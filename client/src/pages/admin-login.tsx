@@ -26,7 +26,7 @@ export default function AdminLogin() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!username.trim() || !password.trim()) {
       toast({
         title: "Erreur",
@@ -61,7 +61,7 @@ export default function AdminLogin() {
             variant: "destructive",
           });
         },
-      }
+      },
     );
   };
 
@@ -84,7 +84,11 @@ export default function AdminLogin() {
           </p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4" data-testid="admin-login-form">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4"
+            data-testid="admin-login-form"
+          >
             <div className="space-y-2">
               <Label htmlFor="username">Nom d'utilisateur</Label>
               <Input
@@ -134,14 +138,6 @@ export default function AdminLogin() {
               {loginMutation.isPending ? "Connexion..." : "Se connecter"}
             </Button>
           </form>
-          
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-800 font-medium">Identifiants par défaut:</p>
-            <p className="text-sm text-blue-600 mt-1">
-              Utilisateur: <code>admin</code><br />
-              Mot de passe: <code>admin123</code>
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>

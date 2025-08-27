@@ -1,94 +1,155 @@
-import { GraduationCap, Users, Clock, CheckCircle } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
 
+// Programmes basés sur l'ancien site de 2IAE
 const programs = [
+  // BTS TERTIAIRES
+  {
+    id: "finance-comptabilite-gestion",
+    title: "FINANCE COMPTABILITÉ & GESTION D'ENTREPRISE",
+    category: "BTS TERTIAIRES",
+    image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "gestion-commerciale",
+    title: "GESTION COMMERCIALE",
+    category: "BTS TERTIAIRES", 
+    image: "https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "ressources-humaines-communication",
+    title: "RESSOURCES HUMAINES & COMMUNICATION",
+    category: "BTS TERTIAIRES",
+    image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "logistique",
+    title: "LOGISTIQUE",
+    category: "BTS TERTIAIRES",
+    image: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  
+  // BTS INDUSTRIEL
+  {
+    id: "science-information",
+    title: "SCIENCE DE L'INFORMATION",
+    category: "BTS INDUSTRIEL",
+    image: "https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "informatique-ida",
+    title: "INFORMATIQUE DÉVELOPPEUR D'APPLICATIONS (IDA)",
+    category: "BTS INDUSTRIEL",
+    image: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "genie-civil-batiment",
+    title: "GÉNIE CIVIL OPTION BÂTIMENT (GBAT)",
+    category: "BTS INDUSTRIEL",
+    image: "https://images.unsplash.com/photo-1541976590-713941681591?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "genie-civil-travaux-publics",
+    title: "GÉNIE CIVIL OPTION TRAVAUX PUBLICS",
+    category: "BTS INDUSTRIEL",
+    image: "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  {
+    id: "agriculture-tropicale",
+    title: "AGRICULTURE TROPICALE OPTION - PRODUCTION VÉGÉTALE (ATPV)",
+    category: "BTS INDUSTRIEL",
+    image: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "2 ans",
+    level: "BTS"
+  },
+  
+  // LICENCE/MASTER
   {
     id: "management-entrepreneuriat",
-    title: "Management et Entrepreneuriat",
-    category: "Entrepreneuriat",
+    title: "MANAGEMENT & ENTREPRENEURIAT",
+    category: "LICENCE/MASTER",
+    image: "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
     duration: "3 ans",
-    level: "Post-BTS",
-    image: "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=400",
-    description: "Formation complète en gestion d'entreprise, innovation et développement entrepreneurial avec une approche pratique du management moderne.",
-    highlights: [
-      "Création et gestion d'entreprise",
-      "Leadership et management d'équipes",
-      "Innovation et développement produit",
-      "Stratégie d'entreprise",
-      "Finance et comptabilité",
-      "Marketing stratégique"
-    ],
-    careers: ["Entrepreneur", "Directeur Général", "Consultant en Management", "Chef de Projet"],
-    color: "primary"
+    level: "Licence"
   },
   {
     id: "marketing-digital",
-    title: "Marketing Digital & E-Commerce",
-    category: "Digital",
-    duration: "2 ans",
-    level: "Post-BTS",
-    image: "https://images.unsplash.com/photo-1556761175-b413da4baf72?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=400",
-    description: "Maîtrisez les outils digitaux et les stratégies marketing pour l'ère numérique avec une spécialisation en e-commerce.",
-    highlights: [
-      "Stratégies digitales avancées",
-      "Gestion des réseaux sociaux",
-      "E-commerce et marketplace",
-      "Analytics et data marketing",
-      "SEO/SEA et référencement",
-      "Content marketing"
-    ],
-    careers: ["Digital Manager", "E-commerce Manager", "Social Media Manager", "Growth Hacker"],
-    color: "secondary"
+    title: "MARKETING DIGITAL & COMMUNICATION",
+    category: "LICENCE/MASTER",
+    image: "https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "3 ans",
+    level: "Licence"
   },
   {
-    id: "gestion-entreprises",
-    title: "Gestion des Entreprises",
-    category: "Business",
+    id: "gestion-financiere",
+    title: "GESTION FINANCIÈRE & CONTRÔLE",
+    category: "LICENCE/MASTER",
+    image: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
     duration: "3 ans",
-    level: "Post-BTS",
-    image: "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=400",
-    description: "Développez vos compétences en gestion, finance et stratégie d'entreprise avec une formation axée sur la performance organisationnelle.",
-    highlights: [
-      "Gestion financière avancée",
-      "Contrôle de gestion",
-      "Ressources humaines",
-      "Audit et conformité",
-      "Stratégie d'entreprise",
-      "Management opérationnel"
-    ],
-    careers: ["Contrôleur de Gestion", "Directeur Financier", "Auditeur", "Consultant Business"],
-    color: "accent"
+    level: "Licence"
+  },
+  
+  // CERTIFICAT
+  {
+    id: "creation-entreprise",
+    title: "CRÉATION & GESTION D'ENTREPRISE",
+    category: "CERTIFICAT",
+    image: "https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "6 mois",
+    level: "Certificat"
+  },
+  {
+    id: "comptabilite-analytique",
+    title: "COMPTABILITÉ ANALYTIQUE & FISCALITÉ",
+    category: "CERTIFICAT",
+    image: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "4 mois",
+    level: "Certificat"
+  },
+  {
+    id: "leadership-management",
+    title: "LEADERSHIP & MANAGEMENT D'ÉQUIPE",
+    category: "CERTIFICAT",
+    image: "https://images.unsplash.com/photo-1600880292089-90a7e086ee0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+    duration: "3 mois",
+    level: "Certificat"
   }
 ];
 
-const advantages = [
-  {
-    icon: GraduationCap,
-    title: "Diplômes Homologués",
-    description: "Reconnaissance internationale avec partenariat Université de Sherbrooke"
-  },
-  {
-    icon: Users,
-    title: "Classes Réduites",
-    description: "Accompagnement personnalisé avec 25 étudiants maximum par classe"
-  },
-  {
-    icon: Clock,
-    title: "Flexibilité",
-    description: "Cours du soir et weekend disponibles pour les professionnels"
-  },
-  {
-    icon: CheckCircle,
-    title: "Stages Garantis",
-    description: "100% de placement en stage dans nos entreprises partenaires"
-  }
+const categories = [
+  { id: "ALL", label: "ALL", color: "bg-orange-500" },
+  { id: "BTS TERTIAIRES", label: "BTS TERTIAIRES", color: "bg-gray-800" },
+  { id: "BTS INDUSTRIEL", label: "BTS INDUSTRIEL", color: "bg-gray-800" },
+  { id: "LICENCE/MASTER", label: "LICENCE/MASTER", color: "bg-gray-800" },
+  { id: "CERTIFICAT", label: "CERTIFICAT", color: "bg-gray-800" }
 ];
 
 export default function FilieresPage() {
+  const [activeCategory, setActiveCategory] = useState("ALL");
+
+  // Filter programs based on active category
+  const filteredPrograms = activeCategory === "ALL" 
+    ? programs 
+    : programs.filter(program => program.category === activeCategory);
+
   return (
     <div className="min-h-screen pt-20">
       {/* Header Section */}
@@ -104,177 +165,82 @@ export default function FilieresPage() {
       </section>
 
       {/* Programs Section */}
-      <section className="py-20 bg-background">
+      <section className="py-20 bg-white">
         <div className="container mx-auto px-4">
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full lg:w-fit lg:grid-cols-4 mb-12">
-              <TabsTrigger value="all">Toutes les Filières</TabsTrigger>
-              <TabsTrigger value="entrepreneuriat">Entrepreneuriat</TabsTrigger>
-              <TabsTrigger value="digital">Digital</TabsTrigger>
-              <TabsTrigger value="business">Business</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="all" className="space-y-12">
-              {programs.map((program, index) => (
-                <Card key={program.id} className="overflow-hidden professional-shadow hover-lift" data-testid={`card-program-${program.id}`}>
-                  <div className="grid lg:grid-cols-2 gap-0">
-                    <div className="relative">
-                      <img 
-                        src={program.image}
-                        alt={program.title}
-                        className="w-full h-80 lg:h-full object-cover"
-                        data-testid={`img-program-${program.id}`}
-                      />
-                      <div className="absolute top-4 left-4">
-                        <Badge 
-                          className={`${
-                            program.color === "primary" ? "bg-primary text-primary-foreground" :
-                            program.color === "secondary" ? "bg-secondary text-secondary-foreground" :
-                            "bg-accent text-accent-foreground"
-                          }`}
-                          data-testid={`badge-program-category-${program.id}`}
-                        >
-                          {program.category}
-                        </Badge>
-                      </div>
-                    </div>
-                    <CardContent className="p-8 lg:p-12">
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-3xl font-bold text-card-foreground" data-testid={`text-program-title-${program.id}`}>
-                          {program.title}
-                        </h2>
-                        <div className="text-right text-sm text-muted-foreground">
-                          <div data-testid={`text-program-duration-${program.id}`}>{program.duration}</div>
-                          <div data-testid={`text-program-level-${program.id}`}>{program.level}</div>
-                        </div>
-                      </div>
-                      
-                      <p className="text-lg text-muted-foreground mb-8" data-testid={`text-program-description-${program.id}`}>
-                        {program.description}
-                      </p>
-                      
-                      <div className="grid md:grid-cols-2 gap-8 mb-8">
-                        <div>
-                          <h3 className="font-semibold text-lg mb-4" data-testid={`text-program-highlights-title-${program.id}`}>
-                            Points Clés du Programme
-                          </h3>
-                          <ul className="space-y-2">
-                            {program.highlights.map((highlight, hIndex) => (
-                              <li key={hIndex} className="flex items-center text-muted-foreground" data-testid={`text-program-highlight-${program.id}-${hIndex}`}>
-                                <CheckCircle className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                                {highlight}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        
-                        <div>
-                          <h3 className="font-semibold text-lg mb-4" data-testid={`text-program-careers-title-${program.id}`}>
-                            Débouchés Professionnels
-                          </h3>
-                          <ul className="space-y-2">
-                            {program.careers.map((career, cIndex) => (
-                              <li key={cIndex} className="text-muted-foreground" data-testid={`text-program-career-${program.id}-${cIndex}`}>
-                                • {career}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-col sm:flex-row gap-4">
-                        <Link href="/contact">
-                          <Button 
-                            className={`${
-                              program.color === "primary" ? "bg-primary hover:bg-primary/90 text-primary-foreground" :
-                              program.color === "secondary" ? "bg-secondary hover:bg-secondary/90 text-secondary-foreground" :
-                              "bg-accent hover:bg-accent/90 text-accent-foreground"
-                            } px-8 py-3`}
-                            data-testid={`button-program-contact-${program.id}`}
-                          >
-                            Demander Plus d'Infos
-                          </Button>
-                        </Link>
-                        <Button 
-                          variant="outline"
-                          className="px-8 py-3"
-                          data-testid={`button-program-brochure-${program.id}`}
-                        >
-                          Télécharger la Brochure
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </div>
-                </Card>
-              ))}
-            </TabsContent>
-
-            {/* Individual category tabs */}
-            {["entrepreneuriat", "digital", "business"].map((category) => (
-              <TabsContent key={category} value={category} className="space-y-12">
-                {programs
-                  .filter(p => p.category.toLowerCase() === category)
-                  .map((program) => (
-                    <Card key={program.id} className="overflow-hidden professional-shadow hover-lift">
-                      {/* Same card structure as above */}
-                      <div className="grid lg:grid-cols-2 gap-0">
-                        <div className="relative">
-                          <img 
-                            src={program.image}
-                            alt={program.title}
-                            className="w-full h-80 lg:h-full object-cover"
-                          />
-                        </div>
-                        <CardContent className="p-8 lg:p-12">
-                          <h2 className="text-3xl font-bold mb-4">{program.title}</h2>
-                          <p className="text-lg text-muted-foreground mb-8">{program.description}</p>
-                          <Link href="/contact">
-                            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3">
-                              Demander Plus d'Infos
-                            </Button>
-                          </Link>
-                        </CardContent>
-                      </div>
-                    </Card>
-                  ))}
-              </TabsContent>
+          {/* Category Filter Tabs */}
+          <div className="flex flex-wrap justify-center gap-2 mb-12">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => setActiveCategory(category.id)}
+                className={`px-6 py-3 rounded-lg font-semibold text-sm uppercase tracking-wide transition-all duration-300 ${
+                  activeCategory === category.id
+                    ? category.color + " text-white shadow-lg"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+                data-testid={`button-category-${category.id.toLowerCase().replace(/[\/\s]/g, "-")}`}
+              >
+                {category.label}
+              </button>
             ))}
-          </Tabs>
-        </div>
-      </section>
+          </div>
 
-      {/* Advantages Section */}
-      <section className="py-20 bg-muted">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4" data-testid="text-advantages-title">
-              Nos Avantages Pédagogiques
-            </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-advantages-subtitle">
-              Une approche moderne et personnalisée de l'enseignement supérieur
-            </p>
-          </div>
-          
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {advantages.map((advantage, index) => {
-              const IconComponent = advantage.icon;
-              return (
-                <Card key={index} className="text-center hover-lift professional-shadow border-0" data-testid={`card-advantage-${index}`}>
-                  <CardContent className="p-8">
-                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6 mx-auto">
-                      <IconComponent className="h-8 w-8 text-primary" />
+          {/* Programs Grid */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredPrograms.map((program) => (
+              <Card 
+                key={program.id} 
+                className="group overflow-hidden professional-shadow hover-lift border-0 cursor-pointer"
+                data-testid={`card-program-${program.id}`}
+              >
+                <div className="relative h-64 overflow-hidden">
+                  <img 
+                    src={program.image}
+                    alt={program.title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    data-testid={`img-program-${program.id}`}
+                  />
+                  {/* Dark Overlay with Title */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent">
+                    <div className="absolute bottom-0 left-0 right-0 p-6">
+                      <h3 
+                        className="text-white font-bold text-lg leading-tight"
+                        data-testid={`text-program-title-${program.id}`}
+                      >
+                        {program.title}
+                      </h3>
+                      <div className="flex items-center gap-3 mt-2 text-white/80 text-sm">
+                        <span data-testid={`text-program-level-${program.id}`}>{program.level}</span>
+                        <span>•</span>
+                        <span data-testid={`text-program-duration-${program.id}`}>{program.duration}</span>
+                      </div>
                     </div>
-                    <h3 className="text-xl font-bold mb-4" data-testid={`text-advantage-title-${index}`}>
-                      {advantage.title}
-                    </h3>
-                    <p className="text-muted-foreground" data-testid={`text-advantage-description-${index}`}>
-                      {advantage.description}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                  </div>
+                  
+                  {/* Hover overlay with CTA */}
+                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                    <Link href="/contact">
+                      <Button 
+                        className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3"
+                        data-testid={`button-program-contact-${program.id}`}
+                      >
+                        Plus d'Infos
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
+
+          {/* No programs found message */}
+          {filteredPrograms.length === 0 && (
+            <div className="text-center py-16">
+              <p className="text-xl text-gray-500">
+                Aucun programme trouvé dans cette catégorie.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 

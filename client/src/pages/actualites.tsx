@@ -163,7 +163,7 @@ export default function ActualitesPage() {
                     <img 
                       src={getImageUrl(featuredNews.imageUrl, featuredNews.category)}
                       alt={featuredNews.title}
-                      className="w-full h-80 lg:h-full object-contain bg-gray-100"
+                      className="w-full h-80 lg:h-full object-cover"
                       data-testid="img-featured-news"
                     />
                     <div className="absolute top-4 left-4">
@@ -247,7 +247,7 @@ export default function ActualitesPage() {
                     <img
                       src={getImageUrl(article.imageUrl, article.category)}
                       alt={article.title}
-                      className="w-full h-48 object-contain bg-gray-100"
+                      className="w-full h-48 object-cover"
                       data-testid={`img-news-${article.id}`}
                     />
                     <div className="absolute top-4 left-4">

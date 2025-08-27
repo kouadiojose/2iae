@@ -42,12 +42,14 @@ export function ObjectUploader({
 
     try {
       setUploading(true);
+      console.log('🔄 Début upload pour:', file.name);
       
       // Get upload parameters
-      const { url } = await onGetUploadParameters();
+      const uploadParams = await onGetUploadParameters();
+      console.log('✅ Paramètres d\'upload reçus:', uploadParams);
       
       // Upload file directly
-      const response = await fetch(url, {
+      const response = await fetch(uploadParams.url, {
         method: 'PUT',
         body: file,
         headers: {
@@ -55,21 +57,28 @@ export function ObjectUploader({
         },
       });
 
+      console.log('📤 Réponse upload:', response.status, response.statusText);
+
       if (response.ok) {
+        const responseData = await response.text();
+        console.log('✅ Upload réussi, réponse:', responseData);
+        
         // Simulate Uppy result format
         const result = {
           successful: [{
-            uploadURL: url,
+            uploadURL: uploadParams.url,
             name: file.name
           }]
         };
         onComplete?.(result);
       } else {
-        throw new Error('Upload failed');
+        const errorText = await response.text();
+        console.error('❌ Erreur upload:', response.status, errorText);
+        throw new Error(`Upload failed: ${response.status} ${errorText}`);
       }
     } catch (error) {
-      console.error('Upload error:', error);
-      alert('Erreur lors de l\'upload de l\'image');
+      console.error('💥 Erreur complète:', error);
+      alert(`Erreur lors de l'upload: ${error.message}`);
     } finally {
       setUploading(false);
       // Reset file input

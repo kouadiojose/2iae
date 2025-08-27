@@ -1,12 +1,7 @@
 import { Facebook, Twitter, Linkedin, Instagram } from "lucide-react";
+import { Link } from "wouter";
 
 export default function Footer() {
-  const scrollToSection = (sectionId: string) => {
-    const element = document.getElementById(sectionId);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
 
   return (
     <footer className="bg-foreground text-white py-16">
@@ -49,29 +44,29 @@ export default function Footer() {
             </h3>
             <ul className="space-y-3 text-white/70">
               <li>
-                <button onClick={() => scrollToSection("accueil")} className="hover:text-primary transition-colors" data-testid="link-footer-accueil">
+                <Link href="/" className="hover:text-primary transition-colors" data-testid="link-footer-accueil">
                   Accueil
-                </button>
+                </Link>
               </li>
               <li>
-                <button onClick={() => scrollToSection("filieres")} className="hover:text-primary transition-colors" data-testid="link-footer-filieres">
+                <Link href="/filieres" className="hover:text-primary transition-colors" data-testid="link-footer-filieres">
                   Nos Filières
-                </button>
+                </Link>
               </li>
               <li>
-                <button onClick={() => scrollToSection("actualites")} className="hover:text-primary transition-colors" data-testid="link-footer-actualites">
+                <Link href="/actualites" className="hover:text-primary transition-colors" data-testid="link-footer-actualites">
                   Actualités
-                </button>
+                </Link>
               </li>
               <li>
-                <button onClick={() => scrollToSection("groupe")} className="hover:text-primary transition-colors" data-testid="link-footer-groupe">
-                  Le Groupe
-                </button>
+                <Link href="/a-propos" className="hover:text-primary transition-colors" data-testid="link-footer-a-propos">
+                  À Propos
+                </Link>
               </li>
               <li>
-                <button onClick={() => scrollToSection("espaces")} className="hover:text-primary transition-colors" data-testid="link-footer-espaces">
-                  Espaces
-                </button>
+                <Link href="/campus" className="hover:text-primary transition-colors" data-testid="link-footer-campus">
+                  Campus
+                </Link>
               </li>
             </ul>
           </div>

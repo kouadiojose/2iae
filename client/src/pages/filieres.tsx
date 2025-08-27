@@ -168,12 +168,12 @@ export default function FilieresPage() {
       <section className="py-20 bg-white">
         <div className="container mx-auto px-4">
           {/* Category Filter Tabs */}
-          <div className="flex flex-wrap justify-center gap-2 mb-12">
+          <div className="flex flex-wrap justify-center gap-2 mb-12 px-4">
             {categories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => setActiveCategory(category.id)}
-                className={`px-6 py-3 rounded-lg font-semibold text-sm uppercase tracking-wide transition-all duration-300 ${
+                className={`px-3 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold text-xs sm:text-sm uppercase tracking-wide transition-all duration-300 ${
                   activeCategory === category.id
                     ? category.color + " text-white shadow-lg"
                     : "bg-gray-200 text-gray-700 hover:bg-gray-300"
@@ -186,14 +186,14 @@ export default function FilieresPage() {
           </div>
 
           {/* Programs Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {filteredPrograms.map((program) => (
               <Card 
                 key={program.id} 
                 className="group overflow-hidden professional-shadow hover-lift border-0 cursor-pointer"
                 data-testid={`card-program-${program.id}`}
               >
-                <div className="relative h-64 overflow-hidden">
+                <div className="relative h-48 sm:h-64 overflow-hidden">
                   <img 
                     src={program.image}
                     alt={program.title}
@@ -202,14 +202,14 @@ export default function FilieresPage() {
                   />
                   {/* Dark Overlay with Title */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent">
-                    <div className="absolute bottom-0 left-0 right-0 p-6">
+                    <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
                       <h3 
-                        className="text-white font-bold text-lg leading-tight"
+                        className="text-white font-bold text-base sm:text-lg leading-tight"
                         data-testid={`text-program-title-${program.id}`}
                       >
                         {program.title}
                       </h3>
-                      <div className="flex items-center gap-3 mt-2 text-white/80 text-sm">
+                      <div className="flex items-center gap-2 sm:gap-3 mt-2 text-white/80 text-xs sm:text-sm">
                         <span data-testid={`text-program-level-${program.id}`}>{program.level}</span>
                         <span>•</span>
                         <span data-testid={`text-program-duration-${program.id}`}>{program.duration}</span>

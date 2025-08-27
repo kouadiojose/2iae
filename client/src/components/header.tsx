@@ -43,7 +43,7 @@ export default function Header() {
         }`}
         data-testid="link-filieres"
       >
-        Nos Filières
+        Nos Tarifs
       </Link>
       <Link 
         href="/a-propos"
@@ -109,7 +109,7 @@ export default function Header() {
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 data-testid="button-filieres"
               >
-                Nos Filières
+                Nos Tarifs
               </Button>
             </Link>
             <Link href="/campus">
@@ -138,7 +138,7 @@ export default function Header() {
                       className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
                       data-testid="button-mobile-filieres"
                     >
-                      Nos Filières
+                      Nos Tarifs
                     </Button>
                   </Link>
                   <Link href="/campus">

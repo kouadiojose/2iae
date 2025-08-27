@@ -176,7 +176,7 @@ export default function AccueilPage() {
                   <div className="flex flex-col sm:flex-row gap-4">
                     <Link href={heroSlides[currentSlide]?.primaryLink || "/filieres"}>
                       <Button 
-                        className="bg-white text-primary hover:bg-white/90 px-8 py-4 text-lg h-auto font-semibold"
+                        className="bg-white text-primary hover:bg-white/90 px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg h-auto font-semibold w-full sm:w-auto"
                         data-testid="button-hero-primary"
                       >
                         {heroSlides[currentSlide]?.primaryButton || "Découvrir"}
@@ -184,8 +184,7 @@ export default function AccueilPage() {
                     </Link>
                     <Link href={heroSlides[currentSlide]?.secondaryLink || "/a-propos"}>
                       <Button 
-                        variant="outline"
-                        className="border-2 border-white text-white hover:bg-white hover:text-primary px-8 py-4 text-lg h-auto"
+                        className="bg-green-500 hover:bg-green-600 text-white px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg h-auto font-semibold w-full sm:w-auto"
                         data-testid="button-hero-secondary"
                       >
                         {heroSlides[currentSlide]?.secondaryButton || "En Savoir Plus"}

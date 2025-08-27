@@ -139,7 +139,7 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen pt-20">
+    <div className="min-h-screen">
       {/* Header Section */}
       <section className="py-20 gradient-bg text-white">
         <div className="container mx-auto px-4 text-center">

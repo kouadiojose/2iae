@@ -101,6 +101,7 @@ export const institutes = pgTable("institutes", {
 export const news = pgTable("news", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
+  slug: text("slug").notNull().unique(),
   summary: text("summary"),
   content: text("content"),
   imageUrl: text("image_url"), // Image principale pour les listes
@@ -231,6 +232,7 @@ export const updateInstituteSchema = createInsertSchema(institutes).pick({
 
 export const insertNewsSchema = createInsertSchema(news).pick({
   title: true,
+  slug: true,
   summary: true,
   content: true,
   imageUrl: true,
@@ -243,6 +245,7 @@ export const insertNewsSchema = createInsertSchema(news).pick({
 
 export const updateNewsSchema = createInsertSchema(news).pick({
   title: true,
+  slug: true,
   summary: true,
   content: true,
   imageUrl: true,

@@ -51,6 +51,7 @@ export interface IStorage {
   getActiveNews(): Promise<News[]>;
   getAllNews(): Promise<News[]>;
   getNewsById(id: string): Promise<News | undefined>;
+  getNewsBySlug(slug: string): Promise<News | undefined>;
   createNews(news: InsertNews): Promise<News>;
   updateNews(id: string, news: UpdateNews): Promise<News | undefined>;
   deleteNews(id: string): Promise<boolean>;
@@ -522,6 +523,10 @@ export class MemStorage implements IStorage {
     return this.newsList.get(id);
   }
 
+  async getNewsBySlug(slug: string): Promise<News | undefined> {
+    return Array.from(this.newsList.values()).find(news => news.slug === slug);
+  }
+
   async createNews(insertNews: InsertNews): Promise<News> {
     const id = randomUUID();
     const newsItem: News = { 
@@ -945,6 +950,11 @@ export class DatabaseStorage implements IStorage {
 
   async getNewsById(id: string): Promise<News | undefined> {
     const [newsItem] = await db.select().from(news).where(eq(news.id, id));
+    return newsItem;
+  }
+
+  async getNewsBySlug(slug: string): Promise<News | undefined> {
+    const [newsItem] = await db.select().from(news).where(eq(news.slug, slug));
     return newsItem;
   }
 

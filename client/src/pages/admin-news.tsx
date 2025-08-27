@@ -27,6 +27,7 @@ const newsCategories = [
 
 const newsFormSchema = z.object({
   title: z.string().min(1, "Le titre est requis"),
+  slug: z.string().min(1, "Le slug est requis"),
   summary: z.string().optional(),
   content: z.string().optional(),
   imageUrl: z.string().optional(),
@@ -43,6 +44,7 @@ type NewsForm = z.infer<typeof newsFormSchema>;
 interface News {
   id: string;
   title: string;
+  slug: string;
   summary: string | null;
   content: string | null;
   imageUrl: string | null;
@@ -64,6 +66,7 @@ export default function AdminNewsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<NewsForm>({
     title: "",
+    slug: "",
     summary: "",
     content: "",
     imageUrl: "",
@@ -77,6 +80,25 @@ export default function AdminNewsPage() {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Function to generate slug from title
+  const generateSlug = (title: string): string => {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/[àáâãäå]/g, 'a')
+      .replace(/[èéêë]/g, 'e')
+      .replace(/[ìíîï]/g, 'i')
+      .replace(/[òóôõö]/g, 'o')
+      .replace(/[ùúûü]/g, 'u')
+      .replace(/[ýÿ]/g, 'y')
+      .replace(/[ñ]/g, 'n')
+      .replace(/[ç]/g, 'c')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  };
 
   const { data: newsData, isLoading } = useQuery({
     queryKey: ["/api/admin/news"],
@@ -225,6 +247,7 @@ export default function AdminNewsPage() {
   const resetForm = () => {
     setFormData({
       title: "",
+      slug: "",
       summary: "",
       content: "",
       imageUrl: "",
@@ -247,6 +270,7 @@ export default function AdminNewsPage() {
     setEditingNews(news);
     setFormData({
       title: news.title,
+      slug: news.slug,
       summary: news.summary || "",
       content: news.content || "",
       imageUrl: news.imageUrl || "",
@@ -346,11 +370,33 @@ export default function AdminNewsPage() {
                     <Input
                       id="title"
                       value={formData.title}
-                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                      onChange={(e) => {
+                        const newTitle = e.target.value;
+                        setFormData(prev => ({ 
+                          ...prev, 
+                          title: newTitle,
+                          slug: generateSlug(newTitle)
+                        }));
+                      }}
                       placeholder="Titre de l'actualité"
                       required
                       data-testid="input-news-title"
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="slug">Slug (URL) *</Label>
+                    <Input
+                      id="slug"
+                      value={formData.slug}
+                      onChange={(e) => setFormData(prev => ({ ...prev, slug: e.target.value }))}
+                      placeholder="url-de-lactualite"
+                      required
+                      data-testid="input-news-slug"
+                    />
+                    <p className="text-sm text-gray-500">
+                      L'URL sera: /actualites/{formData.slug || "url-de-lactualite"}
+                    </p>
                   </div>
                   
                   <div className="space-y-2">

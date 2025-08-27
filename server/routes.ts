@@ -9,6 +9,27 @@ import path from "path";
 import multer from "multer";
 import { randomUUID } from "crypto";
 
+// Function to generate slug from title
+function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    // Replace accented characters
+    .replace(/[àáâãäå]/g, 'a')
+    .replace(/[èéêë]/g, 'e')
+    .replace(/[ìíîï]/g, 'i')
+    .replace(/[òóôõö]/g, 'o')
+    .replace(/[ùúûü]/g, 'u')
+    .replace(/[ýÿ]/g, 'y')
+    .replace(/[ñ]/g, 'n')
+    .replace(/[ç]/g, 'c')
+    // Remove special characters and replace spaces with hyphens
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 // Configure multer for news image uploads
 const newsImageStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -1011,11 +1032,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public route to get single news article by ID
-  app.get("/api/news/:id", async (req, res) => {
+  // Public route to get single news article by slug
+  app.get("/api/news/:slug", async (req, res) => {
     try {
-      const { id } = req.params;
-      const newsItem = await storage.getNewsById(id);
+      const { slug } = req.params;
+      const newsItem = await storage.getNewsBySlug(slug);
       
       if (!newsItem || !newsItem.isActive) {
         return res.status(404).json({ 
@@ -1026,7 +1047,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(newsItem);
     } catch (error) {
-      console.error("Error fetching news by ID:", error);
+      console.error("Error fetching news by slug:", error);
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors de la récupération de l'actualité" 
@@ -1034,13 +1055,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public route to get images for a news article
-  app.get("/api/news/:id/images", async (req, res) => {
+  // Public route to get images for a news article by slug
+  app.get("/api/news/:slug/images", async (req, res) => {
     try {
-      const { id } = req.params;
+      const { slug } = req.params;
       
       // First verify the news exists and is active
-      const newsItem = await storage.getNewsById(id);
+      const newsItem = await storage.getNewsBySlug(slug);
       if (!newsItem || !newsItem.isActive) {
         return res.status(404).json({ 
           success: false, 
@@ -1048,7 +1069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const images = await storage.getNewsImages(id);
+      const images = await storage.getNewsImages(newsItem.id);
       res.json({ 
         success: true, 
         images 

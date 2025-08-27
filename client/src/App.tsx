@@ -17,26 +17,91 @@ import AdminDashboard from "@/pages/admin-dashboard";
 import AdminContent from "@/pages/admin-content";
 import NotFound from "@/pages/not-found";
 
-function Router() {
+// Layout for public website pages
+function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <Header />
-      <Switch>
-        <Route path="/" component={AccueilPage} />
-        <Route path="/accueil" component={AccueilPage} />
-        <Route path="/filieres" component={FilieresPage} />
-        <Route path="/a-propos" component={AProposPage} />
-        <Route path="/actualites" component={ActualitesPage} />
-        <Route path="/contact" component={ContactPage} />
-        <Route path="/campus" component={CampusPage} />
-        <Route path="/admin/login" component={AdminLogin} />
-        <Route path="/admin/dashboard" component={AdminDashboard} />
-        <Route path="/admin/content" component={AdminContent} />
-        <Route component={NotFound} />
-      </Switch>
+      {children}
       <Footer />
       <ChatbotWidget />
     </div>
+  );
+}
+
+// Layout for admin pages (completely separate)
+function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen">
+      {children}
+    </div>
+  );
+}
+
+function Router() {
+  return (
+    <Switch>
+      {/* Admin routes - completely separate layout */}
+      <Route path="/admin/login">
+        <AdminLayout>
+          <AdminLogin />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/dashboard">
+        <AdminLayout>
+          <AdminDashboard />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/content">
+        <AdminLayout>
+          <AdminContent />
+        </AdminLayout>
+      </Route>
+      
+      {/* Public website routes - with header, footer, chatbot */}
+      <Route path="/">
+        <PublicLayout>
+          <AccueilPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/accueil">
+        <PublicLayout>
+          <AccueilPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/filieres">
+        <PublicLayout>
+          <FilieresPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/a-propos">
+        <PublicLayout>
+          <AProposPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/actualites">
+        <PublicLayout>
+          <ActualitesPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/contact">
+        <PublicLayout>
+          <ContactPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/campus">
+        <PublicLayout>
+          <CampusPage />
+        </PublicLayout>
+      </Route>
+      
+      {/* 404 page */}
+      <Route>
+        <PublicLayout>
+          <NotFound />
+        </PublicLayout>
+      </Route>
+    </Switch>
   );
 }
 

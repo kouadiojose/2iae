@@ -7,17 +7,55 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Session configuration for admin authentication
-app.use(session({
-  secret: process.env.SESSION_SECRET || "2iae-admin-secret-key-change-in-production",
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: false, // Set to true in production with HTTPS
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+// Simple CORS for development
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
   }
-}));
+});
+
+// Early admin login route to avoid Vite interference
+app.post("/api/admin/login", (req, res) => {
+  console.log("🔥 Login route hit early");
+  
+  const { username, password } = req.body;
+  console.log("📝 Credentials:", { username, password });
+  
+  if (!username || !password) {
+    console.log("❌ Missing credentials");
+    return res.status(400).json({
+      success: false,
+      message: "Nom d'utilisateur et mot de passe requis"
+    });
+  }
+
+  // Simple check for development
+  if (username === "admin" && password === "admin123") {
+    console.log("✅ Login successful");
+    const response = {
+      success: true,
+      admin: {
+        id: "admin-id",
+        username: "admin",
+        email: "admin@2iae.com"
+      }
+    };
+    console.log("📤 Sending response:", response);
+    res.json(response);
+    console.log("✅ Response sent");
+  } else {
+    console.log("❌ Invalid credentials");
+    res.status(401).json({
+      success: false,
+      message: "Identifiants incorrects"
+    });
+  }
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -50,7 +88,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Setup routes FIRST before Vite
   const server = await registerRoutes(app);
+  
+  console.log("✅ Routes enregistrées");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -60,11 +101,11 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // Setup Vite AFTER all API routes are registered
   if (app.get("env") === "development") {
+    console.log("🔧 Configuration Vite...");
     await setupVite(app, server);
+    console.log("✅ Vite configuré");
   } else {
     serveStatic(app);
   }

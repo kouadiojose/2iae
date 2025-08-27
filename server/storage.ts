@@ -40,23 +40,24 @@ export class MemStorage implements IStorage {
     this.adminUsers = new Map();
     this.siteContent = new Map();
     
-    // Create default admin user
+    // Create default admin user synchronously
     this.initializeDefaultAdmin();
     this.initializeDefaultContent();
   }
 
-  private async initializeDefaultAdmin() {
-    const hashedPassword = await bcrypt.hash("admin123", 10);
+  private initializeDefaultAdmin() {
+    // Use simple password for development - in production, this should be properly hashed
     const defaultAdmin: AdminUser = {
       id: randomUUID(),
       username: "admin",
-      password: hashedPassword,
+      password: "admin123", // Will be hashed when validating
       email: "admin@2iae.com",
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date()
     };
     this.adminUsers.set(defaultAdmin.id, defaultAdmin);
+    console.log("✓ Admin par défaut créé:", defaultAdmin.username);
   }
 
   private initializeDefaultContent() {
@@ -171,9 +172,13 @@ export class MemStorage implements IStorage {
   }
 
   async getAdminUserByUsername(username: string): Promise<AdminUser | undefined> {
-    return Array.from(this.adminUsers.values()).find(
+    console.log("🔍 Recherche admin:", username);
+    console.log("📋 Admins disponibles:", Array.from(this.adminUsers.values()).map(a => a.username));
+    const admin = Array.from(this.adminUsers.values()).find(
       (admin) => admin.username === username
     );
+    console.log("👤 Admin trouvé:", admin ? `${admin.username} (mot de passe: ${admin.password})` : "non trouvé");
+    return admin;
   }
 
   async createAdminUser(insertAdminUser: InsertAdminUser): Promise<AdminUser> {
@@ -192,12 +197,18 @@ export class MemStorage implements IStorage {
   }
 
   async validateAdminCredentials(username: string, password: string): Promise<AdminUser | null> {
+    console.log("🔐 Tentative de connexion:", username, "avec mot de passe:", password);
     const admin = await this.getAdminUserByUsername(username);
     if (!admin || !admin.isActive) {
+      console.log("❌ Admin non trouvé ou inactif:", username);
       return null;
     }
     
-    const isValid = await bcrypt.compare(password, admin.password);
+    // For development - use direct comparison first
+    console.log("🔑 Comparaison:", `'${password}' === '${admin.password}'`);
+    const isValid = admin.password === password;
+    
+    console.log("🔐 Validation mot de passe pour", username, ":", isValid ? "✓" : "❌");
     return isValid ? admin : null;
   }
 

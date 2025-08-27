@@ -15,6 +15,7 @@ import CampusPage from "@/pages/campus";
 import AdminLogin from "@/pages/admin-login";
 import AdminDashboard from "@/pages/admin-dashboard";
 import AdminContent from "@/pages/admin-content";
+import AdminSliders from "@/pages/admin-sliders";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -55,6 +56,11 @@ function Router() {
       <Route path="/admin/content">
         <AdminLayout>
           <AdminContent />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/sliders">
+        <AdminLayout>
+          <AdminSliders />
         </AdminLayout>
       </Route>
       

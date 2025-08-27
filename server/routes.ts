@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 
@@ -371,6 +371,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         message: "Erreur lors de la suppression"
+      });
+    }
+  });
+
+  // ===== SLIDER MANAGEMENT ROUTES (ADMIN ONLY) =====
+
+  // Get all sliders (admin only)
+  app.get("/api/admin/sliders", requireAdmin, async (req, res) => {
+    try {
+      const sliders = await storage.getSliders();
+      res.json({ success: true, sliders });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération des sliders"
+      });
+    }
+  });
+
+  // Get single slider (admin only)
+  app.get("/api/admin/sliders/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const slider = await storage.getSlider(id);
+      
+      if (!slider) {
+        return res.status(404).json({
+          success: false,
+          message: "Slider non trouvé"
+        });
+      }
+
+      res.json({ success: true, slider });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du slider"
+      });
+    }
+  });
+
+  // Create new slider (admin only)
+  app.post("/api/admin/sliders", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertSliderSchema.parse(req.body);
+      const slider = await storage.createSlider(validatedData);
+
+      res.status(201).json({ success: true, slider });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          message: "Données invalides",
+          errors: error.errors
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la création du slider"
+      });
+    }
+  });
+
+  // Update slider (admin only)
+  app.put("/api/admin/sliders/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateSliderSchema.parse(req.body);
+      
+      const updated = await storage.updateSlider(id, validatedData);
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "Slider non trouvé"
+        });
+      }
+
+      res.json({ success: true, slider: updated });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          message: "Données invalides",
+          errors: error.errors
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la mise à jour du slider"
+      });
+    }
+  });
+
+  // Delete slider (admin only)
+  app.delete("/api/admin/sliders/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteSlider(id);
+      
+      if (!deleted) {
+        return res.status(404).json({
+          success: false,
+          message: "Slider non trouvé"
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la suppression du slider"
+      });
+    }
+  });
+
+  // Get public sliders (for frontend)
+  app.get("/api/sliders", async (req, res) => {
+    try {
+      const sliders = await storage.getSliders();
+      res.json({ success: true, sliders });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération des sliders"
       });
     }
   });

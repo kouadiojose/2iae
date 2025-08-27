@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -24,6 +24,13 @@ export interface IStorage {
   createSiteContent(content: InsertSiteContent): Promise<SiteContent>;
   updateSiteContent(key: string, content: UpdateSiteContent): Promise<SiteContent | undefined>;
   deleteSiteContent(key: string): Promise<boolean>;
+  
+  // Slider management
+  getSliders(): Promise<Slider[]>;
+  getSlider(id: string): Promise<Slider | undefined>;
+  createSlider(slider: InsertSlider): Promise<Slider>;
+  updateSlider(id: string, slider: UpdateSlider): Promise<Slider | undefined>;
+  deleteSlider(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -32,6 +39,7 @@ export class MemStorage implements IStorage {
   private chatMessages: Map<string, ChatMessage>;
   private adminUsers: Map<string, AdminUser>;
   private siteContent: Map<string, SiteContent>;
+  private sliders: Map<string, Slider>;
 
   constructor() {
     this.users = new Map();
@@ -39,10 +47,12 @@ export class MemStorage implements IStorage {
     this.chatMessages = new Map();
     this.adminUsers = new Map();
     this.siteContent = new Map();
+    this.sliders = new Map();
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
     this.initializeDefaultContent();
+    this.initializeDefaultSliders();
   }
 
   private initializeDefaultAdmin() {
@@ -259,6 +269,99 @@ export class MemStorage implements IStorage {
 
   async deleteSiteContent(key: string): Promise<boolean> {
     return this.siteContent.delete(key);
+  }
+
+  private initializeDefaultSliders() {
+    const defaultSliders: Slider[] = [
+      {
+        id: randomUUID(),
+        title: "Bienvenue à 2IAE International",
+        subtitle: "L'ÉCOLE DES ENTREPRENEURS",
+        description: "Formez-vous aux métiers de demain avec nos programmes d'entrepreneuriat innovants.",
+        imageUrl: "/api/placeholder/1200/600",
+        button1Text: "Découvrir nos programmes",
+        button1Link: "/filieres",
+        button2Text: "Nous contacter",
+        button2Link: "/contact",
+        isActive: true,
+        order: "1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdBy: null
+      },
+      {
+        id: randomUUID(),
+        title: "Excellence Académique",
+        subtitle: "FORMATION DE QUALITÉ",
+        description: "Des programmes reconnus et des formateurs experts pour votre réussite professionnelle.",
+        imageUrl: "/api/placeholder/1200/600",
+        button1Text: "En savoir plus",
+        button1Link: "/a-propos",
+        button2Text: "Candidater",
+        button2Link: "/contact",
+        isActive: true,
+        order: "2",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdBy: null
+      }
+    ];
+
+    defaultSliders.forEach(slider => {
+      this.sliders.set(slider.id, slider);
+    });
+  }
+
+  // Slider management methods
+  async getSliders(): Promise<Slider[]> {
+    return Array.from(this.sliders.values())
+      .filter(slider => slider.isActive)
+      .sort((a, b) => parseInt(a.order || "0") - parseInt(b.order || "0"));
+  }
+
+  async getSlider(id: string): Promise<Slider | undefined> {
+    return this.sliders.get(id);
+  }
+
+  async createSlider(insertSlider: InsertSlider): Promise<Slider> {
+    const id = randomUUID();
+    const slider: Slider = { 
+      ...insertSlider, 
+      id, 
+      subtitle: insertSlider.subtitle || null,
+      description: insertSlider.description || null,
+      imageUrl: insertSlider.imageUrl || null,
+      button1Text: insertSlider.button1Text || null,
+      button1Link: insertSlider.button1Link || null,
+      button2Text: insertSlider.button2Text || null,
+      button2Link: insertSlider.button2Link || null,
+      isActive: true,
+      order: insertSlider.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+    this.sliders.set(id, slider);
+    return slider;
+  }
+
+  async updateSlider(id: string, updateData: UpdateSlider): Promise<Slider | undefined> {
+    const existing = this.sliders.get(id);
+    if (!existing) {
+      return undefined;
+    }
+    
+    const updated: Slider = {
+      ...existing,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.sliders.set(id, updated);
+    return updated;
+  }
+
+  async deleteSlider(id: string): Promise<boolean> {
+    return this.sliders.delete(id);
   }
 }
 

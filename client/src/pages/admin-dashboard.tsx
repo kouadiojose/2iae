@@ -13,7 +13,8 @@ import {
   MessageSquare, 
   LogOut, 
   Edit3,
-  Eye
+  Eye,
+  Images
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -31,6 +32,12 @@ export default function AdminDashboard() {
   // Get contacts statistics  
   const { data: contactsData } = useQuery({
     queryKey: ["/api/contacts"],
+    enabled: isAuthenticated,
+  });
+
+  // Get sliders statistics
+  const { data: slidersData } = useQuery({
+    queryKey: ["/api/admin/sliders"],
     enabled: isAuthenticated,
   });
 
@@ -69,6 +76,7 @@ export default function AdminDashboard() {
 
   const contentCount = (contentData as any)?.content?.length || 0;
   const contactsCount = (contactsData as any)?.contacts?.length || 0;
+  const slidersCount = (slidersData as any)?.sliders?.length || 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -146,6 +154,18 @@ export default function AdminDashboard() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
+                <Images className="h-8 w-8 text-orange-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Sliders</p>
+                  <p className="text-2xl font-bold text-gray-900">{slidersCount}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
                 <Users className="h-8 w-8 text-purple-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Administrateurs</p>
@@ -171,7 +191,28 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Images className="h-5 w-5 mr-2" />
+                Slider Principal
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les slides de la bannière principale de votre site web.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/sliders")}
+                className="w-full bg-orange-600 hover:bg-orange-700"
+                data-testid="button-manage-sliders"
+              >
+                Gérer les sliders
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">

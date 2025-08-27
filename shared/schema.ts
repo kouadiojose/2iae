@@ -48,6 +48,24 @@ export const siteContent = pgTable("site_content", {
   updatedBy: varchar("updated_by").references(() => adminUsers.id),
 });
 
+// Sliders table for hero slider management
+export const sliders = pgTable("sliders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  subtitle: text("subtitle"),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  button1Text: text("button1_text"),
+  button1Link: text("button1_link"),
+  button2Text: text("button2_text"),
+  button2Link: text("button2_link"),
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -87,6 +105,31 @@ export const updateSiteContentSchema = createInsertSchema(siteContent).pick({
   order: true,
 }).partial();
 
+export const insertSliderSchema = createInsertSchema(sliders).pick({
+  title: true,
+  subtitle: true,
+  description: true,
+  imageUrl: true,
+  button1Text: true,
+  button1Link: true,
+  button2Text: true,
+  button2Link: true,
+  order: true,
+});
+
+export const updateSliderSchema = createInsertSchema(sliders).pick({
+  title: true,
+  subtitle: true,
+  description: true,
+  imageUrl: true,
+  button1Text: true,
+  button1Link: true,
+  button2Text: true,
+  button2Link: true,
+  isActive: true,
+  order: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -98,3 +141,6 @@ export type AdminUser = typeof adminUsers.$inferSelect;
 export type InsertSiteContent = z.infer<typeof insertSiteContentSchema>;
 export type SiteContent = typeof siteContent.$inferSelect;
 export type UpdateSiteContent = z.infer<typeof updateSiteContentSchema>;
+export type InsertSlider = z.infer<typeof insertSliderSchema>;
+export type Slider = typeof sliders.$inferSelect;
+export type UpdateSlider = z.infer<typeof updateSliderSchema>;

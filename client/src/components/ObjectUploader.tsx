@@ -75,9 +75,19 @@ export function ObjectUploader({
       })
   );
 
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowModal(true);
+  };
+
   return (
     <div>
-      <Button type="button" onClick={() => setShowModal(true)} className={buttonClassName}>
+      <Button 
+        type="button" 
+        onClick={handleButtonClick} 
+        className={buttonClassName}
+      >
         {children}
       </Button>
 

@@ -358,41 +358,41 @@ export default function AdminSliders() {
                         )}
                       />
 
-                      <FormField
-                        control={form.control}
-                        name="imageUrl"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Image du slider</FormLabel>
-                            <FormControl>
-                              <div className="space-y-3">
-                                <ObjectUploader
-                                  maxNumberOfFiles={1}
-                                  maxFileSize={5242880} // 5MB
-                                  onGetUploadParameters={handleGetUploadParameters}
-                                  onComplete={handleUploadComplete}
-                                  buttonClassName="w-full"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Upload className="h-4 w-4" />
-                                    <span>Choisir une image</span>
-                                  </div>
-                                </ObjectUploader>
-                                {currentImageUrl && (
-                                  <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                                    <Images className="h-4 w-4 text-green-600" />
-                                    <span className="text-sm text-gray-600 truncate">
-                                      {currentImageUrl}
-                                    </span>
-                                  </div>
-                                )}
-                                <Input {...field} value={field.value || ""} type="hidden" data-testid="input-slider-image" />
-                              </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                      <div className="space-y-3">
+                        <FormLabel>Image du slider</FormLabel>
+                        <ObjectUploader
+                          maxNumberOfFiles={1}
+                          maxFileSize={5242880} // 5MB
+                          onGetUploadParameters={handleGetUploadParameters}
+                          onComplete={handleUploadComplete}
+                          buttonClassName="w-full"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Upload className="h-4 w-4" />
+                            <span>Choisir une image</span>
+                          </div>
+                        </ObjectUploader>
+                        {currentImageUrl && (
+                          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                            <Images className="h-4 w-4 text-green-600" />
+                            <span className="text-sm text-gray-600 truncate">
+                              {currentImageUrl}
+                            </span>
+                          </div>
                         )}
-                      />
+                        <FormField
+                          control={form.control}
+                          name="imageUrl"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input {...field} value={field.value || ""} type="hidden" data-testid="input-slider-image" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">

@@ -268,10 +268,10 @@ export default function AccueilPage() {
                   <h2 className="text-4xl font-bold mb-6 text-foreground" data-testid="text-founder-title">
                     {(founderData.founderMessage as FounderMessage).title || "Entreprendre pour Devenir l'Élite de Demain"}
                   </h2>
-                  <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6" data-testid="text-founder-quote">
+                  <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6 text-justify" data-testid="text-founder-quote">
                     "{(founderData.founderMessage as FounderMessage).quote}"
                   </blockquote>
-                  <p className="text-lg text-muted-foreground mb-8" data-testid="text-founder-vision">
+                  <p className="text-lg text-muted-foreground mb-8 text-justify" data-testid="text-founder-vision">
                     {(founderData.founderMessage as FounderMessage).vision}
                   </p>
                   <div className="flex items-center space-x-4" data-testid="founder-info">
@@ -296,10 +296,10 @@ export default function AccueilPage() {
                   <h2 className="text-4xl font-bold mb-6 text-foreground" data-testid="text-founder-title">
                     "Entreprendre pour Devenir l'Élite de Demain"
                   </h2>
-                  <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6" data-testid="text-founder-quote">
+                  <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6 text-justify" data-testid="text-founder-quote">
                     "Si en Côte D'Ivoire, les Écoles et les Universités ont réussi dans les programmes de formation des cadres, les moyennes et grandes entreprises, elles ont connu moins de succès dans les programmes destinés aux cadres des petites entreprises, et moins encore dans la formation d'entrepreneurs."
                   </blockquote>
-                  <p className="text-lg text-muted-foreground mb-8" data-testid="text-founder-vision">
+                  <p className="text-lg text-muted-foreground mb-8 text-justify" data-testid="text-founder-vision">
                     C'est de cette vision qu'est né 2IAE International, pour combler ce vide et former une nouvelle génération d'entrepreneurs capables de transformer l'économie africaine.
                   </p>
                   <div className="flex items-center space-x-4" data-testid="founder-info">

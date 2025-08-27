@@ -146,9 +146,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get response from OpenAI
       const completion = await openai.chat.completions.create({
-        model: "gpt-5",
+        model: "gpt-4o",
         messages: messages,
-        max_completion_tokens: 500,
+        max_tokens: 500,
+        temperature: 0.7,
       });
 
       const response = completion.choices[0].message.content || "Désolé, je n'ai pas pu traiter votre demande.";

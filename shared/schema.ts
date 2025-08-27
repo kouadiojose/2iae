@@ -66,6 +66,22 @@ export const sliders = pgTable("sliders", {
   createdBy: varchar("created_by").references(() => adminUsers.id),
 });
 
+// Founder message table for founder section management
+export const founderMessage = pgTable("founder_message", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  quote: text("quote").notNull(),
+  vision: text("vision").notNull(),
+  founderName: text("founder_name").notNull(),
+  founderRole: text("founder_role").notNull(),
+  founderOrganization: text("founder_organization").notNull(),
+  founderImageUrl: text("founder_image_url"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").references(() => adminUsers.id),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -130,6 +146,27 @@ export const updateSliderSchema = createInsertSchema(sliders).pick({
   order: true,
 }).partial();
 
+export const insertFounderMessageSchema = createInsertSchema(founderMessage).pick({
+  title: true,
+  quote: true,
+  vision: true,
+  founderName: true,
+  founderRole: true,
+  founderOrganization: true,
+  founderImageUrl: true,
+});
+
+export const updateFounderMessageSchema = createInsertSchema(founderMessage).pick({
+  title: true,
+  quote: true,
+  vision: true,
+  founderName: true,
+  founderRole: true,
+  founderOrganization: true,
+  founderImageUrl: true,
+  isActive: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -144,3 +181,6 @@ export type UpdateSiteContent = z.infer<typeof updateSiteContentSchema>;
 export type InsertSlider = z.infer<typeof insertSliderSchema>;
 export type Slider = typeof sliders.$inferSelect;
 export type UpdateSlider = z.infer<typeof updateSliderSchema>;
+export type InsertFounderMessage = z.infer<typeof insertFounderMessageSchema>;
+export type FounderMessage = typeof founderMessage.$inferSelect;
+export type UpdateFounderMessage = z.infer<typeof updateFounderMessageSchema>;

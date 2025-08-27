@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -623,6 +623,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get public founder message (for frontend)
+  app.get("/api/founder-message", async (req, res) => {
+    try {
+      const founderMessage = await storage.getFounderMessage();
+      res.json({ success: true, founderMessage });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du message du fondateur"
+      });
+    }
+  });
+
   // Get public content by section
   app.get("/api/content/section/:section", async (req, res) => {
     try {
@@ -634,6 +647,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: "Erreur lors de la récupération du contenu"
       });
+    }
+  });
+
+  // ===== FOUNDER MESSAGE MANAGEMENT ROUTES (ADMIN ONLY) =====
+
+  // Get founder message (admin only)
+  app.get("/api/admin/founder-message", requireAdmin, async (req, res) => {
+    try {
+      const founderMessage = await storage.getFounderMessage();
+      res.json({ success: true, founderMessage });
+    } catch (error) {
+      console.error("Erreur lors de la récupération du message du fondateur:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du message du fondateur"
+      });
+    }
+  });
+
+  // Create founder message (admin only)
+  app.post("/api/admin/founder-message", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertFounderMessageSchema.parse(req.body);
+      const founderMessage = await storage.createFounderMessage(validatedData);
+
+      res.status(201).json({ success: true, founderMessage });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          message: "Données invalides",
+          errors: error.errors
+        });
+      }
+      console.error("Erreur lors de la création du message du fondateur:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la création du message du fondateur"
+      });
+    }
+  });
+
+  // Update founder message (admin only)
+  app.put("/api/admin/founder-message", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = updateFounderMessageSchema.parse(req.body);
+      
+      const updated = await storage.updateFounderMessage(validatedData);
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "Message du fondateur non trouvé"
+        });
+      }
+
+      res.json({ success: true, founderMessage: updated });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          message: "Données invalides",
+          errors: error.errors
+        });
+      }
+      console.error("Erreur lors de la mise à jour du message du fondateur:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la mise à jour du message du fondateur"
+      });
+    }
+  });
+
+  // Get upload URL for founder image (admin only)
+  app.post("/api/admin/founder-message/upload", requireAdmin, async (req, res) => {
+    try {
+      // Generate a unique filename for founder image
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 15);
+      const filename = `founder_${timestamp}_${randomId}.jpg`;
+      
+      // Use the same protocol as the request to avoid mixed content issues
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
+      res.json({ 
+        uploadURL: `${protocol}://${req.get('host')}/api/admin/founder-message/upload-file/${filename}`,
+        finalUrl: `/api/assets/founder/${filename}`
+      });
+    } catch (error) {
+      console.error("Error generating upload URL:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  // File upload handler for founder image (admin only)
+  app.put("/api/admin/founder-message/upload-file/:fileName", requireAdmin, async (req, res) => {
+    try {
+      const { fileName } = req.params;
+      const founderDir = path.join(process.cwd(), 'attached_assets', 'founder');
+      
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(founderDir)) {
+        fs.mkdirSync(founderDir, { recursive: true });
+      }
+      
+      const filePath = path.join(founderDir, fileName);
+      
+      // Create write stream
+      const writeStream = fs.createWriteStream(filePath);
+      
+      // Pipe request body to file
+      req.pipe(writeStream);
+      
+      writeStream.on('finish', () => {
+        res.json({ success: true });
+      });
+      
+      writeStream.on('error', (error) => {
+        console.error("Error writing file:", error);
+        res.status(500).json({ error: 'Failed to save file' });
+      });
+      
+    } catch (error) {
+      console.error("Error uploading founder image:", error);
+      res.status(500).json({ error: "Failed to upload file" });
     }
   });
 

@@ -16,6 +16,7 @@ import AdminLogin from "@/pages/admin-login";
 import AdminDashboard from "@/pages/admin-dashboard";
 import AdminContent from "@/pages/admin-content";
 import AdminSliders from "@/pages/admin-sliders";
+import AdminFounder from "@/pages/admin-founder";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -61,6 +62,11 @@ function Router() {
       <Route path="/admin/sliders">
         <AdminLayout>
           <AdminSliders />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/founder">
+        <AdminLayout>
+          <AdminFounder />
         </AdminLayout>
       </Route>
       

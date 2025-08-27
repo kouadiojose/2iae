@@ -10,6 +10,7 @@ import {
   Settings, 
   FileText, 
   Users, 
+  User, 
   MessageSquare, 
   LogOut, 
   Edit3,
@@ -191,7 +192,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
@@ -209,6 +210,27 @@ export default function AdminDashboard() {
                 data-testid="button-manage-sliders"
               >
                 Gérer les sliders
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <User className="h-5 w-5 mr-2" />
+                Message du Fondateur
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Modifiez le message inspirant et les informations du fondateur.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/founder")}
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                data-testid="button-manage-founder"
+              >
+                Gérer le message
               </Button>
             </CardContent>
           </Card>

@@ -6,32 +6,43 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { useSiteContent } from "@/hooks/useSiteContent";
 import { useQuery } from "@tanstack/react-query";
-import { type Slider } from "@shared/schema";
+import { type Slider, type FounderMessage } from "@shared/schema";
+
+// Interface pour les slides formatés
+interface FormattedSlide {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  image: string;
+  primaryButton: string;
+  primaryLink: string;
+  secondaryButton: string;
+  secondaryLink: string;
+}
 import oldSiteImage from "@assets/image_1756294873587.png";
 import schoolBrochureImage from "@assets/image_1756295342176.png";
 
 // Fallback slides en cas d'erreur ou de chargement
-const fallbackSlides = [
+const fallbackSlides: FormattedSlide[] = [
   {
     id: "fallback-1",
     title: "L'École Où L'Apprentissage Prend Vie",
     subtitle: "2IAE, entreprendre pour devenir l'élite de demain",
     description: "Former une nouvelle génération d'entrepreneurs capables de transformer l'économie africaine",
-    imageUrl: schoolBrochureImage,
-    button1Text: "Découvrir nos Filières",
-    button1Link: "/filieres",
-    button2Text: "En Savoir Plus",
-    button2Link: "/a-propos",
-    order: 1,
-    isActive: true
+    image: schoolBrochureImage,
+    primaryButton: "Découvrir nos Filières",
+    primaryLink: "/filieres",
+    secondaryButton: "En Savoir Plus",
+    secondaryLink: "/a-propos"
   }
 ];
 
 // Fonction pour adapter les données de la DB au format du composant
-function formatSlideData(slides: Slider[]) {
+function formatSlideData(slides: Slider[]): FormattedSlide[] {
   return slides
     .filter(slide => slide.isActive) // Seulement les sliders actifs
-    .sort((a, b) => (a.order || 0) - (b.order || 0)) // Trier par ordre
+    .sort((a, b) => parseInt(a.order || "0") - parseInt(b.order || "0")) // Trier par ordre
     .map(slide => ({
       id: slide.id,
       title: slide.title,
@@ -77,10 +88,15 @@ export default function AccueilPage() {
   const { data: slidersData, isLoading: slidersLoading, error } = useQuery({
     queryKey: ["/api/sliders"],
   });
+
+  // Récupérer le message du fondateur depuis l'API
+  const { data: founderData, isLoading: founderLoading } = useQuery({
+    queryKey: ["/api/founder-message"],
+  });
   
   // Formater les données et gérer les fallbacks
-  const heroSlides = slidersData?.sliders && slidersData.sliders.length > 0 
-    ? formatSlideData(slidersData.sliders)
+  const heroSlides = slidersData && typeof slidersData === 'object' && 'sliders' in slidersData && Array.isArray(slidersData.sliders) && slidersData.sliders.length > 0 
+    ? formatSlideData(slidersData.sliders as Slider[])
     : fallbackSlides;
 
   useEffect(() => {
@@ -242,32 +258,74 @@ export default function AccueilPage() {
               <Badge className="bg-primary/10 text-primary mb-6" data-testid="badge-founder-message">
                 Message du Fondateur
               </Badge>
-              <h2 className="text-4xl font-bold mb-6 text-foreground" data-testid="text-founder-title">
-                "Entreprendre pour Devenir l'Élite de Demain"
-              </h2>
-              <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6" data-testid="text-founder-quote">
-                "Si en Côte D'Ivoire, les Écoles et les Universités ont réussi dans les programmes de formation des cadres, les moyennes et grandes entreprises, elles ont connu moins de succès dans les programmes destinés aux cadres des petites entreprises, et moins encore dans la formation d'entrepreneurs."
-              </blockquote>
-              <p className="text-lg text-muted-foreground mb-8" data-testid="text-founder-vision">
-                C'est de cette vision qu'est né 2IAE International, pour combler ce vide et former une nouvelle génération d'entrepreneurs capables de transformer l'économie africaine.
-              </p>
-              <div className="flex items-center space-x-4" data-testid="founder-info">
-                <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
-                  <span className="text-primary-foreground font-bold text-lg">PDG</span>
+              {founderLoading ? (
+                <div className="space-y-4">
+                  <div className="h-8 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
                 </div>
-                <div>
-                  <p className="font-semibold text-foreground" data-testid="text-founder-role">
-                    Directeur Général & Fondateur
+              ) : founderData && typeof founderData === 'object' && 'founderMessage' in founderData && founderData.founderMessage && (founderData.founderMessage as FounderMessage).isActive ? (
+                <>
+                  <h2 className="text-4xl font-bold mb-6 text-foreground" data-testid="text-founder-title">
+                    {(founderData.founderMessage as FounderMessage).title || "Entreprendre pour Devenir l'Élite de Demain"}
+                  </h2>
+                  <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6" data-testid="text-founder-quote">
+                    "{(founderData.founderMessage as FounderMessage).quote}"
+                  </blockquote>
+                  <p className="text-lg text-muted-foreground mb-8" data-testid="text-founder-vision">
+                    {(founderData.founderMessage as FounderMessage).vision}
                   </p>
-                  <p className="text-muted-foreground" data-testid="text-founder-org">
-                    Groupe Écoles 2IAE International
+                  <div className="flex items-center space-x-4" data-testid="founder-info">
+                    <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
+                      <span className="text-primary-foreground font-bold text-lg">PDG</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground" data-testid="text-founder-name">
+                        {(founderData.founderMessage as FounderMessage).founderName || "Directeur Général"}
+                      </p>
+                      <p className="text-sm text-muted-foreground" data-testid="text-founder-role">
+                        {(founderData.founderMessage as FounderMessage).founderRole || "Directeur Général & Fondateur"}
+                      </p>
+                      <p className="text-muted-foreground" data-testid="text-founder-org">
+                        {(founderData.founderMessage as FounderMessage).founderOrganization || "Groupe Écoles 2IAE International"}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-4xl font-bold mb-6 text-foreground" data-testid="text-founder-title">
+                    "Entreprendre pour Devenir l'Élite de Demain"
+                  </h2>
+                  <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6" data-testid="text-founder-quote">
+                    "Si en Côte D'Ivoire, les Écoles et les Universités ont réussi dans les programmes de formation des cadres, les moyennes et grandes entreprises, elles ont connu moins de succès dans les programmes destinés aux cadres des petites entreprises, et moins encore dans la formation d'entrepreneurs."
+                  </blockquote>
+                  <p className="text-lg text-muted-foreground mb-8" data-testid="text-founder-vision">
+                    C'est de cette vision qu'est né 2IAE International, pour combler ce vide et former une nouvelle génération d'entrepreneurs capables de transformer l'économie africaine.
                   </p>
-                </div>
-              </div>
+                  <div className="flex items-center space-x-4" data-testid="founder-info">
+                    <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
+                      <span className="text-primary-foreground font-bold text-lg">PDG</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground" data-testid="text-founder-role">
+                        Directeur Général & Fondateur
+                      </p>
+                      <p className="text-muted-foreground" data-testid="text-founder-org">
+                        Groupe Écoles 2IAE International
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <div className="order-1 lg:order-2">
               <img 
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=700"
+                src={
+                  founderData && typeof founderData === 'object' && 'founderMessage' in founderData && founderData.founderMessage && (founderData.founderMessage as FounderMessage).founderImageUrl
+                    ? (founderData.founderMessage as FounderMessage).founderImageUrl!
+                    : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=700"
+                }
                 alt="Directeur Général 2IAE International"
                 className="rounded-2xl professional-shadow w-full h-auto"
                 data-testid="img-founder"

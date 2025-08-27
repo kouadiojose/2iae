@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, users, contacts, chatMessages, adminUsers, siteContent, sliders } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -33,6 +33,11 @@ export interface IStorage {
   createSlider(slider: InsertSlider): Promise<Slider>;
   updateSlider(id: string, slider: UpdateSlider): Promise<Slider | undefined>;
   deleteSlider(id: string): Promise<boolean>;
+  
+  // Founder message management
+  getFounderMessage(): Promise<FounderMessage | undefined>;
+  createFounderMessage(founderMessage: InsertFounderMessage): Promise<FounderMessage>;
+  updateFounderMessage(founderMessage: UpdateFounderMessage): Promise<FounderMessage | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -42,6 +47,7 @@ export class MemStorage implements IStorage {
   private adminUsers: Map<string, AdminUser>;
   private siteContent: Map<string, SiteContent>;
   private sliders: Map<string, Slider>;
+  private founderMessage: FounderMessage | null;
 
   constructor() {
     this.users = new Map();
@@ -50,11 +56,13 @@ export class MemStorage implements IStorage {
     this.adminUsers = new Map();
     this.siteContent = new Map();
     this.sliders = new Map();
+    this.founderMessage = null;
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
     this.initializeDefaultContent();
     this.initializeDefaultSliders();
+    this.initializeDefaultFounderMessage();
   }
 
   private initializeDefaultAdmin() {
@@ -365,6 +373,58 @@ export class MemStorage implements IStorage {
   async deleteSlider(id: string): Promise<boolean> {
     return this.sliders.delete(id);
   }
+
+  private initializeDefaultFounderMessage() {
+    const defaultFounderMessage: FounderMessage = {
+      id: randomUUID(),
+      title: "Message du Fondateur",
+      quote: "L'entrepreneuriat est l'art de transformer les rêves en réalité concrète.",
+      vision: "Chez 2IAE International, nous formons les entrepreneurs de demain en leur donnant les outils nécessaires pour réussir dans un monde en constante évolution. Notre mission est de créer une génération d'entrepreneurs capables de transformer l'économie africaine.",
+      founderName: "Dr. Jean-Baptiste KOUAME",
+      founderRole: "Fondateur et Directeur Général",
+      founderOrganization: "2IAE International",
+      founderImageUrl: null,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      updatedBy: null
+    };
+    this.founderMessage = defaultFounderMessage;
+  }
+
+  // Founder message management methods
+  async getFounderMessage(): Promise<FounderMessage | undefined> {
+    return this.founderMessage || undefined;
+  }
+
+  async createFounderMessage(insertFounderMessage: InsertFounderMessage): Promise<FounderMessage> {
+    const id = randomUUID();
+    const founderMessage: FounderMessage = { 
+      ...insertFounderMessage, 
+      id, 
+      founderImageUrl: insertFounderMessage.founderImageUrl || null,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      updatedBy: null
+    };
+    this.founderMessage = founderMessage;
+    return founderMessage;
+  }
+
+  async updateFounderMessage(updateData: UpdateFounderMessage): Promise<FounderMessage | undefined> {
+    if (!this.founderMessage) {
+      return undefined;
+    }
+    
+    const updated: FounderMessage = {
+      ...this.founderMessage,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.founderMessage = updated;
+    return updated;
+  }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -398,6 +458,13 @@ export class DatabaseStorage implements IStorage {
       if (existingSliders.length === 0) {
         await this.initializeDefaultSliders();
         console.log("✓ Sliders par défaut créés");
+      }
+
+      // Check if default founder message exists
+      const existingFounderMessage = await db.select().from(founderMessage).limit(1);
+      if (existingFounderMessage.length === 0) {
+        await this.initializeDefaultFounderMessage();
+        console.log("✓ Message du fondateur par défaut créé");
       }
     } catch (error) {
       console.error("Erreur lors de l'initialisation des données:", error);
@@ -606,6 +673,42 @@ export class DatabaseStorage implements IStorage {
   async deleteSlider(id: string): Promise<boolean> {
     const result = await db.delete(sliders).where(eq(sliders.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  private async initializeDefaultFounderMessage() {
+    const defaultFounderMessage = {
+      title: "Message du Fondateur",
+      quote: "L'entrepreneuriat est l'art de transformer les rêves en réalité concrète.",
+      vision: "Chez 2IAE International, nous formons les entrepreneurs de demain en leur donnant les outils nécessaires pour réussir dans un monde en constante évolution. Notre mission est de créer une génération d'entrepreneurs capables de transformer l'économie africaine.",
+      founderName: "Dr. Jean-Baptiste KOUAME",
+      founderRole: "Fondateur et Directeur Général",
+      founderOrganization: "2IAE International",
+      founderImageUrl: null,
+      isActive: true
+    };
+
+    await db.insert(founderMessage).values(defaultFounderMessage);
+  }
+
+  // Founder message operations
+  async getFounderMessage(): Promise<FounderMessage | undefined> {
+    const [message] = await db.select().from(founderMessage)
+      .where(eq(founderMessage.isActive, true))
+      .limit(1);
+    return message;
+  }
+
+  async createFounderMessage(insertFounderMessage: InsertFounderMessage): Promise<FounderMessage> {
+    const [message] = await db.insert(founderMessage).values(insertFounderMessage).returning();
+    return message;
+  }
+
+  async updateFounderMessage(updateFounderMessage: UpdateFounderMessage): Promise<FounderMessage | undefined> {
+    const [updated] = await db.update(founderMessage)
+      .set({ ...updateFounderMessage, updatedAt: new Date() })
+      .where(eq(founderMessage.isActive, true))
+      .returning();
+    return updated;
   }
 }
 

@@ -1,15 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { ObjectUploader } from "@/components/ObjectUploader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { Image, Trash2, MoveUp, MoveDown, Edit3, Save, X } from "lucide-react";
-import type { UploadResult } from "@uppy/core";
+import { Image, Trash2, MoveUp, MoveDown, Edit3, Save, X, Upload } from "lucide-react";
 
 interface NewsImage {
   id: string;
@@ -29,6 +27,7 @@ export function NewsImageManager({ newsId, isEditable = true }: NewsImageManager
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [editCaption, setEditCaption] = useState("");
   const [uploadingCount, setUploadingCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   // Fetch images for this news
@@ -38,6 +37,44 @@ export function NewsImageManager({ newsId, isEditable = true }: NewsImageManager
   });
 
   const images: NewsImage[] = (imagesData as any)?.images || [];
+
+  // Upload image mutation (local file upload)
+  const uploadImageMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('order', String(images.length + 1));
+
+      const response = await fetch(`/api/admin/news/${newsId}/images/upload`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/news/${newsId}/images`] });
+      setUploadingCount(prev => prev - 1);
+      toast({
+        title: "Succès",
+        description: "Image uploadée avec succès",
+      });
+    },
+    onError: (error: any) => {
+      setUploadingCount(prev => prev - 1);
+      toast({
+        title: "Erreur",
+        description: error.message || "Erreur lors de l'upload de l'image",
+        variant: "destructive",
+      });
+    },
+  });
 
   // Create image mutation
   const createImageMutation = useMutation({
@@ -106,22 +143,37 @@ export function NewsImageManager({ newsId, isEditable = true }: NewsImageManager
     },
   });
 
-  const handleUploadComplete = (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-    if (result.successful && result.successful.length > 0) {
-      const uploadURL = result.successful[0].uploadURL;
-      if (uploadURL) {
-        const urlParts = uploadURL.split('/');
-        const filename = urlParts[urlParts.length - 1].split('?')[0];
-        const relativePath = `/api/assets/news/${filename}`;
-        
-        // Get next order number
-        const nextOrder = Math.max(...images.map(img => img.order || 0), 0) + 1;
-        
-        createImageMutation.mutate({
-          imageUrl: relativePath,
-          order: nextOrder,
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Check file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "Erreur",
+          description: "Le fichier est trop volumineux. Taille maximale : 10MB",
+          variant: "destructive",
         });
+        return;
       }
+
+      // Check file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Erreur",
+          description: "Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setUploadingCount(prev => prev + 1);
+      uploadImageMutation.mutate(file);
+    }
+    
+    // Clear the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -199,26 +251,22 @@ export function NewsImageManager({ newsId, isEditable = true }: NewsImageManager
       <CardContent className="space-y-4">
         {/* Upload new image */}
         <div className="border-2 border-dashed border-orange-300 rounded-lg p-4 bg-orange-50">
-          <ObjectUploader
-            maxNumberOfFiles={1}
-            maxFileSize={5 * 1024 * 1024}
-            onGetUploadParameters={async () => {
-              const response: any = await apiRequest("/api/objects/upload", "POST");
-              setUploadingCount(prev => prev + 1);
-              return {
-                method: "PUT" as const,
-                url: response.uploadURL,
-              };
-            }}
-            onComplete={(result) => {
-              setUploadingCount(prev => prev - 1);
-              handleUploadComplete(result);
-            }}
-            buttonClassName="w-full bg-orange-500 hover:bg-orange-600"
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple={false}
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full bg-orange-500 hover:bg-orange-600"
+            disabled={uploadImageMutation.isPending}
           >
-            <Image className="h-4 w-4 mr-2" />
-            Ajouter une image à la galerie
-          </ObjectUploader>
+            <Upload className="h-4 w-4 mr-2" />
+            {uploadImageMutation.isPending ? "Upload en cours..." : "Ajouter une image à la galerie"}
+          </Button>
         </div>
 
         {/* Show uploading status */}

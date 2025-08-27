@@ -6,6 +6,40 @@ import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
+import multer from "multer";
+import { randomUUID } from "crypto";
+
+// Configure multer for news image uploads
+const newsImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'attached_assets/actualites';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueId = randomUUID().replace(/-/g, '');
+    const extension = path.extname(file.originalname);
+    const filename = `news_${Date.now()}_${uniqueId}${extension}`;
+    cb(null, filename);
+  }
+});
+
+const newsImageUpload = multer({
+  storage: newsImageStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
+    }
+  }
+});
 
 // Function to generate presigned URL for object storage
 async function generatePresignedUrl(bucketName: string, objectName: string): Promise<string> {
@@ -1252,6 +1286,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Route to serve news images from local storage
+  app.get("/api/assets/actualites/:filename", async (req, res) => {
+    try {
+      const { filename } = req.params;
+      const filePath = path.join(process.cwd(), 'attached_assets', 'actualites', filename);
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Image non trouvée" 
+        });
+      }
+      
+      // Set appropriate headers
+      const extension = path.extname(filename).toLowerCase();
+      const mimeTypes: { [key: string]: string } = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp'
+      };
+      
+      const mimeType = mimeTypes[extension] || 'application/octet-stream';
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=3600'); // 1 hour cache
+      
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("Error serving news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors du chargement de l'image" 
+      });
+    }
+  });
+
   // Routes for news images management
   app.get("/api/admin/news/:newsId/images", requireAdmin, async (req, res) => {
     try {
@@ -1268,6 +1342,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors de la récupération des images" 
+      });
+    }
+  });
+
+  // Upload route for news images (local storage)
+  app.post("/api/admin/news/:newsId/images/upload", requireAdmin, newsImageUpload.single('image'), async (req, res) => {
+    try {
+      const { newsId } = req.params;
+      const { caption, order } = req.body;
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Aucun fichier image fourni"
+        });
+      }
+
+      // Create the image URL for local storage
+      const imageUrl = `/api/assets/actualites/${req.file.filename}`;
+
+      const newsImage = await storage.createNewsImage({
+        newsId,
+        imageUrl,
+        caption: caption || null,
+        order: order ? parseInt(order) : null
+      });
+
+      res.status(201).json({ 
+        success: true, 
+        image: newsImage,
+        message: "Image uploadée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error uploading news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de l'upload de l'image" 
       });
     }
   });

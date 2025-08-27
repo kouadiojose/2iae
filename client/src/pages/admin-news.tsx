@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +13,7 @@ import { Plus, Edit, Trash2, Calendar, User, Tag, Image } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
-import { ObjectUploader } from "@/components/ObjectUploader";
 import { NewsImageManager } from "@/components/NewsImageManager";
-import type { UploadResult } from "@uppy/core";
 
 const newsCategories = [
   "Innovation",
@@ -62,6 +60,8 @@ interface News {
 export default function AdminNewsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingNews, setEditingNews] = useState<News | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState<NewsForm>({
     title: "",
     summary: "",
@@ -150,6 +150,77 @@ export default function AdminNewsPage() {
       });
     },
   });
+
+  // Upload main image mutation
+  const uploadMainImageMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`/api/admin/news/temp/images/upload`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
+      }
+
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      setUploadingImage(false);
+      setFormData(prev => ({ ...prev, imageUrl: data.image.imageUrl }));
+      toast({
+        title: "Succès",
+        description: "Image uploadée avec succès",
+      });
+    },
+    onError: (error: any) => {
+      setUploadingImage(false);
+      toast({
+        title: "Erreur",
+        description: error.message || "Erreur lors de l'upload de l'image",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleMainImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Check file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "Erreur",
+          description: "Le fichier est trop volumineux. Taille maximale : 10MB",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Erreur",
+          description: "Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setUploadingImage(true);
+      uploadMainImageMutation.mutate(file);
+    }
+    
+    // Clear the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const resetForm = () => {
     setFormData({
@@ -365,33 +436,24 @@ export default function AdminNewsPage() {
                         />
                       </div>
                     )}
-                    <ObjectUploader
-                      maxNumberOfFiles={1}
-                      maxFileSize={5 * 1024 * 1024} // 5MB
-                      onGetUploadParameters={async () => {
-                        const response: any = await apiRequest("/api/objects/upload", "POST");
-                        return {
-                          method: "PUT" as const,
-                          url: response.uploadURL,
-                        };
-                      }}
-                      onComplete={(result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
-                        if (result.successful && result.successful.length > 0) {
-                          const uploadURL = result.successful[0].uploadURL;
-                          if (uploadURL) {
-                            // Extract filename from the upload URL and create relative path
-                            const urlParts = uploadURL.split('/');
-                            const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
-                            const relativePath = `/api/assets/news/${filename}`;
-                            setFormData(prev => ({ ...prev, imageUrl: relativePath }));
-                          }
-                        }
-                      }}
-                      buttonClassName="w-full bg-orange-500 hover:bg-orange-600"
+                    
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                      style={{ display: 'none' }}
+                      onChange={handleMainImageSelect}
+                    />
+                    
+                    <Button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage}
+                      className="w-full bg-orange-500 hover:bg-orange-600"
                     >
                       <Image className="h-4 w-4 mr-2" />
-                      {formData.imageUrl ? "Changer l'image" : "Télécharger une image"}
-                    </ObjectUploader>
+                      {uploadingImage ? "Upload en cours..." : (formData.imageUrl ? "Changer l'image" : "Télécharger une image")}
+                    </Button>
                     
                     <div className="text-sm text-gray-600 mt-2">
                       <p><strong>Note :</strong> Cette image sera utilisée comme image principale pour les listes d'actualités.</p>

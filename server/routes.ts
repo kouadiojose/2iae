@@ -1346,6 +1346,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Upload route for main news images (local storage)
+  app.post("/api/admin/news/temp/images/upload", requireAdmin, newsImageUpload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Aucun fichier image fourni"
+        });
+      }
+
+      // Create the image URL for local storage
+      const imageUrl = `/api/assets/actualites/${req.file.filename}`;
+
+      return res.json({
+        success: true,
+        image: {
+          imageUrl: imageUrl,
+          filename: req.file.filename
+        }
+      });
+    } catch (error) {
+      console.error("Error uploading main news image:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Erreur lors de l'upload de l'image"
+      });
+    }
+  });
+
   // Upload route for news images (local storage)
   app.post("/api/admin/news/:newsId/images/upload", requireAdmin, newsImageUpload.single('image'), async (req, res) => {
     try {

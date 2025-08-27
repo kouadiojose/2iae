@@ -71,12 +71,13 @@ export function ObjectUploader({
       })
       .on("complete", (result) => {
         onComplete?.(result);
+        setShowModal(false); // Close modal after upload completion
       })
   );
 
   return (
     <div>
-      <Button onClick={() => setShowModal(true)} className={buttonClassName}>
+      <Button type="button" onClick={() => setShowModal(true)} className={buttonClassName}>
         {children}
       </Button>
 

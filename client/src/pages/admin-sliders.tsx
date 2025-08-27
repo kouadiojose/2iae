@@ -212,21 +212,29 @@ export default function AdminSliders() {
 
   const handleUploadComplete = (result: any) => {
     if (result.successful?.[0]?.uploadURL) {
-      // Extract the final URL from the upload URL
-      const uploadUrl = result.successful[0].uploadURL;
-      // Convert to our public URL format
+      // Generate the final URL based on the upload response
+      // We use the object name from the upload to construct our public URL
+      const successfulUpload = result.successful[0];
+      
+      // Extract filename from the upload URL or use response data
+      const uploadUrl = successfulUpload.uploadURL;
       const urlParts = uploadUrl.split('/');
-      const bucketIndex = urlParts.findIndex((part: string) => part.includes('replit-objstore'));
-      if (bucketIndex !== -1) {
-        const objectPath = urlParts.slice(bucketIndex + 1).join('/');
-        const finalUrl = `/public-objects/${objectPath.replace('public/', '')}`;
-        setCurrentImageUrl(finalUrl);
-        form.setValue("imageUrl", finalUrl);
-        toast({
-          title: "Succès",
-          description: "Image uploadée avec succès",
-        });
-      }
+      const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
+      
+      const finalUrl = `/public-objects/sliders/${filename}`;
+      setCurrentImageUrl(finalUrl);
+      form.setValue("imageUrl", finalUrl);
+      
+      toast({
+        title: "Succès",
+        description: "Image uploadée avec succès",
+      });
+    } else {
+      toast({
+        title: "Erreur",
+        description: "Erreur lors de l'upload de l'image",
+        variant: "destructive",
+      });
     }
   };
 

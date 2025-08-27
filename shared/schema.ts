@@ -82,6 +82,21 @@ export const founderMessage = pgTable("founder_message", {
   updatedBy: varchar("updated_by").references(() => adminUsers.id),
 });
 
+// Institutes table for institutes section management
+export const institutes = pgTable("institutes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  link: text("link").default("/filieres"),
+  buttonText: text("button_text").default("EN SAVOIR PLUS"),
+  bgColor: text("bg_color").default("from-gray-800 to-gray-900"),
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -167,6 +182,25 @@ export const updateFounderMessageSchema = createInsertSchema(founderMessage).pic
   isActive: true,
 }).partial();
 
+export const insertInstituteSchema = createInsertSchema(institutes).pick({
+  title: true,
+  description: true,
+  link: true,
+  buttonText: true,
+  bgColor: true,
+  order: true,
+});
+
+export const updateInstituteSchema = createInsertSchema(institutes).pick({
+  title: true,
+  description: true,
+  link: true,
+  buttonText: true,
+  bgColor: true,
+  isActive: true,
+  order: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -184,3 +218,6 @@ export type UpdateSlider = z.infer<typeof updateSliderSchema>;
 export type InsertFounderMessage = z.infer<typeof insertFounderMessageSchema>;
 export type FounderMessage = typeof founderMessage.$inferSelect;
 export type UpdateFounderMessage = z.infer<typeof updateFounderMessageSchema>;
+export type InsertInstitute = z.infer<typeof insertInstituteSchema>;
+export type Institute = typeof institutes.$inferSelect;
+export type UpdateInstitute = z.infer<typeof updateInstituteSchema>;

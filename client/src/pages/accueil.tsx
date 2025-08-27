@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { useSiteContent } from "@/hooks/useSiteContent";
 import { useQuery } from "@tanstack/react-query";
-import { type Slider, type FounderMessage } from "@shared/schema";
+import { type Slider, type FounderMessage, type Institute } from "@shared/schema";
 
 // Interface pour les slides formatés
 interface FormattedSlide {
@@ -92,6 +92,11 @@ export default function AccueilPage() {
   // Récupérer le message du fondateur depuis l'API
   const { data: founderData, isLoading: founderLoading } = useQuery({
     queryKey: ["/api/founder-message"],
+  });
+
+  // Récupérer les instituts depuis l'API
+  const { data: institutesData, isLoading: institutesLoading } = useQuery<{ success: boolean; institutes: Institute[] }>({
+    queryKey: ["/api/institutes"],
   });
   
   // Formater les données et gérer les fallbacks
@@ -347,68 +352,124 @@ export default function AccueilPage() {
           </div>
           
           <div className="grid md:grid-cols-3 gap-8">
-            <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-management">
-              <CardContent className="p-8 h-80 flex flex-col justify-between">
-                <div className="flex-1 flex flex-col justify-center">
-                  <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-management-title">
-                    INSTITUTS DE FORMATION EN MANAGEMENT
-                  </h3>
-                  <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
-                </div>
-                <div className="text-center">
-                  <Link href="/filieres">
-                    <Button 
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
-                      data-testid="button-institute-management"
-                    >
-                      EN SAVOIR PLUS
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+            {institutesLoading ? (
+              // État de chargement pour les instituts
+              Array.from({ length: 3 }).map((_, index) => (
+                <Card key={index} className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white">
+                  <CardContent className="p-8 h-80 flex flex-col justify-between">
+                    <div className="flex-1 flex flex-col justify-center">
+                      <div className="w-64 h-6 bg-white/20 rounded mb-4 mx-auto animate-pulse"></div>
+                      <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                    </div>
+                    <div className="text-center">
+                      <div className="w-32 h-12 bg-white/20 rounded mx-auto animate-pulse"></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : institutesData?.institutes && institutesData.institutes.length > 0 ? (
+              // Afficher les instituts depuis la base de données
+              institutesData.institutes
+                .filter(institute => institute.isActive)
+                .sort((a, b) => parseInt(a.order || "1") - parseInt(b.order || "1"))
+                .map((institute, index) => (
+                  <Card 
+                    key={institute.id} 
+                    className={`overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br ${institute.bgColor || 'from-gray-800 to-gray-900'} text-white`}
+                    data-testid={`card-institute-${index}`}
+                  >
+                    <CardContent className="p-8 h-80 flex flex-col justify-between">
+                      <div className="flex-1 flex flex-col justify-center">
+                        <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid={`text-institute-title-${index}`}>
+                          {institute.title}
+                        </h3>
+                        {institute.description && (
+                          <p className="text-sm text-center text-white/80 mb-4" data-testid={`text-institute-description-${index}`}>
+                            {institute.description}
+                          </p>
+                        )}
+                        <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                      </div>
+                      <div className="text-center">
+                        <Link href={institute.link || "/filieres"}>
+                          <Button 
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                            data-testid={`button-institute-${index}`}
+                          >
+                            {institute.buttonText || "EN SAVOIR PLUS"}
+                          </Button>
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+            ) : (
+              // Fallback instituts statiques si aucune donnée en DB
+              <>
+                <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-management">
+                  <CardContent className="p-8 h-80 flex flex-col justify-between">
+                    <div className="flex-1 flex flex-col justify-center">
+                      <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-management-title">
+                        INSTITUTS DE FORMATION EN MANAGEMENT
+                      </h3>
+                      <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                    </div>
+                    <div className="text-center">
+                      <Link href="/filieres">
+                        <Button 
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                          data-testid="button-institute-management"
+                        >
+                          EN SAVOIR PLUS
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
 
-            <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-technology">
-              <CardContent className="p-8 h-80 flex flex-col justify-between">
-                <div className="flex-1 flex flex-col justify-center">
-                  <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-technology-title">
-                    INSTITUTS DE FORMATION AUX NOUVELLES TECHNOLOGIES
-                  </h3>
-                  <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
-                </div>
-                <div className="text-center">
-                  <Link href="/filieres">
-                    <Button 
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
-                      data-testid="button-institute-technology"
-                    >
-                      EN SAVOIR PLUS
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+                <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-technology">
+                  <CardContent className="p-8 h-80 flex flex-col justify-between">
+                    <div className="flex-1 flex flex-col justify-center">
+                      <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-technology-title">
+                        INSTITUTS DE FORMATION AUX NOUVELLES TECHNOLOGIES
+                      </h3>
+                      <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                    </div>
+                    <div className="text-center">
+                      <Link href="/filieres">
+                        <Button 
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                          data-testid="button-institute-technology"
+                        >
+                          EN SAVOIR PLUS
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
 
-            <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-agriculture">
-              <CardContent className="p-8 h-80 flex flex-col justify-between">
-                <div className="flex-1 flex flex-col justify-center">
-                  <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-agriculture-title">
-                    INSTITUTS DE FORMATION AGRICOLE
-                  </h3>
-                  <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
-                </div>
-                <div className="text-center">
-                  <Link href="/filieres">
-                    <Button 
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
-                      data-testid="button-institute-agriculture"
-                    >
-                      EN SAVOIR PLUS
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+                <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-agriculture">
+                  <CardContent className="p-8 h-80 flex flex-col justify-between">
+                    <div className="flex-1 flex flex-col justify-center">
+                      <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-agriculture-title">
+                        INSTITUTS DE FORMATION AGRICOLE
+                      </h3>
+                      <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                    </div>
+                    <div className="text-center">
+                      <Link href="/filieres">
+                        <Button 
+                          className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                          data-testid="button-institute-agriculture"
+                        >
+                          EN SAVOIR PLUS
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </div>
         </div>
       </section>

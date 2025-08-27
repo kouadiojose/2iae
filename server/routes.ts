@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -816,6 +816,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error uploading founder image:", error);
       res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
+
+  // =================== INSTITUTES ROUTES ===================
+
+  // Public route to get all active institutes
+  app.get("/api/institutes", async (req, res) => {
+    try {
+      const institutesData = await storage.getActiveInstitutes();
+      res.json({ success: true, institutes: institutesData });
+    } catch (error) {
+      console.error("Error fetching institutes:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des instituts" 
+      });
+    }
+  });
+
+  // Admin route to get all institutes
+  app.get("/api/admin/institutes", requireAdmin, async (req, res) => {
+    try {
+      const institutesData = await storage.getAllInstitutes();
+      res.json({ success: true, institutes: institutesData });
+    } catch (error) {
+      console.error("Error fetching institutes for admin:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des instituts" 
+      });
+    }
+  });
+
+  // Admin route to get single institute
+  app.get("/api/admin/institutes/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const institute = await storage.getInstituteById(id);
+      
+      if (!institute) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Institut non trouvé" 
+        });
+      }
+
+      res.json({ success: true, institute });
+    } catch (error) {
+      console.error("Error fetching institute:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération de l'institut" 
+      });
+    }
+  });
+
+  // Admin route to create institute
+  app.post("/api/admin/institutes", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertInstituteSchema.parse(req.body);
+      const newInstitute = await storage.createInstitute(validatedData);
+      
+      res.status(201).json({ 
+        success: true, 
+        institute: newInstitute,
+        message: "Institut créé avec succès" 
+      });
+    } catch (error) {
+      console.error("Error creating institute:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Données invalides", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la création de l'institut" 
+      });
+    }
+  });
+
+  // Admin route to update institute
+  app.put("/api/admin/institutes/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateInstituteSchema.parse(req.body);
+      
+      const updatedInstitute = await storage.updateInstitute(id, validatedData);
+      
+      if (!updatedInstitute) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Institut non trouvé" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        institute: updatedInstitute,
+        message: "Institut mis à jour avec succès" 
+      });
+    } catch (error) {
+      console.error("Error updating institute:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Données invalides", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour de l'institut" 
+      });
+    }
+  });
+
+  // Admin route to delete institute
+  app.delete("/api/admin/institutes/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteInstitute(id);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Institut non trouvé" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Institut supprimé avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting institute:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression de l'institut" 
+      });
     }
   });
 

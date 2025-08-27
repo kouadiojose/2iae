@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -38,6 +38,14 @@ export interface IStorage {
   getFounderMessage(): Promise<FounderMessage | undefined>;
   createFounderMessage(founderMessage: InsertFounderMessage): Promise<FounderMessage>;
   updateFounderMessage(founderMessage: UpdateFounderMessage): Promise<FounderMessage | undefined>;
+  
+  // Institute management
+  getActiveInstitutes(): Promise<Institute[]>;
+  getAllInstitutes(): Promise<Institute[]>;
+  getInstituteById(id: string): Promise<Institute | undefined>;
+  createInstitute(institute: InsertInstitute): Promise<Institute>;
+  updateInstitute(id: string, institute: UpdateInstitute): Promise<Institute | undefined>;
+  deleteInstitute(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -48,6 +56,7 @@ export class MemStorage implements IStorage {
   private siteContent: Map<string, SiteContent>;
   private sliders: Map<string, Slider>;
   private founderMessage: FounderMessage | null;
+  private institutes: Map<string, Institute>;
 
   constructor() {
     this.users = new Map();
@@ -57,6 +66,7 @@ export class MemStorage implements IStorage {
     this.siteContent = new Map();
     this.sliders = new Map();
     this.founderMessage = null;
+    this.institutes = new Map();
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
@@ -425,6 +435,57 @@ export class MemStorage implements IStorage {
     this.founderMessage = updated;
     return updated;
   }
+
+  // Institute management methods
+  async getActiveInstitutes(): Promise<Institute[]> {
+    return Array.from(this.institutes.values()).filter(institute => institute.isActive);
+  }
+
+  async getAllInstitutes(): Promise<Institute[]> {
+    return Array.from(this.institutes.values());
+  }
+
+  async getInstituteById(id: string): Promise<Institute | undefined> {
+    return this.institutes.get(id);
+  }
+
+  async createInstitute(insertInstitute: InsertInstitute): Promise<Institute> {
+    const id = randomUUID();
+    const institute: Institute = { 
+      ...insertInstitute, 
+      id, 
+      description: insertInstitute.description || null,
+      link: insertInstitute.link || "/filieres",
+      buttonText: insertInstitute.buttonText || "EN SAVOIR PLUS",
+      bgColor: insertInstitute.bgColor || "from-gray-800 to-gray-900",
+      isActive: true,
+      order: insertInstitute.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+    this.institutes.set(id, institute);
+    return institute;
+  }
+
+  async updateInstitute(id: string, updateData: UpdateInstitute): Promise<Institute | undefined> {
+    const institute = this.institutes.get(id);
+    if (!institute) {
+      return undefined;
+    }
+    
+    const updated: Institute = {
+      ...institute,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.institutes.set(id, updated);
+    return updated;
+  }
+
+  async deleteInstitute(id: string): Promise<boolean> {
+    return this.institutes.delete(id);
+  }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -716,6 +777,40 @@ export class DatabaseStorage implements IStorage {
       .where(eq(founderMessage.isActive, true))
       .returning();
     return updated;
+  }
+
+  // Institute operations
+  async getActiveInstitutes(): Promise<Institute[]> {
+    return await db.select().from(institutes)
+      .where(eq(institutes.isActive, true))
+      .orderBy(institutes.order, institutes.createdAt);
+  }
+
+  async getAllInstitutes(): Promise<Institute[]> {
+    return await db.select().from(institutes).orderBy(institutes.order, institutes.createdAt);
+  }
+
+  async getInstituteById(id: string): Promise<Institute | undefined> {
+    const [institute] = await db.select().from(institutes).where(eq(institutes.id, id));
+    return institute;
+  }
+
+  async createInstitute(insertInstitute: InsertInstitute): Promise<Institute> {
+    const [institute] = await db.insert(institutes).values(insertInstitute).returning();
+    return institute;
+  }
+
+  async updateInstitute(id: string, updateInstitute: UpdateInstitute): Promise<Institute | undefined> {
+    const [updated] = await db.update(institutes)
+      .set({ ...updateInstitute, updatedAt: new Date() })
+      .where(eq(institutes.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteInstitute(id: string): Promise<boolean> {
+    const result = await db.delete(institutes).where(eq(institutes.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 

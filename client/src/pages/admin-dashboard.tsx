@@ -15,7 +15,8 @@ import {
   LogOut, 
   Edit3,
   Eye,
-  Images
+  Images,
+  Building2
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -231,6 +232,27 @@ export default function AdminDashboard() {
                 data-testid="button-manage-founder"
               >
                 Gérer le message
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Building2 className="h-5 w-5 mr-2" />
+                Nos Instituts
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les instituts affichés dans la section "Nos Instituts".
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/institutes")}
+                className="w-full bg-green-600 hover:bg-green-700"
+                data-testid="button-manage-institutes"
+              >
+                Gérer les instituts
               </Button>
             </CardContent>
           </Card>

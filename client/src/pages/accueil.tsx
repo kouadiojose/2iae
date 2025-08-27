@@ -351,10 +351,10 @@ export default function AccueilPage() {
             </p>
           </div>
           
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             {institutesLoading ? (
               // État de chargement pour les instituts
-              Array.from({ length: 3 }).map((_, index) => (
+              Array.from({ length: 4 }).map((_, index) => (
                 <Card key={index} className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white">
                   <CardContent className="p-8 h-80 flex flex-col justify-between">
                     <div className="flex-1 flex flex-col justify-center">

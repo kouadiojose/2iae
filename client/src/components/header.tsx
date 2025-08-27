@@ -114,12 +114,12 @@ export default function Header() {
                 Nos Tarifs
               </Button>
             </Link>
-            <Link href="/campus">
+            <Link href="https://campus.groupe2iae.com" target="_blank">
               <Button
                 className="bg-secondary hover:bg-secondary/90 text-secondary-foreground"
                 data-testid="button-campus"
               >
-                Campus 2iae
+                Campus Numérique 2IAE
               </Button>
             </Link>
           </div>

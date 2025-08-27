@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertNewsSchema, updateNewsSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -957,6 +957,153 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors de la suppression de l'institut" 
+      });
+    }
+  });
+
+  // =================== NEWS ROUTES ===================
+
+  // Public route to get all active news
+  app.get("/api/news", async (req, res) => {
+    try {
+      const newsData = await storage.getActiveNews();
+      res.json({ success: true, news: newsData });
+    } catch (error) {
+      console.error("Error fetching news:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des actualités" 
+      });
+    }
+  });
+
+  // Admin route to get all news
+  app.get("/api/admin/news", requireAdmin, async (req, res) => {
+    try {
+      const newsData = await storage.getAllNews();
+      res.json({ success: true, news: newsData });
+    } catch (error) {
+      console.error("Error fetching news for admin:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des actualités" 
+      });
+    }
+  });
+
+  // Admin route to get single news
+  app.get("/api/admin/news/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const news = await storage.getNewsById(id);
+      
+      if (!news) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Actualité non trouvée" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        news 
+      });
+    } catch (error) {
+      console.error("Error fetching single news:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération de l'actualité" 
+      });
+    }
+  });
+
+  // Admin route to create news
+  app.post("/api/admin/news", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertNewsSchema.parse(req.body);
+      const newNews = await storage.createNews(validatedData);
+      
+      res.status(201).json({ 
+        success: true, 
+        news: newNews,
+        message: "Actualité créée avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error creating news:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la création de l'actualité" 
+      });
+    }
+  });
+
+  // Admin route to update news
+  app.put("/api/admin/news/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateNewsSchema.parse(req.body);
+      
+      const updatedNews = await storage.updateNews(id, validatedData);
+      
+      if (!updatedNews) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Actualité non trouvée" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        news: updatedNews,
+        message: "Actualité mise à jour avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error updating news:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour de l'actualité" 
+      });
+    }
+  });
+
+  // Admin route to delete news
+  app.delete("/api/admin/news/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteNews(id);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Actualité non trouvée" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Actualité supprimée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting news:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression de l'actualité" 
       });
     }
   });

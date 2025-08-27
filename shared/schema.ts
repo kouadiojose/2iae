@@ -97,6 +97,24 @@ export const institutes = pgTable("institutes", {
   createdBy: varchar("created_by").references(() => adminUsers.id),
 });
 
+// News table for news/articles management
+export const news = pgTable("news", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  summary: text("summary"),
+  content: text("content"),
+  imageUrl: text("image_url"),
+  date: text("date").notNull(),
+  category: text("category").notNull(),
+  author: text("author").notNull(),
+  featured: boolean("featured").default(false),
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -201,6 +219,31 @@ export const updateInstituteSchema = createInsertSchema(institutes).pick({
   order: true,
 }).partial();
 
+export const insertNewsSchema = createInsertSchema(news).pick({
+  title: true,
+  summary: true,
+  content: true,
+  imageUrl: true,
+  date: true,
+  category: true,
+  author: true,
+  featured: true,
+  order: true,
+});
+
+export const updateNewsSchema = createInsertSchema(news).pick({
+  title: true,
+  summary: true,
+  content: true,
+  imageUrl: true,
+  date: true,
+  category: true,
+  author: true,
+  featured: true,
+  isActive: true,
+  order: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -221,3 +264,6 @@ export type UpdateFounderMessage = z.infer<typeof updateFounderMessageSchema>;
 export type InsertInstitute = z.infer<typeof insertInstituteSchema>;
 export type Institute = typeof institutes.$inferSelect;
 export type UpdateInstitute = z.infer<typeof updateInstituteSchema>;
+export type InsertNews = z.infer<typeof insertNewsSchema>;
+export type News = typeof news.$inferSelect;
+export type UpdateNews = z.infer<typeof updateNewsSchema>;

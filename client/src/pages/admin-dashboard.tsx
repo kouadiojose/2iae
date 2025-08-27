@@ -16,7 +16,8 @@ import {
   Edit3,
   Eye,
   Images,
-  Building2
+  Building2,
+  Newspaper
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -253,6 +254,27 @@ export default function AdminDashboard() {
                 data-testid="button-manage-institutes"
               >
                 Gérer les instituts
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Newspaper className="h-5 w-5 mr-2" />
+                Actualités
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les actualités et articles affichés sur le site web.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/news")}
+                className="w-full bg-purple-600 hover:bg-purple-700"
+                data-testid="button-manage-news"
+              >
+                Gérer les actualités
               </Button>
             </CardContent>
           </Card>

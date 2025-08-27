@@ -13,6 +13,8 @@ import { Plus, Edit, Trash2, Calendar, User, Tag, Image } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import type { UploadResult } from "@uppy/core";
 
 const newsCategories = [
   "Innovation",
@@ -350,14 +352,46 @@ export default function AdminNewsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="imageUrl">URL de l'image</Label>
-                  <Input
-                    id="imageUrl"
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData(prev => ({ ...prev, imageUrl: e.target.value }))}
-                    placeholder="https://example.com/image.jpg"
-                    data-testid="input-news-image"
-                  />
+                  <Label>Image de l'actualité</Label>
+                  <div className="space-y-4">
+                    {formData.imageUrl && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600">Image actuelle :</p>
+                        <img 
+                          src={formData.imageUrl} 
+                          alt="Aperçu" 
+                          className="w-32 h-32 object-cover rounded border"
+                        />
+                      </div>
+                    )}
+                    <ObjectUploader
+                      maxNumberOfFiles={1}
+                      maxFileSize={5 * 1024 * 1024} // 5MB
+                      onGetUploadParameters={async () => {
+                        const response: any = await apiRequest("/api/objects/upload", "POST");
+                        return {
+                          method: "PUT" as const,
+                          url: response.uploadURL,
+                        };
+                      }}
+                      onComplete={(result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
+                        if (result.successful && result.successful.length > 0) {
+                          const uploadURL = result.successful[0].uploadURL;
+                          if (uploadURL) {
+                            // Extract filename from the upload URL and create relative path
+                            const urlParts = uploadURL.split('/');
+                            const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
+                            const relativePath = `/api/assets/news/${filename}`;
+                            setFormData(prev => ({ ...prev, imageUrl: relativePath }));
+                          }
+                        }
+                      }}
+                      buttonClassName="w-full bg-orange-500 hover:bg-orange-600"
+                    >
+                      <Image className="h-4 w-4 mr-2" />
+                      {formData.imageUrl ? "Changer l'image" : "Télécharger une image"}
+                    </ObjectUploader>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">

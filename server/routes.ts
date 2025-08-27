@@ -1108,6 +1108,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Route for news image upload
+  app.post("/api/objects/upload", async (req, res) => {
+    try {
+      // Generate a unique filename for news image
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 15);
+      const filename = `news_${timestamp}_${randomId}.jpg`;
+      
+      // Get bucket name from environment variable
+      const bucketName = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (!bucketName) {
+        return res.status(500).json({ 
+          success: false, 
+          error: "Bucket de stockage non configuré" 
+        });
+      }
+
+      // Generate object name with news directory
+      const objectName = `news/${filename}`;
+      
+      // Generate presigned URL for uploading
+      const uploadURL = await generatePresignedUrl(bucketName, objectName);
+      
+      res.json({ 
+        success: true, 
+        uploadURL,
+        message: "URL de téléchargement générée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error generating upload URL for news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la génération de l'URL de téléchargement" 
+      });
+    }
+  });
+
+  // Route to serve news images from object storage
+  app.get("/api/assets/news/:filename", async (req, res) => {
+    try {
+      const { filename } = req.params;
+      const bucketName = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      
+      if (!bucketName) {
+        return res.status(500).json({ 
+          success: false, 
+          error: "Bucket de stockage non configuré" 
+        });
+      }
+
+      // Generate object name
+      const objectName = `news/${filename}`;
+      
+      // Generate presigned URL for downloading (24 hours)
+      const downloadRequest = {
+        bucket_name: bucketName,
+        object_name: objectName,
+        method: "GET",
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+      };
+
+      const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+      const response = await fetch(
+        `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(downloadRequest),
+        }
+      );
+
+      if (!response.ok) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Image non trouvée" 
+        });
+      }
+
+      const { signed_url: signedURL } = await response.json();
+      
+      // Redirect to the signed URL
+      res.redirect(signedURL);
+    } catch (error) {
+      console.error("Error serving news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors du chargement de l'image" 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

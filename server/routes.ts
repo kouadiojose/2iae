@@ -5,6 +5,39 @@ import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, 
 import { z } from "zod";
 import OpenAI from "openai";
 
+// Function to generate presigned URL for object storage
+async function generatePresignedUrl(bucketName: string, objectName: string): Promise<string> {
+  const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+  
+  const request = {
+    bucket_name: bucketName,
+    object_name: objectName,
+    method: "PUT",
+    expires_at: new Date(Date.now() + 900 * 1000).toISOString(), // 15 minutes
+  };
+
+  const response = await fetch(
+    `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to sign object URL, errorcode: ${response.status}, ` +
+        `make sure you're running on Replit`
+    );
+  }
+
+  const { signed_url: signedURL } = await response.json();
+  return signedURL;
+}
+
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -80,6 +113,47 @@ INSTRUCTIONS DE RÉPONSE:
 - Mets en avant l'excellence et le caractère innovant de l'institution`;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Public object serving endpoint
+  app.get("/public-objects/:filePath(*)", async (req, res) => {
+    const filePath = req.params.filePath;
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    const publicPath = process.env.PUBLIC_OBJECT_SEARCH_PATHS;
+    
+    if (!bucketId || !publicPath) {
+      return res.status(404).json({ error: "Object storage not configured" });
+    }
+
+    // For simplicity, redirect to the direct GCS URL
+    const objectUrl = `https://storage.googleapis.com/${bucketId}/public/${filePath}`;
+    res.redirect(objectUrl);
+  });
+
+  // Get upload URL for slider images
+  app.post("/api/admin/sliders/upload", async (req, res) => {
+    try {
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (!bucketId) {
+        return res.status(500).json({ error: "Object storage not configured" });
+      }
+
+      // Generate a unique filename
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 15);
+      const filename = `slider_${timestamp}_${randomId}.jpg`;
+      
+      // Generate presigned URL for upload
+      const uploadUrl = await generatePresignedUrl(bucketId, `public/sliders/${filename}`);
+      
+      res.json({ 
+        uploadURL: uploadUrl,
+        finalUrl: `/public-objects/sliders/${filename}`
+      });
+    } catch (error) {
+      console.error("Error generating upload URL:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
   // Contact form submission
   app.post("/api/contact", async (req, res) => {
     try {

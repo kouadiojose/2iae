@@ -16,6 +16,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSliderSchema, type Slider, type InsertSlider } from "@shared/schema";
+import { ObjectUploader } from "@/components/ObjectUploader";
 import { 
   ArrowLeft, 
   Plus,
@@ -34,6 +35,7 @@ export default function AdminSliders() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSlider, setEditingSlider] = useState<Slider | null>(null);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string>("");
 
   // Get all sliders
   const { data: slidersData, isLoading: slidersLoading } = useQuery({
@@ -158,6 +160,7 @@ export default function AdminSliders() {
 
   const handleEdit = (slider: Slider) => {
     setEditingSlider(slider);
+    setCurrentImageUrl(slider.imageUrl ?? "");
     form.reset({
       title: slider.title,
       subtitle: slider.subtitle ?? "",
@@ -192,8 +195,39 @@ export default function AdminSliders() {
 
   const handleNewSlider = () => {
     setEditingSlider(null);
+    setCurrentImageUrl("");
     form.reset();
     setDialogOpen(true);
+  };
+
+  // Handle image upload
+  const handleGetUploadParameters = async () => {
+    const response = await apiRequest("POST", "/api/admin/sliders/upload");
+    const data = await response.json();
+    return {
+      method: "PUT" as const,
+      url: data.uploadURL,
+    };
+  };
+
+  const handleUploadComplete = (result: any) => {
+    if (result.successful?.[0]?.uploadURL) {
+      // Extract the final URL from the upload URL
+      const uploadUrl = result.successful[0].uploadURL;
+      // Convert to our public URL format
+      const urlParts = uploadUrl.split('/');
+      const bucketIndex = urlParts.findIndex((part: string) => part.includes('replit-objstore'));
+      if (bucketIndex !== -1) {
+        const objectPath = urlParts.slice(bucketIndex + 1).join('/');
+        const finalUrl = `/public-objects/${objectPath.replace('public/', '')}`;
+        setCurrentImageUrl(finalUrl);
+        form.setValue("imageUrl", finalUrl);
+        toast({
+          title: "Succès",
+          description: "Image uploadée avec succès",
+        });
+      }
+    }
   };
 
   if (isLoading || slidersLoading) {
@@ -294,7 +328,7 @@ export default function AdminSliders() {
                             <FormItem>
                               <FormLabel>Sous-titre</FormLabel>
                               <FormControl>
-                                <Input {...field} data-testid="input-slider-subtitle" />
+                                <Input {...field} value={field.value || ""} data-testid="input-slider-subtitle" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -309,7 +343,7 @@ export default function AdminSliders() {
                           <FormItem>
                             <FormLabel>Brève Description</FormLabel>
                             <FormControl>
-                              <Textarea {...field} rows={3} data-testid="textarea-slider-description" />
+                              <Textarea {...field} value={field.value || ""} rows={3} data-testid="textarea-slider-description" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -321,13 +355,30 @@ export default function AdminSliders() {
                         name="imageUrl"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>URL de l'image</FormLabel>
+                            <FormLabel>Image du slider</FormLabel>
                             <FormControl>
-                              <div className="flex gap-2">
-                                <Input {...field} placeholder="URL de l'image" data-testid="input-slider-image" />
-                                <Button type="button" variant="outline" size="sm">
-                                  <Upload className="h-4 w-4" />
-                                </Button>
+                              <div className="space-y-3">
+                                <ObjectUploader
+                                  maxNumberOfFiles={1}
+                                  maxFileSize={5242880} // 5MB
+                                  onGetUploadParameters={handleGetUploadParameters}
+                                  onComplete={handleUploadComplete}
+                                  buttonClassName="w-full"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Upload className="h-4 w-4" />
+                                    <span>Choisir une image</span>
+                                  </div>
+                                </ObjectUploader>
+                                {currentImageUrl && (
+                                  <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                                    <Images className="h-4 w-4 text-green-600" />
+                                    <span className="text-sm text-gray-600 truncate">
+                                      {currentImageUrl}
+                                    </span>
+                                  </div>
+                                )}
+                                <Input {...field} value={field.value || ""} type="hidden" data-testid="input-slider-image" />
                               </div>
                             </FormControl>
                             <FormMessage />
@@ -344,7 +395,7 @@ export default function AdminSliders() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input {...field} placeholder="Texte du bouton 1" data-testid="input-button1-text" />
+                                  <Input {...field} value={field.value || ""} placeholder="Texte du bouton 1" data-testid="input-button1-text" />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -356,7 +407,7 @@ export default function AdminSliders() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input {...field} placeholder="Lien du bouton 1" data-testid="input-button1-link" />
+                                  <Input {...field} value={field.value || ""} placeholder="Lien du bouton 1" data-testid="input-button1-link" />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -372,7 +423,7 @@ export default function AdminSliders() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input {...field} placeholder="Texte du bouton 2" data-testid="input-button2-text" />
+                                  <Input {...field} value={field.value || ""} placeholder="Texte du bouton 2" data-testid="input-button2-text" />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -384,7 +435,7 @@ export default function AdminSliders() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormControl>
-                                  <Input {...field} placeholder="Lien du bouton 2" data-testid="input-button2-link" />
+                                  <Input {...field} value={field.value || ""} placeholder="Lien du bouton 2" data-testid="input-button2-link" />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -400,7 +451,7 @@ export default function AdminSliders() {
                           <FormItem>
                             <FormLabel>Ordre d'affichage</FormLabel>
                             <FormControl>
-                              <Input {...field} type="number" min="1" data-testid="input-slider-order" />
+                              <Input {...field} value={field.value || ""} type="number" min="1" data-testid="input-slider-order" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

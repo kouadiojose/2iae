@@ -100,7 +100,7 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
   }
 
   return (
-    <Card className="fixed bottom-6 right-6 w-96 h-[500px] shadow-xl z-50 flex flex-col" data-testid="chatbot-window">
+    <Card className="fixed bottom-6 right-6 w-96 h-[500px] shadow-xl z-50 flex flex-col overflow-hidden" data-testid="chatbot-window">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -125,8 +125,8 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
       </CardHeader>
 
       <CardContent className="flex-1 flex flex-col p-0">
-        <ScrollArea className="flex-1 px-4" data-testid="chatbot-messages">
-          <div className="space-y-4 pb-4">
+        <ScrollArea className="flex-1 px-4 overflow-hidden" data-testid="chatbot-messages">
+          <div className="space-y-4 pb-4 max-w-full overflow-hidden">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -142,13 +142,14 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
                 )}
                 
                 <div
-                  className={`max-w-[80%] rounded-lg px-3 py-2 text-sm break-words overflow-hidden ${
+                  className={`max-w-[75%] rounded-lg px-3 py-2 text-sm break-words overflow-wrap-anywhere ${
                     message.isBot
                       ? "bg-muted text-foreground"
                       : "bg-primary text-primary-foreground"
                   }`}
+                  style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}
                 >
-                  <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                  <p className="whitespace-pre-wrap break-words overflow-wrap-anywhere" style={{ wordBreak: "break-word" }}>{message.content}</p>
                   <p className={`text-xs mt-1 opacity-70`}>
                     {message.timestamp.toLocaleTimeString("fr-FR", {
                       hour: "2-digit",

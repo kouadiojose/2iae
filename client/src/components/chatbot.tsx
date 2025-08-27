@@ -142,13 +142,13 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
                 )}
                 
                 <div
-                  className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                  className={`max-w-[80%] rounded-lg px-3 py-2 text-sm break-words overflow-hidden ${
                     message.isBot
                       ? "bg-muted text-foreground"
                       : "bg-primary text-primary-foreground"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <p className="whitespace-pre-wrap break-words">{message.content}</p>
                   <p className={`text-xs mt-1 opacity-70`}>
                     {message.timestamp.toLocaleTimeString("fr-FR", {
                       hour: "2-digit",

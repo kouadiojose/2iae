@@ -200,10 +200,12 @@ function RecentNewsGrid() {
               <p className="text-muted-foreground mb-4 line-clamp-3 text-sm" data-testid={`text-recent-news-summary-${article.id}`}>
                 {article.summary || "Découvrez cette actualité importante de 2IAE International."}
               </p>
-              <Button variant="outline" size="sm" className="w-full mt-auto hover:bg-orange-100" data-testid={`button-recent-news-read-more-${article.id}`}>
-                Lire la suite
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <Link href={`/actualites/${article.id}`}>
+                <Button variant="outline" size="sm" className="w-full mt-auto hover:bg-orange-100" data-testid={`button-recent-news-read-more-${article.id}`}>
+                  Lire la suite
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         ))}

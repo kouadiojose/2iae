@@ -12,6 +12,9 @@ import AProposPage from "@/pages/a-propos";
 import ActualitesPage from "@/pages/actualites";
 import ContactPage from "@/pages/contact";
 import CampusPage from "@/pages/campus";
+import AdminLogin from "@/pages/admin-login";
+import AdminDashboard from "@/pages/admin-dashboard";
+import AdminContent from "@/pages/admin-content";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -26,6 +29,9 @@ function Router() {
         <Route path="/actualites" component={ActualitesPage} />
         <Route path="/contact" component={ContactPage} />
         <Route path="/campus" component={CampusPage} />
+        <Route path="/admin/login" component={AdminLogin} />
+        <Route path="/admin/dashboard" component={AdminDashboard} />
+        <Route path="/admin/content" component={AdminContent} />
         <Route component={NotFound} />
       </Switch>
       <Footer />

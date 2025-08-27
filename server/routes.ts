@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 
@@ -184,6 +184,231 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         message: "Erreur lors de la récupération de l'historique" 
+      });
+    }
+  });
+
+  // Admin authentication
+  app.post("/api/admin/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "Nom d'utilisateur et mot de passe requis"
+        });
+      }
+
+      const admin = await storage.validateAdminCredentials(username, password);
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: "Identifiants incorrects"
+        });
+      }
+
+      // Simple session - store admin id
+      (req as any).session = { ...(req as any).session, adminId: admin.id };
+      
+      res.json({
+        success: true,
+        admin: {
+          id: admin.id,
+          username: admin.username,
+          email: admin.email
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la connexion"
+      });
+    }
+  });
+
+  // Admin logout
+  app.post("/api/admin/logout", async (req, res) => {
+    (req as any).session = null;
+    res.json({ success: true });
+  });
+
+  // Check admin session
+  app.get("/api/admin/me", async (req, res) => {
+    const adminId = (req as any).session?.adminId;
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Non authentifié"
+      });
+    }
+
+    const admin = await storage.getAdminUser(adminId);
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: "Session invalide"
+      });
+    }
+
+    res.json({
+      success: true,
+      admin: {
+        id: admin.id,
+        username: admin.username,
+        email: admin.email
+      }
+    });
+  });
+
+  // Middleware for admin authentication
+  const requireAdmin = async (req: any, res: any, next: any) => {
+    const adminId = (req as any).session?.adminId;
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentification administrateur requise"
+      });
+    }
+
+    const admin = await storage.getAdminUser(adminId);
+    if (!admin || !admin.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Session administrateur invalide"
+      });
+    }
+
+    req.admin = admin;
+    next();
+  };
+
+  // Get all site content (admin only)
+  app.get("/api/admin/content", requireAdmin, async (req, res) => {
+    try {
+      const content = await storage.getSiteContent();
+      res.json({ success: true, content });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du contenu"
+      });
+    }
+  });
+
+  // Get content by section (admin only)
+  app.get("/api/admin/content/section/:section", requireAdmin, async (req, res) => {
+    try {
+      const { section } = req.params;
+      const content = await storage.getSiteContentBySection(section);
+      res.json({ success: true, content });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du contenu"
+      });
+    }
+  });
+
+  // Update site content (admin only)
+  app.put("/api/admin/content/:key", requireAdmin, async (req, res) => {
+    try {
+      const { key } = req.params;
+      const validatedData = updateSiteContentSchema.parse(req.body);
+      
+      const updated = await storage.updateSiteContent(key, validatedData);
+
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: "Contenu non trouvé"
+        });
+      }
+
+      res.json({ success: true, content: updated });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          message: "Données invalides",
+          errors: error.errors
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la mise à jour"
+      });
+    }
+  });
+
+  // Create new site content (admin only)
+  app.post("/api/admin/content", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertSiteContentSchema.parse(req.body);
+      
+      const content = await storage.createSiteContent(validatedData);
+
+      res.status(201).json({ success: true, content });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          message: "Données invalides",
+          errors: error.errors
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la création"
+      });
+    }
+  });
+
+  // Delete site content (admin only)
+  app.delete("/api/admin/content/:key", requireAdmin, async (req, res) => {
+    try {
+      const { key } = req.params;
+      const deleted = await storage.deleteSiteContent(key);
+      
+      if (!deleted) {
+        return res.status(404).json({
+          success: false,
+          message: "Contenu non trouvé"
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la suppression"
+      });
+    }
+  });
+
+  // Get public site content (for frontend)
+  app.get("/api/content", async (req, res) => {
+    try {
+      const content = await storage.getSiteContent();
+      res.json({ success: true, content });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du contenu"
+      });
+    }
+  });
+
+  // Get public content by section
+  app.get("/api/content/section/:section", async (req, res) => {
+    try {
+      const { section } = req.params;
+      const content = await storage.getSiteContentBySection(section);
+      res.json({ success: true, content });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Erreur lors de la récupération du contenu"
       });
     }
   });

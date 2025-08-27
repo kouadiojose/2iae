@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { useSiteContent } from "@/hooks/useSiteContent";
 import oldSiteImage from "@assets/image_1756294873587.png";
 import schoolBrochureImage from "@assets/image_1756295342176.png";
 
@@ -69,6 +70,7 @@ const features = [
 export default function AccueilPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const { getContentByKey, getContentBySection, isLoading: contentLoading } = useSiteContent();
 
   useEffect(() => {
     if (isPlaying) {
@@ -109,11 +111,11 @@ export default function AccueilPage() {
                 </Badge>
                 
                 <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight" data-testid="text-hero-title">
-                  {heroSlides[currentSlide].title}
+                  {getContentByKey("homepage_title") || heroSlides[currentSlide].title}
                 </h1>
                 
                 <h2 className="text-2xl lg:text-3xl mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
-                  {heroSlides[currentSlide].subtitle}
+                  {getContentByKey("homepage_subtitle") || heroSlides[currentSlide].subtitle}
                 </h2>
                 
                 <p className="text-xl mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">

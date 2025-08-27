@@ -5,44 +5,45 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { useSiteContent } from "@/hooks/useSiteContent";
+import { useQuery } from "@tanstack/react-query";
+import { type Slider } from "@shared/schema";
 import oldSiteImage from "@assets/image_1756294873587.png";
 import schoolBrochureImage from "@assets/image_1756295342176.png";
 
-const heroSlides = [
+// Fallback slides en cas d'erreur ou de chargement
+const fallbackSlides = [
   {
-    id: 1,
+    id: "fallback-1",
     title: "L'École Où L'Apprentissage Prend Vie",
     subtitle: "2IAE, entreprendre pour devenir l'élite de demain",
     description: "Former une nouvelle génération d'entrepreneurs capables de transformer l'économie africaine",
-    image: schoolBrochureImage,
-    primaryButton: "Découvrir nos Filières",
-    primaryLink: "/filieres",
-    secondaryButton: "En Savoir Plus",
-    secondaryLink: "/a-propos"
-  },
-  {
-    id: 2,
-    title: "Excellence Académique & Innovation",
-    subtitle: "Partenariat avec l'Université de Sherbrooke, Canada",
-    description: "Une formation d'excellence reconnue internationalement avec des diplômes homologués",
-    image: "https://images.unsplash.com/photo-1523580846011-d3982bc861b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&h=600",
-    primaryButton: "Voir nos Programmes",
-    primaryLink: "/filieres",
-    secondaryButton: "Campus Virtuel",
-    secondaryLink: "/campus"
-  },
-  {
-    id: 3,
-    title: "L'École des Entrepreneurs",
-    subtitle: "Centre d'incubation opérationnel",
-    description: "Accompagnement complet avec stages garantis et supports pédagogiques modernes",
-    image: "https://images.unsplash.com/photo-1556761175-b413da4baf72?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&h=600",
-    primaryButton: "Nous Contacter",
-    primaryLink: "/contact",
-    secondaryButton: "Voir le Campus",
-    secondaryLink: "/campus"
+    imageUrl: schoolBrochureImage,
+    button1Text: "Découvrir nos Filières",
+    button1Link: "/filieres",
+    button2Text: "En Savoir Plus",
+    button2Link: "/a-propos",
+    order: 1,
+    isActive: true
   }
 ];
+
+// Fonction pour adapter les données de la DB au format du composant
+function formatSlideData(slides: Slider[]) {
+  return slides
+    .filter(slide => slide.isActive) // Seulement les sliders actifs
+    .sort((a, b) => (a.order || 0) - (b.order || 0)) // Trier par ordre
+    .map(slide => ({
+      id: slide.id,
+      title: slide.title,
+      subtitle: slide.subtitle || "",
+      description: slide.description || "",
+      image: slide.imageUrl || schoolBrochureImage,
+      primaryButton: slide.button1Text || "Découvrir",
+      primaryLink: slide.button1Link || "/filieres",
+      secondaryButton: slide.button2Text || "En Savoir Plus",
+      secondaryLink: slide.button2Link || "/a-propos"
+    }));
+}
 
 const features = [
   {
@@ -71,15 +72,32 @@ export default function AccueilPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const { getContentByKey, getContentBySection, isLoading: contentLoading } = useSiteContent();
+  
+  // Récupérer les sliders depuis l'API
+  const { data: slidersData, isLoading: slidersLoading, error } = useQuery({
+    queryKey: ["/api/sliders"],
+  });
+  
+  // Formater les données et gérer les fallbacks
+  const heroSlides = slidersData?.sliders && slidersData.sliders.length > 0 
+    ? formatSlideData(slidersData.sliders)
+    : fallbackSlides;
 
   useEffect(() => {
-    if (isPlaying) {
+    if (isPlaying && heroSlides.length > 0) {
       const interval = setInterval(() => {
         setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
       }, 6000);
       return () => clearInterval(interval);
     }
-  }, [isPlaying]);
+  }, [isPlaying, heroSlides.length]);
+  
+  // Réinitialiser le slide courant si les données changent
+  useEffect(() => {
+    if (currentSlide >= heroSlides.length && heroSlides.length > 0) {
+      setCurrentSlide(0);
+    }
+  }, [heroSlides.length, currentSlide]);
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
@@ -104,96 +122,116 @@ export default function AccueilPage() {
         {/* Slider Content */}
         <div className="relative h-full flex items-center">
           <div className="container mx-auto px-4">
-            <div className="grid lg:grid-cols-2 gap-12 items-center h-full min-h-[80vh]">
-              <div className="text-white animate-fade-in-up">
-                <Badge className="bg-white/20 text-white border-white/30 mb-6" data-testid="badge-welcome">
-                  Bienvenue au Groupe Écoles 2IAE International
-                </Badge>
+            {slidersLoading ? (
+              /* État de chargement */
+              <div className="grid lg:grid-cols-2 gap-12 items-center h-full min-h-[80vh]">
+                <div className="text-white animate-pulse">
+                  <div className="w-80 h-8 bg-white/20 rounded mb-6"></div>
+                  <div className="w-full h-16 bg-white/20 rounded mb-6"></div>
+                  <div className="w-96 h-12 bg-white/20 rounded mb-6"></div>
+                  <div className="w-full h-20 bg-white/20 rounded mb-8"></div>
+                  <div className="flex gap-4">
+                    <div className="w-48 h-14 bg-white/20 rounded"></div>
+                    <div className="w-40 h-14 bg-white/20 rounded"></div>
+                  </div>
+                </div>
+                <div className="w-full h-[600px] bg-white/20 rounded-2xl animate-pulse"></div>
+              </div>
+            ) : (
+              /* Contenu du slider */
+              <div className="grid lg:grid-cols-2 gap-12 items-center h-full min-h-[80vh]">
+                <div className="text-white animate-fade-in-up">
+                  <Badge className="bg-white/20 text-white border-white/30 mb-6" data-testid="badge-welcome">
+                    Bienvenue au Groupe Écoles 2IAE International
+                  </Badge>
+                  
+                  <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight" data-testid="text-hero-title">
+                    {getContentByKey("homepage_title") || heroSlides[currentSlide]?.title}
+                  </h1>
+                  
+                  <h2 className="text-2xl lg:text-3xl mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
+                    {getContentByKey("homepage_subtitle") || heroSlides[currentSlide]?.subtitle}
+                  </h2>
+                  
+                  <p className="text-xl mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">
+                    {heroSlides[currentSlide]?.description}
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <Link href={heroSlides[currentSlide]?.primaryLink || "/filieres"}>
+                      <Button 
+                        className="bg-white text-primary hover:bg-white/90 px-8 py-4 text-lg h-auto font-semibold"
+                        data-testid="button-hero-primary"
+                      >
+                        {heroSlides[currentSlide]?.primaryButton || "Découvrir"}
+                      </Button>
+                    </Link>
+                    <Link href={heroSlides[currentSlide]?.secondaryLink || "/a-propos"}>
+                      <Button 
+                        variant="outline"
+                        className="border-2 border-white text-white hover:bg-white hover:text-primary px-8 py-4 text-lg h-auto"
+                        data-testid="button-hero-secondary"
+                      >
+                        {heroSlides[currentSlide]?.secondaryButton || "En Savoir Plus"}
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
                 
-                <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight" data-testid="text-hero-title">
-                  {getContentByKey("homepage_title") || heroSlides[currentSlide].title}
-                </h1>
-                
-                <h2 className="text-2xl lg:text-3xl mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
-                  {getContentByKey("homepage_subtitle") || heroSlides[currentSlide].subtitle}
-                </h2>
-                
-                <p className="text-xl mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">
-                  {heroSlides[currentSlide].description}
-                </p>
-                
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Link href={heroSlides[currentSlide].primaryLink}>
-                    <Button 
-                      className="bg-white text-primary hover:bg-white/90 px-8 py-4 text-lg h-auto font-semibold"
-                      data-testid="button-hero-primary"
-                    >
-                      {heroSlides[currentSlide].primaryButton}
-                    </Button>
-                  </Link>
-                  <Link href={heroSlides[currentSlide].secondaryLink}>
-                    <Button 
-                      variant="outline"
-                      className="border-2 border-white text-white hover:bg-white hover:text-primary px-8 py-4 text-lg h-auto"
-                      data-testid="button-hero-secondary"
-                    >
-                      {heroSlides[currentSlide].secondaryButton}
-                    </Button>
-                  </Link>
+                <div className="relative animate-fade-in-up">
+                  <img 
+                    src={heroSlides[currentSlide]?.image || schoolBrochureImage}
+                    alt={heroSlides[currentSlide]?.title || "École 2IAE"}
+                    className="rounded-2xl professional-shadow w-full h-auto max-h-[600px] object-cover"
+                    data-testid="img-hero-slide"
+                  />
                 </div>
               </div>
-              
-              <div className="relative animate-fade-in-up">
-                <img 
-                  src={heroSlides[currentSlide].image}
-                  alt={heroSlides[currentSlide].title}
-                  className="rounded-2xl professional-shadow w-full h-auto max-h-[600px] object-cover"
-                  data-testid="img-hero-slide"
-                />
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Slider Controls */}
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex items-center space-x-4">
-          <button 
-            onClick={prevSlide}
-            className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
-            data-testid="button-slide-prev"
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </button>
-          
-          <div className="flex space-x-2">
-            {heroSlides.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => goToSlide(index)}
-                className={`w-3 h-3 rounded-full transition-colors ${
-                  index === currentSlide ? "bg-white" : "bg-white/50"
-                }`}
-                data-testid={`button-slide-dot-${index}`}
-              />
-            ))}
+        {/* Slider Controls - Affichés seulement si pas en chargement et qu'il y a plusieurs slides */}
+        {!slidersLoading && heroSlides.length > 1 && (
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex items-center space-x-4">
+            <button 
+              onClick={prevSlide}
+              className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+              data-testid="button-slide-prev"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+            
+            <div className="flex space-x-2">
+              {heroSlides.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => goToSlide(index)}
+                  className={`w-3 h-3 rounded-full transition-colors ${
+                    index === currentSlide ? "bg-white" : "bg-white/50"
+                  }`}
+                  data-testid={`button-slide-dot-${index}`}
+                />
+              ))}
+            </div>
+            
+            <button 
+              onClick={nextSlide}
+              className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+              data-testid="button-slide-next"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+            
+            <button 
+              onClick={() => setIsPlaying(!isPlaying)}
+              className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+              data-testid="button-slide-play-pause"
+            >
+              <Play className={`h-5 w-5 ${isPlaying ? "opacity-100" : "opacity-60"}`} />
+            </button>
           </div>
-          
-          <button 
-            onClick={nextSlide}
-            className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
-            data-testid="button-slide-next"
-          >
-            <ChevronRight className="h-6 w-6" />
-          </button>
-          
-          <button 
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
-            data-testid="button-slide-play-pause"
-          >
-            <Play className={`h-5 w-5 ${isPlaying ? "opacity-100" : "opacity-60"}`} />
-          </button>
-        </div>
+        )}
       </section>
 
       {/* Founder Message Section */}

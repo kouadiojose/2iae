@@ -27,7 +27,7 @@ export default function Header() {
 
   const NavLinks = () => (
     <>
-      <Link 
+      <Link
         href="/"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/") ? "text-primary" : "text-foreground"
@@ -36,16 +36,16 @@ export default function Header() {
       >
         Accueil
       </Link>
-      <Link 
+      <Link
         href="/filieres"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/filieres") ? "text-primary" : "text-foreground"
         }`}
         data-testid="link-filieres"
       >
-        Nos Tarifs
+        Nos Filières
       </Link>
-      <Link 
+      <Link
         href="/a-propos"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/a-propos") ? "text-primary" : "text-foreground"
@@ -54,7 +54,7 @@ export default function Header() {
       >
         À Propos
       </Link>
-      <Link 
+      <Link
         href="/actualites"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/actualites") ? "text-primary" : "text-foreground"
@@ -63,7 +63,7 @@ export default function Header() {
       >
         Actualités
       </Link>
-      <Link 
+      <Link
         href="/campus"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/campus") ? "text-primary" : "text-foreground"
@@ -72,7 +72,7 @@ export default function Header() {
       >
         Campus
       </Link>
-      <Link 
+      <Link
         href="/contact"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/contact") ? "text-primary" : "text-foreground"
@@ -85,14 +85,16 @@ export default function Header() {
   );
 
   return (
-    <header className={`bg-white shadow-lg sticky top-0 z-50 border-b border-border transition-shadow ${isScrolled ? 'shadow-xl' : ''}`}>
+    <header
+      className={`bg-white shadow-lg sticky top-0 z-50 border-b border-border transition-shadow ${isScrolled ? "shadow-xl" : ""}`}
+    >
       <div className="container mx-auto px-4">
         <nav className="flex items-center justify-between py-4">
           {/* Logo */}
           <Link href="/" className="flex items-center" data-testid="logo">
-            <img 
-              src={logoImage} 
-              alt="Groupe École 2IAE International" 
+            <img
+              src={logoImage}
+              alt="Groupe École 2IAE International"
               className="h-16 w-auto object-contain"
             />
           </Link>
@@ -105,7 +107,7 @@ export default function Header() {
           {/* CTA Buttons */}
           <div className="hidden lg:flex items-center space-x-4">
             <Link href="/filieres">
-              <Button 
+              <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 data-testid="button-filieres"
               >
@@ -113,7 +115,7 @@ export default function Header() {
               </Button>
             </Link>
             <Link href="/campus">
-              <Button 
+              <Button
                 className="bg-secondary hover:bg-secondary/90 text-secondary-foreground"
                 data-testid="button-campus"
               >
@@ -125,7 +127,11 @@ export default function Header() {
           {/* Mobile Menu */}
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" className="lg:hidden" data-testid="button-mobile-menu">
+              <Button
+                variant="ghost"
+                className="lg:hidden"
+                data-testid="button-mobile-menu"
+              >
                 <Menu className="h-6 w-6" />
               </Button>
             </SheetTrigger>
@@ -134,7 +140,7 @@ export default function Header() {
                 <NavLinks />
                 <div className="flex flex-col space-y-4 pt-8 border-t border-border">
                   <Link href="/filieres">
-                    <Button 
+                    <Button
                       className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
                       data-testid="button-mobile-filieres"
                     >
@@ -142,7 +148,7 @@ export default function Header() {
                     </Button>
                   </Link>
                   <Link href="/campus">
-                    <Button 
+                    <Button
                       className="bg-secondary hover:bg-secondary/90 text-secondary-foreground w-full"
                       data-testid="button-mobile-campus"
                     >

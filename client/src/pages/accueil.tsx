@@ -326,7 +326,7 @@ export default function AccueilPage() {
                     : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=700"
                 }
                 alt="Directeur Général 2IAE International"
-                className="rounded-2xl professional-shadow w-full h-auto"
+                className="rounded-2xl professional-shadow w-full max-w-sm h-auto mx-auto"
                 data-testid="img-founder"
               />
             </div>

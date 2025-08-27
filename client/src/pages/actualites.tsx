@@ -9,6 +9,7 @@ import { Link } from "wouter";
 interface News {
   id: string;
   title: string;
+  slug: string;
   summary: string | null;
   content: string | null;
   imageUrl: string | null;
@@ -275,7 +276,7 @@ export default function ActualitesPage() {
                     <p className="text-muted-foreground mb-4 line-clamp-3" data-testid={`text-news-summary-${article.id}`}>
                       {article.summary || "Découvrez cette actualité importante de 2IAE International."}
                     </p>
-                    <Link href={`/actualites/${article.id}`}>
+                    <Link href={`/actualites/${article.slug}`}>
                       <Button variant="outline" className="w-full mt-auto hover:bg-orange-100" data-testid={`button-news-read-more-${article.id}`}>
                         Lire la suite
                         <ArrowRight className="ml-2 h-4 w-4" />

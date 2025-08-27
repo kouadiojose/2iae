@@ -78,7 +78,7 @@ export function ObjectUploader({
       }
     } catch (error) {
       console.error('💥 Erreur complète:', error);
-      alert(`Erreur lors de l'upload: ${error.message}`);
+      alert(`Erreur lors de l'upload: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     } finally {
       setUploading(false);
       // Reset file input

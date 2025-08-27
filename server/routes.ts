@@ -448,8 +448,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const randomId = Math.random().toString(36).substring(2, 15);
       const filename = `slider_${timestamp}_${randomId}.jpg`;
       
+      // Use the same protocol as the request to avoid mixed content issues
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
       res.json({ 
-        uploadURL: `${req.protocol}://${req.get('host')}/api/admin/sliders/upload-file/${filename}`,
+        uploadURL: `${protocol}://${req.get('host')}/api/admin/sliders/upload-file/${filename}`,
         finalUrl: `/api/assets/sliders/${filename}`
       });
     } catch (error) {

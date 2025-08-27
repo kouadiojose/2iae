@@ -272,10 +272,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Check credentials against database
-      const admin = await storage.getAdminUserByUsername(username);
+      // Validate credentials using database with hashed password
+      const admin = await storage.validateAdminCredentials(username, password);
       
-      if (admin && username === "admin" && password === "admin123") {
+      if (admin) {
         // Create admin session
         req.session.adminId = admin.id;
         req.session.admin = {

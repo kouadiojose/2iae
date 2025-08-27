@@ -595,22 +595,29 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAdminUser(insertAdminUser: InsertAdminUser): Promise<AdminUser> {
-    const [admin] = await db.insert(adminUsers).values(insertAdminUser).returning();
+    // Hash the password before storing in database
+    const hashedPassword = await bcrypt.hash(insertAdminUser.password, 10);
+    const adminData = {
+      ...insertAdminUser,
+      password: hashedPassword
+    };
+    const [admin] = await db.insert(adminUsers).values(adminData).returning();
     return admin;
   }
 
   async validateAdminCredentials(username: string, password: string): Promise<AdminUser | null> {
+    console.log("🔐 Validation des credentials pour:", username);
     const admin = await this.getAdminUserByUsername(username);
     if (!admin || !admin.isActive) {
+      console.log("❌ Admin non trouvé ou inactif");
       return null;
     }
 
-    // Compare password (assuming plain text for development)
-    if (admin.password === password) {
-      return admin;
-    }
-
-    return null;
+    // Compare hashed password with provided password
+    const isValid = await bcrypt.compare(password, admin.password);
+    console.log("🔐 Validation mot de passe:", isValid ? "✓" : "❌");
+    
+    return isValid ? admin : null;
   }
 
   // Site content operations

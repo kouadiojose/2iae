@@ -94,7 +94,7 @@ export default function AccueilPage() {
   return (
     <div className="min-h-screen">
       {/* Hero Slider Section */}
-      <section className="relative h-screen overflow-hidden">
+      <section className="relative h-[70vh] overflow-hidden">
         <div className="absolute inset-0 slider-gradient">
           <div className="absolute inset-0 bg-black/20"></div>
         </div>
@@ -194,12 +194,134 @@ export default function AccueilPage() {
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* Founder Message Section */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div className="order-2 lg:order-1">
+              <Badge className="bg-primary/10 text-primary mb-6" data-testid="badge-founder-message">
+                Message du Fondateur
+              </Badge>
+              <h2 className="text-4xl font-bold mb-6 text-foreground" data-testid="text-founder-title">
+                "Entreprendre pour Devenir l'Élite de Demain"
+              </h2>
+              <blockquote className="text-lg text-muted-foreground mb-6 italic border-l-4 border-primary pl-6" data-testid="text-founder-quote">
+                "Si en Côte D'Ivoire, les Écoles et les Universités ont réussi dans les programmes de formation des cadres, les moyennes et grandes entreprises, elles ont connu moins de succès dans les programmes destinés aux cadres des petites entreprises, et moins encore dans la formation d'entrepreneurs."
+              </blockquote>
+              <p className="text-lg text-muted-foreground mb-8" data-testid="text-founder-vision">
+                C'est de cette vision qu'est né 2IAE International, pour combler ce vide et former une nouvelle génération d'entrepreneurs capables de transformer l'économie africaine.
+              </p>
+              <div className="flex items-center space-x-4" data-testid="founder-info">
+                <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center">
+                  <span className="text-primary-foreground font-bold text-lg">PDG</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground" data-testid="text-founder-role">
+                    Directeur Général & Fondateur
+                  </p>
+                  <p className="text-muted-foreground" data-testid="text-founder-org">
+                    Groupe Écoles 2IAE International
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="order-1 lg:order-2">
+              <img 
+                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=700"
+                alt="Directeur Général 2IAE International"
+                className="rounded-2xl professional-shadow w-full h-auto"
+                data-testid="img-founder"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Institutes Section */}
       <section className="py-20 bg-muted">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-institutes-title">
+              NOS INSTITUTS
+            </h2>
+            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-institutes-subtitle">
+              Entreprendre Pour Devenir L'Élite De Demain.
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-3 gap-8">
+            <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-management">
+              <CardContent className="p-8 h-80 flex flex-col justify-between">
+                <div className="flex-1 flex flex-col justify-center">
+                  <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-management-title">
+                    INSTITUTS DE FORMATION EN MANAGEMENT
+                  </h3>
+                  <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                </div>
+                <div className="text-center">
+                  <Link href="/filieres">
+                    <Button 
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                      data-testid="button-institute-management"
+                    >
+                      EN SAVOIR PLUS
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-technology">
+              <CardContent className="p-8 h-80 flex flex-col justify-between">
+                <div className="flex-1 flex flex-col justify-center">
+                  <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-technology-title">
+                    INSTITUTS DE FORMATION AUX NOUVELLES TECHNOLOGIES
+                  </h3>
+                  <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                </div>
+                <div className="text-center">
+                  <Link href="/filieres">
+                    <Button 
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                      data-testid="button-institute-technology"
+                    >
+                      EN SAVOIR PLUS
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden hover-lift professional-shadow border-0 bg-gradient-to-br from-gray-800 to-gray-900 text-white" data-testid="card-institute-agriculture">
+              <CardContent className="p-8 h-80 flex flex-col justify-between">
+                <div className="flex-1 flex flex-col justify-center">
+                  <h3 className="text-xl font-bold mb-4 text-center leading-tight" data-testid="text-institute-agriculture-title">
+                    INSTITUTS DE FORMATION AGRICOLE
+                  </h3>
+                  <div className="w-16 h-1 bg-primary mx-auto mb-6"></div>
+                </div>
+                <div className="text-center">
+                  <Link href="/filieres">
+                    <Button 
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3"
+                      data-testid="button-institute-agriculture"
+                    >
+                      EN SAVOIR PLUS
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Why Choose Us Section */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
             <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-features-title">
-              Pourquoi Choisir 2IAE ?
+              Pourquoi Nous Choisir ?
             </h2>
             <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-features-subtitle">
               Une approche moderne et professionnelle de l'enseignement entrepreneurial

@@ -4,6 +4,8 @@ import { storage } from "./storage";
 import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
+import fs from "fs";
+import path from "path";
 
 // Function to generate presigned URL for object storage
 async function generatePresignedUrl(bucketName: string, objectName: string): Promise<string> {
@@ -113,7 +115,19 @@ INSTRUCTIONS DE RÉPONSE:
 - Mets en avant l'excellence et le caractère innovant de l'institution`;
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Public object serving endpoint
+  // Serve static assets from attached_assets folder
+  app.get("/api/assets/*", (req, res) => {
+    const filePath = req.path.replace("/api/assets/", "");
+    const fullPath = path.join(process.cwd(), "attached_assets", filePath);
+    
+    if (fs.existsSync(fullPath)) {
+      res.sendFile(fullPath);
+    } else {
+      res.status(404).json({ error: "File not found" });
+    }
+  });
+
+  // Public object serving endpoint (legacy)
   app.get("/public-objects/:filePath(*)", async (req, res) => {
     const filePath = req.params.filePath;
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
@@ -128,31 +142,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.redirect(objectUrl);
   });
 
-  // Get upload URL for slider images
-  app.post("/api/admin/sliders/upload", async (req, res) => {
-    try {
-      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-      if (!bucketId) {
-        return res.status(500).json({ error: "Object storage not configured" });
-      }
-
-      // Generate a unique filename
-      const timestamp = Date.now();
-      const randomId = Math.random().toString(36).substring(2, 15);
-      const filename = `slider_${timestamp}_${randomId}.jpg`;
-      
-      // Generate presigned URL for upload
-      const uploadUrl = await generatePresignedUrl(bucketId, `public/sliders/${filename}`);
-      
-      res.json({ 
-        uploadURL: uploadUrl,
-        finalUrl: `/public-objects/sliders/${filename}`
-      });
-    } catch (error) {
-      console.error("Error generating upload URL:", error);
-      res.status(500).json({ error: "Failed to generate upload URL" });
-    }
-  });
 
   // Contact form submission
   app.post("/api/contact", async (req, res) => {
@@ -450,6 +439,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ===== SLIDER MANAGEMENT ROUTES (ADMIN ONLY) =====
+
+  // Get upload URL for slider images (admin only)
+  app.post("/api/admin/sliders/upload", requireAdmin, async (req, res) => {
+    try {
+      // Generate a unique filename
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 15);
+      const filename = `slider_${timestamp}_${randomId}.jpg`;
+      
+      res.json({ 
+        uploadURL: `${req.protocol}://${req.get('host')}/api/admin/sliders/upload-file/${filename}`,
+        finalUrl: `/api/assets/sliders/${filename}`
+      });
+    } catch (error) {
+      console.error("Error generating upload URL:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  // File upload handler (admin only)
+  app.put("/api/admin/sliders/upload-file/:fileName", requireAdmin, async (req, res) => {
+    try {
+      const { fileName } = req.params;
+      const filePath = path.join(process.cwd(), 'attached_assets', 'sliders', fileName);
+      
+      // Create write stream
+      const writeStream = fs.createWriteStream(filePath);
+      
+      // Pipe request body to file
+      req.pipe(writeStream);
+      
+      writeStream.on('finish', () => {
+        res.json({ success: true, path: `/api/assets/sliders/${fileName}` });
+      });
+      
+      writeStream.on('error', (error) => {
+        console.error('File write error:', error);
+        res.status(500).json({ error: 'Failed to save file' });
+      });
+      
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
 
   // Get all sliders (admin only)
   app.get("/api/admin/sliders", requireAdmin, async (req, res) => {

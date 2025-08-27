@@ -99,7 +99,7 @@ export default function ActualitesPage() {
   const regularNews = activeNews.filter((item: News) => !item.featured);
 
   // Get unique categories from news data
-  const existingCategories = [...new Set(activeNews.map((item: News) => item.category))];
+  const existingCategories = Array.from(new Set(activeNews.map((item: News) => item.category)));
   const categories = ["Tous", ...existingCategories.sort()];
 
   // Filter news by category

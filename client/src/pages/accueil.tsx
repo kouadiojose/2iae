@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Play, Calendar, User, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,18 @@ import { Link } from "wouter";
 import { useSiteContent } from "@/hooks/useSiteContent";
 import { useQuery } from "@tanstack/react-query";
 import { type Slider, type FounderMessage, type Institute } from "@shared/schema";
+
+interface News {
+  id: string;
+  title: string;
+  summary: string | null;
+  imageUrl: string | null;
+  date: string;
+  category: string;
+  author: string;
+  featured: boolean;
+  isActive: boolean;
+}
 
 // Interface pour les slides formatés
 interface FormattedSlide {
@@ -78,6 +90,141 @@ const features = [
     icon: "🤝"
   }
 ];
+
+// Recent News Grid Component
+function RecentNewsGrid() {
+  const { data: newsData, isLoading, error } = useQuery({
+    queryKey: ["/api/news"],
+    retry: false,
+  });
+
+  // Format date
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  // Get default image if none provided
+  const getImageUrl = (imageUrl: string | null, category: string) => {
+    if (imageUrl) return imageUrl;
+    
+    // Default images by category
+    const defaultImages: { [key: string]: string } = {
+      'Innovation': 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
+      'Formation': 'https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
+      'Partenariats': 'https://images.unsplash.com/photo-1521791136064-7986c2920216?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
+      'Événements': 'https://images.unsplash.com/photo-1523580846011-d3982bc861b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
+      'Technologie': 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
+      'Réussite Étudiante': 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
+      'International': 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300'
+    };
+    
+    return defaultImages[category] || 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300';
+  };
+
+  if (isLoading) {
+    return (
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i} className="overflow-hidden professional-shadow animate-pulse">
+            <div className="h-48 bg-gray-300"></div>
+            <CardContent className="p-6">
+              <div className="h-4 bg-gray-300 rounded mb-2"></div>
+              <div className="h-6 bg-gray-300 rounded mb-3"></div>
+              <div className="h-4 bg-gray-300 rounded mb-4"></div>
+              <div className="h-10 bg-gray-300 rounded"></div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-muted-foreground">Impossible de charger les actualités pour le moment.</p>
+      </div>
+    );
+  }
+
+  const news: News[] = (newsData as any)?.news || [];
+  const activeNews = news.filter((item: News) => item.isActive);
+  
+  // Get the 4 most recent news (sorted by date, most recent first)
+  const recentNews = activeNews
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 4);
+
+  if (recentNews.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-muted-foreground mb-4">Aucune actualité disponible pour le moment.</p>
+        <p className="text-sm text-muted-foreground">Revenez bientôt pour découvrir nos dernières nouvelles !</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+        {recentNews.map((article: News) => (
+          <Card key={article.id} className="overflow-hidden professional-shadow hover-lift h-full flex flex-col" data-testid={`card-recent-news-${article.id}`}>
+            <div className="relative">
+              <img
+                src={getImageUrl(article.imageUrl, article.category)}
+                alt={article.title}
+                className="w-full h-48 object-cover"
+                data-testid={`img-recent-news-${article.id}`}
+              />
+              <div className="absolute top-4 left-4">
+                <Badge className="bg-orange-500 hover:bg-orange-600" data-testid={`badge-recent-news-category-${article.id}`}>
+                  {article.category}
+                </Badge>
+              </div>
+            </div>
+            <CardContent className="p-6 flex-1 flex flex-col">
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                <div className="flex items-center gap-1" data-testid={`text-recent-news-date-${article.id}`}>
+                  <Calendar className="h-4 w-4" />
+                  {formatDate(article.date)}
+                </div>
+              </div>
+              <h3 className="text-lg font-bold mb-3 flex-1 line-clamp-2" data-testid={`text-recent-news-title-${article.id}`}>
+                {article.title}
+              </h3>
+              <p className="text-muted-foreground mb-4 line-clamp-3 text-sm" data-testid={`text-recent-news-summary-${article.id}`}>
+                {article.summary || "Découvrez cette actualité importante de 2IAE International."}
+              </p>
+              <Button variant="outline" size="sm" className="w-full mt-auto hover:bg-orange-100" data-testid={`button-recent-news-read-more-${article.id}`}>
+                Lire la suite
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      
+      {/* See All News Button */}
+      <div className="text-center mt-12">
+        <Link href="/actualites">
+          <Button 
+            size="lg" 
+            className="bg-orange-500 hover:bg-orange-600 px-8 py-3"
+            data-testid="button-see-all-news"
+          >
+            Voir toutes les actualités
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </Link>
+      </div>
+    </>
+  );
+}
 
 export default function AccueilPage() {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -336,6 +483,22 @@ export default function AccueilPage() {
               />
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Recent News Section */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-news-title">
+              Récentes Actualités
+            </h2>
+            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-news-subtitle">
+              Suivez les dernières nouvelles et innovations de 2IAE International
+            </p>
+          </div>
+          
+          <RecentNewsGrid />
         </div>
       </section>
 

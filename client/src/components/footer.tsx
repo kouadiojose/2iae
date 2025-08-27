@@ -1,5 +1,6 @@
 import { Facebook, Twitter, Linkedin, Instagram } from "lucide-react";
 import { Link } from "wouter";
+import logoImage from "@assets/image_1756310296213.png";
 
 export default function Footer() {
 
@@ -9,14 +10,12 @@ export default function Footer() {
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Company Info */}
           <div>
-            <div className="flex items-center space-x-3 mb-6" data-testid="footer-logo">
-              <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-lg">2IAE</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-lg">Groupe Écoles</span>
-                <span className="text-sm text-white/70">2IAE International</span>
-              </div>
+            <div className="mb-6" data-testid="footer-logo">
+              <img 
+                src={logoImage} 
+                alt="Groupe École 2IAE International" 
+                className="h-16 w-auto object-contain"
+              />
             </div>
             <p className="text-white/70 mb-6" data-testid="text-footer-description">
               L'école où l'apprentissage prend vie. Former l'élite entrepreneuriale de demain.

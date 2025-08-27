@@ -3,6 +3,7 @@ import { Menu, X, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Link, useLocation } from "wouter";
+import logoImage from "@assets/image_1756310296213.png";
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -88,14 +89,12 @@ export default function Header() {
       <div className="container mx-auto px-4">
         <nav className="flex items-center justify-between py-4">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-3" data-testid="logo">
-            <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">2IAE</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-lg text-foreground">Groupe Écoles</span>
-              <span className="text-sm text-muted-foreground">2IAE International</span>
-            </div>
+          <Link href="/" className="flex items-center" data-testid="logo">
+            <img 
+              src={logoImage} 
+              alt="Groupe École 2IAE International" 
+              className="h-16 w-auto object-contain"
+            />
           </Link>
 
           {/* Desktop Navigation */}

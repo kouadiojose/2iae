@@ -977,6 +977,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public route to get single news article by ID
+  app.get("/api/news/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const newsItem = await storage.getNewsById(id);
+      
+      if (!newsItem || !newsItem.isActive) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Actualité non trouvée" 
+        });
+      }
+      
+      res.json(newsItem);
+    } catch (error) {
+      console.error("Error fetching news by ID:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération de l'actualité" 
+      });
+    }
+  });
+
+  // Public route to get images for a news article
+  app.get("/api/news/:id/images", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // First verify the news exists and is active
+      const newsItem = await storage.getNewsById(id);
+      if (!newsItem || !newsItem.isActive) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Actualité non trouvée" 
+        });
+      }
+      
+      const images = await storage.getNewsImages(id);
+      res.json({ 
+        success: true, 
+        images 
+      });
+    } catch (error) {
+      console.error("Error fetching news images:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des images" 
+      });
+    }
+  });
+
   // Admin route to get all news
   app.get("/api/admin/news", requireAdmin, async (req, res) => {
     try {
@@ -1197,6 +1248,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors du chargement de l'image" 
+      });
+    }
+  });
+
+  // Routes for news images management
+  app.get("/api/admin/news/:newsId/images", requireAdmin, async (req, res) => {
+    try {
+      const { newsId } = req.params;
+      const images = await storage.getNewsImages(newsId);
+      
+      res.json({ 
+        success: true, 
+        images,
+        message: "Images récupérées avec succès" 
+      });
+    } catch (error) {
+      console.error("Error fetching news images:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des images" 
+      });
+    }
+  });
+
+  app.post("/api/admin/news/:newsId/images", requireAdmin, async (req, res) => {
+    try {
+      const { newsId } = req.params;
+      const { imageUrl, caption, order } = req.body;
+      
+      if (!imageUrl) {
+        return res.status(400).json({
+          success: false,
+          error: "URL de l'image requise"
+        });
+      }
+
+      const newsImage = await storage.createNewsImage({
+        newsId,
+        imageUrl,
+        caption: caption || null,
+        order: order || 1
+      });
+      
+      res.status(201).json({ 
+        success: true, 
+        image: newsImage,
+        message: "Image ajoutée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error creating news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de l'ajout de l'image" 
+      });
+    }
+  });
+
+  app.put("/api/admin/news-images/:imageId", requireAdmin, async (req, res) => {
+    try {
+      const { imageId } = req.params;
+      const { caption, order } = req.body;
+      
+      const updatedImage = await storage.updateNewsImage(imageId, {
+        caption,
+        order
+      });
+      
+      if (!updatedImage) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Image non trouvée" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        image: updatedImage,
+        message: "Image mise à jour avec succès" 
+      });
+    } catch (error) {
+      console.error("Error updating news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour de l'image" 
+      });
+    }
+  });
+
+  app.delete("/api/admin/news-images/:imageId", requireAdmin, async (req, res) => {
+    try {
+      const { imageId } = req.params;
+      const success = await storage.deleteNewsImage(imageId);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Image non trouvée" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Image supprimée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting news image:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression de l'image" 
       });
     }
   });

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -103,7 +103,7 @@ export const news = pgTable("news", {
   title: text("title").notNull(),
   summary: text("summary"),
   content: text("content"),
-  imageUrl: text("image_url"),
+  imageUrl: text("image_url"), // Image principale pour les listes
   date: text("date").notNull(),
   category: text("category").notNull(),
   author: text("author").notNull(),
@@ -113,6 +113,16 @@ export const news = pgTable("news", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
+// News images table for multiple images per news article
+export const newsImages = pgTable("news_images", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  newsId: varchar("news_id").notNull().references(() => news.id, { onDelete: "cascade" }),
+  imageUrl: text("image_url").notNull(),
+  caption: text("caption"),
+  order: integer("order").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -244,6 +254,19 @@ export const updateNewsSchema = createInsertSchema(news).pick({
   order: true,
 }).partial();
 
+export const insertNewsImageSchema = createInsertSchema(newsImages).pick({
+  newsId: true,
+  imageUrl: true,
+  caption: true,
+  order: true,
+});
+
+export const updateNewsImageSchema = createInsertSchema(newsImages).pick({
+  imageUrl: true,
+  caption: true,
+  order: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -267,3 +290,6 @@ export type UpdateInstitute = z.infer<typeof updateInstituteSchema>;
 export type InsertNews = z.infer<typeof insertNewsSchema>;
 export type News = typeof news.$inferSelect;
 export type UpdateNews = z.infer<typeof updateNewsSchema>;
+export type InsertNewsImage = z.infer<typeof insertNewsImageSchema>;
+export type NewsImage = typeof newsImages.$inferSelect;
+export type UpdateNewsImage = z.infer<typeof updateNewsImageSchema>;

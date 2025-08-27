@@ -10,6 +10,7 @@ import AccueilPage from "@/pages/accueil";
 import FilieresPage from "@/pages/filieres";
 import AProposPage from "@/pages/a-propos";
 import ActualitesPage from "@/pages/actualites";
+import ActualiteDetail from "@/pages/actualite-detail";
 import ContactPage from "@/pages/contact";
 import CampusPage from "@/pages/campus";
 import AdminLogin from "@/pages/admin-login";
@@ -106,6 +107,11 @@ function Router() {
       <Route path="/actualites">
         <PublicLayout>
           <ActualitesPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/actualites/:id">
+        <PublicLayout>
+          <ActualiteDetail />
         </PublicLayout>
       </Route>
       <Route path="/contact">

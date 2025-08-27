@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { NewsImageManager } from "@/components/NewsImageManager";
 import type { UploadResult } from "@uppy/core";
 
 const newsCategories = [
@@ -391,6 +392,11 @@ export default function AdminNewsPage() {
                       <Image className="h-4 w-4 mr-2" />
                       {formData.imageUrl ? "Changer l'image" : "Télécharger une image"}
                     </ObjectUploader>
+                    
+                    <div className="text-sm text-gray-600 mt-2">
+                      <p><strong>Note :</strong> Cette image sera utilisée comme image principale pour les listes d'actualités.</p>
+                      <p>Utilisez la section "Galerie d'images" ci-dessous pour ajouter des images supplémentaires à l'article.</p>
+                    </div>
                   </div>
                 </div>
 
@@ -446,6 +452,16 @@ export default function AdminNewsPage() {
                   </Button>
                 </div>
               </form>
+
+              {/* News Image Gallery Manager - Only show when editing an existing news */}
+              {editingNews && (
+                <div className="mt-6 border-t pt-6">
+                  <NewsImageManager 
+                    newsId={editingNews.id} 
+                    isEditable={true} 
+                  />
+                </div>
+              )}
             </DialogContent>
           </Dialog>
         </div>

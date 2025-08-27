@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type News, type InsertNews, type UpdateNews, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, news } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, news, newsImages } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -54,6 +54,13 @@ export interface IStorage {
   createNews(news: InsertNews): Promise<News>;
   updateNews(id: string, news: UpdateNews): Promise<News | undefined>;
   deleteNews(id: string): Promise<boolean>;
+  
+  // News images management
+  getNewsImages(newsId: string): Promise<NewsImage[]>;
+  createNewsImage(newsImage: InsertNewsImage): Promise<NewsImage>;
+  updateNewsImage(id: string, newsImage: UpdateNewsImage): Promise<NewsImage | undefined>;
+  deleteNewsImage(id: string): Promise<boolean>;
+  deleteAllNewsImages(newsId: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -66,6 +73,7 @@ export class MemStorage implements IStorage {
   private founderMessage: FounderMessage | null;
   private institutes: Map<string, Institute>;
   private newsList: Map<string, News>;
+  private newsImages: Map<string, NewsImage>;
 
   constructor() {
     this.users = new Map();
@@ -77,6 +85,7 @@ export class MemStorage implements IStorage {
     this.founderMessage = null;
     this.institutes = new Map();
     this.newsList = new Map();
+    this.newsImages = new Map();
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
@@ -550,6 +559,52 @@ export class MemStorage implements IStorage {
   async deleteNews(id: string): Promise<boolean> {
     return this.newsList.delete(id);
   }
+
+  // News images management methods
+  async getNewsImages(newsId: string): Promise<NewsImage[]> {
+    return Array.from(this.newsImages.values())
+      .filter(image => image.newsId === newsId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+  }
+
+  async createNewsImage(insertNewsImage: InsertNewsImage): Promise<NewsImage> {
+    const id = randomUUID();
+    const newsImage: NewsImage = { 
+      ...insertNewsImage, 
+      id, 
+      createdAt: new Date(),
+      order: insertNewsImage.order ?? null,
+      caption: insertNewsImage.caption ?? null
+    };
+    this.newsImages.set(id, newsImage);
+    return newsImage;
+  }
+
+  async updateNewsImage(id: string, updateData: UpdateNewsImage): Promise<NewsImage | undefined> {
+    const newsImage = this.newsImages.get(id);
+    if (!newsImage) {
+      return undefined;
+    }
+    
+    const updatedNewsImage = { ...newsImage, ...updateData };
+    this.newsImages.set(id, updatedNewsImage);
+    return updatedNewsImage;
+  }
+
+  async deleteNewsImage(id: string): Promise<boolean> {
+    return this.newsImages.delete(id);
+  }
+
+  async deleteAllNewsImages(newsId: string): Promise<boolean> {
+    const imagesToDelete = Array.from(this.newsImages.entries())
+      .filter(([_, image]) => image.newsId === newsId);
+    
+    for (const [imageId] of imagesToDelete) {
+      this.newsImages.delete(imageId);
+    }
+    
+    return true;
+  }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -909,6 +964,36 @@ export class DatabaseStorage implements IStorage {
   async deleteNews(id: string): Promise<boolean> {
     const result = await db.delete(news).where(eq(news.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // News images operations
+  async getNewsImages(newsId: string): Promise<NewsImage[]> {
+    return await db.select().from(newsImages)
+      .where(eq(newsImages.newsId, newsId))
+      .orderBy(newsImages.order, newsImages.createdAt);
+  }
+
+  async createNewsImage(insertNewsImage: InsertNewsImage): Promise<NewsImage> {
+    const [newsImage] = await db.insert(newsImages).values(insertNewsImage).returning();
+    return newsImage;
+  }
+
+  async updateNewsImage(id: string, updateNewsImage: UpdateNewsImage): Promise<NewsImage | undefined> {
+    const [updated] = await db.update(newsImages)
+      .set(updateNewsImage)
+      .where(eq(newsImages.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteNewsImage(id: string): Promise<boolean> {
+    const result = await db.delete(newsImages).where(eq(newsImages.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deleteAllNewsImages(newsId: string): Promise<boolean> {
+    const result = await db.delete(newsImages).where(eq(newsImages.newsId, newsId));
+    return (result.rowCount ?? 0) >= 0; // Can be 0 if no images exist
   }
 }
 

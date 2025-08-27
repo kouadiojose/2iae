@@ -189,10 +189,12 @@ export default function ActualitesPage() {
                     <p className="text-muted-foreground text-lg mb-6" data-testid="text-featured-summary">
                       {featuredNews.summary}
                     </p>
-                    <Button className="w-fit bg-orange-500 hover:bg-orange-600" data-testid="button-featured-read-more">
-                      Lire la suite
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
+                    <Link href={`/actualites/${featuredNews.id}`}>
+                      <Button className="w-fit bg-orange-500 hover:bg-orange-600" data-testid="button-featured-read-more">
+                        Lire la suite
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </Link>
                   </CardContent>
                 </div>
               </Card>
@@ -273,10 +275,12 @@ export default function ActualitesPage() {
                     <p className="text-muted-foreground mb-4 line-clamp-3" data-testid={`text-news-summary-${article.id}`}>
                       {article.summary || "Découvrez cette actualité importante de 2IAE International."}
                     </p>
-                    <Button variant="outline" className="w-full mt-auto hover:bg-orange-100" data-testid={`button-news-read-more-${article.id}`}>
-                      Lire la suite
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
+                    <Link href={`/actualites/${article.id}`}>
+                      <Button variant="outline" className="w-full mt-auto hover:bg-orange-100" data-testid={`button-news-read-more-${article.id}`}>
+                        Lire la suite
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </Link>
                   </CardContent>
                 </Card>
               ))}

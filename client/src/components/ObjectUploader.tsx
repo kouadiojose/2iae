@@ -52,6 +52,7 @@ export function ObjectUploader({
       const response = await fetch(uploadParams.url, {
         method: 'PUT',
         body: file,
+        credentials: 'include', // Include cookies for authentication
         headers: {
           'Content-Type': file.type,
         },

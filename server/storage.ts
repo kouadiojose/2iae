@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -7,15 +7,19 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   createContact(contact: InsertContact): Promise<Contact>;
   getContacts(): Promise<Contact[]>;
+  createChatMessage(chatMessage: InsertChatMessage): Promise<ChatMessage>;
+  getChatMessages(sessionId: string): Promise<ChatMessage[]>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private contacts: Map<string, Contact>;
+  private chatMessages: Map<string, ChatMessage>;
 
   constructor() {
     this.users = new Map();
     this.contacts = new Map();
+    this.chatMessages = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -50,6 +54,23 @@ export class MemStorage implements IStorage {
     return Array.from(this.contacts.values()).sort(
       (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
     );
+  }
+
+  async createChatMessage(insertChatMessage: InsertChatMessage): Promise<ChatMessage> {
+    const id = randomUUID();
+    const chatMessage: ChatMessage = { 
+      ...insertChatMessage, 
+      id, 
+      createdAt: new Date()
+    };
+    this.chatMessages.set(id, chatMessage);
+    return chatMessage;
+  }
+
+  async getChatMessages(sessionId: string): Promise<ChatMessage[]> {
+    return Array.from(this.chatMessages.values())
+      .filter(msg => msg.sessionId === sessionId)
+      .sort((a, b) => (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0));
   }
 }
 

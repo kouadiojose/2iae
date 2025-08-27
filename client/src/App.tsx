@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
+import ChatbotWidget from "@/components/chatbot-widget";
 import AccueilPage from "@/pages/accueil";
 import FilieresPage from "@/pages/filieres";
 import AProposPage from "@/pages/a-propos";
@@ -28,6 +29,7 @@ function Router() {
         <Route component={NotFound} />
       </Switch>
       <Footer />
+      <ChatbotWidget />
     </div>
   );
 }

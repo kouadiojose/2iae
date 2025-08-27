@@ -221,7 +221,7 @@ export default function AdminSliders() {
       const urlParts = uploadUrl.split('/');
       const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
       
-      const finalUrl = `/public-objects/sliders/${filename}`;
+      const finalUrl = `/api/assets/sliders/${filename}`;
       setCurrentImageUrl(finalUrl);
       form.setValue("imageUrl", finalUrl);
       

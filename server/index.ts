@@ -4,56 +4,32 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Session configuration for admin authentication
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-2iae-admin-2024',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Simple CORS for development
+// CORS for development with credentials support
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {
     next();
-  }
-});
-
-// Early admin login route to avoid Vite interference
-app.post("/api/admin/login", (req, res) => {
-  console.log("🔥 Login route hit early");
-  
-  const { username, password } = req.body;
-  console.log("📝 Credentials:", { username, password });
-  
-  if (!username || !password) {
-    console.log("❌ Missing credentials");
-    return res.status(400).json({
-      success: false,
-      message: "Nom d'utilisateur et mot de passe requis"
-    });
-  }
-
-  // Simple check for development
-  if (username === "admin" && password === "admin123") {
-    console.log("✅ Login successful");
-    const response = {
-      success: true,
-      admin: {
-        id: "admin-id",
-        username: "admin",
-        email: "admin@2iae.com"
-      }
-    };
-    console.log("📤 Sending response:", response);
-    res.json(response);
-    console.log("✅ Response sent");
-  } else {
-    console.log("❌ Invalid credentials");
-    res.status(401).json({
-      success: false,
-      message: "Identifiants incorrects"
-    });
   }
 });
 

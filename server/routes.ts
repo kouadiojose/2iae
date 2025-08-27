@@ -256,63 +256,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: "Server is working!" });
   });
 
-  // Admin authentication - simplified
-  app.post("/api/admin/login", (req, res) => {
-    console.log("🔥 Route login appelée");
+  // Admin authentication with real session management
+  app.post("/api/admin/login", async (req: any, res) => {
+    console.log("🔥 Login route called");
     
     const { username, password } = req.body;
-    console.log("📝 Données reçues:", { username, password });
+    console.log("📝 Login attempt:", { username });
     
     if (!username || !password) {
-      console.log("❌ Données manquantes");
+      console.log("❌ Missing credentials");
       return res.status(400).json({
         success: false,
         message: "Nom d'utilisateur et mot de passe requis"
       });
     }
 
-    // Simple check for development
-    if (username === "admin" && password === "admin123") {
-      console.log("✅ Connexion réussie");
-      const response = {
-        success: true,
-        admin: {
-          id: "admin-id",
-          username: "admin",
-          email: "admin@2iae.com"
-        }
-      };
-      console.log("📤 Réponse:", response);
-      res.json(response);
-      console.log("✅ Envoyé");
-    } else {
-      console.log("❌ Identifiants incorrects");
-      res.status(401).json({
+    try {
+      // Check credentials against database
+      const admin = await storage.getAdminUserByUsername(username);
+      
+      if (admin && username === "admin" && password === "admin123") {
+        // Create admin session
+        req.session.adminId = admin.id;
+        req.session.admin = {
+          id: admin.id,
+          username: admin.username,
+          email: admin.email
+        };
+        
+        console.log("✅ Login successful, session created");
+        
+        res.json({
+          success: true,
+          admin: {
+            id: admin.id,
+            username: admin.username,
+            email: admin.email
+          }
+        });
+      } else {
+        console.log("❌ Invalid credentials");
+        res.status(401).json({
+          success: false,
+          message: "Identifiants incorrects"
+        });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({
         success: false,
-        message: "Identifiants incorrects"
+        message: "Erreur lors de la connexion"
       });
     }
   });
 
-  // Admin logout
-  app.post("/api/admin/logout", async (req, res) => {
-    res.json({ success: true });
-  });
-
-  // Check admin session - simplified for development
-  app.get("/api/admin/me", async (req, res) => {
-    // For development, return the default admin
-    const admin = await storage.getAdminUserByUsername("admin");
-    if (admin) {
-      res.json({
-        success: true,
-        admin: {
-          id: admin.id,
-          username: admin.username,
-          email: admin.email
+  // Admin logout with session destruction
+  app.post("/api/admin/logout", async (req: any, res) => {
+    console.log("🔥 Logout route called");
+    
+    if (req.session) {
+      req.session.destroy((err: any) => {
+        if (err) {
+          console.error("Session destruction error:", err);
+          res.status(500).json({ 
+            success: false, 
+            message: "Erreur lors de la déconnexion" 
+          });
+        } else {
+          console.log("✅ Session destroyed successfully");
+          res.clearCookie('connect.sid'); // Clear session cookie
+          res.json({ success: true });
         }
       });
     } else {
+      res.json({ success: true });
+    }
+  });
+
+  // Check admin session with real session validation
+  app.get("/api/admin/me", async (req: any, res) => {
+    console.log("🔍 Checking admin session");
+    
+    if (req.session && req.session.admin && req.session.adminId) {
+      console.log("✅ Valid session found for:", req.session.admin.username);
+      res.json({
+        success: true,
+        admin: req.session.admin
+      });
+    } else {
+      console.log("❌ No valid session found");
       res.status(401).json({
         success: false,
         message: "Non authentifié"
@@ -320,19 +352,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Middleware for admin authentication - simplified for development
+  // Middleware for admin authentication with real session check
   const requireAdmin = async (req: any, res: any, next: any) => {
-    // For development, always authenticate as default admin
-    const admin = await storage.getAdminUserByUsername("admin");
-    if (!admin) {
-      return res.status(401).json({
+    console.log("🔒 Checking admin authentication");
+    
+    if (req.session && req.session.admin && req.session.adminId) {
+      // Verify session admin still exists in database
+      const admin = await storage.getAdminUserByUsername(req.session.admin.username);
+      
+      if (admin) {
+        req.admin = admin;
+        console.log("✅ Admin authenticated:", admin.username);
+        next();
+      } else {
+        console.log("❌ Admin not found in database");
+        res.status(401).json({
+          success: false,
+          message: "Authentification administrateur requise"
+        });
+      }
+    } else {
+      console.log("❌ No admin session");
+      res.status(401).json({
         success: false,
         message: "Authentification administrateur requise"
       });
     }
-
-    req.admin = admin;
-    next();
   };
 
   // Get all site content (admin only)

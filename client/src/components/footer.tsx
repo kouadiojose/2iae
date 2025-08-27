@@ -113,7 +113,7 @@ export default function Footer() {
                     <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                   </svg>
                 </div>
-                <p>contact@2iae.com</p>
+                <p>contacts@2iae.com</p>
               </div>
             </div>
           </div>

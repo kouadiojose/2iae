@@ -692,8 +692,7 @@ export default function AccueilPage() {
             </Link>
             <Link href="/filieres">
               <Button 
-                variant="outline"
-                className="border-2 border-white text-white hover:bg-white hover:text-primary px-8 py-4 text-lg h-auto"
+                className="bg-green-500 text-white hover:bg-green-600 px-8 py-4 text-lg h-auto font-semibold"
                 data-testid="button-cta-programs"
               >
                 Voir nos Filières

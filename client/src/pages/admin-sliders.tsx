@@ -373,21 +373,16 @@ export default function AdminSliders() {
                           </div>
                         </ObjectUploader>
                         {currentImageUrl && (
-                          <div className="space-y-2">
-                            <div className="relative">
-                              <img
-                                src={currentImageUrl}
-                                alt="Aperçu de l'image"
-                                className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
-                              />
-                              <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
-                                <Images className="h-3 w-3" />
-                                Image chargée
-                              </div>
+                          <div className="relative">
+                            <img
+                              src={currentImageUrl}
+                              alt="Aperçu de l'image"
+                              className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
+                            />
+                            <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                              <Images className="h-3 w-3" />
+                              Image chargée
                             </div>
-                            <p className="text-xs text-gray-500 bg-gray-50 p-2 rounded font-mono break-all">
-                              {currentImageUrl}
-                            </p>
                           </div>
                         )}
                         <FormField

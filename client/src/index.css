@@ -210,6 +210,22 @@
       max-width: 100% !important;
       box-sizing: border-box !important;
     }
+    
+    /* Force navbar to be compact on mobile */
+    header {
+      min-height: auto !important;
+    }
+    
+    header nav {
+      min-height: auto !important;
+      padding-top: 0.25rem !important;
+      padding-bottom: 0.25rem !important;
+    }
+    
+    header img {
+      height: 2rem !important;
+      max-height: 2rem !important;
+    }
   }
 }
 

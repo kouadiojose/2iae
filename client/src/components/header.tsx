@@ -88,14 +88,14 @@ export default function Header() {
     <header
       className={`bg-white shadow-lg sticky top-0 z-50 border-b border-border transition-shadow ${isScrolled ? "shadow-xl" : ""}`}
     >
-      <div className="container mx-auto px-4">
-        <nav className="flex items-center justify-between py-2 lg:py-4">
+      <div className="container mx-auto px-2 lg:px-4">
+        <nav className="flex items-center justify-between py-1 lg:py-4">
           {/* Logo */}
           <Link href="/" className="flex items-center" data-testid="logo">
             <img
               src={logoImage}
               alt="Groupe École 2IAE International"
-              className="h-10 lg:h-16 w-auto object-contain"
+              className="h-8 lg:h-16 w-auto object-contain"
             />
           </Link>
 

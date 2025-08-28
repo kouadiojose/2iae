@@ -17,6 +17,7 @@ import {
   Eye,
   Images,
   Building2,
+  GraduationCap,
   Newspaper
 } from "lucide-react";
 
@@ -254,6 +255,27 @@ export default function AdminDashboard() {
                 data-testid="button-manage-institutes"
               >
                 Gérer les instituts
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <GraduationCap className="h-5 w-5 mr-2" />
+                Filières & Programmes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les filières et programmes d'études proposés par l'école.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/programs")}
+                className="w-full bg-indigo-600 hover:bg-indigo-700"
+                data-testid="button-manage-programs"
+              >
+                Gérer les filières
               </Button>
             </CardContent>
           </Card>

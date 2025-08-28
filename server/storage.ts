@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, news, newsImages } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -47,6 +47,14 @@ export interface IStorage {
   updateInstitute(id: string, institute: UpdateInstitute): Promise<Institute | undefined>;
   deleteInstitute(id: string): Promise<boolean>;
   
+  // Program management
+  getActivePrograms(): Promise<Program[]>;
+  getAllPrograms(): Promise<Program[]>;
+  getProgramById(id: string): Promise<Program | undefined>;
+  createProgram(program: InsertProgram): Promise<Program>;
+  updateProgram(id: string, program: UpdateProgram): Promise<Program | undefined>;
+  deleteProgram(id: string): Promise<boolean>;
+  
   // News management
   getActiveNews(): Promise<News[]>;
   getAllNews(): Promise<News[]>;
@@ -73,6 +81,7 @@ export class MemStorage implements IStorage {
   private sliders: Map<string, Slider>;
   private founderMessage: FounderMessage | null;
   private institutes: Map<string, Institute>;
+  private programs: Map<string, Program>;
   private newsList: Map<string, News>;
   private newsImages: Map<string, NewsImage>;
 
@@ -85,6 +94,7 @@ export class MemStorage implements IStorage {
     this.sliders = new Map();
     this.founderMessage = null;
     this.institutes = new Map();
+    this.programs = new Map();
     this.newsList = new Map();
     this.newsImages = new Map();
     
@@ -507,6 +517,57 @@ export class MemStorage implements IStorage {
     return this.institutes.delete(id);
   }
 
+  // Program management methods
+  async getActivePrograms(): Promise<Program[]> {
+    return Array.from(this.programs.values()).filter(program => program.isActive);
+  }
+
+  async getAllPrograms(): Promise<Program[]> {
+    return Array.from(this.programs.values());
+  }
+
+  async getProgramById(id: string): Promise<Program | undefined> {
+    return this.programs.get(id);
+  }
+
+  async createProgram(insertProgram: InsertProgram): Promise<Program> {
+    const id = randomUUID();
+    const program: Program = { 
+      ...insertProgram, 
+      id, 
+      description: insertProgram.description || null,
+      imageUrl: insertProgram.imageUrl || null,
+      duration: insertProgram.duration || null,
+      level: insertProgram.level || null,
+      isActive: insertProgram.isActive ?? true,
+      order: insertProgram.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+    this.programs.set(id, program);
+    return program;
+  }
+
+  async updateProgram(id: string, updateData: UpdateProgram): Promise<Program | undefined> {
+    const program = this.programs.get(id);
+    if (!program) {
+      return undefined;
+    }
+    
+    const updated: Program = {
+      ...program,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.programs.set(id, updated);
+    return updated;
+  }
+
+  async deleteProgram(id: string): Promise<boolean> {
+    return this.programs.delete(id);
+  }
+
   // News management methods
   async getActiveNews(): Promise<News[]> {
     return Array.from(this.newsList.values())
@@ -650,6 +711,13 @@ export class DatabaseStorage implements IStorage {
       if (existingFounderMessage.length === 0) {
         await this.initializeDefaultFounderMessage();
         console.log("✓ Message du fondateur par défaut créé");
+      }
+
+      // Check if default programs exist
+      const existingPrograms = await db.select().from(programs).limit(1);
+      if (existingPrograms.length === 0) {
+        await this.initializeDefaultPrograms();
+        console.log("✓ Filières par défaut créées");
       }
     } catch (error) {
       console.error("Erreur lors de l'initialisation des données:", error);
@@ -882,6 +950,170 @@ export class DatabaseStorage implements IStorage {
     await db.insert(founderMessage).values(defaultFounderMessage);
   }
 
+  private async initializeDefaultPrograms() {
+    const defaultPrograms = [
+      // BTS TERTIAIRES
+      {
+        name: "FINANCE COMPTABILITÉ & GESTION D'ENTREPRISE",
+        category: "BTS TERTIAIRES",
+        imageUrl: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation complète en finance, comptabilité et gestion d'entreprise pour former des experts financiers capables de gérer les ressources d'une organisation.",
+        isActive: true,
+        order: "1"
+      },
+      {
+        name: "GESTION COMMERCIALE",
+        category: "BTS TERTIAIRES", 
+        imageUrl: "https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en techniques commerciales, marketing et vente pour développer des compétences en gestion des relations clients et développement commercial.",
+        isActive: true,
+        order: "2"
+      },
+      {
+        name: "RESSOURCES HUMAINES & COMMUNICATION",
+        category: "BTS TERTIAIRES",
+        imageUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en gestion des ressources humaines et communication d'entreprise pour devenir un professionnel RH capable de gérer le capital humain.",
+        isActive: true,
+        order: "3"
+      },
+      {
+        name: "LOGISTIQUE",
+        category: "BTS TERTIAIRES",
+        imageUrl: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en gestion logistique et chaîne d'approvisionnement pour optimiser les flux de marchandises et la distribution.",
+        isActive: true,
+        order: "4"
+      },
+      
+      // BTS INDUSTRIEL
+      {
+        name: "SCIENCE DE L'INFORMATION",
+        category: "BTS INDUSTRIEL",
+        imageUrl: "https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en sciences de l'information et technologies numériques pour maîtriser les systèmes d'information modernes.",
+        isActive: true,
+        order: "5"
+      },
+      {
+        name: "INFORMATIQUE DÉVELOPPEUR D'APPLICATIONS (IDA)",
+        category: "BTS INDUSTRIEL",
+        imageUrl: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en développement d'applications informatiques pour créer des solutions logicielles innovantes et performantes.",
+        isActive: true,
+        order: "6"
+      },
+      {
+        name: "GÉNIE CIVIL OPTION BÂTIMENT (GBAT)",
+        category: "BTS INDUSTRIEL",
+        imageUrl: "https://images.unsplash.com/photo-1541976590-713941681591?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en génie civil spécialisée dans la construction de bâtiments pour devenir technicien supérieur en construction.",
+        isActive: true,
+        order: "7"
+      },
+      {
+        name: "GÉNIE CIVIL OPTION TRAVAUX PUBLICS",
+        category: "BTS INDUSTRIEL",
+        imageUrl: "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en génie civil orientée travaux publics pour participer à la construction d'infrastructures publiques.",
+        isActive: true,
+        order: "8"
+      },
+      {
+        name: "AGRICULTURE TROPICALE OPTION - PRODUCTION VÉGÉTALE (ATPV)",
+        category: "BTS INDUSTRIEL",
+        imageUrl: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "2 ans",
+        level: "BTS",
+        description: "Formation en agriculture tropicale spécialisée en production végétale pour optimiser les rendements agricoles en milieu tropical.",
+        isActive: true,
+        order: "9"
+      },
+      
+      // LICENCE/MASTER
+      {
+        name: "MANAGEMENT & ENTREPRENEURIAT",
+        category: "LICENCE/MASTER",
+        imageUrl: "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "3 ans",
+        level: "Licence",
+        description: "Formation complète en management et entrepreneuriat pour développer les compétences de leadership et créer des entreprises innovantes.",
+        isActive: true,
+        order: "10"
+      },
+      {
+        name: "MARKETING DIGITAL & COMMUNICATION",
+        category: "LICENCE/MASTER",
+        imageUrl: "https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "3 ans",
+        level: "Licence",
+        description: "Formation en marketing digital et communication pour maîtriser les stratégies de communication numérique et les réseaux sociaux.",
+        isActive: true,
+        order: "11"
+      },
+      {
+        name: "GESTION FINANCIÈRE & CONTRÔLE",
+        category: "LICENCE/MASTER",
+        imageUrl: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "3 ans",
+        level: "Licence",
+        description: "Formation avancée en gestion financière et contrôle de gestion pour devenir expert en analyse financière et pilotage d'entreprise.",
+        isActive: true,
+        order: "12"
+      },
+      
+      // CERTIFICAT
+      {
+        name: "CRÉATION & GESTION D'ENTREPRISE",
+        category: "CERTIFICAT",
+        imageUrl: "https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "6 mois",
+        level: "Certificat",
+        description: "Formation intensive en création et gestion d'entreprise pour accompagner les porteurs de projets dans la concrétisation de leur vision entrepreneuriale.",
+        isActive: true,
+        order: "13"
+      },
+      {
+        name: "COMPTABILITÉ ANALYTIQUE & FISCALITÉ",
+        category: "CERTIFICAT",
+        imageUrl: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "4 mois",
+        level: "Certificat",
+        description: "Formation spécialisée en comptabilité analytique et fiscalité pour maîtriser les aspects comptables et fiscaux d'une entreprise.",
+        isActive: true,
+        order: "14"
+      },
+      {
+        name: "LEADERSHIP & MANAGEMENT D'ÉQUIPE",
+        category: "CERTIFICAT",
+        imageUrl: "https://images.unsplash.com/photo-1600880292089-90a7e086ee0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
+        duration: "3 mois",
+        level: "Certificat",
+        description: "Formation en leadership et management d'équipe pour développer les compétences de direction et d'animation d'équipes performantes.",
+        isActive: true,
+        order: "15"
+      }
+    ];
+
+    await db.insert(programs).values(defaultPrograms);
+  }
+
   // Founder message operations
   async getFounderMessage(): Promise<FounderMessage | undefined> {
     const [message] = await db.select().from(founderMessage)
@@ -934,6 +1166,45 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInstitute(id: string): Promise<boolean> {
     const result = await db.delete(institutes).where(eq(institutes.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Program operations
+  async getActivePrograms(): Promise<Program[]> {
+    return await db.select().from(programs).where(eq(programs.isActive, true));
+  }
+
+  async getAllPrograms(): Promise<Program[]> {
+    return await db.select().from(programs);
+  }
+
+  async getProgramById(id: string): Promise<Program | undefined> {
+    const [program] = await db.select().from(programs).where(eq(programs.id, id));
+    return program;
+  }
+
+  async createProgram(insertProgram: InsertProgram): Promise<Program> {
+    const [program] = await db
+      .insert(programs)
+      .values(insertProgram)
+      .returning();
+    return program;
+  }
+
+  async updateProgram(id: string, updateData: UpdateProgram): Promise<Program | undefined> {
+    const [program] = await db
+      .update(programs)
+      .set({
+        ...updateData,
+        updatedAt: new Date()
+      })
+      .where(eq(programs.id, id))
+      .returning();
+    return program;
+  }
+
+  async deleteProgram(id: string): Promise<boolean> {
+    const result = await db.delete(programs).where(eq(programs.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 

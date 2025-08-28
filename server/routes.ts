@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertNewsSchema, updateNewsSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -1012,6 +1012,149 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors de la suppression de l'institut" 
+      });
+    }
+  });
+
+  // ========================
+  // PROGRAM ROUTES (FILIÈRES)
+  // ========================
+
+  // Public route to get all active programs
+  app.get("/api/programs", async (req, res) => {
+    try {
+      const programsData = await storage.getActivePrograms();
+      res.json({ success: true, programs: programsData });
+    } catch (error) {
+      console.error("Error fetching programs:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des filières" 
+      });
+    }
+  });
+
+  // Admin route to get all programs
+  app.get("/api/admin/programs", requireAdmin, async (req, res) => {
+    try {
+      const programsData = await storage.getAllPrograms();
+      res.json({ success: true, programs: programsData });
+    } catch (error) {
+      console.error("Error fetching programs for admin:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des filières" 
+      });
+    }
+  });
+
+  // Admin route to get single program
+  app.get("/api/admin/programs/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const program = await storage.getProgramById(id);
+      
+      if (!program) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Filière non trouvée" 
+        });
+      }
+
+      res.json({ success: true, program });
+    } catch (error) {
+      console.error("Error fetching program:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération de la filière" 
+      });
+    }
+  });
+
+  // Admin route to create program
+  app.post("/api/admin/programs", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertProgramSchema.parse(req.body);
+      const newProgram = await storage.createProgram(validatedData);
+      
+      res.status(201).json({ 
+        success: true, 
+        program: newProgram,
+        message: "Filière créée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error creating program:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Données invalides", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la création de la filière" 
+      });
+    }
+  });
+
+  // Admin route to update program
+  app.put("/api/admin/programs/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateProgramSchema.parse(req.body);
+      const updatedProgram = await storage.updateProgram(id, validatedData);
+      
+      if (!updatedProgram) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Filière non trouvée" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        program: updatedProgram,
+        message: "Filière mise à jour avec succès" 
+      });
+    } catch (error) {
+      console.error("Error updating program:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Données invalides", 
+          details: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour de la filière" 
+      });
+    }
+  });
+
+  // Admin route to delete program
+  app.delete("/api/admin/programs/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteProgram(id);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Filière non trouvée" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Filière supprimée avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting program:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression de la filière" 
       });
     }
   });

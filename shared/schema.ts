@@ -97,6 +97,22 @@ export const institutes = pgTable("institutes", {
   createdBy: varchar("created_by").references(() => adminUsers.id),
 });
 
+// Programs table for academic programs/filières management
+export const programs = pgTable("programs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // Nom de la filière
+  category: text("category").notNull(), // Catégorie (BTS TERTIAIRES, BTS INDUSTRIEL, etc.)
+  description: text("description"), // Description complète de la filière
+  imageUrl: text("image_url"), // Image de la filière
+  duration: text("duration"), // Durée (2 ans, 3 mois, etc.)
+  level: text("level"), // Niveau (BTS, Licence, Master, Certificat)
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
 // News table for news/articles management
 export const news = pgTable("news", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -270,6 +286,28 @@ export const updateNewsImageSchema = createInsertSchema(newsImages).pick({
   order: true,
 }).partial();
 
+export const insertProgramSchema = createInsertSchema(programs).pick({
+  name: true,
+  category: true,
+  description: true,
+  imageUrl: true,
+  duration: true,
+  level: true,
+  isActive: true,
+  order: true,
+});
+
+export const updateProgramSchema = createInsertSchema(programs).pick({
+  name: true,
+  category: true,
+  description: true,
+  imageUrl: true,
+  duration: true,
+  level: true,
+  isActive: true,
+  order: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -296,3 +334,6 @@ export type UpdateNews = z.infer<typeof updateNewsSchema>;
 export type InsertNewsImage = z.infer<typeof insertNewsImageSchema>;
 export type NewsImage = typeof newsImages.$inferSelect;
 export type UpdateNewsImage = z.infer<typeof updateNewsImageSchema>;
+export type InsertProgram = z.infer<typeof insertProgramSchema>;
+export type Program = typeof programs.$inferSelect;
+export type UpdateProgram = z.infer<typeof updateProgramSchema>;

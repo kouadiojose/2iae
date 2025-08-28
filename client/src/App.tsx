@@ -19,6 +19,7 @@ import AdminContent from "@/pages/admin-content";
 import AdminSliders from "@/pages/admin-sliders";
 import AdminFounder from "@/pages/admin-founder";
 import AdminInstitutes from "@/pages/admin-institutes";
+import AdminPrograms from "@/pages/admin-programs";
 import AdminNews from "@/pages/admin-news";
 import NotFound from "@/pages/not-found";
 
@@ -75,6 +76,11 @@ function Router() {
       <Route path="/admin/institutes">
         <AdminLayout>
           <AdminInstitutes />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/programs">
+        <AdminLayout>
+          <AdminPrograms />
         </AdminLayout>
       </Route>
       <Route path="/admin/news">

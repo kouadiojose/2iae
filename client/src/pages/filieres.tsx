@@ -2,137 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
-
-// Programmes basés sur l'ancien site de 2IAE
-const programs = [
-  // BTS TERTIAIRES
-  {
-    id: "finance-comptabilite-gestion",
-    title: "FINANCE COMPTABILITÉ & GESTION D'ENTREPRISE",
-    category: "BTS TERTIAIRES",
-    image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "gestion-commerciale",
-    title: "GESTION COMMERCIALE",
-    category: "BTS TERTIAIRES", 
-    image: "https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "ressources-humaines-communication",
-    title: "RESSOURCES HUMAINES & COMMUNICATION",
-    category: "BTS TERTIAIRES",
-    image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "logistique",
-    title: "LOGISTIQUE",
-    category: "BTS TERTIAIRES",
-    image: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  
-  // BTS INDUSTRIEL
-  {
-    id: "science-information",
-    title: "SCIENCE DE L'INFORMATION",
-    category: "BTS INDUSTRIEL",
-    image: "https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "informatique-ida",
-    title: "INFORMATIQUE DÉVELOPPEUR D'APPLICATIONS (IDA)",
-    category: "BTS INDUSTRIEL",
-    image: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "genie-civil-batiment",
-    title: "GÉNIE CIVIL OPTION BÂTIMENT (GBAT)",
-    category: "BTS INDUSTRIEL",
-    image: "https://images.unsplash.com/photo-1541976590-713941681591?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "genie-civil-travaux-publics",
-    title: "GÉNIE CIVIL OPTION TRAVAUX PUBLICS",
-    category: "BTS INDUSTRIEL",
-    image: "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  {
-    id: "agriculture-tropicale",
-    title: "AGRICULTURE TROPICALE OPTION - PRODUCTION VÉGÉTALE (ATPV)",
-    category: "BTS INDUSTRIEL",
-    image: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "2 ans",
-    level: "BTS"
-  },
-  
-  // LICENCE/MASTER
-  {
-    id: "management-entrepreneuriat",
-    title: "MANAGEMENT & ENTREPRENEURIAT",
-    category: "LICENCE/MASTER",
-    image: "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "3 ans",
-    level: "Licence"
-  },
-  {
-    id: "marketing-digital",
-    title: "MARKETING DIGITAL & COMMUNICATION",
-    category: "LICENCE/MASTER",
-    image: "https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "3 ans",
-    level: "Licence"
-  },
-  {
-    id: "gestion-financiere",
-    title: "GESTION FINANCIÈRE & CONTRÔLE",
-    category: "LICENCE/MASTER",
-    image: "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "3 ans",
-    level: "Licence"
-  },
-  
-  // CERTIFICAT
-  {
-    id: "creation-entreprise",
-    title: "CRÉATION & GESTION D'ENTREPRISE",
-    category: "CERTIFICAT",
-    image: "https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "6 mois",
-    level: "Certificat"
-  },
-  {
-    id: "comptabilite-analytique",
-    title: "COMPTABILITÉ ANALYTIQUE & FISCALITÉ",
-    category: "CERTIFICAT",
-    image: "https://images.unsplash.com/photo-1554224155-6726b3ff858f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "4 mois",
-    level: "Certificat"
-  },
-  {
-    id: "leadership-management",
-    title: "LEADERSHIP & MANAGEMENT D'ÉQUIPE",
-    category: "CERTIFICAT",
-    image: "https://images.unsplash.com/photo-1600880292089-90a7e086ee0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500",
-    duration: "3 mois",
-    level: "Certificat"
-  }
-];
+import { useQuery } from "@tanstack/react-query";
+import type { Program } from "@shared/schema";
 
 const categories = [
   { id: "ALL", label: "ALL", color: "bg-orange-500" },
@@ -144,6 +15,13 @@ const categories = [
 
 export default function FilieresPage() {
   const [activeCategory, setActiveCategory] = useState("ALL");
+
+  // Fetch programs from API
+  const { data: programsData, isLoading } = useQuery<{ success: boolean; programs: Program[] }>({
+    queryKey: ["/api/programs"],
+  });
+
+  const programs = programsData?.programs || [];
 
   // Filter programs based on active category
   const filteredPrograms = activeCategory === "ALL" 
@@ -185,53 +63,62 @@ export default function FilieresPage() {
             ))}
           </div>
 
+          {/* Loading State */}
+          {isLoading && (
+            <div className="text-center py-16">
+              <p className="text-xl text-gray-500">Chargement des filières...</p>
+            </div>
+          )}
+
           {/* Programs Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-            {filteredPrograms.map((program) => (
-              <Card 
-                key={program.id} 
-                className="group overflow-hidden professional-shadow hover-lift border-0 cursor-pointer"
-                data-testid={`card-program-${program.id}`}
-              >
-                <div className="relative h-48 sm:h-64 overflow-hidden">
-                  <img 
-                    src={program.image}
-                    alt={program.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    data-testid={`img-program-${program.id}`}
-                  />
-                  {/* Dark Overlay with Title */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent">
-                    <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
-                      <h3 
-                        className="text-white font-bold text-base sm:text-lg leading-tight"
-                        data-testid={`text-program-title-${program.id}`}
-                      >
-                        {program.title}
-                      </h3>
-                      <div className="flex items-center gap-2 sm:gap-3 mt-2 text-white/80 text-xs sm:text-sm">
-                        <span data-testid={`text-program-level-${program.id}`}>{program.level}</span>
-                        <span>•</span>
-                        <span data-testid={`text-program-duration-${program.id}`}>{program.duration}</span>
+          {!isLoading && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+              {filteredPrograms.map((program) => (
+                <Card 
+                  key={program.id} 
+                  className="group overflow-hidden professional-shadow hover-lift border-0 cursor-pointer"
+                  data-testid={`card-program-${program.id}`}
+                >
+                  <div className="relative h-48 sm:h-64 overflow-hidden">
+                    <img 
+                      src={program.imageUrl || "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500"}
+                      alt={program.name}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      data-testid={`img-program-${program.id}`}
+                    />
+                    {/* Dark Overlay with Title */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent">
+                      <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
+                        <h3 
+                          className="text-white font-bold text-base sm:text-lg leading-tight"
+                          data-testid={`text-program-title-${program.id}`}
+                        >
+                          {program.name}
+                        </h3>
+                        <div className="flex items-center gap-2 sm:gap-3 mt-2 text-white/80 text-xs sm:text-sm">
+                          <span data-testid={`text-program-level-${program.id}`}>{program.level || "BTS"}</span>
+                          <span>•</span>
+                          <span data-testid={`text-program-duration-${program.id}`}>{program.duration || "2 ans"}</span>
+                        </div>
                       </div>
                     </div>
+                    
+                    {/* Hover overlay with CTA */}
+                    <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                      <Link href="/contact">
+                        <Button 
+                          className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3"
+                          data-testid={`button-program-contact-${program.id}`}
+                        >
+                          Plus d'Infos
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
-                  
-                  {/* Hover overlay with CTA */}
-                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                    <Link href="/contact">
-                      <Button 
-                        className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3"
-                        data-testid={`button-program-contact-${program.id}`}
-                      >
-                        Plus d'Infos
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                </Card>
+              ))}
+            </div>
+          )}
 
           {/* No programs found message */}
           {filteredPrograms.length === 0 && (

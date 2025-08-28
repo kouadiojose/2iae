@@ -154,8 +154,8 @@
   
   @media (max-width: 640px) {
     .mobile-padding {
-      padding-left: 0.75rem !important;
-      padding-right: 0.75rem !important;
+      padding-left: 1rem !important;
+      padding-right: 1rem !important;
     }
     
     .mobile-margin {
@@ -184,12 +184,31 @@
     .grid {
       max-width: 100% !important;
       overflow-x: hidden !important;
+      gap: 1rem !important;
     }
     
     /* Assurer la responsivité des images */
     img {
       max-width: 100% !important;
       height: auto !important;
+    }
+    
+    /* Forces les sections à respecter la largeur d'écran */
+    section {
+      max-width: 100vw !important;
+      overflow-x: hidden !important;
+    }
+    
+    /* Assure que les cartes restent dans leur container */
+    .card {
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    
+    /* Buttons responsive */
+    button {
+      max-width: 100% !important;
+      box-sizing: border-box !important;
     }
   }
 }

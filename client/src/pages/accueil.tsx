@@ -285,7 +285,7 @@ export default function AccueilPage() {
   return (
     <div className="min-h-screen mobile-safe">
       {/* Hero Slider Section */}
-      <section className="relative h-[70vh] overflow-hidden mobile-no-overflow">
+      <section className="relative min-h-[80vh] lg:h-[70vh] overflow-hidden mobile-no-overflow">
         <div className="absolute inset-0 slider-gradient">
           <div className="absolute inset-0 bg-black/20"></div>
         </div>
@@ -310,28 +310,28 @@ export default function AccueilPage() {
               </div>
             ) : (
               /* Contenu du slider */
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center h-full min-h-[60vh] lg:min-h-[80vh]">
-                <div className="text-white animate-fade-in-up px-4 lg:px-0">
-                  <Badge className="bg-white/20 text-white border-white/30 mb-4 lg:mb-6 text-sm" data-testid="badge-welcome">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center py-8 lg:py-0 lg:h-full lg:min-h-[80vh]">
+                <div className="text-white animate-fade-in-up space-y-4 lg:space-y-6">
+                  <Badge className="bg-white/20 text-white border-white/30 text-xs lg:text-sm" data-testid="badge-welcome">
                     Bienvenue au Groupe Écoles 2IAE International
                   </Badge>
                   
-                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-bold mb-4 lg:mb-6 leading-tight" data-testid="text-hero-title">
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-7xl font-bold leading-tight" data-testid="text-hero-title">
                     {heroSlides[currentSlide]?.title || getContentByKey("homepage_title")}
                   </h1>
                   
-                  <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl mb-4 lg:mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
+                  <h2 className="text-sm sm:text-lg md:text-xl lg:text-3xl text-white/90 font-medium" data-testid="text-hero-subtitle">
                     {heroSlides[currentSlide]?.subtitle || getContentByKey("homepage_subtitle")}
                   </h2>
                   
-                  <p className="text-base sm:text-lg lg:text-xl mb-6 lg:mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">
+                  <p className="text-sm sm:text-base lg:text-xl text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">
                     {heroSlides[currentSlide]?.description}
                   </p>
                   
-                  <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex flex-col gap-3">
                     <Link href={heroSlides[currentSlide]?.primaryLink || "/filieres"}>
                       <Button 
-                        className="bg-white text-primary hover:bg-white/90 px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg h-auto font-semibold w-full sm:w-auto"
+                        className="bg-white text-primary hover:bg-white/90 px-4 py-2 lg:px-8 lg:py-4 text-sm lg:text-lg h-auto font-semibold w-full"
                         data-testid="button-hero-primary"
                       >
                         {heroSlides[currentSlide]?.primaryButton || "Découvrir"}
@@ -339,7 +339,7 @@ export default function AccueilPage() {
                     </Link>
                     <Link href={heroSlides[currentSlide]?.secondaryLink || "/a-propos"}>
                       <Button 
-                        className="bg-green-500 hover:bg-green-600 text-white px-6 sm:px-8 py-3 sm:py-4 text-base sm:text-lg h-auto font-semibold w-full sm:w-auto"
+                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 lg:px-8 lg:py-4 text-sm lg:text-lg h-auto font-semibold w-full"
                         data-testid="button-hero-secondary"
                       >
                         {heroSlides[currentSlide]?.secondaryButton || "En Savoir Plus"}
@@ -348,11 +348,11 @@ export default function AccueilPage() {
                   </div>
                 </div>
                 
-                <div className="relative animate-fade-in-up mobile-no-overflow px-4 lg:px-0">
+                <div className="relative animate-fade-in-up mobile-no-overflow order-first lg:order-last">
                   <img 
                     src={heroSlides[currentSlide]?.image || schoolBrochureImage}
                     alt={heroSlides[currentSlide]?.title || "École 2IAE"}
-                    className="rounded-2xl professional-shadow w-full h-auto max-h-[300px] sm:max-h-[400px] lg:max-h-[600px] object-cover"
+                    className="rounded-lg lg:rounded-2xl professional-shadow w-full h-auto max-h-[250px] lg:max-h-[600px] object-cover"
                     data-testid="img-hero-slide"
                   />
                 </div>
@@ -361,23 +361,23 @@ export default function AccueilPage() {
           </div>
         </div>
 
-        {/* Slider Controls - Affichés seulement si pas en chargement et qu'il y a plusieurs slides */}
+        {/* Slider Controls - Repositionnés pour éviter les chevauchements */}
         {!slidersLoading && heroSlides.length > 1 && (
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex items-center space-x-4">
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 hidden lg:flex items-center space-x-4">
             <button 
               onClick={prevSlide}
-              className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+              className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
               data-testid="button-slide-prev"
             >
-              <ChevronLeft className="h-6 w-6" />
+              <ChevronLeft className="h-5 w-5" />
             </button>
             
-            <div className="flex space-x-2">
+            <div className="flex space-x-1">
               {heroSlides.map((_, index) => (
                 <button
                   key={index}
                   onClick={() => goToSlide(index)}
-                  className={`w-3 h-3 rounded-full transition-colors ${
+                  className={`w-2 h-2 rounded-full transition-colors ${
                     index === currentSlide ? "bg-white" : "bg-white/50"
                   }`}
                   data-testid={`button-slide-dot-${index}`}
@@ -387,18 +387,10 @@ export default function AccueilPage() {
             
             <button 
               onClick={nextSlide}
-              className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+              className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
               data-testid="button-slide-next"
             >
-              <ChevronRight className="h-6 w-6" />
-            </button>
-            
-            <button 
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
-              data-testid="button-slide-play-pause"
-            >
-              <Play className={`h-5 w-5 ${isPlaying ? "opacity-100" : "opacity-60"}`} />
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
         )}

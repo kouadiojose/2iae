@@ -283,16 +283,16 @@ export default function AccueilPage() {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen mobile-safe">
       {/* Hero Slider Section */}
-      <section className="relative h-[70vh] overflow-hidden">
+      <section className="relative h-[70vh] overflow-hidden mobile-no-overflow">
         <div className="absolute inset-0 slider-gradient">
           <div className="absolute inset-0 bg-black/20"></div>
         </div>
 
         {/* Slider Content */}
-        <div className="relative h-full flex items-center">
-          <div className="container mx-auto px-4">
+        <div className="relative h-full flex items-center mobile-no-overflow">
+          <div className="container mx-auto mobile-padding">
             {slidersLoading ? (
               /* État de chargement */
               <div className="grid lg:grid-cols-2 gap-12 items-center h-full min-h-[80vh]">
@@ -348,11 +348,11 @@ export default function AccueilPage() {
                   </div>
                 </div>
                 
-                <div className="relative animate-fade-in-up">
+                <div className="relative animate-fade-in-up mobile-no-overflow">
                   <img 
                     src={heroSlides[currentSlide]?.image || schoolBrochureImage}
                     alt={heroSlides[currentSlide]?.title || "École 2IAE"}
-                    className="rounded-2xl professional-shadow w-full h-auto max-h-[600px] object-cover"
+                    className="rounded-2xl professional-shadow responsive-image max-h-[400px] sm:max-h-[600px] object-cover"
                     data-testid="img-hero-slide"
                   />
                 </div>
@@ -405,8 +405,8 @@ export default function AccueilPage() {
       </section>
 
       {/* Founder Message Section */}
-      <section className="py-20 bg-background">
-        <div className="container mx-auto px-4">
+      <section className="py-20 bg-background mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="order-2 lg:order-1">
               <Badge className="bg-primary/10 text-primary mb-6" data-testid="badge-founder-message">
@@ -490,8 +490,8 @@ export default function AccueilPage() {
       </section>
 
       {/* Recent News Section */}
-      <section className="py-20 bg-background">
-        <div className="container mx-auto px-4">
+      <section className="py-20 bg-background mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-news-title">
               Récentes Actualités
@@ -506,8 +506,8 @@ export default function AccueilPage() {
       </section>
 
       {/* Institutes Section */}
-      <section className="py-20 bg-muted">
-        <div className="container mx-auto px-4">
+      <section className="py-20 bg-muted mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-institutes-title">
               NOS INSTITUTS
@@ -641,8 +641,8 @@ export default function AccueilPage() {
       </section>
 
       {/* Why Choose Us Section */}
-      <section className="py-20 bg-background">
-        <div className="container mx-auto px-4">
+      <section className="py-20 bg-background mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-features-title">
               Pourquoi Nous Choisir ?
@@ -673,8 +673,8 @@ export default function AccueilPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 gradient-bg text-white">
-        <div className="container mx-auto px-4 text-center">
+      <section className="py-20 gradient-bg text-white mobile-no-overflow">
+        <div className="container mx-auto mobile-padding text-center">
           <h2 className="text-4xl font-bold mb-6" data-testid="text-cta-title">
             Prêt à Rejoindre l'Élite de Demain ?
           </h2>

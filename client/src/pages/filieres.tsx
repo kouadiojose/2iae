@@ -10,23 +10,27 @@ const categories = [
   { id: "BTS TERTIAIRES", label: "BTS TERTIAIRES", color: "bg-gray-800" },
   { id: "BTS INDUSTRIEL", label: "BTS INDUSTRIEL", color: "bg-gray-800" },
   { id: "LICENCE/MASTER", label: "LICENCE/MASTER", color: "bg-gray-800" },
-  { id: "CERTIFICAT", label: "CERTIFICAT", color: "bg-gray-800" }
+  { id: "CERTIFICAT", label: "CERTIFICAT", color: "bg-gray-800" },
 ];
 
 export default function FilieresPage() {
   const [activeCategory, setActiveCategory] = useState("ALL");
 
   // Fetch programs from API
-  const { data: programsData, isLoading } = useQuery<{ success: boolean; programs: Program[] }>({
+  const { data: programsData, isLoading } = useQuery<{
+    success: boolean;
+    programs: Program[];
+  }>({
     queryKey: ["/api/programs"],
   });
 
   const programs = programsData?.programs || [];
 
   // Filter programs based on active category
-  const filteredPrograms = activeCategory === "ALL" 
-    ? programs 
-    : programs.filter(program => program.category === activeCategory);
+  const filteredPrograms =
+    activeCategory === "ALL"
+      ? programs
+      : programs.filter((program) => program.category === activeCategory);
 
   return (
     <div className="min-h-screen">
@@ -36,8 +40,12 @@ export default function FilieresPage() {
           <h1 className="text-5xl font-bold mb-6" data-testid="text-page-title">
             Nos Filières de Formation
           </h1>
-          <p className="text-xl text-white/90 max-w-3xl mx-auto" data-testid="text-page-subtitle">
-            Découvrez nos programmes de formation conçus pour former les entrepreneurs et leaders de demain
+          <p
+            className="text-xl text-white/90 max-w-3xl mx-auto"
+            data-testid="text-page-subtitle"
+          >
+            Découvrez nos programmes de formation conçus pour former les
+            entrepreneurs et leaders de demain
           </p>
         </div>
       </section>
@@ -66,7 +74,9 @@ export default function FilieresPage() {
           {/* Loading State */}
           {isLoading && (
             <div className="text-center py-16">
-              <p className="text-xl text-gray-500">Chargement des filières...</p>
+              <p className="text-xl text-gray-500">
+                Chargement des filières...
+              </p>
             </div>
           )}
 
@@ -74,14 +84,17 @@ export default function FilieresPage() {
           {!isLoading && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
               {filteredPrograms.map((program) => (
-                <Card 
-                  key={program.id} 
+                <Card
+                  key={program.id}
                   className="group overflow-hidden professional-shadow hover-lift border-0 cursor-pointer"
                   data-testid={`card-program-${program.id}`}
                 >
                   <div className="relative h-48 sm:h-64 overflow-hidden">
-                    <img 
-                      src={program.imageUrl || "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500"}
+                    <img
+                      src={
+                        program.imageUrl ||
+                        "https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500"
+                      }
                       alt={program.name}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                       data-testid={`img-program-${program.id}`}
@@ -89,24 +102,32 @@ export default function FilieresPage() {
                     {/* Dark Overlay with Title */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent">
                       <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
-                        <h3 
+                        <h3
                           className="text-white font-bold text-base sm:text-lg leading-tight"
                           data-testid={`text-program-title-${program.id}`}
                         >
                           {program.name}
                         </h3>
                         <div className="flex items-center gap-2 sm:gap-3 mt-2 text-white/80 text-xs sm:text-sm">
-                          <span data-testid={`text-program-level-${program.id}`}>{program.level || "BTS"}</span>
+                          <span
+                            data-testid={`text-program-level-${program.id}`}
+                          >
+                            {program.level || "BTS"}
+                          </span>
                           <span>•</span>
-                          <span data-testid={`text-program-duration-${program.id}`}>{program.duration || "2 ans"}</span>
+                          <span
+                            data-testid={`text-program-duration-${program.id}`}
+                          >
+                            {program.duration || "2 ans"}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Hover overlay with CTA */}
                     <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                       <Link href="/contact">
-                        <Button 
+                        <Button
                           className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3"
                           data-testid={`button-program-contact-${program.id}`}
                         >
@@ -137,15 +158,19 @@ export default function FilieresPage() {
           <h2 className="text-4xl font-bold mb-6" data-testid="text-cta-title">
             Prêt à Commencer Votre Formation ?
           </h2>
-          <p className="text-xl text-white/90 mb-8 max-w-2xl mx-auto" data-testid="text-cta-subtitle">
-            Rejoignez des centaines d'étudiants qui ont choisi 2IAE pour leur avenir professionnel
+          <p
+            className="text-xl text-white/90 mb-8 max-w-2xl mx-auto"
+            data-testid="text-cta-subtitle"
+          >
+            Rejoignez des centaines d'étudiants qui ont choisi 2IAE pour leur
+            avenir professionnel
           </p>
           <Link href="/contact">
-            <Button 
+            <Button
               className="bg-white text-primary hover:bg-white/90 px-8 py-4 text-lg h-auto font-semibold"
               data-testid="button-cta-contact"
             >
-              Déposer Ma Candidature
+              Faire ma Préinscription
             </Button>
           </Link>
         </div>

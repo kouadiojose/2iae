@@ -328,10 +328,10 @@ export default function AccueilPage() {
                     {heroSlides[currentSlide]?.description}
                   </p>
                   
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col lg:flex-row gap-3 lg:gap-4">
                     <Link href={heroSlides[currentSlide]?.primaryLink || "/filieres"}>
                       <Button 
-                        className="bg-white text-primary hover:bg-white/90 px-4 py-2 lg:px-8 lg:py-4 text-sm lg:text-lg h-auto font-semibold w-full"
+                        className="bg-white text-primary hover:bg-white/90 px-4 py-2 lg:px-8 lg:py-4 text-sm lg:text-lg h-auto font-semibold w-full lg:w-auto"
                         data-testid="button-hero-primary"
                       >
                         {heroSlides[currentSlide]?.primaryButton || "Découvrir"}
@@ -339,7 +339,7 @@ export default function AccueilPage() {
                     </Link>
                     <Link href={heroSlides[currentSlide]?.secondaryLink || "/a-propos"}>
                       <Button 
-                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 lg:px-8 lg:py-4 text-sm lg:text-lg h-auto font-semibold w-full"
+                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 lg:px-8 lg:py-4 text-sm lg:text-lg h-auto font-semibold w-full lg:w-auto"
                         data-testid="button-hero-secondary"
                       >
                         {heroSlides[currentSlide]?.secondaryButton || "En Savoir Plus"}

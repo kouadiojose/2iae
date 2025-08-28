@@ -89,13 +89,13 @@ export default function Header() {
       className={`bg-white shadow-lg sticky top-0 z-50 border-b border-border transition-shadow ${isScrolled ? "shadow-xl" : ""}`}
     >
       <div className="container mx-auto px-4">
-        <nav className="flex items-center justify-between py-4">
+        <nav className="flex items-center justify-between py-2 lg:py-4">
           {/* Logo */}
           <Link href="/" className="flex items-center" data-testid="logo">
             <img
               src={logoImage}
               alt="Groupe École 2IAE International"
-              className="h-16 w-auto object-contain"
+              className="h-10 lg:h-16 w-auto object-contain"
             />
           </Link>
 
@@ -132,7 +132,7 @@ export default function Header() {
                 className="lg:hidden"
                 data-testid="button-mobile-menu"
               >
-                <Menu className="h-6 w-6" />
+                <Menu className="h-5 w-5 lg:h-6 lg:w-6" />
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-[300px] sm:w-[400px]">

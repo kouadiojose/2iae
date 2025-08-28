@@ -1,31 +1,19 @@
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, Edit, Trash2, Save, X } from "lucide-react";
-import type { Program, InsertProgram, UpdateProgram } from "@shared/schema";
+import { Plus, Edit, Trash2, GraduationCap } from "lucide-react";
+import { ProgramModal } from "@/components/ProgramModal";
+import type { Program } from "@shared/schema";
 
 export default function AdminPrograms() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [formData, setFormData] = useState<Partial<InsertProgram>>({
-    name: "",
-    category: "",
-    description: "",
-    imageUrl: "",
-    duration: "",
-    level: "",
-    order: "1"
-  });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingProgram, setEditingProgram] = useState<Program | null>(null);
 
   // Fetch programs data
   const { data: programsData, isLoading } = useQuery<{ success: boolean; programs: Program[] }>({
@@ -34,59 +22,14 @@ export default function AdminPrograms() {
 
   const programs = programsData?.programs || [];
 
-  // Create program mutation
-  const createMutation = useMutation({
-    mutationFn: async (data: InsertProgram) => {
-      return await apiRequest("POST", "/api/admin/programs", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/programs"] });
-      toast({
-        title: "Succès",
-        description: "Filière créée avec succès",
-      });
-      setShowAddForm(false);
-      resetForm();
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Erreur",
-        description: error.message || "Erreur lors de la création",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Update program mutation
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: UpdateProgram }) => {
-      return await apiRequest("PUT", `/api/admin/programs/${id}`, data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/programs"] });
-      toast({
-        title: "Succès",
-        description: "Filière mise à jour avec succès",
-      });
-      setEditingId(null);
-      resetForm();
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Erreur",
-        description: error.message || "Erreur lors de la mise à jour",
-        variant: "destructive",
-      });
-    },
-  });
-
   // Delete program mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest("DELETE", `/api/admin/programs/${id}`);
+      return await apiRequest(`/api/admin/programs/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/programs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/programs"] });
       toast({
         title: "Succès",
         description: "Filière supprimée avec succès",
@@ -101,71 +44,64 @@ export default function AdminPrograms() {
     },
   });
 
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      category: "",
-      description: "",
-      imageUrl: "",
-      duration: "",
-      level: "",
-      order: "1"
-    });
-  };
-
-  const handleSubmit = () => {
-    if (!formData.name?.trim()) {
+  // Toggle active status mutation
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      return await apiRequest(`/api/admin/programs/${id}`, "PUT", { isActive });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/programs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/programs"] });
+      toast({
+        title: "Succès",
+        description: "Statut mis à jour avec succès",
+      });
+    },
+    onError: (error: any) => {
       toast({
         title: "Erreur",
-        description: "Le nom de la filière est obligatoire",
+        description: error.message || "Erreur lors de la mise à jour",
         variant: "destructive",
       });
-      return;
-    }
+    },
+  });
 
-    if (!formData.category?.trim()) {
-      toast({
-        title: "Erreur",
-        description: "La catégorie est obligatoire",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (editingId) {
-      updateMutation.mutate({ 
-        id: editingId, 
-        data: formData as UpdateProgram 
-      });
-    } else {
-      createMutation.mutate(formData as InsertProgram);
-    }
+  const handleCreate = () => {
+    setEditingProgram(null);
+    setModalOpen(true);
   };
 
-  const startEdit = (program: Program) => {
-    setFormData({
-      name: program.name,
-      category: program.category,
-      description: program.description ?? "",
-      imageUrl: program.imageUrl ?? "",
-      duration: program.duration ?? "",
-      level: program.level ?? "",
-      order: program.order ?? "1"
-    });
-    setEditingId(program.id);
-    setShowAddForm(false);
+  const handleEdit = (program: Program) => {
+    setEditingProgram(program);
+    setModalOpen(true);
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    resetForm();
+  const handleDelete = (program: Program) => {
+    if (window.confirm(`Êtes-vous sûr de vouloir supprimer la filière "${program.name}" ?`)) {
+      deleteMutation.mutate(program.id);
+    }
   };
 
   const handleToggleActive = (program: Program) => {
-    updateMutation.mutate({
+    toggleActiveMutation.mutate({
       id: program.id,
-      data: { isActive: !program.isActive }
+      isActive: !program.isActive
     });
+  };
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case "BTS TERTIAIRES":
+        return "bg-blue-100 text-blue-800";
+      case "BTS INDUSTRIEL":
+        return "bg-green-100 text-green-800";
+      case "LICENCE/MASTER":
+        return "bg-purple-100 text-purple-800";
+      case "CERTIFICAT":
+        return "bg-orange-100 text-orange-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
   };
 
   if (isLoading) {
@@ -187,262 +123,130 @@ export default function AdminPrograms() {
             Gérez les programmes et filières de l'école
           </p>
         </div>
-      </div>
-
-      {/* Add/Edit Form */}
-      {(showAddForm || editingId) && (
-        <Card className="mb-8" data-testid="card-program-form">
-          <CardHeader>
-            <CardTitle data-testid="text-form-title">
-              {editingId ? "Modifier la Filière" : "Ajouter une Filière"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="name">Nom de la filière *</Label>
-                <Input
-                  id="name"
-                  value={formData.name || ""}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ex: Licence en Management"
-                  data-testid="input-name"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="category">Catégorie *</Label>
-                <Select 
-                  value={formData.category || ""} 
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
-                >
-                  <SelectTrigger data-testid="select-category">
-                    <SelectValue placeholder="Choisir une catégorie" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="licence">Licence</SelectItem>
-                    <SelectItem value="master">Master</SelectItem>
-                    <SelectItem value="mba">MBA</SelectItem>
-                    <SelectItem value="formation-continue">Formation Continue</SelectItem>
-                    <SelectItem value="certificat">Certificat</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="description">Description complète</Label>
-              <Textarea
-                id="description"
-                value={formData.description || ""}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Description détaillée de la filière, objectifs, débouchés..."
-                rows={4}
-                data-testid="textarea-description"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="duration">Durée</Label>
-                <Input
-                  id="duration"
-                  value={formData.duration || ""}
-                  onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                  placeholder="Ex: 3 ans, 2 semestres..."
-                  data-testid="input-duration"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="level">Niveau</Label>
-                <Select 
-                  value={formData.level || ""} 
-                  onValueChange={(value) => setFormData({ ...formData, level: value })}
-                >
-                  <SelectTrigger data-testid="select-level">
-                    <SelectValue placeholder="Choisir un niveau" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bac">Bac</SelectItem>
-                    <SelectItem value="bac+1">Bac+1</SelectItem>
-                    <SelectItem value="bac+2">Bac+2</SelectItem>
-                    <SelectItem value="bac+3">Bac+3</SelectItem>
-                    <SelectItem value="bac+4">Bac+4</SelectItem>
-                    <SelectItem value="bac+5">Bac+5</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="imageUrl">URL de l'image</Label>
-                <Input
-                  id="imageUrl"
-                  value={formData.imageUrl || ""}
-                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                  placeholder="https://... ou /assets/..."
-                  data-testid="input-image-url"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="order">Ordre d'affichage</Label>
-                <Input
-                  id="order"
-                  type="number"
-                  value={formData.order || ""}
-                  onChange={(e) => setFormData({ ...formData, order: e.target.value })}
-                  placeholder="1"
-                  data-testid="input-order"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button
-                onClick={handleSubmit}
-                disabled={createMutation.isPending || updateMutation.isPending}
-                data-testid="button-save"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {editingId ? "Mettre à jour" : "Créer"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (editingId) {
-                    cancelEdit();
-                  } else {
-                    setShowAddForm(false);
-                    resetForm();
-                  }
-                }}
-                data-testid="button-cancel"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Annuler
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Add Button */}
-      {!showAddForm && !editingId && (
-        <Button
-          onClick={() => setShowAddForm(true)}
-          className="mb-6"
-          data-testid="button-add-program"
+        <Button 
+          onClick={handleCreate}
+          className="bg-orange-600 hover:bg-orange-700"
+          data-testid="button-create-program"
         >
           <Plus className="h-4 w-4 mr-2" />
-          Ajouter une Filière
+          Nouvelle Filière
         </Button>
-      )}
+      </div>
 
       {/* Programs List */}
-      <div className="grid gap-6">
-        {programs.map((program, index) => (
-          <Card key={program.id} data-testid={`card-program-${index}`}>
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle data-testid={`text-program-name-${index}`}>
-                    {program.name}
-                  </CardTitle>
-                  <CardDescription data-testid={`text-program-category-${index}`}>
-                    {program.category}
-                  </CardDescription>
-                  {program.description && (
-                    <p className="text-sm text-muted-foreground mt-2" data-testid={`text-program-description-${index}`}>
-                      {program.description.length > 150 
-                        ? `${program.description.substring(0, 150)}...`
-                        : program.description
-                      }
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={program.isActive ?? true}
-                    onCheckedChange={() => handleToggleActive(program)}
-                    data-testid={`switch-active-${index}`}
-                  />
-                  <span className="text-sm text-muted-foreground">
-                    {program.isActive ? "Actif" : "Inactif"}
-                  </span>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                  <span className="text-sm font-medium text-muted-foreground">Durée:</span>
-                  <p className="text-sm" data-testid={`text-program-duration-${index}`}>
-                    {program.duration || "Non spécifiée"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm font-medium text-muted-foreground">Niveau:</span>
-                  <p className="text-sm" data-testid={`text-program-level-${index}`}>
-                    {program.level || "Non spécifié"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm font-medium text-muted-foreground">Ordre:</span>
-                  <p className="text-sm" data-testid={`text-program-order-${index}`}>
-                    {program.order ?? "1"}
-                  </p>
-                </div>
-              </div>
-
-              {program.imageUrl && (
-                <div className="mb-4">
-                  <span className="text-sm font-medium text-muted-foreground">Image:</span>
-                  <p className="text-sm text-blue-600 break-all" data-testid={`text-program-image-${index}`}>
-                    {program.imageUrl}
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => startEdit(program)}
-                  data-testid={`button-edit-${index}`}
-                >
-                  <Edit className="h-4 w-4 mr-2" />
-                  Modifier
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => deleteMutation.mutate(program.id)}
-                  disabled={deleteMutation.isPending}
-                  data-testid={`button-delete-${index}`}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Supprimer
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-
-        {programs.length === 0 && (
-          <Card data-testid="card-no-programs">
-            <CardContent className="text-center py-8">
-              <p className="text-muted-foreground mb-4">Aucune filière configurée</p>
-              <Button onClick={() => setShowAddForm(true)} data-testid="button-add-first-program">
+      <div className="grid gap-4">
+        {programs.length === 0 ? (
+          <Card data-testid="card-empty-state">
+            <CardContent className="text-center py-12">
+              <GraduationCap className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-600 mb-2">
+                Aucune filière trouvée
+              </h3>
+              <p className="text-gray-500 mb-4">
+                Commencez par créer votre première filière
+              </p>
+              <Button 
+                onClick={handleCreate}
+                className="bg-orange-600 hover:bg-orange-700"
+                data-testid="button-create-first-program"
+              >
                 <Plus className="h-4 w-4 mr-2" />
-                Créer la première filière
+                Créer une filière
               </Button>
             </CardContent>
           </Card>
+        ) : (
+          programs.map((program) => (
+            <Card key={program.id} data-testid={`card-program-${program.id}`}>
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-semibold" data-testid={`text-program-name-${program.id}`}>
+                        {program.name}
+                      </h3>
+                      <span 
+                        className={`px-2 py-1 text-xs font-medium rounded-full ${getCategoryColor(program.category)}`}
+                        data-testid={`badge-program-category-${program.id}`}
+                      >
+                        {program.category}
+                      </span>
+                      <Switch
+                        checked={program.isActive}
+                        onCheckedChange={() => handleToggleActive(program)}
+                        disabled={toggleActiveMutation.isPending}
+                        data-testid={`switch-program-active-${program.id}`}
+                      />
+                    </div>
+                    
+                    {program.description && (
+                      <p className="text-gray-600 mb-3" data-testid={`text-program-description-${program.id}`}>
+                        {program.description}
+                      </p>
+                    )}
+                    
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
+                      {program.level && (
+                        <span data-testid={`text-program-level-${program.id}`}>
+                          Niveau: {program.level}
+                        </span>
+                      )}
+                      {program.duration && (
+                        <span data-testid={`text-program-duration-${program.id}`}>
+                          Durée: {program.duration}
+                        </span>
+                      )}
+                      {program.order && (
+                        <span data-testid={`text-program-order-${program.id}`}>
+                          Ordre: {program.order}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {program.imageUrl && (
+                      <div className="mt-3">
+                        <img 
+                          src={program.imageUrl} 
+                          alt={program.name}
+                          className="w-20 h-12 object-cover rounded border"
+                          data-testid={`img-program-preview-${program.id}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEdit(program)}
+                      data-testid={`button-edit-program-${program.id}`}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(program)}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`button-delete-program-${program.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
         )}
       </div>
+
+      {/* Program Modal */}
+      <ProgramModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        editingProgram={editingProgram}
+      />
     </div>
   );
 }

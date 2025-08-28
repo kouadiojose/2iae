@@ -62,6 +62,38 @@ const newsImageUpload = multer({
   }
 });
 
+// Configure multer for programs/filieres image uploads
+const programImageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'attached_assets/filieres';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueId = randomUUID().replace(/-/g, '');
+    const extension = path.extname(file.originalname);
+    const filename = `program_${Date.now()}_${uniqueId}${extension}`;
+    cb(null, filename);
+  }
+});
+
+const programImageUpload = multer({
+  storage: programImageStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
+    }
+  }
+});
+
 // Function to generate presigned URL for object storage
 async function generatePresignedUrl(bucketName: string, objectName: string): Promise<string> {
   const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -1157,6 +1189,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Erreur lors de la suppression de la filière" 
       });
     }
+  });
+
+  // Upload route for program images (admin only)
+  app.post("/api/admin/programs/upload", requireAdmin, programImageUpload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Aucun fichier image fourni"
+        });
+      }
+
+      // Create the image URL for local storage
+      const imageUrl = `/api/assets/filieres/${req.file.filename}`;
+
+      return res.json({
+        success: true,
+        image: {
+          imageUrl: imageUrl,
+          filename: req.file.filename
+        }
+      });
+    } catch (error) {
+      console.error("Error uploading program image:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Erreur lors de l'upload de l'image"
+      });
+    }
+  });
+
+  // Route to serve program images
+  app.get("/api/assets/filieres/:filename", (req, res) => {
+    const { filename } = req.params;
+    const filePath = path.join(process.cwd(), 'attached_assets', 'filieres', filename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Image non trouvée" 
+      });
+    }
+    
+    res.sendFile(filePath);
   });
 
   // =================== NEWS ROUTES ===================

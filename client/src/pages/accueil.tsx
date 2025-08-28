@@ -317,11 +317,11 @@ export default function AccueilPage() {
                   </Badge>
                   
                   <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight" data-testid="text-hero-title">
-                    {getContentByKey("homepage_title") || heroSlides[currentSlide]?.title}
+                    {heroSlides[currentSlide]?.title || getContentByKey("homepage_title")}
                   </h1>
                   
                   <h2 className="text-2xl lg:text-3xl mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
-                    {getContentByKey("homepage_subtitle") || heroSlides[currentSlide]?.subtitle}
+                    {heroSlides[currentSlide]?.subtitle || getContentByKey("homepage_subtitle")}
                   </h2>
                   
                   <p className="text-xl mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">

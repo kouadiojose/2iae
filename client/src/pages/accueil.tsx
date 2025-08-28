@@ -129,7 +129,7 @@ function RecentNewsGrid() {
 
   if (isLoading) {
     return (
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
         {[1, 2, 3, 4].map((i) => (
           <Card key={i} className="overflow-hidden professional-shadow animate-pulse">
             <div className="h-48 bg-gray-300"></div>
@@ -172,7 +172,7 @@ function RecentNewsGrid() {
 
   return (
     <>
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
         {recentNews.map((article: News) => (
           <Card key={article.id} className="overflow-hidden professional-shadow hover-lift h-full flex flex-col" data-testid={`card-recent-news-${article.id}`}>
             <div className="relative">
@@ -310,21 +310,21 @@ export default function AccueilPage() {
               </div>
             ) : (
               /* Contenu du slider */
-              <div className="grid lg:grid-cols-2 gap-12 items-center h-full min-h-[80vh]">
-                <div className="text-white animate-fade-in-up">
-                  <Badge className="bg-white/20 text-white border-white/30 mb-6" data-testid="badge-welcome">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center h-full min-h-[60vh] lg:min-h-[80vh]">
+                <div className="text-white animate-fade-in-up px-4 lg:px-0">
+                  <Badge className="bg-white/20 text-white border-white/30 mb-4 lg:mb-6 text-sm" data-testid="badge-welcome">
                     Bienvenue au Groupe Écoles 2IAE International
                   </Badge>
                   
-                  <h1 className="text-5xl lg:text-7xl font-bold mb-6 leading-tight" data-testid="text-hero-title">
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-bold mb-4 lg:mb-6 leading-tight" data-testid="text-hero-title">
                     {heroSlides[currentSlide]?.title || getContentByKey("homepage_title")}
                   </h1>
                   
-                  <h2 className="text-2xl lg:text-3xl mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
+                  <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl mb-4 lg:mb-6 text-white/90 font-medium" data-testid="text-hero-subtitle">
                     {heroSlides[currentSlide]?.subtitle || getContentByKey("homepage_subtitle")}
                   </h2>
                   
-                  <p className="text-xl mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">
+                  <p className="text-base sm:text-lg lg:text-xl mb-6 lg:mb-8 text-white/80 leading-relaxed max-w-lg" data-testid="text-hero-description">
                     {heroSlides[currentSlide]?.description}
                   </p>
                   
@@ -348,11 +348,11 @@ export default function AccueilPage() {
                   </div>
                 </div>
                 
-                <div className="relative animate-fade-in-up mobile-no-overflow">
+                <div className="relative animate-fade-in-up mobile-no-overflow px-4 lg:px-0">
                   <img 
                     src={heroSlides[currentSlide]?.image || schoolBrochureImage}
                     alt={heroSlides[currentSlide]?.title || "École 2IAE"}
-                    className="rounded-2xl professional-shadow responsive-image max-h-[400px] sm:max-h-[600px] object-cover"
+                    className="rounded-2xl professional-shadow w-full h-auto max-h-[300px] sm:max-h-[400px] lg:max-h-[600px] object-cover"
                     data-testid="img-hero-slide"
                   />
                 </div>
@@ -509,15 +509,15 @@ export default function AccueilPage() {
       <section className="py-20 bg-muted mobile-no-overflow">
         <div className="container mx-auto mobile-padding">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-institutes-title">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-4 text-foreground" data-testid="text-institutes-title">
               NOS INSTITUTS
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-institutes-subtitle">
+            <p className="text-lg lg:text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-institutes-subtitle">
               Entreprendre Pour Devenir L'Élite De Demain.
             </p>
           </div>
           
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
             {institutesLoading ? (
               // État de chargement pour les instituts
               Array.from({ length: 4 }).map((_, index) => (
@@ -644,15 +644,15 @@ export default function AccueilPage() {
       <section className="py-20 bg-background mobile-no-overflow">
         <div className="container mx-auto mobile-padding">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4 text-foreground" data-testid="text-features-title">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-4 text-foreground" data-testid="text-features-title">
               Pourquoi Nous Choisir ?
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-features-subtitle">
+            <p className="text-lg lg:text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-features-subtitle">
               Une approche moderne et professionnelle de l'enseignement entrepreneurial
             </p>
           </div>
           
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
             {features.map((feature, index) => (
               <Card key={index} className="hover-lift professional-shadow border-0" data-testid={`card-feature-${index}`}>
                 <CardContent className="p-8 text-center">
@@ -675,10 +675,10 @@ export default function AccueilPage() {
       {/* CTA Section */}
       <section className="py-20 gradient-bg text-white mobile-no-overflow">
         <div className="container mx-auto mobile-padding text-center">
-          <h2 className="text-4xl font-bold mb-6" data-testid="text-cta-title">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-6" data-testid="text-cta-title">
             Prêt à Rejoindre l'Élite de Demain ?
           </h2>
-          <p className="text-xl mb-8 text-white/90 max-w-2xl mx-auto" data-testid="text-cta-subtitle">
+          <p className="text-lg lg:text-xl mb-8 text-white/90 max-w-2xl mx-auto" data-testid="text-cta-subtitle">
             Découvrez nos programmes de formation et commencez votre parcours entrepreneurial dès aujourd'hui
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

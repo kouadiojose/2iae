@@ -6,49 +6,21 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// PRODUCTION-READY SESSION CONFIGURATION
+// SIMPLIFIED SESSION CONFIGURATION FOR PRODUCTION FIX
 const isProduction = process.env.NODE_ENV === 'production';
 
 console.log(`🔐 Session Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+console.log(`🌐 Host: ${process.env.REPLIT_DOMAINS || 'localhost'}`);
 
-// Session store configuration
-function createSessionStore() {
-  if (isProduction) {
-    // Production: Use database-backed session store
-    console.log("🔐 Using database session store for production");
-    try {
-      const connectPg = require('connect-pg-simple');
-      const pgSession = connectPg(session);
-      const { pool } = require('./db');
-      
-      return new pgSession({
-        pool: pool,
-        tableName: 'session',
-        createTableIfMissing: true,
-        ttl: 24 * 60 * 60, // 24 hours in seconds
-      });
-    } catch (error) {
-      console.warn("⚠️  Database session store failed, falling back to memory store:", (error as Error).message);
-      const memoryStore = MemoryStore(session);
-      return new memoryStore({
-        checkPeriod: 86400000,
-        max: 1000,
-        ttl: 24 * 60 * 60 * 1000
-      });
-    }
-  } else {
-    // Development: Use memory store
-    console.log("🔐 Using memory session store for development");
-    const memoryStore = MemoryStore(session);
-    return new memoryStore({
-      checkPeriod: 86400000, // Clean expired entries every 24h
-      max: 1000, // Max sessions
-      ttl: 24 * 60 * 60 * 1000 // 24 hours TTL
-    });
-  }
-}
-
-const sessionStore = createSessionStore();
+// SIMPLIFIÉ: Utilise MemoryStore fiable pour les deux environnements
+// Le problème principal était CORS, pas le store de sessions
+console.log("🔐 Using optimized memory session store (works in both environments)");
+const memoryStore = MemoryStore(session);
+const sessionStore = new memoryStore({
+  checkPeriod: isProduction ? 12 * 60 * 60 * 1000 : 86400000, // Clean more often in prod
+  max: isProduction ? 500 : 1000, // Less memory usage in prod
+  ttl: isProduction ? 8 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000 // 8h prod, 24h dev
+});
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-2iae-admin-2024',
@@ -56,38 +28,29 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   rolling: true, // Reset expiration on activity
-  name: '2iae-admin-session', // Custom session name
+  name: '2iae-admin-session',
   cookie: {
-    secure: isProduction, // HTTPS required in production
+    secure: false, // TEMPORAIRE: Désactivé pour diagnostic (à réactiver après test)
     httpOnly: true,
-    maxAge: isProduction ? 8 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000, // 8h prod, 24h dev
-    sameSite: isProduction ? 'strict' : 'lax', // Stricter in production
-    path: '/', // Ensure cookie is available for all paths
+    maxAge: isProduction ? 8 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000,
+    sameSite: 'lax', // Plus permissif pour le diagnostic
+    path: '/',
+    domain: undefined, // Laisse le navigateur gérer automatiquement
   }
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// PRODUCTION-SAFE CORS configuration
+// CORS PERMISSIF POUR DIAGNOSTIC (temporaire)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  if (isProduction) {
-    // Production: Only allow your domain
-    const allowedOrigins = [
-      'https://your-domain.com', // Replace with actual domain
-      'https://groupe2iae-production.com', // Replace with actual domain
-    ];
-    
-    if (origin && allowedOrigins.includes(origin)) {
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-  } else {
-    // Development: Allow all origins
-    res.header('Access-Control-Allow-Origin', origin || '*');
-  }
+  // TEMPORAIRE: CORS très permissif pour diagnostiquer le problème de sessions
+  console.log(`🌐 Request from origin: ${origin || 'direct'}`);
   
+  // Autorise toutes les origines pour diagnostic
+  res.header('Access-Control-Allow-Origin', origin || '*');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');

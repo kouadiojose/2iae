@@ -8,15 +8,22 @@ interface AdminUser {
 }
 
 export function useAdmin() {
-  const { data: admin, isLoading } = useQuery({
+  const { data: admin, isLoading, error } = useQuery({
     queryKey: ["/api/admin/me"],
-    retry: false,
+    retry: (failureCount, error) => {
+      // Retry on network errors, but not on 401 (unauthorized)
+      const isNetworkError = !error.message?.includes('401');
+      return isNetworkError && failureCount < 2;
+    },
+    staleTime: 30000, // Consider data fresh for 30s
+    refetchOnWindowFocus: false, // Don't refetch on focus to prevent constant checks
   });
 
   return {
     admin: (admin as any)?.admin as AdminUser | undefined,
     isLoading,
     isAuthenticated: !!(admin as any)?.admin,
+    error
   };
 }
 
@@ -31,9 +38,14 @@ export function useAdminLogin() {
       });
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/me"] });
-    }
+    onSuccess: (data) => {
+      if (data.success) {
+        // Force refetch admin data after successful login
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/me"] });
+        queryClient.refetchQueries({ queryKey: ["/api/admin/me"] });
+      }
+    },
+    retry: 1, // Retry once on failure
   });
 }
 

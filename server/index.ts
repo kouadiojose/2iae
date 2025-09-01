@@ -1,19 +1,29 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// Session configuration for admin authentication
+// Session configuration for admin authentication - STABLE CONFIG
+const memoryStore = MemoryStore(session);
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-2iae-admin-2024',
+  store: new memoryStore({
+    checkPeriod: 86400000, // Clean expired entries every 24h
+    max: 1000, // Max sessions
+    ttl: 24 * 60 * 60 * 1000 // 24 hours TTL
+  }),
   resave: false,
   saveUninitialized: false,
+  rolling: true, // Reset expiration on activity
   cookie: {
-    secure: false, // Set to true in production with HTTPS
+    secure: process.env.NODE_ENV === 'production', // HTTPS in production
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 4 * 60 * 60 * 1000, // 4 hours (shorter for security)
+    sameSite: 'lax'
   }
 }));
 

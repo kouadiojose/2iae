@@ -861,12 +861,16 @@ export class DatabaseStorage implements IStorage {
   async validateAdminCredentials(username: string, password: string): Promise<AdminUser | null> {
     console.log("🔐 Validation des credentials pour:", username);
     const admin = await this.getAdminUserByUsername(username);
+    console.log("🔍 Admin récupéré:", admin ? "OUI" : "NON");
+    console.log("🔍 Password DB:", admin?.password ? "EXISTS" : "UNDEFINED");
+    
     if (!admin || !admin.isActive) {
       console.log("❌ Admin non trouvé ou inactif");
       return null;
     }
 
     // Compare hashed password with provided password
+    console.log("🔐 Comparaison:", password, "vs", admin.password ? "HASH_EXISTS" : "HASH_MISSING");
     const isValid = await bcrypt.compare(password, admin.password);
     console.log("🔐 Validation mot de passe:", isValid ? "✓" : "❌");
     

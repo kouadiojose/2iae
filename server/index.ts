@@ -1,55 +1,28 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
-import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// SIMPLIFIED SESSION CONFIGURATION FOR PRODUCTION FIX
-const isProduction = process.env.NODE_ENV === 'production';
-
-console.log(`🔐 Session Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
-console.log(`🌐 Host: ${process.env.REPLIT_DOMAINS || 'localhost'}`);
-
-// SIMPLIFIÉ: Utilise MemoryStore fiable pour les deux environnements
-// Le problème principal était CORS, pas le store de sessions
-console.log("🔐 Using optimized memory session store (works in both environments)");
-const memoryStore = MemoryStore(session);
-const sessionStore = new memoryStore({
-  checkPeriod: isProduction ? 12 * 60 * 60 * 1000 : 86400000, // Clean more often in prod
-  max: isProduction ? 500 : 1000, // Less memory usage in prod
-  ttl: isProduction ? 8 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000 // 8h prod, 24h dev
-});
-
+// Simple session configuration - like incub-agri
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret-2iae-admin-2024',
-  store: sessionStore,
-  resave: true, // Force save même si pas modifiée
-  saveUninitialized: true, // Sauve même session vide
-  rolling: true, // Reset expiration on activity
-  name: 'sessionId', // Nom simple et clair
+  secret: process.env.SESSION_SECRET || 'simple-2iae-secret-2024',
+  resave: false,
+  saveUninitialized: false,
   cookie: {
-    secure: false, // CRITIQUE: Désactivé car HTTPS peut causer des problèmes
-    httpOnly: false, // CRITIQUE: Permettre l'accès JavaScript pour diagnostic
-    maxAge: 24 * 60 * 60 * 1000, // 24h
-    sameSite: false, // CRITIQUE: Complètement désactivé
-    path: '/',
-    domain: undefined, // Auto-détection
+    secure: false, // Works in dev and prod
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// CORS PERMISSIF POUR DIAGNOSTIC (temporaire)
+// Simple CORS setup
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  
-  // TEMPORAIRE: CORS très permissif pour diagnostiquer le problème de sessions
-  console.log(`🌐 Request from origin: ${origin || 'direct'}`);
-  
-  // Autorise toutes les origines pour diagnostic
   res.header('Access-Control-Allow-Origin', origin || '*');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
@@ -60,28 +33,6 @@ app.use((req, res, next) => {
   } else {
     next();
   }
-});
-
-// MIDDLEWARE DE DÉBOGAGE SESSION CRITIQUE - TOUS LES APPELS
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/admin')) {
-    console.log('\n🚨 ===== SESSION DEBUG DÉTAILLÉ =====');
-    console.log(`📍 Path: ${req.path}`);
-    console.log(`🌐 Origin: ${req.headers.origin || 'NONE'}`);
-    console.log(`🎫 Raw Cookies: ${req.headers.cookie || 'NONE'}`);
-    console.log(`🍪 Session ID: ${req.sessionID || 'NONE'}`);
-    console.log(`📦 Session object exists: ${!!req.session}`);
-    console.log(`👤 Admin in session: ${!!req.session?.admin}`);
-    console.log(`🔑 Admin ID: ${req.session?.adminId || 'NONE'}`);
-    
-    if (req.session) {
-      console.log(`📊 Session keys: ${Object.keys(req.session)}`);
-      console.log(`📝 Full session: ${JSON.stringify(req.session, null, 2)}`);
-    }
-    
-    console.log('🚨 ================================\n');
-  }
-  next();
 });
 
 app.use((req, res, next) => {

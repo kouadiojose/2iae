@@ -343,131 +343,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: "Server is working!" });
   });
 
-  // Admin authentication with real session management
-  app.post("/api/admin/login", async (req: any, res) => {
-    console.log("🔥 Login route called");
-    
-    const { username, password } = req.body;
-    console.log("📝 Login attempt:", { username });
-    
-    if (!username || !password) {
-      console.log("❌ Missing credentials");
-      return res.status(400).json({
-        success: false,
-        message: "Nom d'utilisateur et mot de passe requis"
-      });
-    }
+  // Simple auth routes
+  const { requireAuth, handleLogin, handleLogout, handleAuthCheck } = await import('./auth.js');
+  
+  app.post("/api/admin/login", handleLogin);
+  app.post("/api/admin/logout", handleLogout);
+  app.get("/api/admin/me", handleAuthCheck);
 
-    try {
-      // Validate credentials using database with hashed password
-      const admin = await storage.validateAdminCredentials(username, password);
-      
-      if (admin) {
-        // Create admin session
-        req.session.adminId = admin.id;
-        req.session.admin = {
-          id: admin.id,
-          username: admin.username,
-          email: admin.email
-        };
-        
-        console.log("✅ Login successful, session created");
-        
-        res.json({
-          success: true,
-          admin: {
-            id: admin.id,
-            username: admin.username,
-            email: admin.email
-          }
-        });
-      } else {
-        console.log("❌ Invalid credentials");
-        res.status(401).json({
-          success: false,
-          message: "Identifiants incorrects"
-        });
-      }
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erreur lors de la connexion"
-      });
-    }
-  });
-
-  // Admin logout with session destruction
-  app.post("/api/admin/logout", async (req: any, res) => {
-    console.log("🔥 Logout route called");
-    
-    if (req.session) {
-      req.session.destroy((err: any) => {
-        if (err) {
-          console.error("Session destruction error:", err);
-          res.status(500).json({ 
-            success: false, 
-            message: "Erreur lors de la déconnexion" 
-          });
-        } else {
-          console.log("✅ Session destroyed successfully");
-          res.clearCookie('connect.sid'); // Clear session cookie
-          res.json({ success: true });
-        }
-      });
-    } else {
-      res.json({ success: true });
-    }
-  });
-
-  // Check admin session with real session validation
-  app.get("/api/admin/me", async (req: any, res) => {
-    console.log("🔍 Checking admin session");
-    
-    if (req.session && req.session.admin && req.session.adminId) {
-      console.log("✅ Valid session found for:", req.session.admin.username);
-      res.json({
-        success: true,
-        admin: req.session.admin
-      });
-    } else {
-      console.log("❌ No valid session found");
-      res.status(401).json({
-        success: false,
-        message: "Non authentifié"
-      });
-    }
-  });
-
-  // Middleware for admin authentication with real session check
-  const requireAdmin = async (req: any, res: any, next: any) => {
-    console.log("🔒 Checking admin authentication");
-    
-    if (req.session && req.session.admin && req.session.adminId) {
-      // Use session data directly - more resilient to DB issues
-      req.admin = req.session.admin;
-      console.log("✅ Admin authenticated via session:", req.session.admin.username);
-      
-      // Optional: Verify admin exists in DB (non-blocking)
-      try {
-        const admin = await storage.getAdminUserByUsername(req.session.admin.username);
-        if (!admin) {
-          console.log("⚠️  Admin no longer exists in database, but session still valid");
-        }
-      } catch (error) {
-        console.log("⚠️  DB verification failed, but session is valid:", (error as Error).message || error);
-        // Continue anyway - session is valid
-      }
-      
-      next();
-    } else {
-      console.log("❌ No admin session");
-      res.status(401).json({
-        success: false,
-        message: "Authentification administrateur requise"
-      });
-    }
-  };
+  // Use simple auth middleware  
+  const requireAdmin = requireAuth;
 
   // Get all site content (admin only)
   app.get("/api/admin/content", requireAdmin, async (req, res) => {

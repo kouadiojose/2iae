@@ -2,7 +2,17 @@ import { RequestHandler } from 'express';
 import { storage } from './storage.js';
 
 // Simple auth middleware - comme incub-agri
+// 🚫 TEMPORAIREMENT DÉSACTIVÉ POUR DÉVELOPPEMENT
 export const requireAuth: RequestHandler = (req: any, res, next) => {
+  // BYPASS AUTH - Allow all requests
+  req.admin = {
+    id: 'temp-admin',
+    username: 'admin',
+    email: 'admin@2iae.com'
+  };
+  next();
+  
+  /* RÉACTIVER PLUS TARD:
   if (req.session?.adminId) {
     req.admin = req.session.admin;
     next();
@@ -12,6 +22,7 @@ export const requireAuth: RequestHandler = (req: any, res, next) => {
       message: 'Authentication required' 
     });
   }
+  */
 };
 
 // Simple login handler
@@ -79,7 +90,19 @@ export function handleLogout(req: any, res: any) {
 }
 
 // Simple auth check
+// 🚫 TEMPORAIREMENT DÉSACTIVÉ POUR DÉVELOPPEMENT
 export function handleAuthCheck(req: any, res: any) {
+  // BYPASS AUTH - Always return authenticated
+  res.json({
+    success: true,
+    admin: {
+      id: 'temp-admin',
+      username: 'admin',
+      email: 'admin@2iae.com'
+    }
+  });
+  
+  /* RÉACTIVER PLUS TARD:
   if (req.session?.adminId && req.session?.admin) {
     res.json({
       success: true,
@@ -91,4 +114,5 @@ export function handleAuthCheck(req: any, res: any) {
       message: 'Not authenticated'
     });
   }
+  */
 }

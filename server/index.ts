@@ -5,25 +5,44 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
+// CRITICAL: Trust proxy for production (DigitalOcean load balancer)
+app.set('trust proxy', 1);
+
 // Simple session configuration - like incub-agri
+const isProduction = process.env.NODE_ENV === 'production';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'simple-2iae-secret-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Works in dev and prod
+    secure: isProduction, // HTTPS in production, HTTP in dev
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: isProduction ? 'strict' : 'lax'
   }
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Simple CORS setup
+// Simple CORS setup - production optimized
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  res.header('Access-Control-Allow-Origin', origin || '*');
+  
+  // Allow specific origins in production
+  if (isProduction) {
+    const allowedOrigins = [
+      'https://groupe-2iae-web-nzz9m.ondigitalocean.app',
+      'https://www.groupe-2iae.com',
+      'https://groupe-2iae.com'
+    ];
+    if (origin && allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');

@@ -1,4 +1,4 @@
-name: 2iae-international
+name: groupe-2iae
 region: fra
 
 services:
@@ -9,20 +9,42 @@ services:
   environment_slug: node-js
   instance_count: 1
   instance_size_slug: basic-xxs
+  
+  health_check:
+    http_path: /api/health
+    port: 5000
+    initial_delay_seconds: 30
+    period_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3
+
   http_port: 5000
+
   routes:
   - path: /
+
   envs:
   - key: NODE_ENV
     value: production
-  - key: OPENAI_API_KEY
-    value: ${OPENAI_API_KEY}
-    type: SECRET
-  - key: DATABASE_URL
-    value: ${groupe2iae-db.DATABASE_URL}
     type: SECRET
   - key: SESSION_SECRET
-    value: ${SESSION_SECRET}
+    scope: RUN_TIME
+    type: SECRET
+  - key: OPENAI_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_HOST
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_PORT
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_USER
+    scope: RUN_TIME
+    type: SECRET
+  - key: SMTP_PASS
+    scope: RUN_TIME
     type: SECRET
 
 databases:

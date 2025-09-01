@@ -113,13 +113,19 @@ const pool = new Pool({
 node scripts/test-production.js
 ```
 
-### 2. Build Production
+### 2. Persistance Sessions Admin
+
+```bash
+node scripts/test-session-persistence.js
+```
+
+### 3. Build Production
 
 ```bash
 npm ci && npm run build
 ```
 
-### 3. Test Local Production
+### 4. Test Local Production
 
 ```bash
 NODE_ENV=production npm start
@@ -130,19 +136,34 @@ NODE_ENV=production npm start
 ### Sessions Admin
 
 - **Développement**: MemoryStore (volatile)
-- **Production**: MemoryStore optimisé + SESSION_SECRET fort
+- **Production**: Base PostgreSQL (persistante) + SESSION_SECRET fort
+- **Table**: `session` créée automatiquement
+- **Durée**: 8h en production, 24h en développement
+
+### Configuration Domaine Production
+
+⚠️ **IMPORTANT**: Mettez à jour votre domaine dans `server/index.ts`:
+
+```typescript
+const allowedOrigins = [
+  'https://votre-domaine-2iae.com',  // Remplacez par votre vrai domaine
+  'https://groupe2iae.digitalocean.app', // Exemple DigitalOcean
+];
+```
 
 ### Sécurité
 
-- SSL obligatoire en production
+- SSL obligatoire en production (`secure: true`)
+- Cookies `sameSite: 'strict'` en production
 - Variables d'environnement sécurisées
-- Cookies `secure: true` en production
+- CORS limité aux domaines autorisés
 
 ### Performance
 
-- Pool de connexions optimisé
-- Gestion d'erreur non-bloquante
-- Cache de sessions configuré
+- Pool de connexions PostgreSQL optimisé
+- Sessions persistantes en base
+- Gestion d'erreur avec fallback
+- TTL sessions configuré
 
 ## 📊 Monitoring
 

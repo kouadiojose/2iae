@@ -6,36 +6,92 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// Session configuration for admin authentication - STABLE CONFIG
-const memoryStore = MemoryStore(session);
+// PRODUCTION-READY SESSION CONFIGURATION
+const isProduction = process.env.NODE_ENV === 'production';
+
+console.log(`🔐 Session Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+
+// Session store configuration
+function createSessionStore() {
+  if (isProduction) {
+    // Production: Use database-backed session store
+    console.log("🔐 Using database session store for production");
+    try {
+      const connectPg = require('connect-pg-simple');
+      const pgSession = connectPg(session);
+      const { pool } = require('./db');
+      
+      return new pgSession({
+        pool: pool,
+        tableName: 'session',
+        createTableIfMissing: true,
+        ttl: 24 * 60 * 60, // 24 hours in seconds
+      });
+    } catch (error) {
+      console.warn("⚠️  Database session store failed, falling back to memory store:", (error as Error).message);
+      const memoryStore = MemoryStore(session);
+      return new memoryStore({
+        checkPeriod: 86400000,
+        max: 1000,
+        ttl: 24 * 60 * 60 * 1000
+      });
+    }
+  } else {
+    // Development: Use memory store
+    console.log("🔐 Using memory session store for development");
+    const memoryStore = MemoryStore(session);
+    return new memoryStore({
+      checkPeriod: 86400000, // Clean expired entries every 24h
+      max: 1000, // Max sessions
+      ttl: 24 * 60 * 60 * 1000 // 24 hours TTL
+    });
+  }
+}
+
+const sessionStore = createSessionStore();
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-2iae-admin-2024',
-  store: new memoryStore({
-    checkPeriod: 86400000, // Clean expired entries every 24h
-    max: 1000, // Max sessions
-    ttl: 24 * 60 * 60 * 1000 // 24 hours TTL
-  }),
+  store: sessionStore,
   resave: false,
   saveUninitialized: false,
   rolling: true, // Reset expiration on activity
+  name: '2iae-admin-session', // Custom session name
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // HTTPS in production
+    secure: isProduction, // HTTPS required in production
     httpOnly: true,
-    maxAge: 4 * 60 * 60 * 1000, // 4 hours (shorter for security)
-    sameSite: 'lax'
+    maxAge: isProduction ? 8 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000, // 8h prod, 24h dev
+    sameSite: isProduction ? 'strict' : 'lax', // Stricter in production
+    path: '/', // Ensure cookie is available for all paths
   }
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// CORS for development with credentials support
+// PRODUCTION-SAFE CORS configuration
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  const origin = req.headers.origin;
+  
+  if (isProduction) {
+    // Production: Only allow your domain
+    const allowedOrigins = [
+      'https://your-domain.com', // Replace with actual domain
+      'https://groupe2iae-production.com', // Replace with actual domain
+    ];
+    
+    if (origin && allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    // Development: Allow all origins
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+  
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {

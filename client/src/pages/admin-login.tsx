@@ -39,13 +39,17 @@ export default function AdminLogin() {
     loginMutation.mutate(
       { username, password },
       {
-        onSuccess: (data) => {
+        onSuccess: async (data) => {
           if (data.success) {
             toast({
               title: "Connexion réussie",
               description: `Bienvenue, ${data.admin.username}!`,
             });
-            setLocation("/admin/dashboard");
+            
+            // Force a small delay to ensure React Query cache is updated
+            setTimeout(() => {
+              setLocation("/admin/dashboard");
+            }, 100);
           } else {
             toast({
               title: "Erreur de connexion",

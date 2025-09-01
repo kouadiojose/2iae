@@ -38,14 +38,20 @@ export function useAdminLogin() {
       });
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.success) {
-        // Force refetch admin data after successful login
-        queryClient.invalidateQueries({ queryKey: ["/api/admin/me"] });
-        queryClient.refetchQueries({ queryKey: ["/api/admin/me"] });
+        // Immediately set the admin data in cache to trigger re-renders
+        queryClient.setQueryData(["/api/admin/me"], {
+          success: true,
+          admin: data.admin
+        });
+        
+        // Then invalidate and refetch to ensure consistency
+        await queryClient.invalidateQueries({ queryKey: ["/api/admin/me"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/admin/me"] });
       }
     },
-    retry: 1, // Retry once on failure
+    retry: 1,
   });
 }
 

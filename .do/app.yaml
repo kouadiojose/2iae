@@ -19,7 +19,10 @@ services:
     value: ${OPENAI_API_KEY}
     type: SECRET
   - key: DATABASE_URL
-    value: ${DATABASE_URL}
+    value: ${2iae-db.DATABASE_URL}
+    type: SECRET
+  - key: SESSION_SECRET
+    value: ${SESSION_SECRET}
     type: SECRET
 
 databases:

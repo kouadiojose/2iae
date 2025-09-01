@@ -19,14 +19,14 @@ services:
     value: ${OPENAI_API_KEY}
     type: SECRET
   - key: DATABASE_URL
-    value: ${2iae-db.DATABASE_URL}
+    value: ${groupe2iae-db.DATABASE_URL}
     type: SECRET
   - key: SESSION_SECRET
     value: ${SESSION_SECRET}
     type: SECRET
 
 databases:
-- name: 2iae-db
+- name: groupe2iae-db
   engine: PG
   version: "15"
   size: db-s-dev-database

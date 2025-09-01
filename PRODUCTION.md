@@ -21,7 +21,7 @@ const isProduction = process.env.NODE_ENV === 'production' ||
 
 ### 1. Base PostgreSQL DigitalOcean
 
-✅ **Configurée**: Base `2iae-db` (PostgreSQL 15)  
+✅ **Configurée**: Base `groupe2iae-db` (PostgreSQL 15)  
 ✅ **Driver**: `pg` installé  
 ✅ **Configuration**: SSL activé avec `rejectUnauthorized: false`
 
@@ -29,7 +29,7 @@ const isProduction = process.env.NODE_ENV === 'production' ||
 
 ```bash
 NODE_ENV=production
-DATABASE_URL=${2iae-db.DATABASE_URL}  # Auto-injectée par DigitalOcean
+DATABASE_URL=${groupe2iae-db.DATABASE_URL}  # Auto-injectée par DigitalOcean
 OPENAI_API_KEY=${OPENAI_API_KEY}      # À configurer
 SESSION_SECRET=${SESSION_SECRET}      # À générer
 ```
@@ -38,14 +38,14 @@ SESSION_SECRET=${SESSION_SECRET}      # À générer
 
 ```yaml
 databases:
-- name: 2iae-db
+- name: groupe2iae-db
   engine: PG
   version: "15"
   size: db-s-dev-database
 
 envs:
 - key: DATABASE_URL
-  value: ${2iae-db.DATABASE_URL}  # Liaison automatique
+  value: ${groupe2iae-db.DATABASE_URL}  # Liaison automatique
   type: SECRET
 ```
 

@@ -25,16 +25,17 @@ const sessionStore = new memoryStore({
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-2iae-admin-2024',
   store: sessionStore,
-  resave: true, // CRUCIAL: Force save même si pas modifiée
-  saveUninitialized: true, // CRUCIAL: Sauve même session vide
+  resave: true, // Force save même si pas modifiée
+  saveUninitialized: true, // Sauve même session vide
   rolling: true, // Reset expiration on activity
-  name: 'connect.sid', // NOM STANDARD - crucial pour prod
+  name: 'sessionId', // Nom simple et clair
   cookie: {
-    secure: false, // Reste désactivé pour diagnostic
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24h pour test (plus long)
-    sameSite: 'none', // PLUS PERMISSIF - crucial pour cross-origin
+    secure: false, // CRITIQUE: Désactivé car HTTPS peut causer des problèmes
+    httpOnly: false, // CRITIQUE: Permettre l'accès JavaScript pour diagnostic
+    maxAge: 24 * 60 * 60 * 1000, // 24h
+    sameSite: false, // CRITIQUE: Complètement désactivé
     path: '/',
+    domain: undefined, // Auto-détection
   }
 }));
 
@@ -61,17 +62,24 @@ app.use((req, res, next) => {
   }
 });
 
-// MIDDLEWARE DE DÉBOGAGE SESSION CRITIQUE
+// MIDDLEWARE DE DÉBOGAGE SESSION CRITIQUE - TOUS LES APPELS
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/admin')) {
-    console.log('\n🐛 ===== SESSION DEBUG =====');
+    console.log('\n🚨 ===== SESSION DEBUG DÉTAILLÉ =====');
     console.log(`📍 Path: ${req.path}`);
+    console.log(`🌐 Origin: ${req.headers.origin || 'NONE'}`);
+    console.log(`🎫 Raw Cookies: ${req.headers.cookie || 'NONE'}`);
     console.log(`🍪 Session ID: ${req.sessionID || 'NONE'}`);
-    console.log(`📦 Session exists: ${!!req.session}`);
+    console.log(`📦 Session object exists: ${!!req.session}`);
     console.log(`👤 Admin in session: ${!!req.session?.admin}`);
     console.log(`🔑 Admin ID: ${req.session?.adminId || 'NONE'}`);
-    console.log(`🎫 Cookie header: ${req.headers.cookie || 'NONE'}`);
-    console.log('🐛 ========================\n');
+    
+    if (req.session) {
+      console.log(`📊 Session keys: ${Object.keys(req.session)}`);
+      console.log(`📝 Full session: ${JSON.stringify(req.session, null, 2)}`);
+    }
+    
+    console.log('🚨 ================================\n');
   }
   next();
 });

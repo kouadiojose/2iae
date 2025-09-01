@@ -6,21 +6,23 @@ import { setupVite, serveStatic, log } from "./vite";
 const app = express();
 
 // CRITICAL: Trust proxy for production (DigitalOcean load balancer)
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
 // Simple session configuration - like incub-agri
-const isProduction = process.env.NODE_ENV === 'production';
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'simple-2iae-secret-2024',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: isProduction, // HTTPS in production, HTTP in dev
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: isProduction ? 'strict' : 'lax'
-  }
-}));
+const isProduction = process.env.NODE_ENV === "production";
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "simple-2iae-secret-2024",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: isProduction, // HTTPS in production, HTTP in dev
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: isProduction ? "strict" : "lax",
+    },
+  }),
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -28,26 +30,25 @@ app.use(express.urlencoded({ extended: false }));
 // Simple CORS setup - production optimized
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  
+
   // Allow specific origins in production
   if (isProduction) {
-    const allowedOrigins = [
-      'https://groupe-2iae-web-nzz9m.ondigitalocean.app',
-      'https://www.groupe-2iae.com',
-      'https://groupe-2iae.com'
-    ];
+    const allowedOrigins = ["https://www.2iae.com", "https://2iae.com"];
     if (origin && allowedOrigins.includes(origin)) {
-      res.header('Access-Control-Allow-Origin', origin);
+      res.header("Access-Control-Allow-Origin", origin);
     }
   } else {
-    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header("Access-Control-Allow-Origin", origin || "*");
   }
-  
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
-  
-  if (req.method === 'OPTIONS') {
+
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Content-Length, X-Requested-With",
+  );
+
+  if (req.method === "OPTIONS") {
     res.sendStatus(200);
   } else {
     next();
@@ -87,7 +88,7 @@ app.use((req, res, next) => {
 (async () => {
   // Setup routes FIRST before Vite
   const server = await registerRoutes(app);
-  
+
   console.log("✅ Routes enregistrées");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -111,12 +112,15 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  const port = parseInt(process.env.PORT || "5000", 10);
+  server.listen(
+    {
+      port,
+      host: "0.0.0.0",
+      reusePort: true,
+    },
+    () => {
+      log(`serving on port ${port}`);
+    },
+  );
 })();

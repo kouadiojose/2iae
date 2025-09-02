@@ -14,8 +14,11 @@ const pool = new Pool({
 
 const migrationScript = `
 -- ==================================================================
--- MIGRATION 2IAE INTERNATIONAL - VERSION MISE À JOUR
+-- EXPORT COMPLET BASE DE DONNÉES 2IAE INTERNATIONAL
 -- Date: 01 Septembre 2025
+-- ==================================================================
+
+-- Création des tables (structure)
 -- ==================================================================
 
 -- Table session (pour persistance sessions)
@@ -90,8 +93,7 @@ CREATE TABLE IF NOT EXISTS sliders (
     "order" TEXT DEFAULT '0',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    created_by VARCHAR,
-    image_data TEXT
+    created_by VARCHAR
 );
 
 -- Table founder_message
@@ -107,8 +109,7 @@ CREATE TABLE IF NOT EXISTS founder_message (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    updated_by VARCHAR,
-    image_data TEXT
+    updated_by VARCHAR
 );
 
 -- Table institutes
@@ -142,8 +143,7 @@ CREATE TABLE IF NOT EXISTS news (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
     created_by VARCHAR,
-    slug TEXT,
-    image_data TEXT
+    slug TEXT
 );
 
 -- Table news_images
@@ -175,10 +175,10 @@ CREATE TABLE IF NOT EXISTS programs (
 
 const dataScript = `
 -- ==================================================================
--- INSERTION DES DONNÉES
+-- DONNÉES (INSERT)
 -- ==================================================================
 
--- Nettoyage avant insertion
+-- Truncate tables pour clean import
 TRUNCATE TABLE news_images, chat_messages, contacts, programs, news, institutes, founder_message, sliders, site_content, admin_users, users CASCADE;
 
 -- Admin Users
@@ -211,9 +211,17 @@ INSERT INTO institutes (id, title, description, link, button_text, bg_color, is_
 -- News
 INSERT INTO news (id, title, summary, content, image_url, date, category, author, featured, is_active, "order", created_at, updated_at, created_by, slug) VALUES
 ('7d6fd535-434f-4dfb-94eb-1a1ca91d67b6', 'PRIX INTERNATIONAL DES BATISSEURS AFRICAINS', ' Les votes se poursuivent ; N''oubliez pas !
-Soutenons notre PDG, M. Séraphin KOUA, candidat aux AfriBusiness Awards 2025 à Dubaï !', ' Les votes se poursuivent ; N''oubliez pas !
-Soutenons notre PDG, M. Séraphin KOUA, candidat aux AfriBusiness Awards 2025 à Dubaï !', 'https://afribusinesschallenge.com/storage/participants/U46wIOv7ALWgZSEpCxUBHqLYDOxzIWJLssXKsmOl.jpg', '2025-08-27', 'Événements', 'Admin', false, true, 1, '2025-08-27 20:43:20.08087', '2025-08-27 20:43:20.08087', NULL, 'prix-international-des-batisseurs-africains'),
-('2a7dae01-704b-4bbc-9c57-91b09947e651', 'Signature de convention entre 2IAE et CATALYSTE', 'Signature de conventions le lundi 25 Août 2025 entre Catalyste plus et le groupe Écoles 2IAE', 'Signature de conventions le lundi 25 Août 2025 entre Catalyste plus et le groupe Écoles 2IAE représenté par son premier responsable séraphin koua', '/api/assets/actualites/news_1756330108173_19e451469c034dae86a9d6d5e6fb91e0.jpg', '2025-08-27', 'Partenariats', 'Direction 2IAE', true, true, 1, '2025-08-27 20:52:10.86244', '2025-08-27 21:31:30.832', NULL, 'signature-de-convention-entre-2iae-et-catalyste');
+Soutenons notre PDG, M. Séraphin KOUA, candidat aux AfriBusiness Awards 2025 à Dubaï !
+Votez ici : https://afribusinesschallenge.com/.../01k22thzarm2h71ejqq...
+www.2iae.com
+2IAE, l''École des Entrepreneurs', ' Les votes se poursuivent ; N''oubliez pas !
+Soutenons notre PDG, M. Séraphin KOUA, candidat aux AfriBusiness Awards 2025 à Dubaï !
+Votez ici : https://afribusinesschallenge.com/.../01k22thzarm2h71ejqq...
+www.2iae.com
+2IAE, l''École des Entrepreneurs', 'https://afribusinesschallenge.com/storage/participants/U46wIOv7ALWgZSEpCxUBHqLYDOxzIWJLssXKsmOl.jpg', '2025-08-27', 'Événements', 'Admin', false, true, 1, '2025-08-27 20:43:20.08087', '2025-08-27 20:43:20.08087', NULL, 'prix-international-des-batisseurs-africains'),
+('2a7dae01-704b-4bbc-9c57-91b09947e651', 'Signature de convention entre 2IAE et CATALYSTE', 'Signature  de conventions   le lundi  25 Août  2025 entre Catalyste plus et le groupe  Écoles  2IAE  représenté  par son premier  responsable  Séraphin  Koua  et Madame  ,  ......
+Représentant  Catalyste  plus.', 'Signature  de conventions   le lundi  25 Août  2025 entre Catalyste plus et le groupe  Écoles  2IAE  représenté  par son premier  responsable  séraphin  koua  et madam  ,  ......
+Représentant  Catalyste  plus.', '/api/assets/actualites/news_1756330108173_19e451469c034dae86a9d6d5e6fb91e0.jpg', '2025-08-27', 'Partenariats', 'Direction 2IAE', true, true, 1, '2025-08-27 20:52:10.86244', '2025-08-27 21:31:30.832', NULL, 'signature-de-convention-entre-2iae-et-catalyste');
 
 -- News Images
 INSERT INTO news_images (id, news_id, image_url, caption, "order", created_at) VALUES
@@ -223,86 +231,81 @@ INSERT INTO news_images (id, news_id, image_url, caption, "order", created_at) V
 `;
 
 const programsScript = `
--- Programs (partie 1)
+-- Programs
 INSERT INTO programs (id, name, category, description, image_url, duration, level, is_active, "order", created_at, updated_at, created_by) VALUES
-('f5ad5015-09b4-4105-b016-e718c8303425', 'FINANCE COMPTABILITÉ & GESTION D''ENTREPRISE', 'BTS TERTIAIRES', 'Formation complète en finance, comptabilité et gestion d''entreprise', 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 1, '2025-08-28 06:30:17.982851', '2025-08-28 06:47:10.145', NULL),
-('02d6cc6b-b59f-4daf-b9f8-6a16dd6be6f8', 'GESTION COMMERCIALE', 'BTS TERTIAIRES', 'Formation en techniques commerciales, marketing et vente', 'https://images.unsplash.com/photo-1556761175-4b46a572b786', '2 ans', 'BTS', true, 2, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('1e8ad5a1-9d61-4d77-a30a-0eb89647d217', 'RESSOURCES HUMAINES & COMMUNICATION', 'BTS TERTIAIRES', 'Formation en gestion des ressources humaines et communication', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2', '2 ans', 'BTS', true, 3, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('9601845c-cc1f-4cfa-bb09-b7dbee4e5b6b', 'LOGISTIQUE', 'BTS TERTIAIRES', 'Formation en gestion logistique et chaîne d''approvisionnement', 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d', '2 ans', 'BTS', true, 4, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('9d445675-fa45-4262-a522-f4bec682a73b', 'SCIENCE DE L''INFORMATION', 'BTS INDUSTRIEL', 'Formation en sciences de l''information et technologies numériques', 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b', '2 ans', 'BTS', true, 5, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('491f3ba2-ebaa-4dd2-aa80-d8ced2597276', 'INFORMATIQUE DÉVELOPPEUR D''APPLICATIONS (IDA)', 'BTS INDUSTRIEL', 'Formation en développement d''applications informatiques', 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6', '2 ans', 'BTS', true, 6, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('aec5eae6-f050-47c9-8afd-e101155b0d98', 'GÉNIE CIVIL OPTION BÂTIMENT (GBAT)', 'BTS INDUSTRIEL', 'Formation en génie civil spécialisée dans la construction', 'https://images.unsplash.com/photo-1541976590-713941681591', '2 ans', 'BTS', true, 7, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('add068f0-4269-466b-8ced-999085776f22', 'GÉNIE CIVIL OPTION TRAVAUX PUBLICS', 'BTS INDUSTRIEL', 'Formation en génie civil orientée travaux publics', 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789', '2 ans', 'BTS', true, 8, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('d725a9ba-68a6-4365-a656-f11b0c71a545', 'AGRICULTURE TROPICALE OPTION - PRODUCTION VÉGÉTALE (ATPV)', 'BTS INDUSTRIEL', 'Formation en agriculture tropicale spécialisée en production végétale', 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b', '2 ans', 'BTS', true, 9, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('c5cfa6ec-ddca-49c9-995d-b53874042b5d', 'MANAGEMENT & ENTREPRENEURIAT', 'LICENCE/MASTER', 'Formation complète en management et entrepreneuriat', 'https://images.unsplash.com/photo-1497486751825-1233686d5d80', '3 ans', 'Licence', true, 10, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('9c596d84-c5b8-43ee-8ed3-aa382d72f6d3', 'MARKETING DIGITAL & COMMUNICATION', 'LICENCE/MASTER', 'Formation en marketing digital et communication', 'https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a', '3 ans', 'Licence', true, 11, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('0f884988-c10a-4dd0-9df5-7f923aa8f70b', 'GESTION FINANCIÈRE & CONTRÔLE', 'LICENCE/MASTER', 'Formation avancée en gestion financière et contrôle', 'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f', '3 ans', 'Licence', true, 12, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('e508269f-ce2d-40d3-ab0a-bc7318ca3e85', 'CRÉATION & GESTION D''ENTREPRISE', 'CERTIFICAT', 'Formation intensive en création et gestion d''entreprise', 'https://images.unsplash.com/photo-1559136555-9303baea8ebd', '6 mois', 'Certificat', true, 13, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('88943b35-59a9-4bf1-b924-88b5d398dab5', 'COMPTABILITÉ ANALYTIQUE & FISCALITÉ', 'CERTIFICAT', 'Formation spécialisée en comptabilité analytique et fiscalité', 'https://images.unsplash.com/photo-1554224155-6726b3ff858f', '4 mois', 'Certificat', true, 14, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
-('ffd5a4f2-94e0-438b-abfb-04a350d5280d', 'LEADERSHIP & MANAGEMENT D''ÉQUIPE', 'CERTIFICAT', 'Formation en leadership et management d''équipe', 'https://images.unsplash.com/photo-1600880292089-90a7e086ee0c', '3 mois', 'Certificat', true, 15, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL);
+('f5ad5015-09b4-4105-b016-e718c8303425', 'FINANCE COMPTABILITÉ & GESTION D''ENTREPRISE', 'BTS TERTIAIRES', 'Formation complète en finance, comptabilité et gestion d''entreprise pour former des experts financiers capables de gérer les ressources d''une organisation.', 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 1, '2025-08-28 06:30:17.982851', '2025-08-28 06:47:10.145', NULL),
+('02d6cc6b-b59f-4daf-b9f8-6a16dd6be6f8', 'GESTION COMMERCIALE', 'BTS TERTIAIRES', 'Formation en techniques commerciales, marketing et vente pour développer des compétences en gestion des relations clients et développement commercial.', 'https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 2, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('1e8ad5a1-9d61-4d77-a30a-0eb89647d217', 'RESSOURCES HUMAINES & COMMUNICATION', 'BTS TERTIAIRES', 'Formation en gestion des ressources humaines et communication d''entreprise pour devenir un professionnel RH capable de gérer le capital humain.', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 3, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('9601845c-cc1f-4cfa-bb09-b7dbee4e5b6b', 'LOGISTIQUE', 'BTS TERTIAIRES', 'Formation en gestion logistique et chaîne d''approvisionnement pour optimiser les flux de marchandises et la distribution.', 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 4, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('9d445675-fa45-4262-a522-f4bec682a73b', 'SCIENCE DE L''INFORMATION', 'BTS INDUSTRIEL', 'Formation en sciences de l''information et technologies numériques pour maîtriser les systèmes d''information modernes.', 'https://images.unsplash.com/photo-1488590528505-98d2b5aba04b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 5, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('491f3ba2-ebaa-4dd2-aa80-d8ced2597276', 'INFORMATIQUE DÉVELOPPEUR D''APPLICATIONS (IDA)', 'BTS INDUSTRIEL', 'Formation en développement d''applications informatiques pour créer des solutions logicielles innovantes et performantes.', 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 6, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('aec5eae6-f050-47c9-8afd-e101155b0d98', 'GÉNIE CIVIL OPTION BÂTIMENT (GBAT)', 'BTS INDUSTRIEL', 'Formation en génie civil spécialisée dans la construction de bâtiments pour devenir technicien supérieur en construction.', 'https://images.unsplash.com/photo-1541976590-713941681591?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 7, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('add068f0-4269-466b-8ced-999085776f22', 'GÉNIE CIVIL OPTION TRAVAUX PUBLICS', 'BTS INDUSTRIEL', 'Formation en génie civil orientée travaux publics pour participer à la construction d''infrastructures publiques.', 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 8, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('d725a9ba-68a6-4365-a656-f11b0c71a545', 'AGRICULTURE TROPICALE OPTION - PRODUCTION VÉGÉTALE (ATPV)', 'BTS INDUSTRIEL', 'Formation en agriculture tropicale spécialisée en production végétale pour optimiser les rendements agricoles en milieu tropical.', 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '2 ans', 'BTS', true, 9, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('c5cfa6ec-ddca-49c9-995d-b53874042b5d', 'MANAGEMENT & ENTREPRENEURIAT', 'LICENCE/MASTER', 'Formation complète en management et entrepreneuriat pour développer les compétences de leadership et créer des entreprises innovantes.', 'https://images.unsplash.com/photo-1497486751825-1233686d5d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '3 ans', 'Licence', true, 10, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('9c596d84-c5b8-43ee-8ed3-aa382d72f6d3', 'MARKETING DIGITAL & COMMUNICATION', 'LICENCE/MASTER', 'Formation en marketing digital et communication pour maîtriser les stratégies de communication numérique et les réseaux sociaux.', 'https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '3 ans', 'Licence', true, 11, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('0f884988-c10a-4dd0-9df5-7f923aa8f70b', 'GESTION FINANCIÈRE & CONTRÔLE', 'LICENCE/MASTER', 'Formation avancée en gestion financière et contrôle de gestion pour devenir expert en analyse financière et pilotage d''entreprise.', 'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '3 ans', 'Licence', true, 12, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('e508269f-ce2d-40d3-ab0a-bc7318ca3e85', 'CRÉATION & GESTION D''ENTREPRISE', 'CERTIFICAT', 'Formation intensive en création et gestion d''entreprise pour accompagner les porteurs de projets dans la concrétisation de leur vision entrepreneuriale.', 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '6 mois', 'Certificat', true, 13, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('88943b35-59a9-4bf1-b924-88b5d398dab5', 'COMPTABILITÉ ANALYTIQUE & FISCALITÉ', 'CERTIFICAT', 'Formation spécialisée en comptabilité analytique et fiscalité pour maîtriser les aspects comptables et fiscaux d''une entreprise.', 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '4 mois', 'Certificat', true, 14, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL),
+('ffd5a4f2-94e0-438b-abfb-04a350d5280d', 'LEADERSHIP & MANAGEMENT D''ÉQUIPE', 'CERTIFICAT', 'Formation en leadership et management d''équipe pour développer les compétences de direction et d''animation d''équipes performantes.', 'https://images.unsplash.com/photo-1600880292089-90a7e086ee0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=500', '3 mois', 'Certificat', true, 15, '2025-08-28 06:30:17.982851', '2025-08-28 06:30:17.982851', NULL);
 
--- Chat Messages
+-- Chat Messages (exemple)
 INSERT INTO chat_messages (id, session_id, message, response, created_at) VALUES
 ('69538328-fa2e-4ad3-bc6b-6ba60def7b7c', 'session-1756313698774-0.8672108162504497', 'Tu es la ?', 'Oui, je suis là pour vous aider ! Comment puis-je vous assister aujourd''hui concernant le Groupe Écoles 2IAE International ?', '2025-08-27 17:16:34.960181');
 `;
 
 async function runMigration() {
-  console.log(
-    "Début de la migration 2IAE International (Version mise à jour)...",
-  );
+  console.log("MIGRATION 2IAE INTERNATIONAL - SEPTEMBRE 2025");
+  console.log("Migration basée sur l'export complet de votre base de données");
+  console.log("Date d'export: 01 Septembre 2025");
+  console.log("");
 
   try {
-    // Test de connexion
-    console.log("Vérification de la connexion...");
+    console.log("1. Connexion à la base de données...");
     const client = await pool.connect();
     await client.query("SELECT 1");
     console.log("Connexion réussie !");
 
-    // Création des tables
-    console.log("Création des tables...");
+    console.log("2. Création de la structure des tables...");
     await client.query(migrationScript);
-    console.log("Tables créées !");
+    console.log("Structure créée !");
 
-    // Insertion des données principales
-    console.log("Insertion des données...");
+    console.log("3. Import des données principales...");
     await client.query(dataScript);
-    console.log("Données principales insérées !");
+    console.log("Données principales importées !");
 
-    // Insertion des programmes
-    console.log("Insertion des programmes...");
+    console.log("4. Import des programmes et messages...");
     await client.query(programsScript);
-    console.log("Programmes insérés !");
+    console.log("Programmes et messages importés !");
 
-    // Vérification finale
-    console.log("Vérification des données...");
+    console.log("5. Vérification des statistiques...");
     const statsResult = await client.query(`
-            SELECT 'admin_users' as table_name, COUNT(*) as records FROM admin_users
-            UNION ALL
-            SELECT 'site_content', COUNT(*) FROM site_content
-            UNION ALL  
-            SELECT 'sliders', COUNT(*) FROM sliders
-            UNION ALL
-            SELECT 'founder_message', COUNT(*) FROM founder_message
-            UNION ALL
-            SELECT 'institutes', COUNT(*) FROM institutes
-            UNION ALL
-            SELECT 'news', COUNT(*) FROM news
-            UNION ALL
-            SELECT 'news_images', COUNT(*) FROM news_images
-            UNION ALL
-            SELECT 'programs', COUNT(*) FROM programs
-            UNION ALL
-            SELECT 'chat_messages', COUNT(*) FROM chat_messages
-            UNION ALL
-            SELECT 'contacts', COUNT(*) FROM contacts
-            UNION ALL
-            SELECT 'users', COUNT(*) FROM users
-            UNION ALL
-            SELECT 'session', COUNT(*) FROM session;
-        `);
+      SELECT 'admin_users' as table_name, COUNT(*) as records FROM admin_users
+      UNION ALL
+      SELECT 'site_content', COUNT(*) FROM site_content
+      UNION ALL  
+      SELECT 'sliders', COUNT(*) FROM sliders
+      UNION ALL
+      SELECT 'founder_message', COUNT(*) FROM founder_message
+      UNION ALL
+      SELECT 'institutes', COUNT(*) FROM institutes
+      UNION ALL
+      SELECT 'news', COUNT(*) FROM news
+      UNION ALL
+      SELECT 'news_images', COUNT(*) FROM news_images
+      UNION ALL
+      SELECT 'programs', COUNT(*) FROM programs
+      UNION ALL
+      SELECT 'chat_messages', COUNT(*) FROM chat_messages
+      UNION ALL
+      SELECT 'contacts', COUNT(*) FROM contacts
+      UNION ALL
+      SELECT 'users', COUNT(*) FROM users
+      ORDER BY table_name;
+    `);
 
     console.log("");
-    console.log("=== RÉSULTATS DE LA MIGRATION ===");
+    console.log("=== STATISTIQUES FINALES ===");
     statsResult.rows.forEach((row) => {
       console.log(`${row.table_name}: ${row.records} enregistrements`);
     });
@@ -311,15 +314,17 @@ async function runMigration() {
     await pool.end();
 
     console.log("");
-    console.log("Migration 2IAE complétée avec succès !");
-    console.log(
-      "✅ Table session créée pour la persistance des connexions admin",
-    );
-    console.log("✅ Données complètes importées");
-    console.log("✅ Structure mise à jour avec les dernières modifications");
+    console.log("MIGRATION TERMINÉE AVEC SUCCÈS !");
+    console.log("Base de données 2IAE International restaurée complètement.");
+    console.log("Données importées: ~35+ entrées dans 12 tables principales");
+    console.log("");
+    console.log("Accès admin:");
+    console.log("Username: admin");
+    console.log("Password: admin123");
+    console.log("Email: admin@2iae.com");
   } catch (error) {
-    console.error("Erreur lors de la migration:", error.message);
-    console.error("Détails:", error);
+    console.error("ERREUR lors de la migration:", error.message);
+    console.error("Détails complets:", error);
     process.exit(1);
   }
 }
@@ -334,4 +339,5 @@ if (!process.env.DATABASE_URL) {
 }
 
 // Lancement de la migration
+console.log("Début de la migration 2IAE International...");
 runMigration();

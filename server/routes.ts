@@ -269,21 +269,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve static assets from Object Storage or local fallback
   app.get("/api/assets/*", async (req, res) => {
     const filePath = req.path.replace("/api/assets/", "");
-    const localPath = path.join(process.cwd(), "attached_assets", filePath);
     
-    // Try local file first (for backward compatibility)
+    // NOUVEAU: Vérifier d'abord le stockage physique local (/server/uploads/)
+    const uploadPath = path.join(__dirname, 'uploads', filePath);
+    if (fs.existsSync(uploadPath)) {
+      console.log(`✅ Serving from local storage: ${uploadPath}`);
+      return res.sendFile(uploadPath);
+    }
+    
+    // Ensuite vérifier attached_assets (pour la compatibilité)
+    const localPath = path.join(process.cwd(), "attached_assets", filePath);
     if (fs.existsSync(localPath)) {
+      console.log(`✅ Serving from attached_assets: ${localPath}`);
       return res.sendFile(localPath);
     }
     
-    // Try Object Storage for persistent files
+    // En dernier recours, rediriger vers Object Storage
     try {
       const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
       if (bucketId) {
         const objectPath = `public/${filePath}`;
         const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
         
-        // Redirect to Object Storage URL for persistence
         console.log(`↗️ Redirecting to Object Storage: ${publicUrl}`);
         return res.redirect(publicUrl);
       }
@@ -291,7 +298,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Object Storage redirect error:", error);
     }
     
-    // File not found in both locations
+    // File not found in all locations
+    console.log(`❌ File not found: ${filePath}`);
     res.status(404).json({ error: "File not found" });
   });
 

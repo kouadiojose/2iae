@@ -698,21 +698,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new slider (admin only)
   app.post("/api/admin/sliders", requireAdmin, async (req, res) => {
     try {
+      console.log('📝 [SLIDER CREATE] Request body size:', JSON.stringify(req.body).length, 'bytes');
+      console.log('📝 [SLIDER CREATE] Has imageData:', !!req.body.imageData);
+      console.log('📝 [SLIDER CREATE] ImageData length:', req.body.imageData?.length || 0);
+      
       const validatedData = insertSliderSchema.parse(req.body);
+      console.log('✅ [SLIDER CREATE] Validation passed');
+      
       const slider = await storage.createSlider(validatedData);
+      console.log('✅ [SLIDER CREATE] Slider created:', slider.id);
 
       res.status(201).json({ success: true, slider });
     } catch (error) {
+      console.error('❌ [SLIDER CREATE] Error:', error);
       if (error instanceof z.ZodError) {
+        console.error('❌ [SLIDER CREATE] Zod validation errors:', error.errors);
         return res.status(400).json({
           success: false,
           message: "Données invalides",
           errors: error.errors
         });
       }
+      console.error('❌ [SLIDER CREATE] Server error:', error.message);
       res.status(500).json({
         success: false,
-        message: "Erreur lors de la création du slider"
+        message: "Erreur lors de la création du slider: " + error.message
       });
     }
   });

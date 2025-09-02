@@ -30,87 +30,51 @@ function generateSlug(title: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// Configure multer for news image uploads - MIGRATED TO OBJECT STORAGE
-// Keeping minimal memory storage for processing before Object Storage upload
-const newsImageStorage = multer.memoryStorage();
-
-const newsImageUpload = multer({
-  storage: newsImageStorage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
+// Configure multer for physical file storage in /server/uploads/
+const createUploadConfig = (subFolder: string) => {
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const uploadPath = path.join(__dirname, 'uploads', subFolder);
+      // Ensure directory exists
+      fs.mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 15);
+      const ext = path.extname(file.originalname);
+      const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
+      cb(null, filename);
     }
-  }
-});
-
-// Configure multer for programs/filieres image uploads - MIGRATED TO OBJECT STORAGE
-// Keeping minimal memory storage for processing before Object Storage upload
-const programImageStorage = multer.memoryStorage();
-
-const programImageUpload = multer({
-  storage: programImageStorage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
-    }
-  }
-});
-
-// FIXED: Object Storage upload using Replit API - PERSISTENT STORAGE
-async function uploadToObjectStorage(
-  buffer: Buffer, 
-  fileName: string, 
-  folderName: string,
-  contentType: string = 'image/jpeg'
-): Promise<string> {
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) {
-    throw new Error("Object storage not configured");
-  }
-
-  const objectPath = `public/${folderName}/${fileName}`;
+  });
   
-  try {
-    // Step 1: Get presigned URL for upload
-    const presignedUrl = await generatePresignedUrl(bucketId, objectPath);
-    
-    // Step 2: Upload file using presigned URL
-    const uploadResponse = await fetch(presignedUrl, {
-      method: 'PUT',
-      body: buffer,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': buffer.length.toString()
+  return multer({
+    storage,
+    limits: {
+      fileSize: 10 * 1024 * 1024 // 10MB limit
+    },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
       }
-    });
-    
-    if (!uploadResponse.ok) {
-      throw new Error(`Upload failed: ${uploadResponse.status} - ${uploadResponse.statusText}`);
     }
-    
-    // Step 3: Return server-proxied URL (avoids bucket public access policy)
-    const serverUrl = `/api/object-storage/${folderName}/${fileName}`;
-    console.log(`✅ Image uploaded to Object Storage, serving via: ${serverUrl}`);
-    
-    return serverUrl;
-    
-  } catch (error) {
-    console.error('❌ Object Storage upload error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    throw new Error(`Failed to upload to object storage: ${errorMessage}`);
-  }
+  });
+};
+
+// Create upload configurations for each type
+const slidersUpload = createUploadConfig('sliders');
+const newsUpload = createUploadConfig('news');
+const founderUpload = createUploadConfig('founder');
+const programsUpload = createUploadConfig('programs');
+
+// Legacy configurations removed - now using createUploadConfig() function above
+
+// Physical file upload helper - stores files in /server/uploads/
+function getFileUrl(filename: string, folder: string): string {
+  return `/api/assets/${folder}/${filename}`;
 }
 
 // Function to generate presigned URL for object storage
@@ -1279,7 +1243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload route for program images (admin only)
-  app.post("/api/admin/programs/upload", requireAdmin, programImageUpload.single('image'), async (req, res) => {
+  app.post("/api/admin/programs/upload", requireAdmin, programsUpload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -1288,9 +1252,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Upload to Object Storage for persistence
-      const fileName = `program_${Date.now()}_${randomUUID().replace(/-/g, '')}${path.extname(req.file.originalname)}`;
-      const publicUrl = await uploadToObjectStorage(req.file.buffer, fileName, 'filieres', req.file.mimetype);
+      // File already saved to disk by multer
+      const fileName = req.file.filename;
+      const publicUrl = `/api/assets/programs/${fileName}`;
       
       return res.json({
         success: true,
@@ -1689,7 +1653,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload route for main news images (local storage)
-  app.post("/api/admin/news/temp/images/upload", requireAdmin, newsImageUpload.single('image'), async (req, res) => {
+  app.post("/api/admin/news/temp/images/upload", requireAdmin, newsUpload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -1698,9 +1662,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Upload to Object Storage for persistence
-      const fileName = `news_${Date.now()}_${randomUUID().replace(/-/g, '')}${path.extname(req.file.originalname)}`;
-      const publicUrl = await uploadToObjectStorage(req.file.buffer, fileName, 'actualites', req.file.mimetype);
+      // File already saved to disk by multer
+      const fileName = req.file.filename;
+      const publicUrl = `/api/assets/news/${fileName}`;
       
       return res.json({
         success: true,
@@ -1720,7 +1684,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload route for news images (local storage)
-  app.post("/api/admin/news/:newsId/images/upload", requireAdmin, newsImageUpload.single('image'), async (req, res) => {
+  app.post("/api/admin/news/:newsId/images/upload", requireAdmin, newsUpload.single('image'), async (req, res) => {
     try {
       const { newsId } = req.params;
       const { caption, order } = req.body;
@@ -1732,9 +1696,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Upload to Object Storage for persistence
-      const fileName = `news_${Date.now()}_${randomUUID().replace(/-/g, '')}${path.extname(req.file.originalname)}`;
-      const publicUrl = await uploadToObjectStorage(req.file.buffer, fileName, 'actualites', req.file.mimetype);
+      // File already saved to disk by multer
+      const fileName = req.file.filename;
+      const publicUrl = `/api/assets/news/${fileName}`;
       
       const newsImage = await storage.createNewsImage({
         newsId,
@@ -1844,6 +1808,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Erreur lors de la suppression de l'image" 
       });
     }
+  });
+
+  // Serve uploaded files from physical storage (/server/uploads/)
+  app.get("/api/assets/:folder/:filename", (req, res) => {
+    const { folder, filename } = req.params;
+    const filePath = path.join(__dirname, 'uploads', folder, filename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    
+    // Serve the file with appropriate headers
+    res.sendFile(filePath);
   });
 
   const httpServer = createServer(app);

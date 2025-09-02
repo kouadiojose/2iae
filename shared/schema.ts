@@ -62,7 +62,6 @@ export const sliders = pgTable("sliders", {
   subtitle: text("subtitle"),
   description: text("description"),
   imageUrl: text("image_url"),
-  imageData: text("image_data"), // Base64 image storage for persistence
   button1Text: text("button1_text"),
   button1Link: text("button1_link"),
   button2Text: text("button2_text"),
@@ -84,7 +83,6 @@ export const founderMessage = pgTable("founder_message", {
   founderRole: text("founder_role").notNull(),
   founderOrganization: text("founder_organization").notNull(),
   founderImageUrl: text("founder_image_url"),
-  imageData: text("image_data"), // Base64 image storage for persistence
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -130,7 +128,6 @@ export const news = pgTable("news", {
   summary: text("summary"),
   content: text("content"),
   imageUrl: text("image_url"), // Image principale pour les listes
-  imageData: text("image_data"), // Base64 image storage for persistence
   date: text("date").notNull(),
   category: text("category").notNull(),
   author: text("author").notNull(),
@@ -196,7 +193,6 @@ export const insertSliderSchema = createInsertSchema(sliders).pick({
   subtitle: true,
   description: true,
   imageUrl: true,
-  imageData: true,
   button1Text: true,
   button1Link: true,
   button2Text: true,
@@ -225,7 +221,6 @@ export const insertFounderMessageSchema = createInsertSchema(founderMessage).pic
   founderRole: true,
   founderOrganization: true,
   founderImageUrl: true,
-  imageData: true,
 });
 
 export const updateFounderMessageSchema = createInsertSchema(founderMessage).pick({
@@ -236,7 +231,6 @@ export const updateFounderMessageSchema = createInsertSchema(founderMessage).pic
   founderRole: true,
   founderOrganization: true,
   founderImageUrl: true,
-  imageData: true,
   isActive: true,
 }).partial();
 

@@ -259,8 +259,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { signed_url: signedURL } = await response.json();
       
-      // Redirect to the signed URL
-      res.redirect(signedURL);
+      // Stream the file directly instead of redirecting for better browser compatibility
+      try {
+        const fileResponse = await fetch(signedURL);
+        
+        if (!fileResponse.ok) {
+          return res.status(404).json({ error: "Image not found" });
+        }
+        
+        // Set proper headers for image serving
+        res.set({
+          'Content-Type': fileResponse.headers.get('content-type') || 'image/jpeg',
+          'Content-Length': fileResponse.headers.get('content-length') || '',
+          'Cache-Control': 'public, max-age=3600',
+          'Access-Control-Allow-Origin': '*',
+          'Accept-Ranges': 'bytes'
+        });
+        
+        console.log(`🎯 Streaming image: ${objectPath} (${fileResponse.headers.get('content-type')})`);
+        
+        // Stream the response body directly to our response
+        const buffer = await fileResponse.arrayBuffer();
+        res.send(Buffer.from(buffer));
+        
+      } catch (streamError) {
+        console.error('❌ Error streaming file:', streamError);
+        return res.status(500).json({ error: "Error loading image" });
+      }
       
     } catch (error) {
       console.error("Error serving object storage file:", error);

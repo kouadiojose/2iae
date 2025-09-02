@@ -211,47 +211,32 @@ export default function AdminSliders() {
   };
 
   const handleUploadComplete = async (result: any) => {
-    console.log('🔍 Upload Complete called with:', result);
-    
     if (result.successful?.[0]?.uploadURL) {
       try {
         // Extract filename from upload URL
         const successfulUpload = result.successful[0];
         const uploadUrl = successfulUpload.uploadURL;
-        console.log('📤 Upload URL:', uploadUrl);
-        
         const urlParts = uploadUrl.split('/');
         const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
-        console.log('📁 Extracted filename:', filename);
         
         // Call server to finalize upload and get the actual serving URL
-        console.log('⚡ Finalizing upload with server...');
         const response = await apiRequest("PUT", `/api/admin/sliders/upload-file/${filename}`);
         const data = await response.json();
-        console.log('✅ Server response:', data);
         
         if (data.success && data.path) {
           // Use the URL returned by the server (Object Storage proxy URL)
-          console.log('🎯 Setting image URL:', data.path);
-          console.log('🔄 currentImageUrl AVANT:', currentImageUrl);
           setCurrentImageUrl(data.path);
           form.setValue("imageUrl", data.path);
-          
-          // Force re-render verification
-          setTimeout(() => {
-            console.log('🔄 currentImageUrl APRÈS:', currentImageUrl);
-          }, 100);
           
           toast({
             title: "Succès",
             description: "Image uploadée avec succès",
           });
         } else {
-          console.error('❌ Invalid server response:', data);
           throw new Error("Échec de récupération de l'URL de l'image");
         }
       } catch (error) {
-        console.error('💥 Erreur lors de la finalisation de l\'upload:', error);
+        console.error('Erreur lors de la finalisation de l\'upload:', error);
         toast({
           title: "Erreur",
           description: "Erreur lors de la finalisation de l'upload",
@@ -259,7 +244,6 @@ export default function AdminSliders() {
         });
       }
     } else {
-      console.error('❌ No successful upload in result:', result);
       toast({
         title: "Erreur",
         description: "Erreur lors de l'upload de l'image",
@@ -404,13 +388,10 @@ export default function AdminSliders() {
                         </ObjectUploader>
                         {currentImageUrl && (
                           <div className="relative">
-                            <div className="text-xs text-gray-500 mb-2">URL: {currentImageUrl}</div>
                             <img
                               src={currentImageUrl}
                               alt="Aperçu de l'image"
                               className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
-                              onLoad={() => console.log('🖼️ Image loaded successfully!')}
-                              onError={(e) => console.error('❌ Image failed to load:', e)}
                             />
                             <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
                               <Images className="h-3 w-3" />

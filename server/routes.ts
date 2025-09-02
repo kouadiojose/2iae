@@ -221,6 +221,17 @@ INSTRUCTIONS DE RÉPONSE:
 - Mets en avant l'excellence et le caractère innovant de l'institution`;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // CORS middleware for object storage
+  app.use('/api/object-storage/*', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // Proxy route for Object Storage files (handles bucket public access prevention)
   app.get("/api/object-storage/:folderName/:fileName", async (req, res) => {
     try {
@@ -233,12 +244,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const objectPath = `public/${folderName}/${fileName}`;
       
-      // Generate presigned URL for downloading (1 hour)
+      // Generate presigned URL for downloading (10 minutes for reliability)
       const downloadRequest = {
         bucket_name: bucketId,
         object_name: objectPath,
         method: "GET",
-        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
       };
       
       const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -259,9 +270,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { signed_url: signedURL } = await response.json();
       
-      // SIMPLE: Redirect direct vers l'URL signée
-      console.log(`🎯 Redirecting to signed URL for: ${objectPath}`);
-      res.redirect(signedURL);
+      // Fetch and serve the file directly with proper headers
+      const fileResponse = await fetch(signedURL);
+      
+      if (!fileResponse.ok) {
+        return res.status(404).json({ error: "Image not found" });
+      }
+      
+      // Set headers before piping
+      res.set({
+        'Content-Type': fileResponse.headers.get('content-type') || 'image/jpeg',
+        'Content-Length': fileResponse.headers.get('content-length') || '',
+        'Cache-Control': 'public, max-age=3600',
+        'Access-Control-Allow-Origin': '*'
+      });
+      
+      console.log(`🎯 Serving image directly: ${objectPath}`);
+      
+      // Convert to buffer and send
+      const arrayBuffer = await fileResponse.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
       
     } catch (error) {
       console.error("Error serving object storage file:", error);

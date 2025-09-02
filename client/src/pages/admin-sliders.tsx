@@ -232,22 +232,12 @@ export default function AdminSliders() {
         const data = await response.json();
         
         if (data.success && data.path) {
-          // SOLUTION DIRECTE: Utiliser directement l'URL depuis le serveur
+          // SOLUTION DIRECTE: Mettre à jour immédiatement sans test
           const imageUrl = data.path;
-          console.log('🎯 URL image depuis serveur:', imageUrl);
+          console.log('🎯 Mise à jour directe avec URL:', imageUrl);
           
-          // Tester directement si l'URL fonctionne
-          const testImg = new Image();
-          testImg.onload = () => {
-            console.log('✅ IMAGE TEST RÉUSSIE, mise à jour du state');
-            setCurrentImageUrl(imageUrl);
-            form.setValue("imageUrl", imageUrl);
-          };
-          testImg.onerror = (err) => {
-            console.error('❌ IMAGE TEST ÉCHOUÉE:', err);
-            console.error('❌ URL qui échoue:', imageUrl);
-          };
-          testImg.src = imageUrl;
+          setCurrentImageUrl(imageUrl);
+          form.setValue("imageUrl", imageUrl);
           
           toast({
             title: "Succès",
@@ -409,17 +399,19 @@ export default function AdminSliders() {
                         </ObjectUploader>
                         {currentImageUrl && (
                           <div className="relative">
-                            <div className="text-xs bg-yellow-100 p-2 mb-2 rounded">
-                              DEBUG: currentImageUrl = "{currentImageUrl}"
-                            </div>
                             <img
                               src={currentImageUrl}
-                              alt="Aperçu de l'image"
+                              alt="Aperçu de l'image" 
                               className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
+                              crossOrigin="anonymous"
                               onLoad={() => console.log('✅ Image chargée avec succès!')}
                               onError={(e) => {
-                                console.error('❌ ERREUR chargement image:', e);
-                                console.error('❌ URL qui a échoué:', currentImageUrl);
+                                console.error('❌ Image failed to load - trying fallback');
+                                // Essayer une approche différente
+                                setTimeout(() => {
+                                  const img = e.target as HTMLImageElement;
+                                  img.src = currentImageUrl + '?t=' + Date.now(); // Cache bust
+                                }, 1000);
                               }}
                             />
                             <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">

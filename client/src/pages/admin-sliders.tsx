@@ -36,6 +36,11 @@ export default function AdminSliders() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSlider, setEditingSlider] = useState<Slider | null>(null);
   const [currentImageUrl, setCurrentImageUrl] = useState<string>("");
+  
+  // Debug: Monitor currentImageUrl changes
+  useEffect(() => {
+    console.log('🔄 currentImageUrl changed to:', currentImageUrl);
+  }, [currentImageUrl]);
 
   // Get all sliders
   const { data: slidersData, isLoading: slidersLoading } = useQuery({
@@ -225,8 +230,11 @@ export default function AdminSliders() {
         
         if (data.success && data.path) {
           // Use the URL returned by the server (Object Storage proxy URL)
+          console.log('🔴 AVANT setCurrentImageUrl:', currentImageUrl);
+          console.log('🔵 NOUVEAU path depuis server:', data.path);
           setCurrentImageUrl(data.path);
           form.setValue("imageUrl", data.path);
+          console.log('✅ State mis à jour avec:', data.path);
           
           toast({
             title: "Succès",
@@ -388,10 +396,18 @@ export default function AdminSliders() {
                         </ObjectUploader>
                         {currentImageUrl && (
                           <div className="relative">
+                            <div className="text-xs bg-yellow-100 p-2 mb-2 rounded">
+                              DEBUG: currentImageUrl = "{currentImageUrl}"
+                            </div>
                             <img
                               src={currentImageUrl}
                               alt="Aperçu de l'image"
                               className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
+                              onLoad={() => console.log('✅ Image chargée avec succès!')}
+                              onError={(e) => {
+                                console.error('❌ ERREUR chargement image:', e);
+                                console.error('❌ URL qui a échoué:', currentImageUrl);
+                              }}
                             />
                             <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
                               <Images className="h-3 w-3" />

@@ -210,25 +210,39 @@ export default function AdminSliders() {
     };
   };
 
-  const handleUploadComplete = (result: any) => {
+  const handleUploadComplete = async (result: any) => {
     if (result.successful?.[0]?.uploadURL) {
-      // Generate the final URL based on the upload response
-      // We use the object name from the upload to construct our public URL
-      const successfulUpload = result.successful[0];
-      
-      // Extract filename from the upload URL or use response data
-      const uploadUrl = successfulUpload.uploadURL;
-      const urlParts = uploadUrl.split('/');
-      const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
-      
-      const finalUrl = `/api/assets/sliders/${filename}`;
-      setCurrentImageUrl(finalUrl);
-      form.setValue("imageUrl", finalUrl);
-      
-      toast({
-        title: "Succès",
-        description: "Image uploadée avec succès",
-      });
+      try {
+        // Extract filename from upload URL
+        const successfulUpload = result.successful[0];
+        const uploadUrl = successfulUpload.uploadURL;
+        const urlParts = uploadUrl.split('/');
+        const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
+        
+        // Call server to finalize upload and get the actual serving URL
+        const response = await apiRequest("PUT", `/api/admin/sliders/upload-file/${filename}`);
+        const data = await response.json();
+        
+        if (data.success && data.path) {
+          // Use the URL returned by the server (Object Storage proxy URL)
+          setCurrentImageUrl(data.path);
+          form.setValue("imageUrl", data.path);
+          
+          toast({
+            title: "Succès",
+            description: "Image uploadée avec succès",
+          });
+        } else {
+          throw new Error("Échec de récupération de l'URL de l'image");
+        }
+      } catch (error) {
+        console.error('Erreur lors de la finalisation de l\'upload:', error);
+        toast({
+          title: "Erreur",
+          description: "Erreur lors de la finalisation de l'upload",
+          variant: "destructive",
+        });
+      }
     } else {
       toast({
         title: "Erreur",

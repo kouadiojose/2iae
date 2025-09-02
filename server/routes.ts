@@ -820,32 +820,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // File upload handler for founder image (admin only)
+  // File upload handler for founder image (admin only) - USING OBJECT STORAGE
   app.put("/api/admin/founder-message/upload-file/:fileName", requireAdmin, async (req, res) => {
     try {
       const { fileName } = req.params;
-      const founderDir = path.join(process.cwd(), 'attached_assets', 'founder');
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
       
-      // Create directory if it doesn't exist
-      if (!fs.existsSync(founderDir)) {
-        fs.mkdirSync(founderDir, { recursive: true });
+      if (!bucketId) {
+        return res.status(500).json({ error: "Object storage not configured" });
       }
       
-      const filePath = path.join(founderDir, fileName);
-      
-      // Create write stream
-      const writeStream = fs.createWriteStream(filePath);
-      
-      // Pipe request body to file
-      req.pipe(writeStream);
-      
-      writeStream.on('finish', () => {
-        res.json({ success: true });
-      });
-      
-      writeStream.on('error', (error) => {
-        console.error("Error writing file:", error);
-        res.status(500).json({ error: 'Failed to save file' });
+      // Create a buffer from the request stream
+      const chunks: Buffer[] = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', async () => {
+        try {
+          const buffer = Buffer.concat(chunks);
+          const objectPath = `public/founder/${fileName}`;
+          
+          // Upload to Google Cloud Storage
+          const { Storage } = await import('@google-cloud/storage');
+          const storage = new Storage({
+            credentials: {
+              audience: "replit",
+              subject_token_type: "access_token", 
+              token_url: "http://127.0.0.1:1106/token",
+              type: "external_account",
+              credential_source: {
+                url: "http://127.0.0.1:1106/credential",
+                format: {
+                  type: "json",
+                  subject_token_field_name: "access_token"
+                }
+              },
+              universe_domain: "googleapis.com"
+            },
+            projectId: ""
+          });
+          
+          const bucket = storage.bucket(bucketId);
+          const file = bucket.file(objectPath);
+          
+          await file.save(buffer, {
+            metadata: {
+              contentType: req.get('content-type') || 'image/jpeg'
+            }
+          });
+          
+          // Make file publicly readable
+          await file.makePublic();
+          
+          const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+          
+          console.log(`✅ Founder image uploaded to Object Storage: ${publicUrl}`);
+          
+          res.json({ 
+            success: true, 
+            path: publicUrl,
+            localPath: `/api/assets/founder/${fileName}` // For backward compatibility
+          });
+          
+        } catch (uploadError) {
+          console.error("Object storage upload error:", uploadError);
+          res.status(500).json({ error: "Failed to upload to object storage" });
+        }
       });
       
     } catch (error) {

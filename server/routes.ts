@@ -202,16 +202,33 @@ INSTRUCTIONS DE RÉPONSE:
 - Mets en avant l'excellence et le caractère innovant de l'institution`;
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Serve static assets from attached_assets folder
-  app.get("/api/assets/*", (req, res) => {
+  // Serve static assets from Object Storage or local fallback
+  app.get("/api/assets/*", async (req, res) => {
     const filePath = req.path.replace("/api/assets/", "");
-    const fullPath = path.join(process.cwd(), "attached_assets", filePath);
+    const localPath = path.join(process.cwd(), "attached_assets", filePath);
     
-    if (fs.existsSync(fullPath)) {
-      res.sendFile(fullPath);
-    } else {
-      res.status(404).json({ error: "File not found" });
+    // Try local file first (for backward compatibility)
+    if (fs.existsSync(localPath)) {
+      return res.sendFile(localPath);
     }
+    
+    // Try Object Storage for persistent files
+    try {
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (bucketId) {
+        const objectPath = `public/${filePath}`;
+        const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+        
+        // Redirect to Object Storage URL for persistence
+        console.log(`↗️ Redirecting to Object Storage: ${publicUrl}`);
+        return res.redirect(publicUrl);
+      }
+    } catch (error) {
+      console.error("Object Storage redirect error:", error);
+    }
+    
+    // File not found in both locations
+    res.status(404).json({ error: "File not found" });
   });
 
   // Public object serving endpoint (legacy)
@@ -478,25 +495,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // File upload handler (admin only)
+  // File upload handler (admin only) - USING OBJECT STORAGE FOR PERSISTENCE
   app.put("/api/admin/sliders/upload-file/:fileName", requireAdmin, async (req, res) => {
     try {
       const { fileName } = req.params;
-      const filePath = path.join(process.cwd(), 'attached_assets', 'sliders', fileName);
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
       
-      // Create write stream
-      const writeStream = fs.createWriteStream(filePath);
+      if (!bucketId) {
+        return res.status(500).json({ error: "Object storage not configured" });
+      }
       
-      // Pipe request body to file
-      req.pipe(writeStream);
-      
-      writeStream.on('finish', () => {
-        res.json({ success: true, path: `/api/assets/sliders/${fileName}` });
-      });
-      
-      writeStream.on('error', (error) => {
-        console.error('File write error:', error);
-        res.status(500).json({ error: 'Failed to save file' });
+      // Create a buffer from the request stream
+      const chunks: Buffer[] = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', async () => {
+        try {
+          const buffer = Buffer.concat(chunks);
+          const objectPath = `public/sliders/${fileName}`;
+          
+          // Upload to Google Cloud Storage
+          const { Storage } = await import('@google-cloud/storage');
+          const storage = new Storage({
+            credentials: {
+              audience: "replit",
+              subject_token_type: "access_token", 
+              token_url: "http://127.0.0.1:1106/token",
+              type: "external_account",
+              credential_source: {
+                url: "http://127.0.0.1:1106/credential",
+                format: {
+                  type: "json",
+                  subject_token_field_name: "access_token"
+                }
+              },
+              universe_domain: "googleapis.com"
+            },
+            projectId: ""
+          });
+          
+          const bucket = storage.bucket(bucketId);
+          const file = bucket.file(objectPath);
+          
+          await file.save(buffer, {
+            metadata: {
+              contentType: req.get('content-type') || 'image/jpeg'
+            }
+          });
+          
+          // Make file publicly readable
+          await file.makePublic();
+          
+          const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+          
+          console.log(`✅ Image uploaded to Object Storage: ${publicUrl}`);
+          
+          res.json({ 
+            success: true, 
+            path: publicUrl,
+            localPath: `/api/assets/sliders/${fileName}` // For backward compatibility
+          });
+          
+        } catch (uploadError) {
+          console.error("Object storage upload error:", uploadError);
+          res.status(500).json({ error: "Failed to upload to object storage" });
+        }
       });
       
     } catch (error) {

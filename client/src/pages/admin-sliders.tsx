@@ -36,7 +36,7 @@ export default function AdminSliders() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSlider, setEditingSlider] = useState<Slider | null>(null);
   const [currentImageUrl, setCurrentImageUrl] = useState<string>("");
-  const [currentImageData, setCurrentImageData] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Debug: Monitor currentImageUrl changes
   useEffect(() => {
@@ -170,13 +170,10 @@ export default function AdminSliders() {
   const handleEdit = (slider: Slider) => {
     setEditingSlider(slider);
     
-    // Use base64 data if available, otherwise use imageUrl
-    const displayUrl = slider.imageData 
-      ? `data:image/jpeg;base64,${slider.imageData}`
-      : (slider.imageUrl ?? "");
+    // Use imageUrl directly (no more base64)
+    const displayUrl = slider.imageUrl ?? "";
     
     setCurrentImageUrl(displayUrl);
-    setCurrentImageData(slider.imageData || null);
     
     form.reset({
       title: slider.title,
@@ -203,10 +200,10 @@ export default function AdminSliders() {
   };
 
   const onSubmit = (data: InsertSlider) => {
-    // Include base64 image data if available
+    // NOUVEAU SYSTÈME: Utilise imageUrl directement
     const submitData = {
       ...data,
-      imageData: currentImageData || undefined
+      imageUrl: currentImageUrl || data.imageUrl
     };
     
     if (editingSlider) {
@@ -219,61 +216,70 @@ export default function AdminSliders() {
   const handleNewSlider = () => {
     setEditingSlider(null);
     setCurrentImageUrl("");
-    setCurrentImageData(null);
+    setIsUploading(false);
     form.reset();
     setDialogOpen(true);
   };
 
-  // Convert file to base64
-  const convertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Simple base64 image upload
+  // NOUVEAU SYSTÈME: Upload de fichier physique
   const handleImageUpload = async (file: File) => {
     if (!file) return;
     
-    const fileLimit = 5 * 1024 * 1024; // 5MB
+    const fileLimit = 10 * 1024 * 1024; // 10MB
     if (file.size > fileLimit) {
       toast({
         title: "Erreur",
-        description: "L'image ne peut pas dépasser 5 MB",
+        description: "L'image ne peut pas dépasser 10 MB",
         variant: "destructive",
       });
       return;
     }
     
+    setIsUploading(true);
+    
     try {
-      console.log('🔄 Conversion en base64...');
-      const dataUrl = await convertToBase64(file);
+      console.log('🔄 Upload du fichier vers le serveur...');
       
-      // Extract base64 data (remove data:image/...;base64, prefix)
-      const base64Data = dataUrl.split(',')[1];
+      // Créer FormData pour l'upload
+      const formData = new FormData();
+      formData.append('image', file);
       
-      // Update preview and store base64 data
-      setCurrentImageUrl(dataUrl);
-      setCurrentImageData(base64Data);
-      form.setValue("imageUrl", dataUrl);
-      
-      console.log('✅ Image convertie et aperçu mis à jour');
-      
-      toast({
-        title: "Succès",
-        description: "Image chargée avec succès",
+      // Upload vers le backend
+      const response = await fetch('/api/admin/sliders/upload', {
+        method: 'POST',
+        body: formData,
       });
+      
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Mettre à jour l'aperçu avec l'URL du serveur
+        setCurrentImageUrl(result.imageUrl);
+        form.setValue("imageUrl", result.imageUrl);
+        
+        console.log('✅ Image uploadée:', result.imageUrl);
+        
+        toast({
+          title: "Succès",
+          description: "Image uploadée avec succès",
+        });
+      } else {
+        throw new Error(result.error || 'Upload failed');
+      }
       
     } catch (error) {
-      console.error('❌ Erreur conversion base64:', error);
+      console.error('❌ Erreur upload:', error);
       toast({
         title: "Erreur",
-        description: "Erreur lors du traitement de l'image",
+        description: "Erreur lors de l'upload de l'image",
         variant: "destructive",
       });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -595,13 +601,7 @@ export default function AdminSliders() {
                     <TableRow key={slider.id}>
                       <TableCell className="font-medium">{index + 1}</TableCell>
                       <TableCell>
-                        {slider.imageData ? (
-                          <img
-                            src={`data:image/jpeg;base64,${slider.imageData}`}
-                            alt={slider.title}
-                            className="w-16 h-10 object-cover rounded"
-                          />
-                        ) : slider.imageUrl ? (
+                        {slider.imageUrl ? (
                           <img
                             src={slider.imageUrl}
                             alt={slider.title}

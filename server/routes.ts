@@ -534,95 +534,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== SLIDER MANAGEMENT ROUTES (ADMIN ONLY) =====
 
-  // Get upload URL for slider images (admin only)
-  app.post("/api/admin/sliders/upload", requireAdmin, async (req, res) => {
+  // Upload slider image directly to physical storage (admin only)
+  app.post("/api/admin/sliders/upload", requireAdmin, slidersUpload.single('image'), async (req, res) => {
     try {
-      // Generate a unique filename
-      const timestamp = Date.now();
-      const randomId = Math.random().toString(36).substring(2, 15);
-      const filename = `slider_${timestamp}_${randomId}.jpg`;
+      if (!req.file) {
+        return res.status(400).json({ 
+          success: false,
+          error: "Aucun fichier image fourni" 
+        });
+      }
       
-      // Use the same protocol as the request to avoid mixed content issues
-      const protocol = req.get('x-forwarded-proto') || req.protocol;
+      const filename = req.file.filename;
+      const imageUrl = `/api/assets/sliders/${filename}`;
+      
+      console.log(`✅ Slider image uploaded to physical storage: ${filename}`);
+      
       res.json({ 
-        uploadURL: `${protocol}://${req.get('host')}/api/admin/sliders/upload-file/${filename}`,
-        finalUrl: `/api/assets/sliders/${filename}`
+        success: true,
+        imageUrl,
+        filename,
+        message: "Image uploadée avec succès"
       });
     } catch (error) {
-      console.error("Error generating upload URL:", error);
-      res.status(500).json({ error: "Failed to generate upload URL" });
+      console.error("Error uploading slider image:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Erreur lors de l'upload de l'image" 
+      });
     }
   });
 
-  // File upload handler (admin only) - USING OBJECT STORAGE FOR PERSISTENCE
-  app.put("/api/admin/sliders/upload-file/:fileName", requireAdmin, async (req, res) => {
-    try {
-      const { fileName } = req.params;
-      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-      
-      if (!bucketId) {
-        return res.status(500).json({ error: "Object storage not configured" });
-      }
-      
-      // Create a buffer from the request stream
-      const chunks: Buffer[] = [];
-      req.on('data', chunk => chunks.push(chunk));
-      req.on('end', async () => {
-        try {
-          const buffer = Buffer.concat(chunks);
-          const objectPath = `public/sliders/${fileName}`;
-          
-          // Upload to Google Cloud Storage
-          const { Storage } = await import('@google-cloud/storage');
-          const storage = new Storage({
-            credentials: {
-              audience: "replit",
-              subject_token_type: "access_token", 
-              token_url: "http://127.0.0.1:1106/token",
-              type: "external_account",
-              credential_source: {
-                url: "http://127.0.0.1:1106/credential",
-                format: {
-                  type: "json",
-                  subject_token_field_name: "access_token"
-                }
-              },
-              universe_domain: "googleapis.com"
-            },
-            projectId: ""
-          });
-          
-          const bucket = storage.bucket(bucketId);
-          const file = bucket.file(objectPath);
-          
-          await file.save(buffer, {
-            metadata: {
-              contentType: req.get('content-type') || 'image/jpeg'
-            }
-          });
-          
-          // Return server-proxied URL (avoids bucket public access policy)
-          const serverUrl = `/api/object-storage/sliders/${fileName}`;
-          
-          console.log(`✅ Slider image uploaded to Object Storage, serving via: ${serverUrl}`);
-          
-          res.json({ 
-            success: true, 
-            path: serverUrl,
-            localPath: `/api/assets/sliders/${fileName}` // For backward compatibility
-          });
-          
-        } catch (uploadError) {
-          console.error("Object storage upload error:", uploadError);
-          res.status(500).json({ error: "Failed to upload to object storage" });
-        }
-      });
-      
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      res.status(500).json({ error: "Failed to upload file" });
-    }
-  });
+  // Legacy route removed - now using direct multer upload above
 
   // Get all sliders (admin only)
   app.get("/api/admin/sliders", requireAdmin, async (req, res) => {
@@ -659,20 +601,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create new slider (admin only)
+  // Create new slider (admin only) - NOUVEAU SYSTÈME PHYSIQUE
   app.post("/api/admin/sliders", requireAdmin, async (req, res) => {
     try {
-      console.log('📝 [SLIDER CREATE] Request body size:', JSON.stringify(req.body).length, 'bytes');
-      console.log('📝 [SLIDER CREATE] Has imageData:', !!req.body.imageData);
-      console.log('📝 [SLIDER CREATE] ImageData length:', req.body.imageData?.length || 0);
+      console.log('📝 [SLIDER CREATE] Request body:', req.body);
+      console.log('📝 [SLIDER CREATE] ImageUrl provided:', !!req.body.imageUrl);
       
+      // Validation des données avec imageUrl (plus d'imageData)
       const validatedData = insertSliderSchema.parse(req.body);
       console.log('✅ [SLIDER CREATE] Validation passed');
       
       const slider = await storage.createSlider(validatedData);
-      console.log('✅ [SLIDER CREATE] Slider created:', slider.id);
+      console.log('✅ [SLIDER CREATE] Slider created with imageUrl:', slider.imageUrl);
 
-      res.status(201).json({ success: true, slider });
+      res.status(201).json({ 
+        success: true, 
+        slider,
+        message: "Slider créé avec succès"
+      });
     } catch (error) {
       console.error('❌ [SLIDER CREATE] Error:', error);
       if (error instanceof z.ZodError) {
@@ -683,10 +629,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors
         });
       }
-      console.error('❌ [SLIDER CREATE] Server error:', error.message);
+      console.error('❌ [SLIDER CREATE] Server error:', error instanceof Error ? error.message : 'Unknown error');
       res.status(500).json({
         success: false,
-        message: "Erreur lors de la création du slider: " + error.message
+        message: "Erreur lors de la création du slider: " + (error instanceof Error ? error.message : 'Unknown error')
       });
     }
   });
@@ -1806,6 +1752,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors de la suppression de l'image" 
+      });
+    }
+  });
+
+  // Upload route for founder images (physical storage) - admin only
+  app.post("/api/admin/founder/upload", requireAdmin, founderUpload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Aucun fichier image fourni"
+        });
+      }
+
+      // File already saved to disk by multer
+      const fileName = req.file.filename;
+      const publicUrl = `/api/assets/founder/${fileName}`;
+      
+      return res.json({
+        success: true,
+        image: {
+          imageUrl: publicUrl,
+          filename: req.file.filename
+        }
+      });
+    } catch (error) {
+      console.error("Error uploading founder image:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Erreur lors de l'upload de l'image"
       });
     }
   });

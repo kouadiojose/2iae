@@ -177,20 +177,7 @@ export default function AdminNewsPage() {
   });
 
   // Convert image to base64 directly
-  const convertImageToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Remove data:image/...;base64, prefix
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
+  // NOUVEAU SYSTÈME: Upload de fichier physique pour news
   const handleMainImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -218,27 +205,49 @@ export default function AdminNewsPage() {
       setUploadingImage(true);
       
       try {
-        const base64Data = await convertImageToBase64(file);
+        // Créer FormData pour l'upload
+        const uploadFormData = new FormData();
+        uploadFormData.append('image', file);
         
-        // Update form data with base64
-        setFormData(prev => ({ 
-          ...prev, 
-          imageData: base64Data,
-          imageUrl: '' // Clear old URL
-        }));
-        
-        setUploadingImage(false);
-        toast({
-          title: "Succès",
-          description: "Image chargée avec succès",
+        // Upload vers le backend (stockage physique)
+        const response = await fetch('/api/admin/news/temp/images/upload', {
+          method: 'POST',
+          body: uploadFormData,
         });
+        
+        if (!response.ok) {
+          throw new Error('Upload failed');
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          // Update form data with image URL (plus de base64)
+          setFormData(prev => ({ 
+            ...prev, 
+            imageUrl: result.image.imageUrl,
+            imageData: '' // Clear base64 data
+          }));
+          
+          console.log('✅ Image news uploadée:', result.image.imageUrl);
+          
+          toast({
+            title: "Succès",
+            description: "Image uploadée avec succès",
+          });
+        } else {
+          throw new Error(result.error || 'Upload failed');
+        }
+        
       } catch (error) {
-        setUploadingImage(false);
+        console.error('❌ Erreur upload news:', error);
         toast({
           title: "Erreur",
-          description: "Erreur lors du chargement de l'image",
+          description: "Erreur lors de l'upload de l'image",
           variant: "destructive",
         });
+      } finally {
+        setUploadingImage(false);
       }
     }
     
@@ -255,7 +264,7 @@ export default function AdminNewsPage() {
       summary: "",
       content: "",
       imageUrl: "",
-      imageData: "",
+      imageData: "", // Legacy field - will be empty with new system
       date: new Date().toISOString().split('T')[0],
       category: newsCategories[0],
       author: "Direction 2IAE",

@@ -22,7 +22,8 @@ export default function AdminFounder() {
     founderName: "",
     founderRole: "",
     founderOrganization: "",
-    founderImageUrl: ""
+    founderImageUrl: "",
+    imageData: ""
   });
   
   const [isUploading, setIsUploading] = useState(false);
@@ -66,7 +67,8 @@ export default function AdminFounder() {
         founderName: data.founderName || "",
         founderRole: data.founderRole || "",
         founderOrganization: data.founderOrganization || "",
-        founderImageUrl: data.founderImageUrl || ""
+        founderImageUrl: data.founderImageUrl || "",
+        imageData: data.imageData || ""
       });
     }
   }, [founderData]);
@@ -94,6 +96,21 @@ export default function AdminFounder() {
     updateMutation.mutate(formData as UpdateFounderMessage);
   };
 
+  // Convert image to base64 directly
+  const convertImageToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data:image/...;base64, prefix
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -108,11 +125,11 @@ export default function AdminFounder() {
       return;
     }
 
-    // Vérification de la taille (5MB max)
-    if (file.size > 5 * 1024 * 1024) {
+    // Vérification de la taille (10MB max pour base64)
+    if (file.size > 10 * 1024 * 1024) {
       toast({
         title: "Fichier trop volumineux",
-        description: "L'image ne doit pas dépasser 5 MB.",
+        description: "L'image ne doit pas dépasser 10 MB.",
         variant: "destructive",
       });
       return;
@@ -121,39 +138,25 @@ export default function AdminFounder() {
     setIsUploading(true);
 
     try {
-      // Obtenir l'URL d'upload
-      const uploadResponse = await apiRequest("POST", "/api/admin/founder-message/upload");
-      const uploadData = await uploadResponse.json();
-
-      // Upload du fichier
-      const uploadResult = await fetch(uploadData.uploadURL, {
-        method: "PUT",
-        body: file,
-        headers: {
-          "Content-Type": file.type,
-        },
-      });
-
-      if (!uploadResult.ok) {
-        throw new Error("Échec de l'upload");
-      }
-
-      // Mettre à jour l'URL de l'image dans le formulaire
-      setFormData(prev => ({
-        ...prev,
-        founderImageUrl: uploadData.finalUrl
+      const base64Data = await convertImageToBase64(file);
+      
+      // Update form data with base64
+      setFormData(prev => ({ 
+        ...prev, 
+        imageData: base64Data,
+        founderImageUrl: '' // Clear old URL
       }));
 
       toast({
         title: "Succès",
-        description: "Image uploadée avec succès.",
+        description: "Image chargée avec succès.",
       });
 
     } catch (error) {
-      console.error("Erreur lors de l'upload:", error);
+      console.error("Erreur lors du chargement:", error);
       toast({
-        title: "Erreur d'upload",
-        description: "Impossible d'uploader l'image. Veuillez réessayer.",
+        title: "Erreur de chargement",
+        description: "Impossible de charger l'image. Veuillez réessayer.",
         variant: "destructive",
       });
     } finally {
@@ -276,10 +279,12 @@ export default function AdminFounder() {
               <Label>Photo du fondateur</Label>
               
               {/* Aperçu de l'image actuelle */}
-              {formData.founderImageUrl && (
+              {(formData.imageData || formData.founderImageUrl) && (
                 <div className="relative w-32 h-32 border-2 border-gray-200 rounded-lg overflow-hidden">
                   <img 
-                    src={formData.founderImageUrl} 
+                    src={formData.imageData 
+                      ? `data:image/jpeg;base64,${formData.imageData}`
+                      : formData.founderImageUrl!} 
                     alt="Photo du fondateur"
                     className="w-full h-full object-cover"
                   />
@@ -304,7 +309,7 @@ export default function AdminFounder() {
                   ) : (
                     <>
                       <Upload className="h-4 w-4" />
-                      {formData.founderImageUrl ? "Changer la photo" : "Ajouter une photo"}
+                      {(formData.imageData || formData.founderImageUrl) ? "Changer la photo" : "Ajouter une photo"}
                     </>
                   )}
                 </Button>
@@ -317,11 +322,17 @@ export default function AdminFounder() {
                   className="hidden"
                 />
                 
-                {formData.founderImageUrl && (
+                {(formData.imageData || formData.founderImageUrl) && (
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => handleInputChange("founderImageUrl", "")}
+                    onClick={() => {
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        founderImageUrl: "", 
+                        imageData: "" 
+                      }));
+                    }}
                     className="text-red-600 hover:text-red-800"
                     data-testid="button-remove-image"
                   >
@@ -331,7 +342,7 @@ export default function AdminFounder() {
               </div>
               
               <p className="text-sm text-gray-500">
-                Formats acceptés: JPG, PNG, GIF. Taille maximale: 5 MB.
+                Formats acceptés: JPG, PNG, GIF. Taille maximale: 10 MB.
               </p>
             </div>
 

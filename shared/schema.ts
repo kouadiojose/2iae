@@ -225,6 +225,7 @@ export const insertFounderMessageSchema = createInsertSchema(founderMessage).pic
   founderRole: true,
   founderOrganization: true,
   founderImageUrl: true,
+  imageData: true,
 });
 
 export const updateFounderMessageSchema = createInsertSchema(founderMessage).pick({
@@ -235,6 +236,7 @@ export const updateFounderMessageSchema = createInsertSchema(founderMessage).pic
   founderRole: true,
   founderOrganization: true,
   founderImageUrl: true,
+  imageData: true,
   isActive: true,
 }).partial();
 

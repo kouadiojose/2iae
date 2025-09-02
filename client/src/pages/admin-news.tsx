@@ -31,6 +31,7 @@ const newsFormSchema = z.object({
   summary: z.string().optional(),
   content: z.string().optional(),
   imageUrl: z.string().optional(),
+  imageData: z.string().optional(),
   date: z.string().min(1, "La date est requise"),
   category: z.string().min(1, "La catégorie est requise"),
   author: z.string().min(1, "L'auteur est requis"),
@@ -48,6 +49,7 @@ interface News {
   summary: string | null;
   content: string | null;
   imageUrl: string | null;
+  imageData: string | null;
   date: string;
   category: string;
   author: string;
@@ -70,6 +72,7 @@ export default function AdminNewsPage() {
     summary: "",
     content: "",
     imageUrl: "",
+    imageData: "",
     date: new Date().toISOString().split('T')[0],
     category: newsCategories[0],
     author: "Direction 2IAE",
@@ -173,44 +176,22 @@ export default function AdminNewsPage() {
     },
   });
 
-  // Upload main image mutation
-  const uploadMainImageMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('image', file);
+  // Convert image to base64 directly
+  const convertImageToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove data:image/...;base64, prefix
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
 
-      const response = await fetch(`/api/admin/news/temp/images/upload`, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Upload failed');
-      }
-
-      return await response.json();
-    },
-    onSuccess: (data) => {
-      setUploadingImage(false);
-      setFormData(prev => ({ ...prev, imageUrl: data.image.imageUrl }));
-      toast({
-        title: "Succès",
-        description: "Image uploadée avec succès",
-      });
-    },
-    onError: (error: any) => {
-      setUploadingImage(false);
-      toast({
-        title: "Erreur",
-        description: error.message || "Erreur lors de l'upload de l'image",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleMainImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMainImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       // Check file size (10MB limit)
@@ -235,7 +216,30 @@ export default function AdminNewsPage() {
       }
 
       setUploadingImage(true);
-      uploadMainImageMutation.mutate(file);
+      
+      try {
+        const base64Data = await convertImageToBase64(file);
+        
+        // Update form data with base64
+        setFormData(prev => ({ 
+          ...prev, 
+          imageData: base64Data,
+          imageUrl: '' // Clear old URL
+        }));
+        
+        setUploadingImage(false);
+        toast({
+          title: "Succès",
+          description: "Image chargée avec succès",
+        });
+      } catch (error) {
+        setUploadingImage(false);
+        toast({
+          title: "Erreur",
+          description: "Erreur lors du chargement de l'image",
+          variant: "destructive",
+        });
+      }
     }
     
     // Clear the input
@@ -251,6 +255,7 @@ export default function AdminNewsPage() {
       summary: "",
       content: "",
       imageUrl: "",
+      imageData: "",
       date: new Date().toISOString().split('T')[0],
       category: newsCategories[0],
       author: "Direction 2IAE",
@@ -274,6 +279,7 @@ export default function AdminNewsPage() {
       summary: news.summary || "",
       content: news.content || "",
       imageUrl: news.imageUrl || "",
+      imageData: news.imageData || "",
       date: news.date,
       category: news.category,
       author: news.author,
@@ -472,11 +478,13 @@ export default function AdminNewsPage() {
                 <div className="space-y-2">
                   <Label>Image de l'actualité</Label>
                   <div className="space-y-4">
-                    {formData.imageUrl && (
+                    {(formData.imageData || formData.imageUrl) && (
                       <div className="space-y-2">
-                        <p className="text-sm text-gray-600">Image actuelle :</p>
+                        <p className="text-sm text-gray-600">Aperçu de l'image :</p>
                         <img 
-                          src={formData.imageUrl} 
+                          src={formData.imageData 
+                            ? `data:image/jpeg;base64,${formData.imageData}`
+                            : formData.imageUrl!} 
                           alt="Aperçu" 
                           className="w-32 h-32 object-cover rounded border"
                         />
@@ -498,7 +506,7 @@ export default function AdminNewsPage() {
                       className="w-full bg-orange-500 hover:bg-orange-600"
                     >
                       <Image className="h-4 w-4 mr-2" />
-                      {uploadingImage ? "Upload en cours..." : (formData.imageUrl ? "Changer l'image" : "Télécharger une image")}
+                      {uploadingImage ? "Chargement..." : ((formData.imageData || formData.imageUrl) ? "Changer l'image" : "Choisir une image")}
                     </Button>
                     
                     <div className="text-sm text-gray-600 mt-2">
@@ -615,10 +623,12 @@ export default function AdminNewsPage() {
                     )}
                   </div>
                   
-                  {newsItem.imageUrl && (
+                  {(newsItem.imageData || newsItem.imageUrl) && (
                     <div className="ml-4">
                       <img
-                        src={newsItem.imageUrl}
+                        src={newsItem.imageData 
+                          ? `data:image/jpeg;base64,${newsItem.imageData}` 
+                          : newsItem.imageUrl!}
                         alt={newsItem.title}
                         className="w-20 h-20 object-cover rounded"
                       />

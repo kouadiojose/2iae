@@ -259,53 +259,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { signed_url: signedURL } = await response.json();
       
-      // Stream the file directly instead of redirecting for better browser compatibility
-      try {
-        const fileResponse = await fetch(signedURL);
-        
-        if (!fileResponse.ok) {
-          return res.status(404).json({ error: "Image not found" });
-        }
-        
-        // Get content type from response
-        const contentType = fileResponse.headers.get('content-type') || 'image/jpeg';
-        const contentLength = fileResponse.headers.get('content-length');
-        
-        // Set proper headers for image serving
-        res.writeHead(200, {
-          'Content-Type': contentType,
-          'Content-Length': contentLength || '',
-          'Cache-Control': 'public, max-age=3600',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET',
-          'Access-Control-Allow-Headers': 'Content-Type'
-        });
-        
-        console.log(`🎯 Streaming image: ${objectPath} (${contentType}, ${contentLength} bytes)`);
-        
-        // Stream the response body directly
-        const reader = fileResponse.body?.getReader();
-        if (reader) {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              res.write(Buffer.from(value));
-            }
-            res.end();
-          } finally {
-            reader.releaseLock();
-          }
-        } else {
-          // Fallback to buffer approach
-          const buffer = await fileResponse.arrayBuffer();
-          res.end(Buffer.from(buffer));
-        }
-        
-      } catch (streamError) {
-        console.error('❌ Error streaming file:', streamError);
-        return res.status(500).json({ error: "Error loading image" });
-      }
+      // SIMPLE: Redirect direct vers l'URL signée
+      console.log(`🎯 Redirecting to signed URL for: ${objectPath}`);
+      res.redirect(signedURL);
       
     } catch (error) {
       console.error("Error serving object storage file:", error);

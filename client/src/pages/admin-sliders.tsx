@@ -40,6 +40,9 @@ export default function AdminSliders() {
   // Debug: Monitor currentImageUrl changes
   useEffect(() => {
     console.log('🔄 currentImageUrl changed to:', currentImageUrl);
+    if (currentImageUrl) {
+      console.log('🧪 Testing if URL works in img element...');
+    }
   }, [currentImageUrl]);
 
   // Get all sliders
@@ -229,12 +232,22 @@ export default function AdminSliders() {
         const data = await response.json();
         
         if (data.success && data.path) {
-          // Use the URL returned by the server (Object Storage proxy URL)
-          console.log('🔴 AVANT setCurrentImageUrl:', currentImageUrl);
-          console.log('🔵 NOUVEAU path depuis server:', data.path);
-          setCurrentImageUrl(data.path);
-          form.setValue("imageUrl", data.path);
-          console.log('✅ State mis à jour avec:', data.path);
+          // SOLUTION DIRECTE: Utiliser directement l'URL depuis le serveur
+          const imageUrl = data.path;
+          console.log('🎯 URL image depuis serveur:', imageUrl);
+          
+          // Tester directement si l'URL fonctionne
+          const testImg = new Image();
+          testImg.onload = () => {
+            console.log('✅ IMAGE TEST RÉUSSIE, mise à jour du state');
+            setCurrentImageUrl(imageUrl);
+            form.setValue("imageUrl", imageUrl);
+          };
+          testImg.onerror = (err) => {
+            console.error('❌ IMAGE TEST ÉCHOUÉE:', err);
+            console.error('❌ URL qui échoue:', imageUrl);
+          };
+          testImg.src = imageUrl;
           
           toast({
             title: "Succès",

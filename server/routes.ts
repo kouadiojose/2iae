@@ -30,22 +30,9 @@ function generateSlug(title: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-// Configure multer for news image uploads
-const newsImageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = 'attached_assets/actualites';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueId = randomUUID().replace(/-/g, '');
-    const extension = path.extname(file.originalname);
-    const filename = `news_${Date.now()}_${uniqueId}${extension}`;
-    cb(null, filename);
-  }
-});
+// Configure multer for news image uploads - MIGRATED TO OBJECT STORAGE
+// Keeping minimal memory storage for processing before Object Storage upload
+const newsImageStorage = multer.memoryStorage();
 
 const newsImageUpload = multer({
   storage: newsImageStorage,
@@ -62,22 +49,9 @@ const newsImageUpload = multer({
   }
 });
 
-// Configure multer for programs/filieres image uploads
-const programImageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = 'attached_assets/filieres';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueId = randomUUID().replace(/-/g, '');
-    const extension = path.extname(file.originalname);
-    const filename = `program_${Date.now()}_${uniqueId}${extension}`;
-    cb(null, filename);
-  }
-});
+// Configure multer for programs/filieres image uploads - MIGRATED TO OBJECT STORAGE
+// Keeping minimal memory storage for processing before Object Storage upload
+const programImageStorage = multer.memoryStorage();
 
 const programImageUpload = multer({
   storage: programImageStorage,
@@ -93,6 +67,56 @@ const programImageUpload = multer({
     }
   }
 });
+
+// Common Object Storage upload function - PERSISTENT STORAGE
+async function uploadToObjectStorage(
+  buffer: Buffer, 
+  fileName: string, 
+  folderName: string,
+  contentType: string = 'image/jpeg'
+): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) {
+    throw new Error("Object storage not configured");
+  }
+
+  const objectPath = `public/${folderName}/${fileName}`;
+  
+  // Upload to Google Cloud Storage
+  const { Storage } = await import('@google-cloud/storage');
+  const storage = new Storage({
+    credentials: {
+      audience: "replit",
+      subject_token_type: "access_token", 
+      token_url: "http://127.0.0.1:1106/token",
+      type: "external_account",
+      credential_source: {
+        url: "http://127.0.0.1:1106/credential",
+        format: {
+          type: "json",
+          subject_token_field_name: "access_token"
+        }
+      },
+      universe_domain: "googleapis.com"
+    },
+    projectId: ""
+  });
+  
+  const bucket = storage.bucket(bucketId);
+  const file = bucket.file(objectPath);
+  
+  await file.save(buffer, {
+    metadata: { contentType }
+  });
+  
+  // Make file publicly readable
+  await file.makePublic();
+  
+  const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+  console.log(`✅ Image uploaded to Object Storage: ${publicUrl}`);
+  
+  return publicUrl;
+}
 
 // Function to generate presigned URL for object storage
 async function generatePresignedUrl(bucketName: string, objectName: string): Promise<string> {
@@ -1187,13 +1211,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Create the image URL for local storage
-      const imageUrl = `/api/assets/filieres/${req.file.filename}`;
-
+      // Upload to Object Storage for persistence
+      const fileName = `program_${Date.now()}_${randomUUID().replace(/-/g, '')}${path.extname(req.file.originalname)}`;
+      const publicUrl = await uploadToObjectStorage(req.file.buffer, fileName, 'filieres', req.file.mimetype);
+      
       return res.json({
         success: true,
         image: {
-          imageUrl: imageUrl,
+          imageUrl: publicUrl,
+          localPath: `/api/assets/filieres/${fileName}`, // For backward compatibility
           filename: req.file.filename
         }
       });
@@ -1206,20 +1232,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Route to serve program images
-  app.get("/api/assets/filieres/:filename", (req, res) => {
+  // Route to serve program images - OBJECT STORAGE REDIRECT
+  app.get("/api/assets/filieres/:filename", async (req, res) => {
     const { filename } = req.params;
-    const filePath = path.join(process.cwd(), 'attached_assets', 'filieres', filename);
+    const localPath = path.join(process.cwd(), 'attached_assets', 'filieres', filename);
     
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Image non trouvée" 
-      });
+    // Try local file first (for backward compatibility)
+    if (fs.existsSync(localPath)) {
+      return res.sendFile(localPath);
     }
     
-    res.sendFile(filePath);
+    // Redirect to Object Storage for persistent files
+    try {
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (bucketId) {
+        const objectPath = `public/filieres/${filename}`;
+        const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+        console.log(`↗️ Redirecting to Object Storage: ${publicUrl}`);
+        return res.redirect(publicUrl);
+      }
+    } catch (error) {
+      console.error("Object Storage redirect error:", error);
+    }
+    
+    // File not found in both locations
+    res.status(404).json({ 
+      success: false, 
+      error: "Image non trouvée" 
+    });
   });
 
   // =================== NEWS ROUTES ===================
@@ -1513,37 +1553,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Route to serve news images from local storage
+  // Route to serve news images - OBJECT STORAGE REDIRECT
   app.get("/api/assets/actualites/:filename", async (req, res) => {
     try {
       const { filename } = req.params;
-      const filePath = path.join(process.cwd(), 'attached_assets', 'actualites', filename);
+      const localPath = path.join(process.cwd(), 'attached_assets', 'actualites', filename);
       
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ 
-          success: false, 
-          error: "Image non trouvée" 
-        });
+      // Try local file first (for backward compatibility)
+      if (fs.existsSync(localPath)) {
+        return res.sendFile(localPath);
       }
       
-      // Set appropriate headers
-      const extension = path.extname(filename).toLowerCase();
-      const mimeTypes: { [key: string]: string } = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp'
-      };
+      // Redirect to Object Storage for persistent files
+      try {
+        const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+        if (bucketId) {
+          const objectPath = `public/actualites/${filename}`;
+          const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+          console.log(`↗️ Redirecting to Object Storage: ${publicUrl}`);
+          return res.redirect(publicUrl);
+        }
+      } catch (error) {
+        console.error("Object Storage redirect error:", error);
+      }
       
-      const mimeType = mimeTypes[extension] || 'application/octet-stream';
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Cache-Control', 'public, max-age=3600'); // 1 hour cache
-      
-      // Stream the file
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
+      // File not found in both locations
+      res.status(404).json({ 
+        success: false, 
+        error: "Image non trouvée" 
+      });
     } catch (error) {
       console.error("Error serving news image:", error);
       res.status(500).json({ 
@@ -1583,13 +1621,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Create the image URL for local storage
-      const imageUrl = `/api/assets/actualites/${req.file.filename}`;
-
+      // Upload to Object Storage for persistence
+      const fileName = `news_${Date.now()}_${randomUUID().replace(/-/g, '')}${path.extname(req.file.originalname)}`;
+      const publicUrl = await uploadToObjectStorage(req.file.buffer, fileName, 'actualites', req.file.mimetype);
+      
       return res.json({
         success: true,
         image: {
-          imageUrl: imageUrl,
+          imageUrl: publicUrl,
+          localPath: `/api/assets/actualites/${fileName}`, // For backward compatibility
           filename: req.file.filename
         }
       });
@@ -1615,12 +1655,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Create the image URL for local storage
-      const imageUrl = `/api/assets/actualites/${req.file.filename}`;
-
+      // Upload to Object Storage for persistence
+      const fileName = `news_${Date.now()}_${randomUUID().replace(/-/g, '')}${path.extname(req.file.originalname)}`;
+      const publicUrl = await uploadToObjectStorage(req.file.buffer, fileName, 'actualites', req.file.mimetype);
+      
       const newsImage = await storage.createNewsImage({
         newsId,
-        imageUrl,
+        imageUrl: publicUrl,
         caption: caption || null,
         order: order ? parseInt(order) : null
       });

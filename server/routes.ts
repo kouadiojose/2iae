@@ -68,7 +68,7 @@ const programImageUpload = multer({
   }
 });
 
-// Common Object Storage upload function - PERSISTENT STORAGE
+// FIXED: Object Storage upload using Replit API - PERSISTENT STORAGE
 async function uploadToObjectStorage(
   buffer: Buffer, 
   fileName: string, 
@@ -82,40 +82,35 @@ async function uploadToObjectStorage(
 
   const objectPath = `public/${folderName}/${fileName}`;
   
-  // Upload to Google Cloud Storage
-  const { Storage } = await import('@google-cloud/storage');
-  const storage = new Storage({
-    credentials: {
-      audience: "replit",
-      subject_token_type: "access_token", 
-      token_url: "http://127.0.0.1:1106/token",
-      type: "external_account",
-      credential_source: {
-        url: "http://127.0.0.1:1106/credential",
-        format: {
-          type: "json",
-          subject_token_field_name: "access_token"
-        }
-      },
-      universe_domain: "googleapis.com"
-    },
-    projectId: ""
-  });
-  
-  const bucket = storage.bucket(bucketId);
-  const file = bucket.file(objectPath);
-  
-  await file.save(buffer, {
-    metadata: { contentType }
-  });
-  
-  // Make file publicly readable
-  await file.makePublic();
-  
-  const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
-  console.log(`✅ Image uploaded to Object Storage: ${publicUrl}`);
-  
-  return publicUrl;
+  try {
+    // Step 1: Get presigned URL for upload
+    const presignedUrl = await generatePresignedUrl(bucketId, objectPath);
+    
+    // Step 2: Upload file using presigned URL
+    const uploadResponse = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: buffer,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': buffer.length.toString()
+      }
+    });
+    
+    if (!uploadResponse.ok) {
+      throw new Error(`Upload failed: ${uploadResponse.status} - ${uploadResponse.statusText}`);
+    }
+    
+    // Step 3: Return public URL
+    const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
+    console.log(`✅ Image uploaded to Object Storage: ${publicUrl}`);
+    
+    return publicUrl;
+    
+  } catch (error) {
+    console.error('❌ Object Storage upload error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Failed to upload to object storage: ${errorMessage}`);
+  }
 }
 
 // Function to generate presigned URL for object storage

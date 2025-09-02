@@ -233,8 +233,14 @@ export default function AdminSliders() {
         if (data.success && data.path) {
           // Use the URL returned by the server (Object Storage proxy URL)
           console.log('🎯 Setting image URL:', data.path);
+          console.log('🔄 currentImageUrl AVANT:', currentImageUrl);
           setCurrentImageUrl(data.path);
           form.setValue("imageUrl", data.path);
+          
+          // Force re-render verification
+          setTimeout(() => {
+            console.log('🔄 currentImageUrl APRÈS:', currentImageUrl);
+          }, 100);
           
           toast({
             title: "Succès",
@@ -398,10 +404,13 @@ export default function AdminSliders() {
                         </ObjectUploader>
                         {currentImageUrl && (
                           <div className="relative">
+                            <div className="text-xs text-gray-500 mb-2">URL: {currentImageUrl}</div>
                             <img
                               src={currentImageUrl}
                               alt="Aperçu de l'image"
                               className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
+                              onLoad={() => console.log('🖼️ Image loaded successfully!')}
+                              onError={(e) => console.error('❌ Image failed to load:', e)}
                             />
                             <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">
                               <Images className="h-3 w-3" />

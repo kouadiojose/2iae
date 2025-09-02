@@ -6,8 +6,13 @@ import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from 'url';
 import multer from "multer";
 import { randomUUID } from "crypto";
+
+// Pour ES modules, obtenir __dirname équivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Function to generate slug from title
 function generateSlug(title: string): string {

@@ -100,11 +100,11 @@ async function uploadToObjectStorage(
       throw new Error(`Upload failed: ${uploadResponse.status} - ${uploadResponse.statusText}`);
     }
     
-    // Step 3: Return public URL
-    const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
-    console.log(`✅ Image uploaded to Object Storage: ${publicUrl}`);
+    // Step 3: Return server-proxied URL (avoids bucket public access policy)
+    const serverUrl = `/api/object-storage/${folderName}/${fileName}`;
+    console.log(`✅ Image uploaded to Object Storage, serving via: ${serverUrl}`);
     
-    return publicUrl;
+    return serverUrl;
     
   } catch (error) {
     console.error('❌ Object Storage upload error:', error);
@@ -221,6 +221,53 @@ INSTRUCTIONS DE RÉPONSE:
 - Mets en avant l'excellence et le caractère innovant de l'institution`;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Proxy route for Object Storage files (handles bucket public access prevention)
+  app.get("/api/object-storage/:folderName/:fileName", async (req, res) => {
+    try {
+      const { folderName, fileName } = req.params;
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      
+      if (!bucketId) {
+        return res.status(500).json({ error: "Object storage not configured" });
+      }
+      
+      const objectPath = `public/${folderName}/${fileName}`;
+      
+      // Generate presigned URL for downloading (1 hour)
+      const downloadRequest = {
+        bucket_name: bucketId,
+        object_name: objectPath,
+        method: "GET",
+        expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
+      };
+      
+      const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+      const response = await fetch(
+        `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(downloadRequest),
+        }
+      );
+      
+      if (!response.ok) {
+        return res.status(404).json({ error: "Image not found" });
+      }
+      
+      const { signed_url: signedURL } = await response.json();
+      
+      // Redirect to the signed URL
+      res.redirect(signedURL);
+      
+    } catch (error) {
+      console.error("Error serving object storage file:", error);
+      res.status(500).json({ error: "Error loading image" });
+    }
+  });
+
   // Serve static assets from Object Storage or local fallback
   app.get("/api/assets/*", async (req, res) => {
     const filePath = req.path.replace("/api/assets/", "");
@@ -561,16 +608,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
           
-          // Make file publicly readable
-          await file.makePublic();
+          // Return server-proxied URL (avoids bucket public access policy)
+          const serverUrl = `/api/object-storage/sliders/${fileName}`;
           
-          const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
-          
-          console.log(`✅ Image uploaded to Object Storage: ${publicUrl}`);
+          console.log(`✅ Slider image uploaded to Object Storage, serving via: ${serverUrl}`);
           
           res.json({ 
             success: true, 
-            path: publicUrl,
+            path: serverUrl,
             localPath: `/api/assets/sliders/${fileName}` // For backward compatibility
           });
           
@@ -886,16 +931,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
           
-          // Make file publicly readable
-          await file.makePublic();
+          // Return server-proxied URL (avoids bucket public access policy)
+          const serverUrl = `/api/object-storage/founder/${fileName}`;
           
-          const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
-          
-          console.log(`✅ Founder image uploaded to Object Storage: ${publicUrl}`);
+          console.log(`✅ Founder image uploaded to Object Storage, serving via: ${serverUrl}`);
           
           res.json({ 
             success: true, 
-            path: publicUrl,
+            path: serverUrl,
             localPath: `/api/assets/founder/${fileName}` // For backward compatibility
           });
           

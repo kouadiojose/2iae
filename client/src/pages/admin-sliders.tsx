@@ -211,20 +211,28 @@ export default function AdminSliders() {
   };
 
   const handleUploadComplete = async (result: any) => {
+    console.log('🔍 Upload Complete called with:', result);
+    
     if (result.successful?.[0]?.uploadURL) {
       try {
         // Extract filename from upload URL
         const successfulUpload = result.successful[0];
         const uploadUrl = successfulUpload.uploadURL;
+        console.log('📤 Upload URL:', uploadUrl);
+        
         const urlParts = uploadUrl.split('/');
         const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
+        console.log('📁 Extracted filename:', filename);
         
         // Call server to finalize upload and get the actual serving URL
+        console.log('⚡ Finalizing upload with server...');
         const response = await apiRequest("PUT", `/api/admin/sliders/upload-file/${filename}`);
         const data = await response.json();
+        console.log('✅ Server response:', data);
         
         if (data.success && data.path) {
           // Use the URL returned by the server (Object Storage proxy URL)
+          console.log('🎯 Setting image URL:', data.path);
           setCurrentImageUrl(data.path);
           form.setValue("imageUrl", data.path);
           
@@ -233,10 +241,11 @@ export default function AdminSliders() {
             description: "Image uploadée avec succès",
           });
         } else {
+          console.error('❌ Invalid server response:', data);
           throw new Error("Échec de récupération de l'URL de l'image");
         }
       } catch (error) {
-        console.error('Erreur lors de la finalisation de l\'upload:', error);
+        console.error('💥 Erreur lors de la finalisation de l\'upload:', error);
         toast({
           title: "Erreur",
           description: "Erreur lors de la finalisation de l'upload",
@@ -244,6 +253,7 @@ export default function AdminSliders() {
         });
       }
     } else {
+      console.error('❌ No successful upload in result:', result);
       toast({
         title: "Erreur",
         description: "Erreur lors de l'upload de l'image",

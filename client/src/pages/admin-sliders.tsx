@@ -16,7 +16,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSliderSchema, type Slider, type InsertSlider } from "@shared/schema";
-import { ObjectUploader } from "@/components/ObjectUploader";
+// ObjectUploader no longer needed - using direct base64 approach
 import { 
   ArrowLeft, 
   Plus,
@@ -36,6 +36,7 @@ export default function AdminSliders() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSlider, setEditingSlider] = useState<Slider | null>(null);
   const [currentImageUrl, setCurrentImageUrl] = useState<string>("");
+  const [currentImageData, setCurrentImageData] = useState<string | null>(null);
   
   // Debug: Monitor currentImageUrl changes
   useEffect(() => {
@@ -168,12 +169,20 @@ export default function AdminSliders() {
 
   const handleEdit = (slider: Slider) => {
     setEditingSlider(slider);
-    setCurrentImageUrl(slider.imageUrl ?? "");
+    
+    // Use base64 data if available, otherwise use imageUrl
+    const displayUrl = slider.imageData 
+      ? `data:image/jpeg;base64,${slider.imageData}`
+      : (slider.imageUrl ?? "");
+    
+    setCurrentImageUrl(displayUrl);
+    setCurrentImageData(slider.imageData || null);
+    
     form.reset({
       title: slider.title,
       subtitle: slider.subtitle ?? "",
       description: slider.description ?? "",
-      imageUrl: slider.imageUrl ?? "",
+      imageUrl: displayUrl,
       button1Text: slider.button1Text ?? "",
       button1Link: slider.button1Link ?? "",
       button2Text: slider.button2Text ?? "",
@@ -194,70 +203,75 @@ export default function AdminSliders() {
   };
 
   const onSubmit = (data: InsertSlider) => {
+    // Include base64 image data if available
+    const submitData = {
+      ...data,
+      imageData: currentImageData || undefined
+    };
+    
     if (editingSlider) {
-      updateMutation.mutate({ id: editingSlider.id, data });
+      updateMutation.mutate({ id: editingSlider.id, data: submitData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(submitData);
     }
   };
 
   const handleNewSlider = () => {
     setEditingSlider(null);
     setCurrentImageUrl("");
+    setCurrentImageData(null);
     form.reset();
     setDialogOpen(true);
   };
 
-  // Handle image upload
-  const handleGetUploadParameters = async () => {
-    const response = await apiRequest("POST", "/api/admin/sliders/upload");
-    const data = await response.json();
-    return {
-      method: "PUT" as const,
-      url: data.uploadURL,
-    };
+  // Convert file to base64
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   };
 
-  const handleUploadComplete = async (result: any) => {
-    if (result.successful?.[0]?.uploadURL) {
-      try {
-        // Extract filename from upload URL
-        const successfulUpload = result.successful[0];
-        const uploadUrl = successfulUpload.uploadURL;
-        const urlParts = uploadUrl.split('/');
-        const filename = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
-        
-        // Call server to finalize upload and get the actual serving URL
-        const response = await apiRequest("PUT", `/api/admin/sliders/upload-file/${filename}`);
-        const data = await response.json();
-        
-        if (data.success && data.path) {
-          // SOLUTION DIRECTE: Mettre à jour immédiatement sans test
-          const imageUrl = data.path;
-          console.log('🎯 Mise à jour directe avec URL:', imageUrl);
-          
-          setCurrentImageUrl(imageUrl);
-          form.setValue("imageUrl", imageUrl);
-          
-          toast({
-            title: "Succès",
-            description: "Image uploadée avec succès",
-          });
-        } else {
-          throw new Error("Échec de récupération de l'URL de l'image");
-        }
-      } catch (error) {
-        console.error('Erreur lors de la finalisation de l\'upload:', error);
-        toast({
-          title: "Erreur",
-          description: "Erreur lors de la finalisation de l'upload",
-          variant: "destructive",
-        });
-      }
-    } else {
+  // Simple base64 image upload
+  const handleImageUpload = async (file: File) => {
+    if (!file) return;
+    
+    const fileLimit = 5 * 1024 * 1024; // 5MB
+    if (file.size > fileLimit) {
       toast({
         title: "Erreur",
-        description: "Erreur lors de l'upload de l'image",
+        description: "L'image ne peut pas dépasser 5 MB",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      console.log('🔄 Conversion en base64...');
+      const dataUrl = await convertToBase64(file);
+      
+      // Extract base64 data (remove data:image/...;base64, prefix)
+      const base64Data = dataUrl.split(',')[1];
+      
+      // Update preview and store base64 data
+      setCurrentImageUrl(dataUrl);
+      setCurrentImageData(base64Data);
+      form.setValue("imageUrl", dataUrl);
+      
+      console.log('✅ Image convertie et aperçu mis à jour');
+      
+      toast({
+        title: "Succès",
+        description: "Image chargée avec succès",
+      });
+      
+    } catch (error) {
+      console.error('❌ Erreur conversion base64:', error);
+      toast({
+        title: "Erreur",
+        description: "Erreur lors du traitement de l'image",
         variant: "destructive",
       });
     }
@@ -385,18 +399,31 @@ export default function AdminSliders() {
 
                       <div className="space-y-3">
                         <FormLabel>Image du slider</FormLabel>
-                        <ObjectUploader
-                          maxNumberOfFiles={1}
-                          maxFileSize={5242880} // 5MB
-                          onGetUploadParameters={handleGetUploadParameters}
-                          onComplete={handleUploadComplete}
-                          buttonClassName="w-full"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Upload className="h-4 w-4" />
-                            <span>Choisir une image</span>
-                          </div>
-                        </ObjectUploader>
+                        <div className="w-full">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleImageUpload(file);
+                              }
+                            }}
+                            className="hidden"
+                            id="image-upload"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => document.getElementById('image-upload')?.click()}
+                            className="w-full"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Upload className="h-4 w-4" />
+                              <span>Choisir une image</span>
+                            </div>
+                          </Button>
+                        </div>
                         {currentImageUrl && (
                           <div className="relative">
                             <img
@@ -568,7 +595,13 @@ export default function AdminSliders() {
                     <TableRow key={slider.id}>
                       <TableCell className="font-medium">{index + 1}</TableCell>
                       <TableCell>
-                        {slider.imageUrl ? (
+                        {slider.imageData ? (
+                          <img
+                            src={`data:image/jpeg;base64,${slider.imageData}`}
+                            alt={slider.title}
+                            className="w-16 h-10 object-cover rounded"
+                          />
+                        ) : slider.imageUrl ? (
                           <img
                             src={slider.imageUrl}
                             alt={slider.title}

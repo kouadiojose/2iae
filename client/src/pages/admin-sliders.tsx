@@ -436,15 +436,10 @@ export default function AdminSliders() {
                               src={currentImageUrl}
                               alt="Aperçu de l'image" 
                               className="w-full max-w-md h-32 object-cover rounded-lg border-2 border-green-200"
-                              crossOrigin="anonymous"
-                              onLoad={() => console.log('✅ Image chargée avec succès!')}
+                              onLoad={() => console.log('✅ Image chargée avec succès:', currentImageUrl)}
                               onError={(e) => {
-                                console.error('❌ Image failed to load - trying fallback');
-                                // Essayer une approche différente
-                                setTimeout(() => {
-                                  const img = e.target as HTMLImageElement;
-                                  img.src = currentImageUrl + '?t=' + Date.now(); // Cache bust
-                                }, 1000);
+                                console.error('❌ Image failed to load:', currentImageUrl);
+                                console.error('Error details:', e);
                               }}
                             />
                             <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">

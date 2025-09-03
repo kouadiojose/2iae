@@ -295,15 +295,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const objectPath = `public/${filePath}`;
         const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
         
+        console.log(`🔍 Checking Object Storage for: ${objectPath}`);
+        
         // Vérifier si le fichier existe dans Object Storage
         const checkResponse = await fetch(publicUrl, { method: 'HEAD' });
         if (checkResponse.ok) {
           console.log(`✅ Serving from Object Storage: ${publicUrl}`);
           return res.redirect(publicUrl);
+        } else {
+          console.log(`⚠️ Not found in Object Storage: ${objectPath} (Status: ${checkResponse.status})`);
         }
       }
     } catch (error) {
-      console.log(`⚠️ Object Storage check failed for ${filePath}`);
+      console.log(`⚠️ Object Storage check failed for ${filePath}:`, error instanceof Error ? error.message : error);
     }
     
     // PRIORITÉ 2: Stockage physique local (temporaire)

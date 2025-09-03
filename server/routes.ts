@@ -54,11 +54,14 @@ const uploadConfig = multer({
 import AWS from 'aws-sdk';
 
 // Configuration DigitalOcean Spaces (compatible S3)
-const spacesEndpoint = new AWS.Endpoint(process.env.DO_SPACES_ENDPOINT || 'nyc3.digitaloceanspaces.com');
+// Extraire le domaine propre de l'endpoint
+const rawEndpoint = process.env.DO_SPACES_ENDPOINT || 'https://nyc3.digitaloceanspaces.com';
+const spacesEndpoint = rawEndpoint.replace('https://', '').replace(/^[^.]+\./, ''); // Enlever https:// et le nom du bucket
 const s3 = new AWS.S3({
-  endpoint: spacesEndpoint,
+  endpoint: `https://${spacesEndpoint}`,
   accessKeyId: process.env.DO_SPACES_KEY,
   secretAccessKey: process.env.DO_SPACES_SECRET,
+  region: 'us-east-1',
   s3ForcePathStyle: false,
   signatureVersion: 'v4'
 });

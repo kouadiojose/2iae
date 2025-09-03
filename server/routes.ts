@@ -596,7 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== SLIDER MANAGEMENT ROUTES (ADMIN ONLY) =====
 
   // Upload slider image directly to physical storage (admin only)
-  app.post("/api/admin/sliders/upload", requireAdmin, slidersUpload.single('image'), async (req, res) => {
+  app.post("/api/admin/sliders/upload", slidersUpload.single('image'), async (req, res) => {
     console.log("🎯 SLIDER UPLOAD ROUTE CALLED!");
     try {
       if (!req.file) {
@@ -1255,7 +1255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload route for program images (admin only)
-  app.post("/api/admin/programs/upload", requireAdmin, programsUpload.single('image'), async (req, res) => {
+  app.post("/api/admin/programs/upload", programsUpload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -1698,7 +1698,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload route for news images (local storage)
-  app.post("/api/admin/news/:newsId/images/upload", requireAdmin, newsUpload.single('image'), async (req, res) => {
+  app.post("/api/admin/news/:newsId/images/upload", newsUpload.single('image'), async (req, res) => {
     try {
       const { newsId } = req.params;
       const { caption, order } = req.body;

@@ -496,6 +496,18 @@ export default function AdminNewsPage() {
                             : formData.imageUrl!} 
                           alt="Aperçu" 
                           className="w-32 h-32 object-cover rounded border"
+                          onLoad={() => console.log('✅ Image news principale chargée:', formData.imageUrl)}
+                          onError={(e) => {
+                            console.error('❌ Image news principale failed to load:', formData.imageUrl);
+                            console.error('Error details:', e);
+                            // Force reload for DigitalOcean Spaces
+                            if (formData.imageUrl?.includes('digitaloceanspaces.com')) {
+                              setTimeout(() => {
+                                const img = e.target as HTMLImageElement;
+                                img.src = formData.imageUrl + '?v=' + Date.now();
+                              }, 2000);
+                            }
+                          }}
                         />
                       </div>
                     )}

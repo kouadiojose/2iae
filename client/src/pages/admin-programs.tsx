@@ -210,6 +210,18 @@ export default function AdminPrograms() {
                           alt={program.name}
                           className="w-20 h-12 object-cover rounded border"
                           data-testid={`img-program-preview-${program.id}`}
+                          onLoad={() => console.log('✅ Image program liste chargée:', program.imageUrl)}
+                          onError={(e) => {
+                            console.error('❌ Image program liste failed to load:', program.imageUrl);
+                            console.error('Error details:', e);
+                            // Force reload for DigitalOcean Spaces
+                            if (program.imageUrl?.includes('digitaloceanspaces.com')) {
+                              setTimeout(() => {
+                                const img = e.target as HTMLImageElement;
+                                img.src = program.imageUrl + '?v=' + Date.now();
+                              }, 2000);
+                            }
+                          }}
                         />
                       </div>
                     )}

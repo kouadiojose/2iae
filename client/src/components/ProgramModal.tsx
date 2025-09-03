@@ -323,6 +323,18 @@ export function ProgramModal({ open, onOpenChange, editingProgram }: ProgramModa
                   src={previewImage} 
                   alt="Aperçu" 
                   className="w-full h-48 object-cover rounded-lg border"
+                  onLoad={() => console.log('✅ Image program modal chargée:', previewImage)}
+                  onError={(e) => {
+                    console.error('❌ Image program modal failed to load:', previewImage);
+                    console.error('Error details:', e);
+                    // Force reload for DigitalOcean Spaces
+                    if (previewImage?.includes('digitaloceanspaces.com')) {
+                      setTimeout(() => {
+                        const img = e.target as HTMLImageElement;
+                        img.src = previewImage + '?v=' + Date.now();
+                      }, 2000);
+                    }
+                  }}
                 />
                 <Button
                   type="button"

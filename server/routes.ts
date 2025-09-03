@@ -36,84 +36,79 @@ function generateSlug(title: string): string {
 }
 
 // Configure multer for physical file storage in /server/uploads/
-// Configuration pour upload vers Object Storage
-const uploadConfig = multer({
-  storage: multer.memoryStorage(), // Stockage en mémoire temporaire
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
+// Configuration pour upload local (qui fonctionne) + sauvegarde Object Storage en arrière-plan
+const createUploadConfig = (subFolder: string) => {
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const uploadPath = path.join(__dirname, 'uploads', subFolder);
+      fs.mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 15);
+      const ext = path.extname(file.originalname);
+      const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
+      cb(null, filename);
     }
-  }
-});
-
-// Fonction pour uploader vers Object Storage avec logs détaillés
-async function uploadToObjectStorage(file: Express.Multer.File, subFolder: string): Promise<string> {
-  console.log(`🚀 Starting upload to Object Storage for ${subFolder}`);
+  });
   
-  const timestamp = Date.now();
-  const randomId = Math.random().toString(36).substring(2, 15);
-  const ext = path.extname(file.originalname);
-  const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
-  const objectPath = `public/${subFolder}/${filename}`;
-  
-  console.log(`📁 Object path: ${objectPath}`);
-  
-  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-  if (!bucketId) {
-    console.error('❌ Object Storage bucket ID not configured');
-    throw new Error('Object Storage not configured');
-  }
+  return multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
+      }
+    }
+  });
+};
 
-  console.log(`🪣 Using bucket: ${bucketId}`);
-
+// Fonction pour copier asynchrone vers Object Storage (n'interrompt pas l'upload local)
+async function copyToObjectStorageAsync(localFilePath: string, subFolder: string, filename: string): Promise<void> {
   try {
-    // Générer une URL signée pour l'upload
-    console.log(`🔗 Generating presigned URL...`);
-    const uploadUrl = await generatePresignedUrl(bucketId, objectPath);
-    console.log(`✅ Presigned URL generated: ${uploadUrl.substring(0, 100)}...`);
+    console.log(`🔄 Copie asynchrone vers Object Storage: ${filename}`);
     
-    // Upload du fichier vers Object Storage
-    console.log(`⬆️ Uploading file (${file.buffer.length} bytes)...`);
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) {
+      console.log('⚠️ Object Storage non configuré, fichier reste local seulement');
+      return;
+    }
+
+    // Lire le fichier local
+    const fileBuffer = await fs.promises.readFile(localFilePath);
+    const objectPath = `public/${subFolder}/${filename}`;
+    
+    // Upload vers Object Storage
+    const uploadUrl = await generatePresignedUrl(bucketId, objectPath);
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
-      body: file.buffer,
+      body: fileBuffer,
       headers: {
-        'Content-Type': file.mimetype,
+        'Content-Type': 'image/jpeg', // Type générique pour les images
       },
     });
 
-    console.log(`📤 Upload response status: ${uploadResponse.status}`);
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error(`❌ Upload failed: ${uploadResponse.status} - ${errorText}`);
-      throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+    if (uploadResponse.ok) {
+      console.log(`✅ Copie Object Storage réussie: ${filename}`);
+    } else {
+      console.log(`⚠️ Copie Object Storage échouée: ${filename} (${uploadResponse.status})`);
     }
-
-    console.log(`✅ Successfully uploaded to Object Storage: ${objectPath}`);
-    
-    // Retourner l'URL publique
-    const publicUrl = `/api/assets/${subFolder}/${filename}`;
-    console.log(`🌐 Public URL: ${publicUrl}`);
-    return publicUrl;
     
   } catch (error) {
-    console.error(`💥 Upload to Object Storage failed:`, error);
-    throw error;
+    console.log(`⚠️ Erreur copie Object Storage: ${filename}`, error instanceof Error ? error.message : error);
+    // N'interrompt pas le processus principal
   }
 }
 
-// Utilisation de la même configuration pour tous les uploads
-const slidersUpload = uploadConfig;
-const newsUpload = uploadConfig;
-const founderUpload = uploadConfig;
-const programsUpload = uploadConfig;
+// Configuration des uploads spécifiques
+const slidersUpload = createUploadConfig('sliders');
+const newsUpload = createUploadConfig('news');
+const founderUpload = createUploadConfig('founder');
+const programsUpload = createUploadConfig('programs');
 
 // Legacy configurations removed - now using createUploadConfig() function above
 
@@ -597,29 +592,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Upload slider image directly to physical storage (admin only)
   app.post("/api/admin/sliders/upload", slidersUpload.single('image'), async (req, res) => {
-    console.log("🎯 SLIDER UPLOAD ROUTE CALLED!");
     try {
       if (!req.file) {
-        console.log("❌ No file provided in request");
         return res.status(400).json({ 
           success: false,
           error: "Aucun fichier image fourni" 
         });
       }
       
-      console.log(`📋 File received: ${req.file.originalname}, size: ${req.file.buffer?.length || 'unknown'} bytes`);
+      const filename = req.file.filename;
+      const imageUrl = `/api/assets/sliders/${filename}`;
       
-      // Upload vers Object Storage pour persistance
-      const imageUrl = await uploadToObjectStorage(req.file, 'sliders');
-      const filename = imageUrl.split('/').pop();
+      console.log(`✅ Slider image uploaded locally: ${filename}`);
       
-      console.log(`✅ Slider image uploaded to Object Storage: ${imageUrl}`);
+      // Sauvegarde asynchrone vers Object Storage pour persistance en production
+      copyToObjectStorageAsync(req.file.path, 'sliders', filename);
       
       res.json({ 
         success: true,
         imageUrl,
         filename,
-        message: "Image uploadée avec succès vers Object Storage"
+        message: "Image uploadée avec succès"
       });
     } catch (error) {
       console.error("Error uploading slider image:", error);
@@ -1264,11 +1257,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Upload vers Object Storage pour persistance
-      const publicUrl = await uploadToObjectStorage(req.file, 'programs');
-      const fileName = publicUrl.split('/').pop();
+      // Fichier sauvé localement par multer
+      const fileName = req.file.filename;
+      const publicUrl = `/api/assets/programs/${fileName}`;
       
-      console.log(`✅ Program image uploaded to Object Storage: ${publicUrl}`);
+      console.log(`✅ Program image uploaded locally: ${fileName}`);
+      
+      // Copie asynchrone vers Object Storage
+      copyToObjectStorageAsync(req.file.path, 'programs', fileName);
       
       return res.json({
         success: true,
@@ -1710,8 +1706,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Upload vers Object Storage pour persistance
-      const publicUrl = await uploadToObjectStorage(req.file, 'news');
+      // Fichier sauvé localement par multer
+      const fileName = req.file.filename;
+      const publicUrl = `/api/assets/news/${fileName}`;
       
       const newsImage = await storage.createNewsImage({
         newsId,
@@ -1720,12 +1717,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         order: order ? parseInt(order) : null
       });
 
-      console.log(`✅ News image uploaded to Object Storage: ${publicUrl}`);
+      console.log(`✅ News image uploaded locally: ${fileName}`);
+      
+      // Copie asynchrone vers Object Storage
+      copyToObjectStorageAsync(req.file.path, 'news', fileName);
 
       res.status(201).json({ 
         success: true, 
         image: newsImage,
-        message: "Image uploadée avec succès vers Object Storage" 
+        message: "Image uploadée avec succès" 
       });
     } catch (error) {
       console.error("Error uploading news image:", error);

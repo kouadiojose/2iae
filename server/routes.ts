@@ -597,13 +597,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Upload slider image directly to physical storage (admin only)
   app.post("/api/admin/sliders/upload", requireAdmin, slidersUpload.single('image'), async (req, res) => {
+    console.log("🎯 SLIDER UPLOAD ROUTE CALLED!");
     try {
       if (!req.file) {
+        console.log("❌ No file provided in request");
         return res.status(400).json({ 
           success: false,
           error: "Aucun fichier image fourni" 
         });
       }
+      
+      console.log(`📋 File received: ${req.file.originalname}, size: ${req.file.buffer?.length || 'unknown'} bytes`);
       
       // Upload vers Object Storage pour persistance
       const imageUrl = await uploadToObjectStorage(req.file, 'sliders');

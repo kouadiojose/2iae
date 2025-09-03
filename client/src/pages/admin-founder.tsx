@@ -295,6 +295,13 @@ export default function AdminFounder() {
                     onError={(e) => {
                       console.error('❌ Image fondateur failed to load:', formData.founderImageUrl);
                       console.error('Error details:', e);
+                      // Force reload for DigitalOcean Spaces  
+                      if (formData.founderImageUrl?.includes('digitaloceanspaces.com')) {
+                        setTimeout(() => {
+                          const img = e.target as HTMLImageElement;
+                          img.src = formData.founderImageUrl + '?v=' + Date.now();
+                        }, 2000);
+                      }
                     }}
                   />
                 </div>

@@ -290,6 +290,13 @@ export function NewsImageManager({ newsId, isEditable = true }: NewsImageManager
                     onError={(e) => {
                       console.error('❌ Image news failed to load:', image.imageUrl);
                       console.error('Error details:', e);
+                      // Force reload for DigitalOcean Spaces
+                      if (image.imageUrl.includes('digitaloceanspaces.com')) {
+                        setTimeout(() => {
+                          const img = e.target as HTMLImageElement;
+                          img.src = image.imageUrl + '?v=' + Date.now();
+                        }, 2000);
+                      }
                     }}
                   />
                   <div className="absolute top-2 left-2">

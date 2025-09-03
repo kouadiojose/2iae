@@ -440,6 +440,13 @@ export default function AdminSliders() {
                               onError={(e) => {
                                 console.error('❌ Image failed to load:', currentImageUrl);
                                 console.error('Error details:', e);
+                                // Force reload after short delay for DigitalOcean Spaces
+                                if (currentImageUrl.includes('digitaloceanspaces.com')) {
+                                  setTimeout(() => {
+                                    const img = e.target as HTMLImageElement;
+                                    img.src = currentImageUrl + '?v=' + Date.now();
+                                  }, 2000);
+                                }
                               }}
                             />
                             <div className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded-full text-xs flex items-center gap-1">

@@ -52,39 +52,61 @@ const uploadConfig = multer({
   }
 });
 
-// Fonction pour uploader vers Object Storage
+// Fonction pour uploader vers Object Storage avec logs détaillés
 async function uploadToObjectStorage(file: Express.Multer.File, subFolder: string): Promise<string> {
+  console.log(`🚀 Starting upload to Object Storage for ${subFolder}`);
+  
   const timestamp = Date.now();
   const randomId = Math.random().toString(36).substring(2, 15);
   const ext = path.extname(file.originalname);
   const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
   const objectPath = `public/${subFolder}/${filename}`;
   
+  console.log(`📁 Object path: ${objectPath}`);
+  
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
   if (!bucketId) {
+    console.error('❌ Object Storage bucket ID not configured');
     throw new Error('Object Storage not configured');
   }
 
-  // Générer une URL signée pour l'upload
-  const uploadUrl = await generatePresignedUrl(bucketId, objectPath);
-  
-  // Upload du fichier vers Object Storage
-  const uploadResponse = await fetch(uploadUrl, {
-    method: 'PUT',
-    body: file.buffer,
-    headers: {
-      'Content-Type': file.mimetype,
-    },
-  });
+  console.log(`🪣 Using bucket: ${bucketId}`);
 
-  if (!uploadResponse.ok) {
-    throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+  try {
+    // Générer une URL signée pour l'upload
+    console.log(`🔗 Generating presigned URL...`);
+    const uploadUrl = await generatePresignedUrl(bucketId, objectPath);
+    console.log(`✅ Presigned URL generated: ${uploadUrl.substring(0, 100)}...`);
+    
+    // Upload du fichier vers Object Storage
+    console.log(`⬆️ Uploading file (${file.buffer.length} bytes)...`);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file.buffer,
+      headers: {
+        'Content-Type': file.mimetype,
+      },
+    });
+
+    console.log(`📤 Upload response status: ${uploadResponse.status}`);
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.error(`❌ Upload failed: ${uploadResponse.status} - ${errorText}`);
+      throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+    }
+
+    console.log(`✅ Successfully uploaded to Object Storage: ${objectPath}`);
+    
+    // Retourner l'URL publique
+    const publicUrl = `/api/assets/${subFolder}/${filename}`;
+    console.log(`🌐 Public URL: ${publicUrl}`);
+    return publicUrl;
+    
+  } catch (error) {
+    console.error(`💥 Upload to Object Storage failed:`, error);
+    throw error;
   }
-
-  console.log(`✅ Uploaded to Object Storage: ${objectPath}`);
-  
-  // Retourner l'URL publique
-  return `/api/assets/${subFolder}/${filename}`;
 }
 
 // Utilisation de la même configuration pour tous les uploads

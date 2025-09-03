@@ -36,79 +36,73 @@ function generateSlug(title: string): string {
 }
 
 // Configure multer for physical file storage in /server/uploads/
-// Configuration pour upload local (qui fonctionne) + sauvegarde Object Storage en arrière-plan
-const createUploadConfig = (subFolder: string) => {
-  const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      const uploadPath = path.join(__dirname, 'uploads', subFolder);
-      fs.mkdirSync(uploadPath, { recursive: true });
-      cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-      const timestamp = Date.now();
-      const randomId = Math.random().toString(36).substring(2, 15);
-      const ext = path.extname(file.originalname);
-      const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
-      cb(null, filename);
-    }
-  });
-  
-  return multer({
-    storage,
-    limits: { fileSize: 10 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (allowedTypes.includes(file.mimetype)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
-      }
-    }
-  });
-};
-
-// Fonction pour copier asynchrone vers Object Storage (n'interrompt pas l'upload local)
-async function copyToObjectStorageAsync(localFilePath: string, subFolder: string, filename: string): Promise<void> {
-  try {
-    console.log(`🔄 Copie asynchrone vers Object Storage: ${filename}`);
-    
-    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-    if (!bucketId) {
-      console.log('⚠️ Object Storage non configuré, fichier reste local seulement');
-      return;
-    }
-
-    // Lire le fichier local
-    const fileBuffer = await fs.promises.readFile(localFilePath);
-    const objectPath = `public/${subFolder}/${filename}`;
-    
-    // Upload vers Object Storage
-    const uploadUrl = await generatePresignedUrl(bucketId, objectPath);
-    const uploadResponse = await fetch(uploadUrl, {
-      method: 'PUT',
-      body: fileBuffer,
-      headers: {
-        'Content-Type': 'image/jpeg', // Type générique pour les images
-      },
-    });
-
-    if (uploadResponse.ok) {
-      console.log(`✅ Copie Object Storage réussie: ${filename}`);
+// Configuration pour upload direct vers DigitalOcean Spaces
+const uploadConfig = multer({
+  storage: multer.memoryStorage(), // Stockage en mémoire pour upload direct
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
     } else {
-      console.log(`⚠️ Copie Object Storage échouée: ${filename} (${uploadResponse.status})`);
+      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
     }
+  }
+});
+
+// DIGITALOCEAN SPACES CONFIGURATION
+import AWS from 'aws-sdk';
+
+// Configuration DigitalOcean Spaces (compatible S3)
+const spacesEndpoint = new AWS.Endpoint(process.env.DO_SPACES_ENDPOINT || 'nyc3.digitaloceanspaces.com');
+const s3 = new AWS.S3({
+  endpoint: spacesEndpoint,
+  accessKeyId: process.env.DO_SPACES_KEY,
+  secretAccessKey: process.env.DO_SPACES_SECRET,
+  s3ForcePathStyle: false,
+  signatureVersion: 'v4'
+});
+
+// Fonction pour upload direct vers DigitalOcean Spaces
+async function uploadToDigitalOceanSpaces(file: Express.Multer.File, subFolder: string): Promise<string> {
+  try {
+    const bucketName = process.env.DO_SPACES_BUCKET;
+    if (!bucketName || !process.env.DO_SPACES_KEY || !process.env.DO_SPACES_SECRET) {
+      throw new Error('DigitalOcean Spaces non configuré');
+    }
+
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 15);
+    const ext = path.extname(file.originalname);
+    const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
+    const key = `${subFolder}/${filename}`;
+
+    console.log(`🚀 Upload vers DigitalOcean Spaces: ${key}`);
+
+    const uploadParams = {
+      Bucket: bucketName,
+      Key: key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+      ACL: 'public-read' // Images publiques
+    };
+
+    const result = await s3.upload(uploadParams).promise();
+    console.log(`✅ Upload DigitalOcean Spaces réussi: ${result.Location}`);
+    
+    return result.Location; // URL publique complète
     
   } catch (error) {
-    console.log(`⚠️ Erreur copie Object Storage: ${filename}`, error instanceof Error ? error.message : error);
-    // N'interrompt pas le processus principal
+    console.error(`💥 Erreur upload DigitalOcean Spaces:`, error);
+    throw error;
   }
 }
 
-// Configuration des uploads spécifiques
-const slidersUpload = createUploadConfig('sliders');
-const newsUpload = createUploadConfig('news');
-const founderUpload = createUploadConfig('founder');
-const programsUpload = createUploadConfig('programs');
+// Utilisation de la même configuration pour tous les uploads
+const slidersUpload = uploadConfig;
+const newsUpload = uploadConfig;
+const founderUpload = uploadConfig;
+const programsUpload = uploadConfig;
 
 // Legacy configurations removed - now using createUploadConfig() function above
 
@@ -590,7 +584,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===== SLIDER MANAGEMENT ROUTES (ADMIN ONLY) =====
 
-  // Upload slider image directly to physical storage (admin only)
+  // Upload slider image directly to DigitalOcean Spaces (admin only)
   app.post("/api/admin/sliders/upload", slidersUpload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -600,19 +594,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const filename = req.file.filename;
-      const imageUrl = `/api/assets/sliders/${filename}`;
+      // Upload direct vers DigitalOcean Spaces
+      const imageUrl = await uploadToDigitalOceanSpaces(req.file, 'sliders');
+      const filename = imageUrl.split('/').pop();
       
-      console.log(`✅ Slider image uploaded locally: ${filename}`);
-      
-      // Sauvegarde asynchrone vers Object Storage pour persistance en production
-      copyToObjectStorageAsync(req.file.path, 'sliders', filename);
+      console.log(`✅ Slider image uploaded to DigitalOcean Spaces: ${imageUrl}`);
       
       res.json({ 
         success: true,
         imageUrl,
         filename,
-        message: "Image uploadée avec succès"
+        message: "Image uploadée avec succès vers DigitalOcean Spaces"
       });
     } catch (error) {
       console.error("Error uploading slider image:", error);
@@ -1257,21 +1249,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Fichier sauvé localement par multer
-      const fileName = req.file.filename;
-      const publicUrl = `/api/assets/programs/${fileName}`;
+      // Upload direct vers DigitalOcean Spaces
+      const imageUrl = await uploadToDigitalOceanSpaces(req.file, 'programs');
+      const filename = imageUrl.split('/').pop();
       
-      console.log(`✅ Program image uploaded locally: ${fileName}`);
-      
-      // Copie asynchrone vers Object Storage
-      copyToObjectStorageAsync(req.file.path, 'programs', fileName);
+      console.log(`✅ Program image uploaded to DigitalOcean Spaces: ${imageUrl}`);
       
       return res.json({
         success: true,
         image: {
-          imageUrl: publicUrl,
-          localPath: `/api/assets/filieres/${fileName}`, // For backward compatibility
-          filename: fileName
+          imageUrl,
+          localPath: `/api/assets/filieres/${filename}`, // For backward compatibility
+          filename
         }
       });
     } catch (error) {
@@ -1706,26 +1695,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Fichier sauvé localement par multer
-      const fileName = req.file.filename;
-      const publicUrl = `/api/assets/news/${fileName}`;
+      // Upload direct vers DigitalOcean Spaces
+      const imageUrl = await uploadToDigitalOceanSpaces(req.file, 'news');
       
       const newsImage = await storage.createNewsImage({
         newsId,
-        imageUrl: publicUrl,
+        imageUrl,
         caption: caption || null,
         order: order ? parseInt(order) : null
       });
 
-      console.log(`✅ News image uploaded locally: ${fileName}`);
-      
-      // Copie asynchrone vers Object Storage
-      copyToObjectStorageAsync(req.file.path, 'news', fileName);
+      console.log(`✅ News image uploaded to DigitalOcean Spaces: ${imageUrl}`);
 
       res.status(201).json({ 
         success: true, 
         image: newsImage,
-        message: "Image uploadée avec succès" 
+        message: "Image uploadée avec succès vers DigitalOcean Spaces" 
       });
     } catch (error) {
       console.error("Error uploading news image:", error);

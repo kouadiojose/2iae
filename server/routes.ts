@@ -36,44 +36,62 @@ function generateSlug(title: string): string {
 }
 
 // Configure multer for physical file storage in /server/uploads/
-const createUploadConfig = (subFolder: string) => {
-  const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      const uploadPath = path.join(__dirname, 'uploads', subFolder);
-      // Ensure directory exists
-      fs.mkdirSync(uploadPath, { recursive: true });
-      cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-      const timestamp = Date.now();
-      const randomId = Math.random().toString(36).substring(2, 15);
-      const ext = path.extname(file.originalname);
-      const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
-      cb(null, filename);
+// Configuration pour upload vers Object Storage
+const uploadConfig = multer({
+  storage: multer.memoryStorage(), // Stockage en mémoire temporaire
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
     }
-  });
-  
-  return multer({
-    storage,
-    limits: {
-      fileSize: 10 * 1024 * 1024 // 10MB limit
-    },
-    fileFilter: (req, file, cb) => {
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-      if (allowedTypes.includes(file.mimetype)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
-      }
-    }
-  });
-};
+  }
+});
 
-// Create upload configurations for each type
-const slidersUpload = createUploadConfig('sliders');
-const newsUpload = createUploadConfig('news');
-const founderUpload = createUploadConfig('founder');
-const programsUpload = createUploadConfig('programs');
+// Fonction pour uploader vers Object Storage
+async function uploadToObjectStorage(file: Express.Multer.File, subFolder: string): Promise<string> {
+  const timestamp = Date.now();
+  const randomId = Math.random().toString(36).substring(2, 15);
+  const ext = path.extname(file.originalname);
+  const filename = `${subFolder.slice(0, -1)}_${timestamp}_${randomId}${ext}`;
+  const objectPath = `public/${subFolder}/${filename}`;
+  
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) {
+    throw new Error('Object Storage not configured');
+  }
+
+  // Générer une URL signée pour l'upload
+  const uploadUrl = await generatePresignedUrl(bucketId, objectPath);
+  
+  // Upload du fichier vers Object Storage
+  const uploadResponse = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: file.buffer,
+    headers: {
+      'Content-Type': file.mimetype,
+    },
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+  }
+
+  console.log(`✅ Uploaded to Object Storage: ${objectPath}`);
+  
+  // Retourner l'URL publique
+  return `/api/assets/${subFolder}/${filename}`;
+}
+
+// Utilisation de la même configuration pour tous les uploads
+const slidersUpload = uploadConfig;
+const newsUpload = uploadConfig;
+const founderUpload = uploadConfig;
+const programsUpload = uploadConfig;
 
 // Legacy configurations removed - now using createUploadConfig() function above
 
@@ -270,32 +288,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assets/*", async (req, res) => {
     const filePath = req.path.replace("/api/assets/", "");
     
-    // NOUVEAU: Vérifier d'abord le stockage physique local (/server/uploads/)
-    const uploadPath = path.join(__dirname, 'uploads', filePath);
-    if (fs.existsSync(uploadPath)) {
-      console.log(`✅ Serving from local storage: ${uploadPath}`);
-      return res.sendFile(uploadPath);
-    }
-    
-    // Ensuite vérifier attached_assets (pour la compatibilité)
-    const localPath = path.join(process.cwd(), "attached_assets", filePath);
-    if (fs.existsSync(localPath)) {
-      console.log(`✅ Serving from attached_assets: ${localPath}`);
-      return res.sendFile(localPath);
-    }
-    
-    // En dernier recours, rediriger vers Object Storage
+    // PRIORITÉ 1: Object Storage (où sont uploadées les nouvelles images)
     try {
       const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
       if (bucketId) {
         const objectPath = `public/${filePath}`;
         const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
         
-        console.log(`↗️ Redirecting to Object Storage: ${publicUrl}`);
-        return res.redirect(publicUrl);
+        // Vérifier si le fichier existe dans Object Storage
+        const checkResponse = await fetch(publicUrl, { method: 'HEAD' });
+        if (checkResponse.ok) {
+          console.log(`✅ Serving from Object Storage: ${publicUrl}`);
+          return res.redirect(publicUrl);
+        }
       }
     } catch (error) {
-      console.error("Object Storage redirect error:", error);
+      console.log(`⚠️ Object Storage check failed for ${filePath}`);
+    }
+    
+    // PRIORITÉ 2: Stockage physique local (temporaire)
+    const uploadPath = path.join(__dirname, 'uploads', filePath);
+    if (fs.existsSync(uploadPath)) {
+      console.log(`✅ Serving from local storage: ${uploadPath}`);
+      return res.sendFile(uploadPath);
+    }
+    
+    // PRIORITÉ 3: attached_assets (legacy)
+    const localPath = path.join(process.cwd(), "attached_assets", filePath);
+    if (fs.existsSync(localPath)) {
+      console.log(`✅ Serving from attached_assets: ${localPath}`);
+      return res.sendFile(localPath);
     }
     
     // File not found in all locations
@@ -557,16 +579,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const filename = req.file.filename;
-      const imageUrl = `/api/assets/sliders/${filename}`;
+      // Upload vers Object Storage pour persistance
+      const imageUrl = await uploadToObjectStorage(req.file, 'sliders');
+      const filename = imageUrl.split('/').pop();
       
-      console.log(`✅ Slider image uploaded to physical storage: ${filename}`);
+      console.log(`✅ Slider image uploaded to Object Storage: ${imageUrl}`);
       
       res.json({ 
         success: true,
         imageUrl,
         filename,
-        message: "Image uploadée avec succès"
+        message: "Image uploadée avec succès vers Object Storage"
       });
     } catch (error) {
       console.error("Error uploading slider image:", error);
@@ -1211,16 +1234,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // File already saved to disk by multer
-      const fileName = req.file.filename;
-      const publicUrl = `/api/assets/programs/${fileName}`;
+      // Upload vers Object Storage pour persistance
+      const publicUrl = await uploadToObjectStorage(req.file, 'programs');
+      const fileName = publicUrl.split('/').pop();
+      
+      console.log(`✅ Program image uploaded to Object Storage: ${publicUrl}`);
       
       return res.json({
         success: true,
         image: {
           imageUrl: publicUrl,
           localPath: `/api/assets/filieres/${fileName}`, // For backward compatibility
-          filename: req.file.filename
+          filename: fileName
         }
       });
     } catch (error) {
@@ -1655,9 +1680,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // File already saved to disk by multer
-      const fileName = req.file.filename;
-      const publicUrl = `/api/assets/news/${fileName}`;
+      // Upload vers Object Storage pour persistance
+      const publicUrl = await uploadToObjectStorage(req.file, 'news');
       
       const newsImage = await storage.createNewsImage({
         newsId,
@@ -1666,10 +1690,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         order: order ? parseInt(order) : null
       });
 
+      console.log(`✅ News image uploaded to Object Storage: ${publicUrl}`);
+
       res.status(201).json({ 
         success: true, 
         image: newsImage,
-        message: "Image uploadée avec succès" 
+        message: "Image uploadée avec succès vers Object Storage" 
       });
     } catch (error) {
       console.error("Error uploading news image:", error);

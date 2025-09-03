@@ -291,6 +291,11 @@ export default function AdminFounder() {
                     src={formData.founderImageUrl!} 
                     alt="Photo du fondateur"
                     className="w-full h-full object-cover"
+                    onLoad={() => console.log('✅ Image fondateur chargée:', formData.founderImageUrl)}
+                    onError={(e) => {
+                      console.error('❌ Image fondateur failed to load:', formData.founderImageUrl);
+                      console.error('Error details:', e);
+                    }}
                   />
                 </div>
               )}

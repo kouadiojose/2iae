@@ -286,6 +286,11 @@ export function NewsImageManager({ newsId, isEditable = true }: NewsImageManager
                     src={image.imageUrl}
                     alt={image.caption || `Image ${index + 1}`}
                     className="w-full h-full object-cover"
+                    onLoad={() => console.log('✅ Image news chargée:', image.imageUrl)}
+                    onError={(e) => {
+                      console.error('❌ Image news failed to load:', image.imageUrl);
+                      console.error('Error details:', e);
+                    }}
                   />
                   <div className="absolute top-2 left-2">
                     <Badge variant="secondary">#{image.order || index + 1}</Badge>

@@ -1792,7 +1792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Upload route for founder images (physical storage) - admin only
+  // Upload route for founder images (DigitalOcean Spaces) - admin only
   app.post("/api/admin/founder/upload", requireAdmin, founderUpload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -1802,15 +1802,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // File already saved to disk by multer
-      const fileName = req.file.filename;
-      const publicUrl = `/api/assets/founder/${fileName}`;
+      // Upload direct vers DigitalOcean Spaces
+      const imageUrl = await uploadToDigitalOceanSpaces(req.file, 'founder');
+      const filename = imageUrl.split('/').pop();
+      
+      console.log(`✅ Founder image uploaded to DigitalOcean Spaces: ${imageUrl}`);
       
       return res.json({
         success: true,
         image: {
-          imageUrl: publicUrl,
-          filename: req.file.filename
+          imageUrl,
+          filename
         }
       });
     } catch (error) {

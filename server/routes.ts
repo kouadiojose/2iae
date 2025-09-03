@@ -295,40 +295,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Serve static assets from Object Storage or local fallback
+  // Serve legacy assets (anciennes images seulement - nouvelles images sont sur DigitalOcean Spaces)
   app.get("/api/assets/*", async (req, res) => {
     const filePath = req.path.replace("/api/assets/", "");
+    console.log(`🔍 [LEGACY] Serving old asset: ${filePath}`);
     
-    // PRIORITÉ 1: Object Storage (où sont uploadées les nouvelles images)
-    try {
-      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-      if (bucketId) {
-        const objectPath = `public/${filePath}`;
-        const publicUrl = `https://storage.googleapis.com/${bucketId}/${objectPath}`;
-        
-        console.log(`🔍 Checking Object Storage for: ${objectPath}`);
-        
-        // Vérifier si le fichier existe dans Object Storage
-        const checkResponse = await fetch(publicUrl, { method: 'HEAD' });
-        if (checkResponse.ok) {
-          console.log(`✅ Serving from Object Storage: ${publicUrl}`);
-          return res.redirect(publicUrl);
-        } else {
-          console.log(`⚠️ Not found in Object Storage: ${objectPath} (Status: ${checkResponse.status})`);
-        }
-      }
-    } catch (error) {
-      console.log(`⚠️ Object Storage check failed for ${filePath}:`, error instanceof Error ? error.message : error);
-    }
-    
-    // PRIORITÉ 2: Stockage physique local (temporaire)
+    // PRIORITÉ 1: Stockage physique local (temporaire)
     const uploadPath = path.join(__dirname, 'uploads', filePath);
     if (fs.existsSync(uploadPath)) {
       console.log(`✅ Serving from local storage: ${uploadPath}`);
       return res.sendFile(uploadPath);
     }
     
-    // PRIORITÉ 3: attached_assets (legacy)
+    // PRIORITÉ 2: attached_assets (legacy)
     const localPath = path.join(process.cwd(), "attached_assets", filePath);
     if (fs.existsSync(localPath)) {
       console.log(`✅ Serving from attached_assets: ${localPath}`);
@@ -336,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // File not found in all locations
-    console.log(`❌ File not found: ${filePath}`);
+    console.log(`❌ [LEGACY] File not found: ${filePath}`);
     res.status(404).json({ error: "File not found" });
   });
 

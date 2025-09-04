@@ -110,7 +110,7 @@ export default function AdminNewsPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: NewsForm) => {
-      return await apiRequest("POST", "/api/admin/news", data);
+      return await apiRequest("/api/admin/news", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/news"] });
@@ -133,7 +133,7 @@ export default function AdminNewsPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<NewsForm> }) => {
-      return await apiRequest("PUT", `/api/admin/news/${id}`, data);
+      return await apiRequest(`/api/admin/news/${id}`, "PUT", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/news"] });
@@ -157,7 +157,7 @@ export default function AdminNewsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest("DELETE", `/api/admin/news/${id}`);
+      return await apiRequest(`/api/admin/news/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/news"] });

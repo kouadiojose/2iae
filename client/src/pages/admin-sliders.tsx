@@ -70,7 +70,7 @@ export default function AdminSliders() {
   // Create slider mutation
   const createMutation = useMutation({
     mutationFn: async (data: InsertSlider) => {
-      const response = await apiRequest("POST", "/api/admin/sliders", data);
+      const response = await apiRequest("/api/admin/sliders", "POST", data);
       return response.json();
     },
     onSuccess: () => {
@@ -95,7 +95,7 @@ export default function AdminSliders() {
   // Update slider mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertSlider> }) => {
-      const response = await apiRequest("PUT", `/api/admin/sliders/${id}`, data);
+      const response = await apiRequest(`/api/admin/sliders/${id}`, "PUT", data);
       return response.json();
     },
     onSuccess: () => {
@@ -120,7 +120,7 @@ export default function AdminSliders() {
   // Delete slider mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const response = await apiRequest("DELETE", `/api/admin/sliders/${id}`);
+      const response = await apiRequest(`/api/admin/sliders/${id}`, "DELETE");
       return response.json();
     },
     onSuccess: () => {
@@ -142,7 +142,7 @@ export default function AdminSliders() {
   // Toggle slider status
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
-      const response = await apiRequest("PUT", `/api/admin/sliders/${id}`, { isActive });
+      const response = await apiRequest(`/api/admin/sliders/${id}`, "PUT", { isActive });
       return response.json();
     },
     onSuccess: () => {

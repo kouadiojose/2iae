@@ -210,7 +210,7 @@ export default function AdminContent() {
   // Update content mutation
   const updateMutation = useMutation({
     mutationFn: async ({ key, data }: { key: string; data: any }) => {
-      const response = await apiRequest("PUT", `/api/admin/content/${key}`, data);
+      const response = await apiRequest(`/api/admin/content/${key}`, "PUT", data);
       return response.json();
     },
     onSuccess: () => {

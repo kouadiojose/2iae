@@ -36,7 +36,7 @@ export default function AdminInstitutes() {
   // Create institute mutation
   const createMutation = useMutation({
     mutationFn: async (data: InsertInstitute) => {
-      return await apiRequest("POST", "/api/admin/institutes", data);
+      return await apiRequest("/api/admin/institutes", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/institutes"] });
@@ -59,7 +59,7 @@ export default function AdminInstitutes() {
   // Update institute mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: UpdateInstitute }) => {
-      return await apiRequest("PUT", `/api/admin/institutes/${id}`, data);
+      return await apiRequest(`/api/admin/institutes/${id}`, "PUT", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/institutes"] });
@@ -82,7 +82,7 @@ export default function AdminInstitutes() {
   // Delete institute mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest("DELETE", `/api/admin/institutes/${id}`);
+      return await apiRequest(`/api/admin/institutes/${id}`, "DELETE");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/institutes"] });

@@ -42,7 +42,7 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
-      const response = await apiRequest("POST", "/api/chat", {
+      const response = await apiRequest("/api/chat", "POST", {
         message,
         sessionId
       });

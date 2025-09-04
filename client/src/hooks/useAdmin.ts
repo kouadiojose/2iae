@@ -32,7 +32,7 @@ export function useAdminLogin() {
   
   return useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
-      const response = await apiRequest("POST", "/api/admin/login", {
+      const response = await apiRequest("/api/admin/login", "POST", {
         username,
         password
       });
@@ -60,7 +60,7 @@ export function useAdminLogout() {
   
   return useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/admin/logout", {});
+      const response = await apiRequest("/api/admin/logout", "POST", {});
       return response.json();
     },
     onSuccess: () => {

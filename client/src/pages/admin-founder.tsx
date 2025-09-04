@@ -36,7 +36,7 @@ export default function AdminFounder() {
   // Mutation pour mettre à jour le message du fondateur
   const updateMutation = useMutation({
     mutationFn: async (data: UpdateFounderMessage) => {
-      const response = await apiRequest("PUT", "/api/admin/founder-message", data);
+      const response = await apiRequest("/api/admin/founder-message", "PUT", data);
       return response.json();
     },
     onSuccess: () => {

@@ -133,7 +133,7 @@ export function ProgramModal({ open, onOpenChange, editingProgram }: ProgramModa
   // Create program mutation
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      return apiRequest('POST', '/api/admin/programs', data);
+      return apiRequest('/api/admin/programs', 'POST', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/programs"] });
@@ -156,7 +156,7 @@ export function ProgramModal({ open, onOpenChange, editingProgram }: ProgramModa
   // Update program mutation
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      return apiRequest('PUT', `/api/admin/programs/${editingProgram?.id}`, data);
+      return apiRequest(`/api/admin/programs/${editingProgram?.id}`, 'PUT', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/programs"] });

@@ -172,7 +172,7 @@ export default function AdminPrograms() {
                         {program.category}
                       </span>
                       <Switch
-                        checked={program.isActive}
+                        checked={program.isActive ?? false}
                         onCheckedChange={() => handleToggleActive(program)}
                         disabled={toggleActiveMutation.isPending}
                         data-testid={`switch-program-active-${program.id}`}

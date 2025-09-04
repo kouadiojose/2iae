@@ -1633,7 +1633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Upload route for main news images (local storage)
+  // Upload route for main news images (DigitalOcean Spaces)
   app.post("/api/admin/news/temp/images/upload", requireAdmin, newsUpload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
@@ -1643,16 +1643,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // File already saved to disk by multer
-      const fileName = req.file.filename;
-      const publicUrl = `/api/assets/news/${fileName}`;
+      // Upload direct vers DigitalOcean Spaces
+      const imageUrl = await uploadToDigitalOceanSpaces(req.file, 'news');
+      const filename = imageUrl.split('/').pop();
+      
+      console.log(`✅ News main image uploaded to DigitalOcean Spaces: ${imageUrl}`);
       
       return res.json({
         success: true,
         image: {
-          imageUrl: publicUrl,
-          localPath: `/api/assets/actualites/${fileName}`, // For backward compatibility
-          filename: req.file.filename
+          imageUrl,
+          localPath: imageUrl, // For backward compatibility
+          filename
         }
       });
     } catch (error) {

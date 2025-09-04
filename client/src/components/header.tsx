@@ -64,11 +64,11 @@ export default function Header() {
         Actualités
       </Link>
       <Link
-        href="#"
+        href="/cabinet"
         className={`font-medium transition-colors hover:text-primary ${
-          isActive("/campus") ? "text-primary" : "text-foreground"
+          isActive("/cabinet") ? "text-primary" : "text-foreground"
         }`}
-        data-testid="link-campus"
+        data-testid="link-cabinet"
       >
         Cabinet 2IAE
       </Link>

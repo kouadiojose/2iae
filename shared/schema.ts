@@ -315,6 +315,47 @@ export const updateProgramSchema = createInsertSchema(programs).pick({
   order: true,
 }).partial();
 
+// Projects table for Cabinet 2IAE projects showcase
+export const projects = pgTable("projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull(), // "upcoming" | "completed"
+  images: jsonb("images").default('[]'), // Array of image URLs
+  videos: jsonb("videos").default('[]'), // Array of video URLs
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
+export const insertProjectSchema = createInsertSchema(projects).pick({
+  title: true,
+  description: true,
+  status: true,
+  images: true,
+  videos: true,
+  startDate: true,
+  endDate: true,
+  isActive: true,
+  order: true,
+});
+
+export const updateProjectSchema = createInsertSchema(projects).pick({
+  title: true,
+  description: true,
+  status: true,
+  images: true,
+  videos: true,
+  startDate: true,
+  endDate: true,
+  isActive: true,
+  order: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
@@ -344,3 +385,6 @@ export type UpdateNewsImage = z.infer<typeof updateNewsImageSchema>;
 export type InsertProgram = z.infer<typeof insertProgramSchema>;
 export type Program = typeof programs.$inferSelect;
 export type UpdateProgram = z.infer<typeof updateProgramSchema>;
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
+export type UpdateProject = z.infer<typeof updateProjectSchema>;

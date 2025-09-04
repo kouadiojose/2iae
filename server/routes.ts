@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -106,6 +106,7 @@ const slidersUpload = uploadConfig;
 const newsUpload = uploadConfig;
 const founderUpload = uploadConfig;
 const programsUpload = uploadConfig;
+const projectsUpload = uploadConfig;
 
 // Legacy configurations removed - now using createUploadConfig() function above
 
@@ -1790,6 +1791,186 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Erreur lors de la suppression de l'image" 
+      });
+    }
+  });
+
+  // ==================== PROJECT ROUTES (Cabinet 2IAE) ====================
+  
+  // Public route to get active projects
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const projects = await storage.getActiveProjects();
+      res.json({ success: true, projects });
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des projets" 
+      });
+    }
+  });
+
+  // Admin route to get all projects
+  app.get("/api/admin/projects", requireAdmin, async (req, res) => {
+    try {
+      const projects = await storage.getAllProjects();
+      res.json({ success: true, projects });
+    } catch (error) {
+      console.error("Error fetching admin projects:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des projets" 
+      });
+    }
+  });
+
+  // Admin route to get single project
+  app.get("/api/admin/projects/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const project = await storage.getProjectById(id);
+      
+      if (!project) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Projet non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        project 
+      });
+    } catch (error) {
+      console.error("Error fetching single project:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération du projet" 
+      });
+    }
+  });
+
+  // Admin route to create project
+  app.post("/api/admin/projects", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertProjectSchema.parse(req.body);
+      const newProject = await storage.createProject(validatedData);
+      
+      res.status(201).json({ 
+        success: true, 
+        project: newProject,
+        message: "Projet créé avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error creating project:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la création du projet" 
+      });
+    }
+  });
+
+  // Admin route to update project
+  app.put("/api/admin/projects/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateProjectSchema.parse(req.body);
+      
+      const updatedProject = await storage.updateProject(id, validatedData);
+      
+      if (!updatedProject) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Projet non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        project: updatedProject,
+        message: "Projet mis à jour avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error updating project:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour du projet" 
+      });
+    }
+  });
+
+  // Admin route to delete project
+  app.delete("/api/admin/projects/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteProject(id);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Projet non trouvé" 
+        });
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Projet supprimé avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression du projet" 
+      });
+    }
+  });
+
+  // Upload route for project media (images/videos) - admin only
+  app.post("/api/admin/projects/upload", requireAdmin, projectsUpload.single('media'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Aucun fichier média fourni"
+        });
+      }
+
+      // Upload direct vers DigitalOcean Spaces
+      const mediaUrl = await uploadToDigitalOceanSpaces(req.file, 'projects');
+      const filename = mediaUrl.split('/').pop();
+      
+      console.log(`✅ Project media uploaded to DigitalOcean Spaces: ${mediaUrl}`);
+      
+      return res.json({
+        success: true,
+        media: {
+          mediaUrl,
+          filename,
+          type: req.file.mimetype.startsWith('video/') ? 'video' : 'image'
+        }
+      });
+    } catch (error) {
+      console.error("Error uploading project media:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Erreur lors de l'upload du média"
       });
     }
   });

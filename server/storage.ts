@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -70,6 +70,14 @@ export interface IStorage {
   updateNewsImage(id: string, newsImage: UpdateNewsImage): Promise<NewsImage | undefined>;
   deleteNewsImage(id: string): Promise<boolean>;
   deleteAllNewsImages(newsId: string): Promise<boolean>;
+  
+  // Project management
+  getActiveProjects(): Promise<Project[]>;
+  getAllProjects(): Promise<Project[]>;
+  getProjectById(id: string): Promise<Project | undefined>;
+  createProject(project: InsertProject): Promise<Project>;
+  updateProject(id: string, project: UpdateProject): Promise<Project | undefined>;
+  deleteProject(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -84,6 +92,7 @@ export class MemStorage implements IStorage {
   private programs: Map<string, Program>;
   private newsList: Map<string, News>;
   private newsImages: Map<string, NewsImage>;
+  private projects: Map<string, Project>;
 
   constructor() {
     this.users = new Map();
@@ -97,6 +106,7 @@ export class MemStorage implements IStorage {
     this.programs = new Map();
     this.newsList = new Map();
     this.newsImages = new Map();
+    this.projects = new Map();
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
@@ -670,6 +680,60 @@ export class MemStorage implements IStorage {
     }
     
     return true;
+  }
+
+  // Project management methods
+  async getActiveProjects(): Promise<Project[]> {
+    return Array.from(this.projects.values())
+      .filter(project => project.isActive)
+      .sort((a, b) => parseInt(a.order || "0") - parseInt(b.order || "0"));
+  }
+
+  async getAllProjects(): Promise<Project[]> {
+    return Array.from(this.projects.values())
+      .sort((a, b) => parseInt(a.order || "0") - parseInt(b.order || "0"));
+  }
+
+  async getProjectById(id: string): Promise<Project | undefined> {
+    return this.projects.get(id);
+  }
+
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const id = randomUUID();
+    const project: Project = { 
+      ...insertProject, 
+      id, 
+      images: insertProject.images || [],
+      videos: insertProject.videos || [],
+      startDate: insertProject.startDate || null,
+      endDate: insertProject.endDate || null,
+      isActive: insertProject.isActive ?? true,
+      order: insertProject.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+    this.projects.set(id, project);
+    return project;
+  }
+
+  async updateProject(id: string, updateData: UpdateProject): Promise<Project | undefined> {
+    const project = this.projects.get(id);
+    if (!project) {
+      return undefined;
+    }
+    
+    const updated: Project = {
+      ...project,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.projects.set(id, updated);
+    return updated;
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    return this.projects.delete(id);
   }
 }
 
@@ -1279,6 +1343,39 @@ export class DatabaseStorage implements IStorage {
   async deleteAllNewsImages(newsId: string): Promise<boolean> {
     const result = await db.delete(newsImages).where(eq(newsImages.newsId, newsId));
     return (result.rowCount ?? 0) >= 0; // Can be 0 if no images exist
+  }
+
+  // Project management methods
+  async getActiveProjects(): Promise<Project[]> {
+    return await db.select().from(projects).where(eq(projects.isActive, true));
+  }
+
+  async getAllProjects(): Promise<Project[]> {
+    return await db.select().from(projects);
+  }
+
+  async getProjectById(id: string): Promise<Project | undefined> {
+    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    return project;
+  }
+
+  async createProject(insertProject: InsertProject): Promise<Project> {
+    const [project] = await db.insert(projects).values(insertProject).returning();
+    return project;
+  }
+
+  async updateProject(id: string, updateData: UpdateProject): Promise<Project | undefined> {
+    const [project] = await db
+      .update(projects)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(projects.id, id))
+      .returning();
+    return project;
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    const result = await db.delete(projects).where(eq(projects.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 

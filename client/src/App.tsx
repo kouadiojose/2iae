@@ -13,6 +13,7 @@ import ActualitesPage from "@/pages/actualites";
 import ActualiteDetail from "@/pages/actualite-detail";
 import ContactPage from "@/pages/contact";
 import CampusPage from "@/pages/campus";
+import CabinetPage from "@/pages/cabinet";
 import AdminLogin from "@/pages/admin-login";
 import AdminDashboard from "@/pages/admin-dashboard";
 import AdminContent from "@/pages/admin-content";
@@ -21,6 +22,7 @@ import AdminFounder from "@/pages/admin-founder";
 import AdminInstitutes from "@/pages/admin-institutes";
 import AdminPrograms from "@/pages/admin-programs";
 import AdminNews from "@/pages/admin-news";
+import AdminProjects from "@/pages/admin-projects";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -88,6 +90,11 @@ function Router() {
           <AdminNews />
         </AdminLayout>
       </Route>
+      <Route path="/admin/projects">
+        <AdminLayout>
+          <AdminProjects />
+        </AdminLayout>
+      </Route>
       
       {/* Public website routes - with header, footer, chatbot */}
       <Route path="/">
@@ -128,6 +135,11 @@ function Router() {
       <Route path="/campus">
         <PublicLayout>
           <CampusPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/cabinet">
+        <PublicLayout>
+          <CabinetPage />
         </PublicLayout>
       </Route>
       

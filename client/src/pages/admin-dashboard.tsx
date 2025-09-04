@@ -18,7 +18,8 @@ import {
   Images,
   Building2,
   GraduationCap,
-  Newspaper
+  Newspaper,
+  Briefcase
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -297,6 +298,27 @@ export default function AdminDashboard() {
                 data-testid="button-manage-news"
               >
                 Gérer les actualités
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Briefcase className="h-5 w-5 mr-2" />
+                Cabinet 2IAE
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les projets du Cabinet 2IAE - projets à venir et terminés.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/projects")}
+                className="w-full bg-teal-600 hover:bg-teal-700"
+                data-testid="button-manage-projects"
+              >
+                Gérer les projets
               </Button>
             </CardContent>
           </Card>

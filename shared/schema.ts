@@ -338,10 +338,11 @@ export const insertProjectSchema = createInsertSchema(projects).pick({
   status: true,
   images: true,
   videos: true,
-  startDate: true,
-  endDate: true,
   isActive: true,
   order: true,
+}).extend({
+  startDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
+  endDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
 });
 
 export const updateProjectSchema = createInsertSchema(projects).pick({
@@ -350,10 +351,11 @@ export const updateProjectSchema = createInsertSchema(projects).pick({
   status: true,
   images: true,
   videos: true,
-  startDate: true,
-  endDate: true,
   isActive: true,
   order: true,
+}).extend({
+  startDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
+  endDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
 }).partial();
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

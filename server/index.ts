@@ -2,27 +2,18 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { getSessionConfig, ensureAdminExists } from "./auth";
 
 const app = express();
 
 // CRITICAL: Trust proxy for production (DigitalOcean load balancer)
 app.set("trust proxy", 1);
 
-// Simple session configuration - like incub-agri
+// 🔐 SECURE SESSION CONFIGURATION - Production Ready
+app.use(session(getSessionConfig()));
+
+// Production environment check
 const isProduction = process.env.NODE_ENV === "production";
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "simple-2iae-secret-2024",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: isProduction, // HTTPS in production, HTTP in dev
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: isProduction ? "strict" : "lax",
-    },
-  }),
-);
 
 // Increase body parser limits for base64 images
 app.use(express.json({ limit: '50mb' }));
@@ -87,6 +78,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // 🔐 Ensure admin user exists
+  await ensureAdminExists();
+  
   // Setup routes FIRST before Vite
   const server = await registerRoutes(app);
 

@@ -953,16 +953,8 @@ export class DatabaseStorage implements IStorage {
 
   private async initializeDefaultData() {
     try {
-      // Check if admin user exists
-      const existingAdmin = await this.getAdminUserByUsername("admin");
-      if (!existingAdmin) {
-        await this.createAdminUser({
-          username: "admin",
-          password: "admin123",
-          email: "admin@2iae.com"
-        });
-        console.log("✓ Admin par défaut créé: admin");
-      }
+      // Admin creation is handled by ensureAdminExists() in auth.ts
+      // No need to create admin here
 
       // Check if default content exists
       const existingContent = await db.select().from(siteContent).limit(1);
@@ -1131,20 +1123,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async validateAdminCredentials(username: string, password: string): Promise<AdminUser | null> {
-    console.log("🔐 Validation des credentials pour:", username);
     const admin = await this.getAdminUserByUsername(username);
-    console.log("🔍 Admin récupéré:", admin ? "OUI" : "NON");
-    console.log("🔍 Password DB:", admin?.password ? "EXISTS" : "UNDEFINED");
     
     if (!admin || !admin.isActive) {
-      console.log("❌ Admin non trouvé ou inactif");
       return null;
     }
 
     // Compare hashed password with provided password
-    console.log("🔐 Comparaison:", password, "vs", admin.password ? "HASH_EXISTS" : "HASH_MISSING");
     const isValid = await bcrypt.compare(password, admin.password);
-    console.log("🔐 Validation mot de passe:", isValid ? "✓" : "❌");
     
     return isValid ? admin : null;
   }

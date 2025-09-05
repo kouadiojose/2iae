@@ -264,24 +264,93 @@ export default function Tarifs() {
                             </div>
                           </CardHeader>
                           <CardContent>
-                            <div className="grid md:grid-cols-3 gap-4">
-                              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                                <div className="text-sm text-gray-600 mb-1">Frais d'inscription</div>
-                                <div className="text-xl font-bold text-orange-600">
-                                  {program.fees.inscription}
-                                </div>
+                            {/* Professional Payment Schedule Table */}
+                            <div className="mt-6">
+                              <h4 className="text-lg font-bold text-gray-800 mb-4 text-center">
+                                ÉCHÉANCIER : {program.name.toUpperCase()} : {site.site}
+                              </h4>
+                              <div className="overflow-x-auto">
+                                <table className="w-full border-collapse border-2 border-gray-800 bg-white">
+                                  <thead>
+                                    <tr className="bg-gray-100">
+                                      <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-gray-800">
+                                        LIBELLÉ
+                                      </th>
+                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                        1er Vers<br/>Obligatoire
+                                      </th>
+                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                        2ème vers<br/>(1 mois après le 1er Vers.)
+                                      </th>
+                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                        3ème vers.
+                                      </th>
+                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                        TOTAL
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr>
+                                      <td className="border-2 border-gray-800 px-4 py-3 font-medium text-gray-800">
+                                        Droit d'inscription
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                        85 000
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center">
+                                        -
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center">
+                                        -
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                        85 000
+                                      </td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border-2 border-gray-800 px-4 py-3 font-medium text-gray-800">
+                                        Frais Annexes
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center">
+                                        -
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                        90 000
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                        75 000
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                        165 000
+                                      </td>
+                                    </tr>
+                                    <tr className="bg-gray-50">
+                                      <td className="border-2 border-gray-800 px-4 py-3 font-bold text-gray-800">
+                                        TOTAL
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
+                                        85 000
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
+                                        90 000
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
+                                        75 000
+                                      </td>
+                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-green-600 text-lg">
+                                        250 000
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
                               </div>
-                              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                                <div className="text-sm text-gray-600 mb-1">Mensualité</div>
-                                <div className="text-xl font-bold text-orange-600">
-                                  {program.fees.mensualite}
-                                </div>
-                              </div>
-                              <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-                                <div className="text-sm text-green-600 mb-1">Coût total</div>
-                                <div className="text-xl font-bold text-green-600">
-                                  {program.fees.total}
-                                </div>
+                              
+                              {/* Important Note */}
+                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <p className="text-sm text-yellow-800 font-medium">
+                                  <strong>NB :</strong> L'étudiant pourra accéder aux cours après s'être acquitté des frais comme indiqué dans le tableau ci-dessus.
+                                </p>
                               </div>
                             </div>
                             {program.description && (

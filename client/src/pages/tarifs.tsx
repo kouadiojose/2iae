@@ -158,21 +158,34 @@ const tariffData: TariffData[] = [
     location: "Yopougon Centre",
     phone: "+225 XX XX XX XX",
     email: "yopougon@2iae.ci",
+    accountInfo: "N° COMPTE AFG BANK-CI : 01201 013457690001 04",
     programs: [
       {
-        name: "Formation Orientée",
-        duration: "1 an",
+        name: "BTS - Orientés 1ère Année",
+        duration: "2 ans",
         fees: {
-          inscription: 0,
-          fraisAnnexes: 0,
-          total: 0,
+          inscription: 85000,
+          fraisAnnexes: 140000,
+          total: 225000,
           echancier: {
-            premier: 0,
-            deuxieme: 0,
-            troisieme: 0
+            premier: 85000,
+            deuxieme: 85000,
+            troisieme: 55000
           }
         },
-        description: "Informations tarifaires à venir"
+        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 140 000 F.",
+        requiredDocuments: [
+          "2 Extraits de naissance Originaux",
+          "Photocopie du dernier bulletin de notes de la terminale",
+          "2 photos d'identité de même tirage",
+          "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
+          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+        ],
+        supplies: [
+          "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
+          "1 Paquet de papier Rame",
+          "1 Chemise à Rabat pour les nouveaux étudiants"
+        ]
       }
     ]
   }

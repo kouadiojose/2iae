@@ -3,13 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Phone, Mail, Clock, Euro, GraduationCap, Building } from "lucide-react";
+import { MapPin, Phone, Mail, Clock, Euro, GraduationCap, Building, FileText, CreditCard, ShoppingBag, CheckCircle } from "lucide-react";
 
 interface TariffData {
   site: string;
   location: string;
   phone: string;
   email: string;
+  accountInfo?: string;
   programs: {
     name: string;
     duration: string;
@@ -19,34 +20,51 @@ interface TariffData {
       total: string;
     };
     description?: string;
+    requiredDocuments?: string[];
+    uniform?: {
+      tissu: string;
+      cravate: string;
+      blouse?: string;
+    };
+    supplies?: string[];
   }[];
 }
 
-// Données temporaires - à remplacer par les vraies données des PDFs
+// Données réelles des sites 2IAE
 const tariffData: TariffData[] = [
   {
     site: "2IAE PALMERAIE",
-    location: "Abidjan - Cocody Palmeraie",
+    location: "Abidjan - Riviera Palmeraie",
     phone: "+225 XX XX XX XX",
     email: "palmeraie@2iae.ci",
+    accountInfo: "N° COMPTE AFG BANK-CI : 01201 013457690001 04",
     programs: [
       {
-        name: "BTS Gestion Commerciale",
+        name: "BTS - Orientés 1ère Année",
         duration: "2 ans",
         fees: {
-          inscription: "À définir",
-          mensualite: "À définir", 
-          total: "À définir"
-        }
-      },
-      {
-        name: "Formation Orientée",
-        duration: "1 an",
-        fees: {
-          inscription: "À définir",
-          mensualite: "À définir",
-          total: "À définir"
-        }
+          inscription: "85 000 F CFA",
+          mensualite: "Échéancier: 85 000 + 90 000 + 75 000", 
+          total: "250 000 F CFA"
+        },
+        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 165 000 F.",
+        requiredDocuments: [
+          "2 Extraits de naissance Originaux",
+          "Photocopie du dernier bulletin de notes de la terminale",
+          "2 photos d'identité de même tirage",
+          "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
+          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+        ],
+        uniform: {
+          tissu: "25 000 F CFA (Achat obligatoire à 2IAE)",
+          cravate: "5 000 F CFA",
+          blouse: "10 000 F CFA (OBLIGATOIRE pour les filières industrielles et SI)"
+        },
+        supplies: [
+          "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
+          "1 Paquet de papier Rame",
+          "1 Chemise à Rabat pour les nouveaux étudiants"
+        ]
       }
     ]
   },
@@ -200,6 +218,15 @@ export default function Tarifs() {
                         <Mail className="h-4 w-4" />
                         <span>{site.email}</span>
                       </div>
+                      {site.accountInfo && (
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center gap-2 text-blue-700 text-sm">
+                            <CreditCard className="h-4 w-4" />
+                            <span className="font-medium">Compte Bancaire</span>
+                          </div>
+                          <p className="text-xs text-blue-600 mt-1">{site.accountInfo}</p>
+                        </div>
+                      )}
                       <div className="mt-6">
                         <Button 
                           className="w-full bg-orange-600 hover:bg-orange-700"
@@ -262,6 +289,83 @@ export default function Tarifs() {
                                 <p className="text-sm text-gray-700">{program.description}</p>
                               </div>
                             )}
+
+                            {/* Additional Information Sections */}
+                            <div className="mt-6 grid md:grid-cols-1 lg:grid-cols-3 gap-4">
+                              {/* Required Documents */}
+                              {program.requiredDocuments && (
+                                <Card className="border-orange-200">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm flex items-center gap-2 text-orange-600">
+                                      <FileText className="h-4 w-4" />
+                                      Pièces à Fournir
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <ul className="space-y-1">
+                                      {program.requiredDocuments.map((doc, index) => (
+                                        <li key={index} className="flex items-start gap-2 text-xs">
+                                          <CheckCircle className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
+                                          <span>{doc}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </CardContent>
+                                </Card>
+                              )}
+
+                              {/* Uniform Costs */}
+                              {program.uniform && (
+                                <Card className="border-green-200">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm flex items-center gap-2 text-green-600">
+                                      <ShoppingBag className="h-4 w-4" />
+                                      Frais de Tenue
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="space-y-2 text-xs">
+                                      <div className="flex justify-between">
+                                        <span>Tissu uniforme:</span>
+                                        <span className="font-medium">{program.uniform.tissu}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>Cravate:</span>
+                                        <span className="font-medium">{program.uniform.cravate}</span>
+                                      </div>
+                                      {program.uniform.blouse && (
+                                        <div className="flex justify-between">
+                                          <span>Blouse:</span>
+                                          <span className="font-medium">{program.uniform.blouse}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              )}
+
+                              {/* Supplies */}
+                              {program.supplies && (
+                                <Card className="border-purple-200">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm flex items-center gap-2 text-purple-600">
+                                      <ShoppingBag className="h-4 w-4" />
+                                      Fournitures
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <ul className="space-y-1">
+                                      {program.supplies.map((supply, index) => (
+                                        <li key={index} className="flex items-start gap-2 text-xs">
+                                          <CheckCircle className="h-3 w-3 text-purple-500 mt-0.5 flex-shrink-0" />
+                                          <span>{supply}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </CardContent>
+                                </Card>
+                              )}
+                            </div>
                           </CardContent>
                         </Card>
                       ))}

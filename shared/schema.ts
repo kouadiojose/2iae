@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, relations } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, boolean, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -475,3 +475,104 @@ export const updateTariffSchema = createInsertSchema(tariffs).pick({
 export type InsertTariff = z.infer<typeof insertTariffSchema>;
 export type Tariff = typeof tariffs.$inferSelect;
 export type UpdateTariff = z.infer<typeof updateTariffSchema>;
+
+// ==================== GALLERY SCHEMA ====================
+
+// Albums table for organizing gallery content
+export const albums = pgTable("albums", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  coverImage: text("cover_image"), // URL of the cover image
+  category: text("category").notNull(), // "events", "campus", "student-life", "graduations", etc.
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
+// Gallery items (photos and videos) within albums
+export const galleryItems = pgTable("gallery_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  albumId: varchar("album_id").notNull().references(() => albums.id, { onDelete: "cascade" }),
+  title: text("title"),
+  description: text("description"),
+  mediaUrl: text("media_url").notNull(), // URL of the image or video
+  mediaType: text("media_type").notNull(), // "image" or "video"
+  thumbnailUrl: text("thumbnail_url"), // For videos, thumbnail image
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
+// Relations for gallery
+export const albumsRelations = relations(albums, ({ many, one }) => ({
+  items: many(galleryItems),
+  creator: one(adminUsers, {
+    fields: [albums.createdBy],
+    references: [adminUsers.id],
+  }),
+}));
+
+export const galleryItemsRelations = relations(galleryItems, ({ one }) => ({
+  album: one(albums, {
+    fields: [galleryItems.albumId],
+    references: [albums.id],
+  }),
+  creator: one(adminUsers, {
+    fields: [galleryItems.createdBy],
+    references: [adminUsers.id],
+  }),
+}));
+
+// Gallery schemas for validation
+export const insertAlbumSchema = createInsertSchema(albums).pick({
+  title: true,
+  description: true,
+  coverImage: true,
+  category: true,
+  isActive: true,
+  order: true,
+});
+
+export const updateAlbumSchema = createInsertSchema(albums).pick({
+  title: true,
+  description: true,
+  coverImage: true,
+  category: true,
+  isActive: true,
+  order: true,
+}).partial();
+
+export const insertGalleryItemSchema = createInsertSchema(galleryItems).pick({
+  albumId: true,
+  title: true,
+  description: true,
+  mediaUrl: true,
+  mediaType: true,
+  thumbnailUrl: true,
+  isActive: true,
+  order: true,
+});
+
+export const updateGalleryItemSchema = createInsertSchema(galleryItems).pick({
+  albumId: true,
+  title: true,
+  description: true,
+  mediaUrl: true,
+  mediaType: true,
+  thumbnailUrl: true,
+  isActive: true,
+  order: true,
+}).partial();
+
+export type Album = typeof albums.$inferSelect;
+export type InsertAlbum = z.infer<typeof insertAlbumSchema>;
+export type UpdateAlbum = z.infer<typeof updateAlbumSchema>;
+
+export type GalleryItem = typeof galleryItems.$inferSelect;
+export type InsertGalleryItem = z.infer<typeof insertGalleryItemSchema>;
+export type UpdateGalleryItem = z.infer<typeof updateGalleryItemSchema>;

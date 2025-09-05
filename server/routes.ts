@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema, insertTariffSchema, updateTariffSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema, insertTariffSchema, updateTariffSchema, insertAlbumSchema, updateAlbumSchema, insertGalleryItemSchema, updateGalleryItemSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -2135,6 +2135,345 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting tariff:", error);
       res.status(500).json({ success: false, error: "Erreur lors de la suppression du tarif" });
+    }
+  });
+
+  // ===================== GALLERY & ALBUMS ROUTES =====================
+
+  // Public routes for albums
+  app.get("/api/albums", async (req, res) => {
+    try {
+      const albums = await storage.getActiveAlbums();
+      res.json({ success: true, albums });
+    } catch (error) {
+      console.error("Error fetching albums:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des albums" 
+      });
+    }
+  });
+
+  // Public route to get single album with its items
+  app.get("/api/albums/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const album = await storage.getAlbumWithItems(id);
+      
+      if (!album || !album.isActive) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Album non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        album 
+      });
+    } catch (error) {
+      console.error("Error fetching album:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération de l'album" 
+      });
+    }
+  });
+
+  // Admin routes for albums
+  app.get("/api/admin/albums", requireAdmin, async (req, res) => {
+    try {
+      const albums = await storage.getAllAlbums();
+      res.json({ success: true, albums });
+    } catch (error) {
+      console.error("Error fetching admin albums:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des albums" 
+      });
+    }
+  });
+
+  // Admin route to get single album
+  app.get("/api/admin/albums/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const album = await storage.getAlbumWithItems(id);
+      
+      if (!album) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Album non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        album 
+      });
+    } catch (error) {
+      console.error("Error fetching single album:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération de l'album" 
+      });
+    }
+  });
+
+  // Admin route to create album
+  app.post("/api/admin/albums", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertAlbumSchema.parse(req.body);
+      const newAlbum = await storage.createAlbum(validatedData);
+      
+      res.status(201).json({ 
+        success: true, 
+        album: newAlbum,
+        message: "Album créé avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error creating album:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la création de l'album" 
+      });
+    }
+  });
+
+  // Admin route to update album
+  app.put("/api/admin/albums/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateAlbumSchema.parse(req.body);
+      
+      const updatedAlbum = await storage.updateAlbum(id, validatedData);
+      
+      if (!updatedAlbum) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Album non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        album: updatedAlbum,
+        message: "Album mis à jour avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error updating album:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour de l'album" 
+      });
+    }
+  });
+
+  // Admin route to delete album
+  app.delete("/api/admin/albums/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteAlbum(id);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Album non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        message: "Album supprimé avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting album:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression de l'album" 
+      });
+    }
+  });
+
+  // ===================== GALLERY ITEMS ROUTES =====================
+
+  // Admin routes for gallery items
+  app.get("/api/admin/gallery-items", requireAdmin, async (req, res) => {
+    try {
+      const { albumId } = req.query;
+      let items;
+      
+      if (albumId) {
+        items = await storage.getGalleryItemsByAlbum(albumId as string);
+      } else {
+        items = await storage.getActiveGalleryItems();
+      }
+      
+      res.json({ success: true, items });
+    } catch (error) {
+      console.error("Error fetching gallery items:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération des éléments" 
+      });
+    }
+  });
+
+  // Admin route to create gallery item
+  app.post("/api/admin/gallery-items", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertGalleryItemSchema.parse(req.body);
+      const newItem = await storage.createGalleryItem(validatedData);
+      
+      res.status(201).json({ 
+        success: true, 
+        item: newItem,
+        message: "Élément de galerie créé avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error creating gallery item:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la création de l'élément" 
+      });
+    }
+  });
+
+  // Admin route to update gallery item
+  app.put("/api/admin/gallery-items/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateGalleryItemSchema.parse(req.body);
+      
+      const updatedItem = await storage.updateGalleryItem(id, validatedData);
+      
+      if (!updatedItem) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Élément non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        item: updatedItem,
+        message: "Élément mis à jour avec succès" 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Données invalides",
+          details: error.errors
+        });
+      }
+      
+      console.error("Error updating gallery item:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la mise à jour de l'élément" 
+      });
+    }
+  });
+
+  // Admin route to delete gallery item
+  app.delete("/api/admin/gallery-items/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteGalleryItem(id);
+      
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Élément non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        message: "Élément supprimé avec succès" 
+      });
+    } catch (error) {
+      console.error("Error deleting gallery item:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la suppression de l'élément" 
+      });
+    }
+  });
+
+  // Admin route to upload gallery media (images/videos)
+  app.post('/api/admin/gallery-upload', requireAdmin, uploadConfig.single('media'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Aucun fichier fourni"
+        });
+      }
+
+      // Upload to DigitalOcean Spaces or fallback to local
+      let mediaUrl;
+      let filename;
+      
+      try {
+        mediaUrl = await uploadToDigitalOceanSpaces(req.file, 'gallery/');
+        filename = path.basename(mediaUrl);
+      } catch (uploadError) {
+        console.error("Upload DigitalOcean Spaces échoué, sauvegarde locale:", uploadError);
+        
+        // Fallback: Save locally
+        const timestamp = Date.now();
+        const randomId = Math.random().toString(36).substring(2, 15);
+        const ext = path.extname(req.file.originalname);
+        filename = `gallery_${timestamp}_${randomId}${ext}`;
+        const localPath = path.join(__dirname, 'uploads', 'gallery', filename);
+        
+        // Create gallery directory if it doesn't exist
+        const galleryDir = path.dirname(localPath);
+        if (!fs.existsSync(galleryDir)) {
+          fs.mkdirSync(galleryDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(localPath, req.file.buffer);
+        mediaUrl = `/api/assets/gallery/${filename}`;
+      }
+
+      res.json({
+        success: true,
+        mediaUrl,
+        filename
+      });
+    } catch (error) {
+      console.error("Error uploading gallery media:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Erreur lors de l'upload du média"
+      });
     }
   });
 

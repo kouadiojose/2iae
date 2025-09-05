@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, type Tariff, type InsertTariff, type UpdateTariff, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects, tariffs } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, type Tariff, type InsertTariff, type UpdateTariff, type Album, type InsertAlbum, type UpdateAlbum, type GalleryItem, type InsertGalleryItem, type UpdateGalleryItem, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects, tariffs, albums, galleryItems } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -86,6 +86,23 @@ export interface IStorage {
   createTariff(tariff: InsertTariff): Promise<Tariff>;
   updateTariff(id: string, tariff: UpdateTariff): Promise<Tariff | undefined>;
   deleteTariff(id: string): Promise<boolean>;
+
+  // Gallery & Albums management
+  getActiveAlbums(): Promise<Album[]>;
+  getAllAlbums(): Promise<Album[]>;
+  getAlbumById(id: string): Promise<Album | undefined>;
+  getAlbumWithItems(id: string): Promise<(Album & { items: GalleryItem[] }) | undefined>;
+  createAlbum(album: InsertAlbum): Promise<Album>;
+  updateAlbum(id: string, album: UpdateAlbum): Promise<Album | undefined>;
+  deleteAlbum(id: string): Promise<boolean>;
+  
+  // Gallery items management
+  getActiveGalleryItems(): Promise<GalleryItem[]>;
+  getGalleryItemsByAlbum(albumId: string): Promise<GalleryItem[]>;
+  getGalleryItemById(id: string): Promise<GalleryItem | undefined>;
+  createGalleryItem(item: InsertGalleryItem): Promise<GalleryItem>;
+  updateGalleryItem(id: string, item: UpdateGalleryItem): Promise<GalleryItem | undefined>;
+  deleteGalleryItem(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -102,6 +119,8 @@ export class MemStorage implements IStorage {
   private newsImages: Map<string, NewsImage>;
   private projects: Map<string, Project>;
   private tariffs: Map<string, Tariff>;
+  private albumsList: Map<string, Album>;
+  private galleryItemsList: Map<string, GalleryItem>;
 
   constructor() {
     this.users = new Map();
@@ -117,6 +136,8 @@ export class MemStorage implements IStorage {
     this.newsImages = new Map();
     this.projects = new Map();
     this.tariffs = new Map();
+    this.albumsList = new Map();
+    this.galleryItemsList = new Map();
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
@@ -799,6 +820,129 @@ export class MemStorage implements IStorage {
   async deleteTariff(id: string): Promise<boolean> {
     return this.tariffs.delete(id);
   }
+
+  // ===================== GALLERY & ALBUMS METHODS =====================
+
+  async getActiveAlbums(): Promise<Album[]> {
+    return Array.from(this.albumsList.values())
+      .filter(album => album.isActive)
+      .sort((a, b) => parseInt(a.order || "1") - parseInt(b.order || "1"));
+  }
+
+  async getAllAlbums(): Promise<Album[]> {
+    return Array.from(this.albumsList.values())
+      .sort((a, b) => parseInt(a.order || "1") - parseInt(b.order || "1"));
+  }
+
+  async getAlbumById(id: string): Promise<Album | undefined> {
+    return this.albumsList.get(id);
+  }
+
+  async getAlbumWithItems(id: string): Promise<(Album & { items: GalleryItem[] }) | undefined> {
+    const album = this.albumsList.get(id);
+    if (!album) return undefined;
+
+    const items = await this.getGalleryItemsByAlbum(id);
+    return { ...album, items };
+  }
+
+  async createAlbum(album: InsertAlbum): Promise<Album> {
+    const newAlbum: Album = {
+      id: randomUUID(),
+      title: album.title,
+      description: album.description || null,
+      coverImage: album.coverImage || null,
+      category: album.category,
+      isActive: album.isActive ?? true,
+      order: album.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+
+    this.albumsList.set(newAlbum.id, newAlbum);
+    return newAlbum;
+  }
+
+  async updateAlbum(id: string, album: UpdateAlbum): Promise<Album | undefined> {
+    const existing = this.albumsList.get(id);
+    if (!existing) return undefined;
+
+    const updated: Album = {
+      ...existing,
+      ...album,
+      updatedAt: new Date()
+    };
+
+    this.albumsList.set(id, updated);
+    return updated;
+  }
+
+  async deleteAlbum(id: string): Promise<boolean> {
+    // Delete all gallery items in this album first
+    const items = await this.getGalleryItemsByAlbum(id);
+    for (const item of items) {
+      this.galleryItemsList.delete(item.id);
+    }
+    
+    return this.albumsList.delete(id);
+  }
+
+  // ===================== GALLERY ITEMS METHODS =====================
+
+  async getActiveGalleryItems(): Promise<GalleryItem[]> {
+    return Array.from(this.galleryItemsList.values())
+      .filter(item => item.isActive)
+      .sort((a, b) => parseInt(a.order || "1") - parseInt(b.order || "1"));
+  }
+
+  async getGalleryItemsByAlbum(albumId: string): Promise<GalleryItem[]> {
+    return Array.from(this.galleryItemsList.values())
+      .filter(item => item.albumId === albumId && item.isActive)
+      .sort((a, b) => parseInt(a.order || "1") - parseInt(b.order || "1"));
+  }
+
+  async getGalleryItemById(id: string): Promise<GalleryItem | undefined> {
+    return this.galleryItemsList.get(id);
+  }
+
+  async createGalleryItem(item: InsertGalleryItem): Promise<GalleryItem> {
+    const newItem: GalleryItem = {
+      id: randomUUID(),
+      albumId: item.albumId,
+      title: item.title || null,
+      description: item.description || null,
+      mediaUrl: item.mediaUrl,
+      mediaType: item.mediaType,
+      thumbnailUrl: item.thumbnailUrl || null,
+      isActive: item.isActive ?? true,
+      order: item.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+
+    this.galleryItemsList.set(newItem.id, newItem);
+    return newItem;
+  }
+
+  async updateGalleryItem(id: string, item: UpdateGalleryItem): Promise<GalleryItem | undefined> {
+    const existing = this.galleryItemsList.get(id);
+    if (!existing) return undefined;
+
+    const updated: GalleryItem = {
+      ...existing,
+      ...item,
+      updatedAt: new Date()
+    };
+
+    this.galleryItemsList.set(id, updated);
+    return updated;
+  }
+
+  async deleteGalleryItem(id: string): Promise<boolean> {
+    return this.galleryItemsList.delete(id);
+  }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1472,6 +1616,86 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTariff(id: string): Promise<boolean> {
     const result = await db.delete(tariffs).where(eq(tariffs.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ===================== GALLERY & ALBUMS METHODS =====================
+
+  async getActiveAlbums(): Promise<Album[]> {
+    return await db.select().from(albums)
+      .where(eq(albums.isActive, true))
+      .orderBy(albums.order);
+  }
+
+  async getAllAlbums(): Promise<Album[]> {
+    return await db.select().from(albums).orderBy(albums.order);
+  }
+
+  async getAlbumById(id: string): Promise<Album | undefined> {
+    const [album] = await db.select().from(albums).where(eq(albums.id, id));
+    return album;
+  }
+
+  async getAlbumWithItems(id: string): Promise<(Album & { items: GalleryItem[] }) | undefined> {
+    const album = await this.getAlbumById(id);
+    if (!album) return undefined;
+
+    const items = await this.getGalleryItemsByAlbum(id);
+    return { ...album, items };
+  }
+
+  async createAlbum(album: InsertAlbum): Promise<Album> {
+    const [newAlbum] = await db.insert(albums).values(album).returning();
+    return newAlbum;
+  }
+
+  async updateAlbum(id: string, album: UpdateAlbum): Promise<Album | undefined> {
+    const [updated] = await db.update(albums)
+      .set({ ...album, updatedAt: new Date() })
+      .where(eq(albums.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAlbum(id: string): Promise<boolean> {
+    const result = await db.delete(albums).where(eq(albums.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ===================== GALLERY ITEMS METHODS =====================
+
+  async getActiveGalleryItems(): Promise<GalleryItem[]> {
+    return await db.select().from(galleryItems)
+      .where(eq(galleryItems.isActive, true))
+      .orderBy(galleryItems.order);
+  }
+
+  async getGalleryItemsByAlbum(albumId: string): Promise<GalleryItem[]> {
+    return await db.select().from(galleryItems)
+      .where(eq(galleryItems.albumId, albumId) && eq(galleryItems.isActive, true))
+      .orderBy(galleryItems.order);
+  }
+
+  async getGalleryItemById(id: string): Promise<GalleryItem | undefined> {
+    const [item] = await db.select().from(galleryItems).where(eq(galleryItems.id, id));
+    return item;
+  }
+
+  async createGalleryItem(item: InsertGalleryItem): Promise<GalleryItem> {
+    const [newItem] = await db.insert(galleryItems).values(item).returning();
+    return newItem;
+  }
+
+  async updateGalleryItem(id: string, item: UpdateGalleryItem): Promise<GalleryItem | undefined> {
+    const [updated] = await db.update(galleryItems)
+      .set({ ...item, updatedAt: new Date() })
+      .where(eq(galleryItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteGalleryItem(id: string): Promise<boolean> {
+    const result = await db.delete(galleryItems).where(eq(galleryItems.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 }

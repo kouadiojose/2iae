@@ -25,7 +25,10 @@ import AdminPrograms from "@/pages/admin-programs";
 import AdminNews from "@/pages/admin-news";
 import AdminProjects from "@/pages/admin-projects";
 import AdminTariffs from "@/pages/admin-tariffs";
+import AdminGallery from "@/pages/admin-gallery";
 import ProjectDetail from "@/pages/project-detail";
+import Galerie from "@/pages/galerie";
+import AlbumDetail from "@/pages/album-detail";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -103,6 +106,11 @@ function Router() {
           <AdminTariffs />
         </AdminLayout>
       </Route>
+      <Route path="/admin/gallery">
+        <AdminLayout>
+          <AdminGallery />
+        </AdminLayout>
+      </Route>
       
       {/* Public website routes - with header, footer, chatbot */}
       <Route path="/">
@@ -158,6 +166,16 @@ function Router() {
       <Route path="/tarifs">
         <PublicLayout>
           <TarifsPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/galerie">
+        <PublicLayout>
+          <Galerie />
+        </PublicLayout>
+      </Route>
+      <Route path="/galerie/:id">
+        <PublicLayout>
+          <AlbumDetail />
         </PublicLayout>
       </Route>
       

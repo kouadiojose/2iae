@@ -64,6 +64,15 @@ export default function Header() {
         Actualités
       </Link>
       <Link
+        href="/galerie"
+        className={`font-medium transition-colors hover:text-primary ${
+          isActive("/galerie") ? "text-primary" : "text-foreground"
+        }`}
+        data-testid="link-galerie"
+      >
+        Galerie
+      </Link>
+      <Link
         href="/cabinet"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/cabinet") ? "text-primary" : "text-foreground"

@@ -371,11 +371,11 @@ export default function Tarifs() {
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent>
-                                    <ul className="space-y-1">
+                                    <ul className="space-y-2">
                                       {program.requiredDocuments.map((doc, index) => (
-                                        <li key={index} className="flex items-start gap-2 text-xs">
-                                          <CheckCircle className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
-                                          <span>{doc}</span>
+                                        <li key={index} className="flex items-start gap-3 text-sm">
+                                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                          <span className="leading-relaxed">{doc}</span>
                                         </li>
                                       ))}
                                     </ul>
@@ -393,19 +393,19 @@ export default function Tarifs() {
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent>
-                                    <div className="space-y-2 text-xs">
-                                      <div className="flex justify-between">
-                                        <span>Tissu uniforme:</span>
-                                        <span className="font-medium">{program.uniform.tissu}</span>
+                                    <div className="space-y-3 text-sm">
+                                      <div className="flex justify-between items-start">
+                                        <span className="font-medium">Tissu uniforme:</span>
+                                        <span className="text-right ml-2">{program.uniform.tissu}</span>
                                       </div>
-                                      <div className="flex justify-between">
-                                        <span>Cravate:</span>
-                                        <span className="font-medium">{program.uniform.cravate}</span>
+                                      <div className="flex justify-between items-start">
+                                        <span className="font-medium">Cravate:</span>
+                                        <span className="text-right ml-2">{program.uniform.cravate}</span>
                                       </div>
                                       {program.uniform.blouse && (
-                                        <div className="flex justify-between">
-                                          <span>Blouse:</span>
-                                          <span className="font-medium">{program.uniform.blouse}</span>
+                                        <div className="flex justify-between items-start">
+                                          <span className="font-medium">Blouse:</span>
+                                          <span className="text-right ml-2">{program.uniform.blouse}</span>
                                         </div>
                                       )}
                                     </div>
@@ -423,11 +423,11 @@ export default function Tarifs() {
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent>
-                                    <ul className="space-y-1">
+                                    <ul className="space-y-2">
                                       {program.supplies.map((supply, index) => (
-                                        <li key={index} className="flex items-start gap-2 text-xs">
-                                          <CheckCircle className="h-3 w-3 text-purple-500 mt-0.5 flex-shrink-0" />
-                                          <span>{supply}</span>
+                                        <li key={index} className="flex items-start gap-3 text-sm">
+                                          <CheckCircle className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                                          <span className="leading-relaxed">{supply}</span>
                                         </li>
                                       ))}
                                     </ul>

@@ -1,9 +1,27 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Phone, Mail, Clock, Euro, GraduationCap, Building, FileText, CreditCard, ShoppingBag, CheckCircle } from "lucide-react";
+import {
+  MapPin,
+  Phone,
+  Mail,
+  Clock,
+  Euro,
+  GraduationCap,
+  Building,
+  FileText,
+  CreditCard,
+  ShoppingBag,
+  CheckCircle,
+} from "lucide-react";
 
 interface TariffData {
   site: string;
@@ -40,8 +58,8 @@ const tariffData: TariffData[] = [
   {
     site: "2IAE PALMERAIE",
     location: "Abidjan - Riviera Palmeraie",
-    phone: "+225 XX XX XX XX",
-    email: "palmeraie@2iae.ci",
+    phone: "+225 07 07 57 82 82",
+    email: "contacts@2iae.com",
     accountInfo: "N° COMPTE AFG BANK-CI : 01201 013457690001 04",
     programs: [
       {
@@ -54,29 +72,31 @@ const tariffData: TariffData[] = [
           echancier: {
             premier: 85000,
             deuxieme: 90000,
-            troisieme: 75000
-          }
+            troisieme: 75000,
+          },
         },
-        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 165 000 F.",
+        description:
+          "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 165 000 F.",
         requiredDocuments: [
           "2 Extraits de naissance Originaux",
           "Photocopie du dernier bulletin de notes de la terminale",
           "2 photos d'identité de même tirage",
           "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
-          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+          "Photocopie de la CNI ou attestation d'identité en cours de validité",
         ],
         uniform: {
           tissu: "25 000 F CFA (Achat obligatoire à 2IAE)",
           cravate: "5 000 F CFA",
-          blouse: "10 000 F CFA (OBLIGATOIRE pour les filières industrielles et SI)"
+          blouse:
+            "10 000 F CFA (OBLIGATOIRE pour les filières industrielles et SI)",
         },
         supplies: [
           "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
           "1 Paquet de papier Rame",
-          "1 Chemise à Rabat pour les nouveaux étudiants"
-        ]
-      }
-    ]
+          "1 Chemise à Rabat pour les nouveaux étudiants",
+        ],
+      },
+    ],
   },
   {
     site: "2IAE YAMOUSSOUKRO",
@@ -94,29 +114,30 @@ const tariffData: TariffData[] = [
           echancier: {
             premier: 85000,
             deuxieme: 85000,
-            troisieme: 55000
-          }
+            troisieme: 55000,
+          },
         },
-        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 140 000 F.",
+        description:
+          "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 140 000 F.",
         requiredDocuments: [
           "2 Extraits de naissance Originaux",
           "Photocopie du dernier bulletin de notes de la terminale",
           "2 photos d'identité de même tirage",
           "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
-          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+          "Photocopie de la CNI ou attestation d'identité en cours de validité",
         ],
         supplies: [
           "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
           "1 Paquet de papier Rame",
-          "1 Chemise à Rabat pour les nouveaux étudiants"
-        ]
-      }
-    ]
+          "1 Chemise à Rabat pour les nouveaux étudiants",
+        ],
+      },
+    ],
   },
   {
     site: "2IAE AZAGUIÉ",
     location: "Azaguié Centre",
-    phone: "+225 XX XX XX XX",
+    phone: "+225 07 07 57 82 82",
     email: "azaguie@2iae.ci",
     programs: [
       {
@@ -129,29 +150,31 @@ const tariffData: TariffData[] = [
           echancier: {
             premier: 85000,
             deuxieme: 85000,
-            troisieme: 60000
-          }
+            troisieme: 60000,
+          },
         },
-        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 145 000 F.",
+        description:
+          "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 145 000 F.",
         requiredDocuments: [
           "2 Extraits de naissance Originaux",
           "Photocopie du dernier bulletin de notes de la terminale",
           "2 photos d'identité de même tirage",
           "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
-          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+          "Photocopie de la CNI ou attestation d'identité en cours de validité",
         ],
         uniform: {
           tissu: "25 000 F CFA (Achat obligatoire à 2IAE)",
           cravate: "5 000 F CFA",
-          blouse: "10 000 F CFA (OBLIGATOIRE pour les filières industrielles et SI)"
+          blouse:
+            "10 000 F CFA (OBLIGATOIRE pour les filières industrielles et SI)",
         },
         supplies: [
           "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
           "1 Paquet de papier Rame",
-          "1 Chemise à Rabat pour les nouveaux étudiants"
-        ]
-      }
-    ]
+          "1 Chemise à Rabat pour les nouveaux étudiants",
+        ],
+      },
+    ],
   },
   {
     site: "2IAE YOPOUGON",
@@ -170,25 +193,26 @@ const tariffData: TariffData[] = [
           echancier: {
             premier: 85000,
             deuxieme: 85000,
-            troisieme: 55000
-          }
+            troisieme: 55000,
+          },
         },
-        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 140 000 F.",
+        description:
+          "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 140 000 F.",
         requiredDocuments: [
           "2 Extraits de naissance Originaux",
           "Photocopie du dernier bulletin de notes de la terminale",
           "2 photos d'identité de même tirage",
           "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
-          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+          "Photocopie de la CNI ou attestation d'identité en cours de validité",
         ],
         supplies: [
           "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
           "1 Paquet de papier Rame",
-          "1 Chemise à Rabat pour les nouveaux étudiants"
-        ]
-      }
-    ]
-  }
+          "1 Chemise à Rabat pour les nouveaux étudiants",
+        ],
+      },
+    ],
+  },
 ];
 
 export default function Tarifs() {
@@ -202,8 +226,9 @@ export default function Tarifs() {
           <div className="text-center">
             <h1 className="text-5xl font-bold mb-4">Nos Tarifs</h1>
             <p className="text-xl text-orange-100 max-w-3xl mx-auto">
-              Découvrez les tarifs de nos formations dans nos différents sites du Groupe École 2IAE.
-              Des formations de qualité à des prix accessibles.
+              Découvrez les tarifs de nos formations dans nos différents sites
+              du Groupe École 2IAE. Des formations de qualité à des prix
+              accessibles.
             </p>
           </div>
         </div>
@@ -217,20 +242,20 @@ export default function Tarifs() {
               Nos 4 Sites à Votre Service
             </h2>
             <p className="text-gray-600 max-w-2xl mx-auto">
-              Le Groupe École 2IAE vous accompagne dans votre formation avec 4 sites répartis 
-              sur le territoire ivoirien.
+              Le Groupe École 2IAE vous accompagne dans votre formation avec 4
+              sites répartis sur le territoire ivoirien.
             </p>
           </div>
 
           {/* Sites Grid */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
             {tariffData.map((site, index) => (
-              <Card 
+              <Card
                 key={site.site}
                 className={`cursor-pointer transition-all duration-300 hover:shadow-lg border-2 ${
-                  selectedSite === site.site 
-                    ? 'border-orange-500 bg-orange-50' 
-                    : 'border-gray-200 hover:border-orange-300'
+                  selectedSite === site.site
+                    ? "border-orange-500 bg-orange-50"
+                    : "border-gray-200 hover:border-orange-300"
                 }`}
                 onClick={() => setSelectedSite(site.site)}
                 data-testid={`site-card-${index}`}
@@ -250,16 +275,20 @@ export default function Tarifs() {
           </div>
 
           {/* Site Details */}
-          <Tabs value={selectedSite} onValueChange={setSelectedSite} className="w-full">
+          <Tabs
+            value={selectedSite}
+            onValueChange={setSelectedSite}
+            className="w-full"
+          >
             <TabsList className="grid w-full grid-cols-4 mb-8">
               {tariffData.map((site) => (
-                <TabsTrigger 
-                  key={site.site} 
+                <TabsTrigger
+                  key={site.site}
                   value={site.site}
                   className="text-xs sm:text-sm"
-                  data-testid={`tab-${site.site.toLowerCase().replace(/\s/g, '-')}`}
+                  data-testid={`tab-${site.site.toLowerCase().replace(/\s/g, "-")}`}
                 >
-                  {site.site.replace('2IAE ', '')}
+                  {site.site.replace("2IAE ", "")}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -294,11 +323,13 @@ export default function Tarifs() {
                             <CreditCard className="h-4 w-4" />
                             <span className="font-medium">Compte Bancaire</span>
                           </div>
-                          <p className="text-xs text-blue-600 mt-1">{site.accountInfo}</p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            {site.accountInfo}
+                          </p>
                         </div>
                       )}
                       <div className="mt-6">
-                        <Button 
+                        <Button
                           className="w-full bg-orange-600 hover:bg-orange-700"
                           data-testid="contact-site-button"
                         >
@@ -315,7 +346,10 @@ export default function Tarifs() {
                     </h3>
                     <div className="space-y-6">
                       {site.programs.map((program, programIndex) => (
-                        <Card key={programIndex} className="border-l-4 border-l-orange-500">
+                        <Card
+                          key={programIndex}
+                          className="border-l-4 border-l-orange-500"
+                        >
                           <CardHeader>
                             <div className="flex justify-between items-start">
                               <div>
@@ -328,7 +362,10 @@ export default function Tarifs() {
                                   Durée: {program.duration}
                                 </CardDescription>
                               </div>
-                              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                              <Badge
+                                variant="secondary"
+                                className="bg-green-100 text-green-800"
+                              >
                                 {program.duration}
                               </Badge>
                             </div>
@@ -338,94 +375,102 @@ export default function Tarifs() {
                             {program.fees.total > 0 && (
                               <div className="mt-6">
                                 <h4 className="text-lg font-bold text-gray-800 mb-4 text-center">
-                                  ÉCHÉANCIER : {program.name.toUpperCase()} : {site.site}
+                                  ÉCHÉANCIER : {program.name.toUpperCase()} :{" "}
+                                  {site.site}
                                 </h4>
-                              <div className="overflow-x-auto">
-                                <table className="w-full border-collapse border-2 border-gray-800 bg-white">
-                                  <thead>
-                                    <tr className="bg-gray-100">
-                                      <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-gray-800">
-                                        LIBELLÉ
-                                      </th>
-                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
-                                        1er Vers<br/>Obligatoire
-                                      </th>
-                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
-                                        2ème vers<br/>(1 mois après le 1er Vers.)
-                                      </th>
-                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
-                                        3ème vers.
-                                      </th>
-                                      <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
-                                        TOTAL
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td className="border-2 border-gray-800 px-4 py-3 font-medium text-gray-800">
-                                        Droit d'inscription
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        {program.fees.inscription.toLocaleString()}
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center">
-                                        -
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center">
-                                        -
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        {program.fees.inscription.toLocaleString()}
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td className="border-2 border-gray-800 px-4 py-3 font-medium text-gray-800">
-                                        Frais Annexes
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center">
-                                        -
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        {program.fees.echancier.deuxieme.toLocaleString()}
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        {program.fees.echancier.troisieme.toLocaleString()}
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        {program.fees.fraisAnnexes.toLocaleString()}
-                                      </td>
-                                    </tr>
-                                    <tr className="bg-gray-50">
-                                      <td className="border-2 border-gray-800 px-4 py-3 font-bold text-gray-800">
-                                        TOTAL
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
-                                        {program.fees.echancier.premier.toLocaleString()}
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
-                                        {program.fees.echancier.deuxieme.toLocaleString()}
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
-                                        {program.fees.echancier.troisieme.toLocaleString()}
-                                      </td>
-                                      <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-green-600 text-lg">
-                                        {program.fees.total.toLocaleString()}
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full border-collapse border-2 border-gray-800 bg-white">
+                                    <thead>
+                                      <tr className="bg-gray-100">
+                                        <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-gray-800">
+                                          LIBELLÉ
+                                        </th>
+                                        <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                          1er Vers
+                                          <br />
+                                          Obligatoire
+                                        </th>
+                                        <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                          2ème vers
+                                          <br />
+                                          (1 mois après le 1er Vers.)
+                                        </th>
+                                        <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                          3ème vers.
+                                        </th>
+                                        <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-gray-800">
+                                          TOTAL
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr>
+                                        <td className="border-2 border-gray-800 px-4 py-3 font-medium text-gray-800">
+                                          Droit d'inscription
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                          {program.fees.inscription.toLocaleString()}
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center">
+                                          -
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center">
+                                          -
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                          {program.fees.inscription.toLocaleString()}
+                                        </td>
+                                      </tr>
+                                      <tr>
+                                        <td className="border-2 border-gray-800 px-4 py-3 font-medium text-gray-800">
+                                          Frais Annexes
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center">
+                                          -
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                          {program.fees.echancier.deuxieme.toLocaleString()}
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                          {program.fees.echancier.troisieme.toLocaleString()}
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
+                                          {program.fees.fraisAnnexes.toLocaleString()}
+                                        </td>
+                                      </tr>
+                                      <tr className="bg-gray-50">
+                                        <td className="border-2 border-gray-800 px-4 py-3 font-bold text-gray-800">
+                                          TOTAL
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
+                                          {program.fees.echancier.premier.toLocaleString()}
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
+                                          {program.fees.echancier.deuxieme.toLocaleString()}
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
+                                          {program.fees.echancier.troisieme.toLocaleString()}
+                                        </td>
+                                        <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-green-600 text-lg">
+                                          {program.fees.total.toLocaleString()}
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {/* Important Note */}
+                                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                  <p className="text-sm text-yellow-800 font-medium">
+                                    <strong>NB :</strong> L'étudiant pourra
+                                    accéder aux cours après s'être acquitté des
+                                    frais comme indiqué dans le tableau
+                                    ci-dessus.
+                                  </p>
+                                </div>
                               </div>
-                              
-                              {/* Important Note */}
-                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                <p className="text-sm text-yellow-800 font-medium">
-                                  <strong>NB :</strong> L'étudiant pourra accéder aux cours après s'être acquitté des frais comme indiqué dans le tableau ci-dessus.
-                                </p>
-                              </div>
-                            </div>
                             )}
-                            
+
                             {/* Placeholder for incomplete data */}
                             {program.fees.total === 0 && (
                               <div className="mt-6 p-6 bg-orange-50 border border-orange-200 rounded-lg text-center">
@@ -433,7 +478,8 @@ export default function Tarifs() {
                                   Informations Tarifaires
                                 </h4>
                                 <p className="text-gray-700">
-                                  Les tarifs pour ce site seront bientôt disponibles.
+                                  Les tarifs pour ce site seront bientôt
+                                  disponibles.
                                   <br />
                                   Contactez-nous pour plus d'informations.
                                 </p>
@@ -441,7 +487,9 @@ export default function Tarifs() {
                             )}
                             {program.description && (
                               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                                <p className="text-sm text-gray-700">{program.description}</p>
+                                <p className="text-sm text-gray-700">
+                                  {program.description}
+                                </p>
                               </div>
                             )}
 
@@ -458,12 +506,19 @@ export default function Tarifs() {
                                   </CardHeader>
                                   <CardContent>
                                     <ul className="space-y-2">
-                                      {program.requiredDocuments.map((doc, index) => (
-                                        <li key={index} className="flex items-start gap-3 text-sm">
-                                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                                          <span className="leading-relaxed">{doc}</span>
-                                        </li>
-                                      ))}
+                                      {program.requiredDocuments.map(
+                                        (doc, index) => (
+                                          <li
+                                            key={index}
+                                            className="flex items-start gap-3 text-sm"
+                                          >
+                                            <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                            <span className="leading-relaxed">
+                                              {doc}
+                                            </span>
+                                          </li>
+                                        ),
+                                      )}
                                     </ul>
                                   </CardContent>
                                 </Card>
@@ -481,17 +536,29 @@ export default function Tarifs() {
                                   <CardContent>
                                     <div className="space-y-3 text-sm">
                                       <div className="flex justify-between items-start">
-                                        <span className="font-medium">Tissu uniforme:</span>
-                                        <span className="text-right ml-2">{program.uniform.tissu}</span>
+                                        <span className="font-medium">
+                                          Tissu uniforme:
+                                        </span>
+                                        <span className="text-right ml-2">
+                                          {program.uniform.tissu}
+                                        </span>
                                       </div>
                                       <div className="flex justify-between items-start">
-                                        <span className="font-medium">Cravate:</span>
-                                        <span className="text-right ml-2">{program.uniform.cravate}</span>
+                                        <span className="font-medium">
+                                          Cravate:
+                                        </span>
+                                        <span className="text-right ml-2">
+                                          {program.uniform.cravate}
+                                        </span>
                                       </div>
                                       {program.uniform.blouse && (
                                         <div className="flex justify-between items-start">
-                                          <span className="font-medium">Blouse:</span>
-                                          <span className="text-right ml-2">{program.uniform.blouse}</span>
+                                          <span className="font-medium">
+                                            Blouse:
+                                          </span>
+                                          <span className="text-right ml-2">
+                                            {program.uniform.blouse}
+                                          </span>
                                         </div>
                                       )}
                                     </div>
@@ -511,9 +578,14 @@ export default function Tarifs() {
                                   <CardContent>
                                     <ul className="space-y-2">
                                       {program.supplies.map((supply, index) => (
-                                        <li key={index} className="flex items-start gap-3 text-sm">
+                                        <li
+                                          key={index}
+                                          className="flex items-start gap-3 text-sm"
+                                        >
                                           <CheckCircle className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
-                                          <span className="leading-relaxed">{supply}</span>
+                                          <span className="leading-relaxed">
+                                            {supply}
+                                          </span>
                                         </li>
                                       ))}
                                     </ul>
@@ -540,20 +612,21 @@ export default function Tarifs() {
             Prêt à Commencer Votre Formation ?
           </h2>
           <p className="text-gray-300 mb-8 max-w-2xl mx-auto">
-            Contactez-nous dès aujourd'hui pour obtenir plus d'informations sur nos programmes
-            et découvrir comment nous pouvons vous aider à atteindre vos objectifs professionnels.
+            Contactez-nous dès aujourd'hui pour obtenir plus d'informations sur
+            nos programmes et découvrir comment nous pouvons vous aider à
+            atteindre vos objectifs professionnels.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               className="bg-orange-600 hover:bg-orange-700"
               data-testid="contact-general-button"
             >
               Nous Contacter
             </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
+            <Button
+              size="lg"
+              variant="outline"
               className="border-white text-white hover:bg-white hover:text-gray-900"
               data-testid="download-brochure-button"
             >

@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema } from "@shared/schema";
+import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema, insertTariffSchema, updateTariffSchema } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import fs from "fs";
@@ -2019,6 +2019,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     // Serve the file with appropriate headers
     res.sendFile(filePath);
+  });
+
+  // ===== TARIFF MANAGEMENT ROUTES =====
+  
+  // Get all tariffs (public)
+  app.get("/api/tariffs", async (req, res) => {
+    try {
+      const tariffs = await storage.getActiveTariffs();
+      res.json({ success: true, tariffs });
+    } catch (error) {
+      console.error("Error fetching tariffs:", error);
+      res.status(500).json({ success: false, error: "Erreur lors de la récupération des tarifs" });
+    }
+  });
+  
+  // Admin routes for tariff management
+  app.get("/api/admin/tariffs", requireAdmin, async (req, res) => {
+    try {
+      const tariffs = await storage.getAllTariffs();
+      res.json({ success: true, tariffs });
+    } catch (error) {
+      console.error("Error fetching all tariffs:", error);
+      res.status(500).json({ success: false, error: "Erreur lors de la récupération des tarifs" });
+    }
+  });
+
+  app.get("/api/admin/tariffs/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const tariff = await storage.getTariffById(id);
+      
+      if (!tariff) {
+        return res.status(404).json({ success: false, error: "Tarif non trouvé" });
+      }
+      
+      res.json({ success: true, tariff });
+    } catch (error) {
+      console.error("Error fetching tariff:", error);
+      res.status(500).json({ success: false, error: "Erreur lors de la récupération du tarif" });
+    }
+  });
+
+  app.post("/api/admin/tariffs", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertTariffSchema.parse(req.body);
+      const tariff = await storage.createTariff(validatedData);
+      
+      res.status(201).json({ success: true, tariff, message: "Tarif créé avec succès" });
+    } catch (error) {
+      console.error("Error creating tariff:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: "Données invalides", details: error.errors });
+      }
+      res.status(500).json({ success: false, error: "Erreur lors de la création du tarif" });
+    }
+  });
+
+  app.put("/api/admin/tariffs/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateTariffSchema.parse(req.body);
+      const tariff = await storage.updateTariff(id, validatedData);
+      
+      if (!tariff) {
+        return res.status(404).json({ success: false, error: "Tarif non trouvé" });
+      }
+      
+      res.json({ success: true, tariff, message: "Tarif mis à jour avec succès" });
+    } catch (error) {
+      console.error("Error updating tariff:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: "Données invalides", details: error.errors });
+      }
+      res.status(500).json({ success: false, error: "Erreur lors de la mise à jour du tarif" });
+    }
+  });
+
+  app.delete("/api/admin/tariffs/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteTariff(id);
+      
+      if (!success) {
+        return res.status(404).json({ success: false, error: "Tarif non trouvé" });
+      }
+      
+      res.json({ success: true, message: "Tarif supprimé avec succès" });
+    } catch (error) {
+      console.error("Error deleting tariff:", error);
+      res.status(500).json({ success: false, error: "Erreur lors de la suppression du tarif" });
+    }
   });
 
   const httpServer = createServer(app);

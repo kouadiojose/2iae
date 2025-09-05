@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, type Tariff, type InsertTariff, type UpdateTariff, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects, tariffs } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -78,6 +78,14 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: UpdateProject): Promise<Project | undefined>;
   deleteProject(id: string): Promise<boolean>;
+  
+  // Tariff management
+  getActiveTariffs(): Promise<Tariff[]>;
+  getAllTariffs(): Promise<Tariff[]>;
+  getTariffById(id: string): Promise<Tariff | undefined>;
+  createTariff(tariff: InsertTariff): Promise<Tariff>;
+  updateTariff(id: string, tariff: UpdateTariff): Promise<Tariff | undefined>;
+  deleteTariff(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -93,6 +101,7 @@ export class MemStorage implements IStorage {
   private newsList: Map<string, News>;
   private newsImages: Map<string, NewsImage>;
   private projects: Map<string, Project>;
+  private tariffs: Map<string, Tariff>;
 
   constructor() {
     this.users = new Map();
@@ -107,6 +116,7 @@ export class MemStorage implements IStorage {
     this.newsList = new Map();
     this.newsImages = new Map();
     this.projects = new Map();
+    this.tariffs = new Map();
     
     // Create default admin user synchronously
     this.initializeDefaultAdmin();
@@ -734,6 +744,60 @@ export class MemStorage implements IStorage {
 
   async deleteProject(id: string): Promise<boolean> {
     return this.projects.delete(id);
+  }
+
+  // Tariff management methods
+  async getActiveTariffs(): Promise<Tariff[]> {
+    return Array.from(this.tariffs.values())
+      .filter(tariff => tariff.isActive)
+      .sort((a, b) => parseInt(a.order || "0") - parseInt(b.order || "0"));
+  }
+
+  async getAllTariffs(): Promise<Tariff[]> {
+    return Array.from(this.tariffs.values())
+      .sort((a, b) => parseInt(a.order || "0") - parseInt(b.order || "0"));
+  }
+
+  async getTariffById(id: string): Promise<Tariff | undefined> {
+    return this.tariffs.get(id);
+  }
+
+  async createTariff(insertTariff: InsertTariff): Promise<Tariff> {
+    const id = randomUUID();
+    const tariff: Tariff = { 
+      ...insertTariff, 
+      id, 
+      phone: insertTariff.phone || null,
+      email: insertTariff.email || null,
+      accountInfo: insertTariff.accountInfo || null,
+      description: insertTariff.description || null,
+      isActive: true,
+      order: insertTariff.order || "1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null
+    };
+    this.tariffs.set(id, tariff);
+    return tariff;
+  }
+
+  async updateTariff(id: string, updateData: UpdateTariff): Promise<Tariff | undefined> {
+    const tariff = this.tariffs.get(id);
+    if (!tariff) {
+      return undefined;
+    }
+    
+    const updated: Tariff = {
+      ...tariff,
+      ...updateData,
+      updatedAt: new Date()
+    };
+    this.tariffs.set(id, updated);
+    return updated;
+  }
+
+  async deleteTariff(id: string): Promise<boolean> {
+    return this.tariffs.delete(id);
   }
 }
 
@@ -1375,6 +1439,39 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProject(id: string): Promise<boolean> {
     const result = await db.delete(projects).where(eq(projects.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Tariff management methods
+  async getActiveTariffs(): Promise<Tariff[]> {
+    return await db.select().from(tariffs).where(eq(tariffs.isActive, true)).orderBy(tariffs.order);
+  }
+
+  async getAllTariffs(): Promise<Tariff[]> {
+    return await db.select().from(tariffs).orderBy(tariffs.order);
+  }
+
+  async getTariffById(id: string): Promise<Tariff | undefined> {
+    const [tariff] = await db.select().from(tariffs).where(eq(tariffs.id, id));
+    return tariff;
+  }
+
+  async createTariff(insertTariff: InsertTariff): Promise<Tariff> {
+    const [tariff] = await db.insert(tariffs).values(insertTariff).returning();
+    return tariff;
+  }
+
+  async updateTariff(id: string, updateData: UpdateTariff): Promise<Tariff | undefined> {
+    const [tariff] = await db
+      .update(tariffs)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(eq(tariffs.id, id))
+      .returning();
+    return tariff;
+  }
+
+  async deleteTariff(id: string): Promise<boolean> {
+    const result = await db.delete(tariffs).where(eq(tariffs.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 }

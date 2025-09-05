@@ -326,6 +326,27 @@ export default function AdminDashboard() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
+                <Euro className="h-5 w-5 mr-2" />
+                Gestion des Tarifs
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les tarifs des 4 sites 2IAE avec échéanciers complets.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/tariffs")}
+                className="w-full bg-green-600 hover:bg-green-700"
+                data-testid="button-manage-tariffs"
+              >
+                Gérer les tarifs
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
                 <Edit3 className="h-5 w-5 mr-2" />
                 Gestion du contenu
               </CardTitle>

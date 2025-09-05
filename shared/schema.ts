@@ -390,3 +390,88 @@ export type UpdateProgram = z.infer<typeof updateProgramSchema>;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
 export type UpdateProject = z.infer<typeof updateProjectSchema>;
+
+// Tariffs table for managing 2IAE site pricing
+export const tariffs = pgTable("tariffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  site: text("site").notNull(), // 2IAE PALMERAIE, 2IAE YAMOUSSOUKRO, etc.
+  location: text("location").notNull(), // Abidjan - Riviera Palmeraie, etc.
+  phone: text("phone"),
+  email: text("email"),
+  accountInfo: text("account_info"), // Bank account information
+  programName: text("program_name").notNull(), // BTS - Orientés 1ère Année
+  programDuration: text("program_duration").default("2 ans"),
+  
+  // Fees structure
+  inscriptionFee: integer("inscription_fee").notNull(), // 85000
+  fraisAnnexes: integer("frais_annexes").notNull(), // 140000, 145000, 165000
+  totalFee: integer("total_fee").notNull(), // 225000, 230000, 250000
+  
+  // Payment schedule (échéancier)
+  firstPayment: integer("first_payment").notNull(), // Premier versement obligatoire
+  secondPayment: integer("second_payment").notNull(), // Deuxième versement 
+  thirdPayment: integer("third_payment").notNull(), // Troisième versement
+  
+  // Required documents (JSON array)
+  requiredDocuments: jsonb("required_documents").default('[]'),
+  
+  // Uniform costs (JSON object)
+  uniformCosts: jsonb("uniform_costs").default('{}'), // { tissu, cravate, blouse }
+  
+  // Supplies (JSON array)
+  supplies: jsonb("supplies").default('[]'),
+  
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  order: text("order").default("1"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+});
+
+export const insertTariffSchema = createInsertSchema(tariffs).pick({
+  site: true,
+  location: true,
+  phone: true,
+  email: true,
+  accountInfo: true,
+  programName: true,
+  programDuration: true,
+  inscriptionFee: true,
+  fraisAnnexes: true,
+  totalFee: true,
+  firstPayment: true,
+  secondPayment: true,
+  thirdPayment: true,
+  requiredDocuments: true,
+  uniformCosts: true,
+  supplies: true,
+  description: true,
+  order: true,
+});
+
+export const updateTariffSchema = createInsertSchema(tariffs).pick({
+  site: true,
+  location: true,
+  phone: true,
+  email: true,
+  accountInfo: true,
+  programName: true,
+  programDuration: true,
+  inscriptionFee: true,
+  fraisAnnexes: true,
+  totalFee: true,
+  firstPayment: true,
+  secondPayment: true,
+  thirdPayment: true,
+  requiredDocuments: true,
+  uniformCosts: true,
+  supplies: true,
+  description: true,
+  isActive: true,
+  order: true,
+}).partial();
+
+export type InsertTariff = z.infer<typeof insertTariffSchema>;
+export type Tariff = typeof tariffs.$inferSelect;
+export type UpdateTariff = z.infer<typeof updateTariffSchema>;

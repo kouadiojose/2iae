@@ -24,6 +24,7 @@ import AdminInstitutes from "@/pages/admin-institutes";
 import AdminPrograms from "@/pages/admin-programs";
 import AdminNews from "@/pages/admin-news";
 import AdminProjects from "@/pages/admin-projects";
+import AdminTariffs from "@/pages/admin-tariffs";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -94,6 +95,11 @@ function Router() {
       <Route path="/admin/projects">
         <AdminLayout>
           <AdminProjects />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/tariffs">
+        <AdminLayout>
+          <AdminTariffs />
         </AdminLayout>
       </Route>
       

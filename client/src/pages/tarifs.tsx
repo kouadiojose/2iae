@@ -120,19 +120,36 @@ const tariffData: TariffData[] = [
     email: "azaguie@2iae.ci",
     programs: [
       {
-        name: "Formation Orientée",
-        duration: "1 an",
+        name: "BTS - Orientés 1ère Année",
+        duration: "2 ans",
         fees: {
-          inscription: 0,
-          fraisAnnexes: 0,
-          total: 0,
+          inscription: 85000,
+          fraisAnnexes: 145000,
+          total: 230000,
           echancier: {
-            premier: 0,
-            deuxieme: 0,
-            troisieme: 0
+            premier: 85000,
+            deuxieme: 85000,
+            troisieme: 60000
           }
         },
-        description: "Informations tarifaires à venir"
+        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 145 000 F.",
+        requiredDocuments: [
+          "2 Extraits de naissance Originaux",
+          "Photocopie du dernier bulletin de notes de la terminale",
+          "2 photos d'identité de même tirage",
+          "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
+          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+        ],
+        uniform: {
+          tissu: "25 000 F CFA (Achat obligatoire à 2IAE)",
+          cravate: "5 000 F CFA",
+          blouse: "10 000 F CFA (OBLIGATOIRE pour les filières industrielles et SI)"
+        },
+        supplies: [
+          "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
+          "1 Paquet de papier Rame",
+          "1 Chemise à Rabat pour les nouveaux étudiants"
+        ]
       }
     ]
   },

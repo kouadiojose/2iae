@@ -308,6 +308,45 @@ export default function AdminGallery() {
     }
   };
 
+  const handleAlbumCoverUpload = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("media", file);
+
+      const response = await fetch("/api/admin/gallery-upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setAlbumFormData(prev => ({
+          ...prev,
+          coverImage: result.mediaUrl
+        }));
+        
+        toast({
+          title: "Succès",
+          description: "Image de couverture uploadée avec succès",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Erreur lors de l'upload de l'image de couverture",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const albums = (albumsData as any)?.albums || [];
   const items = (itemsData as any)?.items || [];
 
@@ -390,14 +429,53 @@ export default function AdminGallery() {
               </div>
               
               <div className="grid gap-2">
-                <Label htmlFor="coverImage">Image de couverture (URL)</Label>
-                <Input
-                  id="coverImage"
-                  value={albumFormData.coverImage}
-                  onChange={(e) => setAlbumFormData(prev => ({ ...prev, coverImage: e.target.value }))}
-                  placeholder="URL de l'image de couverture..."
-                  data-testid="input-album-cover"
-                />
+                <Label>Image de couverture</Label>
+                <div className="space-y-3">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleAlbumCoverUpload(file);
+                      }
+                    }}
+                    disabled={isUploading}
+                    data-testid="input-album-cover-file"
+                  />
+                  {isUploading && (
+                    <div className="flex items-center gap-2 text-sm text-blue-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Upload en cours...
+                    </div>
+                  )}
+                  {albumFormData.coverImage && (
+                    <div className="relative">
+                      <img
+                        src={albumFormData.coverImage}
+                        alt="Aperçu de l'image de couverture"
+                        className="w-full h-32 object-cover rounded-md border"
+                        data-testid="img-album-cover-preview"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={() => setAlbumFormData(prev => ({ ...prev, coverImage: "" }))}
+                        data-testid="button-remove-cover"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                  <Input
+                    value={albumFormData.coverImage}
+                    onChange={(e) => setAlbumFormData(prev => ({ ...prev, coverImage: e.target.value }))}
+                    placeholder="Ou coller une URL d'image..."
+                    data-testid="input-album-cover-url"
+                  />
+                </div>
               </div>
               
               <div className="grid gap-2">

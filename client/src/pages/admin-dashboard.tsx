@@ -20,7 +20,8 @@ import {
   GraduationCap,
   Newspaper,
   Briefcase,
-  Euro
+  Euro,
+  Camera
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -341,6 +342,27 @@ export default function AdminDashboard() {
                 data-testid="button-manage-tariffs"
               >
                 Gérer les tarifs
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Camera className="h-5 w-5 mr-2" />
+                Galerie Photos/Vidéos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Gérez les albums et médias de votre galerie photo/vidéo.
+              </p>
+              <Button 
+                onClick={() => setLocation("/admin/gallery")}
+                className="w-full bg-pink-600 hover:bg-pink-700"
+                data-testid="button-manage-gallery"
+              >
+                Gérer la galerie
               </Button>
             </CardContent>
           </Card>

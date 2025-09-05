@@ -15,9 +15,14 @@ interface TariffData {
     name: string;
     duration: string;
     fees: {
-      inscription: string;
-      mensualite: string;
-      total: string;
+      inscription: number;
+      fraisAnnexes: number;
+      total: number;
+      echancier: {
+        premier: number;
+        deuxieme: number;
+        troisieme: number;
+      };
     };
     description?: string;
     requiredDocuments?: string[];
@@ -43,9 +48,14 @@ const tariffData: TariffData[] = [
         name: "BTS - Orientés 1ère Année",
         duration: "2 ans",
         fees: {
-          inscription: "85 000 F CFA",
-          mensualite: "Échéancier: 85 000 + 90 000 + 75 000", 
-          total: "250 000 F CFA"
+          inscription: 85000,
+          fraisAnnexes: 165000,
+          total: 250000,
+          echancier: {
+            premier: 85000,
+            deuxieme: 90000,
+            troisieme: 75000
+          }
         },
         description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 165 000 F.",
         requiredDocuments: [
@@ -75,13 +85,31 @@ const tariffData: TariffData[] = [
     email: "yamoussoukro@2iae.ci",
     programs: [
       {
-        name: "Formation Orientée",
-        duration: "1 an",
+        name: "BTS - Orientés 1ère Année",
+        duration: "2 ans",
         fees: {
-          inscription: "À définir",
-          mensualite: "À définir",
-          total: "À définir"
-        }
+          inscription: 85000,
+          fraisAnnexes: 140000,
+          total: 225000,
+          echancier: {
+            premier: 85000,
+            deuxieme: 85000,
+            troisieme: 55000
+          }
+        },
+        description: "Formation BTS (Rentrée académique 2025-2026). Droit d'inscription: 85 000 F + Frais annexes: 140 000 F.",
+        requiredDocuments: [
+          "2 Extraits de naissance Originaux",
+          "Photocopie du dernier bulletin de notes de la terminale",
+          "2 photos d'identité de même tirage",
+          "2 Copies légalisées de l'attestation de réussite du bac ou relevé de notes du bac",
+          "Photocopie de la CNI ou attestation d'identité en cours de validité"
+        ],
+        supplies: [
+          "1 Paquet de Marker non permanent pour tableau (Schneider - Memo - Bic STA)",
+          "1 Paquet de papier Rame",
+          "1 Chemise à Rabat pour les nouveaux étudiants"
+        ]
       }
     ]
   },
@@ -95,10 +123,16 @@ const tariffData: TariffData[] = [
         name: "Formation Orientée",
         duration: "1 an",
         fees: {
-          inscription: "À définir",
-          mensualite: "À définir",
-          total: "À définir"
-        }
+          inscription: 0,
+          fraisAnnexes: 0,
+          total: 0,
+          echancier: {
+            premier: 0,
+            deuxieme: 0,
+            troisieme: 0
+          }
+        },
+        description: "Informations tarifaires à venir"
       }
     ]
   },
@@ -112,10 +146,16 @@ const tariffData: TariffData[] = [
         name: "Formation Orientée",
         duration: "1 an",
         fees: {
-          inscription: "À définir",
-          mensualite: "À définir",
-          total: "À définir"
-        }
+          inscription: 0,
+          fraisAnnexes: 0,
+          total: 0,
+          echancier: {
+            premier: 0,
+            deuxieme: 0,
+            troisieme: 0
+          }
+        },
+        description: "Informations tarifaires à venir"
       }
     ]
   }
@@ -264,11 +304,12 @@ export default function Tarifs() {
                             </div>
                           </CardHeader>
                           <CardContent>
-                            {/* Professional Payment Schedule Table */}
-                            <div className="mt-6">
-                              <h4 className="text-lg font-bold text-gray-800 mb-4 text-center">
-                                ÉCHÉANCIER : {program.name.toUpperCase()} : {site.site}
-                              </h4>
+                            {/* Professional Payment Schedule Table - Only show if data is complete */}
+                            {program.fees.total > 0 && (
+                              <div className="mt-6">
+                                <h4 className="text-lg font-bold text-gray-800 mb-4 text-center">
+                                  ÉCHÉANCIER : {program.name.toUpperCase()} : {site.site}
+                                </h4>
                               <div className="overflow-x-auto">
                                 <table className="w-full border-collapse border-2 border-gray-800 bg-white">
                                   <thead>
@@ -296,7 +337,7 @@ export default function Tarifs() {
                                         Droit d'inscription
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        85 000
+                                        {program.fees.inscription.toLocaleString()}
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center">
                                         -
@@ -305,7 +346,7 @@ export default function Tarifs() {
                                         -
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        85 000
+                                        {program.fees.inscription.toLocaleString()}
                                       </td>
                                     </tr>
                                     <tr>
@@ -316,13 +357,13 @@ export default function Tarifs() {
                                         -
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        90 000
+                                        {program.fees.echancier.deuxieme.toLocaleString()}
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        75 000
+                                        {program.fees.echancier.troisieme.toLocaleString()}
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold">
-                                        165 000
+                                        {program.fees.fraisAnnexes.toLocaleString()}
                                       </td>
                                     </tr>
                                     <tr className="bg-gray-50">
@@ -330,16 +371,16 @@ export default function Tarifs() {
                                         TOTAL
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
-                                        85 000
+                                        {program.fees.echancier.premier.toLocaleString()}
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
-                                        90 000
+                                        {program.fees.echancier.deuxieme.toLocaleString()}
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-orange-600">
-                                        75 000
+                                        {program.fees.echancier.troisieme.toLocaleString()}
                                       </td>
                                       <td className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-green-600 text-lg">
-                                        250 000
+                                        {program.fees.total.toLocaleString()}
                                       </td>
                                     </tr>
                                   </tbody>
@@ -353,6 +394,21 @@ export default function Tarifs() {
                                 </p>
                               </div>
                             </div>
+                            )}
+                            
+                            {/* Placeholder for incomplete data */}
+                            {program.fees.total === 0 && (
+                              <div className="mt-6 p-6 bg-orange-50 border border-orange-200 rounded-lg text-center">
+                                <h4 className="text-lg font-bold text-orange-600 mb-2">
+                                  Informations Tarifaires
+                                </h4>
+                                <p className="text-gray-700">
+                                  Les tarifs pour ce site seront bientôt disponibles.
+                                  <br />
+                                  Contactez-nous pour plus d'informations.
+                                </p>
+                              </div>
+                            )}
                             {program.description && (
                               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                                 <p className="text-sm text-gray-700">{program.description}</p>

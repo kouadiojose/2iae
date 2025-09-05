@@ -25,6 +25,7 @@ import AdminPrograms from "@/pages/admin-programs";
 import AdminNews from "@/pages/admin-news";
 import AdminProjects from "@/pages/admin-projects";
 import AdminTariffs from "@/pages/admin-tariffs";
+import ProjectDetail from "@/pages/project-detail";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -147,6 +148,11 @@ function Router() {
       <Route path="/cabinet">
         <PublicLayout>
           <CabinetPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/cabinet/:id">
+        <PublicLayout>
+          <ProjectDetail />
         </PublicLayout>
       </Route>
       <Route path="/tarifs">

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Calendar, ExternalLink, Play, Camera, Eye, CheckCircle, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,7 @@ import { type Project } from "@shared/schema";
 
 export default function CabinetPage() {
   const [selectedStatus, setSelectedStatus] = useState<"all" | "upcoming" | "completed">("all");
+  const [, setLocation] = useLocation();
 
   // Fetch projects from API
   const { data: projectsData, isLoading, error } = useQuery({
@@ -200,7 +202,8 @@ export default function CabinetPage() {
                 return (
                   <Card 
                     key={project.id} 
-                    className="overflow-hidden hover:shadow-lg transition-shadow duration-300"
+                    className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer"
+                    onClick={() => setLocation(`/cabinet/${project.id}`)}
                     data-testid={`card-project-${project.id}`}
                   >
                     <CardHeader className="p-0">
@@ -275,24 +278,40 @@ export default function CabinetPage() {
                           </span>
                         </div>
                         
-                        {(project as any).link && (
+                        <div className="flex items-center gap-2">
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="p-2 h-auto"
-                            asChild
-                            data-testid={`button-link-${project.id}`}
+                            className="p-2 h-auto text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLocation(`/cabinet/${project.id}`);
+                            }}
+                            data-testid={`button-view-${project.id}`}
                           >
-                            <a 
-                              href={(project as any).link} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              aria-label={`Voir le lien du projet ${project.title}`}
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
+                            <Eye className="w-4 h-4" />
                           </Button>
-                        )}
+                          
+                          {(project as any).link && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="p-2 h-auto"
+                              onClick={(e) => e.stopPropagation()}
+                              asChild
+                              data-testid={`button-link-${project.id}`}
+                            >
+                              <a 
+                                href={(project as any).link} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                aria-label={`Voir le lien du projet ${project.title}`}
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

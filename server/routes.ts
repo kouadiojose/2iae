@@ -1811,6 +1811,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public route to get single project by ID
+  app.get("/api/projects/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const project = await storage.getProjectById(id);
+      
+      if (!project || !project.isActive) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Projet non trouvé" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        project 
+      });
+    } catch (error) {
+      console.error("Error fetching project:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Erreur lors de la récupération du projet" 
+      });
+    }
+  });
+
   // Admin route to get all projects
   app.get("/api/admin/projects", requireAdmin, async (req, res) => {
     try {

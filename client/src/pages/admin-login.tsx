@@ -45,7 +45,7 @@ export default function AdminLogin() {
               title: "Connexion réussie",
               description: `Bienvenue, ${data.admin.username}!`,
             });
-            
+
             // Force a small delay to ensure React Query cache is updated
             setTimeout(() => {
               setLocation("/admin/dashboard");
@@ -88,18 +88,6 @@ export default function AdminLogin() {
           </p>
         </CardHeader>
         <CardContent>
-          {/* Identifiants par défaut - mode développement */}
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm font-medium text-blue-800 mb-1">
-              Identifiants par défaut (développement) :
-            </p>
-            <p className="text-xs text-blue-600">
-              Utilisateur : <code className="font-mono bg-blue-100 px-1 py-0.5 rounded">admin</code>
-            </p>
-            <p className="text-xs text-blue-600">
-              Mot de passe : <code className="font-mono bg-blue-100 px-1 py-0.5 rounded">admin2iae2024!</code>
-            </p>
-          </div>
           <form
             onSubmit={handleSubmit}
             className="space-y-4"

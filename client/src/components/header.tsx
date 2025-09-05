@@ -73,15 +73,6 @@ export default function Header() {
         Cabinet 2IAE
       </Link>
       <Link
-        href="/tarifs"
-        className={`font-medium transition-colors hover:text-primary ${
-          isActive("/tarifs") ? "text-primary" : "text-foreground"
-        }`}
-        data-testid="link-tarifs"
-      >
-        Nos Tarifs
-      </Link>
-      <Link
         href="/contact"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/contact") ? "text-primary" : "text-foreground"

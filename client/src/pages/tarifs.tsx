@@ -101,8 +101,8 @@ const tariffData: TariffData[] = [
   {
     site: "2IAE YAMOUSSOUKRO",
     location: "Yamoussoukro Centre",
-    phone: "+225 XX XX XX XX",
-    email: "yamoussoukro@2iae.ci",
+    phone: "+225 07 07 57 82 82",
+    email: "contacts@2iae.com",
     programs: [
       {
         name: "BTS - Orientés 1ère Année",
@@ -136,9 +136,9 @@ const tariffData: TariffData[] = [
   },
   {
     site: "2IAE AZAGUIÉ",
-    location: "Azaguié Centre",
+    location: "Azaguié Ahoua",
     phone: "+225 07 07 57 82 82",
-    email: "azaguie@2iae.ci",
+    email: "contacts@2iae.com",
     programs: [
       {
         name: "BTS - Orientés 1ère Année",
@@ -178,9 +178,9 @@ const tariffData: TariffData[] = [
   },
   {
     site: "2IAE YOPOUGON",
-    location: "Yopougon Centre",
-    phone: "+225 XX XX XX XX",
-    email: "yopougon@2iae.ci",
+    location: "Yopougon, quartier millionnaire",
+    phone: "+225 07 07 57 82 82",
+    email: "contacts@2iae.com",
     accountInfo: "N° COMPTE AFG BANK-CI : 01201 013457690001 04",
     programs: [
       {

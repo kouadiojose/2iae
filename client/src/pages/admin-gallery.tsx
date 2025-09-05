@@ -90,6 +90,12 @@ export default function AdminGallery() {
 
   const { data: itemsData, isLoading: itemsLoading } = useQuery({
     queryKey: ["/api/admin/gallery-items", selectedAlbum?.id],
+    queryFn: async () => {
+      if (!selectedAlbum?.id) return { items: [] };
+      const response = await fetch(`/api/admin/gallery-items?albumId=${selectedAlbum.id}`);
+      if (!response.ok) throw new Error('Failed to fetch items');
+      return response.json();
+    },
     enabled: !!selectedAlbum?.id,
   });
 

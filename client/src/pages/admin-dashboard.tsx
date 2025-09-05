@@ -19,7 +19,8 @@ import {
   Building2,
   GraduationCap,
   Newspaper,
-  Briefcase
+  Briefcase,
+  Euro
 } from "lucide-react";
 
 export default function AdminDashboard() {

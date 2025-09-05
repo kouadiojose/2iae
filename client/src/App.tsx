@@ -14,6 +14,7 @@ import ActualiteDetail from "@/pages/actualite-detail";
 import ContactPage from "@/pages/contact";
 import CampusPage from "@/pages/campus";
 import CabinetPage from "@/pages/cabinet";
+import TarifsPage from "@/pages/tarifs";
 import AdminLogin from "@/pages/admin-login";
 import AdminDashboard from "@/pages/admin-dashboard";
 import AdminContent from "@/pages/admin-content";
@@ -140,6 +141,11 @@ function Router() {
       <Route path="/cabinet">
         <PublicLayout>
           <CabinetPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/tarifs">
+        <PublicLayout>
+          <TarifsPage />
         </PublicLayout>
       </Route>
       

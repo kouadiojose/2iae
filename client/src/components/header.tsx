@@ -73,6 +73,15 @@ export default function Header() {
         Cabinet 2IAE
       </Link>
       <Link
+        href="/tarifs"
+        className={`font-medium transition-colors hover:text-primary ${
+          isActive("/tarifs") ? "text-primary" : "text-foreground"
+        }`}
+        data-testid="link-tarifs"
+      >
+        Nos Tarifs
+      </Link>
+      <Link
         href="/contact"
         className={`font-medium transition-colors hover:text-primary ${
           isActive("/contact") ? "text-primary" : "text-foreground"
@@ -106,10 +115,10 @@ export default function Header() {
 
           {/* CTA Buttons */}
           <div className="hidden lg:flex items-center space-x-4">
-            <Link href="/filieres">
+            <Link href="/tarifs">
               <Button
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                data-testid="button-filieres"
+                data-testid="button-tarifs"
               >
                 Nos Tarifs
               </Button>

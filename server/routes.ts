@@ -14,6 +14,22 @@ import { randomUUID } from "crypto";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Répertoire des uploads : chemin stable quel que soit le mode (dev via tsx,
+// prod via le bundle dist/index.js où __dirname pointerait vers dist/).
+// Sur Railway, montez un volume ici (ou définissez UPLOADS_DIR) pour la persistance.
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'server', 'uploads');
+
+// Joint des segments à une racine en refusant toute sortie de la racine
+// (protection contre la traversée de répertoire type "../../etc/passwd").
+function safeJoin(root: string, ...segments: string[]): string | null {
+  const resolvedRoot = path.resolve(root);
+  const target = path.resolve(resolvedRoot, ...segments);
+  if (target !== resolvedRoot && !target.startsWith(resolvedRoot + path.sep)) {
+    return null;
+  }
+  return target;
+}
+
 // Function to generate slug from title
 function generateSlug(title: string): string {
   return title
@@ -148,10 +164,18 @@ async function generatePresignedUrl(bucketName: string, objectName: string): Pro
   return signedURL;
 }
 
-// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Client OpenAI initialisé à la demande : évite un crash au démarrage
+// quand OPENAI_API_KEY n'est pas configurée (le chatbot renvoie alors une erreur propre).
+let openaiClient: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY n'est pas configurée");
+  }
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+}
 
 const SYSTEM_PROMPT = `Tu es l'assistant virtuel officiel de 2IAE International (Groupe Écoles 2IAE International), une institution d'enseignement supérieur spécialisée dans l'entrepreneuriat située à Abidjan, Côte d'Ivoire.
 
@@ -301,19 +325,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Serve legacy assets (anciennes images seulement - nouvelles images sont sur DigitalOcean Spaces)
   app.get("/api/assets/*", async (req, res) => {
-    const filePath = req.path.replace("/api/assets/", "");
+    const filePath = decodeURIComponent(req.path.replace("/api/assets/", ""));
     console.log(`🔍 [LEGACY] Serving old asset: ${filePath}`);
-    
+
     // PRIORITÉ 1: Stockage physique local (temporaire)
-    const uploadPath = path.join(__dirname, 'uploads', filePath);
-    if (fs.existsSync(uploadPath)) {
+    const uploadPath = safeJoin(UPLOADS_DIR, filePath);
+    if (uploadPath && fs.existsSync(uploadPath)) {
       console.log(`✅ Serving from local storage: ${uploadPath}`);
       return res.sendFile(uploadPath);
     }
-    
+
     // PRIORITÉ 2: attached_assets (legacy)
-    const localPath = path.join(process.cwd(), "attached_assets", filePath);
-    if (fs.existsSync(localPath)) {
+    const localPath = safeJoin(path.join(process.cwd(), "attached_assets"), filePath);
+    if (localPath && fs.existsSync(localPath)) {
       console.log(`✅ Serving from attached_assets: ${localPath}`);
       return res.sendFile(localPath);
     }
@@ -404,7 +428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       messages.push({ role: "user", content: message });
 
       // Get response from OpenAI
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: "gpt-4o",
         messages: messages,
         max_tokens: 500,
@@ -2036,10 +2060,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploaded files from physical storage (/server/uploads/)
   app.get("/api/assets/:folder/:filename", (req, res) => {
     const { folder, filename } = req.params;
-    const filePath = path.join(__dirname, 'uploads', folder, filename);
-    
+    const filePath = safeJoin(UPLOADS_DIR, folder, filename);
+
     // Check if file exists
-    if (!fs.existsSync(filePath)) {
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: "File not found" });
     }
     
@@ -2451,7 +2475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const randomId = Math.random().toString(36).substring(2, 15);
         const ext = path.extname(req.file.originalname);
         filename = `gallery_${timestamp}_${randomId}${ext}`;
-        const localPath = path.join(__dirname, 'uploads', 'gallery', filename);
+        const localPath = path.join(UPLOADS_DIR, 'gallery', filename);
         
         // Create gallery directory if it doesn't exist
         const galleryDir = path.dirname(localPath);

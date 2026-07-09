@@ -283,7 +283,7 @@ export default function AdminTariffs() {
                         <FormItem>
                           <FormLabel>Téléphone</FormLabel>
                           <FormControl>
-                            <Input placeholder="+225 XX XX XX XX" {...field} />
+                            <Input placeholder="+225 XX XX XX XX" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -297,7 +297,7 @@ export default function AdminTariffs() {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
-                            <Input placeholder="site@2iae.ci" {...field} />
+                            <Input placeholder="site@2iae.ci" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -328,7 +328,7 @@ export default function AdminTariffs() {
                         <FormItem>
                           <FormLabel>Durée</FormLabel>
                           <FormControl>
-                            <Input placeholder="2 ans" {...field} />
+                            <Input placeholder="2 ans" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -465,7 +465,7 @@ export default function AdminTariffs() {
                         <FormItem>
                           <FormLabel>Informations Bancaires</FormLabel>
                           <FormControl>
-                            <Input placeholder="N° COMPTE AFG BANK-CI : 01201 013457690001 04" {...field} />
+                            <Input placeholder="N° COMPTE AFG BANK-CI : 01201 013457690001 04" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -479,7 +479,7 @@ export default function AdminTariffs() {
                         <FormItem>
                           <FormLabel>Description</FormLabel>
                           <FormControl>
-                            <Textarea placeholder="Description du programme..." {...field} />
+                            <Textarea placeholder="Description du programme..." {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -493,7 +493,7 @@ export default function AdminTariffs() {
                         <FormItem>
                           <FormLabel>Ordre d'affichage</FormLabel>
                           <FormControl>
-                            <Input type="number" {...field} />
+                            <Input type="number" {...field} value={field.value ?? ""} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

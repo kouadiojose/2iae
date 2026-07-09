@@ -4,3 +4,11 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environnement — ne jamais commiter de secrets
+.env
+.env.*
+!.env.example
+
+# Fichiers de session / debug locaux
+cookies.txt

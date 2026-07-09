@@ -1,12 +1,12 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { serveStatic, log } from "./static";
 import { getSessionConfig, ensureAdminExists } from "./auth";
 
 const app = express();
 
-// CRITICAL: Trust proxy for production (DigitalOcean load balancer)
+// CRITICAL: Trust proxy for production (Railway/DigitalOcean load balancer)
 app.set("trust proxy", 1);
 
 // 🔐 SECURE SESSION CONFIGURATION - Production Ready
@@ -25,8 +25,18 @@ app.use((req, res, next) => {
 
   // Allow specific origins in production
   if (isProduction) {
-    const allowedOrigins = ["https://www.2iae.com", "https://2iae.com"];
-    if (origin && allowedOrigins.includes(origin)) {
+    const allowedOrigins = new Set(["https://www.2iae.com", "https://2iae.com"]);
+    // Railway injecte automatiquement le domaine public de l'app
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      allowedOrigins.add(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+    }
+    // Domaine(s) supplémentaire(s), séparés par des virgules
+    if (process.env.APP_URL) {
+      for (const url of process.env.APP_URL.split(",")) {
+        allowedOrigins.add(url.trim().replace(/\/$/, ""));
+      }
+    }
+    if (origin && allowedOrigins.has(origin)) {
       res.header("Access-Control-Allow-Origin", origin);
     }
   } else {
@@ -77,10 +87,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint (utilisé par Railway pour vérifier que l'app est en vie)
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", uptime: process.uptime() });
+});
+
 (async () => {
   // 🔐 Ensure admin user exists
   await ensureAdminExists();
-  
+
   // Setup routes FIRST before Vite
   const server = await registerRoutes(app);
 
@@ -90,13 +105,16 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    console.error("Unhandled error:", err);
     res.status(status).json({ message });
-    throw err;
   });
 
   // Setup Vite AFTER all API routes are registered
-  if (app.get("env") === "development") {
+  // NOTE: en build de production, esbuild remplace NODE_ENV et élimine cette
+  // branche, ce qui exclut vite (devDependency) du bundle final.
+  if (process.env.NODE_ENV !== "production") {
     console.log("🔧 Configuration Vite...");
+    const { setupVite } = await import("./vite");
     await setupVite(app, server);
     console.log("✅ Vite configuré");
   } else {

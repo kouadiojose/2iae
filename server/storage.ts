@@ -785,13 +785,17 @@ export class MemStorage implements IStorage {
 
   async createTariff(insertTariff: InsertTariff): Promise<Tariff> {
     const id = randomUUID();
-    const tariff: Tariff = { 
-      ...insertTariff, 
-      id, 
+    const tariff: Tariff = {
+      ...insertTariff,
+      id,
       phone: insertTariff.phone || null,
       email: insertTariff.email || null,
       accountInfo: insertTariff.accountInfo || null,
       description: insertTariff.description || null,
+      programDuration: insertTariff.programDuration ?? "2 ans",
+      requiredDocuments: insertTariff.requiredDocuments ?? '[]',
+      uniformCosts: insertTariff.uniformCosts ?? '{}',
+      supplies: insertTariff.supplies ?? '[]',
       isActive: true,
       order: insertTariff.order || "1",
       createdAt: new Date(),

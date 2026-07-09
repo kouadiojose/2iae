@@ -1,5 +1,7 @@
 # Déploiement sur DigitalOcean App Platform
 
+> ℹ️ Pour un déploiement sur **Railway**, consultez [RAILWAY.md](./RAILWAY.md).
+
 Ce guide explique comment déployer l'application 2IAE International sur DigitalOcean App Platform.
 
 ## Prérequis

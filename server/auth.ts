@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import connectPg from 'connect-pg-simple';
 import { storage } from './storage.js';
+import { pool } from './db.js';
 
 // Create PostgreSQL session store
 const PostgreSQLStore = connectPg(session);
@@ -10,15 +11,22 @@ const PostgreSQLStore = connectPg(session);
 // Session configuration for production
 export function getSessionConfig() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const sessionSecret = process.env.SESSION_SECRET || 'votre-secret-super-securise-2iae-admin';
-  
+  const sessionSecret = process.env.SESSION_SECRET;
+
+  if (!sessionSecret && isProduction) {
+    console.warn(
+      '⚠️  SESSION_SECRET non défini en production ! ' +
+      'Définissez la variable d\'environnement SESSION_SECRET avec une valeur aléatoire et secrète.'
+    );
+  }
+
   return {
     store: new PostgreSQLStore({
-      conString: process.env.DATABASE_URL,
+      pool, // Réutilise le pool partagé (même config SSL que le reste de l'app)
       tableName: 'session',
       createTableIfMissing: true,
     }),
-    secret: sessionSecret,
+    secret: sessionSecret || 'dev-secret-2iae-admin-ne-pas-utiliser-en-production',
     resave: false,
     saveUninitialized: false,
     name: '2iae_admin_session',
@@ -26,7 +34,7 @@ export function getSessionConfig() {
       secure: isProduction, // HTTPS only in production
       httpOnly: true, // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: isProduction ? 'strict' : 'lax' as const
+      sameSite: (isProduction ? 'strict' : 'lax') as 'strict' | 'lax'
     },
     rolling: true // Reset expiry on activity
   };
@@ -151,16 +159,23 @@ export function handleAuthCheck(req: any, res: any) {
 
 // Create first admin user if none exists
 export async function ensureAdminExists() {
+  const username = process.env.ADMIN_USERNAME || 'admin';
+  const password = process.env.ADMIN_PASSWORD || 'admin2iae2024!';
+  const email = process.env.ADMIN_EMAIL || 'admin@2iae.com';
+
   try {
-    const adminUser = await storage.getAdminUserByUsername('admin');
+    const adminUser = await storage.getAdminUserByUsername(username);
     if (!adminUser) {
       // createAdminUser already hashes the password, no need to hash here
-      await storage.createAdminUser({
-        username: 'admin',
-        password: 'admin2iae2024!', // Pass plain password, storage will hash it
-        email: 'admin@2iae.com'
-      });
-      console.log('✅ Admin par défaut créé: admin / admin2iae2024!');
+      await storage.createAdminUser({ username, password, email });
+      if (process.env.NODE_ENV === 'production') {
+        console.log(`✅ Admin par défaut créé: ${username}`);
+        if (!process.env.ADMIN_PASSWORD) {
+          console.warn('⚠️  Mot de passe admin par défaut utilisé — définissez ADMIN_PASSWORD ou changez-le immédiatement.');
+        }
+      } else {
+        console.log(`✅ Admin par défaut créé: ${username} / ${password}`);
+      }
     }
   } catch (error) {
     console.error('Erreur lors de la création de l\'admin par défaut:', error);

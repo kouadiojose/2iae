@@ -61,8 +61,14 @@ const MODELE = process.env.OPENAI_MODEL || "gpt-4o-mini";
 /** Importance minimale pour prétendre à la bannière de la page d'accueil. */
 const SEUIL_BANNIERE = 75;
 
-/** Nombre de bannières issues de Facebook conservées simultanément. */
-export const MAX_BANNIERES = 3;
+/**
+ * Nombre de bannières issues de Facebook conservées simultanément.
+ *
+ * Le groupe compte quatre campus, qui publient chacun leurs résultats, plus le
+ * résultat consolidé : cela fait cinq annonces légitimes. À trois places, deux
+ * campus étaient mécaniquement évincés.
+ */
+export const MAX_BANNIERES = Number(process.env.MAX_BANNIERES) || 5;
 
 /** Publications qui n'ont pas leur place sur le site d'une école. */
 const MOTS_HORS_SUJET = [

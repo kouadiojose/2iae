@@ -17,6 +17,7 @@ import { lirePublications, lirePublication, integrationActive, type PostFacebook
 import { normaliser } from "./rubriques";
 import { analyserImage, choisirImageBanniere } from "./images";
 import { reviser } from "./revision";
+import { verifierFaits, retirerPhrasesNonSourcees } from "./verification";
 import {
   redigerAccroche,
   corrigerNomsPropres,
@@ -191,6 +192,22 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
     console.log(`   ✎ relecture : ${relu.corrections.slice(0, 3).join(" · ")}`);
   }
 
+  // Troisième passe : vérification des faits. Le modèle a déjà écrit des
+  // campus inexistants (« Cocody », « M'batto ») et déformé le taux national
+  // (42,54 au lieu de 42,48). Aucune consigne n'empêche cela de façon fiable ;
+  // seule une confrontation mécanique à la source le peut.
+  const sources = [post.message, analyses[indexIllustration]?.texte ?? ""];
+  const anomalies = verifierFaits(`${relu.titre}\n${relu.resume}\n${relu.article}`, sources);
+  let corps = relu.article;
+  if (anomalies.length) {
+    const purge = retirerPhrasesNonSourcees(corps, anomalies);
+    corps = purge.texte;
+    console.warn(
+      `   ⚠ faits non sourcés écartés : ${anomalies.slice(0, 4).map((a) => a.valeur).join(", ")}`,
+    );
+    purge.retirees.forEach((ph) => console.warn(`     phrase retirée : ${ph}`));
+  }
+
   const aLaUne = meriteLaUne(classement);
   const dateISO = post.publieLe.toISOString().slice(0, 10);
 
@@ -203,7 +220,7 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
       summary: relu.resume || null,
       // L'article réécrit puis relu prime sur le texte d'origine : c'est lui
       // qui donne au site son registre institutionnel.
-      content: relu.article || nettoyer(post.message) || relu.resume || null,
+      content: corps || nettoyer(post.message) || relu.resume || null,
       imageUrl: post.medias[indexIllustration]?.url ?? null,
       date: dateISO,
       category: classement.rubrique,
@@ -287,13 +304,23 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
         button2Text: "Nous contacter",
         button2Link: "/contact",
         isActive: true,
-        order: "1",
+        // Rang 1 à 3 selon l'importance : une annonce à 90 ou plus prend le
+        // rang 1, à 80 le rang 2, au seuil de 75 le rang 3.
+        //
+        // L'échelle est volontairement resserrée sur celle des sliders saisis
+        // à la main, qui portent les rangs 1 et 2. Avec un rang « 100 moins
+        // l'importance », les résultats du BTS se retrouvaient en rang 10,
+        // donc derrière eux dans le carrousel. À rang égal, le tri serveur
+        // départage par date décroissante : l'annonce récente passe devant
+        // l'affiche de la session précédente.
+        order: String(Math.max(1, 10 - Math.floor(classement.importance / 10))),
         source: "facebook",
         sourceId: post.id,
+        importance: classement.importance,
+        contentYear: pourBanniere.analyse.annee ?? null,
       })
       .returning();
     sliderId = slider.id;
-    await limiterBannieres();
   }
 
   await journaliser({
@@ -353,10 +380,27 @@ const SEUIL_PROXIMITE = 0.6;
 
 function proximite(a: string[], b: string[]): number {
   if (!a.length || !b.length) return 0;
+  const setA = new Set(a);
   const setB = new Set(b);
-  const communs = a.filter((m) => setB.has(m)).length;
+  // Sur des ensembles des deux côtés : compter les répétitions au numérateur
+  // face à un dénominateur dédoublonné gonflait l'indice et créait de faux
+  // doublons dès qu'un titre répétait un mot.
+  const communs = Array.from(setA).filter((m) => setB.has(m)).length;
   const union = new Set([...a, ...b]).size;
   return union ? communs / union : 0;
+}
+
+/** Campus et partenaires : deux annonces qui n'en citent pas le même sont distinctes. */
+const CAMPUS = ["yopougon", "palmeraie", "yamoussoukro", "azaguie", "sherbrooke", "abidjan"];
+
+function memeSujet(a: string[], b: string[]): boolean {
+  const chiffres = (t: string[]) => t.filter((m) => /^\d+$/.test(m)).sort().join(",");
+  const lieux = (t: string[]) => t.filter((m) => CAMPUS.includes(m)).sort().join(",");
+  // « BTS 2026 : 83,54 % à Azaguié » et « … 64,13 % à Yopougon » annoncent deux
+  // campus et deux chiffres : ce sont deux nouvelles, pas un doublon. Sans ce
+  // garde-fou, deux accroches ne différant que par le nom du campus tombaient
+  // au-dessus du seuil de proximité et la seconde était perdue.
+  return chiffres(a) === chiffres(b) && lieux(a) === lieux(b);
 }
 
 /** Une bannière active annonce-t-elle déjà la même chose ? */
@@ -367,7 +411,10 @@ async function banniereDejaPresente(titre: string): Promise<boolean> {
     .where(eq(sliders.isActive, true));
   const cible = signatureTitre(titre);
   if (!cible.length) return false;
-  return actives.some((b) => proximite(cible, signatureTitre(b.title)) >= SEUIL_PROXIMITE);
+  return actives.some((b) => {
+    const sig = signatureTitre(b.title);
+    return memeSujet(cible, sig) && proximite(cible, sig) >= SEUIL_PROXIMITE;
+  });
 }
 
 /**
@@ -396,7 +443,7 @@ export async function dedupliquerBannieres(): Promise<number> {
       gardees.push(sig);
       continue;
     }
-    if (sig.length && gardees.some((g) => proximite(sig, g) >= SEUIL_PROXIMITE)) {
+    if (sig.length && gardees.some((g) => memeSujet(sig, g) && proximite(sig, g) >= SEUIL_PROXIMITE)) {
       await db
         .update(sliders)
         .set({ isActive: false, updatedAt: new Date() })
@@ -417,7 +464,11 @@ export async function dedupliquerBannieres(): Promise<number> {
  * historiques livrées avec le dépôt.
  */
 function cheminDepuisUrl(url: string): string | null {
-  const m = url.match(/^\/api\/assets\/(.+)$/);
+  // Deux préfixes coexistent : /api/assets/ pour les fichiers importés, et
+  // /public-objects/ pour les sliders livrés avec le site. Ne reconnaître que
+  // le premier laissait la bannière « Bienvenue à 2IAE International »
+  // indéboulonnable en tête du carrousel.
+  const m = url.match(/^\/(?:api\/assets|public-objects)\/(.+)$/);
   if (!m) return null;
   const relatif = decodeURIComponent(m[1]);
   if (relatif.includes("..")) return null; // jamais sortir des dossiers servis
@@ -425,6 +476,8 @@ function cheminDepuisUrl(url: string): string | null {
   const bases = [
     process.env.UPLOADS_DIR || path.join(process.cwd(), "server", "uploads"),
     path.join(process.cwd(), "attached_assets"),
+    path.join(process.cwd(), "client", "public"),
+    path.join(process.cwd(), "public"),
   ];
   for (const base of bases) {
     const complet = path.join(base, relatif);
@@ -587,12 +640,15 @@ export async function harmoniserBannieres(): Promise<string[]> {
  * ceux marqués source = "facebook" entrent dans la rotation. Les plus anciens
  * sont désactivés plutôt que supprimés, pour rester récupérables.
  */
-async function limiterBannieres(): Promise<void> {
+export async function limiterBannieres(): Promise<void> {
   const auto = await db
     .select({ id: sliders.id })
     .from(sliders)
     .where(and(eq(sliders.source, "facebook"), eq(sliders.isActive, true)))
-    .orderBy(desc(sliders.createdAt));
+    // L'ordre de survie : millésime le plus récent, puis valeur éditoriale,
+    // puis ancienneté. Trier sur la seule date d'insertion revenait à laisser
+    // une publication banale chasser les résultats d'examen de la page.
+    .orderBy(desc(sliders.contentYear), desc(sliders.importance), desc(sliders.createdAt));
 
   for (const s of auto.slice(MAX_BANNIERES)) {
     await db
@@ -672,6 +728,10 @@ export async function traiterPublications(
       }
     }
   }
+
+  // Une seule fois, en fin de lot : arbitrer à chaque insertion évinçait les
+  // bannières du début du lot avant même que les suivantes soient comparées.
+  await limiterBannieres();
   return resultat;
 }
 
@@ -693,6 +753,7 @@ export async function synchroniserUne(postId: string): Promise<Resultat> {
   resultat.vues = 1;
   try {
     await traiter(post, resultat);
+    await limiterBannieres();
   } catch (err) {
     resultat.echecs++;
     console.error(`❌ Facebook — échec sur ${postId} :`, (err as Error).message);

@@ -2,7 +2,7 @@ import { type User, type InsertUser, type Contact, type InsertContact, type Chat
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -378,6 +378,8 @@ export class MemStorage implements IStorage {
         order: "1",
         source: "manual",
         sourceId: null,
+        importance: null,
+        contentYear: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         createdBy: null
@@ -396,6 +398,8 @@ export class MemStorage implements IStorage {
         order: "2",
         source: "manual",
         sourceId: null,
+        importance: null,
+        contentYear: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         createdBy: null
@@ -434,6 +438,8 @@ export class MemStorage implements IStorage {
       order: insertSlider.order || "1",
       source: "manual",
       sourceId: null,
+      importance: null,
+      contentYear: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: null
@@ -1187,7 +1193,15 @@ export class DatabaseStorage implements IStorage {
 
   // Slider operations
   async getSliders(): Promise<Slider[]> {
-    return await db.select().from(sliders).orderBy(sliders.order, sliders.createdAt);
+    // Tri NUMÉRIQUE sur "order", puis du plus récent au plus ancien.
+    // La colonne est un texte : un tri lexicographique placerait "10" avant
+    // "2". Et l'ancien tri croissant sur createdAt affichait la bannière la
+    // plus récente en DERNIER, si bien que le message le plus fort de l'école
+    // n'apparaissait qu'après une quinzaine de secondes de carrousel.
+    return await db
+      .select()
+      .from(sliders)
+      .orderBy(sql`COALESCE(NULLIF(regexp_replace("order", '\\D', '', 'g'), ''), '999')::int`, desc(sliders.createdAt));
   }
 
   async getSlider(id: string): Promise<Slider | undefined> {

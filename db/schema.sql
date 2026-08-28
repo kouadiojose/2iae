@@ -270,7 +270,9 @@ CREATE INDEX IF NOT EXISTS facebook_posts_content_hash_idx ON facebook_posts (co
 -- Bannières issues de Facebook : renouvelées automatiquement, les sliders
 -- saisis à la main ne sont jamais touchés.
 ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source    TEXT DEFAULT 'manual';
-ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source_id TEXT;
+ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source_id    TEXT;
+ALTER TABLE sliders ADD COLUMN IF NOT EXISTS importance   INTEGER;
+ALTER TABLE sliders ADD COLUMN IF NOT EXISTS content_year INTEGER;
 CREATE UNIQUE INDEX IF NOT EXISTS sliders_source_id_key ON sliders (source_id) WHERE source_id IS NOT NULL;
 
 -- Cache des analyses d'images : décrire une image coûte un appel au modèle,

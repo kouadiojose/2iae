@@ -72,6 +72,11 @@ export const sliders = pgTable("sliders", {
   // automatiquement, ceux saisis à la main ne sont jamais touchés.
   source: text("source").default("manual"),
   sourceId: text("source_id").unique(),
+  // Valeur éditoriale et millésime du contenu : sans eux, la rotation ne
+  // pouvait arbitrer qu'à l'ancienneté, et une annonce à 83,54 % de réussite
+  // se faisait évincer par une publication plus récente mais banale.
+  importance: integer("importance"),
+  contentYear: integer("content_year"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdBy: varchar("created_by").references(() => adminUsers.id),

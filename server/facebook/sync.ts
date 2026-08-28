@@ -12,12 +12,14 @@ import fs from "fs";
 import path from "path";
 import { db } from "../db";
 import { facebookPosts, news, newsImages, albums, galleryItems, sliders } from "@shared/schema";
-import { eq, and, desc, isNotNull } from "drizzle-orm";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { lirePublications, lirePublication, integrationActive, type PostFacebook } from "./graph";
 import { normaliser } from "./rubriques";
 import { analyserImage, choisirImageBanniere } from "./images";
+import { reviser } from "./revision";
 import {
   redigerAccroche,
+  corrigerNomsPropres,
   classer,
   meriteLaUne,
   nettoyer,
@@ -177,6 +179,18 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
     return;
   }
 
+  // Seconde passe : un relecteur corrige la langue avant publication. Sur le
+  // site d'une école, une faute d'accord ou un titre bancal entame la
+  // crédibilité de l'établissement.
+  const relu = await reviser({
+    titre: classement.titre,
+    resume: classement.resume,
+    article: classement.article || nettoyer(post.message),
+  });
+  if (relu.corrections.length) {
+    console.log(`   ✎ relecture : ${relu.corrections.slice(0, 3).join(" · ")}`);
+  }
+
   const aLaUne = meriteLaUne(classement);
   const dateISO = post.publieLe.toISOString().slice(0, 10);
 
@@ -184,13 +198,12 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
   const [actu] = await db
     .insert(news)
     .values({
-      title: classement.titre,
-      slug: slugifier(classement.titre, post.id),
-      summary: classement.resume || null,
-      // L'article réécrit par l'IA prime sur le texte d'origine : c'est lui
-      // qui donne au site son registre institutionnel. Repli sur le texte
-      // nettoyé quand le moteur de secours a pris la main.
-      content: classement.article || nettoyer(post.message) || classement.resume || null,
+      title: relu.titre,
+      slug: slugifier(relu.titre, post.id),
+      summary: relu.resume || null,
+      // L'article réécrit puis relu prime sur le texte d'origine : c'est lui
+      // qui donne au site son registre institutionnel.
+      content: relu.article || nettoyer(post.message) || relu.resume || null,
       imageUrl: post.medias[indexIllustration]?.url ?? null,
       date: dateISO,
       category: classement.rubrique,
@@ -201,6 +214,7 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
       source: "facebook",
       sourceId: post.id,
       sourceUrl: post.permalink,
+      revisedAt: new Date(),
     })
     .returning();
 
@@ -420,6 +434,63 @@ function cheminDepuisUrl(url: string): string | null {
 }
 
 /**
+ * Fait relire les articles publiés avant la mise en place du relecteur.
+ *
+ * Les premiers imports sont partis en ligne sans seconde passe : le site
+ * affichait « Les atouts de choisir le groupe 2IAE » et « Qui a été orienté
+ * chez nous-même ? ». Sur le site d'une école, ces fautes se voient et se
+ * paient.
+ *
+ * Chaque article n'est relu qu'une fois — la date de relecture est conservée.
+ * Le lot est borné pour ne pas monopoliser un rattrapage : les suivants
+ * passeront à l'exécution d'après.
+ */
+export async function reviserArticlesPublies(lot = 8): Promise<string[]> {
+  const aRelire = await db
+    .select({
+      id: news.id,
+      title: news.title,
+      summary: news.summary,
+      content: news.content,
+    })
+    .from(news)
+    .where(and(eq(news.source, "facebook"), isNull(news.revisedAt)))
+    .orderBy(desc(news.createdAt))
+    .limit(lot);
+
+  const corriges: string[] = [];
+
+  for (const a of aRelire) {
+    const relu = await reviser({
+      titre: a.title,
+      resume: a.summary ?? "",
+      article: a.content ?? "",
+    });
+
+    const change =
+      relu.titre !== a.title ||
+      relu.resume !== (a.summary ?? "") ||
+      relu.article !== (a.content ?? "");
+
+    await db
+      .update(news)
+      .set({
+        title: relu.titre,
+        summary: relu.resume || null,
+        content: relu.article || a.content,
+        // Marquée dans tous les cas : un texte déjà correct ne doit pas être
+        // resoumis à chaque rattrapage.
+        revisedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(news.id, a.id));
+
+    if (change) corriges.push(`« ${a.title} » → « ${relu.titre} »`);
+  }
+  return corriges;
+}
+
+/**
  * Accorde le texte des bannières à l'image qu'elles portent.
  *
  * Le site affichait « Bienvenue à 2IAE International » au-dessus d'une affiche
@@ -441,9 +512,17 @@ const TITRES_GENERIQUES = [
 function titreEstGenerique(titre: string): boolean {
   const t = normaliser(titre);
   if (!t) return true;
-  // Un titre sans chiffre ni nom de campus n'annonce rien de précis.
-  const porteUneInfo = /\d/.test(t) ||
-    /(yopougon|palmeraie|yamoussoukro|azaguie|sherbrooke|partenariat|inscription|orientation)/.test(t);
+
+  // Le nom de la marque est retiré avant de chercher un chiffre : sans cela,
+  // le « 2 » de 2IAE faisait passer « Bienvenue à 2IAE International » pour un
+  // titre informatif, et la bannière n'était jamais réaccordée.
+  const sansMarque = t.replace(/\b2iae\b/g, " ");
+
+  const porteUneInfo =
+    /\d/.test(sansMarque) ||
+    /(yopougon|palmeraie|yamoussoukro|azaguie|sherbrooke|partenariat|inscription|orientation|resultat)/.test(
+      sansMarque,
+    );
   if (porteUneInfo) return false;
   return TITRES_GENERIQUES.some((g) => t.includes(g) || g.includes(t));
 }
@@ -463,6 +542,17 @@ export async function harmoniserBannieres(): Promise<string[]> {
   const reaccordees: string[] = [];
 
   for (const b of actives) {
+    // Rattrapage : les bannières créées avant la correction typographique
+    // portent « sherbrooke », « yopougon » en minuscules.
+    const corrige = corrigerNomsPropres(b.title);
+    if (corrige !== b.title) {
+      await db
+        .update(sliders)
+        .set({ title: corrige, updatedAt: new Date() })
+        .where(eq(sliders.id, b.id));
+      reaccordees.push(`typographie : « ${b.title} » → « ${corrige} »`);
+    }
+
     if (!b.imageUrl || !titreEstGenerique(b.title)) continue;
 
     const chemin = cheminDepuisUrl(b.imageUrl);

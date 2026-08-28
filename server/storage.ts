@@ -649,6 +649,7 @@ export class MemStorage implements IStorage {
       source: "manual",
       sourceId: null,
       sourceUrl: null,
+      revisedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: null

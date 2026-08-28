@@ -142,6 +142,8 @@ export const news = pgTable("news", {
   source: text("source").default("manual"),
   sourceId: text("source_id").unique(),   // id du post Facebook, garantit l'unicité
   sourceUrl: text("source_url"),          // permalien vers le post d'origine
+  // Date de la relecture : évite de repasser un texte déjà corrigé.
+  revisedAt: timestamp("revised_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdBy: varchar("created_by").references(() => adminUsers.id),

@@ -17,6 +17,7 @@ import {
   synchroniserUne,
   dedupliquerBannieres,
   harmoniserBannieres,
+  reviserArticlesPublies,
 } from "./sync";
 import { NOMS_RUBRIQUES } from "./classification";
 
@@ -154,6 +155,11 @@ export function demarrerRattrapage(): void {
       // Bannières dont le texte ne dit rien de l'image qu'elles portent.
       const harmonisees = await harmoniserBannieres();
       harmonisees.forEach((t) => console.log(`📘 Facebook : bannière réaccordée — ${t}`));
+
+      // Relecture des articles partis en ligne avant la mise en place du
+      // relecteur, par petits lots.
+      const relus = await reviserArticlesPublies();
+      relus.forEach((t) => console.log(`📘 Facebook : article corrigé — ${t}`));
 
       const r = await synchroniser(25);
       if (r.publiees || r.ecartees || r.echecs) {

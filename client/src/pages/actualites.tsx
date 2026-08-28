@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 
+/** Visuel de secours servi par le site, jamais par un tiers. */
+const IMAGE_PAR_DEFAUT = "/api/assets/sliders/slider_1756752371617_9cvh4dv1bnj.jpg";
+
 interface News {
   id: string;
   title: string;
@@ -118,6 +121,31 @@ export default function ActualitesPage() {
     });
   };
 
+  /**
+   * Repli quand une image ne se charge pas.
+   *
+   * Le repli par catégorie ne jouait que si `imageUrl` était vide. Or certaines
+   * images pointent vers un site externe devenu injoignable (celle du prix
+   * AfriBusiness renvoie une erreur 520) : la carte affichait alors le texte
+   * de remplacement à la place du visuel. On bascule donc aussi à l'échec du
+   * chargement, et une seule fois pour ne pas boucler si le repli échoue lui
+   * aussi.
+   */
+  const surErreurImage = (
+    e: React.SyntheticEvent<HTMLImageElement>,
+    category: string,
+  ) => {
+    const img = e.currentTarget;
+    if (img.dataset.repli === "2") return; // déjà au repli local : on s'arrête
+    if (img.dataset.repli === "1") {
+      img.dataset.repli = "2";
+      img.src = IMAGE_PAR_DEFAUT;
+      return;
+    }
+    img.dataset.repli = "1";
+    img.src = getImageUrl(null, category);
+  };
+
   // Get default image if none provided
   const getImageUrl = (imageUrl: string | null, category: string) => {
     if (imageUrl) return imageUrl;
@@ -133,7 +161,11 @@ export default function ActualitesPage() {
       'International': 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300'
     };
     
-    return defaultImages[category] || 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300';
+    // Repli ultime servi par le site lui-même : les images de secours par
+    // catégorie pointent vers un service externe, qui peut être bloqué ou
+    // indisponible. Une carte sans visuel affiche alors son texte de
+    // remplacement en clair, ce qui se voit immédiatement.
+    return defaultImages[category] || IMAGE_PAR_DEFAUT;
   };
 
   return (
@@ -164,7 +196,12 @@ export default function ActualitesPage() {
                     <img 
                       src={getImageUrl(featuredNews.imageUrl, featuredNews.category)}
                       alt={featuredNews.title}
-                      className="w-full h-80 lg:h-full object-cover"
+                      onError={(e) => surErreurImage(e, featuredNews.category)}
+                      // object-contain plutôt que cover : les publications sont
+                      // souvent des affiches où le taux de réussite occupe le
+                      // centre. Un recadrage en bandeau coupait précisément le
+                      // chiffre que l'affiche vient annoncer.
+                      className="w-full h-80 lg:h-full object-contain bg-gray-50"
                       data-testid="img-featured-news"
                     />
                     <div className="absolute top-4 left-4">
@@ -250,7 +287,8 @@ export default function ActualitesPage() {
                     <img
                       src={getImageUrl(article.imageUrl, article.category)}
                       alt={article.title}
-                      className="w-full h-48 object-cover"
+                      onError={(e) => surErreurImage(e, article.category)}
+                      className="w-full h-48 object-contain bg-gray-50"
                       data-testid={`img-news-${article.id}`}
                     />
                     <div className="absolute top-4 left-4">

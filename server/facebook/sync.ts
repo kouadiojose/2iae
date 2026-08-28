@@ -301,12 +301,29 @@ const MOTS_OUTILS = new Set([
   "et", "a", "en", "groupe", "ecole", "ecoles", "2iae", "notre", "nos",
 ]);
 
-function signatureTitre(titre: string): string {
+function signatureTitre(titre: string): string[] {
   return normaliser(titre)
     .split(" ")
-    .filter((m) => m && !MOTS_OUTILS.has(m))
-    .sort()
-    .join(" ");
+    .filter((m) => m && !MOTS_OUTILS.has(m));
+}
+
+/**
+ * Proximité de deux titres, entre 0 et 1 (indice de Jaccard).
+ *
+ * L'égalité stricte ne suffisait pas : « 67,38 % au Groupe 2IAE » et
+ * « 67,38 % d'admis au Groupe 2IAE » annoncent la même chose et se
+ * retrouvaient tous deux en bannière. En comparant la part de mots communs,
+ * ces deux-là se reconnaissent, tandis que « 83,54 % à Azaguié » reste
+ * distinct puisqu'il porte un autre chiffre et un autre campus.
+ */
+const SEUIL_PROXIMITE = 0.6;
+
+function proximite(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const setB = new Set(b);
+  const communs = a.filter((m) => setB.has(m)).length;
+  const union = new Set([...a, ...b]).size;
+  return union ? communs / union : 0;
 }
 
 /** Une bannière active annonce-t-elle déjà la même chose ? */
@@ -316,8 +333,47 @@ async function banniereDejaPresente(titre: string): Promise<boolean> {
     .from(sliders)
     .where(eq(sliders.isActive, true));
   const cible = signatureTitre(titre);
-  if (!cible) return false;
-  return actives.some((b) => signatureTitre(b.title) === cible);
+  if (!cible.length) return false;
+  return actives.some((b) => proximite(cible, signatureTitre(b.title)) >= SEUIL_PROXIMITE);
+}
+
+/**
+ * Désactive les bannières actives qui font double emploi.
+ *
+ * Appelée au démarrage : la déduplication a été ajoutée après une première
+ * mise en production, où plusieurs bannières annonçaient déjà la même chose.
+ * Sans ce rattrapage, elles resteraient affichées jusqu'à ce que la rotation
+ * les évince d'elle-même, ce qui peut prendre des jours.
+ */
+export async function dedupliquerBannieres(): Promise<number> {
+  const actives = await db
+    .select({ id: sliders.id, title: sliders.title, source: sliders.source })
+    .from(sliders)
+    .where(eq(sliders.isActive, true))
+    .orderBy(desc(sliders.createdAt));
+
+  const gardees: string[][] = [];
+  let desactivees = 0;
+
+  for (const b of actives) {
+    const sig = signatureTitre(b.title);
+    // Les bannières saisies à la main font foi : on les conserve toujours et
+    // on ne compare que les suivantes à celles-ci.
+    if (b.source !== "facebook") {
+      gardees.push(sig);
+      continue;
+    }
+    if (sig.length && gardees.some((g) => proximite(sig, g) >= SEUIL_PROXIMITE)) {
+      await db
+        .update(sliders)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(sliders.id, b.id));
+      desactivees++;
+    } else {
+      gardees.push(sig);
+    }
+  }
+  return desactivees;
 }
 
 /**

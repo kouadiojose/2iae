@@ -109,6 +109,9 @@ const NOMS_PROPRES: [RegExp, string][] = [
   [/\bazagui([ée])\b/gi, "Azaguié"],
   [/\babidjan\b/gi, "Abidjan"],
   [/\bc[oô]te d['’]ivoire\b/gi, "Côte d'Ivoire"],
+  [/\bsherbrooke\b/gi, "Sherbrooke"],
+  [/\buniversit[ée] de sherbrooke\b/gi, "Université de Sherbrooke"],
+  [/\bapc\b/g, "APC"],
 ];
 
 export function corrigerNomsPropres(texte: string): string {

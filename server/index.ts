@@ -3,6 +3,7 @@ import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic, log } from "./static";
 import { getSessionConfig, ensureAdminExists } from "./auth";
+import { demarrerRattrapage } from "./facebook/routes";
 
 const app = express();
 
@@ -100,6 +101,10 @@ app.get("/api/health", (_req, res) => {
   const server = await registerRoutes(app);
 
   console.log("✅ Routes enregistrées");
+
+  // Filet de rattrapage Facebook : rejoue périodiquement la page au cas où une
+  // notification du webhook se serait perdue (redéploiement, coupure réseau).
+  demarrerRattrapage();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

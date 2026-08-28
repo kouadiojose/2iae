@@ -9,6 +9,7 @@ import path from "path";
 import { fileURLToPath } from 'url';
 import multer from "multer";
 import { randomUUID } from "crypto";
+import { enregistrerRoutesFacebook } from "./facebook/routes";
 
 // Pour ES modules, obtenir __dirname équivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -2500,6 +2501,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // Intégration Facebook : webhook temps réel + synchronisation
+  enregistrerRoutesFacebook(app, requireAdmin);
 
   const httpServer = createServer(app);
   return httpServer;

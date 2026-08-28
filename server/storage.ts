@@ -376,6 +376,8 @@ export class MemStorage implements IStorage {
         button2Link: "/contact",
         isActive: true,
         order: "1",
+        source: "manual",
+        sourceId: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         createdBy: null
@@ -392,6 +394,8 @@ export class MemStorage implements IStorage {
         button2Link: "/contact",
         isActive: true,
         order: "2",
+        source: "manual",
+        sourceId: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         createdBy: null
@@ -428,6 +432,8 @@ export class MemStorage implements IStorage {
       button2Link: insertSlider.button2Link || null,
       isActive: true,
       order: insertSlider.order || "1",
+      source: "manual",
+      sourceId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: null

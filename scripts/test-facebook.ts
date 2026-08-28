@@ -8,7 +8,7 @@
  * Usage : DATABASE_URL=... npx tsx scripts/test-facebook.ts
  */
 import { traiterPublications } from "../server/facebook/sync";
-import { classerParRegles, meriteLaUne } from "../server/facebook/classification";
+import { classerParRegles, meriteLaUne, nettoyer } from "../server/facebook/classification";
 import type { PostFacebook } from "../server/facebook/graph";
 import { db } from "../server/db";
 import { news, albums, facebookPosts, newsImages, galleryItems } from "@shared/schema";
@@ -17,6 +17,9 @@ import { eq } from "drizzle-orm";
 function media(n: number) {
   return Array.from({ length: n }, (_, i) => ({
     url: `/api/assets/facebook/fb_test_${i}.jpg`,
+    // Fichier inexistant : le classement doit se poursuivre sur le seul texte
+    // plutôt que d'échouer parce qu'une image manque.
+    cheminLocal: `/tmp/inexistant_${i}.jpg`,
     type: "image" as const,
   }));
 }
@@ -70,6 +73,13 @@ const PUBLICATIONS: PostFacebook[] = [
   },
 ];
 
+/**
+ * Cas relevé sur la vraie page : les titres sont écrits en « faux gras »
+ * Unicode, qui vit dans la même zone que les émojis. Sans conversion, le
+ * nettoyage effaçait tout le titre.
+ */
+const FAUX_GRAS = "𝗡𝗼𝘂𝘃𝗲𝗮𝘂𝘅 𝗯𝗮𝗰𝗵𝗲𝗹𝗶𝗲𝗿𝘀 : 𝗰𝗼𝗺𝗺𝗲𝗻𝘁 𝗰𝗵𝗼𝗶𝘀𝗶𝗿 ?";
+
 function ligne(ok: boolean, texte: string) {
   console.log(`  ${ok ? "✅" : "❌"} ${texte}`);
   if (!ok) process.exitCode = 1;
@@ -88,6 +98,17 @@ async function main() {
     console.log(`     titre  : ${c.titre}`);
     console.log(`     raison : ${c.raison}`);
   }
+
+  console.log("\n" + "=".repeat(72));
+  console.log("TEXTE STYLISÉ UNICODE (faux gras de la page réelle)");
+  console.log("=".repeat(72) + "\n");
+  const converti = nettoyer(FAUX_GRAS);
+  console.log(`  avant : ${FAUX_GRAS}`);
+  console.log(`  après : ${converti}`);
+  ligne(
+    converti === "Nouveaux bacheliers : comment choisir ?",
+    `le faux gras est converti en texte lisible (obtenu : « ${converti} »)`,
+  );
 
   console.log("\n" + "=".repeat(72));
   console.log("CHAÎNE COMPLÈTE EN BASE");

@@ -68,6 +68,10 @@ export const sliders = pgTable("sliders", {
   button2Link: text("button2_link"),
   isActive: boolean("is_active").default(true),
   order: text("order").default("1"),
+  // Provenance : un slider issu d'une publication Facebook est renouvelé
+  // automatiquement, ceux saisis à la main ne sont jamais touchés.
+  source: text("source").default("manual"),
+  sourceId: text("source_id").unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdBy: varchar("created_by").references(() => adminUsers.id),
@@ -504,6 +508,10 @@ export const facebookPosts = pgTable("facebook_posts", {
   albumId: varchar("album_id").references(() => albums.id, { onDelete: "set null" }),
   mediaCount: integer("media_count").default(0),
   classifier: text("classifier"),                // "ai" ou "rules"
+  // Empreinte du texte : la page republie le même contenu à quelques jours
+  // d'écart, ce qui produirait des articles jumeaux sur le site.
+  contentHash: text("content_hash"),
+  sliderId: varchar("slider_id").references(() => sliders.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

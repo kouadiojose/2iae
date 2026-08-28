@@ -12,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import { db } from "../db";
 import { facebookPosts, news, newsImages, albums, galleryItems, sliders } from "@shared/schema";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { lirePublications, lirePublication, integrationActive, type PostFacebook } from "./graph";
 import { normaliser } from "./rubriques";
 import { analyserImage, choisirImageBanniere } from "./images";
@@ -577,8 +577,11 @@ export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
     })
     .from(facebookPosts)
     .where(and(eq(facebookPosts.status, "published"), isNull(facebookPosts.sliderId)))
-    .orderBy(desc(facebookPosts.importance))
-    .limit(lot * 4);
+    // NULLS LAST : en PostgreSQL un tri décroissant remonte les valeurs nulles
+    // en tête. Les publications sans importance enregistrée occupaient donc
+    // toute la sélection, et les résultats par campus n'étaient jamais atteints.
+    .orderBy(sql`${facebookPosts.importance} DESC NULLS LAST`)
+    .limit(lot * 6);
 
   const crees: string[] = [];
   let ecartes = { sansArticle: 0, importanceBasse: 0, sansImage: 0, doublon: 0 };
@@ -589,7 +592,21 @@ export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
       ecartes.sansArticle++;
       continue;
     }
-    if ((c.importance ?? 0) < SEUIL_BANNIERE_RATTRAPAGE) {
+    // Importance absente : elle n'a pas été enregistrée sur les premiers
+    // imports. On la déduit alors du contenu — une actualité de la rubrique
+    // « Distinctions » dont le titre annonce un pourcentage est un résultat
+    // d'examen, c'est-à-dire exactement ce qu'il faut mettre en bannière.
+    const [aperçu] = await db
+      .select({ title: news.title, category: news.category })
+      .from(news)
+      .where(eq(news.id, c.newsId))
+      .limit(1);
+
+    const porteUnTaux = /\d{1,3},\d{1,2}\s*%/.test(aperçu?.title ?? "");
+    const rubriqueForte = ["Distinctions", "Admissions"].includes(aperçu?.category ?? "");
+    const importanceRetenue = c.importance ?? (porteUnTaux && rubriqueForte ? 90 : 0);
+
+    if (importanceRetenue < SEUIL_BANNIERE_RATTRAPAGE) {
       ecartes.importanceBasse++;
       continue;
     }
@@ -629,10 +646,10 @@ export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
         button2Text: "Nous contacter",
         button2Link: "/contact",
         isActive: true,
-        order: String(Math.max(1, 10 - Math.floor((c.importance ?? 75) / 10))),
+        order: String(Math.max(1, 10 - Math.floor(importanceRetenue / 10))),
         source: "facebook",
         sourceId: `rattrapage_${c.postId}`,
-        importance: c.importance,
+        importance: importanceRetenue,
         contentYear: millesime,
       })
       .returning();

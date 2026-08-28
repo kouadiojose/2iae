@@ -27,6 +27,34 @@ const TAILLE_MAX = 4 * 1024 * 1024;
  */
 const VERSION_ANALYSE = "v2";
 
+/** Analyses autorisées par passage du rattrapage. */
+const MAX_ANALYSES_PAR_PASSAGE = 12;
+let analysesDuPassage = 0;
+
+/** Remet le compteur à zéro au début de chaque passage. */
+export function reinitialiserQuotaAnalyses(): void {
+  analysesDuPassage = 0;
+}
+
+/**
+ * Réessaie un appel bloqué par la limite de débit.
+ *
+ * OpenAI indique dans son message le délai à respecter ; deux tentatives
+ * espacées suffisent à absorber un pic, et au-delà on renonce plutôt que de
+ * retenir le rattrapage.
+ */
+async function avecReessai<T>(appel: () => Promise<T>): Promise<T> {
+  for (let essai = 0; ; essai++) {
+    try {
+      return await appel();
+    } catch (err) {
+      const message = (err as Error).message || "";
+      if (essai >= 2 || !message.includes("Rate limit")) throw err;
+      await new Promise((r) => setTimeout(r, 1500 * (essai + 1)));
+    }
+  }
+}
+
 export interface AnalyseImage {
   /** Ce que montre l'image, en une phrase */
   sujet: string;
@@ -110,8 +138,15 @@ export async function analyserImage(
   const image = dataUri(chemin);
   if (!api || !image) return null;
 
+  // Plafond par passage : analyser une image coûte plus de mille jetons, et
+  // la limite de débit d'OpenAI (200 000 jetons par minute) est vite atteinte
+  // quand tout le fonds d'images est réexaminé d'un coup. Au-delà, on rend la
+  // main : le rattrapage suivant reprendra où celui-ci s'est arrêté.
+  if (analysesDuPassage >= MAX_ANALYSES_PAR_PASSAGE) return null;
+  analysesDuPassage++;
+
   try {
-    const reponse = await api.chat.completions.create({
+    const reponse = await avecReessai(() => api.chat.completions.create({
       model: MODELE,
       temperature: 0,
       max_tokens: 400,
@@ -126,7 +161,7 @@ export async function analyserImage(
           ] as any,
         },
       ],
-    });
+    }));
 
     const brut = reponse.choices[0]?.message?.content;
     if (!brut) return null;

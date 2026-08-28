@@ -22,6 +22,7 @@ import {
   ameliorerImagesBannieres,
 } from "./sync";
 import { NOMS_RUBRIQUES } from "./classification";
+import { reinitialiserQuotaAnalyses } from "./images";
 
 /** Intervalle du rattrapage périodique, en minutes. */
 const RATTRAPAGE_MIN = Number(process.env.FACEBOOK_SYNC_INTERVAL_MINUTES || 60);
@@ -150,6 +151,8 @@ export function demarrerRattrapage(): void {
 
   const tourner = async () => {
     try {
+      reinitialiserQuotaAnalyses();
+
       // Rattrapage des bannières redondantes créées avant la déduplication.
       const nettoyees = await dedupliquerBannieres();
       if (nettoyees) console.log(`📘 Facebook : ${nettoyees} bannière(s) redondante(s) retirée(s)`);

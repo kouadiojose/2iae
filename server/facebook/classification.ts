@@ -63,6 +63,32 @@ function tronquer(texte: string, max: number): string {
 }
 
 /**
+ * Convertit les lettres et chiffres « stylisés » d'Unicode en caractères
+ * normaux : 𝗡𝗼𝘂𝘃𝗲𝗮𝘂𝘅 devient Nouveaux.
+ *
+ * La page 2IAE emploie beaucoup ce faux gras. Ces caractères appartiennent au
+ * bloc Mathematical Alphanumeric Symbols (U+1D400–U+1D7FF), hors BMP, donc
+ * au même endroit que les émojis : sans cette conversion préalable, le
+ * nettoyage les effacerait et la publication perdrait son titre.
+ *
+ * Le bloc est organisé en séries régulières — 26 majuscules puis 26 minuscules
+ * par style, et des séries de 10 pour les chiffres — d'où le calcul par modulo.
+ */
+export function deStyliser(texte: string): string {
+  return texte.replace(/\uD835[\uDC00-\uDFFF]/g, (ch) => {
+    const cp = ch.codePointAt(0)!;
+    if (cp >= 0x1d400 && cp <= 0x1d6a3) {
+      const i = (cp - 0x1d400) % 52;
+      return i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(97 + i - 26);
+    }
+    if (cp >= 0x1d7ce && cp <= 0x1d7ff) {
+      return String.fromCharCode(48 + ((cp - 0x1d7ce) % 10));
+    }
+    return ch;
+  });
+}
+
+/**
  * Retire émojis et espaces parasites d'un texte de réseau social.
  *
  * Écrit sans le flag `u` : le projet ne fixe pas de `target` dans tsconfig.json,
@@ -71,10 +97,11 @@ function tronquer(texte: string, max: number): string {
  * blocs de symboles et de flèches qui, eux, tiennent dans le BMP.
  */
 export function nettoyer(texte: string): string {
-  return texte
+  return deStyliser(texte) // avant tout : le faux gras n'est pas un émoji
     .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, " ") // émojis (hors BMP)
     .replace(/[☀-➿←-⇿️⬀-⯿]/g, " ") // symboles, flèches
-    .replace(/[ \t]+/g, " ")
+    .replace(/[​-‍⁠﻿‎‏]/g, "") // marques invisibles
+    .replace(/[ \t ]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

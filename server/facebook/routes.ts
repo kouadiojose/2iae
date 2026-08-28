@@ -12,7 +12,12 @@ import { db } from "../db";
 import { facebookPosts } from "@shared/schema";
 import { desc } from "drizzle-orm";
 import { signatureValide, integrationActive } from "./graph";
-import { synchroniser, synchroniserUne, dedupliquerBannieres } from "./sync";
+import {
+  synchroniser,
+  synchroniserUne,
+  dedupliquerBannieres,
+  harmoniserBannieres,
+} from "./sync";
 import { NOMS_RUBRIQUES } from "./classification";
 
 /** Intervalle du rattrapage périodique, en minutes. */
@@ -145,6 +150,10 @@ export function demarrerRattrapage(): void {
       // Rattrapage des bannières redondantes créées avant la déduplication.
       const nettoyees = await dedupliquerBannieres();
       if (nettoyees) console.log(`📘 Facebook : ${nettoyees} bannière(s) redondante(s) retirée(s)`);
+
+      // Bannières dont le texte ne dit rien de l'image qu'elles portent.
+      const harmonisees = await harmoniserBannieres();
+      harmonisees.forEach((t) => console.log(`📘 Facebook : bannière réaccordée — ${t}`));
 
       const r = await synchroniser(25);
       if (r.publiees || r.ecartees || r.echecs) {

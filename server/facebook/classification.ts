@@ -363,6 +363,7 @@ async function classerParIA(
   message: string,
   nbMedias: number,
   cheminImage?: string,
+  texteImage?: string,
 ): Promise<Classement | null> {
   const api = openai();
   if (!api) return null;
@@ -377,6 +378,9 @@ async function classerParIA(
       type: "text",
       text:
         `Publication Facebook (${nbMedias} média(s) joint(s)) :\n\n${tronquer(propre, 4000)}` +
+        (texteImage
+          ? `\n\nMentions relevées sur le visuel joint :\n${tronquer(texteImage, 500)}`
+          : "") +
         (image ? "\n\nL'image jointe est reproduite ci-dessous : lis-la." : ""),
     },
   ];
@@ -445,13 +449,82 @@ async function classerParIA(
 
 // ------------------------------------------------------------------ public ---
 
+export interface Accroche {
+  titre: string;
+  sousTitre: string;
+  description: string;
+}
+
+/**
+ * Rédige l'accroche d'une bannière à partir de ce que montre son image.
+ *
+ * Sert à réaccorder une bannière dont le titre ne dit rien du visuel : le
+ * message est déjà sur l'affiche, il suffit de le reprendre.
+ */
+export async function redigerAccroche(
+  sujet: string,
+  texteImage: string,
+): Promise<Accroche | null> {
+  const api = openai();
+  if (!api) return null;
+
+  try {
+    const reponse = await api.chat.completions.create({
+      model: MODELE,
+      temperature: 0.2,
+      max_tokens: 300,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `Tu rédiges l'accroche d'une bannière pour la page d'accueil du Groupe Écoles 2IAE International, établissement d'enseignement supérieur en Côte d'Ivoire (campus de Palmeraie, Yopougon, Yamoussoukro, et Université de l'Entrepreneuriat d'Azaguié).
+
+On te décrit une image déjà présente sur le site. Reprends son message, sans rien inventer, et réponds UNIQUEMENT par un objet JSON :
+
+{
+  "titre": "accroche de 4 à 8 mots reprenant l'information forte de l'image",
+  "sousTitre": "sur-titre de 2 à 4 mots EN CAPITALES",
+  "description": "une phrase de 140 caractères maximum"
+}
+
+- N'utilise que ce qui figure dans la description et les mentions fournies. Aucun chiffre, aucune date, aucun nom inventé.
+- Si un millésime apparaît (« BTS 2025 »), conserve-le : une réussite passée reste une réussite, mais elle doit être datée pour rester honnête.
+- Typographie exacte des noms propres : 2IAE, BTS, Yopougon, Palmeraie, Yamoussoukro, Azaguié.
+- Pas d'emoji, pas de majuscules intégrales dans le titre.`,
+        },
+        {
+          role: "user",
+          content: `Ce que montre l'image : ${sujet}\n\nMentions lues sur l'image :\n${tronquer(texteImage, 600)}`,
+        },
+      ],
+    });
+
+    const brut = reponse.choices[0]?.message?.content;
+    if (!brut) return null;
+    const d = JSON.parse(brut) as Record<string, unknown>;
+
+    const titre = corrigerNomsPropres(capitaliser(tronquer(String(d.titre ?? "").trim(), 70)));
+    if (!titre || titre.length < 8) return null;
+
+    return {
+      titre,
+      sousTitre: corrigerNomsPropres(tronquer(String(d.sousTitre ?? "").toUpperCase(), 40)),
+      description: corrigerNomsPropres(capitaliser(tronquer(String(d.description ?? ""), 160))),
+    };
+  } catch (err) {
+    console.warn("⚠️  Rédaction d'accroche indisponible :", (err as Error).message);
+    return null;
+  }
+}
+
 /** Classe une publication : IA si possible, règles sinon. Ne rejette jamais. */
 export async function classer(
   message: string,
   nbMedias: number,
   cheminImage?: string,
+  texteImage?: string,
 ): Promise<Classement> {
-  const parIA = await classerParIA(message, nbMedias, cheminImage);
+  const parIA = await classerParIA(message, nbMedias, cheminImage, texteImage);
   return parIA ?? classerParRegles(message, nbMedias);
 }
 

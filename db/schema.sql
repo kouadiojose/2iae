@@ -272,4 +272,12 @@ ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source    TEXT DEFAULT 'manual';
 ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS sliders_source_id_key ON sliders (source_id) WHERE source_id IS NOT NULL;
 
+-- Cache des analyses d'images : décrire une image coûte un appel au modèle,
+-- et la même image est revue à chaque synchronisation.
+CREATE TABLE IF NOT EXISTS image_analyses (
+  cle        VARCHAR PRIMARY KEY,
+  donnees    TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 COMMIT;

@@ -518,6 +518,17 @@ export const facebookPosts = pgTable("facebook_posts", {
 
 export type FacebookPost = typeof facebookPosts.$inferSelect;
 
+// Cache des analyses d'images.
+// Faire décrire une image par le modèle coûte un appel ; la même image est vue
+// à chaque resynchronisation. La clé est l'empreinte du fichier.
+export const imageAnalyses = pgTable("image_analyses", {
+  cle: varchar("cle").primaryKey(),
+  // « analyse » est un mot réservé de PostgreSQL (ANALYZE) : la colonne
+  // s'appelle donc "donnees".
+  donnees: text("donnees").notNull(), // JSON
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // ==================== GALLERY SCHEMA ====================
 
 // Albums table for organizing gallery content

@@ -8,12 +8,16 @@
 // synchronisation ne crée donc jamais de doublon, ce qui compte car le webhook
 // et le rattrapage périodique voient souvent les mêmes publications.
 
+import fs from "fs";
+import path from "path";
 import { db } from "../db";
 import { facebookPosts, news, newsImages, albums, galleryItems, sliders } from "@shared/schema";
 import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { lirePublications, lirePublication, integrationActive, type PostFacebook } from "./graph";
 import { normaliser } from "./rubriques";
+import { analyserImage, choisirImageBanniere } from "./images";
 import {
+  redigerAccroche,
   classer,
   meriteLaUne,
   nettoyer,
@@ -134,12 +138,24 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
     return;
   }
 
-  // La première image est transmise au modèle : les affiches de la page
-  // portent des chiffres que le texte ne reprend pas.
+  // Analyse de chaque visuel : une publication mêle souvent une affiche de
+  // résultats, des photos de cérémonie et des portraits. Prendre la première
+  // venue produisait des bannières incohérentes.
+  const analyses = [];
+  for (const m of post.medias.slice(0, 4)) {
+    analyses.push(await analyserImage(m.cheminLocal, m.url));
+  }
+
+  const pourBanniere = choisirImageBanniere(analyses);
+
+  // L'image transmise au classement est celle qui illustre le mieux le sujet,
+  // et c'est sur elle que le modèle lira les chiffres.
+  const indexIllustration = pourBanniere?.index ?? 0;
   const classement = await classer(
     post.message,
     post.medias.length,
-    post.medias[0]?.cheminLocal,
+    post.medias[indexIllustration]?.cheminLocal,
+    analyses[indexIllustration]?.texte,
   );
 
   if (!classement.publiable) {
@@ -175,7 +191,7 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
       // qui donne au site son registre institutionnel. Repli sur le texte
       // nettoyé quand le moteur de secours a pris la main.
       content: classement.article || nettoyer(post.message) || classement.resume || null,
-      imageUrl: post.medias[0]?.url ?? null,
+      imageUrl: post.medias[indexIllustration]?.url ?? null,
       date: dateISO,
       category: classement.rubrique,
       author: "Groupe Écoles 2IAE",
@@ -241,14 +257,17 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
     ? await banniereDejaPresente(titreBanniere)
     : false;
 
-  if (classement.banniere && post.medias[0] && !doublonBanniere) {
+  const banniereRecevable =
+    classement.banniere && Boolean(pourBanniere) && !doublonBanniere;
+
+  if (banniereRecevable && pourBanniere) {
     const [slider] = await db
       .insert(sliders)
       .values({
         title: titreBanniere,
         subtitle: classement.sousTitre || classement.rubrique.toUpperCase(),
         description: classement.resume || null,
-        imageUrl: post.medias[0].url,
+        imageUrl: post.medias[pourBanniere.index].url,
         button1Text: "Lire l'article",
         button1Link: `/actualites/${actu.id}`,
         button2Text: "Nous contacter",
@@ -374,6 +393,101 @@ export async function dedupliquerBannieres(): Promise<number> {
     }
   }
   return desactivees;
+}
+
+/**
+ * Retrouve le fichier derrière une URL /api/assets/…
+ *
+ * Deux emplacements possibles, comme la route qui sert ces fichiers : le
+ * volume des uploads d'abord, puis attached_assets pour les images
+ * historiques livrées avec le dépôt.
+ */
+function cheminDepuisUrl(url: string): string | null {
+  const m = url.match(/^\/api\/assets\/(.+)$/);
+  if (!m) return null;
+  const relatif = decodeURIComponent(m[1]);
+  if (relatif.includes("..")) return null; // jamais sortir des dossiers servis
+
+  const bases = [
+    process.env.UPLOADS_DIR || path.join(process.cwd(), "server", "uploads"),
+    path.join(process.cwd(), "attached_assets"),
+  ];
+  for (const base of bases) {
+    const complet = path.join(base, relatif);
+    if (fs.existsSync(complet)) return complet;
+  }
+  return null;
+}
+
+/**
+ * Accorde le texte des bannières à l'image qu'elles portent.
+ *
+ * Le site affichait « Bienvenue à 2IAE International » au-dessus d'une affiche
+ * annonçant « Félicitation BTS 2025 — 100 % en ATPA ». L'image portait un
+ * message fort, le titre n'en disait rien : le visiteur voyait une accroche
+ * creuse à côté d'un argument de vente.
+ *
+ * Ne sont retouchées que les bannières au titre générique — celles qui ne
+ * perdent rien à être précisées. Une bannière déjà spécifique est laissée
+ * telle quelle, et rien n'est supprimé : tout reste modifiable en
+ * administration.
+ */
+const TITRES_GENERIQUES = [
+  "bienvenue", "excellence academique", "formation de qualite",
+  "notre ecole", "groupe 2iae", "2iae international", "felecitations",
+  "felicitations", "nos formations", "bienvenue a 2iae international",
+];
+
+function titreEstGenerique(titre: string): boolean {
+  const t = normaliser(titre);
+  if (!t) return true;
+  // Un titre sans chiffre ni nom de campus n'annonce rien de précis.
+  const porteUneInfo = /\d/.test(t) ||
+    /(yopougon|palmeraie|yamoussoukro|azaguie|sherbrooke|partenariat|inscription|orientation)/.test(t);
+  if (porteUneInfo) return false;
+  return TITRES_GENERIQUES.some((g) => t.includes(g) || g.includes(t));
+}
+
+export async function harmoniserBannieres(): Promise<string[]> {
+  const actives = await db
+    .select({
+      id: sliders.id,
+      title: sliders.title,
+      subtitle: sliders.subtitle,
+      description: sliders.description,
+      imageUrl: sliders.imageUrl,
+    })
+    .from(sliders)
+    .where(eq(sliders.isActive, true));
+
+  const reaccordees: string[] = [];
+
+  for (const b of actives) {
+    if (!b.imageUrl || !titreEstGenerique(b.title)) continue;
+
+    const chemin = cheminDepuisUrl(b.imageUrl);
+    if (!chemin) continue;
+
+    const analyse = await analyserImage(chemin, b.imageUrl);
+    // Sans mention lisible sur l'image, on n'a rien de mieux à proposer.
+    if (!analyse || !analyse.texte || analyse.texte.length < 15) continue;
+
+    const accroche = await redigerAccroche(analyse.sujet, analyse.texte);
+    if (!accroche) continue;
+
+    await db
+      .update(sliders)
+      .set({
+        title: accroche.titre,
+        subtitle: accroche.sousTitre,
+        description: accroche.description || b.description,
+        updatedAt: new Date(),
+      })
+      .where(eq(sliders.id, b.id));
+
+    reaccordees.push(`« ${b.title} » → « ${accroche.titre} »`);
+  }
+  return reaccordees;
 }
 
 /**

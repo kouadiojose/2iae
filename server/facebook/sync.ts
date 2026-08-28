@@ -581,10 +581,18 @@ export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
     .limit(lot * 4);
 
   const crees: string[] = [];
+  let ecartes = { sansArticle: 0, importanceBasse: 0, sansImage: 0, doublon: 0 };
 
   for (const c of candidats) {
     if (crees.length >= lot) break;
-    if (!c.newsId || (c.importance ?? 0) < SEUIL_BANNIERE_RATTRAPAGE) continue;
+    if (!c.newsId) {
+      ecartes.sansArticle++;
+      continue;
+    }
+    if ((c.importance ?? 0) < SEUIL_BANNIERE_RATTRAPAGE) {
+      ecartes.importanceBasse++;
+      continue;
+    }
 
     const [article] = await db
       .select({
@@ -598,9 +606,15 @@ export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
       .from(news)
       .where(eq(news.id, c.newsId))
       .limit(1);
-    if (!article?.imageUrl) continue;
+    if (!article?.imageUrl) {
+      ecartes.sansImage++;
+      continue;
+    }
 
-    if (await banniereDejaPresente(article.title)) continue;
+    if (await banniereDejaPresente(article.title)) {
+      ecartes.doublon++;
+      continue;
+    }
 
     const millesime = Number((article.date || "").slice(0, 4)) || null;
     const [slider] = await db
@@ -630,6 +644,12 @@ export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
 
     crees.push(article.title);
   }
+
+  console.log(
+    `📘 Facebook (repêchage) : ${candidats.length} candidat(s), ${crees.length} créée(s) ` +
+      `— écartés : ${ecartes.importanceBasse} peu importants, ${ecartes.doublon} déjà annoncés, ` +
+      `${ecartes.sansImage} sans image, ${ecartes.sansArticle} sans article`,
+  );
 
   if (crees.length) await limiterBannieres();
   return crees;

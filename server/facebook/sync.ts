@@ -487,73 +487,71 @@ function cheminDepuisUrl(url: string): string | null {
 }
 
 /**
- * Remplace l'image d'une bannière quand l'article en offre une meilleure.
+ * Donne à chaque bannière le visuel qui illustre vraiment son annonce.
  *
- * Les premières bannières ont été composées avec un jugement d'image qui
- * pénalisait les affiches chargées de texte — donc précisément celles qui
- * annoncent les taux de réussite. Une photo de réunion pouvait ainsi l'emporter
- * sur un panneau « 83,54 % au BTS 2026 », alors que le second est bien plus
- * parlant pour un parent qui choisit une école.
+ * Le site affichait « BTS 2026 : 67,38 % d'admis » illustré par une photo de
+ * réunion, des gens assis autour d'une table. L'affiche portant ce taux
+ * existait bien, mais dans une AUTRE publication : ne regarder que les images
+ * de l'article d'origine ne pouvait donc pas la trouver.
  *
- * On reprend donc toutes les images de l'article, image principale et images
- * secondaires, et on garde la meilleure selon le classement à jour.
+ * On cherche désormais dans tout le fonds d'images du site celle qui annonce
+ * le chiffre du titre. Entre une salle de gens assis et un panneau
+ * « 83,54 % de réussite », le second est sans comparaison plus parlant pour un
+ * parent qui choisit une école.
  */
-export async function ameliorerImagesBannieres(lot = 4): Promise<string[]> {
+export async function ameliorerImagesBannieres(lot = 5): Promise<string[]> {
   const actives = await db
     .select({
       id: sliders.id,
       title: sliders.title,
+      subtitle: sliders.subtitle,
       imageUrl: sliders.imageUrl,
-      sourceId: sliders.sourceId,
     })
     .from(sliders)
     .where(and(eq(sliders.source, "facebook"), eq(sliders.isActive, true)));
 
+  if (!actives.length) return [];
+
+  // Toutes les images du site, principales et secondaires.
+  const principales = await db
+    .select({ url: news.imageUrl })
+    .from(news)
+    .where(eq(news.source, "facebook"));
+  const secondaires = await db.select({ url: newsImages.imageUrl }).from(newsImages);
+
+  const urls = Array.from(
+    new Set([...principales, ...secondaires].map((r) => r.url).filter((u): u is string => Boolean(u))),
+  );
+
   const ameliorees: string[] = [];
 
   for (const b of actives) {
-    if (ameliorees.length >= lot || !b.sourceId) continue;
+    if (ameliorees.length >= lot) break;
 
-    const postId = b.sourceId.replace(/^rattrapage_/, "");
-    const [journal] = await db
-      .select({ newsId: facebookPosts.newsId })
-      .from(facebookPosts)
-      .where(eq(facebookPosts.postId, postId))
-      .limit(1);
-    if (!journal?.newsId) continue;
+    // Le chiffre annoncé dans le titre : c'est lui que l'affiche doit porter.
+    const chiffres = (b.title.match(/\d{1,3},\d{1,2}/g) ?? []).map((c) => c.replace(",", ""));
+    if (!chiffres.length) continue;
 
-    const [article] = await db
-      .select({ imageUrl: news.imageUrl })
-      .from(news)
-      .where(eq(news.id, journal.newsId))
-      .limit(1);
-    const secondaires = await db
-      .select({ imageUrl: newsImages.imageUrl })
-      .from(newsImages)
-      .where(eq(newsImages.newsId, journal.newsId));
-
-    const urls = [article?.imageUrl, ...secondaires.map((i) => i.imageUrl)].filter(
-      (u): u is string => Boolean(u),
-    );
-    if (urls.length < 2) continue; // rien à départager
-
-    const analyses = [];
-    for (const u of urls.slice(0, 5)) {
+    let retenue: string | null = null;
+    for (const u of urls) {
+      if (u === b.imageUrl) continue;
       const chemin = cheminDepuisUrl(u);
-      analyses.push(chemin ? await analyserImage(chemin, u) : null);
+      if (!chemin) continue;
+      const a = await analyserImage(chemin, u);
+      if (!a?.porteResultats) continue;
+      const texte = a.texte.replace(/[,.\s]/g, "");
+      if (chiffres.some((c) => texte.includes(c))) {
+        retenue = u;
+        break;
+      }
     }
-
-    const meilleure = choisirImageBanniere(analyses);
-    if (!meilleure) continue;
-
-    const urlRetenue = urls[meilleure.index];
-    if (!urlRetenue || urlRetenue === b.imageUrl) continue;
+    if (!retenue) continue;
 
     await db
       .update(sliders)
-      .set({ imageUrl: urlRetenue, updatedAt: new Date() })
+      .set({ imageUrl: retenue, updatedAt: new Date() })
       .where(eq(sliders.id, b.id));
-    ameliorees.push(`${b.title} → ${meilleure.analyse.sujet.slice(0, 60)}`);
+    ameliorees.push(`${b.title} → affiche portant ${chiffres.join(", ")}`);
   }
   return ameliorees;
 }

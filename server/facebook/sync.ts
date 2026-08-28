@@ -487,6 +487,88 @@ function cheminDepuisUrl(url: string): string | null {
 }
 
 /**
+ * Crée les bannières manquantes pour les publications qui les méritaient.
+ *
+ * Deux situations laissent un contenu fort sans bannière : les publications
+ * traitées avant que la valeur éditoriale ne soit persistée, et celles pour
+ * lesquelles l'appel au modèle a échoué au mauvais moment. Dans les deux cas,
+ * la publication est journalisée « published » et ne sera plus jamais
+ * réexaminée — les résultats du BTS par campus restaient ainsi au placard.
+ *
+ * La bannière est reconstruite depuis l'article : son titre, son chapeau et
+ * son image ont déjà été rédigés, relus et vérifiés.
+ */
+export async function creerBannieresManquantes(lot = 6): Promise<string[]> {
+  const candidats = await db
+    .select({
+      postId: facebookPosts.postId,
+      importance: facebookPosts.importance,
+      newsId: facebookPosts.newsId,
+    })
+    .from(facebookPosts)
+    .where(and(eq(facebookPosts.status, "published"), isNull(facebookPosts.sliderId)))
+    .orderBy(desc(facebookPosts.importance))
+    .limit(lot * 4);
+
+  const crees: string[] = [];
+
+  for (const c of candidats) {
+    if (crees.length >= lot) break;
+    if (!c.newsId || (c.importance ?? 0) < SEUIL_BANNIERE_RATTRAPAGE) continue;
+
+    const [article] = await db
+      .select({
+        id: news.id,
+        title: news.title,
+        summary: news.summary,
+        imageUrl: news.imageUrl,
+        category: news.category,
+        date: news.date,
+      })
+      .from(news)
+      .where(eq(news.id, c.newsId))
+      .limit(1);
+    if (!article?.imageUrl) continue;
+
+    if (await banniereDejaPresente(article.title)) continue;
+
+    const millesime = Number((article.date || "").slice(0, 4)) || null;
+    const [slider] = await db
+      .insert(sliders)
+      .values({
+        title: tronquer(article.title, 70),
+        subtitle: article.category.toUpperCase(),
+        description: article.summary,
+        imageUrl: article.imageUrl,
+        button1Text: "Lire l'article",
+        button1Link: `/actualites/${article.id}`,
+        button2Text: "Nous contacter",
+        button2Link: "/contact",
+        isActive: true,
+        order: String(Math.max(1, 10 - Math.floor((c.importance ?? 75) / 10))),
+        source: "facebook",
+        sourceId: `rattrapage_${c.postId}`,
+        importance: c.importance,
+        contentYear: millesime,
+      })
+      .returning();
+
+    await db
+      .update(facebookPosts)
+      .set({ sliderId: slider.id, updatedAt: new Date() })
+      .where(eq(facebookPosts.postId, c.postId));
+
+    crees.push(article.title);
+  }
+
+  if (crees.length) await limiterBannieres();
+  return crees;
+}
+
+/** Importance minimale pour repêcher une publication en bannière. */
+const SEUIL_BANNIERE_RATTRAPAGE = 80;
+
+/**
  * Fait relire les articles publiés avant la mise en place du relecteur.
  *
  * Les premiers imports sont partis en ligne sans seconde passe : le site

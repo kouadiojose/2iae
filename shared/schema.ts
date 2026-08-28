@@ -134,6 +134,10 @@ export const news = pgTable("news", {
   featured: boolean("featured").default(false),
   isActive: boolean("is_active").default(true),
   order: text("order").default("1"),
+  // Provenance : "manual" (saisie admin) ou "facebook" (importé de la page)
+  source: text("source").default("manual"),
+  sourceId: text("source_id").unique(),   // id du post Facebook, garantit l'unicité
+  sourceUrl: text("source_url"),          // permalien vers le post d'origine
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdBy: varchar("created_by").references(() => adminUsers.id),
@@ -476,6 +480,36 @@ export type InsertTariff = z.infer<typeof insertTariffSchema>;
 export type Tariff = typeof tariffs.$inferSelect;
 export type UpdateTariff = z.infer<typeof updateTariffSchema>;
 
+// ==================== INTÉGRATION FACEBOOK ====================
+
+// Journal d'ingestion de la page Facebook.
+// Une ligne par publication vue, qu'elle ait été publiée sur le site ou non :
+// c'est ce qui rend la synchronisation idempotente (on ne retraite jamais deux
+// fois le même post) et ce qui permet de comprendre après coup pourquoi une
+// publication n'est pas apparue sur le site.
+export const facebookPosts = pgTable("facebook_posts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  postId: text("post_id").notNull().unique(),   // id Graph API du post
+  permalink: text("permalink"),
+  message: text("message"),                      // texte brut d'origine
+  publishedAt: timestamp("published_at"),
+  // "published"  : repris sur le site
+  // "skipped"    : jugé hors sujet pour un site institutionnel
+  // "failed"     : erreur de traitement, sera réessayé
+  status: text("status").notNull().default("published"),
+  reason: text("reason"),                        // pourquoi écarté ou en échec
+  rubrique: text("rubrique"),                    // rubrique retenue
+  importance: integer("importance"),             // 0 à 100, décide de la une
+  newsId: varchar("news_id").references(() => news.id, { onDelete: "set null" }),
+  albumId: varchar("album_id").references(() => albums.id, { onDelete: "set null" }),
+  mediaCount: integer("media_count").default(0),
+  classifier: text("classifier"),                // "ai" ou "rules"
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type FacebookPost = typeof facebookPosts.$inferSelect;
+
 // ==================== GALLERY SCHEMA ====================
 
 // Albums table for organizing gallery content
@@ -487,6 +521,8 @@ export const albums = pgTable("albums", {
   category: text("category").notNull(), // "events", "campus", "student-life", "graduations", etc.
   isActive: boolean("is_active").default(true),
   order: text("order").default("1"),
+  source: text("source").default("manual"),
+  sourceId: text("source_id").unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   createdBy: varchar("created_by").references(() => adminUsers.id),

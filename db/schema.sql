@@ -228,4 +228,39 @@ CREATE TABLE IF NOT EXISTS gallery_items (
   created_by    VARCHAR REFERENCES admin_users(id)
 );
 
+-- Intégration Facebook -------------------------------------------------
+-- Provenance des contenus : distingue la saisie admin de l'import Facebook.
+-- ALTER ... IF NOT EXISTS : ces colonnes sont apparues après la première mise
+-- en production, le fichier doit donc rattraper une base déjà en service.
+ALTER TABLE news   ADD COLUMN IF NOT EXISTS source     TEXT DEFAULT 'manual';
+ALTER TABLE news   ADD COLUMN IF NOT EXISTS source_id  TEXT;
+ALTER TABLE news   ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE albums ADD COLUMN IF NOT EXISTS source     TEXT DEFAULT 'manual';
+ALTER TABLE albums ADD COLUMN IF NOT EXISTS source_id  TEXT;
+
+-- L'unicité de source_id est ce qui empêche un post d'être importé deux fois
+-- quand le webhook et le rattrapage périodique le voient tous les deux.
+CREATE UNIQUE INDEX IF NOT EXISTS news_source_id_key   ON news (source_id)   WHERE source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS albums_source_id_key ON albums (source_id) WHERE source_id IS NOT NULL;
+
+-- Journal d'ingestion : une ligne par publication vue, publiée ou non.
+CREATE TABLE IF NOT EXISTS facebook_posts (
+  id           VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id      TEXT NOT NULL UNIQUE,
+  permalink    TEXT,
+  message      TEXT,
+  published_at TIMESTAMP,
+  status       TEXT NOT NULL DEFAULT 'published',
+  reason       TEXT,
+  rubrique     TEXT,
+  importance   INTEGER,
+  news_id      VARCHAR REFERENCES news(id)   ON DELETE SET NULL,
+  album_id     VARCHAR REFERENCES albums(id) ON DELETE SET NULL,
+  media_count  INTEGER   DEFAULT 0,
+  classifier   TEXT,
+  created_at   TIMESTAMP DEFAULT NOW(),
+  updated_at   TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS facebook_posts_published_at_idx ON facebook_posts (published_at DESC);
+
 COMMIT;

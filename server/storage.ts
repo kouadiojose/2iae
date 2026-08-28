@@ -640,6 +640,9 @@ export class MemStorage implements IStorage {
       featured: insertNews.featured || false,
       isActive: true,
       order: insertNews.order || "1",
+      source: "manual",
+      sourceId: null,
+      sourceUrl: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: null
@@ -859,6 +862,8 @@ export class MemStorage implements IStorage {
       category: album.category,
       isActive: album.isActive ?? true,
       order: album.order || "1",
+      source: "manual",
+      sourceId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: null

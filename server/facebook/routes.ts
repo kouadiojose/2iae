@@ -19,6 +19,7 @@ import {
   harmoniserBannieres,
   reviserArticlesPublies,
   creerBannieresManquantes,
+  ameliorerImagesBannieres,
 } from "./sync";
 import { NOMS_RUBRIQUES } from "./classification";
 
@@ -165,6 +166,10 @@ export function demarrerRattrapage(): void {
       // Repêchage des contenus forts restés sans bannière.
       const repechees = await creerBannieresManquantes();
       repechees.forEach((t) => console.log(`📘 Facebook : bannière créée — ${t}`));
+
+      // Bannières dont l'article offre un visuel plus parlant.
+      const mieuxIllustrees = await ameliorerImagesBannieres();
+      mieuxIllustrees.forEach((t) => console.log(`📘 Facebook : visuel remplacé — ${t}`));
 
       const r = await synchroniser(25);
       if (r.publiees || r.ecartees || r.echecs) {

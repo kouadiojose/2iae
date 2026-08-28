@@ -17,6 +17,16 @@ import { eq } from "drizzle-orm";
 const MODELE = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const TAILLE_MAX = 4 * 1024 * 1024;
 
+/**
+ * Version du format d'analyse, incluse dans la clé de cache.
+ *
+ * Les analyses de la version 1 ignoraient le critère « porte des résultats »
+ * et pénalisaient les affiches chargées de texte — c'est-à-dire justement
+ * celles qui annoncent les taux de réussite. Les relire telles quelles
+ * reconduirait ce mauvais jugement, d'où le changement de version.
+ */
+const VERSION_ANALYSE = "v2";
+
 export interface AnalyseImage {
   /** Ce que montre l'image, en une phrase */
   sujet: string;
@@ -28,6 +38,12 @@ export interface AnalyseImage {
   texte: string;
   /** L'image se prête-t-elle à une bannière large ? */
   banniereAdaptee: boolean;
+  /**
+   * L'image annonce-t-elle un résultat chiffré — taux de réussite, palmarès,
+   * distinction ? C'est le visuel le plus convaincant dont dispose une école
+   * en période de rentrée, et il doit primer sur toute photo d'ambiance.
+   */
+  porteResultats: boolean;
   /** Motif, journalisé pour comprendre les choix */
   note: string;
 }
@@ -62,18 +78,21 @@ Réponds UNIQUEMENT par un objet JSON :
   "genre": "affiche" | "photo" | "portrait" | "autre",
   "texte": "les mentions marquantes lues sur l'image (titres, pourcentages, dates), 300 caractères maximum",
   "banniereAdaptee": true ou false,
+  "porteResultats": true ou false,
   "note": "une phrase justifiant ton avis"
 }
 
 - "annee" : uniquement si un millésime est explicitement écrit (« BTS 2025 », « session 2026 », « rentrée 2026-2027 »). Une photo sans date porte null. Ne déduis jamais l'année d'une impression.
 - "texte" : recopie fidèlement les mentions importantes, notamment les pourcentages et les noms de campus. C'est souvent là que se trouve l'information.
-- "banniereAdaptee" : true pour une image lisible et présentable en large sur une page d'accueil (affiche soignée, belle photo de groupe ou de cérémonie). false pour une capture floue, une image très chargée de texte fin, un montage illisible en petit, une capture d'écran.`;
+- "banniereAdaptee" : true pour une image lisible et présentable en large sur une page d'accueil. Une affiche institutionnelle soignée est ADAPTÉE même si elle porte beaucoup de texte : c'est sa raison d'être, et son message est précisément ce qu'on veut montrer. Ne réponds false que pour une capture floue, mal cadrée, pixellisée, une capture d'écran de téléphone, une image manifestement illisible.
+- "porteResultats" : true si l'image annonce un résultat ou une distinction chiffrés — taux de réussite à un examen, palmarès par filière ou par campus, pourcentage de placement ou d'insertion, prix obtenu. C'est le visuel le plus convaincant pour un parent ou un futur étudiant.`;
 
 /** Analyse une image, avec mise en cache : une image n'est jamais réexaminée. */
 export async function analyserImage(
   chemin: string,
-  cle: string,
+  cleBrute: string,
 ): Promise<AnalyseImage | null> {
+  const cle = `${VERSION_ANALYSE}:${cleBrute}`;
   const [cache] = await db
     .select()
     .from(imageAnalyses)
@@ -124,6 +143,7 @@ export async function analyserImage(
       genre: String(d.genre ?? "autre"),
       texte: String(d.texte ?? "").slice(0, 400),
       banniereAdaptee: d.banniereAdaptee === true,
+      porteResultats: d.porteResultats === true,
       note: String(d.note ?? "").slice(0, 300),
     };
 
@@ -159,8 +179,9 @@ export function estAnterieure(analyse: AnalyseImage, reference = new Date()): bo
  * Choisit, parmi les images d'une publication, celle qui illustre le mieux le
  * sujet pour la bannière.
  *
- * Départage : une affiche prime sur une photo, une photo sur une image
- * inadaptée, un millésime courant sur un plus ancien. À égalité on garde
+ * Départage : une affiche de résultats prime sur tout le reste, puis une
+ * affiche sur une photo, une photo sur une image inadaptée, un millésime
+ * courant sur un plus ancien. À égalité on garde
  * l'ordre d'origine, celui que l'auteur de la publication a choisi.
  * Aucune image n'est exclue : un visuel ancien vaut mieux que pas de visuel.
  */
@@ -173,8 +194,12 @@ export function choisirImageBanniere(
   analyses.forEach((a, i) => {
     if (!a) return;
     let score = 0;
-    if (a.banniereAdaptee) score += 10;
-    if (a.genre === "affiche") score += 4;
+    // Une affiche annonçant des résultats l'emporte sur toute photo : entre
+    // une salle de gens assis et un panneau « 83,54 % de réussite au BTS »,
+    // le second parle de lui-même à un parent qui choisit une école.
+    if (a.porteResultats) score += 14;
+    if (a.banniereAdaptee) score += 8;
+    if (a.genre === "affiche") score += 6;
     else if (a.genre === "photo") score += 2;
     // Un visuel de la session en cours passe devant, sans écarter les autres.
     if (a.annee !== null) score += estAnterieure(a) ? 1 : 3;

@@ -9,10 +9,18 @@
 // et le rattrapage périodique voient souvent les mêmes publications.
 
 import { db } from "../db";
-import { facebookPosts, news, newsImages, albums, galleryItems } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { facebookPosts, news, newsImages, albums, galleryItems, sliders } from "@shared/schema";
+import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { lirePublications, lirePublication, integrationActive, type PostFacebook } from "./graph";
-import { classer, meriteLaUne, nettoyer, tronquer } from "./classification";
+import { normaliser } from "./rubriques";
+import {
+  classer,
+  meriteLaUne,
+  nettoyer,
+  tronquer,
+  empreinteContenu,
+  MAX_BANNIERES,
+} from "./classification";
 
 /** Nombre d'images à partir duquel une publication alimente aussi la galerie. */
 const SEUIL_ALBUM = 3;
@@ -63,6 +71,8 @@ async function journaliser(entree: {
   albumId?: string;
   mediaCount: number;
   classifier?: string;
+  contentHash?: string;
+  sliderId?: string;
 }) {
   const valeurs = {
     postId: entree.postId,
@@ -77,6 +87,8 @@ async function journaliser(entree: {
     albumId: entree.albumId ?? null,
     mediaCount: entree.mediaCount,
     classifier: entree.classifier ?? null,
+    contentHash: entree.contentHash ?? null,
+    sliderId: entree.sliderId ?? null,
     updatedAt: new Date(),
   };
 
@@ -86,9 +98,49 @@ async function journaliser(entree: {
     .onConflictDoUpdate({ target: facebookPosts.postId, set: valeurs });
 }
 
+/**
+ * Cette publication reprend-elle un texte déjà publié sur le site ?
+ *
+ * La page republie régulièrement le même contenu à quelques jours d'écart.
+ * Sans ce contrôle, le site afficherait des articles jumeaux.
+ */
+async function estUneRepublication(empreinte: string): Promise<boolean> {
+  if (!empreinte) return false;
+  const [dejaVue] = await db
+    .select({ id: facebookPosts.id })
+    .from(facebookPosts)
+    .where(and(eq(facebookPosts.contentHash, empreinte), eq(facebookPosts.status, "published")))
+    .limit(1);
+  return Boolean(dejaVue);
+}
+
 /** Traite une publication : la publie, l'écarte, ou signale l'échec. */
 async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
-  const classement = await classer(post.message, post.medias.length);
+  const empreinte = empreinteContenu(post.message);
+
+  if (await estUneRepublication(empreinte)) {
+    await journaliser({
+      postId: post.id,
+      permalink: post.permalink,
+      message: post.message,
+      publieLe: post.publieLe,
+      status: "skipped",
+      reason: "Republication d'un contenu déjà présent sur le site",
+      mediaCount: post.medias.length,
+      contentHash: empreinte,
+    });
+    resultat.ecartees++;
+    resultat.details.push(`— republication ignorée : ${tronquer(nettoyer(post.message), 50)}`);
+    return;
+  }
+
+  // La première image est transmise au modèle : les affiches de la page
+  // portent des chiffres que le texte ne reprend pas.
+  const classement = await classer(
+    post.message,
+    post.medias.length,
+    post.medias[0]?.cheminLocal,
+  );
 
   if (!classement.publiable) {
     await journaliser({
@@ -102,6 +154,7 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
       importance: classement.importance,
       mediaCount: post.medias.length,
       classifier: classement.moteur,
+      contentHash: empreinte,
     });
     resultat.ecartees++;
     resultat.details.push(`— écartée : ${tronquer(classement.titre, 50)} (${classement.raison})`);
@@ -118,7 +171,10 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
       title: classement.titre,
       slug: slugifier(classement.titre, post.id),
       summary: classement.resume || null,
-      content: nettoyer(post.message) || classement.resume || null,
+      // L'article réécrit par l'IA prime sur le texte d'origine : c'est lui
+      // qui donne au site son registre institutionnel. Repli sur le texte
+      // nettoyé quand le moteur de secours a pris la main.
+      content: classement.article || nettoyer(post.message) || classement.resume || null,
       imageUrl: post.medias[0]?.url ?? null,
       date: dateISO,
       category: classement.rubrique,
@@ -175,6 +231,38 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
   // 4. Une seule actualité à la une à la fois
   if (aLaUne) await retirerAnciennesUnes(actu.id);
 
+  // 5. La bannière d'accueil, réservée aux annonces fortes et illustrées.
+  // Garde-fou : deux bannières de même titre feraient défiler deux fois la
+  // même chose sur la page d'accueil. La consigne demande des accroches
+  // distinctes, mais on ne s'en remet pas au seul jugement du modèle.
+  let sliderId: string | undefined;
+  const titreBanniere = classement.titreBanniere || classement.titre;
+  const doublonBanniere = classement.banniere
+    ? await banniereDejaPresente(titreBanniere)
+    : false;
+
+  if (classement.banniere && post.medias[0] && !doublonBanniere) {
+    const [slider] = await db
+      .insert(sliders)
+      .values({
+        title: titreBanniere,
+        subtitle: classement.sousTitre || classement.rubrique.toUpperCase(),
+        description: classement.resume || null,
+        imageUrl: post.medias[0].url,
+        button1Text: "Lire l'article",
+        button1Link: `/actualites/${actu.id}`,
+        button2Text: "Nous contacter",
+        button2Link: "/contact",
+        isActive: true,
+        order: "1",
+        source: "facebook",
+        sourceId: post.id,
+      })
+      .returning();
+    sliderId = slider.id;
+    await limiterBannieres();
+  }
+
   await journaliser({
     postId: post.id,
     permalink: post.permalink,
@@ -186,15 +274,72 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
     importance: classement.importance,
     newsId: actu.id,
     albumId,
+    sliderId,
     mediaCount: post.medias.length,
     classifier: classement.moteur,
+    contentHash: empreinte,
   });
 
   resultat.publiees++;
   resultat.details.push(
-    `+ ${classement.rubrique}${aLaUne ? " [À LA UNE]" : ""} : ${tronquer(classement.titre, 55)}` +
+    `+ ${classement.rubrique}${aLaUne ? " [À LA UNE]" : ""}${sliderId ? " [BANNIÈRE]" : ""} : ` +
+      `${tronquer(classement.titre, 50)}` +
       (albumId ? ` (+ album de ${post.medias.length} photos)` : ""),
   );
+}
+
+/**
+ * Réduit un titre de bannière à sa substance, pour comparaison.
+ *
+ * Une égalité stricte ne suffit pas : « 67,38 % d'admis au 2IAE » et
+ * « 67,38 % d'admis au Groupe 2IAE » désignent la même annonce et se
+ * retrouveraient tous deux sur la page d'accueil. On retire donc la casse,
+ * les accents, la ponctuation et les mots outils avant de comparer.
+ */
+const MOTS_OUTILS = new Set([
+  "le", "la", "les", "du", "de", "des", "au", "aux", "un", "une",
+  "et", "a", "en", "groupe", "ecole", "ecoles", "2iae", "notre", "nos",
+]);
+
+function signatureTitre(titre: string): string {
+  return normaliser(titre)
+    .split(" ")
+    .filter((m) => m && !MOTS_OUTILS.has(m))
+    .sort()
+    .join(" ");
+}
+
+/** Une bannière active annonce-t-elle déjà la même chose ? */
+async function banniereDejaPresente(titre: string): Promise<boolean> {
+  const actives = await db
+    .select({ title: sliders.title })
+    .from(sliders)
+    .where(eq(sliders.isActive, true));
+  const cible = signatureTitre(titre);
+  if (!cible) return false;
+  return actives.some((b) => signatureTitre(b.title) === cible);
+}
+
+/**
+ * Ne conserve que les dernières bannières issues de Facebook.
+ *
+ * Les sliders saisis depuis l'administration ne sont jamais touchés : seuls
+ * ceux marqués source = "facebook" entrent dans la rotation. Les plus anciens
+ * sont désactivés plutôt que supprimés, pour rester récupérables.
+ */
+async function limiterBannieres(): Promise<void> {
+  const auto = await db
+    .select({ id: sliders.id })
+    .from(sliders)
+    .where(and(eq(sliders.source, "facebook"), eq(sliders.isActive, true)))
+    .orderBy(desc(sliders.createdAt));
+
+  for (const s of auto.slice(MAX_BANNIERES)) {
+    await db
+      .update(sliders)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(sliders.id, s.id));
+  }
 }
 
 /** Ne laisse qu'une actualité en avant sur la page d'accueil. */

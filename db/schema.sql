@@ -261,6 +261,15 @@ CREATE TABLE IF NOT EXISTS facebook_posts (
   created_at   TIMESTAMP DEFAULT NOW(),
   updated_at   TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE facebook_posts ADD COLUMN IF NOT EXISTS content_hash TEXT;
+ALTER TABLE facebook_posts ADD COLUMN IF NOT EXISTS slider_id VARCHAR REFERENCES sliders(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS facebook_posts_published_at_idx ON facebook_posts (published_at DESC);
+CREATE INDEX IF NOT EXISTS facebook_posts_content_hash_idx ON facebook_posts (content_hash);
+
+-- Bannières issues de Facebook : renouvelées automatiquement, les sliders
+-- saisis à la main ne sont jamais touchés.
+ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source    TEXT DEFAULT 'manual';
+ALTER TABLE sliders ADD COLUMN IF NOT EXISTS source_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS sliders_source_id_key ON sliders (source_id) WHERE source_id IS NOT NULL;
 
 COMMIT;

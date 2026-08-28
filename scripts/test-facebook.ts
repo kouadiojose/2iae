@@ -17,6 +17,9 @@ import { eq } from "drizzle-orm";
 function media(n: number) {
   return Array.from({ length: n }, (_, i) => ({
     url: `/api/assets/facebook/fb_test_${i}.jpg`,
+    // Fichier inexistant : le classement doit se poursuivre sur le seul texte
+    // plutôt que d'échouer parce qu'une image manque.
+    cheminLocal: `/tmp/inexistant_${i}.jpg`,
     type: "image" as const,
   }));
 }

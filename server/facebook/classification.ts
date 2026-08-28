@@ -11,6 +11,8 @@
 // indisponible. Sans lui, une panne de l'API bloquerait tout le site.
 
 import OpenAI from "openai";
+import { createHash } from "crypto";
+import fs from "fs";
 import {
   RUBRIQUES,
   RUBRIQUE_DEFAUT,
@@ -24,12 +26,30 @@ export interface Classement {
   titre: string;
   /** Résumé de 1 à 2 phrases pour les listes et les partages */
   resume: string;
+  /**
+   * Corps de l'article, rédigé pour le site.
+   *
+   * C'est la valeur ajoutée de l'IA : une publication Facebook est écrite pour
+   * un fil d'actualité (émojis, apostrophes, « nous », appels à commenter),
+   * pas pour un site d'établissement. L'article reprend les mêmes faits dans
+   * une langue institutionnelle et se lit hors de son contexte d'origine.
+   *
+   * Vide quand le moteur de secours a pris la main : on retombe alors sur le
+   * texte d'origine nettoyé, jamais sur une réécriture approximative.
+   */
+  article: string;
   /** Nom exact d'une rubrique de RUBRIQUES */
   rubrique: string;
   /** 0 à 100 : poids éditorial, décide de la mise à la une */
   importance: number;
   /** false = hors sujet pour un site institutionnel (vœux, condoléances…) */
   publiable: boolean;
+  /** Cette publication mérite-t-elle la bannière de la page d'accueil ? */
+  banniere: boolean;
+  /** Accroche de bannière, très courte (4 à 8 mots) */
+  titreBanniere: string;
+  /** Sur-titre de bannière, en capitales, 2 à 5 mots */
+  sousTitre: string;
   /** Explication courte, journalisée pour comprendre les décisions */
   raison: string;
   /** Quel moteur a produit ce classement */
@@ -37,6 +57,12 @@ export interface Classement {
 }
 
 const MODELE = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+/** Importance minimale pour prétendre à la bannière de la page d'accueil. */
+const SEUIL_BANNIERE = 75;
+
+/** Nombre de bannières issues de Facebook conservées simultanément. */
+export const MAX_BANNIERES = 3;
 
 /** Publications qui n'ont pas leur place sur le site d'une école. */
 const MOTS_HORS_SUJET = [
@@ -51,6 +77,44 @@ function openai(): OpenAI | null {
   if (!process.env.OPENAI_API_KEY) return null;
   if (!client) client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   return client;
+}
+
+/**
+ * Met une capitale initiale sans toucher au reste.
+ *
+ * La consigne interdit les MAJUSCULES INTÉGRALES, et le modèle sur-corrige
+ * parfois en renvoyant un titre entièrement en minuscules.
+ */
+function capitaliser(texte: string): string {
+  const t = texte.trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
+/**
+ * Rétablit la typographie des noms propres du groupe.
+ *
+ * La consigne interdit les MAJUSCULES INTÉGRALES, et le modèle applique la
+ * règle jusqu'aux sigles et noms de lieux : il renvoie « groupe 2iae »,
+ * « yopougon », « bts ». Sur un site d'établissement, ces coquilles se voient
+ * immédiatement.
+ */
+const NOMS_PROPRES: [RegExp, string][] = [
+  [/\b2iae\b/gi, "2IAE"],
+  [/\bbts\b/gi, "BTS"],
+  [/\brti\b/gi, "RTI"],
+  [/\bbtp\b/gi, "BTP"],
+  [/\byopougon\b/gi, "Yopougon"],
+  [/\bpalmeraie\b/gi, "Palmeraie"],
+  [/\byamoussoukro\b/gi, "Yamoussoukro"],
+  [/\bazagui([ée])\b/gi, "Azaguié"],
+  [/\babidjan\b/gi, "Abidjan"],
+  [/\bc[oô]te d['’]ivoire\b/gi, "Côte d'Ivoire"],
+];
+
+export function corrigerNomsPropres(texte: string): string {
+  let t = texte;
+  for (const [motif, remplacement] of NOMS_PROPRES) t = t.replace(motif, remplacement);
+  return t;
 }
 
 /** Coupe proprement sur un mot, sans laisser de mot tronqué. */
@@ -106,6 +170,20 @@ export function nettoyer(texte: string): string {
     .trim();
 }
 
+/**
+ * Empreinte du contenu d'une publication.
+ *
+ * La page republie régulièrement le même texte à quelques jours d'écart (vu
+ * sur deux publications du 27 et du 28 août). Sans cette empreinte, le site
+ * se retrouverait avec des articles jumeaux. On la calcule sur le texte
+ * normalisé, tronqué : une republication assortie d'une phrase d'accroche
+ * différente doit tout de même être reconnue.
+ */
+export function empreinteContenu(message: string): string {
+  const base = normaliser(nettoyer(message)).slice(0, 500);
+  return createHash("sha1").update(base).digest("hex").slice(0, 32);
+}
+
 // ---------------------------------------------------------------- règles ----
 
 export function classerParRegles(message: string, nbMedias: number): Classement {
@@ -116,9 +194,13 @@ export function classerParRegles(message: string, nbMedias: number): Classement 
     return {
       titre: tronquer(propre || "Publication", 90),
       resume: "",
+      article: "",
       rubrique: RUBRIQUE_DEFAUT,
       importance: 20,
       publiable: nbMedias > 0, // une photo seule reste montrable en galerie
+      banniere: false,
+      titreBanniere: "",
+      sousTitre: "",
       raison: "Texte trop court pour être classé",
       moteur: "rules",
     };
@@ -147,9 +229,13 @@ export function classerParRegles(message: string, nbMedias: number): Classement 
     return {
       titre: tronquer(propre, 90),
       resume: "",
+      article: "",
       rubrique: RUBRIQUE_DEFAUT,
       importance: 0,
       publiable: false,
+      banniere: false,
+      titreBanniere: "",
+      sousTitre: "",
       raison: `Message de circonstance (« ${horsSujet} »), sans autre sujet`,
       moteur: "rules",
     };
@@ -167,9 +253,17 @@ export function classerParRegles(message: string, nbMedias: number): Classement 
   return {
     titre: tronquer(premiereLigne, 90),
     resume: tronquer(propre.replace(/\n+/g, " "), 180),
+    // Le moteur de secours ne rédige pas : sync.ts retombera sur le texte
+    // d'origine nettoyé plutôt que sur une réécriture approximative.
+    article: "",
     rubrique: meilleure,
     importance,
     publiable: true,
+    // La bannière est réservée à l'IA : sans compréhension du contenu, on ne
+    // met rien en avant sur la page d'accueil.
+    banniere: false,
+    titreBanniere: "",
+    sousTitre: "",
     raison: meilleurScore
       ? `Classé par mots-clés (score ${meilleurScore})`
       : "Aucun mot-clé décisif, rubrique par défaut",
@@ -179,30 +273,59 @@ export function classerParRegles(message: string, nbMedias: number): Classement 
 
 // -------------------------------------------------------------------- IA ----
 
-const CONSIGNE = `Tu prépares la reprise, sur le site institutionnel du Groupe Écoles 2IAE International (Abidjan, Côte d'Ivoire), d'une publication de sa page Facebook.
+const CONSIGNE = `Tu es le rédacteur du site institutionnel du Groupe Écoles 2IAE International, un seul et même groupe d'enseignement supérieur spécialisé dans l'entrepreneuriat, en Côte d'Ivoire. Il réunit plusieurs campus : 2IAE Palmeraie et 2IAE Yopougon (Abidjan), 2IAE Yamoussoukro, et l'Université de l'Entrepreneuriat 2IAE Azaguié. Il forme en BTS, Licence, Master et certificats.
 
-2IAE est un établissement d'enseignement supérieur spécialisé dans l'entrepreneuriat (BTS, Licence, Master, certificats).
+Écris toujours comme un groupe unique à plusieurs campus, jamais comme des écoles séparées ou concurrentes. Quand une publication concerne un campus, nomme-le (« le campus de Yopougon », « l'Université de l'Entrepreneuriat 2IAE Azaguié ») tout en le rattachant au Groupe 2IAE.
 
-Analyse la publication et réponds UNIQUEMENT par un objet JSON, sans texte autour :
+On te donne une publication de sa page Facebook. Ta tâche : en faire un article pour le site, ou déterminer qu'elle n'y a pas sa place.
+
+Réponds UNIQUEMENT par un objet JSON, sans texte autour :
 
 {
-  "titre": "titre court et informatif, 4 à 12 mots, sans emoji, sans MAJUSCULES intégrales",
-  "resume": "1 à 2 phrases neutres résumant la publication, 200 caractères maximum",
-  "rubrique": "une valeur EXACTE de la liste des rubriques",
-  "importance": nombre entier de 0 à 100,
+  "titre": "titre d'article, 5 à 12 mots, informatif, sans emoji ni MAJUSCULES intégrales",
+  "resume": "chapeau de 1 à 2 phrases, 200 caracteres maximum",
+  "article": "le corps de l'article en francais, 2 a 4 paragraphes separes par \\n\\n",
+  "rubrique": "une valeur EXACTE de la liste ci-dessous",
+  "importance": entier de 0 a 100,
   "publiable": true ou false,
-  "raison": "une phrase courte justifiant ton choix"
+  "banniere": true ou false,
+  "titreBanniere": "accroche de 4 a 8 mots pour la banniere d'accueil",
+  "sousTitre": "sur-titre de 2 a 5 mots EN CAPITALES",
+  "raison": "une phrase justifiant tes choix"
 }
 
 Rubriques autorisées (recopie le libellé exactement) :
 RUBRIQUES_ICI
 
-Règles :
-- "publiable": false UNIQUEMENT pour ce qui n'a réellement pas sa place sur un site institutionnel : vœux d'anniversaire ou de fête, condoléances, messages purement personnels, partages sans rapport avec l'école, contenu promotionnel d'un tiers.
-- En cas de doute, préfère "publiable": true avec une importance basse. Une simple formule de politesse ("bonne semaine", "bon week-end") à la fin d'une publication ne la rend PAS impubliable : si elle montre la vie de l'école, elle a sa place en "Vie du campus". Le site doit refléter le quotidien de l'établissement, pas seulement ses grands événements.
-- "importance" reflète le poids éditorial : 80 à 100 pour un fait marquant (remise de diplômes, distinction nationale, partenariat majeur, ouverture des inscriptions) ; 40 à 70 pour une actualité utile ; 0 à 30 pour le quotidien ordinaire. La vie de campus courante reste basse : elle doit nourrir le site sans occuper la page d'accueil.
-- Le titre doit se comprendre hors contexte, sans "Nous avons le plaisir de..." ni formule d'introduction.
-- Écris en français, avec une majuscule initiale et une orthographe soignée.`;
+IMAGE JOINTE :
+- Quand une image accompagne la publication, LIS-LA. La page communique beaucoup par affiches, et les chiffres importants (taux de réussite, taux de placement, taux d'insertion, numéros de contact, noms de campus) y figurent souvent sans être repris dans le texte.
+- Tout ce qui est lisible sur l'image est un fait utilisable, au même titre que le texte.
+- Ne devine pas ce qui est illisible ou ambigu : dans le doute, n'en parle pas.
+
+RÉDACTION DE L'ARTICLE — le point le plus important :
+- N'INVENTE AUCUN FAIT. Pas de chiffre, de date, de nom, de lieu ni de citation qui ne soit dans la publication ou lisible sur l'image jointe. Cet établissement existe : une information fausse lui nuirait. Si la publication est trop maigre pour nourrir un article, écris un seul paragraphe court plutôt que de broder.
+- Réécris, ne recopie pas. La publication est écrite pour un fil d'actualité ; l'article est écrit pour un site consulté par des parents, des futurs étudiants et des partenaires. Il doit se comprendre seul, des mois plus tard.
+- Registre institutionnel et sobre : « le Groupe 2IAE », « l'établissement », plutôt que « nous ». Aucun émoji, aucun hashtag, aucune interpellation du lecteur (« Qui a été orienté chez nous ? »), aucun appel à commenter, liker ou partager.
+- Garde la substance : chiffres, taux de réussite, dates, sites concernés, noms de filières, partenaires cités. Ce sont eux qui font l'intérêt de l'article.
+- Une publication purement promotionnelle ou interrogative peut devenir un article utile si tu la reformules en information : ce que l'établissement propose, à qui, et pourquoi.
+- Écris un français soigné. Pas de majuscules intégrales dans le corps du texte.
+
+PUBLIABLE :
+- "publiable": false uniquement pour ce qui n'a réellement pas sa place : vœux d'anniversaire ou de fête, condoléances, messages personnels, partages sans rapport avec l'école, publicité d'un tiers.
+- En cas de doute, préfère true avec une importance basse. Une formule de politesse en fin de publication ne la disqualifie pas. Le site doit refléter le quotidien de l'établissement, pas seulement ses grands moments.
+
+IMPORTANCE :
+- 80 à 100 : fait marquant — résultats d'examens, remise de diplômes, distinction, partenariat majeur, ouverture des inscriptions, orientations.
+- 40 à 70 : actualité utile — événement, présentation d'une filière, information pratique.
+- 0 à 30 : quotidien ordinaire — ambiance, photo de campus, message d'humeur.
+
+BANNIÈRE — sois exigeant, elle n'accueille que le sommet :
+- "banniere": true seulement si l'importance atteint 75 ET que la publication porte une annonce forte, tournée vers l'extérieur, qui mérite d'accueillir un visiteur arrivant sur le site.
+- Typiquement : résultats d'examens, ouverture des inscriptions, distinction obtenue, partenariat officiel, cérémonie de diplômes.
+- Jamais pour une photo d'ambiance, un message d'humeur ou une publication sans image.
+- "titreBanniere" est une accroche, pas une phrase, et elle doit être PROPRE À CETTE PUBLICATION. Plusieurs bannières coexistent sur la page d'accueil : si deux publications portent le même titre générique, le visiteur voit deux fois la même chose. Mentionne donc ce qui distingue celle-ci — le site concerné, le chiffre marquant, le nom du partenaire. Écris « BTS 2026 : 64,13 % à Yopougon » plutôt que « Résultats du BTS 2026 ».
+- Respecte la typographie des noms propres et des sigles : 2IAE, BTS, Yopougon, Palmeraie, Yamoussoukro, Azaguié, Abidjan.
+- "sousTitre" est un sur-titre court EN CAPITALES : « ADMISSIONS », « EXCELLENCE ACADÉMIQUE », « NOS RÉSULTATS ».`;
 
 function consigne(): string {
   return CONSIGNE.replace(
@@ -211,24 +334,62 @@ function consigne(): string {
   );
 }
 
-async function classerParIA(message: string, nbMedias: number): Promise<Classement | null> {
+/**
+ * Encode une image en data URI pour l'envoyer au modèle.
+ *
+ * Renvoie null si le fichier manque ou dépasse la taille retenue : une image
+ * illisible ne doit jamais faire échouer le classement, qui se poursuit alors
+ * sur le seul texte.
+ */
+const TAILLE_IMAGE_MAX = 4 * 1024 * 1024;
+
+function imageEnDataUri(chemin: string): string | null {
+  try {
+    if (!fs.existsSync(chemin)) return null;
+    const stat = fs.statSync(chemin);
+    if (stat.size === 0 || stat.size > TAILLE_IMAGE_MAX) return null;
+    const ext = chemin.split(".").pop()?.toLowerCase();
+    const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    return `data:${type};base64,${fs.readFileSync(chemin).toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+async function classerParIA(
+  message: string,
+  nbMedias: number,
+  cheminImage?: string,
+): Promise<Classement | null> {
   const api = openai();
   if (!api) return null;
 
   const propre = nettoyer(message);
 
+  // L'affiche porte souvent les chiffres que le texte ne reprend pas.
+  const image = cheminImage ? imageEnDataUri(cheminImage) : null;
+
+  const contenu: any[] = [
+    {
+      type: "text",
+      text:
+        `Publication Facebook (${nbMedias} média(s) joint(s)) :\n\n${tronquer(propre, 4000)}` +
+        (image ? "\n\nL'image jointe est reproduite ci-dessous : lis-la." : ""),
+    },
+  ];
+  if (image) {
+    contenu.push({ type: "image_url", image_url: { url: image, detail: "high" } });
+  }
+
   try {
     const reponse = await api.chat.completions.create({
       model: MODELE,
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 900,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: consigne() },
-        {
-          role: "user",
-          content: `Publication Facebook (${nbMedias} média(s) joint(s)) :\n\n${tronquer(propre, 4000)}`,
-        },
+        { role: "user", content: contenu },
       ],
     });
 
@@ -252,12 +413,24 @@ async function classerParIA(message: string, nbMedias: number): Promise<Classeme
       ? Math.max(0, Math.min(100, Math.round(importanceBrute)))
       : 40;
 
+    const publiable = data.publiable !== false;
+
+    // La bannière n'accueille qu'un contenu porteur et illustré. On revérifie
+    // ici plutôt que de faire confiance au seul « oui » du modèle : sans image,
+    // un slider s'afficherait sur un fond vide.
+    const banniere =
+      publiable && data.banniere === true && importance >= SEUIL_BANNIERE && nbMedias > 0;
+
     return {
-      titre: tronquer(titre, 120),
-      resume: tronquer(String(data.resume ?? ""), 220),
+      titre: corrigerNomsPropres(capitaliser(tronquer(titre, 120))),
+      resume: corrigerNomsPropres(capitaliser(tronquer(String(data.resume ?? ""), 220))),
+      article: corrigerNomsPropres(String(data.article ?? "").trim()),
       rubrique: rubrique.nom,
       importance,
-      publiable: data.publiable !== false,
+      publiable,
+      banniere,
+      titreBanniere: corrigerNomsPropres(capitaliser(tronquer(String(data.titreBanniere ?? titre), 60))),
+      sousTitre: tronquer(String(data.sousTitre ?? "").toUpperCase(), 40),
       raison: tronquer(String(data.raison ?? "Classé par IA"), 200),
       moteur: "ai",
     };
@@ -270,8 +443,12 @@ async function classerParIA(message: string, nbMedias: number): Promise<Classeme
 // ------------------------------------------------------------------ public ---
 
 /** Classe une publication : IA si possible, règles sinon. Ne rejette jamais. */
-export async function classer(message: string, nbMedias: number): Promise<Classement> {
-  const parIA = await classerParIA(message, nbMedias);
+export async function classer(
+  message: string,
+  nbMedias: number,
+  cheminImage?: string,
+): Promise<Classement> {
+  const parIA = await classerParIA(message, nbMedias, cheminImage);
   return parIA ?? classerParRegles(message, nbMedias);
 }
 

@@ -21,6 +21,8 @@ const DOSSIER_FB = "facebook";
 export interface MediaFacebook {
   /** URL locale servie par le site, ex. /api/assets/facebook/fb_....jpg */
   url: string;
+  /** Chemin sur le disque, pour faire lire l'image au modèle */
+  cheminLocal: string;
   type: "image";
   legende?: string;
 }
@@ -130,7 +132,12 @@ export async function rapatrierMedia(
     fs.mkdirSync(dossier, { recursive: true });
     fs.writeFileSync(path.join(dossier, nom), donnees);
 
-    return { url: `/api/assets/${DOSSIER_FB}/${nom}`, type: "image", legende };
+    return {
+      url: `/api/assets/${DOSSIER_FB}/${nom}`,
+      cheminLocal: path.join(dossier, nom),
+      type: "image",
+      legende,
+    };
   } catch (err) {
     console.warn(`⚠️  Échec du rapatriement d'un média :`, (err as Error).message);
     return null;

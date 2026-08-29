@@ -24,6 +24,7 @@ import {
   news,
   newsImages,
   programs,
+  projects,
   sliders,
   founderMessage,
 } from "@shared/schema";
@@ -150,6 +151,38 @@ export async function rapatrierVisuelsExternes(lot = 40): Promise<string[]> {
         .set({ [champ.cle]: local })
         .where(eq(champ.id, ligne.id));
       faits.push(`${champ.nom} : ${new URL(ligne.url).hostname} → ${local}`);
+    }
+  }
+
+  // Les projets rangent leurs visuels dans un tableau JSON, pas dans une
+  // colonne à part : chaque adresse extérieure du tableau est traitée une à
+  // une, et la ligne n'est réécrite que si au moins une a pu être rapatriée.
+  if (faits.length < lot) {
+    const lignes = await db.select({ id: projects.id, images: projects.images }).from(projects);
+    for (const ligne of lignes) {
+      if (faits.length >= lot) break;
+      if (!Array.isArray(ligne.images)) continue;
+
+      let modifie = false;
+      const nouvelles = [...(ligne.images as string[])];
+      for (let i = 0; i < nouvelles.length; i++) {
+        if (faits.length >= lot) break;
+        const url = nouvelles[i];
+        if (!estExterne(url)) continue;
+
+        if (!traduction.has(url)) {
+          traduction.set(url, await copierSurLeVolume(url));
+        }
+        const local = traduction.get(url);
+        if (!local) continue;
+
+        nouvelles[i] = local;
+        modifie = true;
+        faits.push(`projet : ${new URL(url).hostname} → ${local}`);
+      }
+      if (modifie) {
+        await db.update(projects).set({ images: nouvelles }).where(eq(projects.id, ligne.id));
+      }
     }
   }
 

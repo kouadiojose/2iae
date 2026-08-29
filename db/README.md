@@ -1,5 +1,21 @@
 # Base de données 2IAE
 
+## Rapatriement DigitalOcean → Railway (2026-08-29)
+
+Le seed du dépôt avait été construit à partir de vieux exports SQL partiels,
+pas de la base DigitalOcean en production : **382 lignes** manquaient sur
+Railway (63 contacts, 299 messages de chat, 8 actualités, 8 bannières,
+2 projets, 5 tarifs, 1 filière). La vraie base vivait dans **`groupe2iae-db`**
+sur le cluster DO — pas dans `defaultdb`, la base de l'URL de connexion
+par défaut.
+
+Le tout a été rapatrié le 2026-08-29 avec `scripts/copy-legacy-db.js`
+(insertion seule, `ON CONFLICT (id) DO NOTHING` — le contenu ajouté depuis
+la migration n'a pas été touché). Audit final : 0 ligne manquante sur
+toutes les tables. Les visuels encore hébergés sur DigitalOcean Spaces sont
+recopiés sur le volume par le rapatriement automatique
+(`server/medias/rapatriement.ts`, toutes les 30 minutes).
+
 ## Fichiers
 
 | Fichier | Rôle |

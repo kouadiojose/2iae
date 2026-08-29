@@ -137,7 +137,7 @@ app.get("/api/health", (_req, res) => {
   // Visuels encore hébergés à l'extérieur — l'ancien compartiment DigitalOcean
   // Spaces, et les photographies Unsplash des filières. Le passage est différé
   // pour laisser l'application finir son démarrage, puis répété toutes les
-  // demi-heures : une fois tout rapatrié il ne coûte plus que huit requêtes
+  // demi-heures : une fois tout rapatrié il ne coûte plus que neuf requêtes
   // sans résultat, et il rattrape aussitôt un visuel extérieur ajouté depuis
   // l'administration.
   const rapatrier = async () => {

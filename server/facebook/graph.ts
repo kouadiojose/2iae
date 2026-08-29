@@ -10,6 +10,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { imageSansInformation } from "./qualiteImage";
 
 const VERSION = process.env.FACEBOOK_API_VERSION || "v21.0";
 const BASE = `https://graph.facebook.com/${VERSION}`;
@@ -122,6 +123,15 @@ export async function rapatrierMedia(
 
     const donnees = Buffer.from(await rep.arrayBuffer());
     if (donnees.length === 0) return null;
+
+    // Une publication vidéo arrive avec sa première image pour illustration.
+    // Quand le film ouvre sur un fondu au noir, cette image est un rectangle
+    // vide, et le site affichait alors un carré noir à la place de
+    // l'actualité. On l'écarte avant même de l'écrire sur le disque.
+    if (imageSansInformation(donnees)) {
+      console.warn(`⚠️  Média écarté, image sans contenu visible : ${urlDistante.slice(0, 80)}`);
+      return null;
+    }
 
     const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
     // Nom déterministe : re-synchroniser un post ne duplique pas ses fichiers.

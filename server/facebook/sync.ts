@@ -12,10 +12,11 @@ import fs from "fs";
 import path from "path";
 import { db } from "../db";
 import { facebookPosts, news, newsImages, albums, galleryItems, sliders } from "@shared/schema";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, isNotNull, sql } from "drizzle-orm";
 import { lirePublications, lirePublication, integrationActive, type PostFacebook } from "./graph";
 import { normaliser } from "./rubriques";
 import { analyserImage, choisirImageBanniere } from "./images";
+import { imageSansInformation } from "./qualiteImage";
 import { reviser } from "./revision";
 import { verifierFaits, retirerPhrasesNonSourcees } from "./verification";
 import {
@@ -537,6 +538,9 @@ export async function ameliorerImagesBannieres(lot = 5): Promise<string[]> {
       if (u === b.imageUrl) continue;
       const chemin = cheminDepuisUrl(u);
       if (!chemin) continue;
+      // Une vignette vide ne porte aucun chiffre : inutile de dépenser une
+      // analyse du quota pour l'apprendre.
+      if (visuelVide(u)) continue;
       const a = await analyserImage(chemin, u);
       if (!a?.porteResultats) continue;
       const texte = a.texte.replace(/[,.\s]/g, "");
@@ -948,4 +952,99 @@ export async function synchroniserUne(postId: string): Promise<Resultat> {
     console.error(`❌ Facebook — échec sur ${postId} :`, (err as Error).message);
   }
   return resultat;
+}
+
+/**
+ * L'image derrière cette URL est-elle vide de tout contenu visible ?
+ *
+ * Une URL qu'on ne sait pas résoudre, ou un fichier illisible, ne sont pas
+ * traités comme fautifs : on ne retire un visuel que sur une certitude.
+ */
+function visuelVide(url: string | null): boolean {
+  if (!url) return false;
+  const chemin = cheminDepuisUrl(url);
+  if (!chemin) return false;
+  try {
+    return imageSansInformation(fs.readFileSync(chemin));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Retire du site les visuels entièrement vides déjà publiés.
+ *
+ * Le contrôle posé au rapatriement protège les imports à venir, mais pas ceux
+ * qui sont déjà en ligne : l'actualité « Choisir une école d'excellence après
+ * le bac » affichait un rectangle noir, celui de la vignette d'une vidéo
+ * ouvrant sur un fondu. Ce passage relit les visuels servis et remplace
+ * chacun d'eux par une autre image de la même publication, ou par rien.
+ *
+ * Rien plutôt qu'un carré noir : la page Actualités possède déjà une image de
+ * repli par rubrique, et un visuel générique cohérent vaut mieux qu'un trou
+ * noir au milieu d'une grille.
+ */
+export async function purgerImagesSansInformation(): Promise<string[]> {
+  const retires: string[] = [];
+
+  // 1. Les images secondaires d'abord : une actualité fautive ne doit pas se
+  //    voir promouvoir une seconde image tout aussi vide.
+  const secondaires = await db
+    .select({ id: newsImages.id, newsId: newsImages.newsId, imageUrl: newsImages.imageUrl })
+    .from(newsImages);
+  for (const img of secondaires) {
+    if (!visuelVide(img.imageUrl)) continue;
+    await db.delete(newsImages).where(eq(newsImages.id, img.id));
+    retires.push(`image secondaire retirée (${img.imageUrl})`);
+  }
+
+  // 2. L'illustration principale des actualités.
+  const actus = await db
+    .select({ id: news.id, title: news.title, imageUrl: news.imageUrl })
+    .from(news)
+    .where(isNotNull(news.imageUrl));
+  for (const a of actus) {
+    if (!visuelVide(a.imageUrl)) continue;
+
+    const [remplacante] = await db
+      .select({ imageUrl: newsImages.imageUrl })
+      .from(newsImages)
+      .where(eq(newsImages.newsId, a.id))
+      .orderBy(newsImages.order)
+      .limit(1);
+
+    await db
+      .update(news)
+      .set({ imageUrl: remplacante?.imageUrl ?? null })
+      .where(eq(news.id, a.id));
+    retires.push(
+      remplacante
+        ? `${tronquer(a.title, 45)} — visuel noir remplacé`
+        : `${tronquer(a.title, 45)} — visuel noir retiré`,
+    );
+  }
+
+  // 3. La galerie.
+  const items = await db
+    .select({ id: galleryItems.id, mediaUrl: galleryItems.mediaUrl })
+    .from(galleryItems);
+  for (const it of items) {
+    if (!visuelVide(it.mediaUrl)) continue;
+    await db.delete(galleryItems).where(eq(galleryItems.id, it.id));
+    retires.push(`élément de galerie retiré (${it.mediaUrl})`);
+  }
+
+  // 4. Les bannières. Une bannière sans visuel n'a pas de raison d'être :
+  //    on la désactive au lieu de la laisser occuper la page d'accueil.
+  const bannieres = await db
+    .select({ id: sliders.id, title: sliders.title, imageUrl: sliders.imageUrl })
+    .from(sliders)
+    .where(and(eq(sliders.isActive, true), isNotNull(sliders.imageUrl)));
+  for (const b of bannieres) {
+    if (!visuelVide(b.imageUrl)) continue;
+    await db.update(sliders).set({ isActive: false }).where(eq(sliders.id, b.id));
+    retires.push(`${tronquer(b.title ?? "", 45)} — bannière désactivée, visuel noir`);
+  }
+
+  return retires;
 }

@@ -20,6 +20,7 @@ import {
   reviserArticlesPublies,
   creerBannieresManquantes,
   ameliorerImagesBannieres,
+  purgerImagesSansInformation,
 } from "./sync";
 import { NOMS_RUBRIQUES } from "./classification";
 import { reinitialiserQuotaAnalyses } from "./images";
@@ -152,6 +153,12 @@ export function demarrerRattrapage(): void {
   const tourner = async () => {
     try {
       reinitialiserQuotaAnalyses();
+
+      // Visuels entièrement noirs déjà en ligne : vignettes de vidéos dont
+      // la première image est un fondu. À traiter avant les bannières, qui
+      // s'appuient sur ces mêmes visuels.
+      const videes = await purgerImagesSansInformation();
+      videes.forEach((t) => console.log(`📘 Facebook : ${t}`));
 
       // Rattrapage des bannières redondantes créées avant la déduplication.
       const nettoyees = await dedupliquerBannieres();

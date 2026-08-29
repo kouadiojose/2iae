@@ -16,6 +16,33 @@ app.use(session(getSessionConfig()));
 // Production environment check
 const isProduction = process.env.NODE_ENV === "production";
 
+// 🔒 HTTPS obligatoire en production.
+//
+// Le navigateur essaie http:// avant https:// quand on tape « 2iae.com » dans
+// la barre d'adresse, et Chrome affiche alors « Non sécurisé » sur un site
+// pourtant servi en HTTPS. La redirection ci-dessous ferme la porte, et
+// l'en-tête Strict-Transport-Security évite l'aller-retour aux visites
+// suivantes : le navigateur passe directement en HTTPS.
+//
+// Volontairement sans « includeSubDomains » : les sous-domaines du groupe
+// (messagerie, panneau d'hébergement) restent servis par PlanetHoster, et
+// leur imposer HTTPS depuis ici les rendrait inaccessibles. Sans « preload »
+// non plus : une inscription sur la liste des navigateurs est irréversible à
+// court terme.
+if (isProduction) {
+  app.use((req, res, next) => {
+    // On ne se fie qu'à l'en-tête posé par le proxy de Railway. La sonde de
+    // santé interrogeant /api/health frappe le conteneur directement, sans cet
+    // en-tête : la rediriger ferait échouer chaque déploiement.
+    const protocole = req.headers["x-forwarded-proto"];
+    if (typeof protocole === "string" && protocole.split(",")[0].trim() === "http") {
+      return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+    }
+    res.setHeader("Strict-Transport-Security", "max-age=15552000");
+    next();
+  });
+}
+
 // Increase body parser limits for base64 images
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));

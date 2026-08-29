@@ -29,6 +29,14 @@ import AdminGallery from "@/pages/admin-gallery";
 import ProjectDetail from "@/pages/project-detail";
 import Galerie from "@/pages/galerie";
 import AlbumDetail from "@/pages/album-detail";
+import HistoriquePage from "@/pages/historique";
+import ObjectifsPage from "@/pages/objectifs";
+import InstitutsPage from "@/pages/instituts";
+import UniversiteEntrepreneuriatPage from "@/pages/universite-entrepreneuriat";
+import NousTrouverPage from "@/pages/nous-trouver";
+import MissionCabinetPage from "@/pages/mission-cabinet";
+import CentreIncubationPage from "@/pages/centre-incubation";
+import FormationsSeminairesPage from "@/pages/formations-seminaires";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -178,7 +186,49 @@ function Router() {
           <AlbumDetail />
         </PublicLayout>
       </Route>
-      
+
+      {/* Pages restaurées de l'ancien site */}
+      <Route path="/historique">
+        <PublicLayout>
+          <HistoriquePage />
+        </PublicLayout>
+      </Route>
+      <Route path="/objectifs">
+        <PublicLayout>
+          <ObjectifsPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/instituts">
+        <PublicLayout>
+          <InstitutsPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/universite-entrepreneuriat">
+        <PublicLayout>
+          <UniversiteEntrepreneuriatPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/nous-trouver">
+        <PublicLayout>
+          <NousTrouverPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/mission-cabinet">
+        <PublicLayout>
+          <MissionCabinetPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/centre-incubation">
+        <PublicLayout>
+          <CentreIncubationPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/formations-seminaires">
+        <PublicLayout>
+          <FormationsSeminairesPage />
+        </PublicLayout>
+      </Route>
+
       {/* 404 page */}
       <Route>
         <PublicLayout>

@@ -1,6 +1,7 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com (pages/centre-incubation).
 import { Card, CardContent } from "@/components/ui/card";
 import { Factory, Bird, Fish, Sprout, Building2, Sun } from "lucide-react";
+import { SectionVideos } from "@/components/video-youtube";
 
 const CENTRES = [
   {
@@ -71,6 +72,15 @@ export default function CentreIncubationPage() {
           ))}
         </div>
       </section>
+
+      <SectionVideos
+        titre="L'incubation en action"
+        videos={[
+          { id: "Nq35VAanh3Q", titre: "Les apprenants produisent et vendent du poulet" },
+          { id: "GVOYLYs3Wr8", titre: "Business 24 : l'ouverture de la vente de poisson du groupe 2IAE" },
+          { id: "KNED-0cu95w", titre: "Devenez entrepreneurs dans le domaine agricole" },
+        ]}
+      />
     </div>
   );
 }

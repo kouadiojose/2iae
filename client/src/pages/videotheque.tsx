@@ -1,8 +1,6 @@
 // Vidéothèque restaurée depuis l'ancien site 2iae.com (pages/videotheque) :
 // les 59 vidéos YouTube publiées par le groupe, avec leurs titres d'origine.
-import { useState } from "react";
-import { Card } from "@/components/ui/card";
-import { Play } from "lucide-react";
+import { VideoYoutube } from "@/components/video-youtube";
 
 const VIDEOS: { id: string; titre: string }[] = [
   { id: "TYMsQL97tO4", titre: "Film de présentation du groupe 2IFE/2IAE" },
@@ -66,48 +64,6 @@ const VIDEOS: { id: string; titre: string }[] = [
   { id: "nS0uWVcrtCI", titre: "Reportage RTI" },
 ];
 
-function Video({ id, titre }: { id: string; titre: string }) {
-  const [lecture, setLecture] = useState(false);
-  return (
-    <Card className="overflow-hidden professional-shadow border-0">
-      <div className="relative aspect-video bg-black">
-        {lecture ? (
-          <iframe
-            className="absolute inset-0 w-full h-full"
-            src={`https://www.youtube.com/embed/${id}?autoplay=1`}
-            title={titre}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setLecture(true)}
-            className="absolute inset-0 w-full h-full group"
-            aria-label={`Lire : ${titre}`}
-            data-testid={`video-${id}`}
-          >
-            <img
-              src={`https://img.youtube.com/vi/${id}/hqdefault.jpg`}
-              alt={titre}
-              loading="lazy"
-              className="w-full h-full object-cover"
-            />
-            <span className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
-              <span className="bg-primary rounded-full p-4">
-                <Play className="h-8 w-8 text-white fill-white" />
-              </span>
-            </span>
-          </button>
-        )}
-      </div>
-      <p className="p-4 font-medium text-gray-900 text-sm leading-snug">
-        {titre}
-      </p>
-    </Card>
-  );
-}
-
 export default function VideothequePage() {
   return (
     <div className="min-h-screen">
@@ -126,7 +82,7 @@ export default function VideothequePage() {
       <section className="py-16 bg-white">
         <div className="container mx-auto px-4 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {VIDEOS.map((v) => (
-            <Video key={v.id} {...v} />
+            <VideoYoutube key={v.id} {...v} />
           ))}
         </div>
       </section>

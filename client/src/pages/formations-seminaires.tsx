@@ -5,6 +5,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { SectionVideos } from "@/components/video-youtube";
 
 const CATALOGUES: { domaine: string; themes: string[] }[] = [
   {
@@ -216,6 +217,15 @@ export default function FormationsSeminairesPage() {
           </Accordion>
         </div>
       </section>
+
+      <SectionVideos
+        titre="Nos séminaires en vidéo"
+        videos={[
+          { id: "xzGmDC04SMc", titre: "Séminaire sur la Gestion Axée sur les Résultats" },
+          { id: "b0Fy6nN949E", titre: "Séminaire de haut niveau — acte II au Canada" },
+          { id: "SGrxU9SfYvM", titre: "La gestion des matières résiduelles au Québec et ponts avec la Côte d'Ivoire" },
+        ]}
+      />
     </div>
   );
 }

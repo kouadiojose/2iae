@@ -1,4 +1,5 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com (pages/historique).
+import { SectionVideos } from "@/components/video-youtube";
 
 export default function HistoriquePage() {
   return (
@@ -151,6 +152,15 @@ export default function HistoriquePage() {
           </p>
         </div>
       </section>
+
+      <SectionVideos
+        titre="Le groupe en vidéo"
+        videos={[
+          { id: "TYMsQL97tO4", titre: "Film de présentation du groupe 2IFE/2IAE" },
+          { id: "gwpBDivHRt4", titre: "Le fondateur à Matin Bonheur (RTI)" },
+          { id: "PRfVVo3xFtQ", titre: "Les forces et avantages du Groupe écoles 2IAE International" },
+        ]}
+      />
     </div>
   );
 }

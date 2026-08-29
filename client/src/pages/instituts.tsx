@@ -2,6 +2,7 @@
 // (pages/filieres, pages/formation-genie-civil, pages/formation-management).
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SectionVideos } from "@/components/video-youtube";
 
 type Filiere = {
   nom: string;
@@ -419,6 +420,18 @@ export default function InstitutsPage() {
           </div>
         </div>
       </section>
+
+      <SectionVideos
+        titre="La formation pratique en vidéo"
+        videos={[
+          { id: "pXqdVrjDNDc", titre: "Les étudiants en génie civil reçoivent des équipements didactiques" },
+          { id: "qzGzpdJKrb0", titre: "La formation en bâtiment à 2IAE" },
+          { id: "3-oC6Q6-2rU", titre: "Les filières de Management du groupe 2IAE" },
+          { id: "OaseOLm8en4", titre: "Témoignage étudiants 2IAE — la pratique" },
+          { id: "k_nQqttfZJA", titre: "Tout le monde a sa place au Groupe 2IAE" },
+          { id: "e7_aS2jj0hE", titre: "L'entrepreneuriat dans le milieu agricole" },
+        ]}
+      />
     </div>
   );
 }

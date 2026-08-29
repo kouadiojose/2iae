@@ -1,6 +1,7 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com
 // (pages/universite-entrepreunariat et pages/supports-pedagogiques).
 import { Card, CardContent } from "@/components/ui/card";
+import { SectionVideos } from "@/components/video-youtube";
 
 const SUPPORTS = [
   {
@@ -83,6 +84,18 @@ export default function UniversiteEntrepreneuriatPage() {
           </ul>
         </div>
       </section>
+
+      <SectionVideos
+        titre="L'Université de l'Entrepreneuriat en vidéo"
+        videos={[
+          { id: "hKpt_P694Zw", titre: "À la découverte de l'Université de l'Entrepreneuriat" },
+          { id: "HdYP7CxQjIY", titre: "Bienvenue à la meilleure université de l'entrepreneuriat" },
+          { id: "z2yFuxXwxhs", titre: "Visite d'une délégation de l'Union Européenne sur le site d'Azaguié Ahoua" },
+          { id: "CC4oP9QSkcQ", titre: "Le vice-doyen de l'Université de Sherbrooke en visite" },
+          { id: "KY_cP1Bb-5Q", titre: "C'midi (RTI) : la visite d'Investisseurs & Partenaires" },
+          { id: "D2-U4TtAdxg", titre: "Visite du chantier de l'Université à Azaguié" },
+        ]}
+      />
     </div>
   );
 }

@@ -37,6 +37,7 @@ import NousTrouverPage from "@/pages/nous-trouver";
 import MissionCabinetPage from "@/pages/mission-cabinet";
 import CentreIncubationPage from "@/pages/centre-incubation";
 import FormationsSeminairesPage from "@/pages/formations-seminaires";
+import VideothequePage from "@/pages/videotheque";
 import NotFound from "@/pages/not-found";
 
 // Layout for public website pages
@@ -226,6 +227,11 @@ function Router() {
       <Route path="/formations-seminaires">
         <PublicLayout>
           <FormationsSeminairesPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/videotheque">
+        <PublicLayout>
+          <VideothequePage />
         </PublicLayout>
       </Route>
 

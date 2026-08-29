@@ -20,6 +20,11 @@ const GROUPE_LINKS = [
   { href: "/nous-trouver", label: "Où nous trouver ?" },
 ];
 
+const GALERIE_LINKS = [
+  { href: "/galerie", label: "Galerie Photos" },
+  { href: "/videotheque", label: "Vidéothèque" },
+];
+
 const CABINET_LINKS = [
   { href: "/cabinet", label: "Nos Projets" },
   { href: "/mission-cabinet", label: "Mission du Cabinet" },
@@ -110,13 +115,23 @@ export default function Header() {
             >
               Actualités
             </Link>
-            <Link
-              href="/galerie"
-              className={linkClass("/galerie")}
-              data-testid="link-galerie"
-            >
-              Galerie
-            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={groupClass(GALERIE_LINKS)}
+                data-testid="menu-galerie"
+              >
+                Galerie <ChevronDown className="h-4 w-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {GALERIE_LINKS.map((l) => (
+                  <DropdownMenuItem key={l.href} asChild>
+                    <Link href={l.href} className="w-full cursor-pointer">
+                      {l.label}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -200,7 +215,10 @@ export default function Header() {
                   Actualités
                 </Link>
                 <Link href="/galerie" className={linkClass("/galerie")}>
-                  Galerie
+                  Galerie Photos
+                </Link>
+                <Link href="/videotheque" className={linkClass("/videotheque")}>
+                  Vidéothèque
                 </Link>
                 <p className="text-sm font-semibold text-muted-foreground uppercase pt-2">
                   Cabinet 2IAE

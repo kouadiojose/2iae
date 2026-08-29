@@ -38,7 +38,9 @@ import MissionCabinetPage from "@/pages/mission-cabinet";
 import CentreIncubationPage from "@/pages/centre-incubation";
 import FormationsSeminairesPage from "@/pages/formations-seminaires";
 import VideothequePage from "@/pages/videotheque";
+import PreinscriptionPage from "@/pages/preinscription";
 import NotFound from "@/pages/not-found";
+import { MessageCircle } from "lucide-react";
 
 // Layout for public website pages
 function PublicLayout({ children }: { children: React.ReactNode }) {
@@ -48,6 +50,23 @@ function PublicLayout({ children }: { children: React.ReactNode }) {
       {children}
       <Footer />
       <ChatbotWidget />
+      {/* WhatsApp — canal de contact privilégié pour la préinscription */}
+      <a
+        href={
+          "https://wa.me/2250707578282?text=" +
+          encodeURIComponent(
+            "Bonjour, je souhaite des informations pour la préinscription au Groupe 2IAE.",
+          )
+        }
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Nous écrire sur WhatsApp"
+        data-testid="button-whatsapp"
+        className="fixed bottom-5 left-5 z-50 flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-xl px-4 py-3 font-semibold transition-colors"
+      >
+        <MessageCircle className="h-6 w-6" />
+        <span className="hidden sm:inline">WhatsApp</span>
+      </a>
     </div>
   );
 }
@@ -232,6 +251,11 @@ function Router() {
       <Route path="/videotheque">
         <PublicLayout>
           <VideothequePage />
+        </PublicLayout>
+      </Route>
+      <Route path="/preinscription">
+        <PublicLayout>
+          <PreinscriptionPage />
         </PublicLayout>
       </Route>
 

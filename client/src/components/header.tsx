@@ -161,10 +161,19 @@ export default function Header() {
           </div>
 
           {/* CTA Buttons */}
-          <div className="hidden lg:flex items-center space-x-4">
+          <div className="hidden lg:flex items-center space-x-3">
+            <Link href="/preinscription">
+              <Button
+                className="bg-orange-500 hover:bg-orange-600 text-white font-bold"
+                data-testid="button-preinscription"
+              >
+                Préinscription
+              </Button>
+            </Link>
             <Link href="/tarifs">
               <Button
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary/5"
                 data-testid="button-tarifs"
               >
                 Nos Tarifs
@@ -175,7 +184,7 @@ export default function Header() {
                 className="bg-secondary hover:bg-secondary/90 text-secondary-foreground"
                 data-testid="button-campus"
               >
-                Campus Numérique 2IAE
+                Campus Numérique
               </Button>
             </Link>
           </div>
@@ -236,6 +245,14 @@ export default function Header() {
                   Contact
                 </Link>
                 <div className="flex flex-col space-y-4 pt-6 border-t border-border">
+                  <Link href="/preinscription">
+                    <Button
+                      className="bg-orange-500 hover:bg-orange-600 text-white font-bold w-full"
+                      data-testid="button-mobile-preinscription"
+                    >
+                      Préinscription
+                    </Button>
+                  </Link>
                   <Link href="/tarifs">
                     <Button
                       className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"

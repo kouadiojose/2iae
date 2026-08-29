@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { imageActualite, IMAGE_PAR_DEFAUT } from "@/lib/imageActualite";
 import { useSiteContent } from "@/hooks/useSiteContent";
 import { useQuery } from "@tanstack/react-query";
 import { type Slider, type FounderMessage, type Institute } from "@shared/schema";
@@ -109,24 +110,6 @@ function RecentNewsGrid() {
     });
   };
 
-  // Get default image if none provided
-  const getImageUrl = (imageUrl: string | null, category: string) => {
-    if (imageUrl) return imageUrl;
-    
-    // Default images by category
-    const defaultImages: { [key: string]: string } = {
-      'Innovation': 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Formation': 'https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Partenariats': 'https://images.unsplash.com/photo-1521791136064-7986c2920216?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Événements': 'https://images.unsplash.com/photo-1523580846011-d3982bc861b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Technologie': 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Réussite Étudiante': 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'International': 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300'
-    };
-    
-    return defaultImages[category] || 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300';
-  };
-
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
@@ -177,8 +160,16 @@ function RecentNewsGrid() {
           <Card key={article.id} className="overflow-hidden professional-shadow hover-lift h-full flex flex-col" data-testid={`card-recent-news-${article.id}`}>
             <div className="relative">
               <img
-                src={getImageUrl(article.imageUrl, article.category)}
+                src={imageActualite(article.imageUrl)}
                 alt={article.title}
+                onError={(e) => {
+                  // Même garde-fou qu'en page Actualités : une URL externe
+                  // devenue injoignable laisserait une carte sans visuel.
+                  const img = e.currentTarget;
+                  if (img.dataset.repli === "1") return;
+                  img.dataset.repli = "1";
+                  img.src = IMAGE_PAR_DEFAUT;
+                }}
                 className="w-full h-48 object-cover"
                 data-testid={`img-recent-news-${article.id}`}
               />

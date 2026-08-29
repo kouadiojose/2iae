@@ -6,8 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 
-/** Visuel de secours servi par le site, jamais par un tiers. */
-const IMAGE_PAR_DEFAUT = "/api/assets/sliders/slider_1756752371617_9cvh4dv1bnj.jpg";
+import { imageActualite, IMAGE_PAR_DEFAUT } from "@/lib/imageActualite";
 
 interface News {
   id: string;
@@ -124,48 +123,18 @@ export default function ActualitesPage() {
   /**
    * Repli quand une image ne se charge pas.
    *
-   * Le repli par catégorie ne jouait que si `imageUrl` était vide. Or certaines
-   * images pointent vers un site externe devenu injoignable (celle du prix
-   * AfriBusiness renvoie une erreur 520) : la carte affichait alors le texte
-   * de remplacement à la place du visuel. On bascule donc aussi à l'échec du
-   * chargement, et une seule fois pour ne pas boucler si le repli échoue lui
-   * aussi.
+   * Une URL renseignée ne garantit pas une image : certaines actualités
+   * pointent vers un site extérieur devenu injoignable — celle du prix
+   * AfriBusiness renvoie une erreur 520 — et la carte affichait alors son
+   * texte de remplacement à la place du visuel. Le repli joue donc aussi à
+   * l'échec du chargement, une seule fois pour ne pas boucler s'il échoue à
+   * son tour.
    */
-  const surErreurImage = (
-    e: React.SyntheticEvent<HTMLImageElement>,
-    category: string,
-  ) => {
+  const surErreurImage = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
-    if (img.dataset.repli === "2") return; // déjà au repli local : on s'arrête
-    if (img.dataset.repli === "1") {
-      img.dataset.repli = "2";
-      img.src = IMAGE_PAR_DEFAUT;
-      return;
-    }
+    if (img.dataset.repli === "1") return; // le repli a échoué : on s'arrête là
     img.dataset.repli = "1";
-    img.src = getImageUrl(null, category);
-  };
-
-  // Get default image if none provided
-  const getImageUrl = (imageUrl: string | null, category: string) => {
-    if (imageUrl) return imageUrl;
-    
-    // Default images by category
-    const defaultImages: { [key: string]: string } = {
-      'Innovation': 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=400',
-      'Formation': 'https://images.unsplash.com/photo-1556761175-4b46a572b786?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Partenariats': 'https://images.unsplash.com/photo-1521791136064-7986c2920216?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Événements': 'https://images.unsplash.com/photo-1523580846011-d3982bc861b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Technologie': 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'Réussite Étudiante': 'https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300',
-      'International': 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300'
-    };
-    
-    // Repli ultime servi par le site lui-même : les images de secours par
-    // catégorie pointent vers un service externe, qui peut être bloqué ou
-    // indisponible. Une carte sans visuel affiche alors son texte de
-    // remplacement en clair, ce qui se voit immédiatement.
-    return defaultImages[category] || IMAGE_PAR_DEFAUT;
+    img.src = IMAGE_PAR_DEFAUT;
   };
 
   return (
@@ -194,9 +163,9 @@ export default function ActualitesPage() {
                 <div className="grid lg:grid-cols-2 gap-0">
                   <div className="relative">
                     <img 
-                      src={getImageUrl(featuredNews.imageUrl, featuredNews.category)}
+                      src={imageActualite(featuredNews.imageUrl)}
                       alt={featuredNews.title}
-                      onError={(e) => surErreurImage(e, featuredNews.category)}
+                      onError={surErreurImage}
                       // object-contain plutôt que cover : les publications sont
                       // souvent des affiches où le taux de réussite occupe le
                       // centre. Un recadrage en bandeau coupait précisément le
@@ -285,9 +254,9 @@ export default function ActualitesPage() {
                 <Card key={article.id} className="overflow-hidden professional-shadow hover-lift h-full flex flex-col" data-testid={`card-news-${article.id}`}>
                   <div className="relative">
                     <img
-                      src={getImageUrl(article.imageUrl, article.category)}
+                      src={imageActualite(article.imageUrl)}
                       alt={article.title}
-                      onError={(e) => surErreurImage(e, article.category)}
+                      onError={surErreurImage}
                       className="w-full h-48 object-contain bg-gray-50"
                       data-testid={`img-news-${article.id}`}
                     />

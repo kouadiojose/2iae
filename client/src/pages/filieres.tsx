@@ -136,6 +136,17 @@ export default function FilieresPage() {
                       </Link>
                     </div>
                   </div>
+
+                  {program.description && (
+                    <CardContent className="p-4 sm:p-6">
+                      <p
+                        className="text-gray-600 text-sm leading-relaxed"
+                        data-testid={`text-program-description-${program.id}`}
+                      >
+                        {program.description}
+                      </p>
+                    </CardContent>
+                  )}
                 </Card>
               ))}
             </div>

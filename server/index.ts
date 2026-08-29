@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic, log } from "./static";
 import { getSessionConfig, ensureAdminExists } from "./auth";
 import { demarrerRattrapage } from "./facebook/routes";
+import { rapatrierVisuelsExternes } from "./medias/rapatriement";
 
 const app = express();
 
@@ -132,6 +133,21 @@ app.get("/api/health", (_req, res) => {
   // Filet de rattrapage Facebook : rejoue périodiquement la page au cas où une
   // notification du webhook se serait perdue (redéploiement, coupure réseau).
   demarrerRattrapage();
+
+  // Visuels encore hébergés à l'extérieur — l'ancien compartiment DigitalOcean
+  // Spaces, principalement. Le passage est différé pour laisser l'application
+  // finir son démarrage, puis répété : il traite quinze visuels à la fois et
+  // s'arrête de lui-même quand il n'en reste plus.
+  const rapatrier = async () => {
+    try {
+      const faits = await rapatrierVisuelsExternes();
+      faits.forEach((f) => console.log(`🖼️  Visuel rapatrié — ${f}`));
+    } catch (err) {
+      console.error("❌ Rapatriement des visuels externes :", (err as Error).message);
+    }
+  };
+  setTimeout(rapatrier, 45_000);
+  setInterval(rapatrier, 6 * 60 * 60_000);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

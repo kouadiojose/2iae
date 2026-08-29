@@ -134,18 +134,27 @@ app.get("/api/health", (_req, res) => {
   // notification du webhook se serait perdue (redéploiement, coupure réseau).
   demarrerRattrapage();
 
-  // Rattrapage profond ponctuel de la page Facebook : FACEBOOK_BACKFILL=300
-  // importe les 300 dernières publications (pagination par curseur) — photos
-  // et textes des années passées compris. Retirer la variable ensuite pour
-  // revenir au rythme normal ; le journal de synchronisation évite de toute
-  // façon les doublons d'un passage à l'autre.
-  const backfill = parseInt(process.env.FACEBOOK_BACKFILL || "", 10);
+  // Rattrapage profond ponctuel de la page Facebook : importe une seule fois
+  // les 300 dernières publications (pagination par curseur) — photos et
+  // textes des années passées compris. Le passage est marqué dans
+  // `_migrations` pour ne jamais se rejouer ; le journal de synchronisation
+  // évite de toute façon les doublons. FACEBOOK_BACKFILL=N ajuste la
+  // profondeur, FACEBOOK_BACKFILL=0 le désactive.
+  const backfill = parseInt(process.env.FACEBOOK_BACKFILL ?? "300", 10);
   if (backfill > 0) {
     setTimeout(async () => {
+      const MARQUE = `facebook-backfill-${backfill}`;
       try {
+        const { pool } = await import("./db");
+        await pool.query(`CREATE TABLE IF NOT EXISTS _migrations (
+          name TEXT PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT NOW())`);
+        const vu = await pool.query(`SELECT 1 FROM _migrations WHERE name = $1`, [MARQUE]);
+        if ((vu.rowCount ?? 0) > 0) return;
         const { synchroniser } = await import("./facebook/sync");
         console.log(`📦 Rattrapage Facebook profond (${backfill} publications)…`);
         const r = await synchroniser(backfill);
+        await pool.query(
+          `INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [MARQUE]);
         console.log(`📦 Rattrapage profond terminé :`, JSON.stringify(r));
       } catch (err) {
         console.error("❌ Rattrapage Facebook profond :", (err as Error).message);

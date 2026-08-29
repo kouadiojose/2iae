@@ -21,12 +21,24 @@
  * Usage :
  *   SOURCE_DATABASE_URL="postgresql://doadmin:...@....db.ondigitalocean.com:25060/defaultdb" \
  *   TARGET_DATABASE_URL="postgresql://postgres:...@postgres.railway.internal:5432/railway" \
- *   node scripts/copy-legacy-db.js [--audit-only]
+ *   node scripts/copy-legacy-db.js [--audit-only] [--diff] [--sync]
+ *
+ * --diff : liste aussi les lignes présentes des deux côtés dont les champs
+ *          diffèrent (une ligne copiée jadis puis modifiée sur la source
+ *          n'est pas rattrapée par l'insertion seule).
+ * --sync : applique la version source de ces lignes, mais UNIQUEMENT quand
+ *          son updated_at est plus récent — une ligne retravaillée sur le
+ *          site cible depuis la migration n'est jamais écrasée. C'est ce
+ *          mode qui a restitué le 2026-08-29 les vraies photos des filières,
+ *          les téléphones, comptes bancaires et adresses des tarifs, et la
+ *          photo du fondateur, mis à jour sur l'ancien site après les exports.
  */
 import pg from "pg";
 const { Client } = pg;
 
 const AUDIT_ONLY = process.argv.includes("--audit-only");
+const DIFF = process.argv.includes("--diff") || process.argv.includes("--sync");
+const SYNC = process.argv.includes("--sync");
 // sslmode retiré de l'URL : il primerait sur l'option ssl passée au client
 // (DigitalOcean utilise un CA auto-signé -> rejectUnauthorized: false requis).
 const SRC_URL = (process.env.SOURCE_DATABASE_URL || "").replace(/[?&]sslmode=[^&]+/, "");
@@ -144,6 +156,51 @@ async function copyTable(src, tgt, t) {
   log(`[copy] ${t}: ${rows.length} lues, ${inserted} insérées, ${failed} échecs, ${rows.length - inserted - failed} déjà présentes`);
 }
 
+// Compare les lignes communes (même id) et montre les champs qui diffèrent.
+// En mode sync, applique la version source quand elle est plus récente.
+const IGNORE_DIFF = new Set(["created_at", "updated_at", "created_by", "updated_by"]);
+async function diffTable(src, tgt, t, apply) {
+  const cs = await columns(src, t), ct = await columns(tgt, t);
+  const cols = cs.filter(c => ct.includes(c));
+  if (!cols.includes("id")) return;
+  const { rows: typed } = await tgt.query(
+    `SELECT column_name, data_type FROM information_schema.columns
+     WHERE table_schema='public' AND table_name=$1`, [t]);
+  const jsonCols = new Set(typed.filter(r => r.data_type === "json" || r.data_type === "jsonb").map(r => r.column_name));
+  const sel = cols.map(c => `"${c}"`).join(",");
+  const { rows: srows } = await src.query(`SELECT ${sel} FROM "${t}"`);
+  if (!srows.length) return;
+  const { rows: trows } = await tgt.query(`SELECT ${sel} FROM "${t}" WHERE id = ANY($1)`, [srows.map(r => r.id)]);
+  const tmap = new Map(trows.map(r => [r.id, r]));
+  const norm = v => v instanceof Date ? v.toISOString() : (v !== null && typeof v === "object" ? JSON.stringify(v) : v);
+  for (const s of srows) {
+    const w = tmap.get(s.id);
+    if (!w) continue;
+    const diffs = cols.filter(c => !IGNORE_DIFF.has(c) && String(norm(s[c])) !== String(norm(w[c])));
+    if (!diffs.length) continue;
+    const su = s.updated_at ? new Date(s.updated_at) : null;
+    const tu = w.updated_at ? new Date(w.updated_at) : null;
+    const srcPlusRecent = su && tu ? su > tu : true;
+    const nom = (s.name || s.title || s.key || s.site || "").toString().slice(0, 40);
+    log(`[diff] ${t} "${nom}" (${s.id.slice(0, 8)}): champs ≠ ${diffs.join(", ")} — source ${srcPlusRecent ? "PLUS récente" : "plus ancienne"}`);
+    for (const c of diffs.slice(0, 6)) {
+      const show = v => String(norm(v) ?? "NULL").replace(/\s+/g, " ").slice(0, 90);
+      log(`        ${c}: source="${show(s[c])}" | cible="${show(w[c])}"`);
+    }
+    if (apply && srcPlusRecent) {
+      const sets = diffs.map((c, i) => `"${c}"=$${i + 2}`).join(", ");
+      const vals = diffs.map(c => {
+        const v = s[c];
+        if (!jsonCols.has(c) || v === null) return v;
+        return typeof v === "string" ? v : JSON.stringify(v);
+      });
+      await tgt.query(`UPDATE "${t}" SET ${sets}, updated_at=$${diffs.length + 2} WHERE id=$1`,
+        [s.id, ...vals, s.updated_at || new Date()]);
+      log(`        -> mis à jour depuis la source`);
+    }
+  }
+}
+
 async function main() {
   if (!SRC_URL || !TGT_URL) throw new Error("SOURCE_DATABASE_URL et TARGET_DATABASE_URL (ou DATABASE_URL) requises");
   let tgt = await connect("cible", TGT_URL, /railway\.internal|localhost|127\.0\.0\.1/.test(TGT_URL) ? false : { rejectUnauthorized: false });
@@ -177,7 +234,16 @@ async function main() {
 
   await audit(src, tgt);
 
-  if (!AUDIT_ONLY) {
+  if (DIFF) {
+    log(`=== DIFF des lignes communes${SYNC ? " (application des versions source plus récentes)" : ""} ===`);
+    const st = await tables(src);
+    const CONTENT = ["site_content", "sliders", "founder_message", "institutes",
+      "programs", "news", "news_images", "projects", "tariffs", "albums", "gallery_items"];
+    for (const t of CONTENT) if (st.includes(t)) await diffTable(src, tgt, t, SYNC);
+    log("=== FIN DIFF ===");
+  }
+
+  if (!AUDIT_ONLY && !DIFF) {
     log("=== COPIE ===");
     const st = await tables(src);
     for (const t of ORDER) if (st.includes(t) && !SKIP.has(t)) await copyTable(src, tgt, t);

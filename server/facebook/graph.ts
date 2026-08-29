@@ -154,20 +154,38 @@ export async function rapatrierMedia(
   }
 }
 
-/** Récupère les publications de la page, de la plus récente à la plus ancienne. */
+/**
+ * Récupère les publications de la page, de la plus récente à la plus ancienne.
+ *
+ * La Graph API plafonne chaque appel à 100 publications : au-delà, la
+ * pagination par curseur (`paging.cursors.after`) est suivie jusqu'à
+ * atteindre `limite` — ce qui permet un rattrapage profond de tout
+ * l'historique de la page, pas seulement des dernières publications.
+ */
 export async function lirePublications(limite = 25): Promise<PostFacebook[]> {
   const { pageId, actif } = config();
   if (!actif) throw new Error("FACEBOOK_PAGE_TOKEN et FACEBOOK_PAGE_ID sont requis.");
 
-  const data = await appel<{ data: any[] }>(`${pageId}/posts`, {
-    fields:
-      "id,message,created_time,permalink_url,full_picture," +
-      "attachments{media,description,subattachments{media,description}}",
-    limit: String(Math.min(limite, 100)),
-  });
+  const bruts: any[] = [];
+  let after: string | undefined;
+  while (bruts.length < limite) {
+    const params: Record<string, string> = {
+      fields:
+        "id,message,created_time,permalink_url,full_picture," +
+        "attachments{media,description,subattachments{media,description}}",
+      limit: String(Math.min(limite - bruts.length, 100)),
+    };
+    if (after) params.after = after;
+    const page = await appel<{ data: any[]; paging?: { cursors?: { after?: string } ; next?: string } }>(
+      `${pageId}/posts`, params);
+    const lot = page.data ?? [];
+    bruts.push(...lot);
+    after = page.paging?.next ? page.paging?.cursors?.after : undefined;
+    if (!after || lot.length === 0) break;
+  }
 
   const posts: PostFacebook[] = [];
-  for (const brut of data.data ?? []) {
+  for (const brut of bruts) {
     const message = (brut.message || "").trim();
     const refs = urlsDesMedias(brut);
 

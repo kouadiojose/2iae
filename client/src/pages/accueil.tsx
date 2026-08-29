@@ -387,6 +387,79 @@ export default function AccueilPage() {
         )}
       </section>
 
+      {/* Bandeau Rentrée — préinscriptions */}
+      <section className="py-14 bg-orange-500 text-white mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
+          <div className="text-center mb-8">
+            <h2
+              className="text-2xl sm:text-3xl lg:text-4xl font-extrabold"
+              data-testid="text-rentree-title"
+            >
+              Rentrée académique : les préinscriptions sont ouvertes !
+            </h2>
+            <p className="text-white/90 mt-3 max-w-3xl mx-auto text-lg">
+              Parents, futurs bacheliers : choisissez une école qui prouve ses
+              résultats et forme des jeunes capables de créer leur emploi.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-center mb-10">
+            <div>
+              <p className="text-3xl lg:text-4xl font-extrabold">67,38&nbsp;%</p>
+              <p className="text-sm text-white/90 mt-1">
+                d'admis au BTS 2026, contre 42,48&nbsp;% au niveau national
+              </p>
+            </div>
+            <div>
+              <p className="text-3xl lg:text-4xl font-extrabold">500+</p>
+              <p className="text-sm text-white/90 mt-1">
+                jeunes formés et insérés avec l'Agence Emploi Jeunes
+              </p>
+            </div>
+            <div>
+              <p className="text-3xl lg:text-4xl font-extrabold">Internat</p>
+              <p className="text-sm text-white/90 mt-1">
+                un cadre sécurisé sur le campus de l'Université de
+                l'Entrepreneuriat à Azaguié
+              </p>
+            </div>
+            <div>
+              <p className="text-3xl lg:text-4xl font-extrabold">Canada</p>
+              <p className="text-sm text-white/90 mt-1">
+                des partenariats internationaux, dont l'Université de
+                Sherbrooke
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/contact">
+              <Button
+                className="bg-white text-orange-600 hover:bg-white/90 px-8 py-4 text-lg h-auto font-bold w-full sm:w-auto"
+                data-testid="button-rentree-preinscription"
+              >
+                Je fais ma préinscription
+              </Button>
+            </Link>
+            <Link href="/tarifs">
+              <Button
+                className="bg-gray-900 text-white hover:bg-gray-800 px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
+                data-testid="button-rentree-tarifs"
+              >
+                Voir les tarifs par site
+              </Button>
+            </Link>
+            <Link href="/instituts">
+              <Button
+                variant="outline"
+                className="border-white text-white hover:bg-white/10 px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
+                data-testid="button-rentree-filieres"
+              >
+                Filières et débouchés
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Founder Message Section */}
       <section className="py-20 bg-background mobile-no-overflow">
         <div className="container mx-auto mobile-padding">

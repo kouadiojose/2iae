@@ -134,6 +134,25 @@ app.get("/api/health", (_req, res) => {
   // notification du webhook se serait perdue (redéploiement, coupure réseau).
   demarrerRattrapage();
 
+  // Rattrapage profond ponctuel de la page Facebook : FACEBOOK_BACKFILL=300
+  // importe les 300 dernières publications (pagination par curseur) — photos
+  // et textes des années passées compris. Retirer la variable ensuite pour
+  // revenir au rythme normal ; le journal de synchronisation évite de toute
+  // façon les doublons d'un passage à l'autre.
+  const backfill = parseInt(process.env.FACEBOOK_BACKFILL || "", 10);
+  if (backfill > 0) {
+    setTimeout(async () => {
+      try {
+        const { synchroniser } = await import("./facebook/sync");
+        console.log(`📦 Rattrapage Facebook profond (${backfill} publications)…`);
+        const r = await synchroniser(backfill);
+        console.log(`📦 Rattrapage profond terminé :`, JSON.stringify(r));
+      } catch (err) {
+        console.error("❌ Rattrapage Facebook profond :", (err as Error).message);
+      }
+    }, 90_000);
+  }
+
   // Visuels encore hébergés à l'extérieur — l'ancien compartiment DigitalOcean
   // Spaces, et les photographies Unsplash des filières. Le passage est différé
   // pour laisser l'application finir son démarrage, puis répété toutes les

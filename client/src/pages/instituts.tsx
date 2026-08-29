@@ -58,6 +58,9 @@ const INSTITUTS: Institut[] = [
   {
     sigle: "IFA",
     nom: "Institut de Formation Agricole",
+    presentation: [
+      "L'IFA forme sur le réel : la ferme pédagogique d'Azaguié Ahoua (bovins, ovins, lapins, volailles avec des poulaillers de 3 000 sujets), le centre piscicole et ses bassins de tilapias, les champs-écoles de 10 hectares à Azaguié M'bromé et de 5 hectares à Bingerville, et des serres de pépinières (banane, cacao, palmier à huile). Cette pédagogie par la pratique a fait ses preuves : dès la session 2015, la filière ATPA réalisait 100 % d'admis au BTS.",
+    ],
     filieres: [
       {
         nom: "Agriculture Tropicale option Production Végétale (ATPV)",
@@ -78,7 +81,15 @@ const INSTITUTS: Institut[] = [
         nom: "Agriculture Tropicale option Production Animale (ATPA)",
         niveau: "BTS et Licence professionnelle",
         objectif:
-          "Former des spécialistes des techniques d'élevage et de la gestion d'une exploitation animale.",
+          "Former des spécialistes des techniques d'élevage et de la gestion d'une exploitation animale : conduite des troupeaux et des poulaillers, alimentation, suivi sanitaire, production et commercialisation. Les apprenants produisent et vendent réellement (volailles, poissons) sur la ferme et le centre piscicole du groupe.",
+        debouches: [
+          "Chef d'exploitation animale",
+          "Responsable d'élevage (volailles, ovins, bovins)",
+          "Responsable de production en ferme piscicole",
+          "Technico-commercial en intrants et équipements d'élevage",
+          "Conseiller en production animale",
+          "Créateur de sa propre exploitation",
+        ],
         conditions:
           "Être titulaire du BAC série A1, A2, C, D, E, F7 ou diplôme équivalent",
       },
@@ -231,7 +242,9 @@ export default function InstitutsPage() {
           </h1>
           <p className="text-xl text-white/90 max-w-3xl mx-auto">
             Quatre instituts de formation, leurs filières, leurs objectifs et
-            leurs débouchés
+            leurs débouchés. Depuis 2006, chaque étudiant du groupe — quelle
+            que soit sa filière — reçoit des cours d'entrepreneuriat : c'est
+            la marque de l'École des Entrepreneurs.
           </p>
         </div>
       </section>
@@ -311,6 +324,99 @@ export default function InstitutsPage() {
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Licences professionnelles */}
+      <section className="py-16 bg-gray-50">
+        <div className="container mx-auto px-4 max-w-5xl">
+          <h2 className="text-3xl font-bold text-gray-900 mb-3 text-center">
+            Licences professionnelles
+          </h2>
+          <p className="text-gray-700 text-center max-w-3xl mx-auto mb-10">
+            Après le BTS ou le BAC, poursuivez en licence professionnelle
+            (3 ans) pour approfondir vos compétences et accéder aux fonctions
+            d'encadrement — ou préparer la création de votre entreprise avec
+            l'appui des centres d'incubation du groupe.
+          </p>
+          <div className="grid gap-6 md:grid-cols-3">
+            {[
+              {
+                nom: "Management & Entrepreneuriat",
+                texte:
+                  "Le cœur de l'ADN de 2IAE : mobiliser les moyens humains et matériels, piloter les résultats et bâtir un projet bancable, pour créer et diriger des PME et PMI à forte valeur ajoutée.",
+              },
+              {
+                nom: "Marketing Digital & Communication",
+                texte:
+                  "Les fondamentaux du marketing associés aux outils numériques : réseaux sociaux, création de contenu, image de marque — pour devenir chargé de communication digitale, responsable marketing ou consultant.",
+              },
+              {
+                nom: "Gestion Financière & Contrôle",
+                texte:
+                  "Tableaux de bord, budgets, coûts de revient, audit : une licence exigeante vers les fonctions de contrôleur de gestion, analyste financier ou auditeur interne.",
+              },
+            ].map((l) => (
+              <Card key={l.nom} className="professional-shadow border-0">
+                <CardContent className="p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">
+                    {l.nom}
+                  </h3>
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    {l.texte}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Certificats */}
+      <section className="py-16 bg-white">
+        <div className="container mx-auto px-4 max-w-5xl">
+          <h2 className="text-3xl font-bold text-gray-900 mb-3 text-center">
+            Certificats professionnels
+          </h2>
+          <p className="text-gray-700 text-center max-w-3xl mx-auto mb-10">
+            Des formations courtes et intensives, animées dans l'esprit des
+            séminaires du Cabinet 2IAE (agréé FDFP), pour monter en compétence
+            rapidement.
+          </p>
+          <div className="grid gap-6 md:grid-cols-3">
+            {[
+              {
+                nom: "Création & Gestion d'Entreprise",
+                duree: "6 mois",
+                texte:
+                  "De l'idée au lancement : business plan, recherche de financement, gestion quotidienne — pour présenter un projet réellement bancable.",
+              },
+              {
+                nom: "Comptabilité Analytique & Fiscalité",
+                duree: "4 mois",
+                texte:
+                  "Coûts de revient, budgets et obligations fiscales dans le cadre ivoirien et l'espace OHADA, pour sécuriser la gestion de votre structure.",
+              },
+              {
+                nom: "Leadership & Management d'Équipe",
+                duree: "3 mois",
+                texte:
+                  "Construire son leadership, manager par objectifs, animer une équipe performante — pour cadres, chefs d'équipe et entrepreneurs.",
+              },
+            ].map((c) => (
+              <Card key={c.nom} className="professional-shadow border-0">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h3 className="text-lg font-bold text-gray-900">{c.nom}</h3>
+                    <Badge variant="secondary">{c.duree}</Badge>
+                  </div>
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    {c.texte}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </section>
     </div>

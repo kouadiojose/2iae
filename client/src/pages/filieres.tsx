@@ -50,6 +50,47 @@ export default function FilieresPage() {
         </div>
       </section>
 
+      {/* Chiffres clés */}
+      <section className="py-10 bg-gray-50 border-b border-gray-100">
+        <div className="container mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+          <div>
+            <p className="text-3xl md:text-4xl font-extrabold text-orange-500">
+              67,38&nbsp;%
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              d'admis au BTS 2026 au Groupe 2IAE, contre 42,48&nbsp;% au
+              niveau national
+            </p>
+          </div>
+          <div>
+            <p className="text-3xl md:text-4xl font-extrabold text-orange-500">
+              2006
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              l'année de création de l'École des Entrepreneurs
+            </p>
+          </div>
+          <div>
+            <p className="text-3xl md:text-4xl font-extrabold text-orange-500">
+              5 campus
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              Abidjan (Palmeraie, Yopougon), Yamoussoukro, Azaguié, M'Batto —
+              et un bureau au Canada
+            </p>
+          </div>
+          <div>
+            <p className="text-3xl md:text-4xl font-extrabold text-orange-500">
+              100&nbsp;%
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              des étudiants reçoivent des cours d'entrepreneuriat, quelle que
+              soit la filière
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Programs Section */}
       <section className="py-20 bg-white">
         <div className="container mx-auto px-4">
@@ -149,6 +190,21 @@ export default function FilieresPage() {
                   )}
                 </Card>
               ))}
+            </div>
+          )}
+
+          {/* Lien vers le détail des instituts */}
+          {!isLoading && filteredPrograms.length > 0 && (
+            <div className="text-center mt-12">
+              <Link href="/instituts">
+                <Button
+                  variant="outline"
+                  className="border-orange-500 text-orange-600 hover:bg-orange-50 font-semibold px-8 py-3 h-auto"
+                  data-testid="button-instituts"
+                >
+                  Objectifs, débouchés et conditions d'entrée par filière →
+                </Button>
+              </Link>
             </div>
           )}
 

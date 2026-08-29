@@ -115,9 +115,13 @@ const CHAMPS = [
  *
  * Le travail est plafonné par passage : un rapatriement télécharge des
  * fichiers entiers, et rien n'exige de tout traiter d'un coup — le passage
- * suivant reprendra où celui-ci s'arrête, jusqu'à ce qu'il n'y ait plus rien.
+ * suivant reprend où celui-ci s'arrête, jusqu'à ce qu'il n'y ait plus rien.
+ *
+ * Le plafond est posé à quarante après un premier passage réel : les quinze
+ * images de filières, toutes hébergées chez Unsplash, l'avaient épuisé à elles
+ * seules et la galerie n'était jamais atteinte.
  */
-export async function rapatrierVisuelsExternes(lot = 15): Promise<string[]> {
+export async function rapatrierVisuelsExternes(lot = 40): Promise<string[]> {
   const faits: string[] = [];
   const traduction = new Map<string, string | null>();
 

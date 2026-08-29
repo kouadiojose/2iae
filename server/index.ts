@@ -135,9 +135,11 @@ app.get("/api/health", (_req, res) => {
   demarrerRattrapage();
 
   // Visuels encore hébergés à l'extérieur — l'ancien compartiment DigitalOcean
-  // Spaces, principalement. Le passage est différé pour laisser l'application
-  // finir son démarrage, puis répété : il traite quinze visuels à la fois et
-  // s'arrête de lui-même quand il n'en reste plus.
+  // Spaces, et les photographies Unsplash des filières. Le passage est différé
+  // pour laisser l'application finir son démarrage, puis répété toutes les
+  // demi-heures : une fois tout rapatrié il ne coûte plus que huit requêtes
+  // sans résultat, et il rattrape aussitôt un visuel extérieur ajouté depuis
+  // l'administration.
   const rapatrier = async () => {
     try {
       const faits = await rapatrierVisuelsExternes();
@@ -147,7 +149,7 @@ app.get("/api/health", (_req, res) => {
     }
   };
   setTimeout(rapatrier, 45_000);
-  setInterval(rapatrier, 6 * 60 * 60_000);
+  setInterval(rapatrier, 30 * 60_000);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

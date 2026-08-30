@@ -4,8 +4,9 @@
 // cadence de relance par étape et le digest quotidien envoyé aux admissions.
 import { and, desc, eq, isNotNull, lte, or, sql as dsql } from "drizzle-orm";
 import { db, pool } from "./db";
-import { leads, type Lead, type StageLead } from "@shared/schema";
+import { chatMessages, leads, type Lead, type StageLead } from "@shared/schema";
 import { envoyerEmail, emailConfigure } from "./mail";
+import { alerterWhatsApp } from "./whatsapp";
 
 const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr")
   .split(",")
@@ -56,6 +57,72 @@ function prochaineRelance(stage: StageLead, depuis: Date = new Date()): Date | n
   const jours = CADENCE_JOURS[stage];
   if (jours === null) return null;
   return new Date(depuis.getTime() + jours * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Alerte instantanée à l'équipe dès qu'un lead laisse un moyen de le joindre :
+ * WhatsApp (si CallMeBot est configuré) et e-mail, avec le contexte de la
+ * conversation et la raison d'appeler vite.
+ */
+async function alerterNouveauLead(lead: Lead): Promise<void> {
+  try {
+    // Contexte : les derniers messages laissés par le visiteur dans le chat.
+    let contexte = "";
+    if (lead.sessionId) {
+      const fil = await db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.sessionId, lead.sessionId))
+        .orderBy(desc(chatMessages.createdAt))
+        .limit(3);
+      if (fil.length > 0) {
+        contexte = fil
+          .reverse()
+          .map((m) => `« ${m.message.slice(0, 120)} »`)
+          .join(" / ");
+      }
+    }
+    if (!contexte && lead.notes) contexte = lead.notes.split("\n").pop() ?? "";
+
+    const identite = [
+      lead.name || "Nom non communiqué",
+      lead.phone ? `📞 ${lead.phone}` : null,
+      lead.email ? `✉️ ${lead.email}` : null,
+    ]
+      .filter(Boolean)
+      .join(" — ");
+    const detail = [
+      lead.filiere ? `Filière : ${lead.filiere}` : null,
+      lead.campus ? `Campus : ${lead.campus}` : null,
+      `Source : ${lead.source}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const texte = [
+      `🔥 NOUVEAU LEAD 2IAE — À RAPPELER MAINTENANT`,
+      ``,
+      identite,
+      detail,
+      contexte ? `Contexte : ${contexte}` : null,
+      lead.phone ? `👉 WhatsApp direct : wa.me/225${lead.phone}` : null,
+      ``,
+      `⏱️ Cette personne vient de laisser ses coordonnées sur le site et le chat lui a promis un rappel rapide : un prospect appelé dans l'heure se préinscrit bien plus souvent qu'un prospect rappelé le lendemain. Après l'appel, notez le résultat dans www.2iae.com/admin/leads pour programmer la suite.`,
+    ]
+      .filter((l): l is string => l !== null)
+      .join("\n");
+
+    void alerterWhatsApp(texte);
+    if (emailConfigure()) {
+      void envoyerEmail({
+        to: DESTINATAIRES.join(","),
+        subject: `🔥 Nouveau lead à rappeler — ${lead.name || lead.phone || lead.email || "visiteur du site"}`,
+        text: texte,
+      });
+    }
+  } catch (err) {
+    console.error("❌ Alerte nouveau lead :", (err as Error).message);
+  }
 }
 
 export async function initCrm(): Promise<void> {
@@ -147,6 +214,11 @@ export async function upsertLead(entree: {
       })
       .where(eq(leads.id, lead.id))
       .returning();
+    // Si le lead vient seulement d'obtenir un moyen de le joindre (le chat
+    // avait créé la fiche sans téléphone), l'équipe est alertée maintenant.
+    if (!lead.phone && !lead.email && (maj.phone || maj.email)) {
+      void alerterNouveauLead(maj);
+    }
     return maj;
   }
 
@@ -167,6 +239,7 @@ export async function upsertLead(entree: {
     })
     .returning();
   console.log(`🎯 Nouveau lead (${cree.source}) : ${cree.phone ?? cree.email ?? cree.sessionId}`);
+  if (cree.phone || cree.email) void alerterNouveauLead(cree);
   return cree;
 }
 

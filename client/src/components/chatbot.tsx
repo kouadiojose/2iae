@@ -52,7 +52,7 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
       });
       setMessages(prev => [...prev, {
         id: `lead-${Date.now()}`,
-        content: "Merci ! Un conseiller vous recontactera très vite. En attendant, je réponds à toutes vos questions 😊",
+        content: "Merci ! ✅ Vos coordonnées viennent d'être transmises à notre équipe : un conseiller vous appelle très rapidement (généralement dans l'heure, en journée). En attendant, je réponds à toutes vos questions 😊",
         isBot: true,
         timestamp: new Date()
       }]);

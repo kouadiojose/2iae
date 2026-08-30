@@ -895,6 +895,32 @@ export default function AccueilPage() {
               </Card>
             ))}
           </div>
+
+          {/* La preuve par le terrain */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-10 max-w-6xl mx-auto">
+            <img
+              src="/images/topographie-groupe.jpg"
+              alt="Travaux pratiques de topographie : les étudiants en génie civil 2IAE sur le terrain avec niveaux et trépieds"
+              loading="lazy"
+              className="col-span-2 w-full h-48 lg:h-56 object-cover rounded-xl professional-shadow"
+            />
+            <img
+              src="/images/chantier-ecole-visite.jpg"
+              alt="Visite de chantier-école : les étudiants 2IAE en casques sur un bâtiment en construction"
+              loading="lazy"
+              className="w-full h-48 lg:h-56 object-cover rounded-xl professional-shadow"
+            />
+            <img
+              src="/images/topographie-duo.jpg"
+              alt="Deux étudiantes 2IAE souriantes en travaux pratiques de topographie"
+              loading="lazy"
+              className="w-full h-48 lg:h-56 object-cover rounded-xl professional-shadow"
+            />
+          </div>
+          <p className="text-center text-sm text-muted-foreground mt-4">
+            Chantier-école, topographie, ferme pédagogique : à 2IAE, le terrain
+            fait partie de l'emploi du temps dès la première année.
+          </p>
         </div>
       </section>
 
@@ -987,6 +1013,22 @@ export default function AccueilPage() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+
+          {/* Affiches officielles : le groupe en chiffres et son réseau */}
+          <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto mt-12">
+            <img
+              src="/images/indicateurs-performance-2iae.jpg"
+              alt="Indicateurs de performance du Groupe 2IAE : plus de 1 500 apprenants par an, 5 campus, 4 incubateurs, plus de 75 % de taux d'insertion, plus de 95 % de stages garantis"
+              loading="lazy"
+              className="w-full rounded-xl professional-shadow"
+            />
+            <img
+              src="/images/reseau-groupe-2iae.jpg"
+              alt="Le réseau du Groupe Écoles 2IAE International : campus de Palmeraie, Yopougon, Azaguié Ahoua, M'Batto et Yamoussoukro, et ses partenaires (Banque Mondiale, Union européenne, OIM, Université de Sherbrooke…)"
+              loading="lazy"
+              className="w-full rounded-xl professional-shadow"
+            />
           </div>
         </div>
       </section>

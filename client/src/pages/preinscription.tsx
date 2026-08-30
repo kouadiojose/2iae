@@ -243,6 +243,18 @@ export default function PreinscriptionPage() {
               <Phone className="h-5 w-5" /> Appeler +225 05 84 24 90 90
             </a>
           </div>
+
+          <div className="mt-10 text-center">
+            <img
+              src="/images/famille-bts-2iae.jpg"
+              alt="Trois étudiantes du Groupe 2IAE en uniforme révisent ensemble — la famille BTS de l'École des Entrepreneurs"
+              loading="lazy"
+              className="w-full max-w-md mx-auto rounded-xl professional-shadow"
+            />
+            <p className="text-muted-foreground text-sm mt-3">
+              Rejoignez la famille BTS de l'École des Entrepreneurs.
+            </p>
+          </div>
         </div>
       </section>
     </div>

@@ -83,6 +83,27 @@ export default function UniversiteEntrepreneuriatPage() {
             className="w-full h-64 object-cover rounded-xl professional-shadow"
             data-testid="img-universite-internat"
           />
+          <img
+            src="/images/topographie-groupe.jpg"
+            alt="Travaux pratiques de topographie sur le terrain du campus : niveaux, trépieds, casques et gilets"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-topographie"
+          />
+          <img
+            src="/images/topographie-etudiante-2.jpg"
+            alt="Une étudiante en génie civil effectue une visée au niveau de chantier"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-topographie-etudiante"
+          />
+          <img
+            src="/images/chantier-ecole-visite.jpg"
+            alt="Visite du chantier-école : les étudiants en casques sur un bâtiment en construction"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-chantier"
+          />
         </div>
       </section>
 

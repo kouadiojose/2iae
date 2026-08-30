@@ -17,6 +17,7 @@ type Institut = {
   sigle: string;
   nom: string;
   presentation?: string[];
+  photos?: { src: string; alt: string }[];
   filieres: Filiere[];
   certificats?: string[];
 };
@@ -29,6 +30,24 @@ const INSTITUTS: Institut[] = [
       "Par définition, le génie civil c'est l'art de concevoir et de réaliser des ouvrages d'infrastructures. Il inclut également les bâtiments lorsque ceux-ci, par leur conception structurelle ou leur architecture, sont exceptionnels. Également, il constitue pour un pays un véritable patrimoine.",
       "De plus, avec une population à croissance galopante s'impose le besoin de maîtriser les techniques du génie civil, d'où le choix de la discipline du GÉNIE CIVIL option BÂTIMENT (GBAT) avec l'Institut de Formation en Génie Civil (IFGC) du groupe écoles 2IFE/2IAE.",
       "En outre, cette discipline permettra aux étudiants d'être financièrement indépendants. Aussi cette discipline tend-elle de plus en plus vers une industrialisation poussée, qui permettra dans le futur d'allier meilleur prix et meilleure qualité, au grand bonheur du développement d'une nation.",
+    ],
+    photos: [
+      {
+        src: "/images/topographie-groupe.jpg",
+        alt: "Séance de topographie sur le terrain : les étudiants en génie civil de 2IAE manipulent niveaux et trépieds, casques et gilets de sécurité",
+      },
+      {
+        src: "/images/chantier-ecole-visite.jpg",
+        alt: "Visite de chantier-école : les étudiants 2IAE en casques découvrent un bâtiment en construction",
+      },
+      {
+        src: "/images/topographie-etudiante.jpg",
+        alt: "Une étudiante 2IAE effectue une visée au niveau de chantier lors des travaux pratiques de topographie",
+      },
+      {
+        src: "/images/topographie-duo.jpg",
+        alt: "Deux étudiantes 2IAE en travaux pratiques de topographie avec un niveau de chantier",
+      },
     ],
     filieres: [
       {
@@ -274,6 +293,20 @@ export default function InstitutsPage() {
                   {p}
                 </p>
               ))}
+
+              {inst.photos && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+                  {inst.photos.map((ph) => (
+                    <img
+                      key={ph.src}
+                      src={ph.src}
+                      alt={ph.alt}
+                      loading="lazy"
+                      className="w-full h-44 md:h-52 object-cover rounded-xl professional-shadow"
+                    />
+                  ))}
+                </div>
+              )}
 
               <div className="grid gap-6 mt-6">
                 {inst.filieres.map((f) => (

@@ -160,6 +160,22 @@ export default function HistoriquePage() {
         </div>
       </section>
 
+      <section className="py-14 bg-gray-50">
+        <div className="container mx-auto px-4 max-w-4xl text-center">
+          <img
+            src="/images/affiche-20-ans-cote-ivoire.jpg"
+            alt="Affiche des 20 ans du Groupe Écoles 2IAE International : au service de la Côte d'Ivoire, entreprendre pour devenir l'élite de demain"
+            loading="lazy"
+            className="w-full rounded-xl professional-shadow"
+            data-testid="img-affiche-20-ans"
+          />
+          <p className="text-muted-foreground text-sm mt-3">
+            2006-2026 : vingt ans d'expériences au service de la nation —
+            « 2IAE, entreprendre pour devenir l'élite de demain ».
+          </p>
+        </div>
+      </section>
+
       <section className="py-14 bg-white">
         <div className="container mx-auto px-4 max-w-4xl text-center">
           <img

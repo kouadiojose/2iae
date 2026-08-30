@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePageMeta } from "@/lib/seo";
 import { useQuery } from "@tanstack/react-query";
 import { Calendar, User, ArrowRight, Tag } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -30,6 +31,12 @@ interface News {
 const defaultCategories = ["Tous", "Innovation", "Formation", "Partenariats", "Événements", "Technologie", "Réussite Étudiante", "International"];
 
 export default function ActualitesPage() {
+  usePageMeta(
+    "Actualités du Groupe 2IAE — vie des campus en Côte d'Ivoire",
+    "Résultats d'examens, orientations des bacheliers, partenariats internationaux, vie des campus : toute l'actualité du Groupe 2IAE International.",
+    '/actualites',
+  );
+
   const [selectedCategory, setSelectedCategory] = useState("Tous");
 
   // Fetch news from API

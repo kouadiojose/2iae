@@ -1,6 +1,7 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com
 // (pages/universite-entrepreunariat et pages/supports-pedagogiques).
 import { Card, CardContent } from "@/components/ui/card";
+import { usePageMeta } from "@/lib/seo";
 import { SectionVideos } from "@/components/video-youtube";
 
 const SUPPORTS = [
@@ -35,6 +36,12 @@ const ETAPES = [
 ];
 
 export default function UniversiteEntrepreneuriatPage() {
+  usePageMeta(
+    "Université de l'Entrepreneuriat d'Azaguié — ferme-école et internat | 2IAE",
+    "Le campus agro-pastoral du Groupe 2IAE à Azaguié : ferme-école, champs d'expérimentation, étang piscicole, internat. La pédagogie par la pratique en conditions réelles.",
+    '/universite-entrepreneuriat',
+  );
+
   return (
     <div className="min-h-screen">
       <section className="py-20 gradient-bg text-white">

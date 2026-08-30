@@ -1,7 +1,14 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com (pages/historique).
 import { SectionVideos } from "@/components/video-youtube";
+import { usePageMeta } from "@/lib/seo";
 
 export default function HistoriquePage() {
+  usePageMeta(
+    "Notre histoire depuis 2006 | Groupe 2IAE — L'École des Entrepreneurs",
+    "De la fondation en 2006 à l'université agro-pastorale d'Azaguié : l'histoire du Groupe 2IAE International racontée par son fondateur Séraphin Koua.",
+    '/historique',
+  );
+
   return (
     <div className="min-h-screen">
       <section className="py-20 gradient-bg text-white">

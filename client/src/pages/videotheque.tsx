@@ -1,6 +1,7 @@
 // Vidéothèque restaurée depuis l'ancien site 2iae.com (pages/videotheque) :
 // les 59 vidéos YouTube publiées par le groupe, avec leurs titres d'origine.
 import { VideoYoutube } from "@/components/video-youtube";
+import { usePageMeta } from "@/lib/seo";
 
 const VIDEOS: { id: string; titre: string }[] = [
   { id: "TYMsQL97tO4", titre: "Film de présentation du groupe 2IFE/2IAE" },
@@ -65,6 +66,12 @@ const VIDEOS: { id: string; titre: string }[] = [
 ];
 
 export default function VideothequePage() {
+  usePageMeta(
+    'Vidéothèque — reportages RTI, témoignages étudiants | Groupe 2IAE',
+    "59 vidéos du Groupe 2IAE : reportages TV, témoignages d'étudiants, visites officielles, séminaires au Canada et vie des campus.",
+    '/videotheque',
+  );
+
   return (
     <div className="min-h-screen">
       <section className="py-20 gradient-bg text-white">

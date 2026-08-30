@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePageMeta } from "@/lib/seo";
 import { ChevronLeft, ChevronRight, Play, Calendar, User, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -253,6 +254,12 @@ function RecentNewsGrid() {
 }
 
 export default function AccueilPage() {
+  usePageMeta(
+    "Groupe 2IAE International — Grande École en Côte d'Ivoire | L'École des Entrepreneurs",
+    "Grande école de référence en Côte d'Ivoire depuis 2006 : 67,38 % d'admis au BTS 2026, 5 campus avec internat, ferme-école, entrepreneuriat pour tous. Préinscriptions ouvertes.",
+    '/',
+  );
+
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const { getContentByKey, getContentBySection, isLoading: contentLoading } = useSiteContent();

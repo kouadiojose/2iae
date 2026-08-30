@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePageMeta } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
@@ -14,6 +15,12 @@ const categories = [
 ];
 
 export default function FilieresPage() {
+  usePageMeta(
+    "Filières BTS, Licences & Certificats en Côte d'Ivoire | Groupe 2IAE",
+    "16 filières en 3 pôles : BTS tertiaires, industriels et agricoles, licences professionnelles et certificats. Conditions d'entrée, débouchés et pédagogie par la pratique.",
+    '/filieres',
+  );
+
   const [activeCategory, setActiveCategory] = useState("ALL");
 
   // Fetch programs from API

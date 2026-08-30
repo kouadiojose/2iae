@@ -1,6 +1,7 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com
 // (pages/filieres, pages/formation-genie-civil, pages/formation-management).
 import { Card, CardContent } from "@/components/ui/card";
+import { usePageMeta } from "@/lib/seo";
 import { Badge } from "@/components/ui/badge";
 import { SectionVideos } from "@/components/video-youtube";
 
@@ -234,6 +235,12 @@ const INSTITUTS: Institut[] = [
 ];
 
 export default function InstitutsPage() {
+  usePageMeta(
+    "Nos Instituts : filières, débouchés, conditions d'entrée | 2IAE Côte d'Ivoire",
+    'IFGC, IFA, IFM, IFNTIC : objectifs de formation, débouchés métiers et séries de BAC admises pour chaque filière BTS et licence du Groupe 2IAE.',
+    '/instituts',
+  );
+
   return (
     <div className="min-h-screen">
       <section className="py-20 gradient-bg text-white">

@@ -1,6 +1,7 @@
 // Sites du groupe — adresses restaurées depuis l'ancien site 2iae.com
 // (pages/nous-trouver et pied de page), coordonnées actualisées.
 import { Card, CardContent } from "@/components/ui/card";
+import { usePageMeta } from "@/lib/seo";
 import { MapPin, Phone, Mail } from "lucide-react";
 
 const SITES = [
@@ -35,6 +36,12 @@ const SITES = [
 ];
 
 export default function NousTrouverPage() {
+  usePageMeta(
+    "Où nous trouver — 5 campus en Côte d'Ivoire | Groupe 2IAE",
+    "Les adresses des campus 2IAE : Abidjan Riviera Palmeraie (siège), Yopougon, Yamoussoukro, Azaguié (internat) et M'Batto, plus le bureau de Longueuil au Canada.",
+    '/nous-trouver',
+  );
+
   return (
     <div className="min-h-screen">
       <section className="py-20 gradient-bg text-white">

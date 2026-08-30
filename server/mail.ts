@@ -1,13 +1,12 @@
 // Notification par e-mail des messages de contact et préinscriptions.
 //
-// Chaque envoi part vers CONTACT_EMAIL (par défaut ptchimou92@gmail.com).
-// Le transport SMTP se configure par variables d'environnement :
+// Chaque envoi part vers CONTACT_EMAIL (par défaut ptchimou92@gmail.com),
+// qui est aussi l'adresse de réponse de tout courrier sortant du site.
 //
-//   SMTP_HOST  ex. smtp.gmail.com  (ou smtp-relay.brevo.com…)
-//   SMTP_PORT  ex. 465 (SSL) ou 587 (STARTTLS)
-//   SMTP_USER  identifiant du compte d'envoi
-//   SMTP_PASS  mot de passe (pour Gmail : un « mot de passe d'application »)
-//   SMTP_FROM  optionnel, adresse d'expéditeur affichée (défaut : SMTP_USER)
+// Deux transports, dans cet ordre de préférence :
+//   1. Resend  — RESEND_API_KEY (et RESEND_FROM une fois un domaine vérifié,
+//      ex. « Groupe 2IAE <contact@2iae.com> » ; défaut : onboarding@resend.dev)
+//   2. SMTP    — SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS
 //
 // Sans configuration, l'envoi est simplement ignoré (les messages restent
 // dans l'administration) — le formulaire ne doit jamais échouer parce que
@@ -16,6 +15,7 @@ import nodemailer from "nodemailer";
 import type { Contact } from "@shared/schema";
 
 const DESTINATAIRE = process.env.CONTACT_EMAIL || "ptchimou92@gmail.com";
+const REPONDRE_A = process.env.REPLY_TO_EMAIL || "ptchimou92@gmail.com";
 
 function transport() {
   const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
@@ -30,13 +30,69 @@ function transport() {
 }
 
 export function emailConfigure(): boolean {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return Boolean(
+    process.env.RESEND_API_KEY ||
+      (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
+  );
+}
+
+/** Envoi générique : Resend si configuré, sinon SMTP. Ne lève jamais. */
+export async function envoyerEmail(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  replyTo?: string;
+}): Promise<boolean> {
+  const replyTo = opts.replyTo || REPONDRE_A;
+
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const rep = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || "Site 2IAE <onboarding@resend.dev>",
+          to: [opts.to],
+          reply_to: replyTo,
+          subject: opts.subject,
+          text: opts.text,
+        }),
+      });
+      if (!rep.ok) {
+        const corps = await rep.text();
+        console.error(`❌ Resend ${rep.status} : ${corps.slice(0, 300)}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("❌ Envoi Resend :", (err as Error).message);
+      return false;
+    }
+  }
+
+  const t = transport();
+  if (!t) return false;
+  try {
+    await t.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: opts.to,
+      replyTo,
+      subject: opts.subject,
+      text: opts.text,
+    });
+    return true;
+  } catch (err) {
+    console.error("❌ Envoi SMTP :", (err as Error).message);
+    return false;
+  }
 }
 
 /** Envoie la notification d'un nouveau contact ; ne lève jamais. */
 export async function notifierContact(contact: Contact): Promise<void> {
-  const t = transport();
-  if (!t) {
+  if (!emailConfigure()) {
     console.log(
       `📮 Contact reçu de ${contact.name} — e-mail non configuré, ` +
         `visible dans l'administration.`,
@@ -53,26 +109,20 @@ export async function notifierContact(contact: Contact): Promise<void> {
     ? `🎓 Nouvelle préinscription — ${contact.name}`
     : `📨 Nouveau message${premiereLigne ? ` (${premiereLigne.slice(0, 60)})` : ""} — ${contact.name}`;
 
-  const lignes = [
-    `Nom : ${contact.name}`,
-    `Téléphone : ${contact.phone}`,
-    `Email : ${contact.email}`,
-    ``,
-    contact.message ?? "",
-    ``,
-    `— Envoyé automatiquement par le site 2iae.com`,
-  ];
-
-  try {
-    await t.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: DESTINATAIRE,
-      replyTo: contact.email || undefined,
-      subject: sujet,
-      text: lignes.join("\n"),
-    });
-    console.log(`📮 Notification envoyée à ${DESTINATAIRE} (${sujet})`);
-  } catch (err) {
-    console.error("❌ Envoi de la notification de contact :", (err as Error).message);
-  }
+  const ok = await envoyerEmail({
+    to: DESTINATAIRE,
+    subject: sujet,
+    // Répondre depuis la boîte doit joindre le demandeur directement.
+    replyTo: contact.email || undefined,
+    text: [
+      `Nom : ${contact.name}`,
+      `Téléphone : ${contact.phone}`,
+      `Email : ${contact.email}`,
+      ``,
+      contact.message ?? "",
+      ``,
+      `— Envoyé automatiquement par le site 2iae.com`,
+    ].join("\n"),
+  });
+  if (ok) console.log(`📮 Notification envoyée à ${DESTINATAIRE} (${sujet})`);
 }

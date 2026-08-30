@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta } from "@/lib/seo";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,12 @@ interface ApiResponse {
 }
 
 export default function Galerie() {
+  usePageMeta(
+    'Galerie photos — la vie du Groupe 2IAE en images',
+    'Albums photos du Groupe 2IAE : campus, formations pratiques, événements, visites officielles et vie étudiante.',
+    '/galerie',
+  );
+
   const [location] = useLocation();
 
   const { data, isLoading, error } = useQuery<ApiResponse>({

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePageMeta } from "@/lib/seo";
 import { useQuery } from "@tanstack/react-query";
 import type { Tariff } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,12 @@ function formatTariff(tariff: Tariff) {
 }
 
 export default function Tarifs() {
+  usePageMeta(
+    "Tarifs et frais de scolarité BTS | Groupe 2IAE Côte d'Ivoire",
+    "Les tarifs officiels du Groupe 2IAE par campus : inscription, scolarité, modalités de paiement et documents à fournir, à Abidjan, Yamoussoukro, Azaguié et M'Batto.",
+    '/tarifs',
+  );
+
   const [selectedSite, setSelectedSite] = useState<string>("");
 
   // Fetch tariffs from API

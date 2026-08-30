@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePageMeta } from "@/lib/seo";
 import { MapPin, Phone, Mail, Clock, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,6 +83,12 @@ const subjects = [
 ];
 
 export default function ContactPage() {
+  usePageMeta(
+    'Contact | Groupe 2IAE International — Abidjan, Yamoussoukro, Azaguié',
+    "Contactez le Groupe 2IAE : +225 07 07 57 82 82, contacts@2iae.com. Campus à Abidjan (Palmeraie, Yopougon), Yamoussoukro, Azaguié et M'Batto.",
+    '/contact',
+  );
+
   const [formData, setFormData] = useState<ContactFormData>({
     name: "",
     email: "",

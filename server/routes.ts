@@ -249,6 +249,69 @@ INSTRUCTIONS DE RÉPONSE:
 - Mets en avant l'excellence et le caractère innovant de l'institution`;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // --- Référencement : robots.txt et sitemap dynamique ---------------------
+  const SITE_URL = "https://www.2iae.com";
+
+  app.get("/robots.txt", (_req, res) => {
+    res.type("text/plain").send(
+      ["User-agent: *", "Allow: /", "Disallow: /admin", "", `Sitemap: ${SITE_URL}/sitemap.xml`].join("\n"),
+    );
+  });
+
+  app.get("/sitemap.xml", async (_req, res) => {
+    try {
+      const statiques = [
+        ["/", "daily", "1.0"],
+        ["/preinscription", "weekly", "0.9"],
+        ["/filieres", "weekly", "0.9"],
+        ["/instituts", "monthly", "0.8"],
+        ["/tarifs", "monthly", "0.8"],
+        ["/actualites", "daily", "0.8"],
+        ["/galerie", "weekly", "0.6"],
+        ["/videotheque", "monthly", "0.6"],
+        ["/universite-entrepreneuriat", "monthly", "0.7"],
+        ["/historique", "yearly", "0.5"],
+        ["/objectifs", "yearly", "0.5"],
+        ["/nous-trouver", "monthly", "0.6"],
+        ["/mission-cabinet", "yearly", "0.4"],
+        ["/centre-incubation", "yearly", "0.5"],
+        ["/formations-seminaires", "yearly", "0.5"],
+        ["/a-propos", "yearly", "0.5"],
+        ["/contact", "yearly", "0.6"],
+        ["/cabinet", "monthly", "0.5"],
+      ];
+      const urls: string[] = statiques.map(
+        ([p, freq, prio]) =>
+          `<url><loc>${SITE_URL}${p}</loc><changefreq>${freq}</changefreq><priority>${prio}</priority></url>`,
+      );
+
+      const actus = await storage.getActiveNews();
+      for (const n of actus) {
+        if (!n.slug) continue;
+        const lastmod = (n.updatedAt ?? n.createdAt)?.toISOString?.().slice(0, 10);
+        urls.push(
+          `<url><loc>${SITE_URL}/actualites/${encodeURIComponent(n.slug)}</loc>` +
+            (lastmod ? `<lastmod>${lastmod}</lastmod>` : "") +
+            `<changefreq>monthly</changefreq><priority>0.5</priority></url>`,
+        );
+      }
+      const albums = await storage.getAllAlbums();
+      for (const a of albums.filter((a) => a.isActive)) {
+        urls.push(
+          `<url><loc>${SITE_URL}/galerie/${a.id}</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>`,
+        );
+      }
+
+      res.type("application/xml").send(
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+          `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`,
+      );
+    } catch (err) {
+      console.error("sitemap:", (err as Error).message);
+      res.status(500).type("text/plain").send("sitemap indisponible");
+    }
+  });
+
   // CORS middleware for object storage
   app.use('/api/object-storage/*', (req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');

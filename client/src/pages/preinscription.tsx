@@ -1,6 +1,7 @@
 // Formulaire de préinscription — pensé pour la rentrée : court, rassurant,
 // et enregistré via l'API contact existante (sujet « Préinscription »).
 import { useState } from "react";
+import { usePageMeta } from "@/lib/seo";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -54,6 +55,12 @@ const WHATSAPP = "https://wa.me/2250707578282?text=" +
   encodeURIComponent("Bonjour, je souhaite faire ma préinscription au Groupe 2IAE.");
 
 export default function PreinscriptionPage() {
+  usePageMeta(
+    "Préinscription en ligne — Rentrée 2026-2027 | Groupe 2IAE Côte d'Ivoire",
+    "Préinscrivez-vous en 5 minutes au Groupe 2IAE : BTS, licences, certificats sur 5 campus en Côte d'Ivoire. Gratuit, sans engagement — un conseiller vous rappelle.",
+    '/preinscription',
+  );
+
   const { toast } = useToast();
   const [envoye, setEnvoye] = useState(false);
   const [f, setF] = useState({

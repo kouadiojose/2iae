@@ -478,6 +478,39 @@ export default function AccueilPage() {
             </Link>
           </div>
         </div>
+
+        {/* Les performances de chaque campus, en pleine vue */}
+        <div className="container mx-auto mobile-padding pb-14">
+          <p className="text-center text-sm text-muted-foreground uppercase tracking-widest mb-6">
+            Les performances officielles, campus par campus
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+            {[
+              ["/images/resultats-2026-azaguie.jpg", "Azaguié", "83,54 %", "ATPV 93,75 %"],
+              ["/images/resultats-2026-yamoussoukro.jpg", "Yamoussoukro", "68,18 %", "ATPA 100 %"],
+              ["/images/resultats-2026-yopougon.jpg", "Yopougon", "64,13 %", "RHCOM 92,3 %"],
+              ["/images/resultats-2026-palmeraie.jpg", "Palmeraie", "58,40 %", "ATPA 90,9 %"],
+            ].map(([img, nom, taux, fort]) => (
+              <Link key={nom} href="/resultats-bts-2026">
+                <div className="group rounded-xl overflow-hidden professional-shadow bg-white cursor-pointer hover-lift" data-testid={`card-resultat-${nom}`}>
+                  <img
+                    src={img}
+                    alt={`Performances BTS 2026 — 2IAE ${nom} : ${taux} d'admis`}
+                    loading="lazy"
+                    className="w-full h-auto group-hover:opacity-95 transition-opacity"
+                  />
+                  <div className="p-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-foreground text-sm">{nom}</p>
+                      <p className="text-xs text-muted-foreground">{fort}</p>
+                    </div>
+                    <p className="font-serif text-xl lg:text-2xl font-semibold text-primary whitespace-nowrap">{taux}</p>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
       </section>
 
       {/* Hero Slider Section */}

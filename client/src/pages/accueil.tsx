@@ -313,9 +313,8 @@ export default function AccueilPage() {
   };
 
   // Fond du hero : une photo fixe sous le voile blanc → orange.
-  // Vue large de la ferme-école d'Azaguié (mécanisation agricole) — un plan
-  // panoramique qui reste lisible une fois recadré en bandeau.
-  const heroImage = "/api/assets/facebook/fb_c5ada9b17ffbbd7d.jpg";
+  // Le campus verdoyant d'Azaguié, palmiers et étudiants en orange.
+  const heroImage = "/images/campus-azaguie-palmiers.jpg";
 
   return (
     <div className="min-h-screen mobile-safe">
@@ -905,9 +904,7 @@ export default function AccueilPage() {
             <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl leading-tight">
               Étudier, dormir, réussir — au même endroit.
             </h2>
-          </div>
-          <div>
-            <p className="text-white/85 text-lg leading-relaxed">
+            <p className="text-white/85 text-lg leading-relaxed mt-6">
               Chambres encadrées, restauration, études surveillées le soir.
               L'internat de l'Université de l'Entrepreneuriat d'Azaguié offre
               aux étudiants venus de toute la Côte d'Ivoire un cadre sûr,
@@ -919,6 +916,13 @@ export default function AccueilPage() {
               </Button>
             </Link>
           </div>
+          <img
+            src="/images/internat-triptyque.jpg"
+            alt="L'internat 2IAE : salle de classe équipée, dortoirs, et la cour intérieure du campus"
+            loading="lazy"
+            className="w-full max-w-md mx-auto rounded-xl shadow-2xl"
+            data-testid="img-internat"
+          />
         </div>
       </section>
 
@@ -965,8 +969,16 @@ export default function AccueilPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 gradient-bg text-white mobile-no-overflow">
-        <div className="container mx-auto mobile-padding text-center">
+      <section className="relative py-20 text-white mobile-no-overflow overflow-hidden">
+        <img
+          src="/images/etudiants-evenement.jpg"
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-[#1a1815]/80" />
+        <div className="relative container mx-auto mobile-padding text-center">
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-6" data-testid="text-cta-title">
             Écrivez la prochaine réussite.
           </h2>

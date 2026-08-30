@@ -160,6 +160,22 @@ export default function HistoriquePage() {
         </div>
       </section>
 
+      <section className="py-14 bg-white">
+        <div className="container mx-auto px-4 max-w-4xl text-center">
+          <img
+            src="/images/etudiants-rti.jpg"
+            alt="Les étudiants du Groupe 2IAE sur le plateau de Matin Bonheur (RTI)"
+            loading="lazy"
+            className="w-full rounded-xl professional-shadow"
+            data-testid="img-etudiants-rti"
+          />
+          <p className="text-muted-foreground text-sm mt-3">
+            Les étudiants du Groupe 2IAE sur le plateau de Matin Bonheur (RTI),
+            aux côtés du fondateur.
+          </p>
+        </div>
+      </section>
+
       <SectionVideos
         titre="Le groupe en vidéo"
         videos={[

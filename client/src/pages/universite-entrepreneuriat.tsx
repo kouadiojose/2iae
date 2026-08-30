@@ -59,6 +59,33 @@ export default function UniversiteEntrepreneuriatPage() {
         </div>
       </section>
 
+      {/* Le campus en images */}
+      <section className="py-14 bg-white">
+        <div className="container mx-auto px-4 max-w-6xl grid sm:grid-cols-3 gap-6">
+          <img
+            src="/images/universite-azaguie-batiment.jpg"
+            alt="Le bâtiment principal de l'Université de l'Entrepreneuriat d'Azaguié"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-batiment"
+          />
+          <img
+            src="/images/campus-azaguie-palmiers.jpg"
+            alt="Le campus verdoyant, ses palmiers et ses étudiants"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-campus"
+          />
+          <img
+            src="/images/internat-triptyque.jpg"
+            alt="Salle de classe, dortoirs de l'internat et cour intérieure"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-internat"
+          />
+        </div>
+      </section>
+
       <section className="py-16 bg-white">
         <div className="container mx-auto px-4 max-w-5xl">
           <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">

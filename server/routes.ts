@@ -263,6 +263,7 @@ TON ET STYLE (très important):
 
 RÈGLES ABSOLUES:
 - Réponds toujours en français.
+- Écris en TEXTE BRUT, sans aucune mise en forme Markdown : pas d'astérisques, pas de titres, et surtout JAMAIS de lien au format [texte](url). Écris les adresses telles quelles, par exemple : www.2iae.com/preinscription
 - Utilise UNIQUEMENT les informations de ce brief. N'invente JAMAIS de numéro de téléphone, d'adresse e-mail, de tarif, de filière, de statistique ou de promesse (pas de « bourse », « réduction » ou « garantie d'emploi » non mentionnées ici) : si tu ne sais pas, dis-le simplement et oriente vers le WhatsApp (+225) 07 47 72 67 29 ou www.2iae.com/preinscription.
 - Quand on te demande les frais, donne les montants exacts de la section TARIFS OFFICIELS ci-dessous.
 - Ne dénigre jamais nommément une autre école ou université.
@@ -593,7 +594,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         temperature: 0.7,
       });
 
-      const response = completion.choices[0].message.content || "Désolé, je n'ai pas pu traiter votre demande.";
+      const brute = completion.choices[0].message.content || "Désolé, je n'ai pas pu traiter votre demande.";
+      // Le widget et les e-mails affichent du texte brut : tout Markdown
+      // résiduel est neutralisé — un lien [texte](url) devient l'adresse nue
+      // (sinon Gmail inclut la parenthèse fermante dans le lien → 404).
+      const response = brute
+        .replace(/\[([^\]]*)\]\(\s*((?:https?:\/\/|www\.)[^)\s]+)\s*\)/g, "$2")
+        .replace(/\*\*([^*]+)\*\*/g, "$1");
 
       // Save conversation
       await storage.createChatMessage({

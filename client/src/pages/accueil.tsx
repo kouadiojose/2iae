@@ -305,9 +305,10 @@ export default function AccueilPage() {
     setCurrentSlide(index);
   };
 
-  // Fond du hero : une photo fixe, en filigrane sous le voile blanc → orange.
-  // Étudiants à la ferme-école d'Azaguié — la pédagogie pratique, sans texte.
-  const heroImage = "/api/assets/facebook/fb_c55f08d91e9759a2.jpg";
+  // Fond du hero : une photo fixe sous le voile blanc → orange.
+  // Vue large de la ferme-école d'Azaguié (mécanisation agricole) — un plan
+  // panoramique qui reste lisible une fois recadré en bandeau.
+  const heroImage = "/api/assets/facebook/fb_c5ada9b17ffbbd7d.jpg";
 
   return (
     <div className="min-h-screen mobile-safe">
@@ -317,13 +318,13 @@ export default function AccueilPage() {
           src={heroImage}
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover object-[70%_30%]"
+          className="absolute inset-0 w-full h-full object-cover object-[center_55%]"
         />
         <div
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(100deg, rgba(255,255,255,0.97) 0%, rgba(255,251,246,0.94) 45%, rgba(255,243,230,0.82) 70%, rgba(240,168,104,0.55) 100%)",
+              "linear-gradient(95deg, rgba(255,255,255,0.95) 0%, rgba(255,251,246,0.88) 38%, rgba(255,245,233,0.55) 62%, rgba(255,240,224,0.22) 82%, rgba(232,114,12,0.18) 100%)",
           }}
         />
         <div className="relative container mx-auto mobile-padding py-20 lg:py-28">

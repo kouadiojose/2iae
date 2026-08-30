@@ -5,6 +5,7 @@ import { serveStatic, log } from "./static";
 import { getSessionConfig, ensureAdminExists } from "./auth";
 import { demarrerRattrapage } from "./facebook/routes";
 import { demarrerRecapsChat } from "./chat-recap";
+import { demarrerCrm } from "./crm";
 import { rapatrierVisuelsExternes } from "./medias/rapatriement";
 
 const app = express();
@@ -138,6 +139,9 @@ app.get("/api/health", (_req, res) => {
   // Récapitulatifs par e-mail des conversations du chatbot (envoyés après
   // inactivité ; le balayage rattrape les sessions perdues au redéploiement).
   void demarrerRecapsChat();
+
+  // Pipeline commercial : table des leads et digest quotidien aux admissions.
+  void demarrerCrm();
 
   // Rattrapage profond ponctuel de la page Facebook : importe une seule fois
   // les 300 dernières publications (pagination par curseur) — photos et

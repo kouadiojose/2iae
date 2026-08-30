@@ -25,6 +25,36 @@ export const contacts = pgTable("contacts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Pipeline commercial : chaque visiteur qui laisse un contact devient un lead
+// suivi jusqu'à l'inscription. Stages : nouveau → contacte → relance →
+// visite → preinscrit → inscrit (ou perdu).
+export const leads = pgTable("leads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name"),
+  phone: text("phone"),
+  email: text("email"),
+  source: text("source").notNull().default("chatbot"), // chatbot | preinscription | contact
+  sessionId: text("session_id"),
+  campus: text("campus"),
+  filiere: text("filiere"),
+  stage: text("stage").notNull().default("nouveau"),
+  notes: text("notes"),
+  nextFollowUpAt: timestamp("next_follow_up_at"),
+  lastContactAt: timestamp("last_contact_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const STAGES_LEAD = [
+  "nouveau",
+  "contacte",
+  "relance",
+  "visite",
+  "preinscrit",
+  "inscrit",
+  "perdu",
+] as const;
+
 export const chatMessages = pgTable("chat_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sessionId: text("session_id").notNull(),
@@ -174,6 +204,28 @@ export const insertContactSchema = createInsertSchema(contacts).pick({
   email: true,
   phone: true,
   message: true,
+});
+
+export const insertLeadSchema = createInsertSchema(leads).pick({
+  name: true,
+  phone: true,
+  email: true,
+  source: true,
+  sessionId: true,
+  campus: true,
+  filiere: true,
+  notes: true,
+});
+
+export const updateLeadSchema = z.object({
+  name: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  campus: z.string().nullable().optional(),
+  filiere: z.string().nullable().optional(),
+  stage: z.enum(STAGES_LEAD).optional(),
+  notes: z.string().nullable().optional(),
+  nextFollowUpAt: z.coerce.date().nullable().optional(),
 });
 
 export const insertChatMessageSchema = createInsertSchema(chatMessages).pick({
@@ -379,6 +431,10 @@ export type InsertContact = z.infer<typeof insertContactSchema>;
 export type Contact = typeof contacts.$inferSelect;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type Lead = typeof leads.$inferSelect;
+export type InsertLead = z.infer<typeof insertLeadSchema>;
+export type UpdateLead = z.infer<typeof updateLeadSchema>;
+export type StageLead = (typeof STAGES_LEAD)[number];
 export type InsertAdminUser = z.infer<typeof insertAdminUserSchema>;
 export type AdminUser = typeof adminUsers.$inferSelect;
 export type InsertSiteContent = z.infer<typeof insertSiteContentSchema>;

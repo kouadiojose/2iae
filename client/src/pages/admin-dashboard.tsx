@@ -325,6 +325,27 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
 
+          <Card className="border-2 border-orange-400">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                🎯 Pipeline des leads
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-600 mb-4">
+                Suivez les prospects du site (chatbot, préinscriptions, contacts)
+                et leurs relances jusqu'à l'inscription.
+              </p>
+              <Button
+                onClick={() => setLocation("/admin/leads")}
+                className="w-full bg-orange-600 hover:bg-orange-700"
+                data-testid="button-manage-leads"
+              >
+                Gérer les leads
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">

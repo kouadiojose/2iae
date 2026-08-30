@@ -11,6 +11,10 @@ import multer from "multer";
 import { randomUUID } from "crypto";
 import { enregistrerRoutesFacebook } from "./facebook/routes";
 import { planifierRecap } from "./chat-recap";
+import { upsertLead, changerStage, traiterMessageChat } from "./crm";
+import { insertLeadSchema, updateLeadSchema, leads as tableLeads } from "@shared/schema";
+import { desc as descOrder, eq as eqLead } from "drizzle-orm";
+import { db as dbCrm } from "./db";
 import { notifierContact } from "./mail";
 
 // Pour ES modules, obtenir __dirname équivalent
@@ -244,6 +248,7 @@ RÉPONSES AUX OBJECTIONS COURANTES (à utiliser naturellement, jamais comme un s
 - « Je ne suis pas orienté par l'État » → Aucun problème : les candidats libres sont les bienvenus, même parcours de préinscription. Et si la personne EST orientée à 2IAE, félicite-la : son affectation vaut préinscription.
 
 MÉTHODE DE VENTE (consultative, jamais agressive):
+0. COLLECTE LE CONTACT tôt dans la conversation : après avoir répondu à la première question, propose naturellement « Laissez-moi votre numéro WhatsApp (et votre e-mail si vous voulez), un conseiller vous rappelle gratuitement ». Une seule fois — si la personne ne veut pas, n'insiste jamais et continue à l'aider normalement. Si elle donne un numéro ou un e-mail, remercie-la et confirme qu'un conseiller la recontactera très vite.
 1. DÉCOUVRE d'abord : pose une ou deux questions pour comprendre à qui tu parles (parent ou étudiant ? quelle série de BAC ou quel niveau ? quelle ville ? quel projet ?) avant de dérouler des arguments.
 2. RECOMMANDE ensuite : propose LA filière et LE campus qui collent à sa situation, avec 2-3 arguments ciblés — pas un catalogue complet.
 3. PROUVE : appuie-toi sur les chiffres officiels (résultats BTS, insertion, partenaires) plutôt que sur des superlatifs vides.
@@ -482,6 +487,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Notification e-mail en arrière-plan : le formulaire n'attend pas
       // l'envoi et ne peut pas échouer à cause de lui.
       void notifierContact(contact);
+      // Alimente le pipeline commercial : une préinscription entre directement
+      // à l'étape « préinscrit », un simple contact à « nouveau ». L'adresse
+      // bouche-trou du formulaire ne doit pas servir au dédoublonnage.
+      const estPreinscription = /pr[ée]-?inscription/i.test(contact.message.split("\n")[0] ?? "");
+      const emailReel = contact.email === "preinscription@2iae.com" ? null : contact.email;
+      const campus = contact.message.match(/Site souhaité : (.+)/)?.[1]?.trim();
+      const filiere = contact.message.match(/Filière : (.+)/)?.[1]?.trim();
+      void upsertLead({
+        name: contact.name,
+        phone: contact.phone,
+        email: emailReel,
+        source: estPreinscription ? "preinscription" : "contact",
+        stage: estPreinscription ? "preinscrit" : "nouveau",
+        campus: campus && campus !== "non précisé" ? campus : null,
+        filiere: filiere && filiere !== "non précisée" ? filiere : null,
+        note: `Formulaire ${estPreinscription ? "de préinscription" : "de contact"} : « ${contact.message.slice(0, 200)} »`,
+      }).catch((e) => console.error("❌ CRM (contact) :", (e as Error).message));
       res.json({ success: true, contact });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -495,6 +517,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           success: false, 
           message: "Erreur interne du serveur" 
         });
+      }
+    }
+  });
+
+  // Capture d'un lead depuis le site (formulaire du chatbot, notamment).
+  app.post("/api/leads", async (req, res) => {
+    try {
+      const donnees = insertLeadSchema.parse(req.body);
+      if (!donnees.phone && !donnees.email) {
+        return res.status(400).json({ success: false, message: "Téléphone ou e-mail requis" });
+      }
+      const lead = await upsertLead({
+        ...donnees,
+        note: donnees.notes || `Coordonnées laissées via ${donnees.source ?? "le site"}.`,
+      });
+      res.json({ success: true, leadId: lead?.id });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ success: false, message: "Données invalides" });
+      } else {
+        console.error("Lead error:", error);
+        res.status(500).json({ success: false, message: "Erreur interne du serveur" });
       }
     }
   });
@@ -558,8 +602,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         response
       });
 
-      // Un récap de la discussion part par e-mail après un temps d'inactivité.
+      // Un récap de la discussion part par e-mail après un temps d'inactivité,
+      // et tout numéro ou e-mail laissé dans le message alimente le pipeline.
       planifierRecap(sessionId);
+      void traiterMessageChat(sessionId, message);
 
       res.json({ 
         success: true, 
@@ -602,6 +648,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Use simple auth middleware  
   const requireAdmin = requireAuth;
+
+  // --- Pipeline commercial (leads) --------------------------------------
+  app.get("/api/admin/leads", requireAdmin, async (req, res) => {
+    try {
+      const stage = typeof req.query.stage === "string" ? req.query.stage : null;
+      const liste = stage
+        ? await dbCrm.select().from(tableLeads).where(eqLead(tableLeads.stage, stage)).orderBy(descOrder(tableLeads.updatedAt))
+        : await dbCrm.select().from(tableLeads).orderBy(descOrder(tableLeads.updatedAt));
+      res.json({ success: true, leads: liste });
+    } catch (error) {
+      console.error("Leads list error:", error);
+      res.status(500).json({ success: false, message: "Erreur lors de la récupération des leads" });
+    }
+  });
+
+  app.put("/api/admin/leads/:id", requireAdmin, async (req, res) => {
+    try {
+      const donnees = updateLeadSchema.parse(req.body);
+      const { stage, notes, ...champs } = donnees;
+      // Le changement d'étape passe par changerStage pour recalculer la
+      // prochaine relance ; les autres champs sont mis à jour directement.
+      if (Object.keys(champs).length > 0) {
+        await dbCrm.update(tableLeads).set({ ...champs, updatedAt: new Date() }).where(eqLead(tableLeads.id, req.params.id));
+      }
+      let lead;
+      if (stage) {
+        lead = await changerStage(req.params.id, stage, notes ?? undefined);
+      } else if (notes !== undefined) {
+        await dbCrm.update(tableLeads).set({ notes, updatedAt: new Date() }).where(eqLead(tableLeads.id, req.params.id));
+      }
+      if (!lead) {
+        [lead] = await dbCrm.select().from(tableLeads).where(eqLead(tableLeads.id, req.params.id));
+      }
+      if (!lead) return res.status(404).json({ success: false, message: "Lead introuvable" });
+      res.json({ success: true, lead });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ success: false, message: "Données invalides" });
+      } else {
+        console.error("Lead update error:", error);
+        res.status(500).json({ success: false, message: "Erreur lors de la mise à jour du lead" });
+      }
+    }
+  });
 
   // Get all site content (admin only)
   app.get("/api/admin/content", requireAdmin, async (req, res) => {

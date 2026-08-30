@@ -32,6 +32,38 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
   const [sessionId] = useState(() => `session-${Date.now()}-${Math.random()}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Collecte des coordonnées en début de discussion : le mini-formulaire
+  // disparaît dès qu'il est rempli ou passé, et n'est montré qu'une fois.
+  const [contactCollecte, setContactCollecte] = useState(false);
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadEnvoi, setLeadEnvoi] = useState(false);
+
+  const envoyerLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leadPhone.trim() && !leadEmail.trim()) return;
+    setLeadEnvoi(true);
+    try {
+      await apiRequest("/api/leads", "POST", {
+        phone: leadPhone.trim() || undefined,
+        email: leadEmail.trim() || undefined,
+        source: "chatbot",
+        sessionId,
+      });
+      setMessages(prev => [...prev, {
+        id: `lead-${Date.now()}`,
+        content: "Merci ! Un conseiller vous recontactera très vite. En attendant, je réponds à toutes vos questions 😊",
+        isBot: true,
+        timestamp: new Date()
+      }]);
+    } catch {
+      // Sans gravité : la conversation continue, l'assistant redemandera.
+    } finally {
+      setLeadEnvoi(false);
+      setContactCollecte(true);
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -181,6 +213,51 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
               </div>
             )}
             
+            {!contactCollecte && (
+              <div className="bg-muted rounded-lg p-3 space-y-2" data-testid="chatbot-lead-form">
+                <p className="text-xs font-semibold text-foreground">
+                  Laissez vos coordonnées, un conseiller vous rappelle gratuitement :
+                </p>
+                <form onSubmit={envoyerLead} className="space-y-2">
+                  <Input
+                    value={leadPhone}
+                    onChange={(e) => setLeadPhone(e.target.value)}
+                    placeholder="Numéro WhatsApp / téléphone"
+                    type="tel"
+                    className="h-8 text-sm bg-white"
+                    data-testid="input-lead-phone"
+                  />
+                  <Input
+                    value={leadEmail}
+                    onChange={(e) => setLeadEmail(e.target.value)}
+                    placeholder="E-mail (facultatif)"
+                    type="email"
+                    className="h-8 text-sm bg-white"
+                    data-testid="input-lead-email"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={leadEnvoi || (!leadPhone.trim() && !leadEmail.trim())}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground h-8"
+                      data-testid="button-lead-submit"
+                    >
+                      Être rappelé
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setContactCollecte(true)}
+                      className="text-xs text-muted-foreground underline"
+                      data-testid="button-lead-skip"
+                    >
+                      Plus tard
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>

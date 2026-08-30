@@ -26,6 +26,7 @@ import AdminNews from "@/pages/admin-news";
 import AdminProjects from "@/pages/admin-projects";
 import AdminTariffs from "@/pages/admin-tariffs";
 import AdminGallery from "@/pages/admin-gallery";
+import AdminLeads from "@/pages/admin-leads";
 import ProjectDetail from "@/pages/project-detail";
 import Galerie from "@/pages/galerie";
 import AlbumDetail from "@/pages/album-detail";
@@ -138,6 +139,11 @@ function Router() {
       <Route path="/admin/gallery">
         <AdminLayout>
           <AdminGallery />
+        </AdminLayout>
+      </Route>
+      <Route path="/admin/leads">
+        <AdminLayout>
+          <AdminLeads />
         </AdminLayout>
       </Route>
       

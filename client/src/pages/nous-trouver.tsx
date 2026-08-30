@@ -74,7 +74,7 @@ export default function NousTrouverPage() {
         </div>
         <div className="container mx-auto px-4 max-w-5xl mt-10 flex flex-wrap justify-center gap-8 text-gray-700">
           <span className="flex items-center gap-2">
-            <Phone className="h-5 w-5 text-primary" /> +225 05 84 24 90 90 (appel & WhatsApp) · 27 22 51 81 75 · WhatsApp 07 47 72 67 29
+            <Phone className="h-5 w-5 text-primary" /> +225 05 84 24 90 90 · 27 22 51 81 75 · WhatsApp 07 47 72 67 29
           </span>
           <span className="flex items-center gap-2">
             <Mail className="h-5 w-5 text-primary" /> contacts@2iae.com

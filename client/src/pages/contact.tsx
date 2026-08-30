@@ -43,7 +43,7 @@ const contactInfo = [
     details: [
       "(+225) 05 84 24 90 90",
       "(+225) 27 22 51 81 75",
-      "WhatsApp : (+225) 07 47 72 67 29",
+      "WhatsApp : (+225) 07 47 72 67 29 / 05 84 24 90 90",
     ],
     color: "secondary",
   },

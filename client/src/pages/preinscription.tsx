@@ -227,14 +227,20 @@ export default function PreinscriptionPage() {
             </Card>
           )}
 
-          <div className="mt-8 grid sm:grid-cols-2 gap-4 text-center">
+          <div className="mt-8 grid sm:grid-cols-3 gap-4 text-center">
             <a href={WHATSAPP} target="_blank" rel="noreferrer"
                className="flex items-center justify-center gap-2 border rounded-lg py-4 text-green-700 font-semibold hover:bg-green-50 transition-colors">
-              <MessageCircle className="h-5 w-5" /> Préinscription via WhatsApp
+              <MessageCircle className="h-5 w-5" /> WhatsApp 07 47 72 67 29
+            </a>
+            <a href={"https://wa.me/2250584249090?text=" +
+                encodeURIComponent("Bonjour, je souhaite faire ma préinscription au Groupe 2IAE.")}
+               target="_blank" rel="noreferrer"
+               className="flex items-center justify-center gap-2 border rounded-lg py-4 text-green-700 font-semibold hover:bg-green-50 transition-colors">
+              <MessageCircle className="h-5 w-5" /> WhatsApp 05 84 24 90 90
             </a>
             <a href="tel:+2250584249090"
                className="flex items-center justify-center gap-2 border rounded-lg py-4 text-gray-800 font-semibold hover:bg-gray-50 transition-colors">
-              <Phone className="h-5 w-5" /> +225 05 84 24 90 90
+              <Phone className="h-5 w-5" /> Appeler le 05 84 24 90 90
             </a>
           </div>
         </div>

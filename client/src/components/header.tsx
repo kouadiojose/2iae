@@ -66,6 +66,21 @@ export default function Header() {
     <header
       className={`bg-white shadow-lg sticky top-0 z-50 border-b border-border transition-shadow ${isScrolled ? "shadow-xl" : ""}`}
     >
+      {/* Bandeau supérieur — campus et préinscriptions */}
+      <div className="bg-[#1a1815] text-[#f0ede8]">
+        <div className="container mx-auto px-4 py-1.5 flex items-center justify-between text-[11px] sm:text-xs tracking-widest uppercase">
+          <span className="hidden md:inline text-[#a39d93]">
+            Abidjan Palmeraie · Yopougon · Yamoussoukro · Azaguié · M'Batto
+          </span>
+          <Link
+            href="/preinscription"
+            className="font-semibold text-[#F0A868] hover:text-white transition-colors mx-auto md:mx-0"
+            data-testid="link-bandeau-preinscription"
+          >
+            Préinscriptions ouvertes →
+          </Link>
+        </div>
+      </div>
       <div className="container mx-auto px-2 lg:px-4">
         <nav className="flex items-center justify-between py-1 lg:py-4">
           {/* Logo */}

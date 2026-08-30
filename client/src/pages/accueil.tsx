@@ -8,6 +8,7 @@ import { imageActualite, IMAGE_PAR_DEFAUT } from "@/lib/imageActualite";
 import { useSiteContent } from "@/hooks/useSiteContent";
 import { useQuery } from "@tanstack/react-query";
 import { type Slider, type FounderMessage, type Institute } from "@shared/schema";
+import { VideoYoutube } from "@/components/video-youtube";
 
 interface News {
   id: string;
@@ -72,25 +73,56 @@ function formatSlideData(slides: Slider[]): FormattedSlide[] {
 
 const features = [
   {
-    title: "Formation Digitalisée",
-    description: "Technologies éducatives de pointe",
-    icon: "💻"
+    title: "La ferme-école d'Azaguié",
+    description:
+      "Parcelles expérimentales, élevages, étang piscicole : les étudiants produisent et commercialisent réellement.",
+    icon: "🌾"
   },
   {
-    title: "Stages Garantis",
-    description: "Partenariats avec les entreprises",
-    icon: "🏢"
+    title: "Les chantiers-écoles",
+    description:
+      "Génie civil et filières industrielles : de vrais ouvrages, menés par les étudiants sous encadrement professionnel.",
+    icon: "🏗️"
   },
   {
-    title: "Diplômes Homologués",
-    description: "Reconnaissance internationale",
-    icon: "🎓"
+    title: "Le projet d'entreprise",
+    description:
+      "Chaque étudiant construit et soutient un projet de création d'entreprise, accompagné de l'idée au plan d'affaires.",
+    icon: "🚀"
   },
   {
-    title: "Accompagnement Personnalisé",
-    description: "Suivi individualisé",
+    title: "Le réseau pour se lancer",
+    description:
+      "Anciens, partenaires et programmes d'insertion (OIM, Union européenne, Agence Emploi Jeunes) pour passer du diplôme à l'activité.",
     icon: "🤝"
   }
+];
+
+const parcoursAdmission = [
+  {
+    n: "01",
+    titre: "Préinscription en ligne",
+    texte:
+      "Identité, contact et filière souhaitée. Aucun document requis à cette étape.",
+  },
+  {
+    n: "02",
+    titre: "Entretien d'orientation",
+    texte:
+      "Un conseiller vous rappelle rapidement pour valider votre projet et votre filière, sur campus ou par téléphone.",
+  },
+  {
+    n: "03",
+    titre: "Dépôt du dossier",
+    texte:
+      "Relevé de notes, extrait de naissance, photos d'identité. Dépôt sur le campus de votre choix.",
+  },
+  {
+    n: "04",
+    titre: "Inscription & rentrée",
+    texte:
+      "Confirmation de votre place, options internat, et accueil de rentrée sur votre campus.",
+  },
 ];
 
 // Recent News Grid Component
@@ -275,6 +307,64 @@ export default function AccueilPage() {
 
   return (
     <div className="min-h-screen mobile-safe">
+      {/* Hero éditorial — l'exigence et l'audace */}
+      <section className="gradient-bg text-white mobile-no-overflow">
+        <div className="container mx-auto mobile-padding py-20 lg:py-28">
+          <p className="text-xs sm:text-sm tracking-[0.25em] uppercase text-[#F0A868] mb-6" data-testid="text-hero-kicker">
+            Grande école · Côte d'Ivoire · Depuis 2006
+          </p>
+          <h1
+            className="font-serif text-4xl sm:text-5xl lg:text-7xl leading-[1.05] max-w-4xl"
+            data-testid="text-hero-title"
+          >
+            L'exigence forme les cadres.
+            <br />
+            <span className="text-[#F0A868]">L'audace forme les entrepreneurs.</span>
+          </h1>
+          <p className="mt-6 text-lg lg:text-xl text-white/80 max-w-2xl">
+            BTS, licences et certificats sur cinq campus. Ferme-école,
+            chantiers-écoles, internats : ici, on apprend un métier en le
+            pratiquant — et on apprend à créer son emploi.
+          </p>
+          <div className="mt-10 flex flex-col sm:flex-row gap-4">
+            <Link href="/preinscription">
+              <Button
+                className="bg-[#E8720C] hover:bg-[#c96208] text-white px-8 py-4 text-lg h-auto font-bold w-full sm:w-auto"
+                data-testid="button-hero-preinscription"
+              >
+                Se préinscrire
+              </Button>
+            </Link>
+            <Link href="/filieres">
+              <Button
+                variant="outline"
+                className="border-white/60 text-white hover:bg-white/10 px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
+                data-testid="button-hero-filieres"
+              >
+                Les filières
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Bande de chiffres — la preuve d'abord */}
+      <section className="bg-background border-b border-border mobile-no-overflow">
+        <div className="container mx-auto mobile-padding py-10 grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
+          {[
+            ["67,38 %", "d'admis au BTS 2026 — contre 42,48 % au niveau national"],
+            ["5", "campus avec internat, d'Abidjan aux terres agricoles"],
+            ["16", "filières BTS, licences et certificats"],
+            ["100 %", "des étudiants formés à l'entrepreneuriat"],
+          ].map(([n, l]) => (
+            <div key={l}>
+              <p className="font-serif text-4xl lg:text-5xl font-semibold text-primary">{n}</p>
+              <p className="text-sm text-muted-foreground mt-2 max-w-[220px] mx-auto">{l}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Hero Slider Section */}
       <section className="relative min-h-[80vh] lg:h-[70vh] overflow-hidden mobile-no-overflow">
         <div className="absolute inset-0 slider-gradient">
@@ -385,79 +475,6 @@ export default function AccueilPage() {
             </button>
           </div>
         )}
-      </section>
-
-      {/* Bandeau Rentrée — préinscriptions */}
-      <section className="py-14 bg-orange-500 text-white mobile-no-overflow">
-        <div className="container mx-auto mobile-padding">
-          <div className="text-center mb-8">
-            <h2
-              className="text-2xl sm:text-3xl lg:text-4xl font-extrabold"
-              data-testid="text-rentree-title"
-            >
-              Rentrée académique : les préinscriptions sont ouvertes !
-            </h2>
-            <p className="text-white/90 mt-3 max-w-3xl mx-auto text-lg">
-              Parents, futurs bacheliers : choisissez une école qui prouve ses
-              résultats et forme des jeunes capables de créer leur emploi.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-center mb-10">
-            <div>
-              <p className="text-3xl lg:text-4xl font-extrabold">67,38&nbsp;%</p>
-              <p className="text-sm text-white/90 mt-1">
-                d'admis au BTS 2026, contre 42,48&nbsp;% au niveau national
-              </p>
-            </div>
-            <div>
-              <p className="text-3xl lg:text-4xl font-extrabold">500+</p>
-              <p className="text-sm text-white/90 mt-1">
-                jeunes formés et insérés avec l'Agence Emploi Jeunes
-              </p>
-            </div>
-            <div>
-              <p className="text-3xl lg:text-4xl font-extrabold">Internat</p>
-              <p className="text-sm text-white/90 mt-1">
-                un cadre sécurisé sur le campus de l'Université de
-                l'Entrepreneuriat à Azaguié
-              </p>
-            </div>
-            <div>
-              <p className="text-3xl lg:text-4xl font-extrabold">Canada</p>
-              <p className="text-sm text-white/90 mt-1">
-                des partenariats internationaux, dont l'Université de
-                Sherbrooke
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/preinscription">
-              <Button
-                className="bg-white text-orange-600 hover:bg-white/90 px-8 py-4 text-lg h-auto font-bold w-full sm:w-auto"
-                data-testid="button-rentree-preinscription"
-              >
-                Je fais ma préinscription
-              </Button>
-            </Link>
-            <Link href="/tarifs">
-              <Button
-                className="bg-gray-900 text-white hover:bg-gray-800 px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
-                data-testid="button-rentree-tarifs"
-              >
-                Voir les tarifs par site
-              </Button>
-            </Link>
-            <Link href="/instituts">
-              <Button
-                variant="outline"
-                className="border-white text-white hover:bg-white/10 px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
-                data-testid="button-rentree-filieres"
-              >
-                Filières et débouchés
-              </Button>
-            </Link>
-          </div>
-        </div>
       </section>
 
       {/* Founder Message Section */}
@@ -700,11 +717,16 @@ export default function AccueilPage() {
       <section className="py-20 bg-background mobile-no-overflow">
         <div className="container mx-auto mobile-padding">
           <div className="text-center mb-16">
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-4 text-foreground" data-testid="text-features-title">
-              Pourquoi Nous Choisir ?
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+              Entrepreneuriat & pédagogie par la pratique
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl mb-4 text-foreground" data-testid="text-features-title">
+              On n'enseigne pas l'entreprise. On la fait vivre.
             </h2>
             <p className="text-lg lg:text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="text-features-subtitle">
-              Une approche moderne et professionnelle de l'enseignement entrepreneurial
+              Tout étudiant 2IAE, quelle que soit sa filière, suit un parcours
+              de création d'entreprise et apprend son métier en conditions
+              réelles.
             </p>
           </div>
           
@@ -728,22 +750,130 @@ export default function AccueilPage() {
         </div>
       </section>
 
+      {/* Parcours d'admission */}
+      <section className="py-20 bg-background mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
+          <div className="text-center mb-14">
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+              Admissions · Rentrée 2026-2027
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl text-foreground">
+              Votre préinscription en cinq minutes.
+            </h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
+            {parcoursAdmission.map((e) => (
+              <div key={e.n} className="relative">
+                <p className="font-serif text-5xl text-primary/30 font-semibold">{e.n}</p>
+                <h3 className="text-lg font-bold text-foreground mt-2">{e.titre}</h3>
+                <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{e.texte}</p>
+              </div>
+            ))}
+          </div>
+          <div className="max-w-3xl mx-auto mt-12 bg-muted rounded-xl p-6 text-center">
+            <p className="font-semibold text-foreground">Étudiants orientés par l'État</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              2IAE accueille les bacheliers orientés par la Direction de
+              l'Orientation et des Bourses : votre affectation vaut
+              préinscription, contactez directement votre campus.
+            </p>
+          </div>
+          <div className="text-center mt-10">
+            <Link href="/preinscription">
+              <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white px-10 py-4 text-lg h-auto font-bold">
+                Commencer ma préinscription
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Internat */}
+      <section className="gradient-bg text-white mobile-no-overflow">
+        <div className="container mx-auto mobile-padding py-16 grid lg:grid-cols-2 gap-10 items-center">
+          <div>
+            <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">
+              L'internat 2IAE
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl leading-tight">
+              Étudier, dormir, réussir — au même endroit.
+            </h2>
+          </div>
+          <div>
+            <p className="text-white/85 text-lg leading-relaxed">
+              Chambres encadrées, restauration, études surveillées le soir.
+              L'internat de l'Université de l'Entrepreneuriat d'Azaguié offre
+              aux étudiants venus de toute la Côte d'Ivoire un cadre sûr,
+              propice au travail — et rassurant pour les parents.
+            </p>
+            <Link href="/preinscription">
+              <Button className="mt-6 bg-white text-[#1a1815] hover:bg-white/90 font-bold px-8 py-3 h-auto">
+                Demander une place
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Partenaires de confiance */}
+      <section className="py-16 bg-background mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
+          <p className="text-xs tracking-[0.25em] uppercase text-primary mb-8 text-center">
+            Ils nous font confiance
+          </p>
+          <div className="grid sm:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {[
+              ["OIM — Nations Unies", "Partenaire des programmes de réinsertion : formation pratique de centaines de migrants de retour, sur le campus d'Azaguié."],
+              ["Union européenne", "Programmes de formation et d'insertion professionnelle pour les jeunes."],
+              ["Agence Emploi Jeunes", "Plus de 500 jeunes formés et insérés dans le bâtiment et l'agriculture."],
+            ].map(([t, d]) => (
+              <Card key={t} className="professional-shadow border-0">
+                <CardContent className="p-6">
+                  <h3 className="font-bold text-foreground">{t}</h3>
+                  <p className="text-muted-foreground text-sm mt-2">{d}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Témoignages vidéo — de vrais étudiants */}
+      <section className="py-20 bg-muted mobile-no-overflow">
+        <div className="container mx-auto mobile-padding">
+          <div className="text-center mb-12">
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+              Résultats & réussite
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl text-foreground">
+              Les chiffres parlent. Nos étudiants aussi.
+            </h2>
+          </div>
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
+            <VideoYoutube id="OaseOLm8en4" titre="Témoignage étudiants 2IAE — la pratique" />
+            <VideoYoutube id="k_nQqttfZJA" titre="Tout le monde a sa place au Groupe 2IAE" />
+            <VideoYoutube id="FnnI71-42xQ" titre="Témoignage des étudiants admissibles au BTS" />
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="py-20 gradient-bg text-white mobile-no-overflow">
         <div className="container mx-auto mobile-padding text-center">
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-6" data-testid="text-cta-title">
-            Prêt à Rejoindre l'Élite de Demain ?
+            Écrivez la prochaine réussite.
           </h2>
           <p className="text-lg lg:text-xl mb-8 text-white/90 max-w-2xl mx-auto" data-testid="text-cta-subtitle">
-            Découvrez nos programmes de formation et commencez votre parcours entrepreneurial dès aujourd'hui
+            La préinscription prend cinq minutes, elle est gratuite et sans
+            engagement — un conseiller vous rappelle pour la suite.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/contact">
-              <Button 
+            <Link href="/preinscription">
+              <Button
                 className="bg-white text-primary hover:bg-white/90 px-8 py-4 text-lg h-auto font-semibold"
                 data-testid="button-cta-contact"
               >
-                Nous Contacter
+                Se préinscrire
               </Button>
             </Link>
             <Link href="/filieres">

@@ -67,6 +67,33 @@ export async function envoyerEmail(opts: {
       });
       if (!rep.ok) {
         const corps = await rep.text();
+        // Compte Resend en mode test (domaine non vérifié) : seul le
+        // propriétaire du compte peut recevoir. On se replie sur son adresse
+        // pour ne perdre aucune notification ; ce repli disparaît de lui-même
+        // dès que le domaine est vérifié.
+        const test = corps.match(/your own email address \(([^)]+)\)/);
+        if (rep.status === 403 && test) {
+          const secours = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: process.env.RESEND_FROM || "Site 2IAE <onboarding@resend.dev>",
+              to: [test[1]],
+              reply_to: replyTo,
+              subject: `${opts.subject} [domaine Resend non vérifié]`,
+              text:
+                `⚠️ Destinataires prévus : ${opts.to} — livrés ici car le domaine ` +
+                `n'est pas encore vérifié sur resend.com/domains.\n\n` + opts.text,
+            }),
+          });
+          if (secours.ok) {
+            console.warn(`📮 Resend en mode test : notification livrée à ${test[1]} (repli).`);
+            return true;
+          }
+        }
         console.error(`❌ Resend ${rep.status} : ${corps.slice(0, 300)}`);
         return false;
       }

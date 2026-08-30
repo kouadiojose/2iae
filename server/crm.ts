@@ -8,7 +8,7 @@ import { chatMessages, leads, type Lead, type StageLead } from "@shared/schema";
 import { envoyerEmail, emailConfigure } from "./mail";
 import { alerterWhatsApp } from "./whatsapp";
 
-const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr")
+const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com")
   .split(",")
   .map((a) => a.trim())
   .filter(Boolean);

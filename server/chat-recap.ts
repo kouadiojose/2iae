@@ -10,7 +10,7 @@ import { envoyerEmail, emailConfigure } from "./mail";
 const INACTIVITE_MS = 10 * 60 * 1000; // silence après lequel la discussion est close
 const BALAYAGE_MS = 5 * 60 * 1000;
 
-const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr")
+const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com")
   .split(",")
   .map((a) => a.trim())
   .filter(Boolean);

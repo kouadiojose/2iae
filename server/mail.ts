@@ -16,7 +16,7 @@ import nodemailer from "nodemailer";
 import type { Contact } from "@shared/schema";
 
 // Plusieurs destinataires possibles, séparés par des virgules dans CONTACT_EMAIL.
-const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr")
+const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com")
   .split(",")
   .map((a) => a.trim())
   .filter(Boolean);

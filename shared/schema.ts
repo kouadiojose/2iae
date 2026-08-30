@@ -68,6 +68,8 @@ export const adminUsers = pgTable("admin_users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   email: text("email").notNull(),
+  // « admin » = accès complet ; « leads » = uniquement le pipeline des leads.
+  role: text("role").notNull().default("admin"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic, log } from "./static";
-import { getSessionConfig, ensureAdminExists } from "./auth";
+import { getSessionConfig, ensureAdminExists, ensureLeadsUserExists } from "./auth";
 import { demarrerRattrapage } from "./facebook/routes";
 import { demarrerRecapsChat } from "./chat-recap";
 import { demarrerCrm } from "./crm";
@@ -126,6 +126,7 @@ app.get("/api/health", (_req, res) => {
 (async () => {
   // 🔐 Ensure admin user exists
   await ensureAdminExists();
+  await ensureLeadsUserExists();
 
   // Setup routes FIRST before Vite
   const server = await registerRoutes(app);

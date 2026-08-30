@@ -640,17 +640,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Simple auth routes
-  const { requireAuth, handleLogin, handleLogout, handleAuthCheck } = await import('./auth.js');
-  
+  const { requireAuth, requireFullAdmin, handleLogin, handleLogout, handleAuthCheck } = await import('./auth.js');
+
   app.post("/api/admin/login", handleLogin);
   app.post("/api/admin/logout", handleLogout);
   app.get("/api/admin/me", handleAuthCheck);
 
-  // Use simple auth middleware  
-  const requireAdmin = requireAuth;
+  // Accès complet pour l'administration du site ; le pipeline des leads
+  // (ci-dessous) reste accessible au rôle restreint « leads ».
+  const requireAdmin = requireFullAdmin;
 
   // --- Pipeline commercial (leads) --------------------------------------
-  app.get("/api/admin/leads", requireAdmin, async (req, res) => {
+  app.get("/api/admin/leads", requireAuth, async (req, res) => {
     try {
       const stage = typeof req.query.stage === "string" ? req.query.stage : null;
       const liste = stage
@@ -663,7 +664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/admin/leads/:id", requireAdmin, async (req, res) => {
+  app.put("/api/admin/leads/:id", requireAuth, async (req, res) => {
     try {
       const donnees = updateLeadSchema.parse(req.body);
       const { stage, notes, ...champs } = donnees;

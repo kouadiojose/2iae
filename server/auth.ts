@@ -57,11 +57,24 @@ export const requireAuth: RequestHandler = (req: any, res, next) => {
     req.admin = req.session.admin;
     next();
   } else {
-    res.status(401).json({ 
-      success: false, 
-      message: 'Authentication required' 
+    res.status(401).json({
+      success: false,
+      message: 'Authentication required'
     });
   }
+};
+
+// Accès complet : réservé aux administrateurs (le rôle « leads » ne voit que
+// le pipeline des leads).
+export const requireFullAdmin: RequestHandler = (req: any, res, next) => {
+  if (!(req.session?.adminId && req.session?.admin)) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+  if (req.session.admin.role === 'leads') {
+    return res.status(403).json({ success: false, message: 'Accès réservé aux administrateurs' });
+  }
+  req.admin = req.session.admin;
+  next();
 };
 
 // 🔐 SECURE LOGIN HANDLER
@@ -98,7 +111,8 @@ export async function handleLogin(req: any, res: any) {
     req.session.admin = {
       id: admin.id,
       username: admin.username,
-      email: admin.email
+      email: admin.email,
+      role: (admin as any).role || 'admin'
     };
 
     // Session created successfully
@@ -108,7 +122,8 @@ export async function handleLogin(req: any, res: any) {
       admin: {
         id: admin.id,
         username: admin.username,
-        email: admin.email
+        email: admin.email,
+        role: (admin as any).role || 'admin'
       },
       message: 'Connexion réussie'
     });
@@ -154,6 +169,30 @@ export function handleAuthCheck(req: any, res: any) {
       success: false,
       message: 'Non authentifié'
     });
+  }
+}
+
+// Compte restreint « leads » : accès uniquement au pipeline des leads.
+// Créé au premier démarrage avec un mot de passe aléatoire affiché une seule
+// fois dans les journaux du serveur (jamais stocké en clair ni dans le code).
+export async function ensureLeadsUserExists() {
+  try {
+    // La colonne de rôle est ajoutée à la volée sur les bases existantes.
+    await pool.query(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'`);
+    const existant = await storage.getAdminUserByUsername('leads');
+    if (existant) return;
+    const { randomBytes } = await import('crypto');
+    // Mot de passe lisible mais robuste : 16 caractères alphanumériques.
+    const motDePasse = randomBytes(12).toString('base64').replace(/[+/=]/g, '').slice(0, 16);
+    const cree = await storage.createAdminUser({
+      username: 'leads',
+      password: motDePasse,
+      email: 'ptchimou92@gmail.com',
+    });
+    await pool.query(`UPDATE admin_users SET role = 'leads' WHERE id = $1`, [cree.id]);
+    console.log(`✅ Compte « leads » créé (accès limité au pipeline). Identifiants — utilisateur : leads / mot de passe : ${motDePasse} — notez-le, il ne sera plus jamais affiché.`);
+  } catch (error) {
+    console.error('Erreur lors de la création du compte leads :', error);
   }
 }
 

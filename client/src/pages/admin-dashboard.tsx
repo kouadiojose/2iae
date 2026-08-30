@@ -52,7 +52,11 @@ export default function AdminDashboard() {
     if (!isLoading && !isAuthenticated) {
       setLocation("/admin/login");
     }
-  }, [isAuthenticated, isLoading, setLocation]);
+    // Le rôle restreint « leads » n'a accès qu'au pipeline des leads.
+    if (!isLoading && isAuthenticated && (admin as any)?.role === "leads") {
+      setLocation("/admin/leads");
+    }
+  }, [isAuthenticated, isLoading, admin, setLocation]);
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {

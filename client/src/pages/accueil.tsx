@@ -305,23 +305,56 @@ export default function AccueilPage() {
     setCurrentSlide(index);
   };
 
+  // Fond du hero : les photos réelles des bannières (campus, vie du groupe)
+  // en fondu-enchaîné lent, sous un voile dégradé blanc → orange léger.
+  const heroImages = heroSlides
+    .map((s) => s.image)
+    .filter(Boolean)
+    .slice(0, 5);
+  const [heroIdx, setHeroIdx] = useState(0);
+  useEffect(() => {
+    if (heroImages.length < 2) return;
+    const t = setInterval(
+      () => setHeroIdx((p) => (p + 1) % heroImages.length),
+      6000,
+    );
+    return () => clearInterval(t);
+  }, [heroImages.length]);
+
   return (
     <div className="min-h-screen mobile-safe">
-      {/* Hero éditorial — l'exigence et l'audace */}
-      <section className="gradient-bg text-white mobile-no-overflow">
-        <div className="container mx-auto mobile-padding py-20 lg:py-28">
-          <p className="text-xs sm:text-sm tracking-[0.25em] uppercase text-[#F0A868] mb-6" data-testid="text-hero-kicker">
+      {/* Hero éditorial — photos du campus sous un voile blanc → orange léger */}
+      <section className="relative overflow-hidden mobile-no-overflow">
+        {heroImages.map((img, i) => (
+          <img
+            key={img}
+            src={img}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-[2000ms]"
+            style={{ opacity: i === heroIdx ? 1 : 0 }}
+          />
+        ))}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(100deg, rgba(255,255,255,0.96) 0%, rgba(255,250,244,0.9) 42%, rgba(255,243,230,0.72) 68%, rgba(232,114,12,0.28) 100%)",
+          }}
+        />
+        <div className="relative container mx-auto mobile-padding py-20 lg:py-28">
+          <p className="text-xs sm:text-sm tracking-[0.25em] uppercase text-[#E8720C] mb-6" data-testid="text-hero-kicker">
             Grande école · Côte d'Ivoire · Depuis 2006
           </p>
           <h1
-            className="font-serif text-4xl sm:text-5xl lg:text-7xl leading-[1.05] max-w-4xl"
+            className="font-serif text-4xl sm:text-5xl lg:text-7xl leading-[1.05] max-w-4xl text-[#1a1815]"
             data-testid="text-hero-title"
           >
             L'exigence forme les cadres.
             <br />
-            <span className="text-[#F0A868]">L'audace forme les entrepreneurs.</span>
+            <span className="text-[#E8720C]">L'audace forme les entrepreneurs.</span>
           </h1>
-          <p className="mt-6 text-lg lg:text-xl text-white/80 max-w-2xl">
+          <p className="mt-6 text-lg lg:text-xl text-[#3d382f] max-w-2xl">
             BTS, licences et certificats sur cinq campus. Ferme-école,
             chantiers-écoles, internats : ici, on apprend un métier en le
             pratiquant — et on apprend à créer son emploi.
@@ -329,7 +362,7 @@ export default function AccueilPage() {
           <div className="mt-10 flex flex-col sm:flex-row gap-4">
             <Link href="/preinscription">
               <Button
-                className="bg-[#E8720C] hover:bg-[#c96208] text-white px-8 py-4 text-lg h-auto font-bold w-full sm:w-auto"
+                className="bg-[#E8720C] hover:bg-[#c96208] text-white px-8 py-4 text-lg h-auto font-bold w-full sm:w-auto shadow-lg"
                 data-testid="button-hero-preinscription"
               >
                 Se préinscrire
@@ -338,7 +371,7 @@ export default function AccueilPage() {
             <Link href="/filieres">
               <Button
                 variant="outline"
-                className="border-white/60 text-white hover:bg-white/10 px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
+                className="border-[#1a1815]/40 text-[#1a1815] bg-white/70 hover:bg-white px-8 py-4 text-lg h-auto font-semibold w-full sm:w-auto"
                 data-testid="button-hero-filieres"
               >
                 Les filières

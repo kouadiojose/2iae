@@ -305,41 +305,25 @@ export default function AccueilPage() {
     setCurrentSlide(index);
   };
 
-  // Fond du hero : les photos réelles des bannières (campus, vie du groupe)
-  // en fondu-enchaîné lent, sous un voile dégradé blanc → orange léger.
-  const heroImages = heroSlides
-    .map((s) => s.image)
-    .filter(Boolean)
-    .slice(0, 5);
-  const [heroIdx, setHeroIdx] = useState(0);
-  useEffect(() => {
-    if (heroImages.length < 2) return;
-    const t = setInterval(
-      () => setHeroIdx((p) => (p + 1) % heroImages.length),
-      6000,
-    );
-    return () => clearInterval(t);
-  }, [heroImages.length]);
+  // Fond du hero : une photo fixe, en filigrane sous le voile blanc → orange.
+  // Étudiants à la ferme-école d'Azaguié — la pédagogie pratique, sans texte.
+  const heroImage = "/api/assets/facebook/fb_c55f08d91e9759a2.jpg";
 
   return (
     <div className="min-h-screen mobile-safe">
-      {/* Hero éditorial — photos du campus sous un voile blanc → orange léger */}
+      {/* Hero éditorial — photo fixe en filigrane sous un voile blanc → orange léger */}
       <section className="relative overflow-hidden mobile-no-overflow">
-        {heroImages.map((img, i) => (
-          <img
-            key={img}
-            src={img}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-[2000ms]"
-            style={{ opacity: i === heroIdx ? 1 : 0 }}
-          />
-        ))}
+        <img
+          src={heroImage}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover object-[70%_30%]"
+        />
         <div
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(100deg, rgba(255,255,255,0.96) 0%, rgba(255,250,244,0.9) 42%, rgba(255,243,230,0.72) 68%, rgba(232,114,12,0.28) 100%)",
+              "linear-gradient(100deg, rgba(255,255,255,0.97) 0%, rgba(255,251,246,0.94) 45%, rgba(255,243,230,0.82) 70%, rgba(240,168,104,0.55) 100%)",
           }}
         />
         <div className="relative container mx-auto mobile-padding py-20 lg:py-28">

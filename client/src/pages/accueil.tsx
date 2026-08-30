@@ -373,6 +373,45 @@ export default function AccueilPage() {
         </div>
       </section>
 
+      {/* Le spot de la rentrée — visible dès l'arrivée, juste sous le hero */}
+      <section className="bg-[#1a1815] mobile-no-overflow">
+        <div className="container mx-auto mobile-padding py-12 lg:py-16">
+          <div className="text-center mb-8">
+            <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">
+              À voir · Rentrée 2026-2027
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl text-white">
+              Comment choisir une école d'excellence ?
+            </h2>
+            <p className="text-white/70 mt-3 max-w-2xl mx-auto">
+              64 secondes pour comprendre ce qui fait la différence — activez
+              le son 🔊
+            </p>
+          </div>
+          <div className="max-w-4xl mx-auto rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+            <video
+              className="w-full h-auto block bg-black"
+              src="/videos/spot-rentree.mp4"
+              poster="/videos/spot-rentree-poster.jpg"
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              preload="metadata"
+              data-testid="video-spot-rentree"
+            />
+          </div>
+          <div className="text-center mt-8">
+            <Link href="/preinscription">
+              <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white px-8 py-3 h-auto font-bold">
+                Je choisis 2IAE — je me préinscris
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Bande de chiffres — la preuve d'abord */}
       <section className="bg-background border-b border-border mobile-no-overflow">
         <div className="container mx-auto mobile-padding py-10 grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">

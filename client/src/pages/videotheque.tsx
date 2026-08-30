@@ -86,6 +86,29 @@ export default function VideothequePage() {
         </div>
       </section>
 
+      {/* À la une — le spot de la rentrée */}
+      <section className="py-14 bg-[#1a1815]">
+        <div className="container mx-auto px-4">
+          <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3 text-center">
+            À la une · Rentrée 2026-2027
+          </p>
+          <h2 className="font-serif text-2xl sm:text-3xl text-white text-center mb-8">
+            Comment choisir une école d'excellence ?
+          </h2>
+          <div className="max-w-4xl mx-auto rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+            <video
+              className="w-full h-auto block bg-black"
+              src="/videos/spot-rentree.mp4"
+              poster="/videos/spot-rentree-poster.jpg"
+              controls
+              playsInline
+              preload="metadata"
+              data-testid="video-videotheque-spot"
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="py-16 bg-white">
         <div className="container mx-auto px-4 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {VIDEOS.map((v) => (

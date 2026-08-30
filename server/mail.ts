@@ -5,7 +5,8 @@
 //
 // Deux transports, dans cet ordre de préférence :
 //   1. Resend  — RESEND_API_KEY (et RESEND_FROM une fois un domaine vérifié,
-//      ex. « Groupe 2IAE <contact@2iae.com> » ; défaut : onboarding@resend.dev)
+//      ex. « Groupe 2IAE <contact@2iae.com> » ; défaut : contact@2iae.com,
+//      le domaine 2iae.com étant vérifié sur Resend)
 //   2. SMTP    — SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS
 //
 // Sans configuration, l'envoi est simplement ignoré (les messages restent
@@ -20,6 +21,9 @@ const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2
   .map((a) => a.trim())
   .filter(Boolean);
 const REPONDRE_A = process.env.REPLY_TO_EMAIL || "ptchimou92@gmail.com";
+// Le domaine 2iae.com est vérifié sur Resend : l'expéditeur officiel est
+// utilisé par défaut, RESEND_FROM permet d'en changer sans redéployer.
+const EXPEDITEUR_DEFAUT = "Groupe 2IAE <contact@2iae.com>";
 
 function transport() {
   const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
@@ -58,7 +62,7 @@ export async function envoyerEmail(opts: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || "Site 2IAE <onboarding@resend.dev>",
+          from: process.env.RESEND_FROM || EXPEDITEUR_DEFAUT,
           to: opts.to.split(",").map((a) => a.trim()).filter(Boolean),
           reply_to: replyTo,
           subject: opts.subject,
@@ -80,7 +84,7 @@ export async function envoyerEmail(opts: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              from: process.env.RESEND_FROM || "Site 2IAE <onboarding@resend.dev>",
+              from: process.env.RESEND_FROM || EXPEDITEUR_DEFAUT,
               to: [test[1]],
               reply_to: replyTo,
               subject: `${opts.subject} [domaine Resend non vérifié]`,

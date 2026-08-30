@@ -412,20 +412,44 @@ export default function AccueilPage() {
         </div>
       </section>
 
-      {/* Bande de chiffres — la preuve d'abord */}
+      {/* Résultats BTS 2026 — l'affiche officielle et les preuves */}
       <section className="bg-background border-b border-border mobile-no-overflow">
-        <div className="container mx-auto mobile-padding py-10 grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
-          {[
-            ["67,38 %", "d'admis au BTS 2026 — contre 42,48 % au niveau national"],
-            ["5", "campus avec internat, d'Abidjan aux terres agricoles"],
-            ["16", "filières BTS, licences et certificats"],
-            ["100 %", "des étudiants formés à l'entrepreneuriat"],
-          ].map(([n, l]) => (
-            <div key={l}>
-              <p className="font-serif text-4xl lg:text-5xl font-semibold text-primary">{n}</p>
-              <p className="text-sm text-muted-foreground mt-2 max-w-[220px] mx-auto">{l}</p>
+        <div className="container mx-auto mobile-padding py-14 grid lg:grid-cols-2 gap-10 items-center">
+          <div className="order-2 lg:order-1">
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+              Résultats · BTS 2026 · 20 ans au service de l'excellence
+            </p>
+            <h2 className="font-serif text-3xl sm:text-4xl text-foreground mb-6">
+              67,38 % d'admis. La preuve que l'exigence paie.
+            </h2>
+            <div className="grid grid-cols-2 gap-6">
+              {[
+                ["83,54 %", "d'admis à 2IAE Azaguié — le campus de l'Université de l'Entrepreneuriat"],
+                ["67,38 %", "taux global de nos écoles, contre 42,48 % au niveau national"],
+                ["100 %", "de stages garantis pour nos étudiants"],
+                ["+80 %", "des diplômés insérés dans l'emploi"],
+              ].map(([n, l]) => (
+                <div key={l}>
+                  <p className="font-serif text-3xl lg:text-4xl font-semibold text-primary">{n}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{l}</p>
+                </div>
+              ))}
             </div>
-          ))}
+            <Link href="/preinscription">
+              <Button className="mt-8 bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto">
+                Rejoindre une école qui prouve ses résultats
+              </Button>
+            </Link>
+          </div>
+          <div className="order-1 lg:order-2">
+            <img
+              src="/images/resultats-bts-2026.jpg"
+              alt="Résultats provisoires BTS 2026 du Groupe 2IAE : Azaguié 83,54 %, Yamoussoukro 68,18 %, Yopougon 64,13 %, Palmeraie 58,40 % — taux global 67,38 % contre 42,48 % au national"
+              loading="lazy"
+              className="w-full max-w-xl mx-auto rounded-xl professional-shadow"
+              data-testid="img-resultats-2026"
+            />
+          </div>
         </div>
       </section>
 

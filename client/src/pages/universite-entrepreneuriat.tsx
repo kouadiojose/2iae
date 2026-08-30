@@ -53,6 +53,9 @@ export default function UniversiteEntrepreneuriatPage() {
             Le campus d'Azaguié Ahoua : un site dédié à la formation pratique,
             à l'expérimentation et à l'incubation
           </p>
+          <p className="mt-6 inline-block bg-[#E8720C] text-white font-bold px-5 py-2 rounded-full">
+            83,54 % d'admis au BTS 2026 — le meilleur taux du groupe
+          </p>
         </div>
       </section>
 

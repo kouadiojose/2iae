@@ -53,7 +53,7 @@ function PublicLayout({ children }: { children: React.ReactNode }) {
       {/* WhatsApp — canal de contact privilégié pour la préinscription */}
       <a
         href={
-          "https://wa.me/2250707578282?text=" +
+          "https://wa.me/2250747726729?text=" +
           encodeURIComponent(
             "Bonjour, je souhaite des informations pour la préinscription au Groupe 2IAE.",
           )

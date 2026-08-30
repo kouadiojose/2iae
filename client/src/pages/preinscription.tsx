@@ -51,7 +51,7 @@ const FILIERES = [
   "Je souhaite être conseillé(e)",
 ];
 
-const WHATSAPP = "https://wa.me/2250707578282?text=" +
+const WHATSAPP = "https://wa.me/2250747726729?text=" +
   encodeURIComponent("Bonjour, je souhaite faire ma préinscription au Groupe 2IAE.");
 
 export default function PreinscriptionPage() {

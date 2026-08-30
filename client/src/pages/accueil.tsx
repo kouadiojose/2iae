@@ -388,19 +388,38 @@ export default function AccueilPage() {
               le son 🔊
             </p>
           </div>
-          <div className="max-w-4xl mx-auto rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
-            <video
-              className="w-full h-auto block bg-black"
-              src="/videos/spot-rentree.mp4"
-              poster="/videos/spot-rentree-poster.jpg"
-              autoPlay
-              muted
-              loop
-              playsInline
-              controls
-              preload="metadata"
-              data-testid="video-spot-rentree"
-            />
+          <div className="grid lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
+            <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+              <video
+                className="w-full h-auto block bg-black"
+                src="/videos/spot-rentree.mp4"
+                poster="/videos/spot-rentree-poster.jpg"
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                preload="metadata"
+                data-testid="video-spot-rentree"
+              />
+              <p className="bg-black/80 text-white/90 text-sm px-4 py-3">
+                Comment choisir une école d'excellence ?
+              </p>
+            </div>
+            <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+              <video
+                className="w-full h-auto block bg-black"
+                src="/videos/spot-20-ans.mp4"
+                poster="/videos/spot-20-ans-poster.jpg"
+                playsInline
+                controls
+                preload="metadata"
+                data-testid="video-spot-20-ans"
+              />
+              <p className="bg-black/80 text-white/90 text-sm px-4 py-3">
+                20 ans au service de la Nation — le film du groupe
+              </p>
+            </div>
           </div>
           <div className="text-center mt-8">
             <Link href="/preinscription">

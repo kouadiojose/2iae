@@ -95,16 +95,35 @@ export default function VideothequePage() {
           <h2 className="font-serif text-2xl sm:text-3xl text-white text-center mb-8">
             Comment choisir une école d'excellence ?
           </h2>
-          <div className="max-w-4xl mx-auto rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
-            <video
-              className="w-full h-auto block bg-black"
-              src="/videos/spot-rentree.mp4"
-              poster="/videos/spot-rentree-poster.jpg"
-              controls
-              playsInline
-              preload="metadata"
-              data-testid="video-videotheque-spot"
-            />
+          <div className="grid lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
+            <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+              <video
+                className="w-full h-auto block bg-black"
+                src="/videos/spot-rentree.mp4"
+                poster="/videos/spot-rentree-poster.jpg"
+                controls
+                playsInline
+                preload="metadata"
+                data-testid="video-videotheque-spot"
+              />
+              <p className="bg-black/60 text-white/90 text-sm px-4 py-3">
+                Comment choisir une école d'excellence ?
+              </p>
+            </div>
+            <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+              <video
+                className="w-full h-auto block bg-black"
+                src="/videos/spot-20-ans.mp4"
+                poster="/videos/spot-20-ans-poster.jpg"
+                controls
+                playsInline
+                preload="metadata"
+                data-testid="video-videotheque-spot-20ans"
+              />
+              <p className="bg-black/60 text-white/90 text-sm px-4 py-3">
+                20 ans au service de la Nation — le film du groupe
+              </p>
+            </div>
           </div>
         </div>
       </section>

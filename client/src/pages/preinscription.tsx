@@ -232,9 +232,9 @@ export default function PreinscriptionPage() {
                className="flex items-center justify-center gap-2 border rounded-lg py-4 text-green-700 font-semibold hover:bg-green-50 transition-colors">
               <MessageCircle className="h-5 w-5" /> Préinscription via WhatsApp
             </a>
-            <a href="tel:+2250707578282"
+            <a href="tel:+2250584249090"
                className="flex items-center justify-center gap-2 border rounded-lg py-4 text-gray-800 font-semibold hover:bg-gray-50 transition-colors">
-              <Phone className="h-5 w-5" /> +225 07 07 57 82 82
+              <Phone className="h-5 w-5" /> +225 05 84 24 90 90
             </a>
           </div>
         </div>

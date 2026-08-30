@@ -60,7 +60,7 @@ const tariffData: TariffData[] = [
   {
     site: "2IAE PALMERAIE",
     location: "Abidjan - Riviera Palmeraie",
-    phone: "+225 07 07 57 82 82",
+    phone: "+225 05 84 24 90 90",
     email: "contacts@2iae.com",
     accountInfo: "N° COMPTE AFG BANK-CI : 01201 013457690001 04",
     programs: [
@@ -103,7 +103,7 @@ const tariffData: TariffData[] = [
   {
     site: "2IAE YAMOUSSOUKRO",
     location: "Yamoussoukro Centre",
-    phone: "+225 07 07 57 82 82",
+    phone: "+225 05 84 24 90 90",
     email: "contacts@2iae.com",
     programs: [
       {
@@ -139,7 +139,7 @@ const tariffData: TariffData[] = [
   {
     site: "2IAE AZAGUIÉ",
     location: "Azaguié Ahoua",
-    phone: "+225 07 07 57 82 82",
+    phone: "+225 05 84 24 90 90",
     email: "contacts@2iae.com",
     programs: [
       {
@@ -181,7 +181,7 @@ const tariffData: TariffData[] = [
   {
     site: "2IAE YOPOUGON",
     location: "Yopougon, quartier millionnaire",
-    phone: "+225 07 07 57 82 82",
+    phone: "+225 05 84 24 90 90",
     email: "contacts@2iae.com",
     accountInfo: "N° COMPTE AFG BANK-CI : 01201 013457690001 04",
     programs: [

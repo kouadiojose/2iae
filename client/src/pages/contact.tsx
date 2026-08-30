@@ -41,9 +41,9 @@ const contactInfo = [
     icon: Phone,
     title: "Téléphone",
     details: [
-      "(+225) 27 22 81 87 76",
-      "(+225) 07 07 57 82 82",
-      "(+225) 05 06 05 29 28",
+      "(+225) 05 84 24 90 90",
+      "(+225) 27 22 51 81 75",
+      "WhatsApp : (+225) 07 47 72 67 29",
     ],
     color: "secondary",
   },
@@ -85,7 +85,7 @@ const subjects = [
 export default function ContactPage() {
   usePageMeta(
     'Contact | Groupe 2IAE International — Abidjan, Yamoussoukro, Azaguié',
-    "Contactez le Groupe 2IAE : +225 07 07 57 82 82, contacts@2iae.com. Campus à Abidjan (Palmeraie, Yopougon), Yamoussoukro, Azaguié et M'Batto.",
+    "Contactez le Groupe 2IAE : +225 05 84 24 90 90, contacts@2iae.com. Campus à Abidjan (Palmeraie, Yopougon), Yamoussoukro, Azaguié et M'Batto.",
     '/contact',
   );
 

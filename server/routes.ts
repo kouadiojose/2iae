@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { enregistrerRoutesFacebook } from "./facebook/routes";
+import { notifierContact } from "./mail";
 
 // Pour ES modules, obtenir __dirname équivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -369,6 +370,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertContactSchema.parse(req.body);
       const contact = await storage.createContact(validatedData);
+      // Notification e-mail en arrière-plan : le formulaire n'attend pas
+      // l'envoi et ne peut pas échouer à cause de lui.
+      void notifierContact(contact);
       res.json({ success: true, contact });
     } catch (error) {
       if (error instanceof z.ZodError) {

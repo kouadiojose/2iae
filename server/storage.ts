@@ -154,6 +154,7 @@ export class MemStorage implements IStorage {
       username: "admin",
       password: "admin123", // Will be hashed when validating
       email: "admin@2iae.com",
+      role: "admin",
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -286,10 +287,11 @@ export class MemStorage implements IStorage {
   async createAdminUser(insertAdminUser: InsertAdminUser): Promise<AdminUser> {
     const hashedPassword = await bcrypt.hash(insertAdminUser.password, 10);
     const id = randomUUID();
-    const adminUser: AdminUser = { 
-      ...insertAdminUser, 
-      id, 
+    const adminUser: AdminUser = {
+      ...insertAdminUser,
+      id,
       password: hashedPassword,
+      role: "admin",
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date()

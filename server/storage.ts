@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, type Tariff, type InsertTariff, type UpdateTariff, type Album, type InsertAlbum, type UpdateAlbum, type GalleryItem, type InsertGalleryItem, type UpdateGalleryItem, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects, tariffs, albums, galleryItems } from "@shared/schema";
+import { type User, type InsertUser, type Contact, type InsertContact, type ChatMessage, type InsertChatMessage, type AdminUser, type InsertAdminUser, type SiteContent, type InsertSiteContent, type UpdateSiteContent, type Slider, type InsertSlider, type UpdateSlider, type FounderMessage, type InsertFounderMessage, type UpdateFounderMessage, type Institute, type InsertInstitute, type UpdateInstitute, type Program, type InsertProgram, type UpdateProgram, type News, type InsertNews, type UpdateNews, type NewsImage, type InsertNewsImage, type UpdateNewsImage, type Project, type InsertProject, type UpdateProject, type Tariff, type InsertTariff, type UpdateTariff, type Album, type InsertAlbum, type UpdateAlbum, type GalleryItem, type InsertGalleryItem, type UpdateGalleryItem, users, contacts, chatMessages, adminUsers, siteContent, sliders, founderMessage, institutes, programs, news, newsImages, projects, tariffs, albums, galleryItems, facebookPosts } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
@@ -99,6 +99,7 @@ export interface IStorage {
   // Gallery items management
   getActiveGalleryItems(): Promise<GalleryItem[]>;
   getGalleryItemsByAlbum(albumId: string): Promise<GalleryItem[]>;
+  getNewsAlbumMap(): Promise<Record<string, string>>;
   getGalleryItemById(id: string): Promise<GalleryItem | undefined>;
   createGalleryItem(item: InsertGalleryItem): Promise<GalleryItem>;
   updateGalleryItem(id: string, item: UpdateGalleryItem): Promise<GalleryItem | undefined>;
@@ -924,6 +925,10 @@ export class MemStorage implements IStorage {
       .sort((a, b) => parseInt(a.order || "1") - parseInt(b.order || "1"));
   }
 
+  async getNewsAlbumMap(): Promise<Record<string, string>> {
+    return {};
+  }
+
   async getGalleryItemById(id: string): Promise<GalleryItem | undefined> {
     return this.galleryItemsList.get(id);
   }
@@ -1693,6 +1698,19 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(galleryItems)
       .where(and(eq(galleryItems.albumId, albumId), eq(galleryItems.isActive, true)))
       .orderBy(sql`COALESCE(NULLIF(regexp_replace("gallery_items"."order", '\D', '', 'g'), ''), '999')::int`, galleryItems.createdAt);
+  }
+
+  // Actualité -> album photo : la synchronisation Facebook enregistre les
+  // deux références sur la même ligne de facebook_posts.
+  async getNewsAlbumMap(): Promise<Record<string, string>> {
+    const rows = await db
+      .select({ newsId: facebookPosts.newsId, albumId: facebookPosts.albumId })
+      .from(facebookPosts)
+      .innerJoin(albums, eq(albums.id, facebookPosts.albumId))
+      .where(and(sql`${facebookPosts.newsId} IS NOT NULL`, eq(albums.isActive, true)));
+    const map: Record<string, string> = {};
+    for (const r of rows) if (r.newsId && r.albumId) map[r.newsId] = r.albumId;
+    return map;
   }
 
   async getGalleryItemById(id: string): Promise<GalleryItem | undefined> {

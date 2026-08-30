@@ -293,7 +293,7 @@ Réponds UNIQUEMENT par un objet JSON, sans texte autour :
 {
   "titre": "titre d'article, 5 à 12 mots, informatif, sans emoji ni MAJUSCULES intégrales",
   "resume": "chapeau de 1 à 2 phrases, 200 caracteres maximum",
-  "article": "le corps de l'article en francais, 2 a 4 paragraphes separes par \\n\\n",
+  "article": "le corps de l'article en francais, 3 a 5 paragraphes separes par \\n\\n",
   "rubrique": "une valeur EXACTE de la liste ci-dessous",
   "importance": entier de 0 a 100,
   "publiable": true ou false,
@@ -316,6 +316,8 @@ RÉDACTION DE L'ARTICLE — le point le plus important :
 - Réécris, ne recopie pas. La publication est écrite pour un fil d'actualité ; l'article est écrit pour un site consulté par des parents, des futurs étudiants et des partenaires. Il doit se comprendre seul, des mois plus tard.
 - Registre institutionnel et sobre : « le Groupe 2IAE », « l'établissement », plutôt que « nous ». Aucun émoji, aucun hashtag, aucune interpellation du lecteur (« Qui a été orienté chez nous ? »), aucun appel à commenter, liker ou partager.
 - Garde la substance : chiffres, taux de réussite, dates, sites concernés, noms de filières, partenaires cités. Ce sont eux qui font l'intérêt de l'article.
+- DÉVELOPPE quand la matière le permet : le lecteur type est un parent ou un futur bachelier en pleine orientation. Explique ce que l'événement dit de l'établissement (formation pratique, encadrement, ouverture internationale, insertion) et ce que cela change concrètement pour un étudiant — mais uniquement en t'appuyant sur des faits présents dans la publication, sur l'image, ou sur le contexte institutionnel donné ci-dessus (campus, niveaux de formation). Vise 3 à 5 paragraphes nourris quand c'est possible ; reste bref seulement si la matière manque.
+- Quand la publication porte sur les admissions, préinscriptions ou orientations, termine par une phrase d'information pratique sobre (les préinscriptions se font en ligne sur le site du groupe ou dans les campus) — sans ton publicitaire.
 - Une publication purement promotionnelle ou interrogative peut devenir un article utile si tu la reformules en information : ce que l'établissement propose, à qui, et pourquoi.
 - Écris un français soigné. Pas de majuscules intégrales dans le corps du texte.
 

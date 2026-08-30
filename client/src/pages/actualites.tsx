@@ -21,6 +21,7 @@ interface News {
   featured: boolean;
   isActive: boolean;
   order: string | null;
+  albumId?: string | null;
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
@@ -265,6 +266,16 @@ export default function ActualitesPage() {
                         {article.category}
                       </Badge>
                     </div>
+                    {article.albumId && (
+                      <Link href={`/galerie/${article.albumId}`}>
+                        <Badge
+                          className="absolute top-4 right-4 bg-white/90 text-gray-800 hover:bg-white cursor-pointer"
+                          data-testid={`badge-news-album-${article.id}`}
+                        >
+                          📷 Album photos
+                        </Badge>
+                      </Link>
+                    )}
                   </div>
                   <CardContent className="p-6 flex-1 flex flex-col">
                     <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">

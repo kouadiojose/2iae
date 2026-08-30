@@ -1316,7 +1316,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/news", async (req, res) => {
     try {
       const newsData = await storage.getActiveNews();
-      res.json({ success: true, news: newsData });
+      const albumsParActu = await storage.getNewsAlbumMap();
+      res.json({
+        success: true,
+        news: newsData.map((n) => ({ ...n, albumId: albumsParActu[n.id] ?? null })),
+      });
     } catch (error) {
       console.error("Error fetching news:", error);
       res.status(500).json({ 
@@ -1331,15 +1335,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { slug } = req.params;
       const newsItem = await storage.getNewsBySlug(slug);
-      
+
       if (!newsItem || !newsItem.isActive) {
-        return res.status(404).json({ 
-          success: false, 
-          error: "Actualité non trouvée" 
+        return res.status(404).json({
+          success: false,
+          error: "Actualité non trouvée"
         });
       }
-      
-      res.json(newsItem);
+
+      const albumsParActu = await storage.getNewsAlbumMap();
+      res.json({ ...newsItem, albumId: albumsParActu[newsItem.id] ?? null });
     } catch (error) {
       console.error("Error fetching news by slug:", error);
       res.status(500).json({ 

@@ -18,6 +18,7 @@ import {
   dedupliquerBannieres,
   harmoniserBannieres,
   reviserArticlesPublies,
+  etofferArticlesMaigres,
   creerBannieresManquantes,
   ameliorerImagesBannieres,
   purgerImagesSansInformation,
@@ -172,6 +173,11 @@ export function demarrerRattrapage(): void {
       // relecteur, par petits lots.
       const relus = await reviserArticlesPublies();
       relus.forEach((t) => console.log(`📘 Facebook : article corrigé — ${t}`));
+
+      // Articles trop maigres hérités des premiers imports : régénérés par
+      // petits lots depuis le texte brut conservé.
+      const etoffes = await etofferArticlesMaigres();
+      etoffes.forEach((t) => console.log(`📘 Facebook : article étoffé — ${t}`));
 
       // Repêchage des contenus forts restés sans bannière.
       const repechees = await creerBannieresManquantes();

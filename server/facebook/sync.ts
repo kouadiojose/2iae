@@ -1048,3 +1048,61 @@ export async function purgerImagesSansInformation(): Promise<string[]> {
 
   return retires;
 }
+
+/**
+ * Étoffe les articles trop maigres, par petits lots.
+ *
+ * Les premiers imports produisaient des articles courts ; la consigne de
+ * rédaction vise désormais 3 à 5 paragraphes nourris. Ce passage reprend le
+ * texte brut conservé dans facebook_posts et régénère l'article des
+ * actualités dont le corps fait moins de 400 caractères. Le nouveau texte ne
+ * remplace l'ancien que s'il est réellement plus riche ; un article qui reste
+ * court (publication d'origine maigre) n'est plus retenté pendant la vie du
+ * processus.
+ */
+const etoffageTente = new Set<string>();
+
+export async function etofferArticlesMaigres(lot = 3): Promise<string[]> {
+  const faits: string[] = [];
+
+  const maigres = await db
+    .select({
+      newsId: facebookPosts.newsId,
+      message: facebookPosts.message,
+      mediaCount: facebookPosts.mediaCount,
+      titre: news.title,
+      contenu: news.content,
+    })
+    .from(facebookPosts)
+    .innerJoin(news, eq(news.id, facebookPosts.newsId))
+    .where(and(
+      eq(facebookPosts.status, "published"),
+      eq(news.isActive, true),
+      sql`LENGTH(COALESCE(${news.content}, '')) < 400`,
+      sql`LENGTH(COALESCE(${facebookPosts.message}, '')) >= 80`,
+    ))
+    .orderBy(sql`LENGTH(COALESCE(${news.content}, ''))`)
+    .limit(lot * 4);
+
+  for (const m of maigres) {
+    if (faits.length >= lot) break;
+    if (!m.newsId || !m.message || etoffageTente.has(m.newsId)) continue;
+    etoffageTente.add(m.newsId);
+
+    try {
+      const c = await classer(m.message, m.mediaCount ?? 0);
+      if (!c.publiable || !c.article) continue;
+      const nouveau = corrigerNomsPropres(c.article.trim());
+      if (nouveau.length <= (m.contenu ?? "").length + 120) continue;
+
+      await db.update(news)
+        .set({ content: nouveau, summary: c.resume || undefined, updatedAt: new Date() })
+        .where(eq(news.id, m.newsId));
+      faits.push(`${tronquer(m.titre ?? "", 50)} — ${(m.contenu ?? "").length} → ${nouveau.length} car.`);
+    } catch (err) {
+      console.warn(`⚠️  Étoffage impossible (${m.titre}) :`, (err as Error).message);
+    }
+  }
+
+  return faits;
+}

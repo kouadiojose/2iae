@@ -17,6 +17,7 @@ interface News {
   author: string;
   featured: boolean;
   isActive: boolean;
+  albumId?: string | null;
 }
 
 interface NewsImage {
@@ -235,6 +236,23 @@ export default function ActualiteDetail() {
                 />
               </CardContent>
             </Card>
+          )}
+
+          {/* Album photo lié à l'événement */}
+          {newsItem.albumId && (
+            <Link href={`/galerie/${newsItem.albumId}`}>
+              <Card className="border-orange-200 bg-orange-50 hover:bg-orange-100 transition-colors cursor-pointer" data-testid="card-album-lie">
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <ImageIcon className="h-6 w-6 text-orange-600" />
+                    <span className="font-semibold text-gray-900">
+                      Voir l'album photo de cet événement
+                    </span>
+                  </div>
+                  <span className="text-orange-600 font-bold">→</span>
+                </CardContent>
+              </Card>
+            </Link>
           )}
 
           {/* Image gallery */}

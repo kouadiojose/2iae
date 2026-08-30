@@ -53,12 +53,12 @@ export default function Header() {
   };
 
   const linkClass = (path: string) =>
-    `font-medium transition-colors hover:text-primary ${
+    `font-medium whitespace-nowrap text-sm xl:text-base transition-colors hover:text-primary ${
       isActive(path) ? "text-primary" : "text-foreground"
     }`;
 
   const groupClass = (links: { href: string }[]) =>
-    `font-medium transition-colors hover:text-primary flex items-center gap-1 ${
+    `font-medium whitespace-nowrap text-sm xl:text-base transition-colors hover:text-primary flex items-center gap-1 ${
       links.some((l) => isActive(l.href)) ? "text-primary" : "text-foreground"
     }`;
 
@@ -78,7 +78,7 @@ export default function Header() {
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center space-x-6">
+          <div className="hidden lg:flex items-center space-x-4 xl:space-x-6">
             <Link href="/" className={linkClass("/")} data-testid="link-accueil">
               Accueil
             </Link>
@@ -160,28 +160,35 @@ export default function Header() {
             </Link>
           </div>
 
-          {/* CTA Buttons */}
-          <div className="hidden lg:flex items-center space-x-3">
+          {/* CTA Buttons — un seul bouton avant xl pour que la barre tienne
+              sur une ligne ; Tarifs et Campus restent accessibles via la
+              navigation et le menu mobile. */}
+          <div className="hidden lg:flex items-center space-x-2 xl:space-x-3">
             <Link href="/preinscription">
               <Button
-                className="bg-orange-500 hover:bg-orange-600 text-white font-bold"
+                size="sm"
+                className="bg-orange-500 hover:bg-orange-600 text-white font-bold whitespace-nowrap xl:h-10 xl:px-4"
                 data-testid="button-preinscription"
               >
                 Préinscription
               </Button>
             </Link>
-            <Link href="/tarifs">
+            <Link href="/tarifs" className="hidden xl:block">
               <Button
                 variant="outline"
-                className="border-primary text-primary hover:bg-primary/5"
+                className="border-primary text-primary hover:bg-primary/5 whitespace-nowrap"
                 data-testid="button-tarifs"
               >
                 Nos Tarifs
               </Button>
             </Link>
-            <Link href="https://campus.groupe2iae.com" target="_blank">
+            <Link
+              href="https://campus.groupe2iae.com"
+              target="_blank"
+              className="hidden xl:block"
+            >
               <Button
-                className="bg-secondary hover:bg-secondary/90 text-secondary-foreground"
+                className="bg-secondary hover:bg-secondary/90 text-secondary-foreground whitespace-nowrap"
                 data-testid="button-campus"
               >
                 Campus Numérique

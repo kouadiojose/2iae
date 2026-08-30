@@ -12,6 +12,7 @@ import { Link, useLocation } from "wouter";
 import logoImage from "@assets/image_1756310296213.png";
 
 const GROUPE_LINKS = [
+  { href: "/resultats-bts-2026", label: "Résultats BTS 2026" },
   { href: "/a-propos", label: "À Propos" },
   { href: "/historique", label: "Historique" },
   { href: "/objectifs", label: "Objectifs & Missions" },

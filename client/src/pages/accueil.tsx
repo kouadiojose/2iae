@@ -453,20 +453,29 @@ export default function AccueilPage() {
                 </div>
               ))}
             </div>
-            <Link href="/preinscription">
-              <Button className="mt-8 bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto">
-                Rejoindre une école qui prouve ses résultats
-              </Button>
-            </Link>
+            <div className="mt-8 flex flex-col sm:flex-row gap-4">
+              <Link href="/preinscription">
+                <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto w-full sm:w-auto">
+                  Rejoindre une école qui prouve ses résultats
+                </Button>
+              </Link>
+              <Link href="/resultats-bts-2026">
+                <Button variant="outline" className="border-primary text-primary hover:bg-primary/5 font-semibold px-8 py-3 h-auto w-full sm:w-auto">
+                  Le détail par campus et par filière →
+                </Button>
+              </Link>
+            </div>
           </div>
           <div className="order-1 lg:order-2">
+            <Link href="/resultats-bts-2026">
             <img
               src="/images/resultats-bts-2026.jpg"
               alt="Résultats provisoires BTS 2026 du Groupe 2IAE : Azaguié 83,54 %, Yamoussoukro 68,18 %, Yopougon 64,13 %, Palmeraie 58,40 % — taux global 67,38 % contre 42,48 % au national"
               loading="lazy"
-              className="w-full max-w-xl mx-auto rounded-xl professional-shadow"
+              className="w-full max-w-xl mx-auto rounded-xl professional-shadow cursor-pointer hover:opacity-95 transition-opacity"
               data-testid="img-resultats-2026"
             />
+            </Link>
           </div>
         </div>
       </section>

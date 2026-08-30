@@ -263,6 +263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const statiques = [
         ["/", "daily", "1.0"],
         ["/preinscription", "weekly", "0.9"],
+        ["/resultats-bts-2026", "weekly", "0.9"],
         ["/filieres", "weekly", "0.9"],
         ["/instituts", "monthly", "0.8"],
         ["/tarifs", "monthly", "0.8"],

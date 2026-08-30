@@ -39,6 +39,7 @@ import CentreIncubationPage from "@/pages/centre-incubation";
 import FormationsSeminairesPage from "@/pages/formations-seminaires";
 import VideothequePage from "@/pages/videotheque";
 import PreinscriptionPage from "@/pages/preinscription";
+import Resultats2026Page from "@/pages/resultats-2026";
 import NotFound from "@/pages/not-found";
 import { MessageCircle } from "lucide-react";
 
@@ -256,6 +257,11 @@ function Router() {
       <Route path="/preinscription">
         <PublicLayout>
           <PreinscriptionPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/resultats-bts-2026">
+        <PublicLayout>
+          <Resultats2026Page />
         </PublicLayout>
       </Route>
 

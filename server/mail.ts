@@ -14,7 +14,11 @@
 import nodemailer from "nodemailer";
 import type { Contact } from "@shared/schema";
 
-const DESTINATAIRE = process.env.CONTACT_EMAIL || "ptchimou92@gmail.com";
+// Plusieurs destinataires possibles, séparés par des virgules dans CONTACT_EMAIL.
+const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr")
+  .split(",")
+  .map((a) => a.trim())
+  .filter(Boolean);
 const REPONDRE_A = process.env.REPLY_TO_EMAIL || "ptchimou92@gmail.com";
 
 function transport() {
@@ -55,7 +59,7 @@ export async function envoyerEmail(opts: {
         },
         body: JSON.stringify({
           from: process.env.RESEND_FROM || "Site 2IAE <onboarding@resend.dev>",
-          to: [opts.to],
+          to: opts.to.split(",").map((a) => a.trim()).filter(Boolean),
           reply_to: replyTo,
           subject: opts.subject,
           text: opts.text,
@@ -110,7 +114,7 @@ export async function notifierContact(contact: Contact): Promise<void> {
     : `📨 Nouveau message${premiereLigne ? ` (${premiereLigne.slice(0, 60)})` : ""} — ${contact.name}`;
 
   const ok = await envoyerEmail({
-    to: DESTINATAIRE,
+    to: DESTINATAIRES.join(","),
     subject: sujet,
     // Répondre depuis la boîte doit joindre le demandeur directement.
     replyTo: contact.email || undefined,
@@ -124,5 +128,5 @@ export async function notifierContact(contact: Contact): Promise<void> {
       `— Envoyé automatiquement par le site 2iae.com`,
     ].join("\n"),
   });
-  if (ok) console.log(`📮 Notification envoyée à ${DESTINATAIRE} (${sujet})`);
+  if (ok) console.log(`📮 Notification envoyée à ${DESTINATAIRES.join(", ")} (${sujet})`);
 }

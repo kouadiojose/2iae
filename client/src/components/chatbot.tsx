@@ -23,7 +23,7 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
-      content: "Bonjour ! Je suis l'assistant virtuel de 2IAE International. Comment puis-je vous aider aujourd'hui ?",
+      content: "Bonjour et bienvenue au Groupe 2IAE, l'École des Entrepreneurs 👋 Je suis votre conseiller d'orientation. Vous vous renseignez pour vous-même ou pour votre enfant ?",
       isBot: true,
       timestamp: new Date()
     }

@@ -2,7 +2,7 @@ import { type User, type InsertUser, type Contact, type InsertContact, type Chat
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { eq, sql, desc } from "drizzle-orm";
+import { and, eq, sql, desc } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -1687,9 +1687,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getGalleryItemsByAlbum(albumId: string): Promise<GalleryItem[]> {
+    // `&&` entre deux expressions Drizzle ne combine pas les conditions en
+    // SQL (seule la seconde survivait) : l'album affichait toutes les photos
+    // actives du site au lieu des siennes.
     return await db.select().from(galleryItems)
-      .where(eq(galleryItems.albumId, albumId) && eq(galleryItems.isActive, true))
-      .orderBy(galleryItems.order);
+      .where(and(eq(galleryItems.albumId, albumId), eq(galleryItems.isActive, true)))
+      .orderBy(sql`COALESCE(NULLIF(regexp_replace("gallery_items"."order", '\D', '', 'g'), ''), '999')::int`, galleryItems.createdAt);
   }
 
   async getGalleryItemById(id: string): Promise<GalleryItem | undefined> {

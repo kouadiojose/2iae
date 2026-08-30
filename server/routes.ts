@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { enregistrerRoutesFacebook } from "./facebook/routes";
+import { planifierRecap } from "./chat-recap";
 import { notifierContact } from "./mail";
 
 // Pour ES modules, obtenir __dirname équivalent
@@ -556,6 +557,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message,
         response
       });
+
+      // Un récap de la discussion part par e-mail après un temps d'inactivité.
+      planifierRecap(sessionId);
 
       res.json({ 
         success: true, 

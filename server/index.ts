@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic, log } from "./static";
 import { getSessionConfig, ensureAdminExists } from "./auth";
 import { demarrerRattrapage } from "./facebook/routes";
+import { demarrerRecapsChat } from "./chat-recap";
 import { rapatrierVisuelsExternes } from "./medias/rapatriement";
 
 const app = express();
@@ -133,6 +134,10 @@ app.get("/api/health", (_req, res) => {
   // Filet de rattrapage Facebook : rejoue périodiquement la page au cas où une
   // notification du webhook se serait perdue (redéploiement, coupure réseau).
   demarrerRattrapage();
+
+  // Récapitulatifs par e-mail des conversations du chatbot (envoyés après
+  // inactivité ; le balayage rattrape les sessions perdues au redéploiement).
+  void demarrerRecapsChat();
 
   // Rattrapage profond ponctuel de la page Facebook : importe une seule fois
   // les 300 dernières publications (pagination par curseur) — photos et

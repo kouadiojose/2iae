@@ -189,6 +189,28 @@ export default function HistoriquePage() {
             Les étudiants du Groupe 2IAE sur le plateau de Matin Bonheur (RTI),
             aux côtés du fondateur.
           </p>
+
+          <div className="mt-10 bg-gray-50 rounded-xl p-6 text-left" data-testid="bloc-audio-radio-historique">
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">
+              🎙️ Dans les médias
+            </p>
+            <h3 className="font-serif text-2xl text-foreground mb-1">
+              Le PDG Séraphin Koua sur la radio d'Azaguié — rentrée 2026-2027
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              L'intégralité de son passage à l'antenne (12 min) : l'Université
+              de l'Entrepreneuriat, les résultats du BTS 2026 et la vision du
+              groupe pour la jeunesse.
+            </p>
+            <audio
+              controls
+              preload="none"
+              className="w-full"
+              src="/audio/pdg-radio-azaguie-rentree-2026.mp3"
+            >
+              Votre navigateur ne prend pas en charge la lecture audio.
+            </audio>
+          </div>
         </div>
       </section>
 

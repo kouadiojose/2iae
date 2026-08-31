@@ -23,7 +23,7 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
-      content: "Bonjour et bienvenue au Groupe 2IAE, l'École des Entrepreneurs 👋 Je suis votre conseiller d'orientation. Vous vous renseignez pour vous-même ou pour votre enfant ?",
+      content: "Bonjour et bienvenue au Groupe 2IAE, l'École des Entrepreneurs 👋 Je suis votre conseiller d'orientation. Pour commencer, indiquez-moi votre nom et votre numéro — un conseiller pourra ainsi vous rappeler gratuitement.",
       isBot: true,
       timestamp: new Date()
     }
@@ -32,33 +32,39 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
   const [sessionId] = useState(() => `session-${Date.now()}-${Math.random()}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Collecte des coordonnées en début de discussion : le mini-formulaire
-  // disparaît dès qu'il est rempli ou passé, et n'est montré qu'une fois.
+  // Collecte OBLIGATOIRE en début de discussion : nom et numéro sont exigés
+  // avant de pouvoir écrire à l'assistant (e-mail facultatif).
   const [contactCollecte, setContactCollecte] = useState(false);
+  const [leadName, setLeadName] = useState("");
   const [leadPhone, setLeadPhone] = useState("");
   const [leadEmail, setLeadEmail] = useState("");
   const [leadEnvoi, setLeadEnvoi] = useState(false);
 
+  const formulaireValide =
+    leadName.trim().length >= 2 && leadPhone.replace(/\D/g, "").length >= 8;
+
   const envoyerLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leadPhone.trim() && !leadEmail.trim()) return;
+    if (!formulaireValide) return;
     setLeadEnvoi(true);
     try {
       await apiRequest("/api/leads", "POST", {
-        phone: leadPhone.trim() || undefined,
+        name: leadName.trim(),
+        phone: leadPhone.trim(),
         email: leadEmail.trim() || undefined,
         source: "chatbot",
         sessionId,
       });
+    } catch {
+      // On ne bloque jamais un prospect pour une erreur technique :
+      // la conversation démarre quand même.
+    } finally {
       setMessages(prev => [...prev, {
         id: `lead-${Date.now()}`,
-        content: "Merci ! ✅ Vos coordonnées viennent d'être transmises à notre équipe : un conseiller vous appelle très rapidement (généralement dans l'heure, en journée). En attendant, je réponds à toutes vos questions 😊",
+        content: `Merci ${leadName.trim()} ! ✅ Vos coordonnées sont transmises à notre équipe : un conseiller vous appelle très rapidement (généralement dans l'heure, en journée). En attendant, posez-moi toutes vos questions — filières, tarifs, campus, internat 😊`,
         isBot: true,
         timestamp: new Date()
       }]);
-    } catch {
-      // Sans gravité : la conversation continue, l'assistant redemandera.
-    } finally {
       setLeadEnvoi(false);
       setContactCollecte(true);
     }
@@ -216,14 +222,23 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
             {!contactCollecte && (
               <div className="bg-muted rounded-lg p-3 space-y-2" data-testid="chatbot-lead-form">
                 <p className="text-xs font-semibold text-foreground">
-                  Laissez vos coordonnées, un conseiller vous rappelle gratuitement :
+                  Vos coordonnées pour démarrer la discussion :
                 </p>
                 <form onSubmit={envoyerLead} className="space-y-2">
                   <Input
+                    value={leadName}
+                    onChange={(e) => setLeadName(e.target.value)}
+                    placeholder="Nom et prénoms *"
+                    autoComplete="name"
+                    className="h-8 text-sm bg-white"
+                    data-testid="input-lead-name"
+                  />
+                  <Input
                     value={leadPhone}
                     onChange={(e) => setLeadPhone(e.target.value)}
-                    placeholder="Numéro WhatsApp / téléphone"
+                    placeholder="Numéro WhatsApp / téléphone *"
                     type="tel"
+                    autoComplete="tel"
                     className="h-8 text-sm bg-white"
                     data-testid="input-lead-phone"
                   />
@@ -232,28 +247,19 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
                     onChange={(e) => setLeadEmail(e.target.value)}
                     placeholder="E-mail (facultatif)"
                     type="email"
+                    autoComplete="email"
                     className="h-8 text-sm bg-white"
                     data-testid="input-lead-email"
                   />
-                  <div className="flex items-center justify-between gap-2">
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={leadEnvoi || (!leadPhone.trim() && !leadEmail.trim())}
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground h-8"
-                      data-testid="button-lead-submit"
-                    >
-                      Être rappelé
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => setContactCollecte(true)}
-                      className="text-xs text-muted-foreground underline"
-                      data-testid="button-lead-skip"
-                    >
-                      Plus tard
-                    </button>
-                  </div>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={leadEnvoi || !formulaireValide}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-8"
+                    data-testid="button-lead-submit"
+                  >
+                    Démarrer la discussion
+                  </Button>
                 </form>
               </div>
             )}
@@ -267,14 +273,14 @@ export default function Chatbot({ isOpen, onToggle }: ChatbotProps) {
             <Input
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Tapez votre message..."
-              disabled={chatMutation.isPending}
+              placeholder={contactCollecte ? "Tapez votre message..." : "Renseignez d'abord vos coordonnées ci-dessus"}
+              disabled={!contactCollecte || chatMutation.isPending}
               className="flex-1"
               data-testid="input-chatbot-message"
             />
             <Button
               type="submit"
-              disabled={!inputMessage.trim() || chatMutation.isPending}
+              disabled={!contactCollecte || !inputMessage.trim() || chatMutation.isPending}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
               data-testid="button-chatbot-send"
             >

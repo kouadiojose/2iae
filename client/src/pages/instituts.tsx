@@ -82,6 +82,24 @@ const INSTITUTS: Institut[] = [
     presentation: [
       "L'IFA forme sur le réel : la ferme pédagogique d'Azaguié Ahoua (bovins, ovins, lapins, volailles avec des poulaillers de 3 000 sujets), le centre piscicole et ses bassins de tilapias, les champs-écoles de 10 hectares à Azaguié M'bromé et de 5 hectares à Bingerville, et des serres de pépinières (banane, cacao, palmier à huile). Cette pédagogie par la pratique a fait ses preuves : dès la session 2015, la filière ATPA réalisait 100 % d'admis au BTS.",
     ],
+    photos: [
+      {
+        src: "/images/recolte-cacao-etudiants.jpg",
+        alt: "Récolte et écabossage du cacao : les étudiants 2IAE en plein travaux pratiques dans la cacaoyère",
+      },
+      {
+        src: "/images/serre-concombres-recolte.jpg",
+        alt: "Récolte de concombres sous serre : les étudiants 2IAE présentent leur production maraîchère",
+      },
+      {
+        src: "/images/elevage-lapins-ferme.jpg",
+        alt: "Travaux pratiques de cuniculture à la ferme pédagogique : manipulation des lapins",
+      },
+      {
+        src: "/images/bassin-piscicole-filet.jpg",
+        alt: "Pêche au filet dans un bassin du centre piscicole d'Azaguié",
+      },
+    ],
     filieres: [
       {
         nom: "Agriculture Tropicale option Production Végétale (ATPV)",

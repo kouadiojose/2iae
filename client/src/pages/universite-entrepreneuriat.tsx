@@ -104,6 +104,27 @@ export default function UniversiteEntrepreneuriatPage() {
             className="w-full h-64 object-cover rounded-xl professional-shadow"
             data-testid="img-universite-chantier"
           />
+          <img
+            src="/images/cacao-feves-ecabossage.jpg"
+            alt="Écabossage du cacao aux champs-écoles : un étudiant trie les fèves fraîches"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-cacao"
+          />
+          <img
+            src="/images/elevage-lapins-ferme.jpg"
+            alt="La ferme pédagogique : travaux pratiques de cuniculture avec les étudiants"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-lapins"
+          />
+          <img
+            src="/images/bassin-piscicole-filet.jpg"
+            alt="Pêche au filet dans les bassins de tilapias du centre piscicole"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-piscicole"
+          />
         </div>
       </section>
 

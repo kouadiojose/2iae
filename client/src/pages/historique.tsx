@@ -190,6 +190,26 @@ export default function HistoriquePage() {
             aux côtés du fondateur.
           </p>
 
+          <div className="mt-10 grid sm:grid-cols-2 gap-4 text-left">
+            <img
+              src="/images/rti-rdv-de-la-1-fondateur.jpg"
+              alt="Le fondateur du Groupe 2IAE sur le plateau du RDV de la 1 (RTI), le 1er septembre 2026"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-rti-historique"
+            />
+            <img
+              src="/images/rti-fondateur-plateau.jpg"
+              alt="Séraphin Koua présente la vision du Groupe 2IAE au RDV de la 1 sur la RTI"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-rti-historique-2"
+            />
+          </div>
+          <p className="text-muted-foreground text-sm mt-3">
+            Le fondateur, invité du RDV de la 1 (RTI) le 1er septembre 2026.
+          </p>
+
           <div className="mt-10 bg-gray-50 rounded-xl p-6 text-left" data-testid="bloc-audio-radio-historique">
             <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">
               🎙️ Dans les médias

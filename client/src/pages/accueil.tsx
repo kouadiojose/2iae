@@ -724,28 +724,52 @@ export default function AccueilPage() {
             </div>
           </div>
 
-          {/* Passage radio du PDG — preuve médiatique fraîche */}
-          <div className="max-w-3xl mx-auto mt-12 bg-muted rounded-xl p-6 professional-shadow" data-testid="bloc-audio-radio">
-            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">
-              🎙️ Ils parlent de nous
-            </p>
-            <h3 className="font-serif text-2xl text-foreground mb-1">
-              Le PDG du Groupe 2IAE au micro de la radio d'Azaguié
-            </h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Rentrée 2026-2027 : Séraphin Koua présente l'Université de
-              l'Entrepreneuriat, les résultats du BTS 2026 et sa vision pour la
-              jeunesse — écoutez l'intégralité de son passage (12 min).
-            </p>
-            <audio
-              controls
-              preload="none"
-              className="w-full"
-              src="/audio/pdg-radio-azaguie-rentree-2026.mp3"
-              data-testid="audio-radio-azaguie"
-            >
-              Votre navigateur ne prend pas en charge la lecture audio.
-            </audio>
+          {/* Le fondateur dans les médias nationaux — preuves fraîches */}
+          <div className="max-w-5xl mx-auto mt-12 grid md:grid-cols-2 gap-6 items-stretch" data-testid="bloc-medias">
+            <div className="bg-muted rounded-xl overflow-hidden professional-shadow">
+              <img
+                src="/images/rti-rdv-de-la-1-fondateur.jpg"
+                alt="Le fondateur du Groupe 2IAE sur le plateau du RDV de la 1 (RTI), le 1er septembre 2026"
+                loading="lazy"
+                className="w-full h-64 object-cover"
+                data-testid="img-rti-plateau"
+              />
+              <div className="p-5">
+                <p className="text-xs tracking-[0.25em] uppercase text-primary mb-1">
+                  📺 Vu sur la RTI
+                </p>
+                <h3 className="font-serif text-xl text-foreground">
+                  Le fondateur, invité du RDV de la 1
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Le 1er septembre 2026, Séraphin Koua présentait les écoles,
+                  les filières et les ambitions du groupe sur le plateau de la
+                  télévision nationale.
+                </p>
+              </div>
+            </div>
+            <div className="bg-muted rounded-xl p-6 professional-shadow flex flex-col justify-center" data-testid="bloc-audio-radio">
+              <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">
+                🎙️ Ils parlent de nous
+              </p>
+              <h3 className="font-serif text-xl text-foreground mb-1">
+                Le PDG au micro de la radio d'Azaguié
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Rentrée 2026-2027 : l'Université de l'Entrepreneuriat, les
+                résultats du BTS 2026 et sa vision pour la jeunesse — écoutez
+                l'intégralité (12 min).
+              </p>
+              <audio
+                controls
+                preload="none"
+                className="w-full"
+                src="/audio/pdg-radio-azaguie-rentree-2026.mp3"
+                data-testid="audio-radio-azaguie"
+              >
+                Votre navigateur ne prend pas en charge la lecture audio.
+              </audio>
+            </div>
           </div>
         </div>
       </section>

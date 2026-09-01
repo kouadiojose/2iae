@@ -20,6 +20,18 @@ const CLASSEMENT_2022 = [
   ["10e", "Institut National Supérieur des Arts et de l'Action Culturelle (INSAAC)", "82,61 %"],
 ];
 
+// Performances historiques de l'Université de l'Entrepreneuriat (Azaguié)
+// au BTS, face à la moyenne nationale — données officielles du groupe.
+const HISTORIQUE = [
+  ["2016-2017", "86,96 %", "70,51 %"],
+  ["2017-2018", "89,09 %", "56,69 %"],
+  ["2018-2019", "100 %", "58,87 %"],
+  ["2019-2020", "72 %", "58,32 %"],
+  ["2020-2021", "94,59 %", "46,80 %"],
+  ["2021-2022", "94,44 %", "46,06 %"],
+  ["BTS 2026", "83,54 %", "42,48 %"],
+];
+
 const CAMPUS = [
   {
     nom: "Université de l'Entrepreneuriat — 2IAE Azaguié",
@@ -127,7 +139,42 @@ export default function Resultats2026Page() {
         </div>
       </section>
 
+      {/* L'excellence dans la durée — Azaguié vs national depuis 2017 */}
       <section className="py-14 bg-background">
+        <div className="container mx-auto px-4 max-w-4xl">
+          <h2 className="font-serif text-3xl md:text-4xl text-foreground text-center mb-4">
+            La constance de l'excellence.
+          </h2>
+          <p className="text-muted-foreground text-center max-w-2xl mx-auto mb-8">
+            Depuis 2017, l'Université de l'Entrepreneuriat d'Azaguié domine
+            largement la moyenne nationale au BTS, année après année — jusqu'à
+            un 100 % d'admis en 2018-2019. Un accident heureux ne dure pas
+            sept ans : c'est une méthode.
+          </p>
+          <div className="overflow-x-auto rounded-xl professional-shadow bg-white">
+            <table className="w-full text-sm" data-testid="table-historique">
+              <thead>
+                <tr className="bg-[#1a1815] text-white text-left">
+                  <th className="px-4 py-3 font-semibold">Session</th>
+                  <th className="px-4 py-3 font-semibold text-right">2IAE Azaguié</th>
+                  <th className="px-4 py-3 font-semibold text-right">Moyenne nationale</th>
+                </tr>
+              </thead>
+              <tbody>
+                {HISTORIQUE.map(([annee, nous, national]) => (
+                  <tr key={annee} className="odd:bg-white even:bg-muted/50">
+                    <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{annee}</td>
+                    <td className="px-4 py-3 text-right font-serif text-lg font-semibold text-primary whitespace-nowrap">{nous}</td>
+                    <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{national}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-14 bg-white">
         <div className="container mx-auto px-4 max-w-6xl">
           <h2 className="font-serif text-3xl md:text-4xl text-foreground text-center mb-10">
             Le détail par campus

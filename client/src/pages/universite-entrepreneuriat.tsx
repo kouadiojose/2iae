@@ -125,6 +125,27 @@ export default function UniversiteEntrepreneuriatPage() {
             className="w-full h-64 object-cover rounded-xl professional-shadow"
             data-testid="img-universite-piscicole"
           />
+          <img
+            src="/images/tp-cuniculture-groupe.jpg"
+            alt="Travaux pratiques de cuniculture : toute la promotion manipule les lapins à la ferme pédagogique"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-cuniculture"
+          />
+          <img
+            src="/images/visite-cacao-media.jpg"
+            alt="Visite médiatisée des champs-écoles : découverte de la cacaoyère avec les étudiants 2IAE"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-visite-cacao"
+          />
+          <img
+            src="/images/serre-concombres-recolte.jpg"
+            alt="Récolte de concombres sous serre : les étudiants présentent et pèsent leur production"
+            loading="lazy"
+            className="w-full h-64 object-cover rounded-xl professional-shadow"
+            data-testid="img-universite-serre"
+          />
         </div>
       </section>
 

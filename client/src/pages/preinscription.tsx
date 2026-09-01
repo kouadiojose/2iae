@@ -244,16 +244,24 @@ export default function PreinscriptionPage() {
             </a>
           </div>
 
-          <div className="mt-10 text-center">
+          <div className="mt-10 grid sm:grid-cols-2 gap-6 items-center">
             <img
-              src="/images/famille-bts-2iae.jpg"
-              alt="Trois étudiantes du Groupe 2IAE en uniforme révisent ensemble — la famille BTS de l'École des Entrepreneurs"
+              src="/images/affiche-rejoins-2iae.jpg"
+              alt="Ton avenir se décide aujourd'hui : rejoins le Groupe 2IAE, l'école d'excellence par excellence"
               loading="lazy"
-              className="w-full max-w-md mx-auto rounded-xl professional-shadow"
+              className="w-full rounded-xl professional-shadow"
             />
-            <p className="text-muted-foreground text-sm mt-3">
-              Rejoignez la famille BTS de l'École des Entrepreneurs.
-            </p>
+            <div className="text-center">
+              <img
+                src="/images/famille-bts-2iae.jpg"
+                alt="Trois étudiantes du Groupe 2IAE en uniforme révisent ensemble — la famille BTS de l'École des Entrepreneurs"
+                loading="lazy"
+                className="w-full max-w-sm mx-auto rounded-xl professional-shadow"
+              />
+              <p className="text-muted-foreground text-sm mt-3">
+                Rejoignez la famille BTS de l'École des Entrepreneurs.
+              </p>
+            </div>
           </div>
         </div>
       </section>

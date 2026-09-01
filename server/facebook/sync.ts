@@ -233,6 +233,9 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
       sourceId: post.id,
       sourceUrl: post.permalink,
       revisedAt: new Date(),
+      // La date de création reflète la publication Facebook d'origine, pas
+      // le moment de l'import : les listes triées restent chronologiques.
+      createdAt: post.publieLe,
     })
     .returning();
 
@@ -260,6 +263,7 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
         order: "1",
         source: "facebook",
         sourceId: post.id,
+        createdAt: post.publieLe,
       })
       .returning();
 

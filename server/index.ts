@@ -144,6 +144,35 @@ app.get("/api/health", (_req, res) => {
   // Pipeline commercial : table des leads et digest quotidien aux admissions.
   void demarrerCrm();
 
+  // Réparation ponctuelle : les contenus importés de Facebook portaient la
+  // date d'import (fin août 2026) au lieu de la date de publication d'origine,
+  // conservée dans facebook_posts.published_at. On réaligne albums et
+  // actualités une seule fois, marqueur dans _migrations.
+  void (async () => {
+    const MARQUE = "fix-dates-import-facebook";
+    try {
+      const { pool } = await import("./db");
+      await pool.query(`CREATE TABLE IF NOT EXISTS _migrations (
+        name TEXT PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT NOW())`);
+      const vu = await pool.query(`SELECT 1 FROM _migrations WHERE name = $1`, [MARQUE]);
+      if ((vu.rowCount ?? 0) > 0) return;
+      const albumsMaj = await pool.query(`
+        UPDATE albums a SET created_at = fp.published_at
+          FROM facebook_posts fp
+         WHERE fp.album_id = a.id AND fp.published_at IS NOT NULL
+           AND a.created_at::date > fp.published_at::date`);
+      const newsMaj = await pool.query(`
+        UPDATE news n SET created_at = fp.published_at
+          FROM facebook_posts fp
+         WHERE fp.news_id = n.id AND fp.published_at IS NOT NULL
+           AND n.created_at::date > fp.published_at::date`);
+      await pool.query(`INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [MARQUE]);
+      console.log(`🗓️  Dates réalignées sur Facebook : ${albumsMaj.rowCount} album(s), ${newsMaj.rowCount} actualité(s).`);
+    } catch (err) {
+      console.error("❌ Réparation des dates :", (err as Error).message);
+    }
+  })();
+
   // Rattrapage profond ponctuel de la page Facebook : importe une seule fois
   // les 300 dernières publications (pagination par curseur) — photos et
   // textes des années passées compris. Le passage est marqué dans

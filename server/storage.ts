@@ -1509,13 +1509,15 @@ export class DatabaseStorage implements IStorage {
 
   // News operations
   async getActiveNews(): Promise<News[]> {
+    // Tri par date réelle de publication (champ texte AAAA-MM-JJ), les plus
+    // récentes d'abord — la date d'import ne doit pas dicter l'ordre.
     return await db.select().from(news)
       .where(eq(news.isActive, true))
-      .orderBy(news.order, news.createdAt);
+      .orderBy(desc(news.date), desc(news.createdAt));
   }
 
   async getAllNews(): Promise<News[]> {
-    return await db.select().from(news).orderBy(news.order, news.createdAt);
+    return await db.select().from(news).orderBy(desc(news.date), desc(news.createdAt));
   }
 
   async getNewsById(id: string): Promise<News | undefined> {
@@ -1651,7 +1653,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllAlbums(): Promise<Album[]> {
-    return await db.select().from(albums).orderBy(albums.order);
+    // Une fois les dates réalignées sur Facebook, l'ordre chronologique
+    // inverse redevient le bon ordre de présentation.
+    return await db.select().from(albums).orderBy(desc(albums.createdAt));
   }
 
   async getAlbumById(id: string): Promise<Album | undefined> {

@@ -5,6 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePageMeta } from "@/lib/seo";
 
+// Dernier classement officiel des grandes écoles publié par le MESRS
+// (BTS 2022) : 2IFE-2IAE Azaguié 5e de Côte d'Ivoire.
+const CLASSEMENT_2022 = [
+  ["1er", "Institut des Nouvelles Techniques Agricoles (INTA)", "100,00 %"],
+  ["2e", "Lycée Professionnel d'Odienné", "98,04 %"],
+  ["3e", "GSMA INPRAT Miadzin Adzopé", "98,00 %"],
+  ["4e", "Lycée Technique de Yopougon", "97,56 %"],
+  ["5e", "2IFE-2IAE Azaguié", "94,44 %"],
+  ["6e", "ISFOP – Optique LOKO", "92,23 %"],
+  ["7e", "École Supérieure de Génie Civil de San-Pédro (ESGC-SP)", "89,04 %"],
+  ["8e", "ESSECT Poincaré Cocody", "88,24 %"],
+  ["9e", "École Centrale d'Abidjan (ECA)", "85,19 %"],
+  ["10e", "Institut National Supérieur des Arts et de l'Action Culturelle (INSAAC)", "82,61 %"],
+];
+
 const CAMPUS = [
   {
     nom: "Université de l'Entrepreneuriat — 2IAE Azaguié",
@@ -34,8 +49,8 @@ const CAMPUS = [
 
 export default function Resultats2026Page() {
   usePageMeta(
-    "Résultats BTS 2026 du Groupe 2IAE : 67,38 % d'admis (national : 42,48 %)",
-    "Les résultats provisoires du BTS 2026 campus par campus : Azaguié 83,54 %, Yamoussoukro 68,18 % (ATPA 100 %), Yopougon 64,13 %, Palmeraie 58,40 %. Taux global 67,38 % contre 42,48 % au national.",
+    "Résultats BTS 2026 du Groupe 2IAE : 67,38 % d'admis — 5e grande école de Côte d'Ivoire (classement MESRS)",
+    "Les résultats provisoires du BTS 2026 campus par campus : Azaguié 83,54 %, Yamoussoukro 68,18 % (ATPA 100 %), Yopougon 64,13 %, Palmeraie 58,40 %. Taux global 67,38 % contre 42,48 % au national. 5e grande école du pays au classement officiel MESRS (BTS 2022, 94,44 %).",
     "/resultats-bts-2026",
   );
 
@@ -67,7 +82,52 @@ export default function Resultats2026Page() {
         </div>
       </section>
 
+      {/* Classement officiel MESRS — la preuve d'État */}
       <section className="py-14 bg-white">
+        <div className="container mx-auto px-4 max-w-4xl">
+          <p className="text-xs tracking-[0.25em] uppercase text-primary text-center mb-3">
+            Source officielle : MESRS Côte d'Ivoire
+          </p>
+          <h2 className="font-serif text-3xl md:text-4xl text-foreground text-center mb-4">
+            5e grande école de Côte d'Ivoire.
+          </h2>
+          <p className="text-muted-foreground text-center max-w-2xl mx-auto mb-8">
+            Au dernier classement officiel des grandes écoles publié par le
+            Ministère de l'Enseignement Supérieur et de la Recherche
+            Scientifique (BTS 2022), 2IFE-2IAE Azaguié se classe 5e de tout le
+            pays avec 94,44 % de réussite — devant bien des écoles réputées
+            d'Abidjan.
+          </p>
+          <div className="overflow-x-auto rounded-xl professional-shadow">
+            <table className="w-full text-sm" data-testid="table-classement-2022">
+              <thead>
+                <tr className="bg-[#1a1815] text-white text-left">
+                  <th className="px-4 py-3 font-semibold">Rang</th>
+                  <th className="px-4 py-3 font-semibold">Établissement</th>
+                  <th className="px-4 py-3 font-semibold text-right">Taux de réussite</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CLASSEMENT_2022.map(([rang, ecole, taux]) => {
+                  const nous = ecole.includes("2IAE");
+                  return (
+                    <tr
+                      key={rang}
+                      className={nous ? "bg-primary/15 font-bold text-foreground" : "odd:bg-white even:bg-muted/50 text-gray-700"}
+                    >
+                      <td className="px-4 py-3 whitespace-nowrap">{nous ? "🏅 " : ""}{rang}</td>
+                      <td className="px-4 py-3">{ecole}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">{taux}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-14 bg-background">
         <div className="container mx-auto px-4 max-w-6xl">
           <h2 className="font-serif text-3xl md:text-4xl text-foreground text-center mb-10">
             Le détail par campus

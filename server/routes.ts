@@ -205,6 +205,9 @@ CONTACT (les SEULS numéros à communiquer):
 - WhatsApp : (+225) 07 47 72 67 29 et (+225) 05 84 24 90 90
 - Préinscription en ligne (2 minutes, gratuite, sans engagement) : www.2iae.com/preinscription — un conseiller rappelle pour finaliser le dossier.
 
+CLASSEMENT OFFICIEL DE L'ÉTAT (argument massue, incontestable):
+- Au dernier classement officiel des grandes écoles publié par le MESRS (Ministère de l'Enseignement Supérieur), portant sur le BTS 2022, 2IFE-2IAE Azaguié est classée 5e GRANDE ÉCOLE DE TOUTE LA CÔTE D'IVOIRE avec 94,44 % de réussite — devant l'ISFOP, l'ESSECT Poincaré Cocody et l'École Centrale d'Abidjan. Tableau complet : www.2iae.com/resultats-bts-2026.
+
 RÉSULTATS BTS 2026 (résultats provisoires — argument clé à mettre en avant):
 - Taux global du groupe : 67,38 % d'admis, contre 42,48 % au niveau national
 - Azaguié (Université de l'Entrepreneuriat) : 83,54 % — Yamoussoukro : 68,18 % (ATPA 100 %) — Yopougon : 64,13 % — Palmeraie : 58,40 %

@@ -257,7 +257,7 @@ function RecentNewsGrid() {
 export default function AccueilPage() {
   usePageMeta(
     "Groupe 2IAE International — Grande École en Côte d'Ivoire | L'École des Entrepreneurs",
-    "Grande école de référence en Côte d'Ivoire depuis 2006 : 67,38 % d'admis au BTS 2026, 5 campus avec internat, ferme-école, entrepreneuriat pour tous. Préinscriptions ouvertes.",
+    "5e grande école de Côte d'Ivoire au classement officiel MESRS : 67,38 % d'admis au BTS 2026, 5 campus avec internat, ferme-école, entrepreneuriat pour tous. Préinscriptions ouvertes.",
     '/',
   );
 
@@ -457,6 +457,18 @@ export default function AccueilPage() {
                 </div>
               ))}
             </div>
+            <Link href="/resultats-bts-2026">
+              <div className="mt-6 bg-primary/10 border border-primary/30 rounded-xl px-5 py-4 cursor-pointer hover:bg-primary/15 transition-colors" data-testid="badge-classement-officiel">
+                <p className="font-bold text-foreground">
+                  🏅 5e grande école de Côte d'Ivoire — classement officiel
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Au dernier classement des grandes écoles publié par le MESRS
+                  (BTS 2022), 2IFE-2IAE Azaguié se classe 5e du pays avec
+                  94,44 % de réussite.
+                </p>
+              </div>
+            </Link>
             <div className="mt-8 flex flex-col sm:flex-row gap-4">
               <Link href="/preinscription">
                 <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto w-full sm:w-auto">

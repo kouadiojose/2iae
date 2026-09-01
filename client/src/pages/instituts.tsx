@@ -84,16 +84,16 @@ const INSTITUTS: Institut[] = [
     ],
     photos: [
       {
-        src: "/images/recolte-cacao-etudiants.jpg",
-        alt: "Récolte et écabossage du cacao : les étudiants 2IAE en plein travaux pratiques dans la cacaoyère",
+        src: "/images/cacao-recolte-equipe.jpg",
+        alt: "Fiers de leur récolte : les étudiants 2IAE autour du tas de cabosses de cacao aux champs-écoles",
       },
       {
         src: "/images/serre-concombres-recolte.jpg",
         alt: "Récolte de concombres sous serre : les étudiants 2IAE présentent leur production maraîchère",
       },
       {
-        src: "/images/elevage-lapins-ferme.jpg",
-        alt: "Travaux pratiques de cuniculture à la ferme pédagogique : manipulation des lapins",
+        src: "/images/etudiante-lapin-ferme.jpg",
+        alt: "Une étudiante 2IAE manipule un lapin lors des travaux pratiques de cuniculture à la ferme pédagogique",
       },
       {
         src: "/images/bassin-piscicole-filet.jpg",

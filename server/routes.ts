@@ -294,7 +294,21 @@ async function construirePromptSysteme(): Promise<string> {
   } catch (e) {
     console.error("Chatbot: tarifs indisponibles pour le prompt:", e);
   }
-  const texte = PROMPT_BASE + blocTarifs;
+  // Actualité datée : le prompt connaît la date du jour (Abidjan) et les
+  // événements temporaires, qui expirent d'eux-mêmes.
+  const dateAbidjan = new Date().toLocaleDateString("fr-FR", {
+    timeZone: "Africa/Abidjan",
+    dateStyle: "full",
+  });
+  let blocEvenement = "";
+  if (Date.now() < Date.parse("2026-09-01T13:00:00Z")) {
+    blocEvenement =
+      "\n\nÉVÉNEMENT DU JOUR (mentionne-le quand c'est pertinent) : le fondateur du Groupe 2IAE est l'invité de la RTI AUJOURD'HUI à 11 h 30. Invite chaleureusement les visiteurs à suivre l'émission pour découvrir nos écoles, nos filières et les ambitions du groupe.";
+  } else if (Date.now() < Date.parse("2026-09-08T00:00:00Z")) {
+    blocEvenement =
+      "\n\nACTUALITÉ RÉCENTE : le fondateur du Groupe 2IAE était l'invité de la RTI (télévision nationale) le 1er septembre 2026 — une preuve de plus de la crédibilité du groupe, que tu peux citer sans inventer le contenu de l'émission.";
+  }
+  const texte = PROMPT_BASE + `\n\nNous sommes le ${dateAbidjan}.` + blocEvenement + blocTarifs;
   promptSystemeCache = { texte, expire: Date.now() + 10 * 60 * 1000 };
   return texte;
 }

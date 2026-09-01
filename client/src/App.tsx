@@ -43,11 +43,13 @@ import PreinscriptionPage from "@/pages/preinscription";
 import Resultats2026Page from "@/pages/resultats-2026";
 import NotFound from "@/pages/not-found";
 import { MessageCircle } from "lucide-react";
+import { BandeauRTI } from "@/components/annonce-rti";
 
 // Layout for public website pages
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
+      <BandeauRTI />
       <Header />
       {children}
       <Footer />

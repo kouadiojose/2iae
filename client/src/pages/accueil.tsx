@@ -10,6 +10,7 @@ import { useSiteContent } from "@/hooks/useSiteContent";
 import { useQuery } from "@tanstack/react-query";
 import { type Slider, type FounderMessage, type Institute } from "@shared/schema";
 import { VideoYoutube } from "@/components/video-youtube";
+import { AfficheRTI } from "@/components/annonce-rti";
 
 interface News {
   id: string;
@@ -371,6 +372,9 @@ export default function AccueilPage() {
           </div>
         </div>
       </section>
+
+      {/* Annonce temporaire : passage du fondateur sur la RTI (auto-expirante) */}
+      <AfficheRTI />
 
       {/* Le spot de la rentrée — visible dès l'arrivée, juste sous le hero */}
       <section className="bg-[#1a1815] mobile-no-overflow">

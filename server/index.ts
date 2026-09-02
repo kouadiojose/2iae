@@ -173,6 +173,28 @@ app.get("/api/health", (_req, res) => {
     }
   })();
 
+  // Correction ponctuelle : la réécriture avait daté « décembre 2026 » des
+  // articles publiés en décembre 2025 (année hallucinée dans le texte).
+  void (async () => {
+    const MARQUE = "fix-annee-texte-banque-mondiale";
+    try {
+      const { pool } = await import("./db");
+      const vu = await pool.query(`SELECT 1 FROM _migrations WHERE name = $1`, [MARQUE]);
+      if ((vu.rowCount ?? 0) > 0) return;
+      const maj = await pool.query(`
+        UPDATE news SET
+          content = replace(replace(content, 'décembre 2026', 'décembre 2025'), 'decembre 2026', 'décembre 2025'),
+          summary = replace(coalesce(summary,''), 'décembre 2026', 'décembre 2025'),
+          updated_at = NOW()
+        WHERE date >= '2025-11-01' AND date <= '2025-12-31'
+          AND (content LIKE '%décembre 2026%' OR content LIKE '%decembre 2026%' OR summary LIKE '%décembre 2026%')`);
+      await pool.query(`INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [MARQUE]);
+      if ((maj.rowCount ?? 0) > 0) console.log(`🗓️  Années corrigées dans le texte de ${maj.rowCount} article(s).`);
+    } catch (err) {
+      console.error("❌ Correction des années :", (err as Error).message);
+    }
+  })();
+
   // Rattrapage profond ponctuel de la page Facebook : importe une seule fois
   // les 300 dernières publications (pagination par curseur) — photos et
   // textes des années passées compris. Le passage est marqué dans

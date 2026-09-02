@@ -200,7 +200,15 @@ export default function ActualiteDetail() {
             <div className="flex items-center gap-6 text-gray-600">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
-                <span>{newsItem.date}</span>
+                <span>
+                  {/[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(newsItem.date)
+                    ? new Date(newsItem.date + "T12:00:00").toLocaleDateString("fr-FR", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })
+                    : newsItem.date}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4" />

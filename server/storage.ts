@@ -1647,9 +1647,10 @@ export class DatabaseStorage implements IStorage {
   // ===================== GALLERY & ALBUMS METHODS =====================
 
   async getActiveAlbums(): Promise<Album[]> {
+    // Du plus récent au plus ancien, sur la vraie date de publication.
     return await db.select().from(albums)
       .where(eq(albums.isActive, true))
-      .orderBy(albums.order);
+      .orderBy(desc(albums.createdAt));
   }
 
   async getAllAlbums(): Promise<Album[]> {

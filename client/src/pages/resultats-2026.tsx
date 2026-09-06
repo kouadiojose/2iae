@@ -203,17 +203,26 @@ export default function Resultats2026Page() {
             bâtiment et l'agriculture confirment leur statut de filières
             pourvoyeuses d'emplois.
           </p>
-          <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto mb-8 text-center">
-            {[
-              ["66 %", "d'insertion globale"],
-              ["53 %", "en emploi salarié"],
-              ["13 %", "devenus entrepreneurs"],
-            ].map(([n, l]) => (
-              <div key={l} className="bg-muted rounded-xl p-4">
-                <p className="font-serif text-3xl font-semibold text-primary">{n}</p>
-                <p className="text-sm text-muted-foreground mt-1">{l}</p>
-              </div>
-            ))}
+          <div className="grid md:grid-cols-2 gap-8 items-center mb-8">
+            <img
+              src="/images/enquete-60-decibels.jpg"
+              alt="Affiche officielle des résultats de l'enquête de satisfaction 60 Decibels sur les anciens étudiants 2IAE (2017-2021) : 66 % d'insertion globale, 53 % en emploi salarié, 13 % entrepreneurs"
+              loading="lazy"
+              className="w-full max-w-sm mx-auto rounded-xl professional-shadow"
+              data-testid="img-enquete-60db"
+            />
+            <div className="grid grid-cols-1 gap-4 text-center">
+              {[
+                ["66 %", "d'insertion globale"],
+                ["53 %", "en emploi salarié"],
+                ["13 %", "devenus entrepreneurs"],
+              ].map(([n, l]) => (
+                <div key={l} className="bg-muted rounded-xl p-5">
+                  <p className="font-serif text-4xl font-semibold text-primary">{n}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{l}</p>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="overflow-x-auto rounded-xl professional-shadow">
             <table className="w-full text-sm" data-testid="table-insertion-60db">

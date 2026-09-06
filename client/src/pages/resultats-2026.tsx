@@ -32,6 +32,19 @@ const HISTORIQUE = [
   ["BTS 2026", "83,54 %", "42,48 %"],
 ];
 
+// Enquête de satisfaction menée par le cabinet indépendant 60 Decibels
+// auprès des anciens étudiants 2IAE (promotions 2017 à 2021).
+const INSERTION_60DB = [
+  ["Logistique", "66 %"],
+  ["Production animale (ATPA)", "62 %"],
+  ["Bâtiment (GBAT)", "61 %"],
+  ["Gestion commerciale", "53 %"],
+  ["Sciences de l'information", "50 %"],
+  ["Production végétale (ATPV)", "46 %"],
+  ["Ressources humaines et communication", "46 %"],
+  ["Finance comptabilité", "32 %"],
+];
+
 const CAMPUS = [
   {
     nom: "Université de l'Entrepreneuriat — 2IAE Azaguié",
@@ -174,7 +187,60 @@ export default function Resultats2026Page() {
         </div>
       </section>
 
+      {/* L'insertion mesurée par un cabinet indépendant */}
       <section className="py-14 bg-white">
+        <div className="container mx-auto px-4 max-w-4xl">
+          <p className="text-xs tracking-[0.25em] uppercase text-primary text-center mb-3">
+            Enquête indépendante · Cabinet 60 Decibels
+          </p>
+          <h2 className="font-serif text-3xl md:text-4xl text-foreground text-center mb-4">
+            Et après le diplôme ? Un cabinet indépendant a vérifié.
+          </h2>
+          <p className="text-muted-foreground text-center max-w-2xl mx-auto mb-8">
+            Le cabinet d'étude 60 Decibels a interrogé les anciens étudiants
+            2IAE des promotions 2017 à 2021. Verdict : deux tiers sont
+            insérés — salariés ou à la tête de leur propre entreprise. Le
+            bâtiment et l'agriculture confirment leur statut de filières
+            pourvoyeuses d'emplois.
+          </p>
+          <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto mb-8 text-center">
+            {[
+              ["66 %", "d'insertion globale"],
+              ["53 %", "en emploi salarié"],
+              ["13 %", "devenus entrepreneurs"],
+            ].map(([n, l]) => (
+              <div key={l} className="bg-muted rounded-xl p-4">
+                <p className="font-serif text-3xl font-semibold text-primary">{n}</p>
+                <p className="text-sm text-muted-foreground mt-1">{l}</p>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-xl professional-shadow">
+            <table className="w-full text-sm" data-testid="table-insertion-60db">
+              <thead>
+                <tr className="bg-[#1a1815] text-white text-left">
+                  <th className="px-4 py-3 font-semibold">Filière</th>
+                  <th className="px-4 py-3 font-semibold text-right">Taux d'insertion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {INSERTION_60DB.map(([filiere, taux]) => (
+                  <tr key={filiere} className="odd:bg-white even:bg-muted/50">
+                    <td className="px-4 py-3 text-gray-700">{filiere}</td>
+                    <td className="px-4 py-3 text-right font-serif text-lg font-semibold text-primary whitespace-nowrap">{taux}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-center text-muted-foreground text-sm mt-4">
+            Source : enquête de satisfaction 60 Decibels, anciens étudiants
+            2IAE disponibles, promotions 2017-2021.
+          </p>
+        </div>
+      </section>
+
+      <section className="py-14 bg-background">
         <div className="container mx-auto px-4 max-w-6xl">
           <h2 className="font-serif text-3xl md:text-4xl text-foreground text-center mb-10">
             Le détail par campus

@@ -208,6 +208,7 @@ CONTACT (les SEULS numéros à communiquer):
 CLASSEMENT OFFICIEL DE L'ÉTAT (argument massue, incontestable):
 - Au dernier classement officiel des grandes écoles publié par le MESRS (Ministère de l'Enseignement Supérieur), portant sur le BTS 2022, 2IFE-2IAE Azaguié est classée 5e GRANDE ÉCOLE DE TOUTE LA CÔTE D'IVOIRE avec 94,44 % de réussite — devant l'ISFOP, l'ESSECT Poincaré Cocody et l'École Centrale d'Abidjan. Tableau complet : www.2iae.com/resultats-bts-2026.
 - Et ce n'est pas un exploit isolé : Azaguié dépasse largement la moyenne nationale au BTS chaque année depuis 2017 (86,96 % en 2017, 89,09 % en 2018, 100 % en 2019, 94,59 % en 2021, 94,44 % en 2022, 83,54 % en 2026 — contre 42 à 70 % au national selon les années).
+- L'insertion aussi est vérifiée par un tiers : le cabinet d'étude indépendant 60 Decibels a interrogé les anciens étudiants des promotions 2017-2021 — 66 % d'insertion globale, dont 53 % en emploi salarié et 13 % devenus entrepreneurs ; la logistique (66 %), la production animale (62 %) et le bâtiment (61 %) sont les filières qui insèrent le plus. Détail sur www.2iae.com/resultats-bts-2026.
 
 RÉSULTATS BTS 2026 (résultats provisoires — argument clé à mettre en avant):
 - Taux global du groupe : 67,38 % d'admis, contre 42,48 % au niveau national

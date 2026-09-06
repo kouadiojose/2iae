@@ -1079,7 +1079,8 @@ export default function AccueilPage() {
             ))}
           </div>
 
-          {/* Affiches officielles : le groupe en chiffres et son réseau */}
+          {/* Affiches officielles : le groupe en chiffres, son réseau, et
+              l'insertion vérifiée par le cabinet indépendant 60 Decibels */}
           <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto mt-12">
             <img
               src="/images/indicateurs-performance-2iae.jpg"
@@ -1093,6 +1094,36 @@ export default function AccueilPage() {
               loading="lazy"
               className="w-full rounded-xl professional-shadow"
             />
+          </div>
+          <div className="max-w-5xl mx-auto mt-6 grid md:grid-cols-2 gap-6 items-center">
+            <Link href="/resultats-bts-2026">
+              <img
+                src="/images/enquete-60-decibels.jpg"
+                alt="Résultats de l'enquête de satisfaction 60 Decibels sur les anciens étudiants 2IAE (2017-2021) : 66 % d'insertion globale, 53 % en emploi salarié, 13 % entrepreneurs"
+                loading="lazy"
+                className="w-full max-w-sm mx-auto rounded-xl professional-shadow cursor-pointer hover:opacity-95 transition-opacity"
+                data-testid="img-enquete-60db-accueil"
+              />
+            </Link>
+            <div className="text-center md:text-left">
+              <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">
+                Enquête indépendante · 60 Decibels
+              </p>
+              <h3 className="font-serif text-2xl md:text-3xl text-foreground mb-3">
+                L'insertion de nos anciens, vérifiée par un cabinet indépendant.
+              </h3>
+              <p className="text-muted-foreground leading-relaxed">
+                66 % d'insertion globale chez les anciens étudiants des
+                promotions 2017-2021, dont 53 % en emploi salarié et 13 %
+                devenus entrepreneurs. Ce ne sont pas nos chiffres : ce sont
+                ceux du cabinet d'étude 60 Decibels.
+              </p>
+              <Link href="/resultats-bts-2026">
+                <Button variant="outline" className="mt-4 border-primary text-primary hover:bg-primary/5 font-semibold">
+                  Voir le détail par filière →
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>

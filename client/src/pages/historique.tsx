@@ -210,7 +210,14 @@ export default function HistoriquePage() {
             Le fondateur, invité du RDV de la 1 (RTI) le 1er septembre 2026.
           </p>
 
-          <div className="mt-10 grid sm:grid-cols-2 gap-4 text-left">
+          <div className="mt-10 grid sm:grid-cols-3 gap-4 text-left">
+            <img
+              src="/images/prix-fondateur-laureats.jpg"
+              alt="Les fondateurs distingués par Excel Ados posent avec leurs trophées au Palm Club de Cocody, Séraphin Koua parmi eux"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-prix-fondateur-laureats"
+            />
             <img
               src="/images/prix-meilleur-fondateur-trophee.jpg"
               alt="Séraphin Koua, trophée du Meilleur Fondateur BTS 2026 en main, au Palm Club de Cocody"

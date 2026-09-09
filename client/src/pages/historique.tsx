@@ -210,6 +210,28 @@ export default function HistoriquePage() {
             Le fondateur, invité du RDV de la 1 (RTI) le 1er septembre 2026.
           </p>
 
+          <div className="mt-10 grid sm:grid-cols-2 gap-4 text-left">
+            <img
+              src="/images/prix-meilleur-fondateur-trophee.jpg"
+              alt="Séraphin Koua, trophée du Meilleur Fondateur BTS 2026 en main, au Palm Club de Cocody"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-prix-fondateur-historique"
+            />
+            <img
+              src="/images/prix-meilleur-fondateur-presse.jpg"
+              alt="Le fondateur du Groupe 2IAE répond à la presse nationale (RTI, Business 24) après avoir reçu le Prix du Meilleur Fondateur"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-prix-fondateur-presse"
+            />
+          </div>
+          <p className="text-muted-foreground text-sm mt-3">
+            🏆 9 septembre 2026 : Séraphin Koua reçoit le Prix du Meilleur
+            Fondateur, décerné par Excel Ados en présence du Sous-Directeur de
+            l'Enseignement supérieur.
+          </p>
+
           <div className="mt-10 bg-gray-50 rounded-xl p-6 text-left" data-testid="bloc-audio-radio-historique">
             <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">
               🎙️ Dans les médias

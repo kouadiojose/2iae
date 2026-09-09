@@ -725,7 +725,29 @@ export default function AccueilPage() {
           </div>
 
           {/* Le fondateur dans les médias nationaux — preuves fraîches */}
-          <div className="max-w-5xl mx-auto mt-12 grid md:grid-cols-2 gap-6 items-stretch" data-testid="bloc-medias">
+          <div className="max-w-6xl mx-auto mt-12 grid md:grid-cols-3 gap-6 items-stretch" data-testid="bloc-medias">
+            <div className="bg-muted rounded-xl overflow-hidden professional-shadow">
+              <img
+                src="/images/prix-meilleur-fondateur-remise.jpg"
+                alt="Séraphin Koua reçoit le Prix du Meilleur Fondateur BTS 2026, décerné par Excel Ados au Palm Club de Cocody"
+                loading="lazy"
+                className="w-full h-64 object-cover"
+                data-testid="img-prix-fondateur"
+              />
+              <div className="p-5">
+                <p className="text-xs tracking-[0.25em] uppercase text-primary mb-1">
+                  🏆 Distinction · 9 septembre 2026
+                </p>
+                <h3 className="font-serif text-xl text-foreground">
+                  Prix du Meilleur Fondateur
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Séraphin Koua, fondateur du Groupe 2IAE, distingué par la
+                  structure Excel Ados au Palm Club de Cocody, en présence du
+                  Sous-Directeur de l'Enseignement supérieur.
+                </p>
+              </div>
+            </div>
             <div className="bg-muted rounded-xl overflow-hidden professional-shadow">
               <img
                 src="/images/rti-rdv-de-la-1-fondateur.jpg"

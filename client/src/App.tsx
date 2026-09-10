@@ -39,6 +39,7 @@ import MissionCabinetPage from "@/pages/mission-cabinet";
 import CentreIncubationPage from "@/pages/centre-incubation";
 import FormationsSeminairesPage from "@/pages/formations-seminaires";
 import VideothequePage from "@/pages/videotheque";
+import FaqPage from "@/pages/faq";
 import PreinscriptionPage from "@/pages/preinscription";
 import Resultats2026Page from "@/pages/resultats-2026";
 import NotFound from "@/pages/not-found";
@@ -260,6 +261,11 @@ function Router() {
       <Route path="/videotheque">
         <PublicLayout>
           <VideothequePage />
+        </PublicLayout>
+      </Route>
+      <Route path="/faq">
+        <PublicLayout>
+          <FaqPage />
         </PublicLayout>
       </Route>
       <Route path="/preinscription">

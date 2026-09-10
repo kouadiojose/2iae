@@ -6,6 +6,7 @@ import { getSessionConfig, ensureAdminExists, ensureLeadsUserExists } from "./au
 import { demarrerRattrapage } from "./facebook/routes";
 import { demarrerRecapsChat } from "./chat-recap";
 import { demarrerCrm } from "./crm";
+import { enregistrerRoutesSeo } from "./seo-pages";
 import { rapatrierVisuelsExternes } from "./medias/rapatriement";
 
 const app = express();
@@ -130,6 +131,12 @@ app.get("/api/health", (_req, res) => {
 
   // Setup routes FIRST before Vite
   const server = await registerRoutes(app);
+
+  // Référencement : chaque page publique est servie avec son titre, sa
+  // description et son JSON-LD propres (indispensable pour une SPA — sinon
+  // Google et les moteurs IA voient le même <head> partout). Doit précéder
+  // le service statique ; sans gabarit construit, les routes se désistent.
+  enregistrerRoutesSeo(app);
 
   console.log("✅ Routes enregistrées");
 

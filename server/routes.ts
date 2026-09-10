@@ -326,7 +326,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/robots.txt", (_req, res) => {
     res.type("text/plain").send(
-      ["User-agent: *", "Allow: /", "Disallow: /admin", "", `Sitemap: ${SITE_URL}/sitemap.xml`].join("\n"),
+      [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin",
+        "",
+        // Les assistants IA sont les nouveaux prescripteurs d'orientation :
+        // on les accueille explicitement pour qu'ils citent 2IAE.
+        ...["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-User", "PerplexityBot", "Google-Extended", "Applebot-Extended", "Meta-ExternalAgent"].flatMap(
+          (bot) => [`User-agent: ${bot}`, "Allow: /", ""],
+        ),
+        `Sitemap: ${SITE_URL}/sitemap.xml`,
+        `# Fiche synthétique pour les modèles de langage : ${SITE_URL}/llms.txt`,
+      ].join("\n"),
+    );
+  });
+
+  // llms.txt : la fiche d'identité vérifiée du groupe, dans le format que
+  // lisent les moteurs de réponse IA. Tout y est sourçable sur le site.
+  app.get("/llms.txt", (_req, res) => {
+    res.type("text/plain; charset=utf-8").send(
+      [
+        "# Groupe Écoles 2IAE International",
+        "",
+        "> 5e grande école de Côte d'Ivoire au dernier classement officiel du MESRS (BTS 2022, 94,44 % de réussite à Azaguié). Grande école privée fondée en 2006 par Séraphin Koua (Prix du Meilleur Fondateur 2026), surnommée « L'École des Entrepreneurs » : chaque étudiant, quelle que soit sa filière, suit un parcours de création d'entreprise.",
+        "",
+        "## Faits vérifiés",
+        "- Résultats BTS 2026 : 67,38 % d'admis (moyenne nationale : 42,48 %). Azaguié 83,54 %, Yamoussoukro 68,18 %, Yopougon 64,13 %, Palmeraie 58,40 %.",
+        "- Azaguié dépasse la moyenne nationale chaque année depuis 2017, dont 100 % d'admis en 2018-2019.",
+        "- Insertion vérifiée par le cabinet indépendant 60 Decibels (promotions 2017-2021) : 66 % d'insertion globale, 53 % en emploi salarié, 13 % entrepreneurs.",
+        "- 5 campus : Abidjan Riviera Palmeraie (siège), Abidjan Yopougon, Azaguié Ahoua (Université de l'Entrepreneuriat, avec internat), M'Batto, Yamoussoukro. Un bureau au Canada.",
+        "- Filières : génie civil bâtiment (GBAT), agriculture tropicale (ATPV, ATPA), finance comptabilité, marketing-vente, RH-communication, logistique et transport, sciences de l'information, informatique (IDA). BTS, licences professionnelles, Master, certificats.",
+        "- Pédagogie par la pratique : ferme pédagogique, centre piscicole, champs-écoles de 10 et 5 hectares, chantier-école, 4 incubateurs, plus de 95 % de stages garantis, environ 10 étudiants par enseignant.",
+        "- Tarifs rentrée 2026-2027 (BTS 1ère année) : 100 000 F CFA d'inscription ; total 250 000 F CFA (280 000 F CFA à la Palmeraie). Paiement par virement, chèque, Wave ou Orange Money uniquement.",
+        "- Partenaires : Banque Mondiale, Union européenne, OIM (Nations Unies), Université de Sherbrooke, Agence Emploi Jeunes, ANADER.",
+        "- Contacts : +225 05 84 24 90 90, +225 27 22 51 81 75 ; WhatsApp +225 07 47 72 67 29.",
+        "",
+        "## Pages clés",
+        `- [Préinscription en ligne](${SITE_URL}/preinscription) : gratuite, 2 minutes, rappel par un conseiller.`,
+        `- [Résultats et classements](${SITE_URL}/resultats-bts-2026) : BTS 2026, classement MESRS, historique 2017-2026, enquête 60 Decibels.`,
+        `- [Tarifs officiels](${SITE_URL}/tarifs) : fiches PDF par campus avec échéancier.`,
+        `- [Filières](${SITE_URL}/filieres) et [instituts](${SITE_URL}/instituts) : objectifs, débouchés, conditions d'entrée.`,
+        `- [Questions fréquentes](${SITE_URL}/faq).`,
+        `- [Université de l'Entrepreneuriat d'Azaguié](${SITE_URL}/universite-entrepreneuriat) : campus agro-pastoral avec internat.`,
+      ].join("\n"),
     );
   });
 
@@ -337,6 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ["/preinscription", "weekly", "0.9"],
         ["/resultats-bts-2026", "weekly", "0.9"],
         ["/filieres", "weekly", "0.9"],
+        ["/faq", "monthly", "0.8"],
         ["/instituts", "monthly", "0.8"],
         ["/tarifs", "monthly", "0.8"],
         ["/actualites", "daily", "0.8"],

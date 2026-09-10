@@ -180,6 +180,26 @@ app.get("/api/health", (_req, res) => {
     }
   })();
 
+  // Correction ponctuelle : l'article sur le prix d'excellence portait comme
+  // visuel une image de texte (rendu Facebook du discours) — illisible en
+  // vignette. On lui donne la photo du trophée.
+  void (async () => {
+    const MARQUE = "fix-image-article-excellence";
+    try {
+      const { pool } = await import("./db");
+      const vu = await pool.query(`SELECT 1 FROM _migrations WHERE name = $1`, [MARQUE]);
+      if ((vu.rowCount ?? 0) > 0) return;
+      const maj = await pool.query(
+        `UPDATE news SET image_url = '/images/prix-meilleur-fondateur-trophee.jpg', updated_at = NOW()
+          WHERE slug = 'le-groupe-2iae-recompense-pour-son-excellence-academique-414330'`,
+      );
+      await pool.query(`INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [MARQUE]);
+      if ((maj.rowCount ?? 0) > 0) console.log("🖼️  Visuel de l'article « excellence » remplacé par la photo du trophée.");
+    } catch (err) {
+      console.error("❌ Correction visuel article :", (err as Error).message);
+    }
+  })();
+
   // Correction ponctuelle : la réécriture avait daté « décembre 2026 » des
   // articles publiés en décembre 2025 (année hallucinée dans le texte).
   void (async () => {

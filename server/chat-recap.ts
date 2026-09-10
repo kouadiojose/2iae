@@ -5,15 +5,10 @@
 // minuteur a été perdu lors d'un redéploiement.
 import { pool } from "./db";
 import { storage } from "./storage";
-import { envoyerEmail, emailConfigure } from "./mail";
+import { envoyerAEquipe, emailConfigure } from "./mail";
 
 const INACTIVITE_MS = 10 * 60 * 1000; // silence après lequel la discussion est close
 const BALAYAGE_MS = 5 * 60 * 1000;
-
-const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com,honorablejeanmissionnaire@gmail.com")
-  .split(",")
-  .map((a) => a.trim())
-  .filter(Boolean);
 
 const minuteries = new Map<string, NodeJS.Timeout>();
 
@@ -75,17 +70,23 @@ async function envoyerRecapSession(sessionId: string): Promise<void> {
       (telephone ? ` — numéro laissé : ${telephone}` : "");
 
     const texte = [
-      `Récapitulatif d'une conversation avec l'assistant du site www.2iae.com`,
+      telephone
+        ? `un visiteur vient de discuter avec l'assistant du site et a laissé son numéro : il s'attend à être rappelé. Lisez sa conversation ci-dessous — vous saurez exactement quoi lui dire.`
+        : `un visiteur vient de discuter avec l'assistant du site. Sa conversation ci-dessous vous dit ce qu'il cherche — utile pour anticiper les questions de la rentrée.`,
       ``,
       `Début : ${dateFr(premier)} — dernier message : ${dateFr(dernier)} (heure d'Abidjan)`,
-      telephone ? `📞 Numéro repéré dans la conversation : ${telephone}` : `(Aucun numéro de téléphone laissé dans la conversation.)`,
+      telephone ? `📞 Numéro repéré dans la conversation : ${telephone} — 👉 appelez-le aujourd'hui, pendant que son intérêt est chaud.` : `(Aucun numéro de téléphone laissé dans la conversation.)`,
       ``,
       `============================`,
       ``,
       fil,
+      ``,
+      telephone
+        ? `👉 Après votre appel, notez le résultat dans www.2iae.com/admin/leads — c'est ce geste qui programme la relance suivante et évite qu'un prospect tombe dans l'oubli.`
+        : `— L'assistant du site 2iae.com`,
     ].join("\n");
 
-    const ok = await envoyerEmail({ to: DESTINATAIRES.join(","), subject: sujet, text: texte });
+    const ok = await envoyerAEquipe({ subject: sujet, text: texte });
     if (ok) {
       await pool.query(
         `INSERT INTO chat_recaps (session_id, last_message_at, sent_at)

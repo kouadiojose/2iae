@@ -5,13 +5,8 @@
 import { and, desc, eq, isNotNull, lte, or, sql as dsql } from "drizzle-orm";
 import { db, pool } from "./db";
 import { chatMessages, leads, type Lead, type StageLead } from "@shared/schema";
-import { envoyerEmail, emailConfigure } from "./mail";
+import { envoyerAEquipe, emailConfigure } from "./mail";
 import { alerterWhatsApp } from "./whatsapp";
-
-const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com,honorablejeanmissionnaire@gmail.com")
-  .split(",")
-  .map((a) => a.trim())
-  .filter(Boolean);
 
 // Cadence de suivi : délai (en jours) avant la prochaine action selon l'étape.
 // null = plus de relance (dossier clos ou gagné).
@@ -114,10 +109,11 @@ async function alerterNouveauLead(lead: Lead): Promise<void> {
 
     void alerterWhatsApp(texte);
     if (emailConfigure()) {
-      void envoyerEmail({
-        to: DESTINATAIRES.join(","),
+      void envoyerAEquipe({
         subject: `🔥 Nouveau lead à rappeler — ${lead.name || lead.phone || lead.email || "visiteur du site"}`,
-        text: texte,
+        text:
+          texte +
+          `\n\n👉 Qui l'appelle ? Le premier qui agit gagne cette inscription. Si vous prenez ce lead, dites-le à l'équipe et notez le résultat de l'appel dans www.2iae.com/admin/leads — un lead sans suite sous 24 h est un étudiant offert à la concurrence.`,
       });
     }
   } catch (err) {
@@ -381,10 +377,11 @@ export function demarrerDigestLeads(): void {
         await pool.query(`INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [MARQUE]);
         return;
       }
-      const ok = await envoyerEmail({
-        to: DESTINATAIRES.join(","),
-        subject: `Suivi commercial 2IAE — actions du jour`,
-        text: digest,
+      const ok = await envoyerAEquipe({
+        subject: `Suivi commercial 2IAE — vos actions du jour`,
+        text:
+          `voici votre feuille de route commerciale du jour. Chaque ligne cochée aujourd'hui, c'est une famille rassurée et une inscription qui se rapproche — l'équipe compte sur vous.\n\n` +
+          digest,
       });
       if (ok) {
         await pool.query(`INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [MARQUE]);

@@ -21,6 +21,42 @@ const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2
   .map((a) => a.trim())
   .filter(Boolean);
 const REPONDRE_A = process.env.REPLY_TO_EMAIL || "ptchimou92@gmail.com";
+
+// Noms des membres de l'équipe de suivi : chaque notification est envoyée
+// individuellement et personnalisée pour pousser à l'action.
+const NOMS_EQUIPE: Record<string, string> = {
+  "ptchimou92@gmail.com": "Mme Konaté",
+  "skoua2000@yahoo.fr": "M. Koua",
+  "kouadiojose@gmail.com": "José",
+  "honorablejeanmissionnaire@gmail.com": "Honorable Jean",
+};
+
+function nomDe(email: string): string {
+  return NOMS_EQUIPE[email.toLowerCase()] ?? "cher membre de l'équipe";
+}
+
+/**
+ * Envoie un message à chaque membre de l'équipe de suivi, individuellement
+ * et personnalisé par son nom — un e-mail nominatif engage bien plus qu'une
+ * liste de diffusion. Ne lève jamais ; vrai si au moins un envoi a abouti.
+ */
+export async function envoyerAEquipe(opts: {
+  subject: string;
+  text: string;
+  replyTo?: string;
+}): Promise<boolean> {
+  let auMoinsUn = false;
+  for (const dest of DESTINATAIRES) {
+    const ok = await envoyerEmail({
+      to: dest,
+      subject: opts.subject,
+      replyTo: opts.replyTo,
+      text: `Bonjour ${nomDe(dest)},\n\n${opts.text}`,
+    });
+    auMoinsUn = auMoinsUn || ok;
+  }
+  return auMoinsUn;
+}
 // Le domaine 2iae.com est vérifié sur Resend : l'expéditeur officiel est
 // utilisé par défaut, RESEND_FROM permet d'en changer sans redéployer.
 const EXPEDITEUR_DEFAUT = "Groupe 2IAE <contact@2iae.com>";
@@ -144,20 +180,25 @@ export async function notifierContact(contact: Contact): Promise<void> {
     ? `🎓 Nouvelle préinscription — ${contact.name}`
     : `📨 Nouveau message${premiereLigne ? ` (${premiereLigne.slice(0, 60)})` : ""} — ${contact.name}`;
 
-  const ok = await envoyerEmail({
-    to: DESTINATAIRES.join(","),
+  const ok = await envoyerAEquipe({
     subject: sujet,
     // Répondre depuis la boîte doit joindre le demandeur directement.
     replyTo: contact.email || undefined,
     text: [
+      preinscription
+        ? `${contact.name} vient de faire le premier pas vers 2IAE en se préinscrivant sur le site. À nous de faire le second : un appel dans l'heure transforme une préinscription en inscription.`
+        : `${contact.name} vient d'écrire au Groupe 2IAE via le site. Une réponse rapide fait toute la différence.`,
+      ``,
       `Nom : ${contact.name}`,
       `Téléphone : ${contact.phone}`,
       `Email : ${contact.email}`,
       ``,
       contact.message ?? "",
       ``,
-      `— Envoyé automatiquement par le site 2iae.com`,
+      `👉 Pouvez-vous prendre ce contact en charge maintenant ? Appelez, puis notez le résultat dans www.2iae.com/admin/leads pour que toute l'équipe le voie. Chaque étudiant inscrit a commencé par un appel passé à temps.`,
+      ``,
+      `— L'assistant du site 2iae.com`,
     ].join("\n"),
   });
-  if (ok) console.log(`📮 Notification envoyée à ${DESTINATAIRES.join(", ")} (${sujet})`);
+  if (ok) console.log(`📮 Notification personnalisée envoyée à l'équipe (${sujet})`);
 }

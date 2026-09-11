@@ -308,12 +308,12 @@ async function construirePromptSysteme(): Promise<string> {
     dateStyle: "full",
   });
   let blocEvenement = "";
-  if (Date.now() < Date.parse("2026-09-03T15:30:00Z")) {
+  if (Date.now() < Date.parse("2026-09-11T15:30:00Z")) {
     blocEvenement =
-      "\n\nÉVÉNEMENT DU JOUR (mentionne-le quand c'est pertinent) : l'émission avec le fondateur du Groupe 2IAE au RDV de la 1 est diffusée AUJOURD'HUI à 14 h (GMT) sur RTI 1 — un message important pour les nouveaux bacheliers 2026. Invite chaleureusement les visiteurs à la regarder.";
-  } else if (Date.now() < Date.parse("2026-09-12T00:00:00Z")) {
+      "\n\nÉVÉNEMENT DU JOUR (mentionne-le quand c'est pertinent) : la Journée d'Excellence BTS 2026, où le Groupe 2IAE s'est illustré avec 4 distinctions, est passée au JT de Business 24 Africa jeudi 10 septembre à 21 h et 23 h GMT. Rediffusions AUJOURD'HUI vendredi 11 septembre à 12 h et 14 h GMT sur Business 24 Africa (canal 259, TV d'Orange 30, business24tv.com). Invite chaleureusement les visiteurs à regarder.";
+  } else if (Date.now() < Date.parse("2026-09-19T00:00:00Z")) {
     blocEvenement =
-      "\n\nACTUALITÉ RÉCENTE : le fondateur du Groupe 2IAE était l'invité du RDV de la 1 sur la RTI (télévision nationale, diffusion le 3 septembre 2026) — une preuve de plus de la crédibilité du groupe, que tu peux citer sans inventer le contenu de l'émission. Photos sur la page d'accueil du site.";
+      "\n\nACTUALITÉ RÉCENTE : le Groupe 2IAE a reçu 4 distinctions à la Journée d'Excellence BTS 2026, un événement couvert au journal télévisé de Business 24 Africa (diffusion des 10 et 11 septembre 2026). Le fondateur était aussi l'invité du RDV de la 1 sur la RTI le 3 septembre 2026, et il a reçu le Prix du Meilleur Fondateur le 9 septembre. Des preuves de crédibilité que tu peux citer sans inventer le contenu des émissions. Photos sur le site.";
   }
   const texte = PROMPT_BASE + `\n\nNous sommes le ${dateAbidjan}.` + blocEvenement + blocTarifs;
   promptSystemeCache = { texte, expire: Date.now() + 10 * 60 * 1000 };

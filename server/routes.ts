@@ -175,12 +175,28 @@ async function generatePresignedUrl(bucketName: string, objectName: string): Pro
 // demande : pas de crash au démarrage quand ANTHROPIC_API_KEY manque — le
 // chatbot confie alors le visiteur à un conseiller humain.
 let anthropicClient: Anthropic | null = null;
+function cleAnthropic(): string | undefined {
+  // Le nom officiel d'abord ; les variantes qu'on rencontre dans les
+  // tableaux de bord ensuite, pour ne pas laisser l'assistant muet à cause
+  // d'une majuscule ou d'un mot manquant dans le nom de la variable.
+  for (const nom of ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY", "ANTHROPIC_KEY", "CLAUDE_KEY"]) {
+    const v = process.env[nom]?.trim();
+    if (v) return v;
+  }
+  return undefined;
+}
 function getAnthropic(): Anthropic {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY n'est pas configurée");
+  const apiKey = cleAnthropic();
+  if (!apiKey) {
+    // Noms seulement, jamais les valeurs : de quoi voir sous quel nom la
+    // clé a été saisie sans exposer le moindre secret dans les journaux.
+    const proches = Object.keys(process.env).filter((k) => /anthropic|claude/i.test(k));
+    throw new Error(
+      `ANTHROPIC_API_KEY n'est pas configurée (variables proches présentes : ${proches.join(", ") || "aucune"})`,
+    );
   }
   if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    anthropicClient = new Anthropic({ apiKey });
   }
   return anthropicClient;
 }

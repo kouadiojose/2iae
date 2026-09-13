@@ -685,10 +685,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Chat error:", error);
-      res.status(500).json({ 
-        success: false, 
-        message: "Erreur lors du traitement de votre message" 
-      });
+      // L'assistant peut tomber : quota du fournisseur épuisé, panne réseau,
+      // modèle indisponible. Un visiteur qui vient de laisser son nom et son
+      // numéro ne doit jamais recevoir « une erreur est survenue » — il est
+      // confié à un conseiller humain, et son message continue d'alimenter le
+      // pipeline commercial pour que personne ne le perde.
+      const sessionId = String(req.body?.sessionId ?? "");
+      const message = String(req.body?.message ?? "");
+      const secours =
+        "Je suis désolé, je n'arrive pas à vous répondre à l'instant : un incident technique de mon côté. " +
+        "Votre message est bien arrivé chez nous et un conseiller vous rappelle. " +
+        "Si vous préférez ne pas attendre, appelez le (+225) 05 84 24 90 90 ou le (+225) 27 22 51 81 75, " +
+        "écrivez sur WhatsApp au (+225) 07 47 72 67 29, " +
+        "ou laissez vos coordonnées sur www.2iae.com/preinscription : c'est gratuit et sans engagement.";
+
+      if (sessionId && message) {
+        try {
+          await storage.createChatMessage({ sessionId, message, response: secours });
+          planifierRecap(sessionId);
+          void traiterMessageChat(sessionId, message);
+        } catch (e) {
+          console.error("Chat error (secours) :", e);
+        }
+      }
+
+      res.json({ success: true, response: secours });
     }
   });
 

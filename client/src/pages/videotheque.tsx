@@ -108,9 +108,9 @@ export default function VideothequePage() {
               Votre navigateur ne prend pas en charge la lecture vidéo.
             </video>
             <p className="bg-black/60 text-white/90 text-sm px-4 py-3">
-              La RTI couvre la Journée d'Excellence BTS 2026 : le Groupe 2IAE y
-              reçoit 4 distinctions, et son fondateur Séraphin Koua répond au
-              micro de la télévision nationale.
+              Journée d'Excellence BTS 2026 : 4 distinctions pour le Groupe
+              2IAE, et le fondateur Séraphin Koua au micro du journal de 13 h
+              de la RTI. Ce n'est pas une publicité : c'est le journal télévisé.
             </p>
           </div>
         </div>

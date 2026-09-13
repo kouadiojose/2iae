@@ -1,8 +1,7 @@
 // Le reportage du journal de 13 h de la RTI sur la Journée d'Excellence
-// BTS 2026, où le groupe a reçu 4 distinctions. Tout ce qui est affirmé ici
-// est visible à l'écran dans la vidéo : le titre du sujet, le trophée
-// « Excell'Ados — meilleurs résultats BTS 2026 », et l'incrustation qui
-// présente le fondateur comme lauréat.
+// BTS 2026. Tout ce qui est affirmé ici est visible à l'écran dans la
+// vidéo : le titre du sujet, le trophée « Excell'Ados — meilleurs résultats
+// BTS 2026 », et l'incrustation qui présente le fondateur comme lauréat.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 
@@ -32,31 +31,29 @@ export function ReportageRtiBts({
 
         <div>
           <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
-            📺 RTI 1 · Journal de 13 h
+            Journal de 13 h · RTI 1
           </p>
           <h2 className="font-serif text-3xl md:text-4xl text-foreground mb-4 leading-tight">
-            La télévision nationale est venue filmer nos distinctions.
+            4 distinctions au BTS 2026. La télévision nationale était là.
           </h2>
           <p className="text-muted-foreground leading-relaxed mb-4">
-            « Enseignement supérieur : des établissements distingués pour leurs
-            résultats au BTS 2026 » — sous ce titre, le journal de 13 h de la
-            RTI a consacré son reportage à la Journée d'Excellence BTS 2026,
-            où le Groupe 2IAE a reçu 4 distinctions et le trophée Excell'Ados
-            des meilleurs résultats.
+            À la Journée d'Excellence BTS 2026, le Groupe 2IAE reçoit
+            4 distinctions et le trophée Excell'Ados des meilleurs résultats.
+            Le journal de 13 h de la RTI y consacre son reportage —
+            « Enseignement supérieur : des établissements distingués pour
+            leurs résultats au BTS 2026 » — et tend son micro à notre
+            fondateur, Séraphin Koua.
           </p>
           <p className="text-muted-foreground leading-relaxed mb-6">
-            Au micro de la RTI, notre fondateur <strong>Séraphin Koua</strong>,
-            présenté à l'écran comme « lauréat-fondateur d'école », aux côtés
-            du président de l'Organisation des parents d'élèves et étudiants de
-            Côte d'Ivoire. Deux minutes qui disent, sans nous, ce que valent nos
-            résultats.
+            Ce n'est pas une publicité : c'est le journal télévisé. Deux
+            minutes.
           </p>
 
           {avecCta && (
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/preinscription">
                 <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto w-full sm:w-auto">
-                  Je rejoins cette école
+                  Je me préinscris
                 </Button>
               </Link>
               <Link href="/resultats-bts-2026">
@@ -64,7 +61,7 @@ export function ReportageRtiBts({
                   variant="outline"
                   className="font-semibold px-8 py-3 h-auto w-full sm:w-auto"
                 >
-                  Voir tous les résultats
+                  Tous les résultats BTS 2026
                 </Button>
               </Link>
             </div>

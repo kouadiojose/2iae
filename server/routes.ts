@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema, insertTariffSchema, updateTariffSchema, insertAlbumSchema, updateAlbumSchema, insertGalleryItemSchema, updateGalleryItemSchema } from "@shared/schema";
 import { z } from "zod";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
@@ -171,17 +171,18 @@ async function generatePresignedUrl(bucketName: string, objectName: string): Pro
   return signedURL;
 }
 
-// Client OpenAI initialisé à la demande : évite un crash au démarrage
-// quand OPENAI_API_KEY n'est pas configurée (le chatbot renvoie alors une erreur propre).
-let openaiClient: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY n'est pas configurée");
+// L'assistant en ligne tourne sur Claude (Anthropic). Client initialisé à la
+// demande : pas de crash au démarrage quand ANTHROPIC_API_KEY manque — le
+// chatbot confie alors le visiteur à un conseiller humain.
+let anthropicClient: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY n'est pas configurée");
   }
-  if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
-  return openaiClient;
+  return anthropicClient;
 }
 
 const PROMPT_BASE = `Tu es le conseiller d'orientation et d'admission du Groupe Écoles 2IAE International — « L'École des Entrepreneurs » — grande école privée de Côte d'Ivoire fondée en 2006 par Séraphin Koua, qui fête ses 20 ans. Tu es un excellent commercial : à l'écoute, naturel, jamais insistant — ton but est que chaque conversation se termine par une préinscription sur www.2iae.com/preinscription ou un contact WhatsApp au (+225) 07 47 72 67 29.
@@ -637,29 +638,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get conversation history
       const chatHistory = await storage.getChatMessages(sessionId);
       
-      // Build conversation context
-      const messages: any[] = [
-        { role: "system", content: await construirePromptSysteme() }
-      ];
-      
-      // Add previous conversation
-      chatHistory.forEach(chat => {
-        messages.push({ role: "user", content: chat.message });
-        messages.push({ role: "assistant", content: chat.response });
-      });
-      
-      // Add current message
-      messages.push({ role: "user", content: message });
+      // Historique de la conversation, puis le message du jour. Un échange
+      // dont une moitié serait vide est ignoré : l'API refuse les blocs vides.
+      const historique: Anthropic.Beta.BetaMessageParam[] = [];
+      for (const chat of chatHistory) {
+        if (!chat.message?.trim() || !chat.response?.trim()) continue;
+        historique.push({ role: "user", content: chat.message });
+        historique.push({ role: "assistant", content: chat.response });
+      }
+      historique.push({ role: "user", content: message });
 
-      // Get response from OpenAI
-      const completion = await getOpenAI().chat.completions.create({
-        model: "gpt-4o",
-        messages: messages,
-        max_tokens: 500,
-        temperature: 0.7,
+      // Le brief (long, stable pendant dix minutes) est mis en cache côté
+      // API : chaque message ne paie que l'échange en cours.
+      const completion = await getAnthropic().beta.messages.create({
+        model: "claude-opus-5",
+        max_tokens: 4000,
+        betas: ["server-side-fallback-2026-06-01"],
+        fallbacks: [{ model: "claude-opus-4-8" }],
+        system: [
+          {
+            type: "text",
+            text: await construirePromptSysteme(),
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        output_config: { effort: "medium" },
+        messages: historique,
       });
 
-      const brute = completion.choices[0].message.content || "Désolé, je n'ai pas pu traiter votre demande.";
+      const texte = completion.content
+        .filter((bloc) => bloc.type === "text")
+        .map((bloc) => bloc.text)
+        .join("\n")
+        .trim();
+      const brute =
+        completion.stop_reason === "refusal" || !texte
+          ? "Je préfère vous mettre en relation avec un conseiller pour cette question : écrivez-nous sur WhatsApp au (+225) 07 47 72 67 29 ou appelez le (+225) 05 84 24 90 90."
+          : texte;
       // Le widget et les e-mails affichent du texte brut : tout Markdown
       // résiduel est neutralisé — un lien [texte](url) devient l'adresse nue
       // (sinon Gmail inclut la parenthèse fermante dans le lien → 404).

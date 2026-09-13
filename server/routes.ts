@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertContactSchema, insertChatMessageSchema, insertSiteContentSchema, updateSiteContentSchema, insertSliderSchema, updateSliderSchema, insertFounderMessageSchema, updateFounderMessageSchema, insertInstituteSchema, updateInstituteSchema, insertProgramSchema, updateProgramSchema, insertNewsSchema, updateNewsSchema, insertProjectSchema, updateProjectSchema, insertTariffSchema, updateTariffSchema, insertAlbumSchema, updateAlbumSchema, insertGalleryItemSchema, updateGalleryItemSchema } from "@shared/schema";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
@@ -199,6 +200,55 @@ function getAnthropic(): Anthropic {
     anthropicClient = new Anthropic({ apiKey });
   }
   return anthropicClient;
+}
+
+// Secours : si Claude ne répond pas (clé absente, quota, panne), l'assistant
+// bascule sur OpenAI avant de confier le visiteur à un conseiller humain.
+let openaiClient: OpenAI | null = null;
+function getOpenAI(): OpenAI | null {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return null;
+  if (!openaiClient) openaiClient = new OpenAI({ apiKey });
+  return openaiClient;
+}
+
+type EchangeChat = { role: "user" | "assistant"; content: string };
+
+async function repondreAvecClaude(systeme: string, historique: EchangeChat[]): Promise<string> {
+  // Le brief (long, stable pendant dix minutes) est mis en cache côté API :
+  // chaque message ne paie que l'échange en cours.
+  const completion = await getAnthropic().beta.messages.create({
+    model: "claude-opus-5",
+    max_tokens: 4000,
+    betas: ["server-side-fallback-2026-06-01"],
+    fallbacks: [{ model: "claude-opus-4-8" }],
+    system: [{ type: "text", text: systeme, cache_control: { type: "ephemeral" } }],
+    output_config: { effort: "medium" },
+    messages: historique,
+  });
+  const texte = completion.content
+    .filter((bloc) => bloc.type === "text")
+    .map((bloc) => bloc.text)
+    .join("\n")
+    .trim();
+  if (completion.stop_reason === "refusal" || !texte) {
+    return "Je préfère vous mettre en relation avec un conseiller pour cette question : écrivez-nous sur WhatsApp au (+225) 07 47 72 67 29 ou appelez le (+225) 05 84 24 90 90.";
+  }
+  return texte;
+}
+
+async function repondreAvecOpenAI(systeme: string, historique: EchangeChat[]): Promise<string> {
+  const client = getOpenAI();
+  if (!client) throw new Error("OPENAI_API_KEY n'est pas configurée");
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "system", content: systeme }, ...historique],
+    max_tokens: 700,
+    temperature: 0.7,
+  });
+  const texte = completion.choices[0]?.message?.content?.trim();
+  if (!texte) throw new Error("OpenAI : réponse vide");
+  return texte;
 }
 
 const PROMPT_BASE = `Tu es le conseiller d'orientation et d'admission du Groupe Écoles 2IAE International — « L'École des Entrepreneurs » — grande école privée de Côte d'Ivoire fondée en 2006 par Séraphin Koua, qui fête ses 20 ans. Tu es un excellent commercial : à l'écoute, naturel, jamais insistant — ton but est que chaque conversation se termine par une préinscription sur www.2iae.com/preinscription ou un contact WhatsApp au (+225) 07 47 72 67 29.
@@ -655,8 +705,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const chatHistory = await storage.getChatMessages(sessionId);
       
       // Historique de la conversation, puis le message du jour. Un échange
-      // dont une moitié serait vide est ignoré : l'API refuse les blocs vides.
-      const historique: Anthropic.Beta.BetaMessageParam[] = [];
+      // dont une moitié serait vide est ignoré : les API refusent les blocs vides.
+      const historique: EchangeChat[] = [];
       for (const chat of chatHistory) {
         if (!chat.message?.trim() || !chat.response?.trim()) continue;
         historique.push({ role: "user", content: chat.message });
@@ -664,33 +714,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       historique.push({ role: "user", content: message });
 
-      // Le brief (long, stable pendant dix minutes) est mis en cache côté
-      // API : chaque message ne paie que l'échange en cours.
-      const completion = await getAnthropic().beta.messages.create({
-        model: "claude-opus-5",
-        max_tokens: 4000,
-        betas: ["server-side-fallback-2026-06-01"],
-        fallbacks: [{ model: "claude-opus-4-8" }],
-        system: [
-          {
-            type: "text",
-            text: await construirePromptSysteme(),
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        output_config: { effort: "medium" },
-        messages: historique,
-      });
-
-      const texte = completion.content
-        .filter((bloc) => bloc.type === "text")
-        .map((bloc) => bloc.text)
-        .join("\n")
-        .trim();
-      const brute =
-        completion.stop_reason === "refusal" || !texte
-          ? "Je préfère vous mettre en relation avec un conseiller pour cette question : écrivez-nous sur WhatsApp au (+225) 07 47 72 67 29 ou appelez le (+225) 05 84 24 90 90."
-          : texte;
+      // Claude d'abord ; si l'appel échoue, OpenAI prend le relais avec le
+      // même brief ; si les deux tombent, le bloc catch confie le visiteur à
+      // un conseiller humain.
+      const systeme = await construirePromptSysteme();
+      let brute: string;
+      try {
+        brute = await repondreAvecClaude(systeme, historique);
+      } catch (erreurClaude) {
+        console.error("Chat : Claude indisponible, bascule sur OpenAI —", erreurClaude);
+        brute = await repondreAvecOpenAI(systeme, historique);
+      }
       // Le widget et les e-mails affichent du texte brut : tout Markdown
       // résiduel est neutralisé — un lien [texte](url) devient l'adresse nue
       // (sinon Gmail inclut la parenthèse fermante dans le lien → 404).

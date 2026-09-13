@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePageMeta } from "@/lib/seo";
+import { ReportageRtiBts } from "@/components/reportage-rti";
 
 // Dernier classement officiel des grandes écoles publié par le MESRS
 // (BTS 2022) : 2IFE-2IAE Azaguié 5e de Côte d'Ivoire.
@@ -95,6 +96,8 @@ export default function Resultats2026Page() {
           </p>
         </div>
       </section>
+
+      <ReportageRtiBts fond="bg-white" />
 
       <section className="py-14 bg-background">
         <div className="container mx-auto px-4 max-w-4xl">

@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type Slider, type FounderMessage, type Institute } from "@shared/schema";
 import { VideoYoutube } from "@/components/video-youtube";
 import { AfficheRTI } from "@/components/annonce-rti";
+import { ReportageRtiBts } from "@/components/reportage-rti";
 
 interface News {
   id: string;
@@ -528,6 +529,8 @@ export default function AccueilPage() {
           </div>
         </div>
       </section>
+
+      <ReportageRtiBts fond="bg-white" avecCta />
 
       {/* Hero Slider Section */}
       <section className="relative min-h-[80vh] lg:h-[70vh] overflow-hidden mobile-no-overflow">

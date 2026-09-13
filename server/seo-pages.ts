@@ -49,6 +49,27 @@ function filAriane(nom: string, chemin: string) {
   };
 }
 
+// Le reportage du journal de 13 h de la RTI sur la Journée d'Excellence
+// BTS 2026 : déclaré aux moteurs pour qu'il soit indexable comme vidéo.
+const REPORTAGE_RTI = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "RTI — Journal de 13 h : des établissements distingués pour leurs résultats au BTS 2026",
+  description:
+    "Le journal de 13 h de la RTI consacre son reportage à la Journée d'Excellence BTS 2026 : le Groupe Écoles 2IAE International y reçoit 4 distinctions et le trophée Excell'Ados des meilleurs résultats, et son fondateur Séraphin Koua répond au micro de la télévision nationale.",
+  thumbnailUrl: [SITE + "/videos/reportage-rti-bts-2026-poster.jpg"],
+  contentUrl: SITE + "/videos/reportage-rti-bts-2026.mp4",
+  uploadDate: "2026-09-13",
+  duration: "PT2M4S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: {
+    "@type": "Organization",
+    name: "Groupe Écoles 2IAE International",
+    url: SITE,
+  },
+};
+
 const PAGES: Record<string, MetaPage> = {
   "/": {
     titre: "Groupe 2IAE International — 5e Grande École de Côte d'Ivoire | BTS, Licences, Entrepreneuriat",
@@ -84,7 +105,7 @@ const PAGES: Record<string, MetaPage> = {
     description:
       "Azaguié 83,54 %, Yamoussoukro 68,18 %, Yopougon 64,13 %, Palmeraie 58,40 % — 67,38 % au global contre 42,48 % au national. 5e du classement officiel MESRS (BTS 2022) et 66 % d'insertion vérifiée par 60 Decibels.",
     image: SITE + "/images/resultats-bts-2026.jpg",
-    jsonLd: [filAriane("Résultats BTS 2026", "/resultats-bts-2026")],
+    jsonLd: [filAriane("Résultats BTS 2026", "/resultats-bts-2026"), REPORTAGE_RTI],
   },
   "/actualites": {
     titre: "Actualités du Groupe 2IAE — vie des campus, résultats, événements",
@@ -102,7 +123,7 @@ const PAGES: Record<string, MetaPage> = {
     titre: "Vidéothèque 2IAE — reportages, témoignages et formation en vidéo",
     description:
       "Les vidéos du Groupe 2IAE : spots de rentrée, témoignages d'étudiants, reportages sur la pédagogie par la pratique et passages télévisés du fondateur.",
-    jsonLd: [filAriane("Vidéothèque", "/videotheque")],
+    jsonLd: [filAriane("Vidéothèque", "/videotheque"), REPORTAGE_RTI],
   },
   "/universite-entrepreneuriat": {
     titre: "Université de l'Entrepreneuriat d'Azaguié — campus agro-pastoral avec internat | 2IAE",

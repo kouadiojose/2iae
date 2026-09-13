@@ -311,9 +311,9 @@ async function construirePromptSysteme(): Promise<string> {
   if (Date.now() < Date.parse("2026-09-11T15:30:00Z")) {
     blocEvenement =
       "\n\nÉVÉNEMENT DU JOUR (mentionne-le quand c'est pertinent) : la Journée d'Excellence BTS 2026, où le Groupe 2IAE s'est illustré avec 4 distinctions, est passée au JT de Business 24 Africa jeudi 10 septembre à 21 h et 23 h GMT. Rediffusions AUJOURD'HUI vendredi 11 septembre à 12 h et 14 h GMT sur Business 24 Africa (canal 259, TV d'Orange 30, business24tv.com). Invite chaleureusement les visiteurs à regarder.";
-  } else if (Date.now() < Date.parse("2026-09-19T00:00:00Z")) {
+  } else if (Date.now() < Date.parse("2026-09-30T00:00:00Z")) {
     blocEvenement =
-      "\n\nACTUALITÉ RÉCENTE : le Groupe 2IAE a reçu 4 distinctions à la Journée d'Excellence BTS 2026, un événement couvert au journal télévisé de Business 24 Africa (diffusion des 10 et 11 septembre 2026). Le fondateur était aussi l'invité du RDV de la 1 sur la RTI le 3 septembre 2026, et il a reçu le Prix du Meilleur Fondateur le 9 septembre. Des preuves de crédibilité que tu peux citer sans inventer le contenu des émissions. Photos sur le site.";
+      "\n\nACTUALITÉ RÉCENTE : le Groupe 2IAE a reçu 4 distinctions à la Journée d'Excellence BTS 2026, ainsi que le trophée Excell'Ados des meilleurs résultats. Le journal de 13 h de la RTI (télévision nationale) y a consacré un reportage intitulé « Enseignement supérieur : des établissements distingués pour leurs résultats au BTS 2026 », où le fondateur Séraphin Koua est interviewé et présenté à l'écran comme lauréat-fondateur d'école. CE REPORTAGE EST VISIBLE SUR LE SITE : page d'accueil, page des résultats BTS 2026 et vidéothèque — invite les visiteurs à le regarder, c'est notre meilleure preuve. L'événement a aussi été couvert par Business 24 Africa (10 et 11 septembre 2026), et le fondateur était l'invité du RDV de la 1 sur la RTI le 3 septembre. Ne jamais inventer le contenu des émissions au-delà de ces faits.";
   }
   const texte = PROMPT_BASE + `\n\nNous sommes le ${dateAbidjan}.` + blocEvenement + blocTarifs;
   promptSystemeCache = { texte, expire: Date.now() + 10 * 60 * 1000 };

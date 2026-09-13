@@ -86,6 +86,36 @@ export default function VideothequePage() {
         </div>
       </section>
 
+      {/* Le passage au journal de 13 h de la RTI — la preuve la plus fraîche */}
+      <section className="py-14 bg-[#0d2c54]" data-testid="section-reportage-rti-videotheque">
+        <div className="container mx-auto px-4 max-w-5xl">
+          <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3 text-center">
+            📺 RTI 1 · Journal de 13 h · Septembre 2026
+          </p>
+          <h2 className="font-serif text-2xl sm:text-3xl text-white text-center mb-8">
+            « Des établissements distingués pour leurs résultats au BTS 2026 »
+          </h2>
+          <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60 max-w-3xl mx-auto">
+            <video
+              className="w-full h-auto block bg-black"
+              src="/videos/reportage-rti-bts-2026.mp4"
+              poster="/videos/reportage-rti-bts-2026-poster.jpg"
+              controls
+              playsInline
+              preload="none"
+              data-testid="video-reportage-rti-videotheque"
+            >
+              Votre navigateur ne prend pas en charge la lecture vidéo.
+            </video>
+            <p className="bg-black/60 text-white/90 text-sm px-4 py-3">
+              La RTI couvre la Journée d'Excellence BTS 2026 : le Groupe 2IAE y
+              reçoit 4 distinctions, et son fondateur Séraphin Koua répond au
+              micro de la télévision nationale.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* À la une — le spot de la rentrée */}
       <section className="py-14 bg-[#1a1815]">
         <div className="container mx-auto px-4">

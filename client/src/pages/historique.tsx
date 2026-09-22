@@ -210,6 +210,43 @@ export default function HistoriquePage() {
             Le fondateur, invité du RDV de la 1 (RTI) le 1er septembre 2026.
           </p>
 
+          <div className="mt-10 grid sm:grid-cols-2 gap-4 text-left">
+            <img
+              src="/images/rti-septembre-fondateur-animatrice.jpg"
+              alt="Séraphin Koua face à l'animatrice du RDV de la 1 sur la RTI, le 22 septembre 2026"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-rti-septembre-1"
+            />
+            <img
+              src="/images/rti-septembre-laureats-ecran.jpg"
+              alt="Les lauréats de la Journée d'Excellence BTS 2026 affichés à l'écran du plateau de la RTI, trophées et médailles en main"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-rti-septembre-2"
+            />
+            <img
+              src="/images/rti-septembre-formation-theorique.jpg"
+              alt="La formation théorique du Groupe 2IAE présentée à l'écran pendant l'émission de la RTI"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-rti-septembre-3"
+            />
+            <img
+              src="/images/rti-septembre-ferme-irrigation.jpg"
+              alt="Les installations d'irrigation de la ferme pédagogique d'Azaguié montrées à l'antenne de la RTI"
+              loading="lazy"
+              className="w-full h-full object-cover rounded-xl professional-shadow"
+              data-testid="img-rti-septembre-4"
+            />
+          </div>
+          <p className="text-muted-foreground text-sm mt-3">
+            Retour au RDV de la 1 le 22 septembre 2026 : les résultats du
+            BTS 2026 campus par campus, les lauréats de la Journée
+            d'Excellence, la formation théorique et la ferme pédagogique
+            d'Azaguié — présentés à l'antenne de la télévision nationale.
+          </p>
+
           <div className="mt-10 grid sm:grid-cols-3 gap-4 text-left">
             <img
               src="/images/prix-fondateur-laureats.jpg"

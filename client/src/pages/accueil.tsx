@@ -753,8 +753,8 @@ export default function AccueilPage() {
             </div>
             <div className="bg-muted rounded-xl overflow-hidden professional-shadow">
               <img
-                src="/images/rti-rdv-de-la-1-fondateur.jpg"
-                alt="Le fondateur du Groupe 2IAE sur le plateau du RDV de la 1 (RTI), le 1er septembre 2026"
+                src="/images/rti-septembre-resultats-plateau.jpg"
+                alt="Le tableau des résultats BTS 2026 du Groupe 2IAE affiché à l'écran du RDV de la 1 sur la RTI : Azaguié 83,54 %, Yamoussoukro 68,18 %, Yopougon 64,13 %, Palmeraie 58,40 %, taux global 67,38 % contre 42,48 % au national"
                 loading="lazy"
                 className="w-full h-64 object-cover"
                 data-testid="img-rti-plateau"
@@ -764,12 +764,13 @@ export default function AccueilPage() {
                   📺 Vu sur la RTI
                 </p>
                 <h3 className="font-serif text-xl text-foreground">
-                  Le fondateur, invité du RDV de la 1
+                  Nos résultats à l'écran du RDV de la 1.
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Le 1er septembre 2026, Séraphin Koua présentait les écoles,
-                  les filières et les ambitions du groupe sur le plateau de la
-                  télévision nationale.
+                  Invité de la RTI pour la seconde fois du mois, Séraphin Koua
+                  a détaillé le BTS 2026 campus par campus. Nos taux sont
+                  passés à l'écran de la télévision nationale, chiffre par
+                  chiffre.
                 </p>
               </div>
             </div>

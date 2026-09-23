@@ -16,7 +16,7 @@ import nodemailer from "nodemailer";
 import type { Contact } from "@shared/schema";
 
 // Plusieurs destinataires possibles, séparés par des virgules dans CONTACT_EMAIL.
-const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com,honorablejeanmissionnaire@gmail.com")
+const DESTINATAIRES = (process.env.CONTACT_EMAIL || "ptchimou92@gmail.com,skoua2000@yahoo.fr,kouadiojose@gmail.com,honorablejeanmissionnaire@gmail.com,traorecheickidriss@gmail.com")
   .split(",")
   .map((a) => a.trim())
   .filter(Boolean);
@@ -29,6 +29,7 @@ const NOMS_EQUIPE: Record<string, string> = {
   "skoua2000@yahoo.fr": "M. Koua",
   "kouadiojose@gmail.com": "José",
   "honorablejeanmissionnaire@gmail.com": "Honorable Jean",
+  "traorecheickidriss@gmail.com": "Traoré Cheikh",
 };
 
 function nomDe(email: string): string {

@@ -1,4 +1,5 @@
-// Connexion, déconnexion, profil courant et changement de mot de passe.
+// Connexion, déconnexion, profil courant et changement de code secret
+// (étudiants : code à chiffres ; personnel : mot de passe de 10 caractères).
 import type { Express } from "express";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
@@ -20,7 +21,8 @@ import {
   fermerAutresSessions,
 } from "../auth";
 import { route, valider, ErreurHttp } from "../http";
-import { utilisateurs, journal } from "@shared/schema";
+import { utilisateurs, journal, type Utilisateur } from "@shared/schema";
+import { invaliderJetons } from "./compte";
 
 const schemaConnexion = z.object({
   identifiant: z.string().trim().min(1, "indique ton matricule, ton téléphone ou ton e-mail").max(120),
@@ -31,8 +33,12 @@ const schemaConnexion = z.object({
 
 const schemaMotDePasse = z.object({
   actuel: z.string().max(200).optional(),
-  nouveau: z.string().min(6, "6 caractères minimum").max(200),
+  // La longueur minimale dépend du rôle : vérifiée plus bas, avec un message adapté.
+  nouveau: z.string().min(1, "choisis ton code secret").max(200),
 });
+
+/** Étudiants tutoyés, personnel vouvoyé. */
+const selonRole = (u: Pick<Utilisateur, "role">, tu: string, vous: string) => (u.role === "etudiant" ? tu : vous);
 
 // Limite globale : protège contre l'essai d'un même code sur des milliers de matricules.
 let echecsGlobaux: number[] = [];
@@ -67,7 +73,7 @@ export function enregistrerAuth(app: Express) {
       if (appareilPartage) req.session.cookie.expires = undefined;
       else req.session.cookie.maxAge = dureeSession(u.role);
       await db.update(utilisateurs).set({ derniereConnexion: new Date() }).where(eq(utilisateurs.id, u.id));
-      await db.insert(journal).values({ utilisateurId: u.id, action: "connexion", details: { ip: req.ip } });
+      await db.insert(journal).values({ utilisateurId: u.id, action: "connexion", details: { ip: req.ip, appareilPartage: Boolean(appareilPartage) } });
       oublierUtilisateur(u.id);
       res.json(await versMoi({ ...u, derniereConnexion: new Date() }));
     }),
@@ -95,20 +101,31 @@ export function enregistrerAuth(app: Express) {
       const u = moi(req);
       const { actuel, nouveau } = valider(schemaMotDePasse, req.body);
       const minimum = longueurMinimale(u.role);
-      if (nouveau.length < minimum) throw new ErreurHttp(400, `Ton code secret doit faire au moins ${minimum} caractères.`);
-      if (!codeSecretAcceptable(nouveau)) throw new ErreurHttp(400, "Ce code est trop facile à deviner. Évite les suites comme 123456 ou 111111.");
+      if (nouveau.length < minimum) {
+        throw new ErreurHttp(400, selonRole(u, `Ton code secret doit faire au moins ${minimum} caractères.`, `Votre mot de passe doit faire au moins ${minimum} caractères.`));
+      }
+      if (!codeSecretAcceptable(nouveau)) {
+        throw new ErreurHttp(400, selonRole(u, "Ce code est trop facile à deviner. Évite les suites comme 123456 ou 111111.", "Ce mot de passe est trop facile à deviner."));
+      }
       // Première connexion : le mot de passe provisoire vient d'être saisi, pas besoin de le redemander.
       if (!u.doitChangerMotDePasse) {
         if (!actuel || !(await verifier(actuel, u.motDePasseHash))) {
-          throw new ErreurHttp(400, "Ton mot de passe actuel n'est pas le bon.");
+          throw new ErreurHttp(400, selonRole(u, "Ton code secret actuel n'est pas le bon.", "Votre mot de passe actuel n'est pas le bon."));
         }
+      } else if (await verifier(nouveau, u.motDePasseHash)) {
+        // Garder le code imprimé sur la fiche, c'est laisser le compte ouvert à qui trouve le papier.
+        throw new ErreurHttp(400, selonRole(u, "Choisis un code différent de celui de ta fiche : lui, il est imprimé sur un papier.", "Choisissez un mot de passe différent du mot de passe provisoire."));
       }
-      if (actuel && actuel === nouveau) throw new ErreurHttp(400, "Choisis un mot de passe différent de l'actuel.");
+      if (actuel && actuel === nouveau) {
+        throw new ErreurHttp(400, selonRole(u, "Choisis un code différent de l'actuel.", "Choisissez un mot de passe différent de l'actuel."));
+      }
       await db
         .update(utilisateurs)
         .set({ motDePasseHash: await hacher(nouveau), doitChangerMotDePasse: false, motDePasseExpireLe: null })
         .where(eq(utilisateurs.id, u.id));
       await db.insert(journal).values({ utilisateurId: u.id, action: "mot_de_passe_change" });
+      // Le QR de la fiche et les liens « code oublié » encore ouverts ne doivent plus ouvrir le compte.
+      await invaliderJetons(u.id);
       await fermerAutresSessions(u.id, req.sessionID);
       oublierUtilisateur(u.id);
       res.json({ ok: true });

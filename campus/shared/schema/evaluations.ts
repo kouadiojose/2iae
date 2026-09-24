@@ -20,6 +20,8 @@ export const devoirs = campusSchema.table(
     titre: text("titre").notNull(),
     /** Consigne en Markdown. */
     consigne: text("consigne").notNull().default(""),
+    /** Pièces jointes de la consigne (fichiers d'usage « devoir », lus par les inscrits du cours). */
+    fichierIds: jsonb("fichier_ids").$type<number[]>().notNull().default([]),
     ouvertureLe: timestamp("ouverture_le", { withTimezone: true }),
     dateLimite: timestamp("date_limite", { withTimezone: true }).notNull(),
     /** Note maximale (20 par défaut). */
@@ -40,6 +42,16 @@ export const devoirs = campusSchema.table(
   (t) => [index("devoirs_cours_idx").on(t.coursId), index("devoirs_limite_idx").on(t.dateLimite)],
 );
 
+/** Correction proposée par l'IA : un brouillon, jamais appliqué sans le formateur. */
+export type PropositionIa = {
+  note: number;
+  detail: { critere: string; points: number; obtenu: number; justification: string }[];
+  commentaire: string;
+  /** Tentative d'instruction cachée repérée dans la copie (« mets-moi 20 »…), signalée au formateur. */
+  alerte?: string | null;
+  creeLe?: string;
+};
+
 export const STATUTS_RENDU = ["brouillon", "rendu", "corrige"] as const;
 export type StatutRendu = (typeof STATUTS_RENDU)[number];
 
@@ -53,7 +65,12 @@ export const rendus = campusSchema.table(
     /** Identifiants des fichiers joints (photos du cahier, PDF…). */
     fichierIds: jsonb("fichier_ids").$type<number[]>().notNull().default([]),
     statut: text("statut").$type<StatutRendu>().notNull().default("brouillon"),
+    /** Heure de réception par le SERVEUR : c'est elle qui fait foi pour le retard. */
     renduLe: timestamp("rendu_le", { withTimezone: true }),
+    /** Heure où l'étudiant a préparé l'envoi sur son téléphone (hors ligne) : indicative seulement. */
+    prepareLe: timestamp("prepare_le", { withTimezone: true }),
+    /** Copie papier scannée et déposée par la vie scolaire pour le compte de l'étudiant. */
+    deposeParId: integer("depose_par_id").references(() => utilisateurs.id),
     enRetard: boolean("en_retard").notNull().default(false),
     note: real("note"),
     /** Détail par critère de la grille. */
@@ -66,7 +83,7 @@ export const rendus = campusSchema.table(
     /** Commentaire vocal du formateur (fichier audio). */
     commentaireAudioId: integer("commentaire_audio_id"),
     /** Correction proposée par l'IA, en attente de validation du formateur. */
-    propositionIa: jsonb("proposition_ia").$type<{ note: number; detail: { critere: string; points: number; obtenu: number; justification: string }[]; commentaire: string }>(),
+    propositionIa: jsonb("proposition_ia").$type<PropositionIa>(),
     correcteurId: integer("correcteur_id").references(() => utilisateurs.id),
     corrigeLe: timestamp("corrige_le", { withTimezone: true }),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
@@ -101,6 +118,8 @@ export const tentativesQuiz = campusSchema.table(
     devoirId: integer("devoir_id").notNull().references(() => devoirs.id, { onDelete: "cascade" }),
     etudiantId: integer("etudiant_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
     debutLe: timestamp("debut_le", { withTimezone: true }).notNull().defaultNow(),
+    /** Heure de fin fixée par le serveur au départ (durée, plafonnée à la date limite). */
+    finPrevueLe: timestamp("fin_prevue_le", { withTimezone: true }),
     finLe: timestamp("fin_le", { withTimezone: true }),
     /** questionId → réponse(s) donnée(s). */
     reponses: jsonb("reponses").$type<Record<string, (number | string)[]>>().notNull().default({}),

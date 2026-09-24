@@ -13,6 +13,7 @@ import { enregistrerAdmin } from "./admin";
 import { enregistrerIa } from "./ia";
 import { enregistrerPublic } from "./public";
 import { enregistrerPush } from "./push";
+import { enregistrerVisioCampus } from "../visio-campus";
 
 export function enregistrerRoutes(app: Express) {
   enregistrerPublic(app);
@@ -28,4 +29,5 @@ export function enregistrerRoutes(app: Express) {
   enregistrerAdmin(app);
   enregistrerIa(app);
   enregistrerPush(app);
+  enregistrerVisioCampus(app);
 }

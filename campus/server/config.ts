@@ -47,6 +47,10 @@ export const config = {
     /** Sous-domaine Daily (ex. « groupe2iae » pour groupe2iae.daily.co) — facultatif, déduit de l'API sinon. */
     dailyDomaine: env("DAILY_DOMAIN"),
     jitsiDomaine: env("JITSI_DOMAIN"),
+    /** Serveurs TURN pour la visio intégrée (réseaux mobiles derrière CGNAT), ex. turns:turn.example.com:443?transport=tcp */
+    turnUrls: (env("TURN_URLS") || "").split(",").map((u) => u.trim()).filter(Boolean),
+    turnUtilisateur: env("TURN_USERNAME"),
+    turnSecret: env("TURN_CREDENTIAL"),
   },
 
   ia: {

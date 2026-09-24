@@ -7,8 +7,12 @@ import { cours } from "./cours";
 export const STATUTS_SEANCE = ["planifiee", "en_direct", "terminee", "annulee"] as const;
 export type StatutSeance = (typeof STATUTS_SEANCE)[number];
 
-/** daily : visio intégrée Daily.co · jitsi : serveur Jitsi · externe : lien Zoom/Meet/Teams · demo : sans visio (scène simulée). */
-export const FOURNISSEURS_VISIO = ["daily", "jitsi", "externe", "demo"] as const;
+/**
+ * campus : visio intégrée au campus (WebRTC pair-à-pair formateur ↔ salles, sans compte externe)
+ * daily : Daily.co · jitsi : serveur Jitsi · externe : lien Zoom/Meet/Teams · demo : scène simulée.
+ * La « radio » (son du formateur en flux HTTP + diapos) fonctionne avec tous les fournisseurs.
+ */
+export const FOURNISSEURS_VISIO = ["campus", "daily", "jitsi", "externe", "demo"] as const;
 export type FournisseurVisio = (typeof FOURNISSEURS_VISIO)[number];
 
 export type EtapePlan = { titre: string; minutes?: number };
@@ -23,7 +27,7 @@ export const seances = campusSchema.table(
     debut: timestamp("debut", { withTimezone: true }).notNull(),
     dureeMinutes: integer("duree_minutes").notNull().default(90),
     statut: text("statut").$type<StatutSeance>().notNull().default("planifiee"),
-    fournisseur: text("fournisseur").$type<FournisseurVisio>().notNull().default("daily"),
+    fournisseur: text("fournisseur").$type<FournisseurVisio>().notNull().default("campus"),
     /** Nom de la salle chez le fournisseur (créée à la demande). */
     salleVisio: text("salle_visio"),
     lienExterne: text("lien_externe"),

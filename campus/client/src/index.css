@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Identité : maquette « Campus numérique 2IAE » (Claude Design). */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-white text-encre font-sans antialiased;
+    font-feature-settings: "ss01";
+  }
+  h1, h2, h3, h4 {
+    @apply font-extrabold tracking-serre;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  a {
+    @apply text-orange-fonce hover:text-encre;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-orange ring-offset-2;
+  }
+  ::selection {
+    @apply bg-orange-peche;
+  }
+  input, textarea, select, button {
+    font: inherit;
+  }
+}
+
+@layer components {
+  /* Étiquette mono de la maquette (« L'ÉCOLE DES ENTREPRENEURS · RENTRÉE 2026 »). */
+  .etiquette {
+    @apply font-mono text-xs uppercase tracking-[0.12em] text-orange-fonce;
+  }
+  .mono {
+    @apply font-mono;
+  }
+  .conteneur {
+    @apply mx-auto w-full max-w-[1320px] px-4 sm:px-7;
+  }
+  .titre-page {
+    @apply text-[32px] leading-[1.02] font-black tracking-serre sm:text-[40px];
+  }
+  .point-direct {
+    @apply inline-block h-2 w-2 rounded-full bg-direct animate-direct;
+  }
+  /* Zone sûre des téléphones à encoche (barre d'onglets du bas). */
+  .bas-sur {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  .defile-fin {
+    scrollbar-width: thin;
+  }
+  /* Texte riche issu du Markdown (leçons, consignes, résumés IA). */
+  .prose-campus {
+    @apply text-[15.5px] leading-[1.65] text-texte-doux;
+  }
+  .prose-campus h1, .prose-campus h2, .prose-campus h3 {
+    @apply text-encre mt-6 mb-2 leading-tight;
+  }
+  .prose-campus h1 { @apply text-2xl; }
+  .prose-campus h2 { @apply text-xl; }
+  .prose-campus h3 { @apply text-lg; }
+  .prose-campus p { @apply my-3; }
+  .prose-campus ul { @apply my-3 list-disc pl-6 space-y-1; }
+  .prose-campus ol { @apply my-3 list-decimal pl-6 space-y-1; }
+  .prose-campus strong { @apply text-encre font-bold; }
+  .prose-campus code { @apply font-mono text-[13px] bg-creme rounded px-1.5 py-0.5 text-encre; }
+  .prose-campus pre { @apply bg-encre text-white rounded-xl p-4 overflow-x-auto my-4 text-[13px]; }
+  .prose-campus pre code { @apply bg-transparent text-white p-0; }
+  .prose-campus blockquote { @apply border-l-4 border-orange pl-4 italic my-4; }
+  .prose-campus a { @apply underline underline-offset-2; }
+  .prose-campus hr { @apply my-6 border-ligne; }
+  .prose-nuit {
+    @apply text-nuit-texte;
+  }
+  .prose-nuit h1, .prose-nuit h2, .prose-nuit h3, .prose-nuit strong { @apply text-white; }
+  .prose-nuit code { @apply bg-nuit-ligne text-white; }
+}
+
+/* Mode données réduites : pas d'animations décoratives. */
+.donnees-reduites *,
+.donnees-reduites *::before,
+.donnees-reduites *::after {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

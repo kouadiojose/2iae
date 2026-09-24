@@ -3,7 +3,7 @@
 // Toutes les tables vivent dans le schéma PostgreSQL « campus » (voir
 // drizzle.config.ts) : le campus peut partager la base du site sans
 // collision, ou disposer de sa propre base.
-import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, json, varchar, index } from "drizzle-orm/pg-core";
 
 export const campusSchema = pgSchema("campus");
 
@@ -171,3 +171,17 @@ export type Moi = Omit<Utilisateur, "motDePasseHash" | "jetonAgenda" | "jetonRel
   classe: Pick<Classe, "id" | "nom" | "filiere" | "niveau"> | null;
 };
 
+
+/**
+ * Sessions de connexion (connect-pg-simple). Déclarée ici pour que les
+ * migrations la créent et que drizzle-kit ne la supprime jamais.
+ */
+export const sessions = campusSchema.table(
+  "session",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: json("sess").notNull(),
+    expire: timestamp("expire", { precision: 6 }).notNull(),
+  },
+  (t) => [index("IDX_session_expire").on(t.expire)],
+);

@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Campus numérique 2IAE",
+  "short_name": "Campus 2IAE",
+  "description": "Les cours en direct des cinq campus 2IAE, les devoirs, les replays et les messages de tes formateurs, dans ta poche.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/accueil?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#141414",
+  "categories": ["education"],
+  "icons": [
+    { "src": "/icons/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icone-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Le live", "short_name": "Live", "url": "/direct?source=pwa", "icons": [{ "src": "/icons/icone-192.png", "sizes": "192x192" }] },
+    { "name": "Mes devoirs", "short_name": "Devoirs", "url": "/devoirs?source=pwa", "icons": [{ "src": "/icons/icone-192.png", "sizes": "192x192" }] },
+    { "name": "Mes messages", "short_name": "Messages", "url": "/messages?source=pwa", "icons": [{ "src": "/icons/icone-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -2,8 +2,9 @@
 //
 // Une consigne « n'invente aucun fait » ne suffit pas. Sur les premiers
 // imports, le modèle a écrit :
-//   — « Cocody » et « M'batto » comme campus du groupe : aucune occurrence
-//     dans les 40 publications de la page ;
+//   — « Cocody » comme campus du groupe : aucune occurrence dans les
+//     40 publications de la page (M'Batto, cité à tort dans le même constat,
+//     EST bien l'un des cinq campus : voir client/src/pages/nous-trouver.tsx) ;
 //   — « 42,54 % » comme taux national alors que la source dit toujours
 //     42,48 % ;
 //   — « un taux de réussite de 42,48 % » attribué à 2IAE, alors que ce chiffre
@@ -18,7 +19,10 @@ import { nettoyer } from "./classification";
 
 /** Campus et lieux que le groupe peut légitimement citer. */
 const LIEUX_CONNUS = [
-  "palmeraie", "yopougon", "yamoussoukro", "azaguie", "azaguié",
+  "palmeraie", "yopougon", "yamoussoukro", "azaguie", "azaguié", "ahoua",
+  // Les cinq campus : Palmeraie, Yopougon, Yamoussoukro, Azaguié Ahoua et
+  // M'Batto (toutes les graphies de l'apostrophe).
+  "m'batto", "m’batto", "mbatto",
   "abidjan", "cote d'ivoire", "côte d'ivoire", "ivoire", "riviera",
   "sherbrooke", "canada", "dubai", "dubaï", "france", "afrique",
 ];
@@ -91,7 +95,8 @@ export function verifierFaits(produit: string, sources: string[]): Anomalie[] {
   ) ?? [];
 
   for (const bloc of Array.from(new Set(apresIndice))) {
-    const mot = bloc.split(/\s+/).pop() ?? "";
+    // « campus d'Azaguié » : l'élision reste collée au dernier mot, on la retire.
+    const mot = (bloc.split(/\s+/).pop() ?? "").replace(/^d['’]/i, "");
     const norme = normaliser(mot);
     if (!norme || source.includes(norme)) continue;
     if (LIEUX_CONNUS.some((l) => normaliser(l) === norme)) continue;

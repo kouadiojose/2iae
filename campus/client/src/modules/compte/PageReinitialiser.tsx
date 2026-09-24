@@ -66,7 +66,7 @@ export default function PageReinitialiser({ jeton }: { jeton: string }) {
           </span>
           <h1 className="text-[34px] font-black leading-[1.02] tracking-tres-serre">Ce lien ne marche plus.</h1>
           <p className="text-base leading-relaxed text-texte-pale">
-            {error instanceof ErreurApi ? error.message : "Ce lien a déjà servi ou a expiré."} Un lien « code oublié » ne sert qu'une fois, pendant 1 heure.
+            {error instanceof ErreurApi ? error.message : "Ce lien a déjà servi ou a expiré : un lien « code oublié » ne sert qu'une fois, pendant 1 heure."}
           </p>
           <LienBouton href="/mot-de-passe-oublie" taille="lg" className="mt-2 min-h-[56px] w-full text-[17px]">
             Refaire une demande

@@ -55,7 +55,7 @@ export const Selection = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTML
   const cle = id ?? auto;
   return (
     <Cadre id={cle} libelle={libelle} aide={aide} erreur={erreur} className={className}>
-      <select ref={ref} id={cle} className={cn(BASE, "appearance-none bg-[length:16px] bg-[right_14px_center] bg-no-repeat pr-10", erreur && "border-danger")}
+      <select ref={ref} id={cle} className={cn(BASE, "appearance-none bg-[length:16px] bg-[position:right_14px_center] bg-no-repeat pr-10", erreur && "border-danger")}
         style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141414' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")" }}
         {...reste}
       >

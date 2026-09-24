@@ -30,7 +30,9 @@ export function Fenetre({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-encre/50 backdrop-blur-[2px] animate-apparait" />
         <Dialog.Content
           className={cn(
-            "fixed z-50 flex max-h-[92dvh] w-full flex-col bg-white shadow-2xl animate-monte focus:outline-none",
+            // Sur ordinateur, « apparait » (opacité seule) : l'animation « monte » finit sur transform: none
+            // et annulerait le centrage par translate de la fenêtre.
+            "fixed z-50 flex max-h-[92dvh] w-full flex-col bg-white shadow-2xl animate-monte sm:animate-apparait focus:outline-none",
             "inset-x-0 bottom-0 rounded-t-[28px] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]",
             large ? "sm:max-w-3xl" : "sm:max-w-lg",
           )}

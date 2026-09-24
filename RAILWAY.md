@@ -77,7 +77,48 @@ en cas d'échec.
 2. Configurez le CNAME chez votre registrar selon les instructions Railway.
 3. Ajoutez le domaine dans `APP_URL` (ex. `https://www.2iae.com`).
 
-## 7. Vérification post-déploiement
+## 7. Campus numérique
+
+Le campus numérique (dossier `campus/`) est un **service Railway à part**,
+dans le même projet. Le site n'en dépend pas pour fonctionner : il lit la
+vitrine publique du campus (`GET <campus>/api/public/vitrine`), la garde en
+cache 5 minutes et conserve la **dernière version connue** si le campus ne
+répond plus. Sans aucune version connue (campus pas encore déployé), les
+pages du campus affichent une présentation fixe et le bouton « Campus
+Numérique » de l'en-tête garde l'adresse actuelle, `https://campus.groupe2iae.com`.
+
+Ce que le site affiche : le bandeau « ● EN DIRECT » ou « Dans 6 jours… »
+au-dessus de l'en-tête, la section « Au campus numérique » de l'accueil, les pages
+`/campus-numerique`, `/campus-numerique/cours/:slug` et
+`/campus-numerique/formateurs/:slug` (titre, description et vignette de
+partage servis par le serveur, entrées au sitemap et au `llms.txt`).
+
+Variables du **service du site** :
+
+| Variable | Obligatoire | Description |
+|---|---|---|
+| `CAMPUS_URL` | Recommandé | Adresse publique du campus, sans `/` final (défaut : `https://campus.2iae.com`). Sert aux liens, aux photos et au bouton « Accéder au campus ». |
+| `CAMPUS_INTERNAL_URL` | Non | Adresse du campus sur le réseau privé Railway, pour la lecture de la vitrine (ex. `http://campus.railway.internal:8080`, le port étant celui du service campus). Plus rapide, sans passer par Internet. |
+| `CAMPUS_WEBHOOK_SECRET` | Recommandé | Secret partagé avec le campus (`openssl rand -hex 32`). Sans lui, `POST /api/campus/rafraichir` répond 503 et le site ne se met à jour qu'à l'expiration du cache (5 min). |
+
+Variables du **service campus**, à accorder :
+
+```
+SITE_WEBHOOK_URL=https://www.2iae.com          # ou l'adresse privée du site
+CAMPUS_WEBHOOK_SECRET=<la même valeur que sur le site>
+```
+
+Le campus prévient le site à chaque publication (`POST /api/campus/rafraichir`,
+en-tête `X-Campus-Signature: sha256=<HMAC-SHA256 du corps>`). Le site vérifie
+la signature sur le corps brut, refuse un message de plus de 5 minutes ou déjà
+reçu, puis relit la vitrine aussitôt.
+
+Vérification : `https://www.2iae.com/api/campus/vitrine` renvoie la vitrine
+(`"aJour": true`), ou `{"indisponible": true, …}` tant que le campus n'a jamais
+répondu. Les journaux du site signalent « Campus numérique injoignable » une
+seule fois par panne.
+
+## 8. Vérification post-déploiement
 
 1. `https://votre-app.up.railway.app/api/health` → `{"status":"ok"}`
 2. Page d'accueil et images des sliders

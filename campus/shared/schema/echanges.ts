@@ -1,6 +1,6 @@
 // Échanges : messagerie (étudiant ↔ formateur, salons de cours et de classe),
 // annonces de la vie scolaire, notifications, agenda.
-import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
+import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, sites, classes, fichiers } from "./base";
 import { cours } from "./cours";
 
@@ -16,13 +16,24 @@ export const conversations = campusSchema.table(
     coursId: integer("cours_id").references(() => cours.id, { onDelete: "cascade" }),
     classeId: integer("classe_id").references(() => classes.id, { onDelete: "cascade" }),
     titre: text("titre"),
+    /**
+     * Clé d'unicité (module messages) : « direct:12-45 » (les deux personnes,
+     * plus petit identifiant d'abord) ou « cours:7 ». Deux ouvertures
+     * simultanées ne créent jamais deux conversations.
+     */
+    cleUnique: text("cle_unique").unique(),
     dernierMessageLe: timestamp("dernier_message_le", { withTimezone: true }).notNull().defaultNow(),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("conversations_cours_idx").on(t.coursId), index("conversations_classe_idx").on(t.classeId)],
 );
 
-/** Participants explicites (conversations directes) et curseur de lecture de chacun. */
+/**
+ * Participants explicites (conversations directes) et curseur de lecture de
+ * chacun. Dans un salon de cours, l'accès se déduit de l'inscription au cours :
+ * une ligne n'y est créée que pour garder le curseur de lecture (et la
+ * sourdine) de ceux qui l'ont ouvert.
+ */
 export const participants = campusSchema.table(
   "participants",
   {
@@ -31,7 +42,7 @@ export const participants = campusSchema.table(
     luJusquA: timestamp("lu_jusqu_a", { withTimezone: true }),
     sourdine: boolean("sourdine").notNull().default(false),
   },
-  (t) => [primaryKey({ columns: [t.conversationId, t.utilisateurId] })],
+  (t) => [primaryKey({ columns: [t.conversationId, t.utilisateurId] }), index("participants_utilisateur_idx").on(t.utilisateurId)],
 );
 
 export const messages = campusSchema.table(
@@ -44,10 +55,26 @@ export const messages = campusSchema.table(
     fichierId: integer("fichier_id").references(() => fichiers.id),
     /** Message auquel celui-ci répond (fil). */
     reponseAId: integer("reponse_a_id"),
+    /** En-tête « À propos du devoir : Business plan » quand on écrit depuis un devoir ou une leçon. */
+    contexte: text("contexte"),
+    /** Durée d'une note vocale (les enregistrements webm du navigateur ne la portent pas). */
+    dureeSecondes: integer("duree_secondes"),
+    /**
+     * Identifiant d'envoi choisi par le téléphone : un renvoi de la file
+     * d'envoi hors ligne ne crée jamais de doublon.
+     */
+    cleEnvoi: text("cle_envoi"),
     supprime: boolean("supprime").notNull().default(false),
+    supprimeLe: timestamp("supprime_le", { withTimezone: true }),
+    /** L'auteur lui-même, ou le formateur / l'équipe qui modère le salon. */
+    supprimeParId: integer("supprime_par_id").references(() => utilisateurs.id),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("messages_conversation_idx").on(t.conversationId, t.creeLe)],
+  (t) => [
+    index("messages_conversation_idx").on(t.conversationId, t.creeLe),
+    index("messages_fichier_idx").on(t.fichierId),
+    uniqueIndex("messages_cle_envoi_idx").on(t.auteurId, t.cleEnvoi),
+  ],
 );
 
 /** Qui voit une annonce ou un événement. */

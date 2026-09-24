@@ -75,6 +75,8 @@ function classeSansSite(nomClasse: string, nomSite: string | null) {
 }
 
 /** Ordre de priorité de la carte « À faire maintenant ». */
+// Un live dans plus de 2 h n'est jamais « à faire maintenant » (le bandeau du
+// prochain live s'en charge) : il ne sert qu'aux lignes « Ensuite ».
 const RANGS: Record<ElementAFaire["type"], number> = {
   live: 1,
   devoir_urgent: 2,
@@ -82,6 +84,7 @@ const RANGS: Record<ElementAFaire["type"], number> = {
   message: 4,
   devoir_retard: 5,
   devoir: 6,
+  live_prevu: 7,
   a_jour: 9,
 };
 
@@ -211,7 +214,7 @@ export function enregistrerAccueil(app: Express) {
             {
               type: "live",
               titre: s.titre,
-              detail: [code, formateur].filter(Boolean).join(" · "),
+              detail: formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte.",
               lien: `/live/${s.id}`,
               bouton: "Rejoindre le live",
               urgence: "haute",
@@ -227,12 +230,12 @@ export function enregistrerAccueil(app: Express) {
         const bientot = dans < 2 * HEURE;
         ajouter(
           {
-            type: bientot ? "live_bientot" : "live",
+            type: bientot ? "live_bientot" : "live_prevu",
             titre: s.titre,
             detail:
               dans <= 0
-                ? `${code} · Le formateur ouvre la classe dans un instant`
-                : `${code} · En direct ${quand(s.debut, maintenant)} à ${heureFr(s.debut)}${formateur ? ` · ${formateur}` : ""}`,
+                ? "Le formateur ouvre la classe dans un instant."
+                : `En direct ${quand(s.debut, maintenant)} à ${heureFr(s.debut)}${formateur ? ` avec ${formateur}` : ""}.`,
             lien: `/live/${s.id}`,
             bouton: bientot ? "Entrer dans la classe" : "Voir le live",
             urgence: bientot ? "moyenne" : "basse",
@@ -242,8 +245,6 @@ export function enregistrerAccueil(app: Express) {
           },
           s.debut.getTime(),
         );
-        // Un live dans plus de 2 h n'est jamais « à faire maintenant » : le bandeau du prochain live s'en charge.
-        if (!bientot) candidats[candidats.length - 1].rang = 7;
       }
 
       for (const { d, code, couleur, fait } of listeDevoirs) {
@@ -258,7 +259,7 @@ export function enregistrerAccueil(app: Express) {
             {
               type: "devoir_retard",
               titre: d.titre,
-              detail: `${code} · Date limite dépassée (${echeance}). Tu peux encore le rendre, en retard.`,
+              detail: `Date limite dépassée (${echeance}). Tu peux encore le rendre, en retard.`,
               lien,
               bouton: estQuiz ? "Faire l'interrogation" : "Rendre mon devoir",
               urgence: "moyenne",
@@ -274,7 +275,7 @@ export function enregistrerAccueil(app: Express) {
             {
               type: urgent ? "devoir_urgent" : "devoir",
               titre: d.titre,
-              detail: `${code} · ${estQuiz ? "Interrogation à faire" : "À rendre"} ${echeance}`,
+              detail: `${estQuiz ? "Interrogation à faire" : "À rendre"} ${echeance}.`,
               lien,
               bouton: urgent ? (estQuiz ? "Commencer l'interrogation" : "Rendre mon devoir") : "Voir le devoir",
               urgence: urgent ? "haute" : "basse",
@@ -308,7 +309,16 @@ export function enregistrerAccueil(app: Express) {
       // Priorité d'abord, puis le plus proche dans le temps.
       candidats.sort((a, b) => a.rang - b.rang || a.t - b.t);
       const premier = candidats.find((c) => c.rang <= RANGS.devoir);
-      const aFaire: ElementAFaire = premier ? sansRang(premier) : A_JOUR;
+      // À jour : on dit tout de même quand est le prochain rendez-vous (« Prochain live : lundi à 09h00 »).
+      const prochainLive = candidats.find((c) => c.type === "live_prevu");
+      const aFaire: ElementAFaire = premier
+        ? sansRang(premier)
+        : prochainLive?.quand
+          ? {
+              ...A_JOUR,
+              detail: `Prochain rendez-vous : ${prochainLive.coursCode} en direct ${quand(new Date(prochainLive.quand), maintenant)} à ${heureFr(new Date(prochainLive.quand))}. D'ici là, avance dans une leçon.`,
+            }
+          : A_JOUR;
       // « Ensuite » : l'urgent restant, puis ce qui vient, dans l'ordre du temps.
       const suite = candidats
         .filter((c) => c !== premier)
@@ -362,9 +372,9 @@ export function enregistrerAccueil(app: Express) {
       });
 
       // Annonce importante : la première importante non lue, sinon la dernière épinglée.
-      const importantes = await annoncesPour(u, { importantesSeulement: true, limite: 20 });
-      const choisie =
-        importantes.find((l) => l.annonce.importante && !l.luLe && l.annonce.auteurId !== u.id) ?? importantes.find((l) => l.annonce.epinglee);
+      const annoncesEnLigne = await annoncesPour(u);
+      const nonLue = (l: (typeof annoncesEnLigne)[number]) => !l.luLe && l.annonce.auteurId !== u.id;
+      const choisie = annoncesEnLigne.find((l) => l.annonce.importante && nonLue(l)) ?? annoncesEnLigne.find((l) => l.annonce.epinglee);
       const annonceImportante: AnnonceResume | null = choisie
         ? {
             id: choisie.annonce.id,
@@ -403,6 +413,7 @@ export function enregistrerAccueil(app: Express) {
         prochains: suite,
         cours: mesCours,
         annonceImportante,
+        annoncesNonLues: annoncesEnLigne.filter(nonLue).length,
         semaine: {
           numero: numeroSemaine(maintenant),
           lives: livesSemaine[0]?.n ?? 0,
@@ -529,14 +540,15 @@ export function enregistrerAccueil(app: Express) {
             ...c,
             etudiants: (await etudiantsDuCours(c.id)).length,
             campus: nbCampus.get(c.id) ?? 0,
-            prochaineSeance: p ? { id: p.s.id, debut: p.s.debut.toISOString() } : null,
+            prochaineSeance: p ? { id: p.s.id, debut: p.s.debut.toISOString(), statut: p.s.statut } : null,
           };
         }),
       );
 
-      const [messagesNonLus, semaine] = await Promise.all([
+      const [messagesNonLus, semaine, annoncesEnLigne] = await Promise.all([
         compterMessagesNonLus(u).catch(() => 0),
         elementsAgenda(u, maintenant, new Date(t0 + 7 * JOUR)),
+        annoncesPour(u),
       ]);
 
       const reponse: AccueilFormateur = {
@@ -554,6 +566,7 @@ export function enregistrerAccueil(app: Express) {
         questions,
         cours: mesCours,
         messagesNonLus,
+        annoncesNonLues: annoncesEnLigne.filter((l) => !l.luLe && l.annonce.auteurId !== u.id).length,
         semaine: semaine.filter((e) => e.statut !== "annulee").slice(0, 8),
       };
       res.json(reponse);

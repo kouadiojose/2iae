@@ -192,4 +192,6 @@ export type OptionsEditionCours = {
   peutPublierSurSite: boolean;
   /** La personne peut changer le formateur principal (équipe). */
   peutChangerFormateur: boolean;
+  /** L'assistant IA est configuré (sinon : bouton « Proposer une accroche » désactivé). */
+  iaDisponible: boolean;
 };

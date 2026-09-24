@@ -255,7 +255,9 @@ export function extrait(markdown: string, longueur = 160): string {
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/^\s{0,3}(#{1,6}|>|[-*•]|\d+[.)])\s+/gm, "")
+    // Les puces deviennent « · » pour que les éléments d'une liste restent séparés une fois sur une ligne.
+    .replace(/^\s{0,3}([-*•]|\d+[.)])\s+/gm, "· ")
+    .replace(/^\s{0,3}(#{1,6}|>)\s+/gm, "")
     .replace(/^\s*(-{3,}|\*{3,})\s*$/gm, " ")
     .replace(/(\*\*|__|\*|`)(.+?)\1/g, "$2")
     .replace(/\s+/g, " ")
@@ -708,6 +710,8 @@ export function enregistrerAnnonces(app: Express) {
       const [a] = await db.select().from(annonces).where(eq(annonces.id, idParam(req)));
       if (!a || !(await peutGererAnnonce(u, a))) throw introuvable("Annonce");
       await db.delete(annonces).where(eq(annonces.id, a.id));
+      // Les notifications qui y menaient ne mèneraient plus nulle part : on les retire des cloches.
+      await db.delete(notifications).where(eq(notifications.lien, `/annonces/${a.id}`));
       await db.insert(journal).values({ utilisateurId: u.id, action: "annonce.supprimee", details: { annonceId: a.id, titre: a.titre } });
       if (a.publierSurSite) prevenirSite("annonce retirée");
       const canal = canalCible(a);

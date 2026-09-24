@@ -47,6 +47,13 @@ if (isProduction) {
   });
 }
 
+// Webhooks signés : la signature HMAC porte sur les octets EXACTS du corps.
+// Leur corps est donc gardé brut (Buffer) ici, AVANT le parseur JSON global —
+// un express.raw posé sur la route elle-même arriverait trop tard : le corps
+// aurait déjà été lu et transformé en objet par express.json.
+app.use("/api/campus/rafraichir", express.raw({ type: () => true, limit: "64kb" }));
+app.use("/api/webhooks/facebook", express.raw({ type: "application/json", limit: "5mb" }));
+
 // Increase body parser limits for base64 images
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));

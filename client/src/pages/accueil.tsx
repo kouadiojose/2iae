@@ -12,6 +12,7 @@ import { type Slider, type FounderMessage, type Institute } from "@shared/schema
 import { VideoYoutube } from "@/components/video-youtube";
 import { AfficheRTI } from "@/components/annonce-rti";
 import { ReportageRtiBts } from "@/components/reportage-rti";
+import { SectionCampusAccueil } from "@/components/campus-numerique";
 
 interface News {
   id: string;
@@ -531,6 +532,9 @@ export default function AccueilPage() {
       </section>
 
       <ReportageRtiBts fond="bg-white" avecCta />
+
+      {/* Campus numérique : prochain live, cours annoncés, nouveaux formateurs */}
+      <SectionCampusAccueil />
 
       {/* Hero Slider Section */}
       <section className="relative min-h-[80vh] lg:h-[70vh] overflow-hidden mobile-no-overflow">

@@ -2,7 +2,8 @@
 // formateurs, et consommation quotidienne pour maîtriser le coût.
 import { serial, text, integer, boolean, timestamp, primaryKey, index, date } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { cours } from "./cours";
+import { cours, lecons } from "./cours";
+import { devoirs } from "./evaluations";
 
 export const conversationsIa = campusSchema.table(
   "conversations_ia",
@@ -10,6 +11,13 @@ export const conversationsIa = campusSchema.table(
     id: serial("id").primaryKey(),
     utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
     coursId: integer("cours_id").references(() => cours.id, { onDelete: "set null" }),
+    /** Leçon depuis laquelle la conversation a été ouverte (l'assistant sait ce que l'étudiant lit). */
+    leconId: integer("lecon_id").references(() => lecons.id, { onDelete: "set null" }),
+    /**
+     * Devoir depuis lequel la conversation a été ouverte : le mode tuteur
+     * (indices, jamais la réponse) reste actif pour toute la conversation.
+     */
+    devoirId: integer("devoir_id").references(() => devoirs.id, { onDelete: "set null" }),
     titre: text("titre").notNull().default("Nouvelle conversation"),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),

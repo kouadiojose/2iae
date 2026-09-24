@@ -58,7 +58,7 @@ const selonRole = (u: Pick<Utilisateur, "role">, tu: string, vous: string) => (u
 const lienPerimeActivation = () =>
   new ErreurHttp(410, "Ce lien a déjà servi ou a expiré. Connecte-toi avec ton matricule et le code de ta fiche.");
 const lienPerimeReinitialisation = () =>
-  new ErreurHttp(410, "Ce lien a déjà servi ou a expiré. Refais une demande depuis « Code oublié ? ».");
+  new ErreurHttp(410, "Ce lien a déjà servi ou a expiré : un lien « code oublié » ne sert qu'une fois, pendant 1 heure.");
 
 /** Un jeton bien formé (base64url, 24 octets → 32 caractères). Évite une requête pour du bruit. */
 const jetonBienForme = (j: string) => /^[A-Za-z0-9_-]{20,80}$/.test(j);
@@ -247,7 +247,8 @@ const schemaProfil = z
     codeActuel: z.string().max(200).optional(),
     photoFichierId: z.number().int().positive().nullable().optional(),
     titre: texteFacultatif(120),
-    bio: texteFacultatif(1200),
+    /** Trois ou quatre lignes sur la carte du site : 600 caractères suffisent. */
+    bio: texteFacultatif(600),
     localisation: texteFacultatif(80),
     consentementSite: z.boolean().optional(),
   })
@@ -300,7 +301,13 @@ export function enregistrerCompte(app: Express) {
       const cleIp = `oubli|${req.ip}`;
       verifierTentatives(cleIp, 10);
       noterEchec(cleIp); // chaque demande compte : 10 par quart d'heure et par adresse
-      const u = await trouverParIdentifiant(identifiant); // téléphone partagé : 409 qui demande le matricule (comme à la connexion)
+      // Téléphone partagé par plusieurs comptes : on demande le matricule, comme à la connexion.
+      const u = await trouverParIdentifiant(identifiant).catch((e: unknown) => {
+        if (e instanceof ErreurHttp && e.statut === 409) {
+          throw new ErreurHttp(409, "Plusieurs comptes utilisent ce numéro. Tape plutôt ton matricule : il est sur ta fiche de connexion.");
+        }
+        throw e;
+      });
       if (u && u.actif && u.role !== "salle") {
         const derniere = demandesRecentes.get(u.id);
         if (!derniere || derniere < Date.now() - DELAI_ENTRE_DEMANDES) {
@@ -489,7 +496,7 @@ export function enregistrerCompte(app: Express) {
           maj.consentementSite = false;
           maj.proposeSurSite = false;
           maj.publierSurSite = false;
-          ficheRetiree = u.publierSurSite;
+          ficheRetiree = true;
         }
       }
 

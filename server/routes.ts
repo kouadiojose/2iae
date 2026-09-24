@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { enregistrerRoutesFacebook } from "./facebook/routes";
+import { enregistrerCampus, lireVitrine } from "./campus";
 import { planifierRecap } from "./chat-recap";
 import { upsertLead, changerStage, traiterMessageChat } from "./crm";
 import { insertLeadSchema, updateLeadSchema, leads as tableLeads } from "@shared/schema";
@@ -436,6 +437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `- [Filières](${SITE_URL}/filieres) et [instituts](${SITE_URL}/instituts) : objectifs, débouchés, conditions d'entrée.`,
         `- [Questions fréquentes](${SITE_URL}/faq).`,
         `- [Université de l'Entrepreneuriat d'Azaguié](${SITE_URL}/universite-entrepreneuriat) : campus agro-pastoral avec internat.`,
+        `- [Campus numérique](${SITE_URL}/campus-numerique) : un même formateur enseigne en direct aux salles de conférence des 5 campus et aux étudiants connectés depuis leur téléphone ; cours annoncés, formateurs et prochains lives.`,
       ].join("\n"),
     );
   });
@@ -463,6 +465,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ["/a-propos", "yearly", "0.5"],
         ["/contact", "yearly", "0.6"],
         ["/cabinet", "monthly", "0.5"],
+        ["/campus-numerique", "daily", "0.8"],
       ];
       const urls: string[] = statiques.map(
         ([p, freq, prio]) =>
@@ -483,6 +486,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const a of albums.filter((a) => a.isActive)) {
         urls.push(
           `<url><loc>${SITE_URL}/galerie/${a.id}</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>`,
+        );
+      }
+
+      // Campus numérique : cours et formateurs annoncés (vitrine en cache ;
+      // si le campus est injoignable, ces entrées manquent simplement).
+      const vitrine = await lireVitrine();
+      const slugsFormateurs = new Set<string>();
+      for (const c of vitrine?.cours ?? []) {
+        urls.push(
+          `<url><loc>${SITE_URL}/campus-numerique/cours/${encodeURIComponent(c.slug)}</loc><changefreq>daily</changefreq><priority>0.6</priority></url>`,
+        );
+        if (c.formateur) slugsFormateurs.add(c.formateur.slug);
+      }
+      for (const f of vitrine?.formateurs ?? []) slugsFormateurs.add(f.slug);
+      for (const slug of Array.from(slugsFormateurs)) {
+        urls.push(
+          `<url><loc>${SITE_URL}/campus-numerique/formateurs/${encodeURIComponent(slug)}</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>`,
         );
       }
 
@@ -2874,6 +2894,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Intégration Facebook : webhook temps réel + synchronisation
   enregistrerRoutesFacebook(app, requireAdmin);
+
+  // Campus numérique : vitrine du campus (cache) et webhook de rafraîchissement
+  enregistrerCampus(app);
 
   const httpServer = createServer(app);
   return httpServer;

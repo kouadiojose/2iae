@@ -27,7 +27,14 @@ export function destinationApresConnexion(m: Moi, retour: string | null): string
 /** Enregistre la personne connectée (après connexion, activation ou nouveau code). */
 export function installerMoi(m: Moi, viderCache = false) {
   // Un autre compte était peut-être ouvert sur ce téléphone : on ne garde rien de ses données.
-  if (viderCache) queryClient.clear();
+  // (Pas de queryClient.clear() : il détacherait l'observateur de /api/auth/moi, et
+  // l'application croirait encore la personne déconnectée jusqu'au prochain rendu.)
+  if (viderCache) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "/api/auth/moi" });
+  queryClient.setQueryData(["/api/auth/moi"], m);
+}
+
+/** Met à jour la personne connectée après une modification (profil, préférences, charte…). */
+export function majMoi(m: Moi) {
   queryClient.setQueryData(["/api/auth/moi"], m);
 }
 
@@ -51,7 +58,13 @@ export function lienWhatsApp(numero: string, texte: string) {
   return `https://wa.me/${numero.replace(/\D/g, "")}?text=${encodeURIComponent(texte)}`;
 }
 
-export const attendre = (ms: number) => new Promise<void>((ok) => setTimeout(ok, ms));
+/** « 0707123456 » → « 07 07 12 34 56 » (numéros ivoiriens à 10 chiffres) ; sinon inchangé. */
+export function formaterTelephone(t: string | null | undefined): string {
+  if (!t) return "";
+  return /^\d{10}$/.test(t) ? t.replace(/(\d{2})(?=\d)/g, "$1 ") : t;
+}
+
+export const attendre =(ms: number) => new Promise<void>((ok) => setTimeout(ok, ms));
 
 /** Étudiants tutoyés, personnel vouvoyé. */
 export const tuOuVous = (m: Pick<Moi, "role">) => (tu: string, vous: string) => (m.role === "etudiant" ? tu : vous);

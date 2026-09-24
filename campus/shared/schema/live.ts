@@ -53,6 +53,12 @@ export const seances = campusSchema.table(
     publierSurSite: boolean("publier_sur_site").notNull().default(false),
     /** Motif d'annulation ou de report (« Le formateur a un empêchement »), affiché partout. */
     motifAnnulation: text("motif_annulation"),
+    /** Lien de secours (Zoom, Meet, Teams, Jitsi) préparé pour le « Plan B ». */
+    lienSecours: text("lien_secours"),
+    /** Plan B déclenché : tout le monde bascule sur le lien de secours. */
+    planBLe: timestamp("plan_b_le", { withTimezone: true }),
+    /** Le brouillon de fiche de révision a été rédigé par l'IA (« Proposé par l'IA »). */
+    resumeParIa: boolean("resume_par_ia").notNull().default(false),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("seances_cours_idx").on(t.coursId), index("seances_debut_idx").on(t.debut)],
@@ -72,6 +78,8 @@ export const questionsLive = campusSchema.table(
     repondue: boolean("repondue").notNull().default(false),
     epinglee: boolean("epinglee").notNull().default(false),
     masquee: boolean("masquee").notNull().default(false),
+    /** Moment où le formateur l'a marquée répondue (lien vers le replay). */
+    reponduLe: timestamp("repondu_le", { withTimezone: true }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("questions_live_seance_idx").on(t.seanceId)],
@@ -152,7 +160,14 @@ export const sondages = campusSchema.table(
     options: jsonb("options").$type<string[]>().notNull(),
     /** Index de la bonne réponse quand le sondage sert de question de cours. */
     bonneReponse: integer("bonne_reponse"),
+    /** Explication de la bonne réponse, montrée à la fermeture. */
+    explication: text("explication"),
     ouvert: boolean("ouvert").notNull().default(true),
+    /** Préparé à l'avance : ouvertLe reste vide tant qu'il n'a pas été lancé. */
+    ouvertLe: timestamp("ouvert_le", { withTimezone: true }),
+    fermeLe: timestamp("ferme_le", { withTimezone: true }),
+    /** Question proposée par l'IA (question éclair) et validée par le formateur. */
+    parIa: boolean("par_ia").notNull().default(false),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("sondages_seance_idx").on(t.seanceId)],

@@ -9,6 +9,8 @@ import path from "path";
 import type { Express } from "express";
 import { storage } from "./storage";
 import { FAQS } from "@shared/faq";
+import { coursParSlug, formateurParSlug, lireVitrine } from "./campus";
+import type { VitrineCours, VitrineFormateur, VitrineLive } from "@shared/campus";
 
 const SITE = "https://www.2iae.com";
 
@@ -237,8 +239,192 @@ function rendre(meta: MetaPage, chemin: string): string | null {
   return html;
 }
 
+// ── Campus numérique ────────────────────────────────────────────────────────
+// Les pages /campus-numerique… sont servies avec les vraies données de la
+// vitrine du campus (en cache) : un lien partagé sur WhatsApp ou Facebook
+// affiche le titre du cours, le formateur et une vignette.
+
+/** Visuel de partage par défaut : les cinq campus du réseau. */
+const IMAGE_CAMPUS = SITE + "/images/reseau-groupe-2iae.jpg";
+const ORGANISATION = { "@type": "EducationalOrganization", name: "Groupe Écoles 2IAE International", url: SITE };
+
+/** Les textes viennent du campus : aucun chevron ne doit pouvoir fermer le <script> du JSON-LD. */
+function sansChevrons(t: string): string {
+  return t.replace(/[<>]/g, " ");
+}
+
+function resume(t: string, max = 300): string {
+  const net = t.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim();
+  return net.length > max ? net.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : net;
+}
+
+/** « Docteur en IA » → « docteur en IA » après une virgule ; les sigles (« PDG ») restent intacts. */
+function minusculeInitiale(t: string): string {
+  return /^[A-ZÀ-ÖØ-Þ][a-zß-öø-ÿ]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
+}
+
+function dateAbidjan(iso: string): string {
+  return new Intl.DateTimeFormat("fr-FR", { timeZone: "Africa/Abidjan", day: "numeric", month: "long", year: "numeric" }).format(new Date(iso));
+}
+
+function filArianeCampus(nom: string, chemin: string) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Accueil", item: SITE + "/" },
+      { "@type": "ListItem", position: 2, name: "Campus numérique", item: SITE + "/campus-numerique" },
+      { "@type": "ListItem", position: 3, name: sansChevrons(nom), item: SITE + chemin },
+    ],
+  };
+}
+
+function personne(f: Pick<VitrineFormateur, "prenom" | "nom"> & Partial<VitrineFormateur>) {
+  return {
+    "@type": "Person",
+    name: sansChevrons(`${f.prenom} ${f.nom}`),
+    jobTitle: f.titre ? sansChevrons(f.titre) : undefined,
+    image: f.photoUrl ?? undefined,
+    url: f.slug ? `${SITE}/campus-numerique/formateurs/${f.slug}` : undefined,
+  };
+}
+
+function schemaCours(c: VitrineCours) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Course",
+    name: sansChevrons(c.titre),
+    description: sansChevrons(resume(c.accroche || c.titre)),
+    courseCode: sansChevrons(c.code),
+    url: `${SITE}/campus-numerique/cours/${c.slug}`,
+    image: c.imageUrl ?? undefined,
+    inLanguage: "fr",
+    provider: ORGANISATION,
+    hasCourseInstance: {
+      "@type": "CourseInstance",
+      courseMode: "Blended",
+      startDate: c.dateDebut ?? undefined,
+      endDate: c.dateFin ?? undefined,
+      instructor: c.formateur ? personne(c.formateur) : undefined,
+    },
+  };
+}
+
+function schemaLive(l: VitrineLive) {
+  const debut = new Date(l.debut);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: sansChevrons(`${l.coursTitre} — ${l.titre}`),
+    startDate: debut.toISOString(),
+    endDate: new Date(debut.getTime() + l.dureeMinutes * 60_000).toISOString(),
+    eventAttendanceMode: "https://schema.org/MixedEventAttendanceMode",
+    eventStatus: "https://schema.org/EventScheduled",
+    location: { "@type": "VirtualLocation", url: l.url },
+    organizer: ORGANISATION,
+    performer: l.formateur ? personne(l.formateur) : undefined,
+  };
+}
+
+function enregistrerSeoCampus(app: Express): void {
+  app.get("/campus-numerique", async (_req, res, next) => {
+    try {
+      const v = await lireVitrine();
+      // Le prochain live qui n'a pas encore commencé : un « en direct » serait
+      // périmé dans la vignette partagée ou l'index du moteur.
+      const prochain = v?.lives.find((l) => Date.parse(l.debut) > Date.now());
+      const meta: MetaPage = {
+        titre: "Campus numérique 2IAE — un cours, cinq campus, en direct | Groupe 2IAE",
+        description:
+          "Au campus numérique du Groupe 2IAE, un même formateur enseigne en direct aux salles de conférence de Riviera Palmeraie, Yopougon, Yamoussoukro, Azaguié et M'Batto, et aux étudiants connectés depuis leur téléphone." +
+          (prochain ? ` Prochain cours en direct : ${prochain.coursTitre}, le ${dateAbidjan(prochain.debut)}.` : " Cours annoncés, formateurs et prochains lives."),
+        image: IMAGE_CAMPUS,
+        jsonLd: [
+          ...(v?.cours.length
+            ? [{
+                "@context": "https://schema.org",
+                "@type": "ItemList",
+                name: "Cours annoncés au campus numérique 2IAE",
+                itemListElement: v.cours.map((c, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE}/campus-numerique/cours/${c.slug}`, name: sansChevrons(c.titre) })),
+              }]
+            : []),
+          ...(v?.lives ?? []).slice(0, 10).map(schemaLive),
+          filAriane("Campus numérique", "/campus-numerique"),
+        ],
+      };
+      const html = rendre(meta, "/campus-numerique");
+      if (!html) return next();
+      res.type("html").send(html);
+    } catch {
+      next();
+    }
+  });
+
+  app.get("/campus-numerique/cours/:slug", async (req, res, next) => {
+    try {
+      const c = await coursParSlug(req.params.slug);
+      if (!c) return next();
+      const chemin = `/campus-numerique/cours/${c.slug}`;
+      const par = c.formateur
+        ? ` Avec ${c.formateur.prenom} ${c.formateur.nom}${c.formateur.localisation ? `, depuis ${c.formateur.localisation}` : ""}.`
+        : "";
+      const quand = c.dateDebut && Date.parse(c.dateDebut) > Date.now() ? ` Dès le ${dateAbidjan(c.dateDebut)},` : "";
+      const ou = ` en direct dans ${c.nbCampus > 1 ? `nos ${c.nbCampus} campus` : "nos campus"}.`;
+      const meta: MetaPage = {
+        titre: `${c.titre} — cours en direct au campus numérique | Groupe 2IAE`,
+        description: resume(`${c.accroche || c.titre}${par}${quand}${ou}`),
+        image: c.imageUrl ?? c.formateur?.photoUrl ?? IMAGE_CAMPUS,
+        jsonLd: [schemaCours(c), filArianeCampus(c.titre, chemin)],
+      };
+      const html = rendre(meta, chemin);
+      if (!html) return next();
+      res.type("html").send(html);
+    } catch {
+      next();
+    }
+  });
+
+  app.get("/campus-numerique/formateurs/:slug", async (req, res, next) => {
+    try {
+      const f = await formateurParSlug(req.params.slug);
+      if (!f) return next();
+      const chemin = `/campus-numerique/formateurs/${f.slug}`;
+      const nom = `${f.prenom} ${f.nom}`;
+      const intro = [f.titre ? minusculeInitiale(f.titre) : null, f.localisation ? `depuis ${f.localisation}` : null]
+        .filter(Boolean)
+        .join(", ");
+      const meta: MetaPage = {
+        titre: `${nom} — formateur au campus numérique | Groupe 2IAE`,
+        description: resume(
+          `${nom}${intro ? `, ${intro}` : ""}, enseigne en direct aux étudiants des 5 campus du Groupe 2IAE.` +
+            (f.bio ? ` ${f.bio}` : "") +
+            (f.cours.length ? ` Cours : ${f.cours.map((c) => c.titre).join(", ")}.` : ""),
+        ),
+        image: f.photoUrl ?? IMAGE_CAMPUS,
+        jsonLd: [
+          {
+            "@context": "https://schema.org",
+            ...personne(f),
+            description: f.bio ? sansChevrons(resume(f.bio)) : undefined,
+            affiliation: ORGANISATION,
+          },
+          filArianeCampus(nom, chemin),
+        ],
+      };
+      const html = rendre(meta, chemin);
+      if (!html) return next();
+      res.type("html").send(html);
+    } catch {
+      next();
+    }
+  });
+}
+
 /** Routes HTML avec métadonnées propres — à enregistrer AVANT le statique. */
 export function enregistrerRoutesSeo(app: Express): void {
+  // Campus numérique : pages alimentées par la vitrine du campus.
+  enregistrerSeoCampus(app);
+
   // Les pages connues.
   for (const [chemin, meta] of Object.entries(PAGES)) {
     app.get(chemin, (_req, res, next) => {

@@ -51,8 +51,13 @@ export const relancesAnnonces = campusSchema.table(
 
 // ── Contrats d'API du module (dates en chaînes ISO) ────────────────────────
 
-/** Nature d'un élément « à faire » de l'accueil étudiant. */
-export type TypeAFaire = "live" | "live_bientot" | "devoir_urgent" | "message" | "devoir_retard" | "devoir" | "a_jour";
+/**
+ * Nature d'un élément « à faire » de l'accueil étudiant :
+ * live (en direct maintenant) · live_bientot (dans moins de 2 h) · live_prevu (plus tard) ·
+ * devoir_urgent (dû sous 24 h) · message (d'un formateur, non lu) · devoir_retard (encore accepté) ·
+ * devoir (à venir) · a_jour (rien à faire).
+ */
+export type TypeAFaire = "live" | "live_bientot" | "live_prevu" | "devoir_urgent" | "message" | "devoir_retard" | "devoir" | "a_jour";
 
 /** haute : maintenant · moyenne : aujourd'hui · basse : plus tard · aucune : tout est fait. */
 export type Urgence = "haute" | "moyenne" | "basse" | "aucune";
@@ -105,6 +110,8 @@ export type AccueilEtudiant = {
   prochains: ElementAFaire[];
   cours: CoursAccueil[];
   annonceImportante: AnnonceResume | null;
+  /** Annonces en ligne qui me concernent et que je n'ai pas encore ouvertes. */
+  annoncesNonLues: number;
   semaine: { numero: number; lives: number; devoirs: number };
 };
 
@@ -143,7 +150,7 @@ export type CoursFormateur = {
   statut: string;
   etudiants: number;
   campus: number;
-  prochaineSeance: { id: number; debut: string } | null;
+  prochaineSeance: { id: number; debut: string; statut: string } | null;
 };
 
 /** GET /api/accueil/formateur */
@@ -166,6 +173,7 @@ export type AccueilFormateur = {
   } | null;
   cours: CoursFormateur[];
   messagesNonLus: number;
+  annoncesNonLues: number;
   semaine: ElementAgenda[];
 };
 

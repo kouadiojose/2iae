@@ -22,7 +22,9 @@ export function CadrePublic({ children, identifiant }: { children: ReactNode; id
             className="flex min-h-[48px] items-center gap-2 rounded-full px-3 text-[15px] font-bold text-texte-doux hover:bg-creme hover:text-encre"
           >
             <MessageCircleQuestion className="h-5 w-5 text-orange-fonce" />
-            <span>Besoin d'aide ?</span>
+            {/* Sur petit téléphone, « Aide » tient sur une ligne à côté de la marque. */}
+            <span className="hidden min-[420px]:inline">Besoin d'aide ?</span>
+            <span className="min-[420px]:hidden">Aide</span>
           </button>
         </header>
         <main className="flex flex-1 items-start justify-center px-4 pb-10 pt-4 sm:items-center sm:px-7 sm:pt-0">

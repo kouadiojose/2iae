@@ -108,7 +108,7 @@ export default function PageConnexion() {
             </button>
           </div>
           {!personnel && (
-            <button type="button" onClick={() => setLettres((l) => !l)} className="self-start py-1 text-[13px] font-semibold text-texte-gris underline-offset-2 hover:text-encre hover:underline">
+            <button type="button" onClick={() => setLettres((l) => !l)} className="-my-2 min-h-[44px] self-start text-[14px] font-semibold text-texte-gris underline-offset-2 hover:text-encre hover:underline">
               {lettres ? "Mon code n'a que des chiffres" : "Mon code contient des lettres"}
             </button>
           )}

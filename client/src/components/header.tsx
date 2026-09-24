@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import logoImage from "@assets/image_1756310296213.png";
+import { PointDirect, liveEnCours, useMaintenant, useVitrineCampus } from "@/components/campus-numerique";
 
 const GROUPE_LINKS = [
   { href: "/resultats-bts-2026", label: "Résultats BTS 2026" },
@@ -18,6 +19,7 @@ const GROUPE_LINKS = [
   { href: "/objectifs", label: "Objectifs & Missions" },
   { href: "/instituts", label: "Nos Instituts" },
   { href: "/universite-entrepreneuriat", label: "Université de l'Entrepreneuriat" },
+  { href: "/campus-numerique", label: "Campus numérique" },
   { href: "/nous-trouver", label: "Où nous trouver ?" },
 ];
 
@@ -36,6 +38,14 @@ const CABINET_LINKS = [
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [location] = useLocation();
+  // Campus numérique : adresse du campus lue dans sa vitrine (repli sur
+  // l'adresse actuelle tant que le nouveau campus n'a pas répondu) et point
+  // rouge sur le bouton quand un cours est en direct. La page de
+  // présentation est dans le menu « Le Groupe » : un lien de plus dans la
+  // barre écraserait le logo entre 1280 et 1440 px.
+  const { vitrine, campusUrl } = useVitrineCampus();
+  const maintenant = useMaintenant(30_000);
+  const campusEnDirect = liveEnCours(vitrine, maintenant) !== null;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -198,18 +208,19 @@ export default function Header() {
                 Nos Tarifs
               </Button>
             </Link>
-            <Link
-              href="https://campus.groupe2iae.com"
-              target="_blank"
-              className="hidden xl:block"
+            {/* Lien externe : un <a> simple. Le Link de wouter intercepte le
+                clic pour une navigation interne, ce qui échoue vers un autre
+                domaine. */}
+            <Button
+              asChild
+              className="hidden xl:inline-flex bg-secondary hover:bg-secondary/90 text-secondary-foreground whitespace-nowrap"
             >
-              <Button
-                className="bg-secondary hover:bg-secondary/90 text-secondary-foreground whitespace-nowrap"
-                data-testid="button-campus"
-              >
+              <a href={campusUrl} target="_blank" rel="noopener noreferrer" data-testid="button-campus">
+                {campusEnDirect && <PointDirect />}
                 Campus Numérique
-              </Button>
-            </Link>
+                {campusEnDirect && <span className="sr-only"> (un cours est en direct)</span>}
+              </a>
+            </Button>
           </div>
 
           {/* Mobile Menu */}
@@ -284,14 +295,16 @@ export default function Header() {
                       Nos Tarifs
                     </Button>
                   </Link>
-                  <Link href="https://campus.groupe2iae.com" target="_blank">
-                    <Button
-                      className="bg-secondary hover:bg-secondary/90 text-secondary-foreground w-full"
-                      data-testid="button-mobile-campus"
-                    >
+                  <Button
+                    asChild
+                    className="bg-secondary hover:bg-secondary/90 text-secondary-foreground w-full"
+                  >
+                    <a href={campusUrl} target="_blank" rel="noopener noreferrer" data-testid="button-mobile-campus">
+                      {campusEnDirect && <PointDirect />}
                       Campus Numérique 2IAE
-                    </Button>
-                  </Link>
+                      {campusEnDirect && <span className="sr-only"> (un cours est en direct)</span>}
+                    </a>
+                  </Button>
                 </div>
               </div>
             </SheetContent>

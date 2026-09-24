@@ -16,7 +16,7 @@ import { exigerConnexion, moi, estEquipe } from "./auth";
 import { route, idParam, introuvable, interdit, invalide } from "./http";
 import { fichiers, type Fichier, type Utilisateur } from "@shared/schema";
 
-export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import"] as const;
+export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo"] as const;
 export type UsageFichier = (typeof USAGES_FICHIER)[number];
 
 const MIMES_AUTORISES = [

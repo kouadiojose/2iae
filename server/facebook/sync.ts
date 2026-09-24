@@ -193,10 +193,11 @@ async function traiter(post: PostFacebook, resultat: Resultat): Promise<void> {
     console.log(`   ✎ relecture : ${relu.corrections.slice(0, 3).join(" · ")}`);
   }
 
-  // Troisième passe : vérification des faits. Le modèle a déjà écrit des
-  // campus inexistants (« Cocody », « M'batto ») et déformé le taux national
-  // (42,54 au lieu de 42,48). Aucune consigne n'empêche cela de façon fiable ;
-  // seule une confrontation mécanique à la source le peut.
+  // Troisième passe : vérification des faits. Le modèle a déjà écrit un
+  // campus inexistant (« Cocody » ; M'Batto, lui, est bien l'un des cinq
+  // campus) et déformé le taux national (42,54 au lieu de 42,48). Aucune
+  // consigne n'empêche cela de façon fiable ; seule une confrontation
+  // mécanique à la source le peut.
   const sources = [post.message, analyses[indexIllustration]?.texte ?? ""];
   const anomalies = verifierFaits(`${relu.titre}\n${relu.resume}\n${relu.article}`, sources);
   let corps = relu.article;

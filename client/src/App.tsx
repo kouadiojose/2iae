@@ -42,15 +42,21 @@ import VideothequePage from "@/pages/videotheque";
 import FaqPage from "@/pages/faq";
 import PreinscriptionPage from "@/pages/preinscription";
 import Resultats2026Page from "@/pages/resultats-2026";
+import CampusNumeriquePage from "@/pages/campus-numerique";
+import CampusNumeriqueCoursPage from "@/pages/campus-numerique-cours";
+import CampusNumeriqueFormateurPage from "@/pages/campus-numerique-formateur";
 import NotFound from "@/pages/not-found";
 import { MessageCircle } from "lucide-react";
 import { BandeauRTI } from "@/components/annonce-rti";
+import { BandeauCampus } from "@/components/campus-numerique";
 
 // Layout for public website pages
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       <BandeauRTI />
+      {/* Campus numérique : « ● EN DIRECT » ou « Dans 6 jours » (rien sinon) */}
+      <BandeauCampus />
       <Header />
       {children}
       <Footer />
@@ -276,6 +282,23 @@ function Router() {
       <Route path="/resultats-bts-2026">
         <PublicLayout>
           <Resultats2026Page />
+        </PublicLayout>
+      </Route>
+
+      {/* Campus numérique : vitrine du campus (fiches avant la page générale) */}
+      <Route path="/campus-numerique/cours/:slug">
+        <PublicLayout>
+          <CampusNumeriqueCoursPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/campus-numerique/formateurs/:slug">
+        <PublicLayout>
+          <CampusNumeriqueFormateurPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/campus-numerique">
+        <PublicLayout>
+          <CampusNumeriquePage />
         </PublicLayout>
       </Route>
 

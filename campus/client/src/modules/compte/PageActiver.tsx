@@ -42,6 +42,14 @@ export default function PageActiver({ jeton }: { jeton: string }) {
   return <EcranPreparation moi={moi} />;
 }
 
+/** « BTS Gestion commerciale · 1re année · Yopougon » (le campus n'est ajouté que s'il n'est pas déjà dans le nom de la classe). */
+function sousTitre(moi: Moi): string {
+  const classe = moi.classe?.nom ?? "";
+  const campus = moi.site?.nomCourt;
+  if (!campus || classe.includes(campus)) return classe;
+  return [classe, `campus ${campus}`].filter(Boolean).join(" · ");
+}
+
 function EcranPreparation({ moi }: { moi: Moi | null }) {
   const { data } = useContactsSites();
   const campus = data?.length ? data.map((s) => s.nomCourt) : CAMPUS_PAR_DEFAUT;
@@ -49,7 +57,7 @@ function EcranPreparation({ moi }: { moi: Moi | null }) {
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-encre px-6 text-center text-white" aria-live="polite">
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/3 h-80 w-80 -translate-x-1/2 rounded-full bg-orange/25 blur-3xl" />
-      <img src="/marque-2iae.svg" alt="Groupe 2IAE" className="relative h-14 w-auto animate-monte brightness-0 invert" />
+      <img src="/marque-2iae.svg" alt="Groupe 2IAE" className="relative h-16 w-auto animate-monte" />
 
       <div className="relative mt-10 flex min-h-[132px] flex-col items-center gap-3">
         {moi ? (
@@ -58,9 +66,9 @@ function EcranPreparation({ moi }: { moi: Moi | null }) {
             <h1 className="animate-monte text-[44px] font-black leading-none tracking-tres-serre sm:text-[56px]">
               Akwaba, <span className="text-orange">{moi.prenom}</span> !
             </h1>
-            {(moi.classe || moi.site) && (
+            {sousTitre(moi) && (
               <p className="animate-monte text-base text-nuit-doux" style={{ animationDelay: "0.15s" }}>
-                {[moi.classe?.nom, moi.site ? `campus ${moi.site.nomCourt}` : null].filter(Boolean).join(" · ")}
+                {sousTitre(moi)}
               </p>
             )}
           </>
@@ -79,11 +87,11 @@ function EcranPreparation({ moi }: { moi: Moi | null }) {
           return (
             <li
               key={nom}
-              className={cn("flex animate-monte flex-col items-center gap-2 rounded-2xl px-1 py-3 transition-colors duration-500", le ? "bg-orange text-encre" : "bg-nuit-carte")}
+              className={cn("flex animate-monte flex-col items-center gap-2 rounded-2xl px-0.5 py-3 transition-colors duration-500", le ? "bg-orange text-encre" : "bg-nuit-carte")}
               style={{ animationDelay: `${0.35 + i * 0.3}s` }}
             >
               <span className={cn("h-2.5 w-2.5 rounded-full", le ? "bg-encre" : "bg-orange")} />
-              <span className="w-full truncate text-[11px] font-bold sm:text-[13px]">{nom}</span>
+              <span className="w-full truncate text-[10px] font-bold sm:text-[13px]">{nom}</span>
             </li>
           );
         })}

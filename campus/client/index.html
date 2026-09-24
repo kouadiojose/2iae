@@ -7,12 +7,35 @@
     <meta name="description" content="Le campus numérique du Groupe Écoles 2IAE International : cours en direct dans les cinq campus, devoirs, interrogations, replays et assistant IA." />
     <meta name="theme-color" content="#141414" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" type="image/png" href="/icons/icone-192.png" />
-    <link rel="apple-touch-icon" href="/icons/icone-192.png" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icone.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icone-192.png" />
+    <link rel="apple-touch-icon" href="/icons/icone-apple-180.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Campus 2IAE" />
   </head>
   <body>
+    <!--
+      Navigateurs incapables de faire tourner le campus (Opera Mini en mode
+      extrême, très vieux Android, JavaScript coupé) : un message clair
+      plutôt qu'une page blanche. Les navigateurs modernes ignorent
+      <script nomodule> et le message reste caché.
+    -->
+    <div id="navigateur-incompatible" style="display:none;font-family:Arial,sans-serif;max-width:480px;margin:40px auto;padding:24px;border-radius:18px;background:#FFF1E6;color:#141414;text-align:center">
+      <p style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#C85F22;margin:0 0 10px">Campus numérique 2IAE</p>
+      <p style="font-size:24px;font-weight:bold;margin:0 0 12px">Ouvre le campus dans Chrome</p>
+      <p style="font-size:17px;line-height:1.5;margin:0">Ce navigateur ne peut pas afficher le campus ni les cours en direct. Installe ou ouvre Google Chrome, puis reviens sur cette adresse.</p>
+    </div>
+    <script nomodule>
+      document.getElementById("navigateur-incompatible").style.display = "block";
+    </script>
+    <noscript>
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:40px auto;padding:24px;border-radius:18px;background:#FFF1E6;color:#141414;text-align:center">
+        <p style="font-size:24px;font-weight:bold;margin:0 0 12px">Active JavaScript ou ouvre le campus dans Chrome</p>
+        <p style="font-size:17px;line-height:1.5;margin:0">Le campus numérique a besoin de JavaScript pour fonctionner.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

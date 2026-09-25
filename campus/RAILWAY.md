@@ -52,6 +52,7 @@ railway domain --service campus                # domaine *.up.railway.app
 ## 4. Déployer
 
 - **Depuis le poste (immédiat)** : `cd campus && railway up --service campus`.
+  Les migrations sont appliquées au démarrage du service (`node dist/scripts/migrate.js && npm run start`), avant le serveur ; elles sont idempotentes.
   Railway lit `campus/railway.json` : build `npm run build`, migrations
   `npm run db:migrate` avant le démarrage, santé `/api/health`.
 - **Depuis GitHub (automatique, une fois le code sur `main`)** : réglages du

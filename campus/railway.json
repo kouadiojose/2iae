@@ -6,11 +6,10 @@
     "watchPatterns": ["/campus/**"]
   },
   "deploy": {
-    "startCommand": "npm run start",
-    "preDeployCommand": "npm run db:migrate",
+    "startCommand": "node dist/scripts/migrate.js && npm run start",
     "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 120,
+    "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 5
+    "restartPolicyMaxRetries": 10
   }
 }

@@ -21,6 +21,10 @@ import type { ClePush, ResultatEssaiPush } from "@shared/schema";
 
 type Etat = "chargement" | "masque" | "non_supporte" | "refuse" | "inactif" | "actif";
 
+/** Prévient les autres cartes de la page (compacte et complète) qu'il faut relire l'état. */
+const EVENEMENT_MAJ = "campus:rappels-maj";
+const prevenirAutresCartes = () => window.dispatchEvent(new Event(EVENEMENT_MAJ));
+
 const pushSupporte = () =>
   typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 
@@ -76,6 +80,9 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
     if (isLoading) return;
     if (isError) return setEtat("masque");
     void verifier();
+    const maj = () => void verifier();
+    window.addEventListener(EVENEMENT_MAJ, maj);
+    return () => window.removeEventListener(EVENEMENT_MAJ, maj);
   }, [isLoading, isError, verifier]);
 
   async function activer() {
@@ -97,6 +104,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(cle) }));
       await post("/api/push/abonnement", abo.toJSON());
       setEtat("actif");
+      prevenirAutresCartes();
       toast(`Rappels activés sur ${ici}.`);
       void rechargerMoi();
     } catch (e) {
@@ -115,6 +123,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         await abo.unsubscribe().catch(() => false);
       }
       setEtat("inactif");
+      prevenirAutresCartes();
       toast(f(`Tu ne recevras plus de rappels sur ${ici}.`, `Vous ne recevrez plus de rappels sur ${ici}.`), "info");
       void rechargerMoi();
     } catch (e) {

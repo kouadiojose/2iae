@@ -48,7 +48,7 @@ function BandeauHaut({ seance, siteId }: { seance?: SeanceDetailDto; siteId: num
   const maintenant = useMaintenant(1000);
   const site = seance?.sites.find((s) => s.id === siteId);
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 px-6 pt-5 lg:px-10">
+    <header className="flex flex-wrap items-center justify-between gap-4 px-4 pt-5 sm:px-6 lg:px-10">
       <div className="flex items-center gap-4">
         <img src="/marque-2iae.svg" alt="2IAE" className="h-10 w-auto rounded bg-white p-1" />
         <span className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-doux lg:text-base">
@@ -57,7 +57,7 @@ function BandeauHaut({ seance, siteId }: { seance?: SeanceDetailDto; siteId: num
       </div>
       <div className="flex items-center gap-4">
         {seance && (
-          <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-4 py-2 font-mono text-sm text-[#FF8A6B]">
+          <span className="hidden items-center gap-2 rounded-full bg-[#2A1510] px-4 py-2 font-mono text-sm text-[#FF8A6B] md:flex">
             <span className="point-direct" />
             {seance.fournisseur === "daily" ? "Ce cours est enregistré" : "Questions et sous-titres gardés pour le replay"}
           </span>
@@ -178,7 +178,7 @@ function BlocCode({ seance, siteId, compact }: { seance: SeanceDetailDto; siteId
   if (!code) return <div className="rounded-[28px] bg-nuit-panneau p-6 text-xl text-nuit-doux">{erreur ?? "Chargement du code…"}</div>;
   const chemin = code.url.replace(/^https?:\/\//, "").replace(/\/emargement\/\d+$/, "/emargement");
   return (
-    <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "items-center p-6 lg:p-7")}>
+    <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "flex-col p-6 sm:flex-row sm:items-center lg:p-7")}>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">Émargement · {code.salle}</p>
         <p
@@ -197,7 +197,7 @@ function BlocCode({ seance, siteId, compact }: { seance: SeanceDetailDto; siteId
         </p>
       </div>
       <div
-        className={cn("shrink-0 rounded-2xl bg-white p-2.5", compact ? "hidden" : "w-36 sm:w-44 xl:w-52")}
+        className={cn("shrink-0 self-center rounded-2xl bg-white p-2.5", compact ? "hidden" : "w-44 xl:w-52")}
         dangerouslySetInnerHTML={{ __html: code.qrSvg }}
         aria-label={`QR d'émargement, code ${code.code}`}
         role="img"
@@ -226,9 +226,9 @@ function CompteursEmarges({ etat, grand, liste }: { etat: EtatDirectDto; grand?:
   return (
     <div className="grid grid-cols-5 gap-2">
       {etat.campus.map((c) => (
-        <div key={c.siteId} className={cn("rounded-2xl p-3 text-center", c.salleConnectee ? "bg-nuit-carte" : "bg-nuit-panneau")}>
+        <div key={c.siteId} className={cn("rounded-2xl px-1.5 py-3 text-center", c.salleConnectee ? "bg-nuit-carte" : "bg-nuit-panneau")}>
           <div className={cn("font-black tabular-nums text-white", grand ? "text-5xl" : "text-3xl")}>{c.emarges}</div>
-          <div className={cn("mt-1 break-words font-bold leading-tight", grand ? "text-[clamp(12px,1vw,17px)]" : "text-sm", c.salleConnectee ? "text-orange-peche" : "text-nuit-gris")}>{c.nomCourt}</div>
+          <div className={cn("mt-1 overflow-hidden text-ellipsis whitespace-nowrap font-bold leading-tight", grand ? "text-[clamp(11px,0.86vw,17px)]" : "text-sm", c.salleConnectee ? "text-orange-peche" : "text-nuit-gris")}>{c.nomCourt}</div>
         </div>
       ))}
     </div>
@@ -248,9 +248,9 @@ function GrandCompteARebours({ cible }: { cible: string }) {
     { v: p(d.secondes), l: "sec" },
   ];
   return (
-    <div className="flex max-w-3xl gap-3" aria-label="Compte à rebours">
+    <div className="flex max-w-3xl gap-2 sm:gap-3" aria-label="Compte à rebours">
       {cases.map((c) => (
-        <div key={c.l} className="flex-1 rounded-[20px] bg-[#242120] px-3 py-4 text-center">
+        <div key={c.l} className="min-w-0 flex-1 rounded-[20px] bg-[#242120] px-2 py-4 text-center">
           <div className="text-[clamp(44px,5.2vw,100px)] font-black leading-none tabular-nums">{c.v}</div>
           <div className="mt-2 font-mono text-sm uppercase tracking-wider text-nuit-gris">{c.l}</div>
         </div>
@@ -264,8 +264,8 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
   const maintenant = useMaintenant(1000);
   const avantDebutMin = (new Date(seance.debut).getTime() - maintenant) / 60_000;
   return (
-    <main className="grid flex-1 gap-6 px-6 py-5 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
-      <div className="flex flex-col gap-5 lg:min-h-0">
+    <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
+      <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
         <div className="flex flex-col gap-2">
           <span className="font-mono text-lg text-orange-peche">
             {seance.coursCode} · {avantDebutMin <= 0 ? "Le formateur arrive" : avantDebutMin < 10 ? "La salle ouvre, installez-vous" : "Prochain cours"}
@@ -282,15 +282,31 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
           <p className="rounded-[20px] bg-[#242120] px-6 py-5 text-[clamp(24px,2.4vw,44px)] font-black">Le cours commence dès que le formateur ouvre l'antenne.</p>
         )}
         <div className="flex min-h-[260px] justify-center lg:min-h-0 lg:flex-1">
-          <CarteCoteIvoire campus={etat.campus} villeFormateur={ville} className="h-full max-h-[520px] w-auto max-w-full" />
+          <CarteCoteIvoire campus={etat.campus} villeFormateur={ville} className="w-full max-w-md lg:h-full lg:max-h-[560px] lg:w-auto lg:max-w-full" />
         </div>
       </div>
-      <div className="flex flex-col gap-5 lg:min-h-0">
+      <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
         <BlocCode seance={seance} siteId={siteId} />
         <div className="flex flex-col gap-3">
           <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
           <CompteursEmarges etat={etat} grand />
         </div>
+        {seance.plan.length > 0 && (
+          <div className="hidden min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:flex">
+            <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Au programme</p>
+            <ol className="flex flex-col gap-1.5">
+              {seance.plan.map((e, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-4 border-b border-nuit-ligne py-2 text-[clamp(16px,1.3vw,24px)] font-bold">
+                  <span>
+                    <span className="mr-3 font-mono text-orange-peche">{i + 1}</span>
+                    {e.titre}
+                  </span>
+                  {e.minutes ? <span className="shrink-0 font-mono text-base font-normal text-nuit-gris">{e.minutes} min</span> : null}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </div>
     </main>
   );
@@ -304,7 +320,7 @@ function PendantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; eta
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
   const sondage = etat.sondage;
   return (
-    <main className="grid flex-1 gap-6 px-6 py-4 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10">
+    <main className="grid flex-1 gap-6 px-4 py-4 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10">
       <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
         {aLaParole && (
           <div className="animate-monte shrink-0 rounded-[22px] bg-orange px-6 py-3 text-center text-[clamp(26px,2.8vw,50px)] font-black uppercase tracking-serre text-encre" role="alert">

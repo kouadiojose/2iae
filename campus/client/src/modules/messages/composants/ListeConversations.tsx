@@ -84,7 +84,7 @@ function LigneConversation({ c, active, maintenant, role }: { c: ConversationRes
             {c.sourdine && <BellOff className="h-4 w-4 text-texte-gris" aria-label="Alertes coupées" />}
             {nonLus && (
               <span
-                className="grid h-6 min-w-6 place-items-center rounded-full bg-orange px-1.5 font-mono text-xs font-bold text-encre"
+                className={cn("grid h-6 min-w-6 place-items-center rounded-full px-1.5 font-mono text-xs font-bold", c.sourdine ? "bg-ligne text-texte-doux" : "bg-orange text-encre")}
                 aria-label={`${c.nonLus} message${c.nonLus > 1 ? "s" : ""} non lu${c.nonLus > 1 ? "s" : ""}`}
               >
                 {c.nonLus > 99 ? "99+" : c.nonLus}

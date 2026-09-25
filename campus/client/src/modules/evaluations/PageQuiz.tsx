@@ -105,7 +105,7 @@ function Accueil({ d, onCommencer, depart, retour }: { d: DevoirDetailEtudiant; 
     { icone: <ListChecks className="h-5 w-5" />, texte: pluriel(q.nbQuestions, "question") },
     { icone: <Timer className="h-5 w-5" />, texte: devoir.dureeMinutes ? `${devoir.dureeMinutes} minutes` : "Sans chrono" },
     { icone: <RotateCcw className="h-5 w-5" />, texte: q.tentativesMax > 1 ? `${q.tentativesMax} tentatives` : "Une seule tentative" },
-    { icone: <Clock className="h-5 w-5" />, texte: `Avant le ${dateEtHeureCourte(devoir.dateLimite)}` },
+    { icone: <Clock className="h-5 w-5" />, texte: `${close ? "Close le" : "Avant le"} ${dateEtHeureCourte(devoir.dateLimite)}` },
   ];
 
   let action: React.ReactNode;
@@ -309,7 +309,8 @@ function Passage({ enCours, onFin }: { enCours: QuizEnCours; onFin: (r: Resultat
       } catch {
         /* rien */
       }
-      onFin(r);
+      // Fin du chrono côté téléphone : on le dit, même si le serveur a reçu la demande à temps.
+      onFin({ ...r, horsDelai: r.horsDelai || horsDelai });
     } catch (e) {
       termine.current = false;
       setErreurFin(

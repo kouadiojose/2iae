@@ -295,7 +295,12 @@ export const Composeur = forwardRef<PoigneeComposeur, Props>(function Composeur(
             onPointerDown={(e) => {
               if (e.pointerType === "mouse" && e.button !== 0) return;
               e.preventDefault();
-              e.currentTarget.setPointerCapture(e.pointerId);
+              try {
+                // Garde le doigt « attaché » au bouton même s'il glisse (pour « glisser pour annuler »).
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                /* pointeur déjà relâché : sans importance */
+              }
               appuiDebut.current = Date.now();
               departX.current = e.clientX;
               setGlisse(0);

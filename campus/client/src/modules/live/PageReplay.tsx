@@ -8,7 +8,7 @@ import { PlayCircle, Search, FileText, MessageSquare, Presentation, ExternalLink
 import { get, post } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { dateEtHeure } from "@/lib/dates";
+import { dateComplete, dateEtHeure, heure } from "@/lib/dates";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Chargement, EtatVide, Erreur, Badge } from "@/components/ui/divers";
@@ -79,7 +79,7 @@ export default function PageReplay({ id }: { id: string }) {
       <EnTetePage
         etiquette={`${r.seance.coursCode} · Replay`}
         titre={r.seance.titre}
-        sousTitre={`${dateEtHeure(r.seance.debut)}${r.seance.formateur ? ` · ${r.seance.formateur}` : ""}`}
+        sousTitre={`${enseignant ? dateEtHeure(r.seance.debut) : `${dateComplete(r.seance.debut)} · ${heure(r.seance.debut)}`}${r.seance.formateur ? ` · ${r.seance.formateur}` : ""}`}
         actions={enseignant ? <LienBouton href={`/enseigner/seances/${r.seance.id}`} variante="contour">Bilan et fiche</LienBouton> : undefined}
       />
 

@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 
 const PAGES: { href: string; libelle: string; prefixes?: string[]; direction?: boolean }[] = [
   { href: "/pilotage", libelle: "Tableau" },
-  { href: "/pilotage/suivi", libelle: "À contacter", prefixes: ["/pilotage/etudiants"] },
-  { href: "/pilotage/comptes", libelle: "Comptes", prefixes: ["/pilotage/comptes"] },
+  { href: "/pilotage/suivi", libelle: "À contacter" },
+  { href: "/pilotage/comptes", libelle: "Comptes", prefixes: ["/pilotage/comptes", "/pilotage/etudiants", "/pilotage/fiches"] },
   { href: "/pilotage/classes", libelle: "Classes et campus" },
   { href: "/pilotage/cours", libelle: "Cours" },
   { href: "/pilotage/planning", libelle: "Planning" },

@@ -4,8 +4,8 @@
 //   GET /api/public/cours/:slug        → fiche d'un cours annoncé
 //   GET /api/public/formateurs/:slug   → fiche d'un formateur annoncé
 //   GET /api/public/sites              → les cinq campus et leur salle
-//   GET /api/public/formateurs/:slug/photo, /api/public/cours/:slug/image
-//                                      → photo et image publiques (sinon réservées aux comptes)
+//   GET /api/public/images/:fichierId  → image d'un cours annoncé ou photo d'un formateur
+//                                        annoncé (les fichiers déposés sont sinon réservés aux comptes)
 //
 // Tout est piloté par les cases « Annoncer sur 2iae.com » (publierSurSite)
 // validées par la direction. Jamais une donnée nominative d'étudiant : la
@@ -21,7 +21,7 @@ import fs from "fs";
 import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config, estProduction } from "../config";
-import { route, introuvable } from "../http";
+import { route, introuvable, idParam } from "../http";
 import { enregistrerMetaPage } from "../vite";
 import {
   cours,
@@ -81,14 +81,20 @@ function idFichierInterne(url: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** Adresse publique d'une image déposée sur le campus (voir GET /api/public/images/:fichierId). */
+const routeImage = (id: number) => `/api/public/images/${id}`;
+
 /**
- * Rend une image utilisable hors du campus : les fichiers internes sont
- * réservés aux comptes connectés, on passe donc par une route publique dédiée.
+ * Rend une image utilisable hors du campus : les fichiers internes
+ * (/api/fichiers/:id) sont réservés aux comptes connectés, on passe donc par
+ * la route publique des images, qui vérifie la publication. L'identifiant
+ * change avec l'image : les caches ne gardent jamais une ancienne photo.
  */
-function imagePublique(url: string | null, routePublique: string): string | null {
+function imagePublique(url: string | null): string | null {
   if (!url) return null;
   if (/^https?:\/\//.test(url)) return url;
-  if (idFichierInterne(url)) return urlCampus(routePublique);
+  const id = idFichierInterne(url);
+  if (id) return urlCampus(routeImage(id));
   return url.startsWith("/") ? urlCampus(url) : null;
 }
 
@@ -203,7 +209,7 @@ async function construireCatalogue(maintenant: Date): Promise<Catalogue> {
     slug: c.slug,
     titre: c.titre,
     accroche: accrocheDe(c),
-    imageUrl: imagePublique(c.imageUrl, `/api/public/cours/${c.slug}/image`),
+    imageUrl: imagePublique(c.imageUrl),
     couleur: c.couleur,
     dateDebut: c.dateDebut?.toISOString() ?? null,
     dateFin: c.dateFin?.toISOString() ?? null,
@@ -224,7 +230,7 @@ function versVitrineFormateur(f: LigneFormateur, listeCours: VitrineFormateur["c
     titre: f.titre,
     localisation: f.localisation,
     bio: f.bio,
-    photoUrl: imagePublique(f.photoUrl, `/api/public/formateurs/${slug}/photo`),
+    photoUrl: imagePublique(f.photoUrl),
     annonceLe: f.annonceLe?.toISOString() ?? null,
     cours: listeCours,
     url: urlCampus(`/formateurs/${slug}`),
@@ -405,7 +411,7 @@ async function ficheCours(slug: string): Promise<FicheCoursPublique | null> {
     slug: c.slug,
     titre: c.titre,
     accroche: accrocheDe(c),
-    imageUrl: imagePublique(c.imageUrl, `/api/public/cours/${c.slug}/image`),
+    imageUrl: imagePublique(c.imageUrl),
     couleur: c.couleur,
     dateDebut: c.dateDebut?.toISOString() ?? null,
     dateFin: c.dateFin?.toISOString() ?? null,
@@ -450,11 +456,30 @@ async function ficheFormateur(slug: string): Promise<FicheFormateurPublique | nu
 
 // ── Lecture d'une image publique ───────────────────────────────────────────
 
-async function envoyerImage(res: Response, url: string | null) {
-  const id = idFichierInterne(url);
-  if (!id) throw introuvable("Image");
+/**
+ * Une image déposée n'est publique que si elle est l'image d'un cours annoncé
+ * (non archivé) ou la photo d'un formateur annoncé ET consentant.
+ */
+async function imagePubliee(id: number): Promise<boolean> {
+  const motif = `/api/fichiers/${id}%`;
+  const [coursLies, formateursLies] = await Promise.all([
+    db
+      .select({ url: cours.imageUrl })
+      .from(cours)
+      .where(and(eq(cours.publierSurSite, true), ne(cours.statut, "archive"), sql`${cours.imageUrl} like ${motif}`)),
+    db
+      .select({ url: utilisateurs.photoUrl })
+      .from(utilisateurs)
+      .where(and(filtreFormateurPublic, sql`${utilisateurs.photoUrl} like ${motif}`)),
+  ]);
+  // « like » laisse passer /api/fichiers/120 pour 12 : on revérifie l'identifiant exact.
+  return [...coursLies, ...formateursLies].some((l) => idFichierInterne(l.url) === id);
+}
+
+async function envoyerImage(res: Response, id: number) {
+  if (!(await imagePubliee(id))) throw introuvable("Image");
   const [f] = await db.select().from(fichiers).where(eq(fichiers.id, id));
-  if (!f || !f.mime.startsWith("image/")) throw introuvable("Image");
+  if (!f || !f.mime.startsWith("image/") || f.mime === "image/svg+xml") throw introuvable("Image");
   const chemin = path.resolve(config.dossierFichiers, f.cle);
   if (!chemin.startsWith(config.dossierFichiers) || !fs.existsSync(chemin)) throw introuvable("Image");
   res.setHeader("Content-Type", f.mime);
@@ -504,13 +529,13 @@ const IMAGE_CAMPUS = (): ImagePartage => ({
  * Image propre à un cours ou à un formateur pour l'aperçu, si c'est une vraie
  * photo PNG ou JPEG (jamais un SVG) ; sinon l'image du campus.
  */
-async function imagePartage(url: string | null, routePublique: string, alt: string): Promise<ImagePartage> {
+async function imagePartage(url: string | null, alt: string): Promise<ImagePartage> {
   if (!url) return IMAGE_CAMPUS();
   if (/^https?:\/\/.+\.(png|jpe?g)(\?.*)?$/i.test(url)) return { url, alt };
   const id = idFichierInterne(url);
   if (id) {
     const [f] = await db.select({ mime: fichiers.mime }).from(fichiers).where(eq(fichiers.id, id));
-    if (f && /^image\/(png|jpeg)$/.test(f.mime)) return { url: urlCampus(routePublique), alt };
+    if (f && /^image\/(png|jpeg)$/.test(f.mime)) return { url: urlCampus(routeImage(id)), alt };
   }
   return IMAGE_CAMPUS();
 }
@@ -566,7 +591,7 @@ async function metaPage(url: string): Promise<string | null> {
       description: `${accrocheDe(c)}${quand}${ou}`,
       chemin: `/cours-ouverts/${c.slug}`,
       type: "article",
-      image: await imagePartage(c.imageUrl, `/api/public/cours/${c.slug}/image`, c.titre),
+      image: await imagePartage(c.imageUrl, c.titre),
     });
   }
   const mFormateur = chemin.match(/^\/formateurs\/([^/]+)$/);
@@ -580,7 +605,7 @@ async function metaPage(url: string): Promise<string | null> {
       description: bio,
       chemin: `/formateurs/${slugFormateur(f)}`,
       type: "profile",
-      image: await imagePartage(f.photoUrl, `/api/public/formateurs/${slugFormateur(f)}/photo`, `${f.prenom} ${f.nom}`),
+      image: await imagePartage(f.photoUrl, `${f.prenom} ${f.nom}`),
     });
   }
   return null;
@@ -636,15 +661,6 @@ export function enregistrerPublic(app: Express) {
   );
 
   app.get(
-    "/api/public/cours/:slug/image",
-    route(async (req, res) => {
-      const c = await coursAnnonceParSlug(String(req.params.slug));
-      if (!c) throw introuvable("Image");
-      await envoyerImage(res, c.imageUrl);
-    }),
-  );
-
-  app.get(
     "/api/public/formateurs/:slug",
     route(async (req, res) => {
       const fiche = await ficheFormateur(String(req.params.slug));
@@ -654,12 +670,11 @@ export function enregistrerPublic(app: Express) {
     }),
   );
 
+  // Image d'un cours annoncé ou photo d'un formateur annoncé (le site et WhatsApp l'affichent sans compte).
   app.get(
-    "/api/public/formateurs/:slug/photo",
+    "/api/public/images/:fichierId",
     route(async (req, res) => {
-      const f = await formateurAnnonceParSlug(String(req.params.slug));
-      if (!f) throw introuvable("Image");
-      await envoyerImage(res, f.photoUrl);
+      await envoyerImage(res, idParam(req, "fichierId"));
     }),
   );
 }

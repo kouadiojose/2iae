@@ -87,6 +87,9 @@ export default function PageCoursPublic({ slug }: { slug: string }) {
                   <li className="rounded-full bg-creme px-3 py-1.5 font-mono text-xs text-texte-doux">Replays et fiches de révision</li>
                 </ul>
                 <BoutonsAcces hrefEtudiant={`/cours/${c.coursId}`} libelleEtudiant="Je suis étudiant 2IAE : accéder au cours" codeCours={c.code} />
+                {c.imageUrl && (
+                  <img src={c.imageUrl} alt="" loading="lazy" decoding="async" className="aspect-[16/9] w-full max-w-[620px] rounded-3xl object-cover" />
+                )}
                 <BoutonPartager
                   className="-ml-3 self-start"
                   texte={`${c.titre} : un cours en direct au campus numérique 2IAE${c.dateDebut && new Date(c.dateDebut).getTime() > maintenant ? `, dès le ${dateComplete(c.dateDebut).toLowerCase()}` : ""}. ${window.location.origin}/cours-ouverts/${c.slug}`}

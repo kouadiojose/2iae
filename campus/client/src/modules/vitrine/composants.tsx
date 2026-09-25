@@ -288,6 +288,7 @@ export function CarteCoursPublic({ cours: c }: { cours: VitrineCours }) {
       className="group flex h-full flex-col overflow-hidden rounded-3xl border border-ligne bg-white text-encre no-underline transition-colors hover:border-orange hover:text-encre focus-visible:border-orange"
     >
       <div className="h-2" style={{ backgroundColor: c.couleur }} aria-hidden />
+      {c.imageUrl && <img src={c.imageUrl} alt="" loading="lazy" decoding="async" className="aspect-[16/9] w-full object-cover" />}
       <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-xs font-semibold text-orange-fonce">{c.code}</span>

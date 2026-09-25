@@ -246,7 +246,7 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
           type="datetime-local"
           value={debut}
           onChange={(e) => setDebut(e.target.value)}
-          aide={iso ? `${dateEtHeure(iso)}` : "Heure d'Abidjan (GMT)"}
+          aide={iso ? dateEtHeure(iso).split(" · ")[0] : "Heure d'Abidjan (GMT)"}
           required
           disabled={seance ? seance.statut !== "planifiee" : false}
         />

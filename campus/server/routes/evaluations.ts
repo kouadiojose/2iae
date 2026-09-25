@@ -614,7 +614,7 @@ async function detailEnseignant(u: Utilisateur, d: Devoir, c: Cours): Promise<De
   };
 }
 
-async function copieDetail(u: Utilisateur, r: Rendu, d: Devoir, e: Utilisateur): Promise<CopieDetail> {
+async function copieDetail(r: Rendu, d: Devoir, e: Utilisateur): Promise<CopieDetail> {
   const sitesNoms = await nomsSites();
   const [depose] = r.deposeParId
     ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, r.deposeParId))
@@ -1246,7 +1246,7 @@ export function enregistrerEvaluations(app: Express) {
           publierUtilisateur(e.id, "devoir-vu", { devoirId: d.id, renduId: r.id, vuLe: iso(maj.vuLe) });
         }
       }
-      res.json(await copieDetail(u, copie, d, e));
+      res.json(await copieDetail(copie, d, e));
     }),
   );
 
@@ -1311,7 +1311,7 @@ export function enregistrerEvaluations(app: Express) {
         await notifier([e.id], { type: "note", titre: "Note mise à jour", corps: `« ${d.titre} »`, lien: `/devoirs/${d.id}` });
         publierUtilisateur(e.id, "devoir-corrige", { devoirId: d.id });
       }
-      res.json(await copieDetail(u, maj, d, e));
+      res.json(await copieDetail(maj, d, e));
     }),
   );
 
@@ -1372,7 +1372,7 @@ export function enregistrerEvaluations(app: Express) {
       };
       const [maj] = await db.update(rendus).set({ propositionIa: proposition, majLe: new Date() }).where(eq(rendus.id, r.id)).returning();
       await tracer(u, "proposition_ia", { renduId: r.id, devoirId: d.id, noteProposee: proposition.note, alerte: Boolean(proposition.alerte) });
-      res.json(await copieDetail(u, maj, d, e));
+      res.json(await copieDetail(maj, d, e));
     }),
   );
 

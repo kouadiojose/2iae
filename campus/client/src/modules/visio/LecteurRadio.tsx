@@ -235,7 +235,7 @@ export function LecteurRadio({ seanceId, nuit, onConsommation }: { seanceId: num
                   ? "Le réseau a coupé, on reprend…"
                   : "Connexion à la radio…"}
           </p>
-          <Bouton variante={nuit ? "nuit" : "contour"} icone={<Square className="h-4 w-4" />} onClick={arreter} className="min-h-[48px] self-start">
+          <Bouton variante={nuit ? "nuit" : "contour"} icone={<Square className="h-4 w-4" />} onClick={arreter} className={cn("min-h-[48px] self-start", nuit && "border border-nuit-bord")}>
             Arrêter
           </Bouton>
         </>

@@ -28,6 +28,7 @@ type Vue = "accueil" | "essentiel" | "autrement" | "reviser";
 export function BoutonAssistant({ coursId, leconId, devoirId, variante = "flottant" }: Props) {
   const { moi } = useMoi();
   const [ouverte, setOuverte] = useState(false);
+  const compact = usePastilleCompacte(variante === "flottant");
   if (!moi || moi.role === "salle") return null;
   const enseignant = moi.role !== "etudiant";
   const libelle = devoirId && !enseignant ? "Bloqué ? Demande au tuteur" : "Demander à l'assistant";
@@ -38,13 +39,18 @@ export function BoutonAssistant({ coursId, leconId, devoirId, variante = "flotta
         <button
           type="button"
           onClick={() => setOuverte(true)}
-          className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] right-4 z-40 flex min-h-14 items-center gap-2.5 rounded-full bg-encre py-3 pl-4 pr-5 text-[15px] font-bold text-white shadow-telephone transition-colors hover:bg-orange hover:text-encre lg:bottom-8 lg:right-8"
+          className={cn(
+            // Au-dessus de la barre d'onglets du téléphone (zone sûre comprise) ; libellé complet sur ordinateur.
+            "fixed bottom-[calc(84px+env(safe-area-inset-bottom))] right-4 z-40 flex min-h-14 items-center gap-2.5 rounded-full bg-encre py-3 pl-4 pr-5 text-[15px] font-bold text-white shadow-telephone transition-all hover:bg-orange hover:text-encre lg:bottom-8 lg:right-8",
+            // Pastille (icône seule) : sur téléphone uniquement.
+            compact && "max-sm:w-14 max-sm:justify-center max-sm:p-0",
+          )}
           aria-label={libelle}
         >
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-orange text-encre" aria-hidden>
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange text-encre" aria-hidden>
             <Sparkles className="h-4 w-4" />
           </span>
-          <span className="sm:hidden">{devoirId && !enseignant ? "Tuteur" : "Assistant"}</span>
+          {!compact && <span className="sm:hidden">{devoirId && !enseignant ? "Tuteur" : "Assistant"}</span>}
           <span className="hidden sm:inline">{libelle}</span>
         </button>
       ) : (
@@ -64,6 +70,40 @@ export function BoutonAssistant({ coursId, leconId, devoirId, variante = "flotta
       />
     </>
   );
+}
+
+/**
+ * Sur téléphone, le bouton flottant se réduit à une pastille (icône seule)
+ * quand on descend dans la page, près du bas, ou si la page est courte :
+ * il ne cache pas l'action principale (« J'ai terminé », « Rendre »…).
+ * Il reprend son libellé quand on remonte.
+ */
+function usePastilleCompacte(actif: boolean) {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    if (!actif) return;
+    let dernierY = window.scrollY;
+    const calculer = () => {
+      const y = window.scrollY;
+      const hauteur = document.documentElement.scrollHeight;
+      const courte = hauteur <= window.innerHeight + 160;
+      const presDuBas = window.innerHeight + y >= hauteur - 220;
+      const ecart = y - dernierY;
+      dernierY = y;
+      setCompact((c) => (courte || presDuBas ? true : ecart > 4 ? true : ecart < -4 ? false : c));
+    };
+    calculer();
+    const observateur = typeof ResizeObserver !== "undefined" ? new ResizeObserver(calculer) : null;
+    observateur?.observe(document.body);
+    window.addEventListener("scroll", calculer, { passive: true });
+    window.addEventListener("resize", calculer);
+    return () => {
+      observateur?.disconnect();
+      window.removeEventListener("scroll", calculer);
+      window.removeEventListener("resize", calculer);
+    };
+  }, [actif]);
+  return compact;
 }
 
 function FeuilleAssistant({

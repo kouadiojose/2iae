@@ -28,11 +28,13 @@ const TYPES: Record<TypePublication, { libelle: string; icone: typeof Globe }> =
 
 export default function PageSite() {
   const { data, isLoading, error, refetch } = useQuery<EtatSite>({ queryKey: ["/api/pilotage/site"] });
-  const [filtre, setFiltre] = useState<Filtre>("a_valider");
+  const [choix, setChoix] = useState<Filtre | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const elements = data?.elements ?? [];
   const aValider = elements.filter((e) => e.propose && !e.publie && !e.bloque);
   const enLigne = elements.filter((e) => e.publie);
+  // Rien à valider : on ouvre directement sur tout ce qui peut être publié.
+  const filtre: Filtre = choix ?? (aValider.length ? "a_valider" : "tout");
   const visibles = filtre === "a_valider" ? aValider : filtre === "en_ligne" ? enLigne : elements;
 
   const prevenir = async () => {
@@ -80,7 +82,7 @@ export default function PageSite() {
         <>
           <Onglets<Filtre>
             valeur={filtre}
-            onChange={setFiltre}
+            onChange={setChoix}
             options={[
               { valeur: "a_valider", libelle: "À valider", compteur: aValider.length },
               { valeur: "en_ligne", libelle: "En ligne", compteur: enLigne.length },

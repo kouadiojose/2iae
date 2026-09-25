@@ -313,11 +313,7 @@ const pourDiffusion = (m: MessageDto, cle: string | null): MessageDto => ({ ...m
 
 // ── Conversations → résumés ────────────────────────────────────────────────
 
-type LigneConversation = {
-  c: Conversation;
-  luJusquA: Date | null;
-  sourdine: boolean | null;
-};
+type LigneConversation = { c: Conversation; sourdine: boolean | null };
 
 /** Construit les lignes de la liste (dernier message, non lus, interlocuteur, cours). */
 async function resumer(u: Utilisateur, lignes: LigneConversation[]): Promise<ConversationResume[]> {
@@ -412,7 +408,7 @@ async function mesConversations(u: Utilisateur): Promise<ConversationResume[]> {
       .onConflictDoNothing({ target: conversations.cleUnique });
   }
   const lignes = await db
-    .select({ c: conversations, luJusquA: participants.luJusquA, sourdine: participants.sourdine })
+    .select({ c: conversations, sourdine: participants.sourdine })
     .from(conversations)
     .leftJoin(participants, and(eq(participants.conversationId, conversations.id), eq(participants.utilisateurId, u.id)))
     .where(perimetreConversations(u, salons));
@@ -707,7 +703,7 @@ export function enregistrerMessages(app: Express) {
       const u = moi(req);
       const acces = await accesConversation(u, idParam(req));
       const { conversation: c, participant: p } = acces;
-      const [resume] = await resumer(u, [{ c, luJusquA: p?.luJusquA ?? null, sourdine: p?.sourdine ?? false }]);
+      const [resume] = await resumer(u, [{ c, sourdine: p?.sourdine ?? false }]);
       if (!resume) throw introuvable("Conversation");
       let luJusquAAutre: string | null = null;
       let peutEcrire = true;

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { WifiOff, RotateCw } from "lucide-react";
 import { Marque } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
+import { reseauJoignable } from "./service-worker";
 
 /** Page demandée au départ (?page=/cours/3), limitée aux adresses du campus. */
 function pageDemandee(): string | null {
@@ -12,8 +13,13 @@ function pageDemandee(): string | null {
   return page && page.startsWith("/") && !page.startsWith("//") && !page.startsWith("/hors-ligne") ? page : null;
 }
 
+/** Sans réseau, on vérifie son retour toutes les 10 secondes (sonde minuscule, jamais en cache). */
+const INTERVALLE_VERIFICATION_MS = 10_000;
+
 export default function PageHorsLigne() {
-  const [enLigne, setEnLigne] = useState(() => navigator.onLine);
+  // On arrive ici parce qu'un chargement a échoué : on part du principe que le
+  // réseau manque, même si le téléphone croit être connecté (4G faible).
+  const [enLigne, setEnLigne] = useState(false);
   const cible = pageDemandee();
 
   const reessayer = () => {
@@ -22,12 +28,17 @@ export default function PageHorsLigne() {
   };
 
   useEffect(() => {
-    const on = () => setEnLigne(true);
+    let actif = true;
+    const verifier = () => void reseauJoignable().then((ok) => actif && setEnLigne(ok));
     const off = () => setEnLigne(false);
-    window.addEventListener("online", on);
+    verifier();
+    const minuteur = window.setInterval(verifier, INTERVALLE_VERIFICATION_MS);
+    window.addEventListener("online", verifier);
     window.addEventListener("offline", off);
     return () => {
-      window.removeEventListener("online", on);
+      actif = false;
+      window.clearInterval(minuteur);
+      window.removeEventListener("online", verifier);
       window.removeEventListener("offline", off);
     };
   }, []);

@@ -12,9 +12,9 @@ import crypto from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { config } from "./config";
-import { exigerConnexion, moi, estEquipe } from "./auth";
+import { exigerConnexion, moi, estEquipe, perimetreSites } from "./auth";
 import { route, idParam, introuvable, interdit, invalide } from "./http";
-import { fichiers, type Fichier, type Utilisateur } from "@shared/schema";
+import { fichiers, utilisateurs, type Fichier, type Utilisateur } from "@shared/schema";
 
 export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo"] as const;
 export type UsageFichier = (typeof USAGES_FICHIER)[number];
@@ -38,8 +38,18 @@ export function enregistrerGardienFichier(usage: UsageFichier, gardien: GardienF
 }
 
 export async function peutLireFichier(u: Utilisateur, f: Fichier): Promise<boolean> {
-  if (f.proprietaireId === u.id || estEquipe(u)) return true;
-  if (f.usage === "avatar") return true;
+  if (f.proprietaireId === u.id || f.usage === "avatar") return true;
+  if (estEquipe(u)) {
+    const perimetre = perimetreSites(u);
+    if (!perimetre) return true; // direction, ou vie scolaire du groupe
+    // Vie scolaire d'un site : les fichiers des personnes de son site…
+    const [proprietaire] = await db
+      .select({ siteId: utilisateurs.siteId })
+      .from(utilisateurs)
+      .where(eq(utilisateurs.id, f.proprietaireId));
+    if (proprietaire?.siteId && perimetre.includes(proprietaire.siteId)) return true;
+    // …sinon, seulement ce que le module concerné autorise (ressources de cours, etc.).
+  }
   const gardien = gardiens.get(f.usage);
   return gardien ? gardien(u, f) : false;
 }

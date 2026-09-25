@@ -83,7 +83,7 @@ async function desinscrire() {
 }
 
 /** Le réseau répond-il vraiment ? (navigator.onLine ment souvent en 4G faible.) */
-async function reseauJoignable(): Promise<boolean> {
+export async function reseauJoignable(): Promise<boolean> {
   try {
     const r = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(4000) });
     return r.ok;

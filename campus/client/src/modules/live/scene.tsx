@@ -277,7 +277,16 @@ function SceneDaily({ seance, role, micro, camera, onConsommationVisio, onEtatVi
   const [etat, setEtat] = useState<"connexion" | "connecte" | "erreur">("connexion");
   const [message, setMessage] = useState("");
   const [essai, setEssai] = useState(0);
+  const [lent, setLent] = useState(false);
   const recu = useRef(0);
+
+  // Connexion anormalement longue (réseau filtré, 3G faible) : on le dit et on propose une issue.
+  useEffect(() => {
+    setLent(false);
+    if (etat !== "connexion") return;
+    const id = setTimeout(() => setLent(true), 20_000);
+    return () => clearTimeout(id);
+  }, [etat, essai]);
 
   useEffect(() => {
     let annule = false;
@@ -374,7 +383,23 @@ function SceneDaily({ seance, role, micro, camera, onConsommationVisio, onEtatVi
       {etat !== "connecte" && (
         <div className="absolute inset-0">
           {etat === "connexion" ? (
-            <MessageScene icone={<Loader2 className="h-6 w-6 animate-spin" />} texte="Connexion à la visio…" />
+            <MessageScene
+              icone={<Loader2 className="h-6 w-6 animate-spin" />}
+              texte={
+                lent
+                  ? role === "formateur"
+                    ? "La visio met du temps à répondre. Réessayez, ou passez au Plan B : questions, sondages et diapos continuent sur le campus."
+                    : "La visio met du temps à répondre. Réessaie, ou passe en « son + diapos » (bouton « Changer de mode »)."
+                  : "Connexion à la visio…"
+              }
+              action={
+                lent ? (
+                  <Bouton variante="nuit-actif" onClick={() => setEssai((n) => n + 1)}>
+                    Réessayer
+                  </Bouton>
+                ) : undefined
+              }
+            />
           ) : (
             <MessageScene
               icone={<WifiOff className="h-6 w-6" />}

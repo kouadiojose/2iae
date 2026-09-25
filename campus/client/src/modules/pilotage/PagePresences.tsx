@@ -117,12 +117,12 @@ function ListeSeances() {
 function Decompte({ r, className }: { r: ResumePresences; className?: string }) {
   return (
     <div className={cn("flex flex-wrap gap-1.5", className)}>
-      <Badge ton="succes">{r.presents} présents</Badge>
-      {r.partiel > 0 && <Badge ton="alerte">{r.partiel} partiels</Badge>}
+      <Badge ton="succes">{pluriel(r.presents, "présent")}</Badge>
+      {r.partiel > 0 && <Badge ton="alerte">{pluriel(r.partiel, "partiel")}</Badge>}
       <Badge ton={r.absent ? "danger" : "gris"}>{pluriel(r.absent, "absent")}</Badge>
-      {r.justifie > 0 && <Badge ton="gris">{r.justifie} justifiés</Badge>}
-      {r.incident > 0 && <Badge ton="encre">{r.incident} incident</Badge>}
-      <Badge ton="gris">{r.attendus} attendus</Badge>
+      {r.justifie > 0 && <Badge ton="gris">{pluriel(r.justifie, "justifié")}</Badge>}
+      {r.incident > 0 && <Badge ton="encre">{pluriel(r.incident, "incident")}</Badge>}
+      <Badge ton="gris">{pluriel(r.attendus, "attendu")}</Badge>
     </div>
   );
 }
@@ -264,7 +264,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
                 <div className="text-[13px] text-texte-gris">
                   {[
                     e.matricule,
-                    e.arriveeLe ? `arrivé${e.retard ? " en retard" : ""} à ${heure(e.arriveeLe)}` : null,
+                    e.arriveeLe ? `arrivée${e.retard ? " en retard" : ""} : ${heure(e.arriveeLe)}` : null,
                     e.minutes ? `${e.minutes} min en ligne` : null,
                     e.justification ? `« ${e.justification} »` : null,
                   ]

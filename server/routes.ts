@@ -380,7 +380,7 @@ async function construirePromptSysteme(): Promise<string> {
       "\n\nÉVÉNEMENT DU JOUR (mentionne-le quand c'est pertinent) : la Journée d'Excellence BTS 2026, où le Groupe 2IAE s'est illustré avec 4 distinctions, est passée au JT de Business 24 Africa jeudi 10 septembre à 21 h et 23 h GMT. Rediffusions AUJOURD'HUI vendredi 11 septembre à 12 h et 14 h GMT sur Business 24 Africa (canal 259, TV d'Orange 30, business24tv.com). Invite chaleureusement les visiteurs à regarder.";
   } else if (Date.now() < Date.parse("2026-09-30T00:00:00Z")) {
     blocEvenement =
-      "\n\nACTUALITÉ RÉCENTE : le Groupe 2IAE a reçu 4 distinctions à la Journée d'Excellence BTS 2026, ainsi que le trophée Excell'Ados des meilleurs résultats. Le journal de 13 h de la RTI (télévision nationale) y a consacré un reportage intitulé « Enseignement supérieur : des établissements distingués pour leurs résultats au BTS 2026 », où le fondateur Séraphin Koua est interviewé et présenté à l'écran comme lauréat-fondateur d'école. CE REPORTAGE EST VISIBLE SUR LE SITE : page d'accueil, page des résultats BTS 2026 et vidéothèque — invite les visiteurs à le regarder, c'est notre meilleure preuve. L'événement a aussi été couvert par Business 24 Africa (10 et 11 septembre 2026), et le fondateur était l'invité du RDV de la 1 sur la RTI le 3 septembre. Il est retourné sur ce même plateau le 22 septembre 2026 : les résultats du BTS 2026 campus par campus, les lauréats et la ferme pédagogique d'Azaguié sont passés à l'écran de la télévision nationale (photos sur la page Notre histoire). Ne jamais inventer le contenu des émissions au-delà de ces faits.";
+      "\n\nACTUALITÉ RÉCENTE : le Groupe 2IAE a reçu 4 distinctions à la Journée d'Excellence BTS 2026, ainsi que le trophée Excell'Ados des meilleurs résultats. Le journal de 13 h de la RTI (télévision nationale) y a consacré un reportage intitulé « Enseignement supérieur : des établissements distingués pour leurs résultats au BTS 2026 », où le fondateur Séraphin Koua est interviewé et présenté à l'écran comme lauréat-fondateur d'école. CE REPORTAGE EST VISIBLE SUR LE SITE : page d'accueil, page des résultats BTS 2026 et vidéothèque — invite les visiteurs à le regarder, c'est notre meilleure preuve. L'événement a aussi été couvert par Business 24 Africa (10 et 11 septembre 2026), et le fondateur était l'invité du RDV de la 1 sur la RTI le 3 septembre. Il est retourné sur ce même plateau le 22 septembre 2026 : les résultats du BTS 2026 campus par campus, les lauréats et la ferme pédagogique d'Azaguié sont passés à l'écran de la télévision nationale (photos sur la page Notre histoire). APPEL AUX ANCIENS : le Département Communication invite les anciens étudiants à témoigner de leur parcours pour les 20 ans de l'école — si ton interlocuteur est un ancien de 2IAE, oriente-le vers www.2iae.com/temoignages. Ne jamais inventer le contenu des émissions au-delà de ces faits.";
   }
   const texte = PROMPT_BASE + `\n\nNous sommes le ${dateAbidjan}.` + blocEvenement + blocTarifs;
   promptSystemeCache = { texte, expire: Date.now() + 10 * 60 * 1000 };
@@ -448,6 +448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ["/resultats-bts-2026", "weekly", "0.9"],
         ["/filieres", "weekly", "0.9"],
         ["/faq", "monthly", "0.8"],
+        ["/temoignages", "monthly", "0.7"],
         ["/instituts", "monthly", "0.8"],
         ["/tarifs", "monthly", "0.8"],
         ["/actualites", "daily", "0.8"],
@@ -623,7 +624,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Alimente le pipeline commercial : une préinscription entre directement
       // à l'étape « préinscrit », un simple contact à « nouveau ». L'adresse
       // bouche-trou du formulaire ne doit pas servir au dédoublonnage.
-      const estPreinscription = /pr[ée]-?inscription/i.test(contact.message.split("\n")[0] ?? "");
+      // Un ancien étudiant qui témoigne n'est pas un prospect : son message
+      // part à l'équipe, mais il n'entre pas dans le pipeline commercial, qui
+      // doit rester la liste des candidats à rappeler.
+      const premiereLigne = contact.message.split("\n")[0] ?? "";
+      if (/t[ée]moignage/i.test(premiereLigne)) {
+        return res.json({ success: true, contact });
+      }
+      const estPreinscription = /pr[ée]-?inscription/i.test(premiereLigne);
       const emailReel = contact.email === "preinscription@2iae.com" ? null : contact.email;
       const campus = contact.message.match(/Site souhaité : (.+)/)?.[1]?.trim();
       const filiere = contact.message.match(/Filière : (.+)/)?.[1]?.trim();

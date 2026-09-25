@@ -102,6 +102,15 @@ export default function Footer() {
               </li>
               <li>
                 <Link
+                  href="/temoignages"
+                  className="hover:text-primary transition-colors"
+                  data-testid="link-footer-temoignages"
+                >
+                  Anciens étudiants
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/a-propos"
                   className="hover:text-primary transition-colors"
                   data-testid="link-footer-a-propos"

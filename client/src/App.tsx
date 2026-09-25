@@ -41,6 +41,7 @@ import FormationsSeminairesPage from "@/pages/formations-seminaires";
 import VideothequePage from "@/pages/videotheque";
 import FaqPage from "@/pages/faq";
 import PreinscriptionPage from "@/pages/preinscription";
+import TemoignagesPage from "@/pages/temoignages";
 import Resultats2026Page from "@/pages/resultats-2026";
 import NotFound from "@/pages/not-found";
 import { MessageCircle } from "lucide-react";
@@ -184,6 +185,11 @@ function Router() {
       <Route path="/contact">
         <PublicLayout>
           <ContactPage />
+        </PublicLayout>
+      </Route>
+      <Route path="/temoignages">
+        <PublicLayout>
+          <TemoignagesPage />
         </PublicLayout>
       </Route>
       <Route path="/campus">

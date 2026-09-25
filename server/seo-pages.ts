@@ -100,6 +100,12 @@ const PAGES: Record<string, MetaPage> = {
       "Préinscrivez-vous en 2 minutes, gratuitement et sans engagement : un conseiller vous rappelle pour finaliser votre dossier. Bacheliers orientés par l'État bienvenus. WhatsApp +225 07 47 72 67 29.",
     jsonLd: [filAriane("Préinscription", "/preinscription")],
   },
+  "/temoignages": {
+    titre: "Avis aux anciens étudiants — partagez votre réussite | Groupe 2IAE",
+    description:
+      "Vous avez été formé au Groupe Écoles 2IAE ? Témoignez de votre parcours et de votre réussite professionnelle. Vos témoignages célèbrent les 20 ans de l'école des entrepreneurs.",
+    jsonLd: [filAriane("Anciens étudiants", "/temoignages")],
+  },
   "/resultats-bts-2026": {
     titre: "Résultats BTS 2026 : 67,38 % d'admis — 5e grande école de Côte d'Ivoire (MESRS) | 2IAE",
     description:

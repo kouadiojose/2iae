@@ -103,7 +103,8 @@ export async function elementsAgenda(u: Utilisateur, debut: Date, fin: Date): Pr
         coursCode: code,
         couleur,
         lieu: null,
-        lien: s.statut === "terminee" && s.replayUrl ? `/replays/${s.id}` : `/live/${s.id}`,
+        // Séance terminée : la page du replay (fiche de révision, transcription, vidéo s'il y en a une).
+        lien: s.statut === "terminee" ? `/replays/${s.id}` : `/live/${s.id}`,
         description: s.description,
         statut: s.statut,
         motifAnnulation: s.motifAnnulation,

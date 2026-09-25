@@ -136,8 +136,8 @@ function SeanceExistante({ id }: { id: number }) {
         className="w-fit"
       />
       {courant === "preparer" && (
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="flex min-w-0 flex-col gap-4">
             <TitreSection titre="La séance" />
             <FormulaireSeance
               seance={seance}
@@ -157,7 +157,7 @@ function SeanceExistante({ id }: { id: number }) {
               </div>
             )}
           </div>
-          <div className="flex flex-col gap-8">
+          <div className="flex min-w-0 flex-col gap-8">
             <SectionDiapos seance={seance} />
             <SectionSondages seance={seance} />
           </div>

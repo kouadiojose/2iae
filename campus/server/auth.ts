@@ -33,8 +33,9 @@ declare global {
 const StorePg = connectPg(session);
 
 export function configurationSession(): session.SessionOptions {
-  if (estProduction && !process.env.SESSION_SECRET) {
-    console.warn("⚠️  SESSION_SECRET non défini en production : les sessions ne sont pas sûres.");
+  // Sans secret, sessions ET codes d'émargement (HMAC) seraient calculables par n'importe qui.
+  if (estProduction && !process.env.SESSION_SECRET?.trim()) {
+    throw new Error("SESSION_SECRET est obligatoire en production (valeur aléatoire : openssl rand -hex 32).");
   }
   return {
     store: new StorePg({
@@ -144,6 +145,8 @@ export async function fermerAutresSessions(utilisateurId: number, sessionCourant
     `DELETE FROM campus.session WHERE (sess->>'utilisateurId')::int = $1 AND ($2::text IS NULL OR sid <> $2)`,
     [utilisateurId, sessionCourante ?? null],
   );
+  // Et les onglets déjà ouverts : leur flux temps réel est coupé tout de suite.
+  void import("./temps-reel").then((m) => m.fermerFluxUtilisateur(utilisateurId, sessionCourante)).catch(() => undefined);
 }
 
 // ── Limitation des tentatives de connexion ─────────────────────────────────
@@ -176,6 +179,10 @@ const cache = new Map<number, { u: Utilisateur; exp: number }>();
 export function oublierUtilisateur(id: number) {
   cache.delete(id);
 }
+setInterval(() => {
+  const maintenant = Date.now();
+  for (const [id, c] of cache) if (c.exp < maintenant) cache.delete(id);
+}, 60_000).unref();
 
 export async function utilisateurParId(id: number): Promise<Utilisateur | undefined> {
   const c = cache.get(id);

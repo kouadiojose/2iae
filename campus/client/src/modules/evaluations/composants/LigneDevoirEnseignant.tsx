@@ -41,9 +41,11 @@ export function LigneDevoirEnseignant({ d, maintenant, compact }: { d: DevoirEns
         <LienBouton href={`/enseigner/devoirs/${d.id}/copies`} variante={aCorriger || c.corrigees > 0 ? "principal" : "contour"} className="min-h-[48px] flex-1">
           {quiz ? "Résultats" : aCorriger ? "Corriger" : "Copies"}
         </LienBouton>
-        <LienBouton href={`/enseigner/devoirs/${d.id}`} variante="fantome" icone={<PenLine className="h-4 w-4" />} className="min-h-[48px] flex-1 border border-ligne">
-          Modifier
-        </LienBouton>
+        {d.modifiable && (
+          <LienBouton href={`/enseigner/devoirs/${d.id}`} variante="fantome" icone={<PenLine className="h-4 w-4" />} className="min-h-[48px] flex-1 border border-ligne">
+            Modifier
+          </LienBouton>
+        )}
       </div>
     </article>
   );

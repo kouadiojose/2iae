@@ -13,6 +13,17 @@ import { brancherVite, servirStatique } from "./vite";
 import { pool } from "./db";
 import { demarrerTaches } from "./taches";
 
+// Dernier filet : une erreur imprévue est journalisée sans faire tomber le
+// campus (les lives en cours et l'état temps réel vivent dans ce processus).
+process.on("unhandledRejection", (raison) => console.error("[processus] promesse rejetée non traitée :", raison));
+process.on("uncaughtException", (e) => console.error("[processus] exception non rattrapée :", e));
+
+if (estProduction && !process.env.UPLOADS_DIR) {
+  console.error(
+    "⚠️  UPLOADS_DIR n'est pas défini : les fichiers déposés (devoirs, ressources) seront PERDUS au prochain déploiement. Montez un volume et définissez UPLOADS_DIR=/data/uploads.",
+  );
+}
+
 const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");

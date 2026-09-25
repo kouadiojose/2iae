@@ -82,6 +82,8 @@ export type CompteursCopies = {
 export type DevoirEnseignantResume = BaseDevoirResume & {
   publie: boolean;
   compteurs: CompteursCopies;
+  /** Faux pour la vie scolaire d'un campus sur un cours suivi aussi par d'autres campus (consultation seule). */
+  modifiable: boolean;
 };
 
 /** GET /api/devoirs (et ?cours=<id>) : la vue dépend du rôle. */
@@ -180,6 +182,8 @@ export type DevoirDetailEnseignant = {
   /** Des copies ou des tentatives existent : on ne change plus le type. */
   aDesRendus: boolean;
   iaDisponible: boolean;
+  /** La personne peut modifier le devoir (formateur du cours, direction, vie scolaire d'un cours propre à son campus). */
+  modifiable: boolean;
 };
 
 export type DevoirDetail = DevoirDetailEtudiant | DevoirDetailEnseignant;
@@ -231,6 +235,12 @@ export type ListeCopies = {
   copies: CopieResume[];
   compteurs: CompteursCopies;
   iaDisponible: boolean;
+  /**
+   * La personne peut noter, publier et modifier le devoir. Faux pour la vie
+   * scolaire d'un campus sur un cours suivi aussi par d'autres campus : elle
+   * consulte les copies de ses étudiants et dépose les copies papier.
+   */
+  peutCorriger: boolean;
 };
 
 /** GET /api/rendus/:id : une copie dans la visionneuse du formateur. */

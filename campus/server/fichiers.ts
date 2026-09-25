@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { config } from "./config";
 import { exigerConnexion, moi, estEquipe, perimetreSites } from "./auth";
-import { route, idParam, introuvable, interdit, invalide } from "./http";
+import { route, idParam, introuvable, interdit, invalide, ErreurHttp } from "./http";
 import { fichiers, utilisateurs, type Fichier, type Utilisateur } from "@shared/schema";
 
 export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo"] as const;
@@ -56,7 +56,11 @@ export async function peutLireFichier(u: Utilisateur, f: Fichier): Promise<boole
 
 export const urlFichier = (id: number) => `/api/fichiers/${id}`;
 
-fs.mkdirSync(config.dossierFichiers, { recursive: true });
+try {
+  fs.mkdirSync(config.dossierFichiers, { recursive: true });
+} catch (e) {
+  console.error(`⚠️  Dossier des fichiers inutilisable (${config.dossierFichiers}) : ${(e as Error).message}`);
+}
 
 const stockage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -75,7 +79,7 @@ export const televersement = multer({
   limits: { fileSize: config.tailleMaxFichierMo * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
     if (MIMES_AUTORISES.some((re) => re.test(file.mimetype))) cb(null, true);
-    else cb(new Error(`Type de fichier non accepté (${file.mimetype}).`));
+    else cb(new ErreurHttp(415, "Ce type de fichier n'est pas accepté. Envoie une photo, un PDF, un document Office, un fichier audio ou une vidéo courte."));
   },
 });
 
@@ -104,8 +108,12 @@ export function enregistrerFichiers(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const usage = String(req.body?.usage || "") as UsageFichier;
-      if (!USAGES_FICHIER.includes(usage)) throw invalide("Usage de fichier inconnu.");
       const recus = (req.files as Express.Multer.File[] | undefined) ?? [];
+      if (!USAGES_FICHIER.includes(usage)) {
+        // multer a déjà écrit les fichiers : on ne laisse pas d'orphelins sur le disque.
+        await Promise.all(recus.map((f) => fs.promises.unlink(f.path).catch(() => undefined)));
+        throw invalide("Usage de fichier inconnu.");
+      }
       if (!recus.length) throw invalide("Aucun fichier reçu.");
       const enregistres = [];
       for (const f of recus) enregistres.push(versFichierPublic(await enregistrerFichier(u, f, usage)));
@@ -131,7 +139,15 @@ export function enregistrerFichiers(app: Express) {
       );
       res.setHeader("Cache-Control", "private, max-age=86400");
       res.setHeader("X-Content-Type-Options", "nosniff");
-      fs.createReadStream(chemin).pipe(res);
+      // Une erreur de lecture (fichier abîmé, volume indisponible) ne doit
+      // jamais faire tomber le serveur : on répond ou on coupe proprement.
+      const flux = fs.createReadStream(chemin);
+      flux.on("error", (e) => {
+        console.error(`[fichiers] lecture impossible (${f.id}) :`, e.message);
+        if (res.headersSent) res.destroy();
+        else res.status(500).json({ message: "Ce fichier est momentanément illisible." });
+      });
+      flux.pipe(res);
     }),
   );
 }

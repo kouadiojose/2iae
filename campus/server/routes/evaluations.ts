@@ -16,9 +16,9 @@ import { z } from "zod";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
-import { exigerConnexion, exigerRole, moi, perimetreSites } from "../auth";
+import { estEquipe, exigerConnexion, exigerRole, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { coursEnseigne, coursVisible, devoirVisible, enseigneCours, etudiantsDuCours, formateursDuCours, idsCoursAccessibles } from "../acces";
+import { coursEnseigne, coursVisible, devoirVisible, enseigneCours, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, peutVoirCours } from "../acces";
 import { enregistrerGardienFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
 import { publierUtilisateur } from "../temps-reel";
@@ -168,6 +168,32 @@ async function tracer(u: Utilisateur, action: string, details: Record<string, un
   await db.insert(journal).values({ utilisateurId: u.id, action, details });
 }
 
+/**
+ * Suivi des devoirs par l'équipe : la vie scolaire d'un campus consulte les
+ * devoirs des cours que suit son campus (copies et notes de SES étudiants,
+ * dépôt des copies papier) sans pouvoir modifier ni corriger un cours partagé
+ * avec d'autres campus (enseigneCours, CONCEPTION §9.5).
+ */
+async function suitCours(u: Utilisateur, coursId: number): Promise<boolean> {
+  if (await enseigneCours(u, coursId)) return true;
+  return estEquipe(u) && (await peutVoirCours(u, coursId));
+}
+
+/** Charge un cours dont la personne suit les devoirs (lecture), ou lève 404/403. */
+async function coursSuivi(u: Utilisateur, coursId: number): Promise<Cours> {
+  const [c] = await db.select().from(cours).where(eq(cours.id, coursId));
+  if (!c) throw introuvable("Cours");
+  if (!(await suitCours(u, coursId))) throw interdit("Seul le formateur de ce cours peut faire cela.");
+  return c;
+}
+
+/** Charge un devoir dont la personne suit les copies (lecture), ou lève 404/403. */
+async function devoirSuivi(u: Utilisateur, devoirId: number): Promise<{ d: Devoir; c: Cours }> {
+  const [d] = await db.select().from(devoirs).where(eq(devoirs.id, devoirId));
+  if (!d) throw introuvable("Devoir");
+  return { d, c: await coursSuivi(u, d.coursId) };
+}
+
 /** Charge un devoir que la personne enseigne (formateur du cours ou équipe), ou lève 404/403. */
 async function devoirEnseigne(u: Utilisateur, devoirId: number): Promise<{ d: Devoir; c: Cours }> {
   const [d] = await db.select().from(devoirs).where(eq(devoirs.id, devoirId));
@@ -176,8 +202,8 @@ async function devoirEnseigne(u: Utilisateur, devoirId: number): Promise<{ d: De
   return { d, c };
 }
 
-/** Charge une copie que la personne peut corriger (formateur du cours, équipe de son campus). */
-async function renduEnseigne(u: Utilisateur, renduId: number) {
+/** Charge une copie que la personne peut corriger (formateur du cours, équipe de son campus) ; lecture seule : suivi par l'équipe. */
+async function renduEnseigne(u: Utilisateur, renduId: number, lecture = false) {
   const [ligne] = await db
     .select({ r: rendus, d: devoirs, e: utilisateurs })
     .from(rendus)
@@ -185,7 +211,7 @@ async function renduEnseigne(u: Utilisateur, renduId: number) {
     .innerJoin(utilisateurs, eq(utilisateurs.id, rendus.etudiantId))
     .where(eq(rendus.id, renduId));
   if (!ligne) throw introuvable("Copie");
-  if (!(await enseigneCours(u, ligne.d.coursId))) throw interdit("Seul le formateur du cours peut ouvrir cette copie.");
+  if (!(await (lecture ? suitCours : enseigneCours)(u, ligne.d.coursId))) throw interdit("Seul le formateur du cours peut ouvrir cette copie.");
   if (!dansPerimetre(u, ligne.e)) throw interdit("Cet étudiant n'est pas rattaché à votre campus.");
   return ligne;
 }
@@ -294,7 +320,14 @@ async function listeEnseignant(u: Utilisateur, coursIds: number[]): Promise<Devo
     .where(inArray(devoirs.coursId, coursIds))
     .orderBy(desc(devoirs.dateLimite));
   const compteurs = await compteursPour(u, lignes.map((l) => l.d));
-  return lignes.map(({ d, c }) => ({ ...baseResume(d, c), publie: d.publie, compteurs: compteurs.get(d.id) ?? compteursVides() }));
+  const modifiables = new Map<number, boolean>();
+  for (const coursId of new Set(lignes.map((l) => l.d.coursId))) modifiables.set(coursId, await enseigneCours(u, coursId));
+  return lignes.map(({ d, c }) => ({
+    ...baseResume(d, c),
+    publie: d.publie,
+    compteurs: compteurs.get(d.id) ?? compteursVides(),
+    modifiable: modifiables.get(d.coursId) ?? false,
+  }));
 }
 
 // ── Notifications de devoirs ───────────────────────────────────────────────
@@ -611,6 +644,7 @@ async function detailEnseignant(u: Utilisateur, d: Devoir, c: Cours): Promise<De
     compteurs,
     aDesRendus: copies + essais > 0,
     iaDisponible: iaDisponible(),
+    modifiable: await enseigneCours(u, d.coursId),
   };
 }
 
@@ -947,7 +981,7 @@ export function enregistrerEvaluations(app: Express) {
   enregistrerGardienFichier("devoir", async (u, f) => {
     const lignes = await db.select().from(devoirs).where(sql`${devoirs.fichierIds} @> ${JSON.stringify([f.id])}::jsonb`);
     for (const d of lignes) {
-      if (await enseigneCours(u, d.coursId)) return true;
+      if (await suitCours(u, d.coursId)) return true;
       if (u.role === "etudiant" && d.publie && ouvert(d)) {
         const ids = await idsCoursAccessibles(u);
         if (ids.includes(d.coursId)) return true;
@@ -964,7 +998,9 @@ export function enregistrerEvaluations(app: Express) {
     exigerRole(...ENSEIGNANTS),
     route(async (req, res) => {
       const u = moi(req);
-      const ids = await idsCoursAccessibles(u);
+      // La vie scolaire d'un campus ne donne de devoir que dans les cours propres à son campus.
+      const ids: number[] = [];
+      for (const id of await idsCoursAccessibles(u)) if (await enseigneCours(u, id)) ids.push(id);
       const liste = ids.length
         ? await db
             .select({ id: cours.id, code: cours.code, titre: cours.titre, couleur: cours.couleur })
@@ -1031,7 +1067,7 @@ export function enregistrerEvaluations(app: Express) {
       const u = moi(req);
       const d = await devoirVisible(u, idParam(req));
       const [c] = await db.select().from(cours).where(eq(cours.id, d.coursId));
-      if (await enseigneCours(u, d.coursId)) return res.json(await detailEnseignant(u, d, c));
+      if (await suitCours(u, d.coursId)) return res.json(await detailEnseignant(u, d, c));
       if (u.role !== "etudiant") throw interdit("Seul le formateur du cours peut ouvrir ce devoir.");
       if (!ouvert(d)) throw new ErreurHttp(403, `Ce devoir ouvrira le ${dateFr(d.ouvertureLe!)}.`);
       res.json(await detailEtudiant(u, d, c));
@@ -1182,7 +1218,7 @@ export function enregistrerEvaluations(app: Express) {
     exigerRole(...ENSEIGNANTS),
     route(async (req, res) => {
       const u = moi(req);
-      const { d, c } = await devoirEnseigne(u, idParam(req));
+      const { d, c } = await devoirSuivi(u, idParam(req));
       const inscrits = await inscritsVisibles(u, d.coursId);
       const sitesNoms = await nomsSites();
       const lesRendus = await db.select().from(rendus).where(and(eq(rendus.devoirId, d.id), ne(rendus.statut, "brouillon")));
@@ -1225,6 +1261,7 @@ export function enregistrerEvaluations(app: Express) {
         copies,
         compteurs: (await compteursPour(u, [d])).get(d.id) ?? compteursVides(),
         iaDisponible: iaDisponible(),
+        peutCorriger: await enseigneCours(u, d.coursId),
       };
       res.json(reponse);
     }),
@@ -1235,7 +1272,7 @@ export function enregistrerEvaluations(app: Express) {
     exigerRole(...ENSEIGNANTS),
     route(async (req, res) => {
       const u = moi(req);
-      const { r, d, e } = await renduEnseigne(u, idParam(req));
+      const { r, d, e } = await renduEnseigne(u, idParam(req), true);
       if (r.statut === "brouillon") throw introuvable("Copie");
       let copie = r;
       // Deuxième coche : la première fois que LE FORMATEUR ouvre la copie, l'étudiant le voit (✓✓).
@@ -1421,7 +1458,8 @@ export function enregistrerEvaluations(app: Express) {
     exigerRole(...ENSEIGNANTS),
     route(async (req, res) => {
       const u = moi(req);
-      const { d } = await devoirQuizEnseigne(u, idParam(req));
+      const { d } = await devoirSuivi(u, idParam(req));
+      if (d.type !== "quiz") throw invalide("Ce devoir n'est pas une interrogation.");
       res.json((await questionsDe(d.id)).map(versQuestionEnseignant));
     }),
   );
@@ -1765,7 +1803,7 @@ export function enregistrerEvaluations(app: Express) {
     exigerRole(...ENSEIGNANTS),
     route(async (req, res) => {
       const u = moi(req);
-      const c = await coursEnseigne(u, idParam(req));
+      const c = await coursSuivi(u, idParam(req));
       res.json(await carnetDuCours(u, c));
     }),
   );
@@ -1775,7 +1813,7 @@ export function enregistrerEvaluations(app: Express) {
     exigerRole(...ENSEIGNANTS),
     route(async (req, res) => {
       const u = moi(req);
-      const c = await coursEnseigne(u, idParam(req));
+      const c = await coursSuivi(u, idParam(req));
       const carnet = await carnetDuCours(u, c);
       const entete = [
         "Matricule",

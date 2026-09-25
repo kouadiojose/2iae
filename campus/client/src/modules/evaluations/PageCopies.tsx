@@ -125,7 +125,7 @@ export default function PageCopies({ id }: { id: string }) {
         titre={devoir.titre}
         actions={
           <>
-            {!quiz && (
+            {!quiz && data.peutCorriger && (
               <Bouton icone={<Send className="h-4 w-4" />} onClick={() => setPublier(true)} disabled={!compteurs.corrigees} className="min-h-[48px]">
                 Publier les notes{compteurs.corrigees ? ` (${compteurs.corrigees})` : ""}
               </Bouton>
@@ -133,9 +133,11 @@ export default function PageCopies({ id }: { id: string }) {
             <LienBouton href={`/enseigner/notes/${devoir.coursId}`} variante="contour" icone={<BookOpenCheck className="h-4 w-4" />} className="min-h-[48px]">
               Carnet
             </LienBouton>
-            <LienBouton href={`/enseigner/devoirs/${devoirId}`} variante="fantome" icone={<PenLine className="h-4 w-4" />} className="min-h-[48px]">
-              Modifier
-            </LienBouton>
+            {data.peutCorriger && (
+              <LienBouton href={`/enseigner/devoirs/${devoirId}`} variante="fantome" icone={<PenLine className="h-4 w-4" />} className="min-h-[48px]">
+                Modifier
+              </LienBouton>
+            )}
           </>
         }
       />
@@ -262,6 +264,7 @@ export default function PageCopies({ id }: { id: string }) {
                   bareme={devoir.bareme}
                   grille={devoir.grille}
                   quiz={quiz}
+                  lectureSeule={!data.peutCorriger}
                   iaDisponible={data.iaDisponible}
                   onSuivante={() => aller(1)}
                   derniere={position >= visibles.length - 1}
@@ -312,6 +315,7 @@ function CopieOuverte({
   bareme,
   grille,
   quiz,
+  lectureSeule,
   iaDisponible,
   onSuivante,
   derniere,
@@ -320,6 +324,7 @@ function CopieOuverte({
   bareme: number;
   grille: CritereGrille[];
   quiz: boolean;
+  lectureSeule: boolean;
   iaDisponible: boolean;
   onSuivante: () => void;
   derniere: boolean;
@@ -379,6 +384,20 @@ function CopieOuverte({
             <span className="text-xl text-texte-gris">/{nombre(bareme)}</span>
           </span>
           <span className="text-sm text-texte-pale">Meilleure tentative retenue.</span>
+        </Carte>
+      ) : lectureSeule ? (
+        <Carte className="flex flex-col gap-2 xl:sticky xl:top-24">
+          <span className="font-mono text-xs uppercase tracking-wider text-texte-gris">
+            {c.statut === "corrige" ? "Note publiée" : c.note !== null ? "Note posée, pas encore publiée" : "Pas encore notée"}
+          </span>
+          {c.note !== null && (
+            <span className="text-[44px] font-black leading-none tracking-tres-serre tabular-nums">
+              {nombre(c.note)}
+              <span className="text-xl text-texte-gris">/{nombre(bareme)}</span>
+            </span>
+          )}
+          {c.commentaire && <p className="whitespace-pre-line text-[15px] text-texte-doux">{c.commentaire}</p>}
+          <span className="text-sm text-texte-pale">Ce cours est suivi par plusieurs campus : seul son formateur le corrige et publie les notes.</span>
         </Carte>
       ) : (
         <PanneauNotation key={c.id} copie={c} bareme={bareme} grille={grille} iaDisponible={iaDisponible} onSuivante={onSuivante} derniere={derniere} />

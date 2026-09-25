@@ -256,7 +256,7 @@ export default function PageEditeurCours({ id }: { id: string }) {
           <SectionClasses classeIds={form.classeIds} onChange={(classeIds) => modifier({ classeIds })} options={options} />
           <SectionProgramme cours={cours} leconAOuvrir={leconAOuvrir} />
         </div>
-        <div className="flex flex-col gap-6 lg:sticky lg:top-24">
+        <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
           <SectionSite cours={cours} form={form} modifier={modifier} options={options} erreur={erreurs.accrocheSite} />
         </div>
       </div>

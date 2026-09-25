@@ -303,7 +303,7 @@ function LigneElement({ element: e, formateur, onEvenement }: { element: Element
   const annule = e.statut === "annulee";
   const titre = (
     <span className={cn("text-base font-bold leading-snug", annule && "text-texte-gris line-through")}>
-      {e.type === "devoir" ? "À rendre : " : e.type === "live" ? "En direct : " : ""}
+      {e.type === "devoir" ? "À rendre : " : e.type === "live" ? (e.statut === "terminee" ? "Replay : " : "En direct : ") : ""}
       {e.titre}
     </span>
   );
@@ -482,7 +482,7 @@ function texteSemaine(elements: ElementAgenda[], lundi: Date, numero: number): s
     lignes.push(`*${majuscule(jourLong(jour))}*`);
     for (const e of duJour) {
       const code = e.coursCode ? `${e.coursCode} · ` : "";
-      if (e.type === "live") lignes.push(`- ${heure(e.debut)} · ${code}${e.statut === "annulee" ? "ANNULÉ : " : "En direct : "}${e.titre}`);
+      if (e.type === "live") lignes.push(`- ${heure(e.debut)} · ${code}${e.statut === "annulee" ? "ANNULÉ : " : e.statut === "terminee" ? "Replay : " : "En direct : "}${e.titre}`);
       else if (e.type === "devoir") lignes.push(`- Avant ${heure(e.debut)} · ${code}À rendre : ${e.titre}`);
       else lignes.push(`- ${heure(e.debut)} · ${e.titre}${e.lieu ? ` (${e.lieu})` : ""}`);
     }

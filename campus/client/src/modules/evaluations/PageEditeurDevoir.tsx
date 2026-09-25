@@ -140,6 +140,8 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
     );
   }
   if (data?.vue === "etudiant") return <Redirect to={`/devoirs/${devoirId}`} replace />;
+  // Consultation seule (vie scolaire d'un campus, cours partagé) : les copies de ses étudiants.
+  if (detail && !detail.modifiable) return <Redirect to={`/enseigner/devoirs/${devoirId}/copies`} replace />;
 
   const maj = (champ: Partial<Formulaire>) => setF((x) => ({ ...x, ...champ }));
   const quiz = f.type === "quiz";

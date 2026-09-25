@@ -15,7 +15,7 @@ export function Onglets<T extends string>({
   className?: string;
 }) {
   return (
-    <div role="tablist" className={cn("flex gap-1 overflow-x-auto rounded-2xl p-1.5", nuit ? "bg-nuit-panneau" : "bg-creme", className)}>
+    <div role="tablist" className={cn("flex max-w-full gap-1 overflow-x-auto rounded-2xl p-1.5", nuit ? "bg-nuit-panneau" : "bg-creme", className)}>
       {options.map((o) => {
         const actif = o.valeur === valeur;
         return (

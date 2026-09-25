@@ -10,7 +10,10 @@ import { reseauJoignable } from "./service-worker";
 /** Page demandée au départ (?page=/cours/3), limitée aux adresses du campus. */
 function pageDemandee(): string | null {
   const page = new URLSearchParams(window.location.search).get("page");
-  return page && page.startsWith("/") && !page.startsWith("//") && !page.startsWith("/hors-ligne") ? page : null;
+  // « /\hote » est lu comme « //hote » par les navigateurs : même filtre que le retour après connexion.
+  if (!page || !page.startsWith("/") || page.startsWith("//") || page.startsWith("/\\") || page.startsWith("/hors-ligne")) return null;
+  if (/[\u0000-\u001f\\]/.test(page)) return null;
+  return page;
 }
 
 /** Sans réseau, on vérifie son retour toutes les 10 secondes (sonde minuscule, jamais en cache). */

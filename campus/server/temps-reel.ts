@@ -12,7 +12,8 @@
 // Railway). Pour plusieurs répliques, brancher publier() sur LISTEN/NOTIFY.
 import type { Express, Response } from "express";
 import crypto from "crypto";
-import { exigerConnexion, moi } from "./auth";
+import { exigerConnexion, moi, utilisateurParId } from "./auth";
+import { pool } from "./db";
 import { route, valider, interdit } from "./http";
 import { z } from "zod";
 import type { Utilisateur } from "@shared/schema";
@@ -20,15 +21,57 @@ import type { Utilisateur } from "@shared/schema";
 type Connexion = {
   id: string;
   utilisateur: Utilisateur;
+  /** Session qui a ouvert le flux : si elle est révoquée, le flux est fermé. */
+  sessionId: string;
+  ouverteLe: number;
   res: Response;
   canaux: Set<string>;
 };
+
+/** Onglets ouverts en même temps par personne (au-delà, le plus ancien est fermé). */
+const MAX_CONNEXIONS_PAR_PERSONNE = 6;
 
 type Gardien = (u: Utilisateur, cle: string) => Promise<boolean>;
 
 const connexions = new Map<string, Connexion>();
 const parCanal = new Map<string, Set<Connexion>>();
 const gardiens = new Map<string, Gardien>();
+
+function fermer(c: Connexion) {
+  try {
+    c.res.end();
+  } catch {
+    /* déjà fermée */
+  }
+}
+
+/**
+ * Révocation : toutes les 30 s, les flux dont la session a été supprimée
+ * (« se déconnecter partout », nouveau code, changement de code) ou dont le
+ * compte a été désactivé sont fermés. Sans cela, un onglet resté ouvert
+ * continuerait de recevoir les messages privés.
+ */
+async function verifierSessions() {
+  const liste = [...connexions.values()];
+  if (!liste.length) return;
+  const ids = [...new Set(liste.map((c) => c.sessionId))];
+  const { rows } = await pool.query<{ sid: string }>("SELECT sid FROM campus.session WHERE sid = ANY($1) AND expire > now()", [ids]);
+  const valides = new Set(rows.map((r) => r.sid));
+  for (const c of liste) {
+    if (!valides.has(c.sessionId)) {
+      fermer(c);
+      continue;
+    }
+    const u = await utilisateurParId(c.utilisateur.id);
+    if (!u?.actif) fermer(c);
+  }
+}
+setInterval(() => void verifierSessions().catch((e) => console.error("[temps réel] vérification des sessions :", e.message)), 30_000).unref();
+
+/** Ferme tout de suite les flux d'une personne (sauf celui de la session indiquée). */
+export function fermerFluxUtilisateur(utilisateurId: number, saufSession?: string) {
+  for (const c of connexions.values()) if (c.utilisateur.id === utilisateurId && c.sessionId !== saufSession) fermer(c);
+}
 
 /** Un module déclare qui peut écouter les canaux « prefixe:cle ». */
 export function enregistrerGardien(prefixe: string, gardien: Gardien) {
@@ -97,7 +140,9 @@ export function enregistrerTempsReel(app: Express) {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
-    const c: Connexion = { id: crypto.randomUUID(), utilisateur: u, res, canaux: new Set() };
+    const c: Connexion = { id: crypto.randomUUID(), utilisateur: u, sessionId: req.sessionID, ouverteLe: Date.now(), res, canaux: new Set() };
+    const miennes = [...connexions.values()].filter((x) => x.utilisateur.id === u.id).sort((a, b) => a.ouverteLe - b.ouverteLe);
+    while (miennes.length >= MAX_CONNEXIONS_PAR_PERSONNE) fermer(miennes.shift()!);
     connexions.set(c.id, c);
     for (const canal of [`u:${u.id}`, "tous", `role:${u.role}`]) abonner(c, canal);
     if (u.siteId) abonner(c, `site:${u.siteId}`);

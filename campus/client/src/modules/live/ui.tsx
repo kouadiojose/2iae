@@ -66,7 +66,11 @@ export function FinDeSeance({ seance }: { seance: Pick<SeanceDetailDto, "id" | "
           </p>
         )}
         <p className="text-[15px] text-nuit-doux">
-          {annulee ? "Tu seras prévenu dès qu'une nouvelle date est fixée." : "Le replay, la transcription et la fiche de révision arrivent dans le cours."}
+          {annulee
+            ? "Tu seras prévenu dès qu'une nouvelle date est fixée."
+            : seance.replayDisponible
+              ? "Le replay est prêt : fiche de révision, transcription et questions posées."
+              : "Le replay, la transcription et la fiche de révision arrivent dans le cours."}
         </p>
         <div className="flex flex-wrap justify-center gap-2">
           {!annulee && (

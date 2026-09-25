@@ -643,6 +643,17 @@ export function enregistrerVisioCampus(app: Express) {
       const deja = c.pairs.get(corps.pairId);
       if (deja && (deja.utilisateurId !== u.id || deja.role !== role)) throw new ErreurHttp(409, "Cet onglet est déjà utilisé.");
 
+      // Une personne = une place : un nouvel onglet (ou appareil) remplace les
+      // précédents, pour qu'un seul compte ne puisse pas occuper toutes les places.
+      if (role !== "formateur") {
+        for (const autre of [...c.pairs.values()]) {
+          if (autre.utilisateurId === u.id && autre.pairId !== corps.pairId) {
+            envoyer(autre, { genre: "remplace" }, c.seanceId);
+            retirer(c, autre.pairId);
+          }
+        }
+      }
+
       // Places des étudiants en ligne : vidéo d'abord, puis son seul, puis la radio.
       let video = false;
       if (role === "etudiant") {

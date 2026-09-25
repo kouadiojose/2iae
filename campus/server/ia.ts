@@ -66,6 +66,7 @@ function texteDe(message: Anthropic.Beta.BetaMessage): string {
 
 async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.BetaUsage | undefined) {
   if (!utilisateurId) return;
+  liberer(utilisateurId);
   const jour = new Date().toISOString().slice(0, 10);
   const entree = (usage?.input_tokens ?? 0) + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0);
   const sortie = usage?.output_tokens ?? 0;
@@ -93,11 +94,32 @@ export async function requetesDuJour(utilisateurId: number): Promise<number> {
   return ligne?.n ?? 0;
 }
 
-/** Lève une ErreurIa 429 si le quota quotidien est atteint. */
+// Requêtes en cours (comptées en base seulement à la fin de la réponse) :
+// sans elles, dix questions envoyées en même temps passeraient toutes le quota.
+const reservations = new Map<number, symbol[]>();
+
+function reserver(utilisateurId: number) {
+  const jeton = Symbol();
+  reservations.set(utilisateurId, [...(reservations.get(utilisateurId) ?? []), jeton]);
+  // Filet : une requête qui échoue avant d'être comptée libère sa place.
+  setTimeout(() => liberer(utilisateurId, jeton), 3 * 60_000).unref();
+}
+
+function liberer(utilisateurId: number, jeton?: symbol) {
+  const liste = reservations.get(utilisateurId);
+  if (!liste?.length) return;
+  const reste = jeton ? liste.filter((j) => j !== jeton) : liste.slice(1);
+  if (reste.length) reservations.set(utilisateurId, reste);
+  else reservations.delete(utilisateurId);
+}
+
+/** Lève une ErreurIa 429 si le quota quotidien est atteint (requêtes en cours comprises), sinon réserve une place. */
 export async function verifierQuota(utilisateurId: number, quota = config.ia.quotaJour): Promise<void> {
-  if ((await requetesDuJour(utilisateurId)) >= quota) {
+  const enCours = reservations.get(utilisateurId)?.length ?? 0;
+  if ((await requetesDuJour(utilisateurId)) + enCours >= quota) {
     throw new ErreurIa(`Tu as atteint ta limite de ${quota} questions à l'assistant pour aujourd'hui. Elle se renouvelle demain matin.`, 429);
   }
+  reserver(utilisateurId);
 }
 
 const MESSAGE_REFUS =

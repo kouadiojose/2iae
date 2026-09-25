@@ -36,8 +36,11 @@ const A_PRECHARGER = ["/manifest.webmanifest", "/marque-2iae.svg", "/icons/icone
 
 /** Requêtes qui ouvrent ou ferment une session : les données de la personne précédente sont oubliées (téléphones partagés). */
 const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|compte\/(reinitialiser|deconnecter-partout))/;
-/** Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels, sonde de santé. */
-const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|health$|auth\/(?!moi$))/;
+/**
+ * Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels, sonde de santé,
+ * radio du cours (flux audio continu) et signalisation de la visio.
+ */
+const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|health$|auth\/(?!moi$)|radio\/|visio\/)/;
 /** Le profil courant est gardé même « non connecté » (401) : sans réseau, les pages publiques s'ouvrent aussitôt. */
 const PROFIL = "/api/auth/moi";
 

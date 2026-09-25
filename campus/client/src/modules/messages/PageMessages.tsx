@@ -1,7 +1,7 @@
 // /messages et /messages/:id — sur téléphone, deux écrans (la liste, puis le
 // fil en plein écran) ; sur ordinateur, la liste et le fil côte à côte.
 import { useState } from "react";
-import { useSearch } from "wouter";
+import { Redirect, useSearch } from "wouter";
 import { PenSquare, MessageCircle } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { Page, EnTetePage } from "@/components/layout/coquille";
@@ -19,6 +19,10 @@ export default function PageMessages({ id }: { id?: string }) {
   const contexte = recherche.get("contexte")?.slice(0, 200) || null;
   const [choix, setChoix] = useState(recherche.get("nouveau") === "1");
   const etudiant = moi.role === "etudiant";
+
+  // Ancien format des liens « Écrire à… » (/messages?a=<id>&contexte=…) :
+  // l'ouverture de la conversation directe se fait dans /messages/nouveau.
+  if (id === undefined && recherche.get("a")) return <Redirect to={`/messages/nouveau?${recherche.toString()}`} replace />;
 
   const idNum = id === undefined ? null : Number(id);
   if (idNum !== null && !(Number.isInteger(idNum) && idNum > 0)) {

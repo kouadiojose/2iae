@@ -188,7 +188,10 @@ function peutGerer(u: Utilisateur, cible: Pick<Utilisateur, "role" | "siteId">):
   if (cible.role === "admin") return false;
   const p = perimetreSites(u);
   if (!p) return true;
-  if (cible.role === "formateur") return true; // les formateurs n'ont pas de campus
+  // Les formateurs enseignent à tous les campus : les gérer (nouveau code,
+  // désactivation…) reviendrait à accéder aux copies et notes de tous les
+  // sites. Réservé à la direction et à la vie scolaire du groupe (ci-dessus).
+  if (cible.role === "formateur") return false;
   return cible.siteId !== null && p.includes(cible.siteId);
 }
 
@@ -1153,6 +1156,9 @@ export function enregistrerAdmin(app: Express) {
       const p = perimetreSites(u);
 
       if (d.role === "admin" && u.role !== "admin") throw interdit("Seule la direction crée les comptes de la direction.");
+      if (d.role === "formateur" && perimetreSites(u)) {
+        throw interdit("Les comptes des formateurs sont créés par la direction : ils enseignent à tous les campus.");
+      }
       let siteId: number | null = null;
       let classeId: number | null = null;
       if (d.role === "etudiant") {

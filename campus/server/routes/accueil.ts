@@ -465,23 +465,25 @@ export function enregistrerAccueil(app: Express) {
       const direct = seancesUtiles.find((l) => l.s.statut === "en_direct");
       const prochaine = seancesUtiles.find((l) => l.s.statut === "planifiee");
 
-      // Copies rendues, pas encore corrigées, regroupées par devoir (les plus anciennes d'abord).
+      // Copies rendues pas encore publiées, regroupées par devoir (les plus anciennes d'abord) :
+      // à corriger (sans note) et à publier (note posée, même règle que le module évaluations).
       const copies = coursIds.length
         ? await db
             .select({
               devoirId: devoirs.id,
               titre: devoirs.titre,
               coursCode: cours.code,
-              nombre: sql<number>`count(*)::int`,
-              enRetard: sql<number>`count(*) filter (where ${rendus.enRetard})::int`,
-              plusAncienne: sql<string | null>`min(${rendus.renduLe})`,
+              nombre: sql<number>`count(*) filter (where ${rendus.note} is null)::int`,
+              enRetard: sql<number>`count(*) filter (where ${rendus.note} is null and ${rendus.enRetard})::int`,
+              aPublier: sql<number>`count(*) filter (where ${rendus.note} is not null)::int`,
+              plusAncienne: sql<string | null>`min(${rendus.renduLe}) filter (where ${rendus.note} is null)`,
             })
             .from(rendus)
             .innerJoin(devoirs, eq(devoirs.id, rendus.devoirId))
             .innerJoin(cours, eq(cours.id, devoirs.coursId))
             .where(and(inArray(devoirs.coursId, coursIds), eq(rendus.statut, "rendu")))
             .groupBy(devoirs.id, devoirs.titre, cours.code)
-            .orderBy(sql`min(${rendus.renduLe}) asc nulls last`)
+            .orderBy(sql`min(${rendus.renduLe}) filter (where ${rendus.note} is null) asc nulls last`)
         : [];
 
       // Questions du dernier live terminé, restées sans réponse (signées par campus, jamais par un nom).
@@ -563,6 +565,7 @@ export function enregistrerAccueil(app: Express) {
           lien: `/enseigner/devoirs/${c.devoirId}/copies`,
         })),
         totalCopies: copies.reduce((s, c) => s + c.nombre, 0),
+        totalAPublier: copies.reduce((s, c) => s + c.aPublier, 0),
         questions,
         cours: mesCours,
         messagesNonLus,

@@ -5,7 +5,7 @@
 // c'est le rappel le plus fiable qu'on puisse offrir.
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, asc, eq, gte, inArray, lt, sql, isNotNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, lte, or, isNull, sql, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { config, estProduction } from "../config";
 import { exigerConnexion, exigerRole, moi, estEquipe, perimetreSites, jetonAleatoire, oublierUtilisateur } from "../auth";
@@ -116,6 +116,8 @@ export async function elementsAgenda(u: Utilisateur, debut: Date, fin: Date): Pr
 
     const conditionsDevoirs = [inArray(devoirs.coursId, coursIds), gte(devoirs.dateLimite, debut), lt(devoirs.dateLimite, fin)];
     if (u.role !== "formateur") conditionsDevoirs.push(eq(devoirs.publie, true));
+    // Un devoir à ouverture différée (interrogation surprise) reste caché aux étudiants jusqu'à son ouverture.
+    if (u.role === "etudiant") conditionsDevoirs.push(or(isNull(devoirs.ouvertureLe), lte(devoirs.ouvertureLe, new Date()))!);
     const echeances = await db
       .select({ d: devoirs, code: cours.code, couleur: cours.couleur })
       .from(devoirs)

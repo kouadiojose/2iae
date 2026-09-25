@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, PenLine, Undo2, BookOpen } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, PenLine, Undo2, BookOpen, MessageCircle } from "lucide-react";
 import { Page } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { EtatVide, Erreur, Squelette, BarreProgression } from "@/components/ui/divers";
@@ -190,6 +190,24 @@ export default function PageLecon({ id, leconId }: { id: string; leconId: string
         )}
       </div>
 
+      {/* Une question sur la leçon : conversation directe avec le formateur, la leçon en contexte. */}
+      {etudiant && lecon.formateur && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-creme px-5 py-4">
+          <span className="text-[15px] text-texte-pale">
+            Une question sur cette leçon ? Écris à {lecon.formateur.prenom} {lecon.formateur.nom}.
+          </span>
+          <LienBouton
+            href={lienEcrireSurLecon(lecon.formateur.id, lecon.titre)}
+            variante="contour"
+            taille="sm"
+            icone={<MessageCircle className="h-4 w-4" />}
+            className="min-h-[44px]"
+          >
+            Écrire au formateur
+          </LienBouton>
+        </div>
+      )}
+
       {/* Précédente · suivante */}
       {(lecon.precedente || suivante) && (
         <nav className="grid grid-cols-2 gap-3" aria-label="Autres leçons">
@@ -205,6 +223,12 @@ export default function PageLecon({ id, leconId }: { id: string; leconId: string
       <BoutonAssistant coursId={lecon.coursId} leconId={lecon.id} variante="flottant" />
     </Page>
   );
+}
+
+/** Lien « Écrire au formateur » avec la leçon en contexte (module messages). */
+function lienEcrireSurLecon(formateurId: number, titre: string) {
+  const params = new URLSearchParams({ a: String(formateurId), contexte: `À propos de la leçon : ${titre}`.slice(0, 200) });
+  return `/messages/nouveau?${params.toString()}`;
 }
 
 function VoisineLien({ coursId, lecon, sens }: { coursId: number; lecon: { id: number; titre: string; numero: string }; sens: "precedente" | "suivante" }) {

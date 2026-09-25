@@ -136,6 +136,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
               campus={etat.campus}
               paroleSiteId={paroleSiteId}
               onChoisir={observation || !enDirect ? undefined : (c) => donnerParole(seance.id, { siteId: c.siteId })}
+              // La visio du campus montre déjà la grille des cinq salles : pas de second jeu d'images.
+              compactes={!observation && seance.fournisseur === "campus" && !(etat.planB ?? seance.planB)}
             />
             {!observation && (seance.fournisseur === "daily" || seance.fournisseur === "campus" || etat.parole) && !etat.planB && (
               <div className="flex flex-wrap items-center justify-center gap-2">
@@ -732,7 +734,7 @@ function OutilsDiffusion({ seance, enDirect, radio, setRadio, fluxRadio }: { sea
           <span className="flex items-center gap-2 text-[15px] font-bold">
             <Radio className="h-4 w-4 text-orange" /> Radio pour les étudiants en ligne
           </span>
-          <span className="text-[12px] text-nuit-gris">Votre voix en son léger (≈ 15 Mo/h) : des centaines d'étudiants en 3G/4G.</span>
+          <span className="text-[12px] text-nuit-gris">Votre voix en son léger (≈ 12 à 15 Mo/h) : des centaines d'étudiants en 3G/4G.</span>
         </div>
         <Interrupteur actif={radio} onChange={setRadio} libelle="Radio pour les étudiants en ligne" />
       </div>

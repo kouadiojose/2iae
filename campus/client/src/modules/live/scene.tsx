@@ -107,7 +107,7 @@ function PortraitFormateur({ seance, sousTitre }: { seance: SeanceDetailDto; sou
   );
 }
 
-// ── Radio : son du formateur + diapo + sous-titres (≈ 15 à 20 Mo/h) ────────
+// ── Radio : son du formateur + diapo + sous-titres (≈ 12 à 15 Mo/h) ────────
 
 function SceneRadio({ seance, etat, onConsommationRadio }: PropsScene) {
   const dernier = etat.sousTitres[etat.sousTitres.length - 1];

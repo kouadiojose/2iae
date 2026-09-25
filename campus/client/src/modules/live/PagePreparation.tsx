@@ -273,7 +273,7 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
             </label>
           ))}
         </div>
-        <p className="text-[13px] text-texte-gris">Quel que soit le choix, les étudiants en 3G/4G peuvent suivre en « son + diapos » (radio, ≈ 15 à 20 Mo/h).</p>
+        <p className="text-[13px] text-texte-gris">Quel que soit le choix, les étudiants en 3G/4G peuvent suivre en « son + diapos » (radio, ≈ 12 à 15 Mo/h).</p>
       </fieldset>
       {choisi === "externe" && <Champ libelle="Lien de la visio (Zoom, Meet, Teams)" value={lienExterne} onChange={(e) => setLienExterne(e.target.value)} placeholder="https://…" inputMode="url" required />}
       <Champ
@@ -325,9 +325,15 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
             </div>
           </div>
         ))}
-        <Bouton type="button" variante="doux" taille="sm" icone={<Plus className="h-4 w-4" />} onClick={() => setPlan([...plan, { titre: "", minutes: 15 }])} className="w-fit" disabled={plan.length >= 30}>
-          Ajouter une étape
-        </Bouton>
+        <div className="flex flex-wrap items-center gap-2">
+          <Bouton type="button" variante="doux" taille="sm" icone={<Plus className="h-4 w-4" />} onClick={() => setPlan([...plan, { titre: "", minutes: 15 }])} className="w-fit" disabled={plan.length >= 30}>
+            Ajouter une étape
+          </Bouton>
+          {/* L'assistant propose un plan minuté et des sondages éclair (brouillon à reprendre ici). */}
+          <LienBouton href={`/assistant/preparer-seance?cours=${coursId}`} variante="fantome" taille="sm" icone={<Sparkles className="h-4 w-4" />} className="w-fit">
+            Préparer avec l'assistant IA
+          </LienBouton>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-ligne p-4">

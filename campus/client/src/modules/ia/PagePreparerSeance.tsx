@@ -76,7 +76,10 @@ export default function PagePreparerSeance() {
   const [copie, setCopie] = useState(false);
 
   useEffect(() => {
-    if (coursId === null && mesCours.length) setCoursId(mesCours[0].id);
+    if (coursId !== null || !mesCours.length) return;
+    // Venu de la préparation d'une séance (/assistant/preparer-seance?cours=12) : ce cours d'abord.
+    const demande = Number(new URLSearchParams(window.location.search).get("cours"));
+    setCoursId(mesCours.some((c) => c.id === demande) ? demande : mesCours[0].id);
   }, [mesCours, coursId]);
 
   const blocage = blocageDe(etat);

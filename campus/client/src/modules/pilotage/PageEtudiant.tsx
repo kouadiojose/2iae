@@ -4,12 +4,12 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, KeyRound, NotebookPen, Pencil, Link2, Link2Off, Copy, ExternalLink, ArrowLeft, Share2 } from "lucide-react";
+import { MessageCircle, KeyRound, NotebookPen, Pencil, Link2, Link2Off, Copy, ExternalLink, ArrowLeft, Share2, ChevronRight, Send } from "lucide-react";
 import type { DossierEtudiant, CompteLigne, CodeRemis, ReleveCree, LignePresenceEtudiant, DevoirDossier } from "@shared/schema";
 import { LIBELLES_PRESENCE_PILOTAGE, comptePresent } from "@shared/schema";
 import { Page } from "@/components/layout/coquille";
 import { Avatar, Badge, Chargement, Erreur, EtatVide, type Ton } from "@/components/ui/divers";
-import { Bouton } from "@/components/ui/bouton";
+import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
 import { ZoneTexte } from "@/components/ui/champs";
 import { toast, toastErreur } from "@/components/ui/toast";
@@ -100,6 +100,11 @@ export default function PageEtudiant({ id }: { id: string }) {
             </a>
           ) : (
             <span className="col-span-2 text-center text-sm text-texte-gris">Pas de téléphone enregistré</span>
+          )}
+          {e.actif && (
+            <LienBouton href={`/messages/nouveau?a=${e.id}`} variante="contour" icone={<Send className="h-4 w-4" />} className="col-span-2 min-h-[48px] px-3">
+              Écrire sur le campus
+            </LienBouton>
           )}
           <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px] px-3">
             Modifier
@@ -241,14 +246,19 @@ function Notes({ d }: { d: DossierEtudiant }) {
           <>
             <ul className="flex flex-col divide-y divide-ligne-douce">
               {d.notes.cours.map((c) => (
-                <li key={c.coursId} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold">{c.titre}</div>
-                    <div className="font-mono text-xs text-texte-gris">
-                      {c.code} · {pluriel(c.notes, "note")}
+                <li key={c.coursId}>
+                  <Link href={`/enseigner/notes/${c.coursId}`} className="flex min-h-[48px] items-center justify-between gap-3 py-2.5 text-encre no-underline hover:text-orange-fonce">
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold">{c.titre}</div>
+                      <div className="font-mono text-xs text-texte-gris">
+                        {c.code} · {pluriel(c.notes, "note")} · carnet de notes
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-xl font-black tabular-nums">{note(c.moyenne)}</div>
+                    <div className="flex items-center gap-1 text-xl font-black tabular-nums">
+                      {note(c.moyenne)}
+                      <ChevronRight className="h-4 w-4 text-texte-gris" aria-hidden="true" />
+                    </div>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -273,14 +283,21 @@ function Devoirs({ d }: { d: DossierEtudiant }) {
         <Carte className="p-0">
           <ul className="flex flex-col divide-y divide-ligne-douce">
             {d.devoirs.slice(0, 15).map((v) => (
-              <li key={v.id} className="flex items-center gap-3 px-5 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold">{v.titre}</div>
-                  <div className="text-[13px] text-texte-gris">
-                    {v.coursCode} · {v.type === "quiz" ? "interrogation" : "devoir"} · pour le {dateCourte(v.dateLimite)}
+              <li key={v.id}>
+                {/* La copie de l'étudiant, dans la page des copies du devoir. */}
+                <Link
+                  href={`/enseigner/devoirs/${v.id}/copies?etudiant=${d.etudiant.id}`}
+                  className="flex min-h-[56px] items-center gap-3 px-5 py-3 text-encre no-underline hover:bg-creme"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">{v.titre}</div>
+                    <div className="text-[13px] text-texte-gris">
+                      {v.coursCode} · {v.type === "quiz" ? "interrogation" : "devoir"} · pour le {dateCourte(v.dateLimite)}
+                    </div>
                   </div>
-                </div>
-                {v.note !== null ? <span className="font-black tabular-nums">{note(v.note, v.bareme)}</span> : <Badge ton={ETATS_DEVOIR[v.etat].ton}>{ETATS_DEVOIR[v.etat].texte}</Badge>}
+                  {v.note !== null ? <span className="font-black tabular-nums">{note(v.note, v.bareme)}</span> : <Badge ton={ETATS_DEVOIR[v.etat].ton}>{ETATS_DEVOIR[v.etat].texte}</Badge>}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-texte-gris" aria-hidden="true" />
+                </Link>
               </li>
             ))}
           </ul>

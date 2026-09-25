@@ -21,8 +21,8 @@ import type {
 export const CONSOMMATION: Record<ModeSuivi, { titre: string; resume: string; moParHeure: [number, number]; detail: string }> = {
   radio: {
     titre: "Son + diapos",
-    resume: "≈ 15 à 20 Mo par heure",
-    moParHeure: [15, 20],
+    resume: "≈ 12 à 15 Mo par heure",
+    moParHeure: [12, 15],
     detail: "Tu entends le formateur et tu vois ses diapos. Recommandé en 3G/4G.",
   },
   video: {

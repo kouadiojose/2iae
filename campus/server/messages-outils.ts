@@ -19,6 +19,8 @@ import {
   messages,
   cours,
   coursFormateurs,
+  coursClasses,
+  classes,
   type Utilisateur,
   type Conversation,
   type Role,
@@ -142,7 +144,25 @@ export async function accesConversation(u: Utilisateur, conversationId: number):
   if (!c.coursId || !(await peutVoirCours(u, c.coursId))) {
     throw new ErreurHttp(403, u.role === "etudiant" ? "Ce salon est réservé aux inscrits du cours." : "Ce salon ne vous est pas accessible.");
   }
-  return { conversation: c, participant: p ?? null, moderateur: await enseigneCours(u, c.coursId) };
+  return { conversation: c, participant: p ?? null, moderateur: await modereSalon(u, c.coursId) };
+}
+
+/**
+ * Qui modère le salon d'un cours : ses formateurs, la direction, et la vie
+ * scolaire seulement si le cours est suivi par une classe de son campus
+ * (CONCEPTION §9.5 : la vie scolaire n'agit que sur son site).
+ */
+async function modereSalon(u: Utilisateur, coursId: number): Promise<boolean> {
+  if (!(await enseigneCours(u, coursId))) return false;
+  const perimetre = perimetreSites(u);
+  if (!perimetre) return true;
+  const [touche] = await db
+    .select({ x: sql`1` })
+    .from(coursClasses)
+    .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+    .where(and(eq(coursClasses.coursId, coursId), inArray(classes.siteId, perimetre)))
+    .limit(1);
+  return Boolean(touche);
 }
 
 export async function peutLireConversation(u: Utilisateur, conversationId: number): Promise<boolean> {

@@ -22,6 +22,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-o
 import { db } from "../db";
 import { config, estProduction } from "../config";
 import { route, introuvable, idParam } from "../http";
+import { surChangementPublication } from "../site";
 import { enregistrerMetaPage } from "../vite";
 import {
   cours,
@@ -369,6 +370,8 @@ export async function lireVitrine(): Promise<Vitrine> {
 export function oublierVitrine() {
   cache = null;
 }
+// Toute publication qui change (cours, formateur, live, annonce) passe par prevenirSite().
+surChangementPublication(oublierVitrine);
 
 // ── Fiches ─────────────────────────────────────────────────────────────────
 

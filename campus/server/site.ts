@@ -10,8 +10,17 @@ import { config } from "./config";
 
 let enAttente: NodeJS.Timeout | null = null;
 
+/** Ce qui doit être oublié dès qu'une publication change (cache de la vitrine publique). */
+const abonnes: (() => void)[] = [];
+export function surChangementPublication(fn: () => void) {
+  abonnes.push(fn);
+}
+
 /** Prévient le site qu'il doit relire la vitrine (regroupé sur 3 s). */
 export function prevenirSite(raison: string) {
+  // La vitrine du campus (/api/public/vitrine, pages publiques) reflète aussitôt le changement,
+  // même quand aucun webhook n'est configuré.
+  for (const fn of abonnes) fn();
   if (!config.webhookSite || !config.secretSite) return;
   if (enAttente) clearTimeout(enAttente);
   enAttente = setTimeout(() => {

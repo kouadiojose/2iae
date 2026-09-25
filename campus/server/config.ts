@@ -51,6 +51,10 @@ export const config = {
     turnUrls: (env("TURN_URLS") || "").split(",").map((u) => u.trim()).filter(Boolean),
     turnUtilisateur: env("TURN_USERNAME"),
     turnSecret: env("TURN_CREDENTIAL"),
+    /** Visio du campus : étudiants en ligne qui reçoivent la vidéo du formateur (chaque place coûte un encodage à son ordinateur). */
+    placesVideo: Math.max(1, Number(env("VISIO_PLACES_VIDEO")) || 8),
+    /** Visio du campus : étudiants en ligne en visio (vidéo + son seul) ; au-delà, ils écoutent la radio. */
+    placesTotal: Number(env("VISIO_PLACES_TOTAL")) || 40,
   },
 
   ia: {

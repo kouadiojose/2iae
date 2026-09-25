@@ -134,8 +134,11 @@ export type CopiesDevoir = {
   devoirId: number;
   titre: string;
   coursCode: string;
+  /** Copies rendues sans note : à corriger. */
   nombre: number;
   enRetard: number;
+  /** Copies notées dont la note n'est pas encore publiée aux étudiants. */
+  aPublier: number;
   plusAncienne: string | null;
   lien: string;
 };
@@ -161,7 +164,10 @@ export type AccueilFormateur = {
   enDirect: SeanceFormateur | null;
   prochaineSeance: SeanceFormateur | null;
   copies: CopiesDevoir[];
+  /** Copies à corriger (rendues, sans note). */
   totalCopies: number;
+  /** Notes posées, pas encore publiées. */
+  totalAPublier: number;
   questions: {
     seanceId: number;
     seanceTitre: string;

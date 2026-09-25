@@ -35,7 +35,7 @@ const MODES = [
     n: "01",
     titre: "Téléphone",
     texte: "Application légère, optimisée pour la 4G. Live, questions, replays et devoirs depuis le téléphone.",
-    detail: "Audio + diapos : environ 30 Mo par heure",
+    detail: "Son + diapos : environ 12 à 15 Mo par heure",
     icone: Smartphone,
     fond: "bg-orange-clair text-encre",
   },

@@ -267,7 +267,7 @@ export default function PageCopies({ id }: { id: string }) {
                   derniere={position >= visibles.length - 1}
                 />
               ) : (
-                <CopieAbsente copie={courante} devoirId={devoirId} peutDeposer={estEquipe(moi.role) && !quiz} quiz={quiz} />
+                <CopieAbsente copie={courante} devoirId={devoirId} devoirTitre={devoir.titre} peutDeposer={estEquipe(moi.role) && !quiz} quiz={quiz} />
               )}
             </div>
           ) : (
@@ -602,7 +602,19 @@ function PanneauNotation({
 }
 
 /** Pas de copie : la vie scolaire peut déposer une copie papier scannée pour l'étudiant. */
-function CopieAbsente({ copie, devoirId, peutDeposer, quiz }: { copie: CopieResume; devoirId: number; peutDeposer: boolean; quiz: boolean }) {
+function CopieAbsente({
+  copie,
+  devoirId,
+  devoirTitre,
+  peutDeposer,
+  quiz,
+}: {
+  copie: CopieResume;
+  devoirId: number;
+  devoirTitre: string;
+  peutDeposer: boolean;
+  quiz: boolean;
+}) {
   const [fichiers, setFichiers] = useState<File[]>([]);
   const [aLHeure, setALHeure] = useState(true);
   const choix = useRef<HTMLInputElement>(null);
@@ -629,7 +641,7 @@ function CopieAbsente({ copie, devoirId, peutDeposer, quiz }: { copie: CopieResu
         titre={`${copie.etudiant.prenom} ${copie.etudiant.nom} n'a ${quiz ? "pas fait l'interrogation" : "pas rendu de copie"}.`}
         texte={`${copie.etudiant.site ?? "Sans campus"} · ${copie.etudiant.matricule ?? ""}. Un message peut suffire à débloquer la situation (réseau, téléphone, compréhension de la consigne).`}
         action={
-          <LienBouton href={`/messages?a=${copie.etudiant.id}`} variante="contour" className="min-h-[48px]">
+          <LienBouton href={`/messages/nouveau?a=${copie.etudiant.id}&contexte=${encodeURIComponent(`À propos du devoir : ${devoirTitre}`.slice(0, 200))}`} variante="contour" className="min-h-[48px]">
             Écrire à l'étudiant
           </LienBouton>
         }

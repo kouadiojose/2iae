@@ -167,6 +167,8 @@ export type LeconDetail = {
   rang: number;
   total: number;
   enseignant: boolean;
+  /** Formateur principal du cours (« Écrire au formateur » depuis la leçon). */
+  formateur: FormateurDuCours | null;
 };
 
 /** POST/DELETE /api/lecons/:id/terminee */

@@ -1,13 +1,16 @@
 // Qui a le droit de voir quoi. Toutes les routes passent par ces fonctions :
 // un étudiant ne voit que les cours de sa classe (ou ceux où il est inscrit),
-// un formateur ne gère que ses cours, la vie scolaire et la direction voient tout.
+// un formateur ne gère que ses cours, la direction voit tout, la vie scolaire
+// d'un campus voit les cours suivis par son campus et ne modifie que ceux
+// suivis uniquement par son campus (CONCEPTION §9.5).
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { estEquipe } from "./auth";
+import { estEquipe, perimetreSites } from "./auth";
 import { ErreurHttp, introuvable } from "./http";
 import {
   cours,
   coursClasses,
+  classes,
   coursFormateurs,
   inscriptions,
   utilisateurs,
@@ -17,11 +20,35 @@ import {
   type Cours,
 } from "@shared/schema";
 
+/** Sites des classes qui suivent un cours. */
+async function sitesDuCours(coursId: number): Promise<number[]> {
+  const lignes = await db
+    .select({ siteId: classes.siteId })
+    .from(coursClasses)
+    .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+    .where(eq(coursClasses.coursId, coursId));
+  return lignes.map((l) => l.siteId);
+}
+
 /** Identifiants des cours visibles par cette personne. */
 export async function idsCoursAccessibles(u: Utilisateur): Promise<number[]> {
   if (estEquipe(u)) {
-    const lignes = await db.select({ id: cours.id }).from(cours);
-    return lignes.map((l) => l.id);
+    const perimetre = perimetreSites(u);
+    const tous = await db.select({ id: cours.id }).from(cours);
+    if (!perimetre) return tous.map((l) => l.id);
+    // Vie scolaire d'un campus : cours suivis par son campus, et cours sans classe (brouillons).
+    const lignes = await db
+      .select({ coursId: coursClasses.coursId, siteId: classes.siteId })
+      .from(coursClasses)
+      .innerJoin(classes, eq(classes.id, coursClasses.classeId));
+    const sitesParCours = new Map<number, number[]>();
+    for (const l of lignes) sitesParCours.set(l.coursId, [...(sitesParCours.get(l.coursId) ?? []), l.siteId]);
+    return tous
+      .map((l) => l.id)
+      .filter((id) => {
+        const sites = sitesParCours.get(id);
+        return !sites || sites.some((s) => perimetre.includes(s));
+      });
   }
   if (u.role === "formateur") {
     const lignes = await db
@@ -59,14 +86,28 @@ export async function idsCoursAccessibles(u: Utilisateur): Promise<number[]> {
 
 /** La personne peut-elle consulter ce cours ? */
 export async function peutVoirCours(u: Utilisateur, coursId: number): Promise<boolean> {
-  if (estEquipe(u)) return true;
+  if (estEquipe(u)) {
+    const perimetre = perimetreSites(u);
+    if (!perimetre) return true;
+    const sites = await sitesDuCours(coursId);
+    return !sites.length || sites.some((s) => perimetre.includes(s));
+  }
   const ids = await idsCoursAccessibles(u);
   return ids.includes(coursId);
 }
 
-/** La personne enseigne-t-elle ce cours (ou fait-elle partie de l'équipe) ? */
+/**
+ * La personne enseigne-t-elle ce cours, ou peut-elle agir dessus comme
+ * l'équipe (séances, devoirs, modération) ? La vie scolaire d'un campus ne le
+ * peut que pour les cours suivis uniquement par son campus.
+ */
 export async function enseigneCours(u: Utilisateur, coursId: number): Promise<boolean> {
-  if (estEquipe(u)) return true;
+  if (estEquipe(u)) {
+    const perimetre = perimetreSites(u);
+    if (!perimetre) return true;
+    const sites = await sitesDuCours(coursId);
+    return sites.every((s) => perimetre.includes(s));
+  }
   if (u.role !== "formateur") return false;
   const [c] = await db.select({ formateurId: cours.formateurId }).from(cours).where(eq(cours.id, coursId));
   if (!c) return false;

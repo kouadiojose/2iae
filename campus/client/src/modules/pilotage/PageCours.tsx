@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, BookOpen, ExternalLink, Search } from "lucide-react";
+import { Plus, BookOpen, ExternalLink, Search, GraduationCap } from "lucide-react";
 import type { CoursResume, CoursDetail, OptionsEditionCours, FormateurOption, StatutCours } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Badge, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
@@ -218,9 +218,15 @@ function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
       description={c ? `${pluriel(c.nbEtudiants ?? 0, "étudiant")} · ${pluriel(c.classes.length, "classe")}` : undefined}
       pied={
         <>
-          <Link href={`/enseigner/cours/${id}`} className="inline-flex min-h-[48px] items-center gap-2 px-2 font-bold">
-            <ExternalLink className="h-4 w-4" /> Ouvrir l'éditeur du cours
-          </Link>
+          <div className="flex flex-wrap items-center gap-x-3">
+            <Link href={`/enseigner/cours/${id}`} className="inline-flex min-h-[48px] items-center gap-2 px-2 font-bold">
+              <ExternalLink className="h-4 w-4" /> Ouvrir l'éditeur du cours
+            </Link>
+            {/* L'équipe n'a pas d'onglet « Corrections » : le carnet de notes du cours s'ouvre d'ici. */}
+            <Link href={`/enseigner/notes/${id}`} className="inline-flex min-h-[48px] items-center gap-2 px-2 font-bold">
+              <GraduationCap className="h-4 w-4" /> Carnet de notes
+            </Link>
+          </div>
           <Bouton onClick={enregistrerClasses} chargement={envoi === "classes"} disabled={!modifie}>
             Enregistrer les classes
           </Bouton>

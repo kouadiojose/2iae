@@ -253,7 +253,13 @@ function CopiesACorriger({ data }: { data: AccueilFormateur }) {
           {data.copies.map((c) => (
             <li key={c.devoirId}>
               <CarteLien href={c.lien} className="flex items-center gap-4 px-4 py-3.5">
-                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-orange text-lg font-black tabular-nums text-encre" aria-label={pluriel(c.nombre, "copie")}>
+                <span
+                  className={cn(
+                    "grid h-12 w-12 shrink-0 place-items-center rounded-xl text-lg font-black tabular-nums",
+                    c.nombre > 0 ? "bg-orange text-encre" : "bg-creme text-texte-pale",
+                  )}
+                  aria-label={c.nombre > 0 ? `${pluriel(c.nombre, "copie")} à corriger` : "Aucune copie à corriger"}
+                >
                   {c.nombre}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -262,6 +268,7 @@ function CopiesACorriger({ data }: { data: AccueilFormateur }) {
                     <span className="font-mono text-xs font-semibold text-orange-fonce">{c.coursCode}</span>
                     {c.enRetard > 0 && ` · dont ${c.enRetard} en retard`}
                     {c.plusAncienne && ` · la plus ancienne ${relatif(c.plusAncienne)}`}
+                    {c.aPublier > 0 && ` · ${c.aPublier} ${c.aPublier > 1 ? "notes" : "note"} à publier`}
                   </span>
                 </span>
                 <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />

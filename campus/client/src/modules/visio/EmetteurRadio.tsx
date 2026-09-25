@@ -61,7 +61,7 @@ export function EmetteurRadio({ seanceId, flux, actif }: { seanceId: number; flu
       )}
       role="status"
       aria-live="polite"
-      title="Son du formateur diffusé aux étudiants qui suivent en audio (environ 11 Mo par heure)"
+      title="Son du formateur diffusé aux étudiants qui suivent en audio (environ 12 à 15 Mo par heure)"
     >
       <Radio className={cn("h-3.5 w-3.5", etat === "direct" && "text-direct")} />
       {texte}

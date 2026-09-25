@@ -677,6 +677,7 @@ export function enregistrerCours(app: Express) {
       const voisine = (x: (typeof liste)[number] | undefined): LeconVoisine | null => (x ? { id: x.id, titre: x.titre, numero: x.numero } : null);
 
       const [f] = l.fichierId ? await db.select().from(fichiers).where(eq(fichiers.id, l.fichierId)) : [];
+      const [formateur] = c.formateurId ? await db.select().from(utilisateurs).where(eq(utilisateurs.id, c.formateurId)) : [];
       let terminee = false;
       if (u.role === "etudiant") {
         const [p] = await db
@@ -712,6 +713,7 @@ export function enregistrerCours(app: Express) {
         rang: i + 1,
         total: liste.length,
         enseignant: voitBrouillons && (await coursDansPerimetre(u, c.id)),
+        formateur: formateur ? versFormateur(formateur) : null,
       };
       res.json(detail);
     }),

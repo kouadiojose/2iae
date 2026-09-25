@@ -63,9 +63,11 @@ export const LETTRES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 
 /** Lien « Écrire au formateur » avec le devoir en contexte (module messages). */
 export function lienEcrireAuFormateur(formateurId: number | null | undefined, titre: string) {
-  const params = new URLSearchParams({ contexte: `À propos du devoir : ${titre}` });
+  // /messages/nouveau ouvre (ou crée) la conversation directe, le devoir en contexte ;
+  // sans formateur connu, il propose le choix du contact.
+  const params = new URLSearchParams({ contexte: `À propos du devoir : ${titre}`.slice(0, 200) });
   if (formateurId) params.set("a", String(formateurId));
-  return `/messages?${params.toString()}`;
+  return `/messages/nouveau?${params.toString()}`;
 }
 
 // ── Brouillons gardés sur le téléphone ─────────────────────────────────────

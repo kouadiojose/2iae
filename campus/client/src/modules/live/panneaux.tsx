@@ -407,7 +407,49 @@ export function SondageSuperpose({ seanceId, etat }: { seanceId: number; etat: E
 
 // ── Vignettes des cinq salles ──────────────────────────────────────────────
 
-export function VignettesSalles({ campus, paroleSiteId, onChoisir }: { campus: CampusDirectDto[]; paroleSiteId?: number | null; onChoisir?: (c: CampusDirectDto) => void }) {
+export function VignettesSalles({
+  campus,
+  paroleSiteId,
+  onChoisir,
+  compactes,
+}: {
+  campus: CampusDirectDto[];
+  paroleSiteId?: number | null;
+  onChoisir?: (c: CampusDirectDto) => void;
+  /** La scène montre déjà l'image des salles (visio du campus) : une simple rangée d'étiquettes, sans doublon d'images. */
+  compactes?: boolean;
+}) {
+  if (compactes) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {campus.map((c) => {
+          const aLaParole = paroleSiteId === c.siteId;
+          const Balise = onChoisir ? "button" : "div";
+          return (
+            <Balise
+              key={c.siteId}
+              {...(onChoisir ? { type: "button" as const, onClick: () => onChoisir(c), "aria-label": `Donner la parole à ${c.nomCourt}` } : {})}
+              className={cn(
+                "inline-flex min-h-12 items-center gap-2 rounded-full border-2 bg-nuit-carte px-3.5 text-left text-[13px] transition-colors",
+                aLaParole || c.mainLevee ? "border-orange" : "border-nuit-ligne",
+                onChoisir && "hover:border-orange-peche",
+              )}
+            >
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", c.salleConnectee ? "bg-[#6FCF97]" : "bg-nuit-bord")} title={c.salleConnectee ? "Écran connecté" : "Écran non connecté"} />
+              <span className="font-bold text-white">{c.nomCourt}</span>
+              <span className="font-mono text-[11px] text-nuit-gris">{c.emarges} en salle</span>
+              {c.incident && <span className="rounded-md bg-direct px-1.5 py-0.5 text-[10px] font-bold text-white">Incident</span>}
+              {aLaParole ? (
+                <span className="rounded-[7px] bg-orange px-1.5 py-0.5 text-[11px] font-extrabold text-encre">Parole</span>
+              ) : c.mainLevee ? (
+                <span className="rounded-[7px] bg-orange px-1.5 py-0.5 text-[11px] font-extrabold text-encre">Main</span>
+              ) : null}
+            </Balise>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
       {campus.map((c) => {

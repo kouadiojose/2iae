@@ -1,4 +1,4 @@
-// Côté étudiant : écoute la radio du cours (≈ 11 Mo/h), reprise automatique après coupure.
+// Côté étudiant : écoute la radio du cours (≈ 12 à 15 Mo/h), reprise automatique après coupure.
 //
 // Un simple <audio> sur l'adresse d'écoute (WebM/Opus en flux continu). Les
 // navigateurs n'autorisent le son qu'après un geste : d'où le gros bouton
@@ -212,7 +212,7 @@ export function LecteurRadio({ seanceId, nuit, onConsommation }: { seanceId: num
             Écouter le cours
           </Bouton>
           <p className={cn("text-sm", nuit ? "text-nuit-doux" : "text-texte-pale")}>
-            Le son du formateur seulement · environ 11 Mo par heure.{" "}
+            Le son du formateur seulement · environ 12 à 15 Mo par heure.{" "}
             {etat?.enDirect ? "La radio est en direct." : "Elle commence avec le cours."}
           </p>
         </>

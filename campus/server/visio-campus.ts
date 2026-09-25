@@ -17,7 +17,8 @@
 // Le navigateur du formateur enregistre son micro (MediaRecorder, WebM/Opus
 // ≈ 24 kbit/s) et envoie une tranche par seconde. Le serveur découpe le flux
 // WebM (analyse EBML minimale) et le rediffuse en HTTP à chaque auditeur :
-// ≈ 11 Mo par heure, lisible par un simple <audio>, avec tous les
+// ≈ 11 Mo par heure pour le son seul (affiché « ≈ 12 à 15 Mo/h » avec les
+// diapos et les sous-titres), lisible par un simple <audio>, avec tous les
 // fournisseurs de visio (Daily, Jitsi, lien externe, campus).
 //
 // État en mémoire : prévu pour une seule instance, comme le temps réel.
@@ -52,10 +53,10 @@ import {
 // Réglages
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Étudiants en ligne qui reçoivent la vidéo du formateur (chaque place coûte un encodage à son ordinateur). */
-const PLACES_VIDEO = Number(process.env.VISIO_PLACES_VIDEO) || 8;
-/** Étudiants en ligne en visio (vidéo + son seul) ; au-delà, ils écoutent la radio. */
-const PLACES_TOTAL = Math.max(PLACES_VIDEO, Number(process.env.VISIO_PLACES_TOTAL) || 40);
+/** Étudiants en ligne qui reçoivent la vidéo du formateur (VISIO_PLACES_VIDEO, 8 par défaut). */
+const PLACES_VIDEO = config.visio.placesVideo;
+/** Étudiants en ligne en visio (VISIO_PLACES_TOTAL, 40 par défaut) ; au-delà, ils écoutent la radio. */
+const PLACES_TOTAL = Math.max(PLACES_VIDEO, config.visio.placesTotal);
 /** Un onglet silencieux depuis ce délai est considéré comme parti (battement toutes les 10 s). */
 const DELAI_DISPARITION_MS = 35_000;
 /** Taille maximale d'un message de négociation (une offre SDP pèse 3 à 10 Ko). */

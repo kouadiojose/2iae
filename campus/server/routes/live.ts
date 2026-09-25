@@ -399,8 +399,10 @@ async function questionsPour(u: Utilisateur, role: RoleSeance, seanceId: number,
 /** Version diffusée à tout le canal : sans vote personnel, sans auteur réel. */
 async function diffuserQuestion(q: QuestionLive) {
   const [auteur] = await db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role }).from(utilisateurs).where(eq(utilisateurs.id, q.auteurId));
+  // Le canal est aussi écouté par les écrans de salle (postes partagés) : on
+  // diffuse la version sans nom ; chacun relit ensuite /direct avec ses droits.
   const c: ContexteQuestions = {
-    role: "etudiant",
+    role: "salle",
     moiId: 0,
     mesVotes: new Set(),
     auteurs: new Map(auteur ? [[auteur.id, auteur]] : []),

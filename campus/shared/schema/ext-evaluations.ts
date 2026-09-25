@@ -70,10 +70,10 @@ export type CompteursCopies = {
   /** Copies rendues (à l'heure ou en retard). */
   rendus: number;
   enRetard: number;
-  /** Rendues, sans note encore. */
+  /** À corriger : rendues, sans note encore (ou notées avant l'arrivée de la copie actuelle). */
   aCorriger: number;
-  /** Note posée, pas encore publiée. */
-  corrigees: number;
+  /** À publier : note posée sur la copie actuelle, pas encore publiée aux étudiants. */
+  aPublier: number;
   /** Notes publiées aux étudiants. */
   publiees: number;
 };

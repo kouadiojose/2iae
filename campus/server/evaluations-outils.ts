@@ -129,11 +129,32 @@ export function corrigerTentative(questions: QuestionQuiz[], reponses: Tentative
   return { score: arrondi(score), total: arrondi(total), note, detail };
 }
 
+// ── Échéances ──────────────────────────────────────────────────────────────
+
+/**
+ * Règle de l'échéance « avant 23h59 » : une date limite saisie à la minute
+ * près (secondes et millisecondes nulles) sur une minute 59 — 23:59, 17:59… —
+ * court jusqu'à la FIN de cette minute, hh:59:59.999. Une copie reçue à
+ * 23 h 59 min 30 s est donc à l'heure. Les autres échéances (10:00, 17:30…)
+ * restent exactes : « avant 10h00 » s'arrête à 10:00:00.000.
+ *
+ * Les échéances sont enregistrées ainsi à la saisie (création et modification
+ * d'un devoir) ; la règle est aussi appliquée à la lecture (echeance) pour
+ * celles enregistrées à hh:59:00.000 avant elle. Idempotente.
+ */
+export function finEcheance(date: Date): Date {
+  if (date.getUTCMinutes() === 59 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0) return new Date(date.getTime() + 59_999);
+  return date;
+}
+
+/** Échéance effective d'un devoir (voir finEcheance) : c'est elle qui décide du retard et de la clôture. */
+export const echeance = (d: Pick<Devoir, "dateLimite">) => finEcheance(d.dateLimite);
+
 // ── Tentatives ─────────────────────────────────────────────────────────────
 
 /** Fin d'une tentative commencée maintenant : durée du quiz, plafonnée à la date limite. */
 export function finPrevuePour(d: Pick<Devoir, "dureeMinutes" | "dateLimite">, debut: Date): Date {
-  const limite = d.dateLimite.getTime();
+  const limite = echeance(d).getTime();
   const parDuree = d.dureeMinutes ? debut.getTime() + d.dureeMinutes * 60_000 : limite;
   return new Date(Math.min(parDuree, limite));
 }
@@ -174,6 +195,11 @@ export async function meilleureNoteQuiz(devoirId: number, etudiantId: number): P
  * automatique, puis la meilleure note devient la copie « corrigée » de
  * l'interrogation (une ligne de rendus, avec son reçu). Sans effet si la
  * tentative est déjà terminée : renvoie alors null.
+ *
+ * Clôture et note se décident sur la même lecture des réponses, sous le verrou
+ * de la ligne (SELECT … FOR UPDATE) : une réponse de dernière seconde est soit
+ * enregistrée AVANT (et comptée dans la note), soit refusée après (« déjà
+ * terminée ») — jamais acceptée puis ignorée par la note.
  */
 export async function terminerTentative(tentativeId: number, horsDelai = false) {
   const [ligne] = await db
@@ -182,18 +208,24 @@ export async function terminerTentative(tentativeId: number, horsDelai = false) 
     .innerJoin(devoirs, eq(devoirs.id, tentativesQuiz.devoirId))
     .where(eq(tentativesQuiz.id, tentativeId));
   if (!ligne || ligne.t.finLe) return null;
-  const { t, d } = ligne;
+  const { d } = ligne;
   const questions = await db.select().from(questionsQuiz).where(eq(questionsQuiz.devoirId, d.id)).orderBy(asc(questionsQuiz.ordre), asc(questionsQuiz.id));
-  const resultat = corrigerTentative(questions, t.reponses, d.bareme);
-  // La fin retenue ne dépasse jamais la fin prévue (+ marge) : un « Terminer » tardif ne donne pas de temps en plus.
-  const finMax = new Date(finDe(t, d).getTime() + MARGE_QUIZ_MS);
-  const fin = new Date(Math.min(Date.now(), finMax.getTime()));
-  const [fermee] = await db
-    .update(tentativesQuiz)
-    .set({ finLe: fin, score: resultat.score, note: resultat.note })
-    .where(and(eq(tentativesQuiz.id, t.id), isNull(tentativesQuiz.finLe)))
-    .returning({ id: tentativesQuiz.id });
-  if (!fermee) return null; // terminée entre-temps par une autre requête
+  const cloture = await db.transaction(async (tx) => {
+    const [t] = await tx
+      .select()
+      .from(tentativesQuiz)
+      .where(and(eq(tentativesQuiz.id, tentativeId), isNull(tentativesQuiz.finLe)))
+      .for("update");
+    if (!t) return null; // terminée entre-temps par une autre requête
+    const resultat = corrigerTentative(questions, t.reponses, d.bareme);
+    // La fin retenue ne dépasse jamais la fin prévue (+ marge) : un « Terminer » tardif ne donne pas de temps en plus.
+    const finMax = new Date(finDe(t, d).getTime() + MARGE_QUIZ_MS);
+    const fin = new Date(Math.min(Date.now(), finMax.getTime()));
+    await tx.update(tentativesQuiz).set({ finLe: fin, score: resultat.score, note: resultat.note }).where(eq(tentativesQuiz.id, t.id));
+    return { t, resultat, fin };
+  });
+  if (!cloture) return null;
+  const { t, resultat, fin } = cloture;
 
   const meilleure = await meilleureNoteQuiz(d.id, t.etudiantId);
   const [rendu] = await db

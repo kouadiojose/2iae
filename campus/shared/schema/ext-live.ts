@@ -5,6 +5,7 @@
 import { serial, text, integer, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
 import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence } from "./live";
+import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
 export const rappelsLive = campusSchema.table(
@@ -28,7 +29,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -252,14 +253,28 @@ export type CodeSalleDto = {
   expireDansMs: number;
 };
 
-export type EmargementDto = { seanceId: number; titre: string; site: string; salle: string; heure: string; dejaEmarge: boolean };
+export type EmargementDto = {
+  seanceId: number;
+  titre: string;
+  site: string;
+  salle: string;
+  heure: string;
+  dejaEmarge: boolean;
+  /** Émargé dans la salle d'un autre campus que le sien : accepté, signalé à la vie scolaire. */
+  horsCampus: boolean;
+  /** Campus de rattachement de l'étudiant (« Yopougon »). */
+  monSite: string | null;
+};
 
 export type LignePresenceDto = {
   utilisateurId: number;
   prenom: string;
   nom: string;
   matricule: string | null;
+  /** Campus où la présence a été prise (salle d'émargement), sinon le campus de l'étudiant. */
   siteId: number | null;
+  /** Campus de rattachement de l'étudiant. */
+  siteInscription: number | null;
   statut: StatutPresence;
   minutes: number;
   mode: ModePresence | null;
@@ -267,6 +282,10 @@ export type LignePresenceDto = {
   pointe: boolean;
   justification: string | null;
   arriveeLe: string | null;
+  /** Heure d'arrivée dans la salle (émargement), qui fait foi pour le retard. */
+  arriveeSalleLe: string | null;
+  /** Émargé dans la salle d'un autre campus que le sien (à confirmer par la vie scolaire). */
+  horsCampus: boolean;
 };
 
 export type BilanSiteDto = {
@@ -283,7 +302,10 @@ export type BilanSiteDto = {
   effectifDeclare: number | null;
   /** Écart entre l'effectif déclaré et les émargés (signalé). */
   ecart: number | null;
+  /** Incident en cours, ou incident résolu qui a touché la séance (« … · résolu »). */
   incidentSalle: string | null;
+  /** Émargés dans cette salle alors qu'ils sont rattachés à un autre campus. */
+  horsCampus: number;
 };
 
 export type BilanDto = {
@@ -294,6 +316,11 @@ export type BilanDto = {
   demarreeLe: string | null;
   termineeLe: string | null;
   dureeMinutes: number;
+  /**
+   * La séance a réellement été démarrée. Une séance jamais démarrée (annulée,
+   * « Séance non tenue ») ne compte ni présents ni absents.
+   */
+  tenue: boolean;
   /** Seuil de présence en ligne (70 % de la durée). */
   seuilMinutes: number;
   sites: BilanSiteDto[];
@@ -327,3 +354,39 @@ export type ReplayDto = {
   diapos: DiapoDto[];
 };
 
+
+/**
+ * Événements temps réel du module live qui portent l'état utile, pour que
+ * personne n'ait à relire l'API au même moment que tout le monde.
+ */
+/** « live » (canal personnel) : démarrage, fin ou annulation d'une séance. */
+export type EvenementLiveDto = {
+  seanceId: number;
+  statut: StatutSeance;
+  /** État complet de GET /api/live/en-cours pour la personne ; absent : relire (avec un délai aléatoire). */
+  enCours?: EnCours;
+};
+
+/** « live:mains » (canal personnel) : l'état de SA main (étudiant) ou de celle de sa salle (écran de salle). */
+export type EvenementMainsDto = { seanceId: number; mains: MainDirectDto[] };
+
+/** « mains » (canal de la séance) : seulement le compteur, utile à tous. */
+export type CompteurMainsDto = { total: number };
+
+/** POST /api/seances/:id/presence — battement de présence (un par minute). */
+export type BattementPresenceDto =
+  | { compte: false; raison: "hors_direct" | "flux_ferme" }
+  | {
+      compte: true;
+      mode: ModePresence;
+      suivi: ModeSuivi;
+      /** Minutes distinctes suivies. */
+      minutes: number;
+      seuil: number;
+      statut: StatutPresence;
+      /**
+       * Heure (serveur) du battement précédent quand il date de plus de 2 min :
+       * le client demande « Voici ce que tu as raté » depuis cette heure-là.
+       */
+      absenceDepuis: string | null;
+    };

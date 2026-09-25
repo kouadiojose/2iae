@@ -1,5 +1,6 @@
 // Classes en direct : un formateur (en France ou ailleurs) enseigne aux cinq
 // salles de conférence et aux étudiants connectés, en même temps.
+import { sql } from "drizzle-orm";
 import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, sites } from "./base";
 import { cours } from "./cours";
@@ -102,12 +103,20 @@ export const mainsLevees = campusSchema.table(
     seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
     utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id),
     siteId: integer("site_id").references(() => sites.id),
+    /** Main levée pour toute la salle (écran de salle ou vie scolaire du site). */
+    pourSalle: boolean("pour_salle").notNull().default(false),
     leveeLe: timestamp("levee_le", { withTimezone: true }).notNull().defaultNow(),
     /** Le formateur a donné la parole. */
     paroleDonneeLe: timestamp("parole_donnee_le", { withTimezone: true }),
     baisseeLe: timestamp("baissee_le", { withTimezone: true }),
   },
-  (t) => [index("mains_seance_idx").on(t.seanceId)],
+  (t) => [
+    index("mains_seance_idx").on(t.seanceId),
+    // Une seule main levée à la fois par personne, et une seule par salle :
+    // deux clics simultanés ne mettent jamais deux fois la même main dans la file.
+    uniqueIndex("mains_levee_personne_unique").on(t.seanceId, t.utilisateurId).where(sql`${t.baisseeLe} is null`),
+    uniqueIndex("mains_levee_salle_unique").on(t.seanceId, t.siteId).where(sql`${t.baisseeLe} is null and ${t.pourSalle}`),
+  ],
 );
 
 export const MODES_PRESENCE = ["salle", "en_ligne"] as const;
@@ -124,8 +133,19 @@ export const presences = campusSchema.table(
     mode: text("mode").$type<ModePresence>().notNull().default("en_ligne"),
     emargeQr: boolean("emarge_qr").notNull().default(false),
     arriveeLe: timestamp("arrivee_le", { withTimezone: true }).notNull().defaultNow(),
+    /** Arrivée dans la salle de conférence (émargement), qui fait foi pour le retard. */
+    arriveeSalleLe: timestamp("arrivee_salle_le", { withTimezone: true }),
+    /** Émargé dans la salle d'un autre campus que le sien : accepté, signalé à la vie scolaire. */
+    horsCampus: boolean("hors_campus").notNull().default(false),
     derniereActivite: timestamp("derniere_activite", { withTimezone: true }).notNull().defaultNow(),
+    /** Minutes distinctes suivies en ligne (voir minutesVues), jamais plus que la durée réelle. */
     minutes: integer("minutes").notNull().default(0),
+    /**
+     * Minutes de la séance où un battement est arrivé (0 = la première minute
+     * après le démarrage) : chaque minute ne compte qu'une fois, quel que soit
+     * le nombre d'onglets ou de battements.
+     */
+    minutesVues: integer("minutes_vues").array().notNull().default(sql`'{}'::integer[]`),
     /** Absence justifiée par la vie scolaire (ligne créée pour l'absent). */
     justification: text("justification"),
     /** Pointé à la main par le responsable de salle (fait foi en cas d'écart). */
@@ -143,8 +163,16 @@ export const effectifsSalles = campusSchema.table(
     nombre: integer("nombre").notNull().default(0),
     /** La salle a vérifié écran, son et caméra avant le live. */
     prete: boolean("prete").notNull().default(false),
-    /** Incident signalé (coupure de courant, réseau…) : personne n'est compté absent. */
+    /** Incident en cours (coupure de courant, réseau…) : personne n'est compté absent. */
     incident: text("incident"),
+    /**
+     * Mémoire de l'incident, gardée après sa résolution : premier signalement,
+     * dernier motif, résolution. Les absents de la salle restent « incident de
+     * salle » si l'incident a touché la séance.
+     */
+    incidentLe: timestamp("incident_le", { withTimezone: true }),
+    incidentMotif: text("incident_motif"),
+    incidentResoluLe: timestamp("incident_resolu_le", { withTimezone: true }),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.seanceId, t.siteId] })],
@@ -220,3 +248,5 @@ export type Seance = typeof seances.$inferSelect;
 export type QuestionLive = typeof questionsLive.$inferSelect;
 export type Presence = typeof presences.$inferSelect;
 export type Sondage = typeof sondages.$inferSelect;
+export type EffectifSalle = typeof effectifsSalles.$inferSelect;
+export type MainLevee = typeof mainsLevees.$inferSelect;

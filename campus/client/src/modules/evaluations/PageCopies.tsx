@@ -16,7 +16,7 @@ import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { useMoiConnecte, estEquipe } from "@/lib/auth";
 import { useCanal } from "@/lib/flux";
-import { patch, post, televerser } from "@/lib/api";
+import { patch, post, televerser, ErreurApi } from "@/lib/api";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { jourLong, heure, heureDouble } from "@/lib/dates";
 import { cn, pluriel, taille } from "@/lib/utils";
@@ -126,8 +126,8 @@ export default function PageCopies({ id }: { id: string }) {
         actions={
           <>
             {!quiz && data.peutCorriger && (
-              <Bouton icone={<Send className="h-4 w-4" />} onClick={() => setPublier(true)} disabled={!compteurs.corrigees} className="min-h-[48px]">
-                Publier les notes{compteurs.corrigees ? ` (${compteurs.corrigees})` : ""}
+              <Bouton icone={<Send className="h-4 w-4" />} onClick={() => setPublier(true)} disabled={!compteurs.aPublier} className="min-h-[48px]">
+                Publier les notes{compteurs.aPublier ? ` (${compteurs.aPublier})` : ""}
               </Bouton>
             )}
             <LienBouton href={`/enseigner/notes/${devoir.coursId}`} variante="contour" icone={<BookOpenCheck className="h-4 w-4" />} className="min-h-[48px]">
@@ -292,7 +292,7 @@ export default function PageCopies({ id }: { id: string }) {
       <Fenetre
         ouverte={publier}
         onFermer={() => setPublier(false)}
-        titre={`Publier ${pluriel(compteurs.corrigees, "note")} ?`}
+        titre={`Publier ${pluriel(compteurs.aPublier, "note")} ?`}
         description="Les étudiants recevront « Nouvelle note disponible » (sans la note sur l'écran verrouillé) et verront leur note, votre commentaire et votre message vocal. Les copies sans note restent en attente."
         pied={
           <>
@@ -400,7 +400,8 @@ function CopieOuverte({
           <span className="text-sm text-texte-pale">Ce cours est suivi par plusieurs campus : seul son formateur le corrige et publie les notes.</span>
         </Carte>
       ) : (
-        <PanneauNotation key={c.id} copie={c} bareme={bareme} grille={grille} iaDisponible={iaDisponible} onSuivante={onSuivante} derniere={derniere} />
+        // Une copie remplacée par l'étudiant (autre heure d'arrivée) repart d'une notation vierge.
+        <PanneauNotation key={`${c.id}:${c.renduLe}`} copie={c} bareme={bareme} grille={grille} iaDisponible={iaDisponible} onSuivante={onSuivante} derniere={derniere} />
       )}
     </div>
   );
@@ -454,9 +455,15 @@ function PanneauNotation({
       toast("Correction proposée par l'IA. Relisez-la avant de l'utiliser.", "info");
     } catch (e) {
       toastErreur(e);
+      copieRemplacee(e);
     } finally {
       setDemandeIa(false);
     }
+  }
+
+  /** 409 : l'étudiant a remplacé sa copie pendant la correction ; on affiche la nouvelle. */
+  function copieRemplacee(e: unknown) {
+    if (e instanceof ErreurApi && e.statut === 409) void rafraichir("/api/rendus", "/api/devoirs");
   }
 
   async function enregistrer(suivante: boolean, corpsEnPlus?: Record<string, unknown>) {
@@ -473,13 +480,15 @@ function PanneauNotation({
           corps = { ...corps, note: total };
         }
       }
-      const maj = await patch<CopieDetail>(`/api/rendus/${copie.id}/correction`, corps);
+      // renduLe : la copie corrigée est bien celle affichée (pas une copie remplacée entre-temps).
+      const maj = await patch<CopieDetail>(`/api/rendus/${copie.id}/correction`, { ...corps, renduLe: copie.renduLe });
       queryClient.setQueryData(["/api/rendus", copie.id], maj);
       await rafraichir("/api/devoirs");
       if (!corpsEnPlus) toast(publiee ? "Note mise à jour : l'étudiant est prévenu." : "Correction enregistrée (pas encore publiée).");
       if (suivante && !derniere) onSuivante();
     } catch (e) {
       toastErreur(e);
+      copieRemplacee(e);
     } finally {
       setEnvoi(false);
     }

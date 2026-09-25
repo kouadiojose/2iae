@@ -33,13 +33,13 @@ export function LigneDevoirEnseignant({ d, maintenant, compact }: { d: DevoirEns
           </Badge>
           {c.enRetard > 0 && <Badge ton="danger">{c.enRetard} en retard</Badge>}
           {aCorriger && <Badge ton="orange">{c.aCorriger} à corriger</Badge>}
-          {!quiz && c.corrigees > 0 && <Badge ton="alerte">{c.corrigees} prête{c.corrigees > 1 ? "s" : ""} à publier</Badge>}
+          {!quiz && c.aPublier > 0 && <Badge ton="alerte">{c.aPublier} note{c.aPublier > 1 ? "s" : ""} à publier</Badge>}
           {!quiz && c.publiees > 0 && <Badge ton="succes">{c.publiees} publiée{c.publiees > 1 ? "s" : ""}</Badge>}
         </div>
       </div>
       <div className={cn("flex shrink-0 gap-2", compact ? "" : "sm:flex-col")}>
-        <LienBouton href={`/enseigner/devoirs/${d.id}/copies`} variante={aCorriger || c.corrigees > 0 ? "principal" : "contour"} className="min-h-[48px] flex-1">
-          {quiz ? "Résultats" : aCorriger ? "Corriger" : "Copies"}
+        <LienBouton href={`/enseigner/devoirs/${d.id}/copies`} variante={aCorriger || c.aPublier > 0 ? "principal" : "contour"} className="min-h-[48px] flex-1">
+          {quiz ? "Résultats" : aCorriger ? "Corriger" : c.aPublier > 0 ? "Publier" : "Copies"}
         </LienBouton>
         {d.modifiable && (
           <LienBouton href={`/enseigner/devoirs/${d.id}`} variante="fantome" icone={<PenLine className="h-4 w-4" />} className="min-h-[48px] flex-1 border border-ligne">

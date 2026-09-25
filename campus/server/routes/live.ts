@@ -27,7 +27,7 @@ import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
-import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur } from "../temps-reel";
+import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
 import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia";
@@ -37,6 +37,8 @@ import * as visio from "../visio";
 import {
   seances,
   cours,
+  coursClasses,
+  inscriptions,
   sites,
   utilisateurs,
   lecons,
@@ -85,6 +87,12 @@ import {
   type RattrapageDto,
   type ReplayDto,
   type TypeEvenementSeance,
+  type EvenementLiveDto,
+  type EvenementMainsDto,
+  type CompteurMainsDto,
+  type BattementPresenceDto,
+  type EffectifSalle,
+  type MainLevee,
 } from "@shared/schema";
 import type { SeanceResume, EnCours } from "@shared/api";
 
@@ -103,6 +111,20 @@ const SIGNALEMENTS_MASQUAGE = 3;
 /** Le code d'émargement s'affiche 60 min avant le début et jusqu'à 15 min après la fin. */
 const AVANT_CODE_MS = 60 * 60_000;
 const APRES_CODE_MS = 15 * 60_000;
+/** Fin automatique : 30 min après la fin (prévue, ou comptée depuis le démarrage réel si plus tardive)… */
+const DELAI_FIN_AUTO_MS = 30 * 60_000;
+/** … et seulement si aucun battement de présence depuis 15 min… */
+const INACTIVITE_FIN_AUTO_MS = 15 * 60_000;
+/** … sauf filet : 3 h de plus sans formateur, la séance est close même si des onglets restent ouverts. */
+const FILET_FIN_AUTO_MS = 3 * 3600_000;
+/** Motif d'une séance planifiée dont l'heure est passée sans qu'elle ait été démarrée. */
+const MOTIF_NON_TENUE = "Séance non tenue";
+/** Deux battements espacés d'au plus 90 s encadrent la minute qui les sépare : elle est comptée. */
+const ECART_BATTEMENTS_CONTINUS_MS = 90_000;
+/** Au-delà de 2 min sans battement, l'étudiant revenu reçoit « Voici ce que tu as raté ». */
+const COUPURE_RATTRAPAGE_MS = 2 * 60_000;
+/** Mémoire du direct gardée pour une séance close depuis moins de 3 h. */
+const RETENTION_MEMOIRE_MS = 3 * 3600_000;
 
 const MINUTE = 60_000;
 
@@ -111,6 +133,13 @@ const MINUTE = 60_000;
 const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : null);
 const finPrevue = (s: Pick<Seance, "debut" | "dureeMinutes">) => new Date(s.debut).getTime() + s.dureeMinutes * MINUTE;
 const nomCourt = (u: Pick<Utilisateur, "prenom" | "nom">) => `${u.prenom} ${u.nom.charAt(0)}.`;
+const heureA = (d: Date, fuseau = "Africa/Abidjan") => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: fuseau }).format(d).replace(":", "h");
+/** « 08h00 Abidjan · 10h00 Paris » : beaucoup de formateurs enseignent depuis la France (comme heureDouble côté client). */
+function heureDouble(d: Date): string {
+  const a = heureA(d);
+  const p = heureA(d, "Europe/Paris");
+  return a === p ? `${a} Abidjan et Paris` : `${a} Abidjan · ${p} Paris`;
+}
 const lienHttp = z
   .string()
   .trim()
@@ -258,6 +287,82 @@ function replayDisponible(s: Seance): boolean {
 
 const colonnesResume = { s: seances, code: cours.code, titreCours: cours.titre, formateurId: cours.formateurId };
 
+/** Séance en direct et prochaine séance parmi ces cours (GET /api/live/en-cours, bandeau « En direct »). */
+async function enCoursPour(ids: number[]): Promise<EnCours> {
+  if (!ids.length) return { enDirect: null, prochaine: null };
+  const [direct] = await db
+    .select(colonnesResume)
+    .from(seances)
+    .innerJoin(cours, eq(cours.id, seances.coursId))
+    .where(and(inArray(seances.coursId, ids), eq(seances.statut, "en_direct")))
+    .orderBy(desc(seances.debut))
+    .limit(1);
+  const candidates = await db
+    .select(colonnesResume)
+    .from(seances)
+    .innerJoin(cours, eq(cours.id, seances.coursId))
+    .where(and(inArray(seances.coursId, ids), eq(seances.statut, "planifiee"), gte(seances.debut, new Date(Date.now() - 8 * 3600_000))))
+    .orderBy(asc(seances.debut))
+    .limit(10);
+  const prochaine = candidates.find((l) => finPrevue(l.s) > Date.now() && l.s.id !== direct?.s.id);
+  const [enDirect, suivante] = await resumesSeances([direct, prochaine].filter((x): x is NonNullable<typeof x> => Boolean(x)));
+  return direct ? { enDirect: enDirect, prochaine: suivante ?? null } : { enDirect: null, prochaine: enDirect ?? null };
+}
+
+/**
+ * Démarrage, fin, annulation : chaque coquille met à jour son bandeau
+ * « En direct » avec l'état reçu, au lieu que toutes relisent
+ * /api/live/en-cours au même instant. L'événement ne part qu'aux personnes
+ * concernées et connectées ; leur état se calcule une fois par ensemble de
+ * cours identique (toute une classe partage le sien). Sans état, la coquille
+ * relit avec un délai aléatoire.
+ */
+async function annoncerLive(s: Pick<Seance, "id" | "coursId" | "statut">): Promise<void> {
+  const groupes = new Map<string, { ids: number[]; personnes: number[] }>();
+  const ajouter = (ids: number[], personne: number) => {
+    if (!ids.includes(s.coursId)) return;
+    const tries = [...new Set(ids)].sort((a, b) => a - b);
+    const cle = tries.join(",");
+    const g = groupes.get(cle) ?? { ids: tries, personnes: [] };
+    g.personnes.push(personne);
+    groupes.set(cle, g);
+  };
+  // Étudiants : cours publiés de leur classe et de leurs inscriptions individuelles (comme idsCoursAccessibles), lus en une fois.
+  const etudiants = (await etudiantsDuCours(s.coursId)).filter((e) => estEnLigne(e.id));
+  if (etudiants.length) {
+    const idsClasses = [...new Set(etudiants.map((e) => e.classeId).filter((x): x is number => x !== null))];
+    const [parClasse, individuels, publies] = await Promise.all([
+      idsClasses.length
+        ? db.select({ classeId: coursClasses.classeId, coursId: coursClasses.coursId }).from(coursClasses).where(inArray(coursClasses.classeId, idsClasses))
+        : Promise.resolve([]),
+      db
+        .select({ utilisateurId: inscriptions.utilisateurId, coursId: inscriptions.coursId })
+        .from(inscriptions)
+        .where(inArray(inscriptions.utilisateurId, etudiants.map((e) => e.id))),
+      db.select({ id: cours.id }).from(cours).where(eq(cours.statut, "publie")),
+    ]);
+    const publie = new Set(publies.map((c) => c.id));
+    for (const e of etudiants) {
+      const ids = [
+        ...parClasse.filter((l) => l.classeId === e.classeId).map((l) => l.coursId),
+        ...individuels.filter((l) => l.utilisateurId === e.id).map((l) => l.coursId),
+      ].filter((id) => publie.has(id));
+      ajouter(ids, e.id);
+    }
+  }
+  // Formateurs du cours, équipe et écrans de salle connectés : peu nombreux.
+  const autres = new Map<number, Utilisateur>();
+  for (const f of await formateursDuCours(s.coursId)) if (estEnLigne(f.id)) autres.set(f.id, f);
+  for (const role of ["admin", "vie_scolaire", "salle"] as const) for (const x of utilisateursSur(`role:${role}`)) autres.set(x.id, x);
+  for (const x of autres.values()) ajouter(await idsCoursAccessibles(x), x.id);
+  for (const g of groupes.values()) {
+    const evt: EvenementLiveDto = { seanceId: s.id, statut: s.statut, enCours: await enCoursPour(g.ids) };
+    for (const id of g.personnes) publierUtilisateur(id, "live", evt);
+  }
+}
+
+const annoncer = (s: Pick<Seance, "id" | "coursId" | "statut">) => void annoncerLive(s).catch((e) => console.error("[live] annonce :", (e as Error).message));
+
 // ── Présences ──────────────────────────────────────────────────────────────
 
 /** Minutes à atteindre pour être « présent en ligne » (70 % de la durée réellement tenue). */
@@ -270,11 +375,21 @@ function seuilMinutes(s: Seance): number {
   return Math.max(1, Math.ceil(duree * SEUIL_PRESENCE));
 }
 
+/**
+ * Séance close sans jamais avoir été démarrée (annulée, « Séance non tenue ») :
+ * elle ne compte ni présents ni absents, nulle part.
+ */
+const seanceNonTenue = (s: Pick<Seance, "demarreeLe" | "statut">) => !s.demarreeLe && (s.statut === "annulee" || s.statut === "terminee");
+
 function statutPresence(p: Presence | undefined, s: Seance, siteEtudiant: number | null, sitesIncident: Set<number>): StatutPresence {
   if (p?.justification) return "justifie";
   if (p && p.mode === "salle") {
+    // Le retard se mesure depuis le démarrage réel (demarreeLe, comme le pilotage),
+    // à l'heure d'arrivée EN SALLE : un étudiant d'abord connecté en ligne puis
+    // émargé tard n'est pas « à l'heure » grâce à son premier battement.
     const reference = (s.demarreeLe ?? s.debut).getTime();
-    if (!p.pointeParId && p.arriveeLe.getTime() > reference + RETARD_MS) return "retard";
+    const arrivee = (p.arriveeSalleLe ?? p.arriveeLe).getTime();
+    if (!p.pointeParId && arrivee > reference + RETARD_MS) return "retard";
     return "salle";
   }
   if (p && p.minutes >= seuilMinutes(s)) return "en_ligne";
@@ -284,9 +399,30 @@ function statutPresence(p: Presence | undefined, s: Seance, siteEtudiant: number
   return "absent";
 }
 
-async function sitesEnIncident(seanceId: number): Promise<Map<number, string>> {
-  const lignes = await db.select().from(effectifsSalles).where(and(eq(effectifsSalles.seanceId, seanceId), isNotNull(effectifsSalles.incident)));
-  return new Map(lignes.map((l) => [l.siteId, l.incident!]));
+/**
+ * L'incident de cette salle a-t-il touché la séance ? Oui s'il est en cours, ou
+ * s'il a été résolu après le démarrage : sa résolution n'efface pas le fait que
+ * les absents de la salle l'ont été à cause de lui.
+ */
+function incidentSurvenu(e: EffectifSalle, s: Pick<Seance, "demarreeLe" | "debut">): string | null {
+  if (e.incident) return e.incident;
+  if (!e.incidentLe) return null;
+  const debut = (s.demarreeLe ?? s.debut).getTime();
+  if (e.incidentResoluLe && e.incidentResoluLe.getTime() <= debut) return null;
+  return e.incidentMotif ?? "Incident de salle";
+}
+
+async function sitesEnIncident(s: Pick<Seance, "id" | "demarreeLe" | "debut">): Promise<Map<number, string>> {
+  const lignes = await db
+    .select()
+    .from(effectifsSalles)
+    .where(and(eq(effectifsSalles.seanceId, s.id), or(isNotNull(effectifsSalles.incident), isNotNull(effectifsSalles.incidentLe))));
+  const res = new Map<number, string>();
+  for (const l of lignes) {
+    const motif = incidentSurvenu(l, s);
+    if (motif) res.set(l.siteId, motif);
+  }
+  return res;
 }
 
 // ── Parole (une seule voix à la fois) ──────────────────────────────────────
@@ -308,13 +444,17 @@ async function paroleCourante(seanceId: number): Promise<ParoleInterne | null> {
   return p;
 }
 
-async function finirParole(seanceId: number): Promise<void> {
+/** Rend la scène au formateur ; renvoie la main baissée au passage (son propriétaire en est prévenu). */
+async function finirParole(seanceId: number): Promise<MainLevee | null> {
   const p = await paroleCourante(seanceId);
-  if (!p) return;
+  if (!p) return null;
   const secondes = Math.round((Date.now() - new Date(p.depuis).getTime()) / 1000);
   await consigner(seanceId, "parole_fin", { siteId: p.siteId, utilisateurId: p.utilisateurId, secondes });
-  if (p.mainId) await db.update(mainsLevees).set({ baisseeLe: new Date() }).where(and(eq(mainsLevees.id, p.mainId), isNull(mainsLevees.baisseeLe)));
+  const [main] = p.mainId
+    ? await db.update(mainsLevees).set({ baisseeLe: new Date() }).where(and(eq(mainsLevees.id, p.mainId), isNull(mainsLevees.baisseeLe))).returning()
+    : [];
   paroles.set(seanceId, null);
+  return main ?? null;
 }
 
 const versParolePublique = (p: ParoleInterne | null): ParoleDto | null => {
@@ -427,7 +567,7 @@ async function diffuserQuestion(q: QuestionLive) {
 
 // ── Mains levées ───────────────────────────────────────────────────────────
 
-async function mainsPour(u: Utilisateur, role: RoleSeance, seanceId: number): Promise<MainDirectDto[]> {
+async function mainsPour(u: Pick<Utilisateur, "id" | "role" | "siteId">, role: RoleSeance, seanceId: number): Promise<MainDirectDto[]> {
   const lignes = await db
     .select({ m: mainsLevees, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role })
     .from(mainsLevees)
@@ -477,10 +617,33 @@ async function dejaParle(seanceId: number): Promise<{ sites: Set<number>; utilis
   return res;
 }
 
-function signalerMains(seanceId: number) {
-  // Le formateur recharge la file ; tout le monde reçoit l'état des salles.
-  publier(canal(seanceId), "mains", null);
+/**
+ * Une ou plusieurs mains ont changé. Le canal de la séance ne porte que ce qui
+ * sert à tous (le compteur, puis l'état des salles) ; le formateur et l'équipe
+ * relisent leur file nominative ; chaque propriétaire reçoit sur son canal
+ * personnel l'état de SA main (l'écran d'une salle, celui de la main de sa
+ * salle). Les étudiants n'ont donc plus à relire GET /mains tous ensemble.
+ */
+async function signalerMains(seanceId: number, touchees: (MainLevee | null | undefined)[] = []) {
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(mainsLevees)
+    .where(and(eq(mainsLevees.seanceId, seanceId), isNull(mainsLevees.baisseeLe)));
+  publier(canal(seanceId), "mains", { total } satisfies CompteurMainsDto);
   diffuserBientot(`campus:${seanceId}`, () => diffuserCampus(seanceId), 300);
+  const prevenus = new Set<number>();
+  for (const m of touchees) {
+    if (!m) continue;
+    const destinataires = m.pourSalle
+      ? utilisateursSur(canal(seanceId)).filter((x) => x.role === "salle" && x.siteId === m.siteId)
+      : [{ id: m.utilisateurId, role: "etudiant" as const, siteId: m.siteId }];
+    for (const d of destinataires) {
+      if (prevenus.has(d.id)) continue;
+      prevenus.add(d.id);
+      const evt: EvenementMainsDto = { seanceId, mains: await mainsPour(d, d.role === "salle" ? "salle" : "etudiant", seanceId) };
+      publierUtilisateur(d.id, "live:mains", evt);
+    }
+  }
 }
 
 // ── Sondages ───────────────────────────────────────────────────────────────
@@ -631,6 +794,33 @@ async function campusDirect(s: Pick<Seance, "id">): Promise<{ campus: CampusDire
 }
 
 const derniersCampus = new Map<number, string>();
+
+/**
+ * Oublie la parole courante et le dernier état des campus des séances closes
+ * depuis plus de quelques heures (ou supprimées) : ces deux mémoires ne
+ * grossissent plus indéfiniment. Elles se reconstruisent au besoin (la parole
+ * se relit dans le fil de la séance).
+ */
+async function purgerMemoire(maintenant = Date.now()): Promise<number> {
+  const ids = [...new Set([...paroles.keys(), ...derniersCampus.keys()])];
+  if (!ids.length) return 0;
+  const lignes = await db
+    .select({ id: seances.id, statut: seances.statut, debut: seances.debut, dureeMinutes: seances.dureeMinutes, termineeLe: seances.termineeLe })
+    .from(seances)
+    .where(inArray(seances.id, ids));
+  const parId = new Map(lignes.map((l) => [l.id, l]));
+  let oubliees = 0;
+  for (const id of ids) {
+    const s = parId.get(id);
+    const close = s && s.statut !== "en_direct" && maintenant - (s.termineeLe?.getTime() ?? finPrevue(s)) > RETENTION_MEMOIRE_MS;
+    if (s && !close && s.statut !== "annulee") continue;
+    paroles.delete(id);
+    derniersCampus.delete(id);
+    oubliees++;
+  }
+  return oubliees;
+}
+
 async function diffuserCampus(seanceId: number, seulementSiChange = false) {
   const etat = await campusDirect({ id: seanceId });
   const empreinte = JSON.stringify(etat);
@@ -717,10 +907,10 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
   const sitesListe = await listeSites();
   const monSite = u.siteId ? sitesListe.find((x) => x.id === u.siteId) : undefined;
   let maPresence: SeanceDetailDto["maPresence"] = null;
-  if (role === "etudiant") {
+  if (role === "etudiant" && !seanceNonTenue(s)) {
     const [p] = await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id)));
     if (p) {
-      const incidents = await sitesEnIncident(s.id);
+      const incidents = await sitesEnIncident(s);
       maPresence = { mode: p.mode, minutes: p.minutes, emargeQr: p.emargeQr, statut: statutPresence(p, s, u.siteId, new Set(incidents.keys())) };
     }
   }
@@ -861,26 +1051,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const ids = await idsCoursAccessibles(u);
-      if (!ids.length) return res.json({ enDirect: null, prochaine: null } satisfies EnCours);
-      const [direct] = await db
-        .select(colonnesResume)
-        .from(seances)
-        .innerJoin(cours, eq(cours.id, seances.coursId))
-        .where(and(inArray(seances.coursId, ids), eq(seances.statut, "en_direct")))
-        .orderBy(desc(seances.debut))
-        .limit(1);
-      const candidates = await db
-        .select(colonnesResume)
-        .from(seances)
-        .innerJoin(cours, eq(cours.id, seances.coursId))
-        .where(and(inArray(seances.coursId, ids), eq(seances.statut, "planifiee"), gte(seances.debut, new Date(Date.now() - 8 * 3600_000))))
-        .orderBy(asc(seances.debut))
-        .limit(10);
-      const prochaine = candidates.find((l) => finPrevue(l.s) > Date.now() && l.s.id !== direct?.s.id);
-      const [enDirect, suivante] = await resumesSeances([direct, prochaine].filter((x): x is NonNullable<typeof x> => Boolean(x)));
-      const resultat: EnCours = direct ? { enDirect: enDirect, prochaine: suivante ?? null } : { enDirect: null, prochaine: enDirect ?? null };
-      res.json(resultat);
+      res.json(await enCoursPour(await idsCoursAccessibles(u)));
     }),
   );
 
@@ -1111,21 +1282,30 @@ export function enregistrerLive(app: Express) {
         throw new ErreurHttp(409, "Cette séance est terminée depuis longtemps : créez-en une nouvelle (Dupliquer).");
       }
       if (s.statut === "en_direct") return res.json(await detailSeance(u, s));
+      // Un seul « Démarrer » gagne (double clic, deux formateurs) : les autres
+      // reçoivent l'état courant, sans rien consigner ni notifier une 2e fois.
+      const reprise = Boolean(s.demarreeLe);
       const [maj] = await db
         .update(seances)
         .set({ statut: "en_direct", demarreeLe: s.demarreeLe ?? new Date(), termineeLe: null })
-        .where(eq(seances.id, s.id))
+        .where(and(eq(seances.id, s.id), inArray(seances.statut, ["planifiee", "terminee"])))
         .returning();
-      await consigner(s.id, "demarrage", { par: u.id });
+      if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
+      await consigner(s.id, "demarrage", { par: u.id, ...(reprise && { reprise: true }) });
       publier(canal(s.id), "statut", { statut: maj.statut, demarreeLe: iso(maj.demarreeLe), termineeLe: null, motif: null });
-      publier("tous", "live", { seanceId: s.id, statut: "en_direct" });
-      const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
-      await notifier((await etudiantsDuCours(s.coursId)).map((e) => e.id), {
-        type: "live",
-        titre: `En direct : ${s.titre}`,
-        corps: `${c?.code ?? ""} · le formateur a ouvert la classe. Entre maintenant.`,
-        lien: `/live/${s.id}`,
-      });
+      annoncer(maj);
+      // Reprise après une fin : ceux qui sont dans la classe la voient repartir et
+      // le bandeau « En direct » revient partout ; on ne renvoie pas « En direct » à tous.
+      if (!reprise) {
+        const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
+        await notifier((await etudiantsDuCours(s.coursId)).map((e) => e.id), {
+          type: "live",
+          titre: `En direct : ${s.titre}`,
+          corps: `${c?.code ?? ""} · le formateur a ouvert la classe. Entre maintenant.`,
+          lien: `/live/${s.id}`,
+          urgent: true,
+        });
+      }
       if (s.publierSurSite) prevenirSite("live en direct");
       res.json(await detailSeance(u, maj));
     }),
@@ -1151,11 +1331,17 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAnimee(u, idParam(req));
       exigerStatut(s, ["planifiee", "en_direct"], "Cette séance ne peut plus être annulée.");
       const { motif } = valider(z.object({ motif: z.string().trim().min(3, "indiquez un motif").max(300) }), req.body);
-      const [maj] = await db.update(seances).set({ statut: "annulee", motifAnnulation: motif }).where(eq(seances.id, s.id)).returning();
+      // Une seule annulation compte (double clic) : une seule notification « Live annulé ».
+      const [maj] = await db
+        .update(seances)
+        .set({ statut: "annulee", motifAnnulation: motif })
+        .where(and(eq(seances.id, s.id), inArray(seances.statut, ["planifiee", "en_direct"])))
+        .returning();
+      if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
       await finirParole(s.id);
       await consigner(s.id, "annulation", { motif, par: u.id });
       publier(canal(s.id), "statut", { statut: "annulee", demarreeLe: iso(maj.demarreeLe), termineeLe: null, motif });
-      publier("tous", "live", { seanceId: s.id, statut: "annulee" });
+      annoncer(maj);
       const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
       await notifier(await destinatairesSeance(s), {
         type: "live",
@@ -1422,15 +1608,11 @@ export function enregistrerLive(app: Express) {
       if (role === "formateur" || (role === "equipe" && u.role !== "vie_scolaire")) throw interdit("Le formateur donne la parole, il ne lève pas la main.");
       if (pourSalle && !u.siteId) throw invalide("Ce compte n'est rattaché à aucune salle.");
       exigerStatut(s, ["en_direct"], "La séance n'est pas en direct.");
-      const conditions = pourSalle
-        ? and(eq(mainsLevees.seanceId, s.id), eq(mainsLevees.siteId, u.siteId!), isNull(mainsLevees.baisseeLe), inArray(mainsLevees.utilisateurId, db.select({ id: utilisateurs.id }).from(utilisateurs).where(inArray(utilisateurs.role, ["salle", "vie_scolaire"]))))
-        : and(eq(mainsLevees.seanceId, s.id), eq(mainsLevees.utilisateurId, u.id), isNull(mainsLevees.baisseeLe));
-      const [deja] = await db.select().from(mainsLevees).where(conditions);
-      if (!deja) {
-        await db.insert(mainsLevees).values({ seanceId: s.id, utilisateurId: u.id, siteId: u.siteId });
-        signalerMains(s.id);
-      }
-      res.status(deja ? 200 : 201).json(await mainsPour(u, role, s.id));
+      // Les index uniques partiels (une main levée par personne, une par salle)
+      // tranchent les clics simultanés : la main déjà levée reste la seule.
+      const [levee] = await db.insert(mainsLevees).values({ seanceId: s.id, utilisateurId: u.id, siteId: u.siteId, pourSalle }).onConflictDoNothing().returning();
+      if (levee) await signalerMains(s.id, [levee]);
+      res.status(levee ? 201 : 200).json(await mainsPour(u, role, s.id));
     }),
   );
 
@@ -1451,13 +1633,13 @@ export function enregistrerLive(app: Express) {
             ? and(eq(mainsLevees.seanceId, s.id), eq(mainsLevees.siteId, u.siteId), isNull(mainsLevees.baisseeLe), inArray(mainsLevees.utilisateurId, db.select({ id: utilisateurs.id }).from(utilisateurs).where(inArray(utilisateurs.role, ["salle", "vie_scolaire"]))))
             : and(eq(mainsLevees.seanceId, s.id), eq(mainsLevees.utilisateurId, u.id), isNull(mainsLevees.baisseeLe)),
         )
-        .returning({ id: mainsLevees.id });
+        .returning();
       const p = await paroleCourante(s.id);
       if (p?.mainId && baissees.some((b) => b.id === p.mainId)) {
         await finirParole(s.id);
         publier(canal(s.id), "parole", null);
       }
-      if (baissees.length) signalerMains(s.id);
+      if (baissees.length) await signalerMains(s.id, baissees);
       res.json(await mainsPour(u, role, s.id));
     }),
   );
@@ -1480,8 +1662,7 @@ export function enregistrerLive(app: Express) {
         await finirParole(s.id);
         publier(canal(s.id), "parole", null);
       }
-      publierUtilisateur(m.utilisateurId, "live:main-baissee", { seanceId: s.id });
-      signalerMains(s.id);
+      await signalerMains(s.id, [m]);
       res.json(await mainsPour(u, "formateur", s.id));
     }),
   );
@@ -1497,6 +1678,7 @@ export function enregistrerLive(app: Express) {
       const d = valider(z.object({ mainId: z.number().int().positive().optional(), siteId: z.number().int().positive().optional() }).refine((x) => x.mainId || x.siteId, "précisez une main ou une salle"), req.body);
       const sitesParId = await nomsSites();
       let parole: ParoleInterne;
+      let mainDonnee: MainLevee | undefined;
       if (d.mainId) {
         const [ligne] = await db
           .select({ m: mainsLevees, role: utilisateurs.role })
@@ -1506,7 +1688,7 @@ export function enregistrerLive(app: Express) {
         if (!ligne) throw introuvable("Main levée");
         const pourSalle = ligne.role === "salle" || ligne.role === "vie_scolaire";
         const site = ligne.m.siteId ? sitesParId.get(ligne.m.siteId) : undefined;
-        await db.update(mainsLevees).set({ paroleDonneeLe: new Date() }).where(eq(mainsLevees.id, ligne.m.id));
+        [mainDonnee] = await db.update(mainsLevees).set({ paroleDonneeLe: new Date() }).where(eq(mainsLevees.id, ligne.m.id)).returning();
         parole = {
           type: pourSalle ? "salle" : "etudiant",
           siteId: ligne.m.siteId,
@@ -1521,11 +1703,11 @@ export function enregistrerLive(app: Express) {
         if (!site) throw introuvable("Salle");
         parole = { type: "salle", siteId: site.id, site: site.nomCourt, utilisateurId: null, libelle: site.nomCourt, depuis: new Date().toISOString(), mainId: null };
       }
-      await finirParole(s.id);
+      const rendue = await finirParole(s.id);
       paroles.set(s.id, parole);
       await consigner(s.id, "parole", { ...parole });
       publier(canal(s.id), "parole", versParolePublique(parole));
-      signalerMains(s.id);
+      await signalerMains(s.id, [rendue, mainDonnee]);
       res.json(versParolePublique(parole));
     }),
   );
@@ -1537,9 +1719,9 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceAnimee(u, idParam(req));
-      await finirParole(s.id);
+      const rendue = await finirParole(s.id);
       publier(canal(s.id), "parole", null);
-      signalerMains(s.id);
+      await signalerMains(s.id, [rendue]);
       res.json({ ok: true });
     }),
   );
@@ -1816,6 +1998,11 @@ export function enregistrerLive(app: Express) {
   );
 
   // ── Présence en ligne : un battement par minute, tolérant aux coupures ───
+  // Chaque battement marque la minute de la séance où il arrive (0 = la
+  // première minute après le démarrage réel). Les minutes comptées sont des
+  // minutes DISTINCTES : deux onglets décalés, ou un battement toutes les
+  // 45 s, ne comptent ni double ni rien ; le total ne dépasse jamais la durée
+  // réellement écoulée. Une coupure ne remet rien à zéro.
   app.post(
     "/api/seances/:id/presence",
     exigerConnexion,
@@ -1823,28 +2010,46 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       const s = await seanceAccessible(u, idParam(req));
       const { mode } = valider(z.object({ mode: z.enum(["video", "radio", "compagnon"]) }), req.body);
-      if (u.role !== "etudiant" || s.statut !== "en_direct") return res.json({ compte: false });
+      if (u.role !== "etudiant" || s.statut !== "en_direct") return res.json({ compte: false, raison: "hors_direct" } satisfies BattementPresenceDto);
+      // Seul un onglet réellement ouvert sur le campus (flux temps réel) compte : un script seul ne suffit pas.
+      if (!estEnLigne(u.id)) return res.json({ compte: false, raison: "flux_ferme" } satisfies BattementPresenceDto);
       const maintenant = new Date();
-      const [p] = await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id)));
-      let ligne: Presence;
+      const reference = (s.demarreeLe ?? s.debut).getTime();
+      const minuteDe = (t: number) => Math.max(0, Math.floor((t - reference) / MINUTE));
+      const minute = minuteDe(maintenant.getTime());
+      const plafond = Math.max(1, Math.ceil((maintenant.getTime() - reference) / MINUTE));
+      const chercher = async () => (await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id))))[0];
+      let p = await chercher();
+      let ligne: Presence | undefined;
+      let absenceDepuis: string | null = null;
       if (!p) {
         [ligne] = await db
           .insert(presences)
-          .values({ seanceId: s.id, utilisateurId: u.id, siteId: u.siteId, mode: "en_ligne", arriveeLe: maintenant, derniereActivite: maintenant, minutes: 0 })
+          .values({ seanceId: s.id, utilisateurId: u.id, siteId: u.siteId, mode: "en_ligne", arriveeLe: maintenant, derniereActivite: maintenant, minutes: 1, minutesVues: [minute] })
           .onConflictDoNothing()
           .returning();
-        if (!ligne) [ligne] = await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id)));
-        diffuserBientot(`campus:${s.id}`, () => diffuserCampus(s.id), 800);
-      } else {
-        // Une minute de plus par battement espacé d'au moins 45 s ; une coupure ne remet rien à zéro.
-        const ecart = maintenant.getTime() - p.derniereActivite.getTime();
+        if (ligne) diffuserBientot(`campus:${s.id}`, () => diffuserCampus(s.id), 800);
+        else p = await chercher(); // un autre onglet vient de créer la ligne
+      }
+      if (!ligne && p) {
+        const precedent = p.derniereActivite.getTime();
+        // Deux battements réguliers peuvent encadrer une frontière de minute sans
+        // tomber dedans (59,9 s puis 120,1 s) : la minute qui les sépare est comptée.
+        const depuis = precedent >= reference && maintenant.getTime() - precedent <= ECART_BATTEMENTS_CONTINUS_MS ? Math.min(minuteDe(precedent), minute) : minute;
+        const nouvelles = Array.from({ length: minute - depuis + 1 }, (_, i) => depuis + i);
+        if (maintenant.getTime() - precedent > COUPURE_RATTRAPAGE_MS) absenceDepuis = p.derniereActivite.toISOString();
+        const vues = sql`(select coalesce(array_agg(distinct m order by m), '{}'::integer[]) from unnest(${presences.minutesVues} || array[${sql.join(
+          nouvelles.map((n) => sql`${n}`),
+          sql`, `,
+        )}]::integer[]) as m)`;
         [ligne] = await db
           .update(presences)
-          .set({ derniereActivite: maintenant, ...(ecart >= 45_000 && { minutes: p.minutes + 1 }) })
+          .set({ derniereActivite: maintenant, minutesVues: vues, minutes: sql`least(${plafond}, cardinality(${vues}))` })
           .where(eq(presences.id, p.id))
           .returning();
       }
-      const incidents = await sitesEnIncident(s.id);
+      if (!ligne) throw new ErreurHttp(409, "Présence introuvable : réessaie dans un instant.");
+      const incidents = await sitesEnIncident(s);
       res.json({
         compte: true,
         mode: ligne.mode,
@@ -1852,7 +2057,8 @@ export function enregistrerLive(app: Express) {
         minutes: ligne.minutes,
         seuil: seuilMinutes(s),
         statut: statutPresence(ligne, s, u.siteId, new Set(incidents.keys())),
-      });
+        absenceDepuis,
+      } satisfies BattementPresenceDto);
     }),
   );
 
@@ -1924,13 +2130,20 @@ export function enregistrerLive(app: Express) {
       const [p] = await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id)));
       const dejaEmarge = Boolean(p && p.mode === "salle" && p.emargeQr);
       const quand = new Date(maintenant);
+      // Code d'une autre salle que celle de son campus : accepté (l'étudiant a pu
+      // se déplacer), mais marqué pour que la vie scolaire le voie et le confirme.
+      const horsCampus = u.siteId !== null && site.id !== u.siteId;
       if (!p) {
         await db
           .insert(presences)
-          .values({ seanceId: s.id, utilisateurId: u.id, siteId: site.id, mode: "salle", emargeQr: true, arriveeLe: quand, derniereActivite: quand })
+          .values({ seanceId: s.id, utilisateurId: u.id, siteId: site.id, mode: "salle", emargeQr: true, arriveeLe: quand, arriveeSalleLe: quand, horsCampus, derniereActivite: quand })
           .onConflictDoNothing();
       } else if (!dejaEmarge) {
-        await db.update(presences).set({ mode: "salle", siteId: site.id, emargeQr: true, derniereActivite: quand }).where(eq(presences.id, p.id));
+        // Déjà suivi en ligne : l'arrivée EN SALLE (qui fait foi pour le retard) est maintenant.
+        await db
+          .update(presences)
+          .set({ mode: "salle", siteId: site.id, emargeQr: true, arriveeSalleLe: quand, horsCampus, derniereActivite: quand })
+          .where(eq(presences.id, p.id));
       }
       diffuserBientot(`campus:${s.id}`, () => diffuserCampus(s.id), 300);
       const dto: EmargementDto = {
@@ -1938,8 +2151,10 @@ export function enregistrerLive(app: Express) {
         titre: s.titre,
         site: site.nomCourt,
         salle: site.salleConference,
-        heure: (dejaEmarge && p ? p.arriveeLe : quand).toISOString(),
+        heure: (dejaEmarge && p ? p.arriveeSalleLe ?? p.arriveeLe : quand).toISOString(),
         dejaEmarge,
+        horsCampus: dejaEmarge && p ? p.horsCampus : horsCampus,
+        monSite: sitesListe.find((x) => x.id === u.siteId)?.nomCourt ?? null,
       };
       res.json(dto);
     }),
@@ -1953,6 +2168,7 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       if (!estEquipe(u)) throw interdit("Le pointage est fait par la vie scolaire du campus.");
       const s = await chargerSeance(idParam(req));
+      if (seanceNonTenue(s)) throw new ErreurHttp(409, "Cette séance n'a pas eu lieu : il n'y a pas de présence à pointer.");
       const d = valider(
         z.object({
           utilisateurId: z.number().int().positive(),
@@ -1968,11 +2184,23 @@ export function enregistrerLive(app: Express) {
       const [p] = await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, etudiant.id)));
       const maintenant = new Date();
       if (d.statut === "present") {
-        if (p) await db.update(presences).set({ mode: "salle", siteId: etudiant.siteId, pointeParId: u.id, justification: null }).where(eq(presences.id, p.id));
-        else await db.insert(presences).values({ seanceId: s.id, utilisateurId: etudiant.id, siteId: etudiant.siteId, mode: "salle", pointeParId: u.id, arriveeLe: maintenant, derniereActivite: maintenant });
+        // Le responsable de salle confirme la présence dans la salle de son campus : fait foi.
+        if (p)
+          await db
+            .update(presences)
+            .set({ mode: "salle", siteId: etudiant.siteId, pointeParId: u.id, justification: null, horsCampus: false, arriveeSalleLe: p.arriveeSalleLe ?? maintenant })
+            .where(eq(presences.id, p.id));
+        else
+          await db
+            .insert(presences)
+            .values({ seanceId: s.id, utilisateurId: etudiant.id, siteId: etudiant.siteId, mode: "salle", pointeParId: u.id, arriveeLe: maintenant, arriveeSalleLe: maintenant, derniereActivite: maintenant });
       } else if (d.statut === "absent") {
         // Absent de la salle : s'il a suivi en ligne, ses minutes restent comptées.
-        if (p && p.minutes > 0) await db.update(presences).set({ mode: "en_ligne", emargeQr: false, pointeParId: u.id, justification: null }).where(eq(presences.id, p.id));
+        if (p && p.minutes > 0)
+          await db
+            .update(presences)
+            .set({ mode: "en_ligne", emargeQr: false, pointeParId: u.id, justification: null, horsCampus: false, arriveeSalleLe: null })
+            .where(eq(presences.id, p.id));
         else if (p) await db.delete(presences).where(eq(presences.id, p.id));
       } else {
         if (!d.justification) throw invalide("Indiquez la justification.");
@@ -2010,17 +2238,28 @@ export function enregistrerLive(app: Express) {
         req.body,
       );
       const [avant] = await db.select().from(effectifsSalles).where(and(eq(effectifsSalles.seanceId, s.id), eq(effectifsSalles.siteId, siteId)));
+      const incident = d.incident === undefined ? undefined : d.incident || null;
+      const maintenant = new Date();
+      // Un incident résolu n'est pas oublié : on garde son premier signalement,
+      // son motif et l'heure de sa résolution (statut « incident » des absents).
+      const memoire = incident
+        ? { incidentLe: avant?.incidentLe ?? maintenant, incidentMotif: incident, incidentResoluLe: null }
+        : incident === null && avant?.incident
+          ? { incidentResoluLe: maintenant }
+          : {};
       const valeurs = {
         ...(d.nombre !== undefined && { nombre: d.nombre }),
         ...(d.prete !== undefined && { prete: d.prete }),
-        ...(d.incident !== undefined && { incident: d.incident || null }),
-        majLe: new Date(),
+        ...(incident !== undefined && { incident }),
+        ...memoire,
+        majLe: maintenant,
       };
       const [e] = await db
         .insert(effectifsSalles)
-        .values({ seanceId: s.id, siteId, nombre: d.nombre ?? 0, prete: d.prete ?? false, incident: d.incident || null })
+        .values({ seanceId: s.id, siteId, nombre: d.nombre ?? 0, prete: d.prete ?? false, incident: incident ?? null, ...memoire })
         .onConflictDoUpdate({ target: [effectifsSalles.seanceId, effectifsSalles.siteId], set: valeurs })
         .returning();
+      if (incident === null && avant?.incident) await consigner(s.id, "incident_resolu", { siteId, incident: avant.incident });
       if (d.incident && d.incident !== avant?.incident) {
         const site = (await nomsSites()).get(siteId);
         await consigner(s.id, "incident", { siteId, incident: d.incident });
@@ -2048,9 +2287,11 @@ export function enregistrerLive(app: Express) {
       const role = await roleDans(u, s);
       const sitesParId = await nomsSites();
       const perimetre = perimetreSites(u);
+      // Séance jamais démarrée (« Séance non tenue ») : feuille vide, ni présents ni absents.
       const feuille = await feuillePresence(u, s);
       const effectifs = await db.select().from(effectifsSalles).where(eq(effectifsSalles.seanceId, s.id));
       const effectifDe = new Map(effectifs.map((e) => [e.siteId, e]));
+      const incidents = await sitesEnIncident(s);
       const parSite = new Map<number | null, BilanSiteDto>();
       for (const site of await listeSites()) {
         if (perimetre && !perimetre.includes(site.id)) continue;
@@ -2068,16 +2309,18 @@ export function enregistrerLive(app: Express) {
           incident: 0,
           effectifDeclare: e ? e.nombre : null,
           ecart: null,
-          incidentSalle: e?.incident ?? null,
+          incidentSalle: e?.incident ?? (incidents.has(site.id) ? `${incidents.get(site.id)} · résolu` : null),
+          horsCampus: 0,
         });
       }
       for (const l of feuille) {
         let b = parSite.get(l.siteId);
         if (!b) {
-          b = { siteId: l.siteId, site: l.siteId ? sitesParId.get(l.siteId)?.nomCourt ?? "?" : "Sans campus", inscrits: 0, enSalle: 0, enLigne: 0, retard: 0, partiel: 0, absents: 0, justifies: 0, incident: 0, effectifDeclare: null, ecart: null, incidentSalle: null };
+          b = { siteId: l.siteId, site: l.siteId ? sitesParId.get(l.siteId)?.nomCourt ?? "?" : "Sans campus", inscrits: 0, enSalle: 0, enLigne: 0, retard: 0, partiel: 0, absents: 0, justifies: 0, incident: 0, effectifDeclare: null, ecart: null, incidentSalle: null, horsCampus: 0 };
           parSite.set(l.siteId, b);
         }
         b.inscrits++;
+        if (l.horsCampus) b.horsCampus++;
         if (l.statut === "salle") b.enSalle++;
         else if (l.statut === "en_ligne") b.enLigne++;
         else if (l.statut === "retard") b.retard++;
@@ -2104,6 +2347,7 @@ export function enregistrerLive(app: Express) {
         demarreeLe: iso(s.demarreeLe),
         termineeLe: iso(s.termineeLe),
         dureeMinutes: s.dureeMinutes,
+        tenue: Boolean(s.demarreeLe),
         seuilMinutes: seuilMinutes(s),
         sites: sitesBilan,
         totaux: { inscrits, presents, taux: inscrits ? Math.round((presents / inscrits) * 100) : 0 },
@@ -2127,10 +2371,16 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceAccessible(u, idParam(req));
+      // « depuis » vient du serveur (absenceDepuis du battement : l'heure serveur du
+      // battement précédent), jamais de l'horloge du téléphone. Sans lui, un
+      // étudiant repart de sa dernière activité connue ici.
       const depuisBrut = String(req.query.depuis || "");
-      const depuis = new Date(depuisBrut);
-      if (!depuisBrut || Number.isNaN(depuis.getTime())) throw invalide("Paramètre depuis invalide (date ISO attendue).");
-      const borne = new Date(Math.max(depuis.getTime(), Date.now() - 3 * 3600_000));
+      let depuis = new Date(depuisBrut);
+      if (!depuisBrut) {
+        const [p] = await db.select({ d: presences.derniereActivite }).from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id)));
+        depuis = p?.d ?? new Date();
+      } else if (Number.isNaN(depuis.getTime())) throw invalide("Paramètre depuis invalide (date ISO attendue).");
+      const borne = new Date(Math.min(Date.now(), Math.max(depuis.getTime(), Date.now() - 3 * 3600_000, s.demarreeLe?.getTime() ?? 0)));
       const role = await roleDans(u, s);
       const [st, qs, diapos, sds] = await Promise.all([
         db
@@ -2397,11 +2647,12 @@ export function enregistrerLive(app: Express) {
 // ── Fonctions partagées par plusieurs routes et tâches ─────────────────────
 
 async function feuillePresence(u: Utilisateur, s: Seance): Promise<LignePresenceDto[]> {
+  if (seanceNonTenue(s)) return [];
   const perimetre = perimetreSites(u);
   const inscrits = (await etudiantsDuCours(s.coursId)).filter((e) => !perimetre || (e.siteId !== null && perimetre.includes(e.siteId)));
   const lignes = await db.select().from(presences).where(eq(presences.seanceId, s.id));
   const parEtudiant = new Map(lignes.map((p) => [p.utilisateurId, p]));
-  const incidents = new Set((await sitesEnIncident(s.id)).keys());
+  const incidents = new Set((await sitesEnIncident(s)).keys());
   return inscrits
     .map((e): LignePresenceDto => {
       const p = parEtudiant.get(e.id);
@@ -2411,6 +2662,7 @@ async function feuillePresence(u: Utilisateur, s: Seance): Promise<LignePresence
         nom: e.nom,
         matricule: e.matricule,
         siteId: p?.siteId ?? e.siteId,
+        siteInscription: e.siteId,
         statut: statutPresence(p, s, e.siteId, incidents),
         minutes: p?.minutes ?? 0,
         mode: p?.mode ?? null,
@@ -2418,6 +2670,8 @@ async function feuillePresence(u: Utilisateur, s: Seance): Promise<LignePresence
         pointe: Boolean(p?.pointeParId),
         justification: p?.justification ?? null,
         arriveeLe: iso(p?.arriveeLe),
+        arriveeSalleLe: iso(p?.arriveeSalleLe),
+        horsCampus: Boolean(p?.horsCampus && p.mode === "salle"),
       };
     })
     .sort((a, b) => (a.siteId ?? 0) - (b.siteId ?? 0) || a.nom.localeCompare(b.nom, "fr"));
@@ -2427,11 +2681,11 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
   const site = typeof d.siteId === "number" ? sitesParId.get(d.siteId)?.nomCourt : undefined;
   switch (type) {
     case "demarrage":
-      return "Début du direct";
+      return d.reprise ? "Reprise du direct" : "Début du direct";
     case "fin":
       return "Fin du direct";
     case "annulation":
-      return `Séance annulée : ${String(d.motif ?? "")}`;
+      return `Séance annulée${d.automatique ? " automatiquement" : ""} : ${String(d.motif ?? "")}`;
     case "plan_b":
       return "Plan B : bascule sur le lien de secours";
     case "parole":
@@ -2440,6 +2694,8 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       return `Fin de parole${site ? ` (${site})` : ""} · ${Math.round(Number(d.secondes ?? 0))} s`;
     case "incident":
       return `Incident à ${site ?? "une salle"} : ${String(d.incident ?? "")}`;
+    case "incident_resolu":
+      return `Incident résolu à ${site ?? "une salle"} (${String(d.incident ?? "")})`;
     default:
       return type;
   }
@@ -2456,20 +2712,72 @@ async function marquerVu(seanceId: number, utilisateurId: number) {
 async function terminerSeance(s: Seance, parId: number | null): Promise<Seance> {
   const lignes = await db.select({ t: sousTitres.t, texte: sousTitres.texte }).from(sousTitres).where(eq(sousTitres.seanceId, s.id)).orderBy(asc(sousTitres.t), asc(sousTitres.id));
   const transcription = lignes.map((l) => `[${Math.floor(l.t / 60)}:${String(l.t % 60).padStart(2, "0")}] ${l.texte}`).join("\n");
-  const [maj] = await db.update(seances).set({ statut: "terminee", termineeLe: new Date(), transcription }).where(eq(seances.id, s.id)).returning();
+  const [maj] = await db
+    .update(seances)
+    .set({ statut: "terminee", termineeLe: new Date(), transcription })
+    .where(and(eq(seances.id, s.id), inArray(seances.statut, ["en_direct", "planifiee"])))
+    .returning();
+  // Déjà terminée (double clic, fin automatique au même instant) : rien à refaire ni à annoncer.
+  if (!maj) return chargerSeance(s.id);
   await finirParole(s.id);
   await db.update(sondages).set({ ouvert: false, fermeLe: new Date() }).where(and(eq(sondages.seanceId, s.id), eq(sondages.ouvert, true), isNotNull(sondages.ouvertLe)));
   await db.update(mainsLevees).set({ baisseeLe: new Date() }).where(and(eq(mainsLevees.seanceId, s.id), isNull(mainsLevees.baisseeLe)));
   await consigner(s.id, "fin", { par: parId, automatique: parId === null });
   publier(canal(s.id), "statut", { statut: "terminee", demarreeLe: iso(maj.demarreeLe), termineeLe: iso(maj.termineeLe), motif: null });
-  publier("tous", "live", { seanceId: s.id, statut: "terminee" });
+  annoncer(maj);
   if (s.publierSurSite) prevenirSite("live terminé");
   return maj;
 }
 
+/**
+ * Séance planifiée dont l'heure est passée sans qu'elle ait jamais été
+ * démarrée : « annulée », motif « Séance non tenue ». Aucune notification ; le
+ * bilan et les présences l'ignorent (seanceNonTenue).
+ */
+async function marquerNonTenue(s: Seance): Promise<void> {
+  const [maj] = await db
+    .update(seances)
+    .set({ statut: "annulee", motifAnnulation: MOTIF_NON_TENUE })
+    .where(and(eq(seances.id, s.id), eq(seances.statut, "planifiee"), isNull(seances.demarreeLe)))
+    .returning();
+  if (!maj) return;
+  await consigner(s.id, "annulation", { motif: MOTIF_NON_TENUE, automatique: true });
+  publier(canal(s.id), "statut", { statut: "annulee", demarreeLe: null, termineeLe: null, motif: MOTIF_NON_TENUE });
+  annoncer(maj);
+  if (s.publierSurSite) prevenirSite("live non tenu");
+}
+
+/** Le formateur (ou la personne qui a démarré le direct) a-t-il encore le studio ouvert ? */
+async function animateurConnecte(s: Seance): Promise<boolean> {
+  const presents = connectesSur(canal(s.id));
+  if (!presents.size) return false;
+  if ((await formateursDuCours(s.coursId)).some((f) => presents.has(f.id))) return true;
+  const [demarrage] = await db
+    .select({ donnees: evenementsSeances.donnees })
+    .from(evenementsSeances)
+    .where(and(eq(evenementsSeances.seanceId, s.id), eq(evenementsSeances.type, "demarrage")))
+    .orderBy(desc(evenementsSeances.id))
+    .limit(1);
+  return typeof demarrage?.donnees.par === "number" && presents.has(demarrage.donnees.par);
+}
+
+/** Un étudiant a-t-il envoyé un battement de présence (ou émargé) récemment ? */
+async function presenceRecente(seanceId: number, depuis: Date): Promise<boolean> {
+  const [r] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(presences)
+    .where(and(eq(presences.seanceId, seanceId), gt(presences.derniereActivite, depuis)));
+  return (r?.n ?? 0) > 0;
+}
+
 // ── Tâches de fond ─────────────────────────────────────────────────────────
 
-/** Rappels 24 h et 15 min avant (notification + push), une seule fois par séance. */
+/**
+ * Rappels 24 h et 15 min avant, une seule fois par séance. Le rappel 15 min est
+ * urgent (il passe les heures calmes et le plafond) ; celui de la veille suit
+ * les règles normales. L'heure est toujours dite avec son fuseau : heure
+ * d'Abidjan pour les étudiants, Abidjan et Paris pour les formateurs.
+ */
 planifier("live-rappels", MINUTE, async () => {
   const maintenant = Date.now();
   const proches = await db
@@ -2483,35 +2791,61 @@ planifier("live-rappels", MINUTE, async () => {
     if (!type) continue;
     const inseres = await db.insert(rappelsLive).values({ seanceId: s.id, type }).onConflictDoNothing().returning();
     if (!inseres.length) continue;
-    const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(s.debut).replace(":", "h");
     // Abidjan vit à l'heure UTC : le jour d'Abidjan est la date UTC.
     const quand = s.debut.toISOString().slice(0, 10) === new Date(maintenant).toISOString().slice(0, 10) ? "Aujourd'hui" : "Demain";
-    const titre = type === "15min" ? `Dans 15 min : ${s.titre}` : `${quand} à ${heure} : ${s.titre}`;
+    const urgent = type === "15min";
+    const titreEtudiant = urgent ? `Dans 15 min : ${s.titre}` : `${quand} à ${heureA(s.debut)} (heure d'Abidjan) : ${s.titre}`;
+    const titreFormateur = urgent ? `Dans 15 min : ${s.titre}` : `${quand} à ${heureDouble(s.debut)} : ${s.titre}`;
     // Tutoiement pour les étudiants, vouvoiement pour les formateurs (CONCEPTION §1.6).
     await notifier(await destinatairesSeance(s, false), {
       type: "live",
-      titre,
-      corps: type === "15min" ? `${code} · entre dans la classe ou installe-toi dans ta salle de conférence.` : `${code} · live multi-campus. Ajoute-le à ton agenda.`,
+      titre: titreEtudiant,
+      corps: urgent ? `${code} · entre dans la classe ou installe-toi dans ta salle de conférence.` : `${code} · live multi-campus. Ajoute-le à ton agenda.`,
       lien: `/live/${s.id}`,
+      urgent,
     });
     await notifier((await formateursDuCours(s.coursId)).map((f) => f.id), {
       type: "live",
-      titre,
-      corps: type === "15min" ? `${code} · ouvrez le studio : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan et vos diapos.`,
+      titre: titreFormateur,
+      corps: urgent ? `${code} · ouvrez le studio : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan et vos diapos.`,
       lien: `/live/${s.id}`,
+      urgent,
     });
   }
 });
 
-/** Passage automatique en « terminée » 30 min après la fin prévue. */
+/**
+ * Fin automatique des séances oubliées (toutes les 5 min).
+ *  - Jamais démarrée, 30 min après la fin prévue : « annulée », motif « Séance
+ *    non tenue », sans notification.
+ *  - En direct : 30 min après la plus tardive des deux fins, prévue ou comptée
+ *    depuis le démarrage réel (un live commencé en retard n'est pas coupé en
+ *    plein cours), et seulement si plus personne n'est là : formateur absent du
+ *    canal de la séance et aucun battement de présence depuis 15 min. Filet :
+ *    3 h plus tard sans formateur, elle est close même si des onglets restent
+ *    ouverts.
+ * Au passage, la mémoire du direct des séances closes est purgée.
+ */
 planifier("live-fin-auto", 5 * MINUTE, async () => {
+  const maintenant = Date.now();
   const candidates = await db
     .select()
     .from(seances)
-    .where(and(inArray(seances.statut, ["planifiee", "en_direct"]), lt(seances.debut, new Date(Date.now() - 30 * MINUTE))));
+    .where(and(inArray(seances.statut, ["planifiee", "en_direct"]), lt(seances.debut, new Date(maintenant - DELAI_FIN_AUTO_MS))));
   for (const s of candidates) {
-    if (finPrevue(s) + 30 * MINUTE < Date.now()) await terminerSeance(s, null);
+    const finReelle = s.demarreeLe ? s.demarreeLe.getTime() + s.dureeMinutes * MINUTE : 0;
+    const limite = Math.max(finPrevue(s), finReelle) + DELAI_FIN_AUTO_MS;
+    if (limite > maintenant) continue;
+    if (await animateurConnecte(s)) continue;
+    if (!s.demarreeLe) {
+      await marquerNonTenue(s);
+      continue;
+    }
+    if (maintenant < limite + FILET_FIN_AUTO_MS && (await presenceRecente(s.id, new Date(maintenant - INACTIVITE_FIN_AUTO_MS)))) continue;
+    await terminerSeance(s, null);
   }
+  const oubliees = await purgerMemoire(maintenant);
+  if (oubliees) console.log(`[live] mémoire du direct : ${oubliees} séance(s) close(s) oubliée(s)`);
 });
 
 /** Récupère l'enregistrement Daily des séances terminées (lien de lecture demandé à la volée). */

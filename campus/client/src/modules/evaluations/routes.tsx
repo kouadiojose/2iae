@@ -3,6 +3,11 @@
 // Motifs précis avant motifs génériques.
 import { lazy } from "react";
 import type { DefRoute } from "@/routes-types";
+import { suivreEnvoisDeCopies } from "./outils";
+
+// Dès le démarrage (avant la première relance de la file d'envoi) : le brouillon
+// d'une copie partie hors ligne s'efface à l'arrivée de son reçu, quelle que soit la page.
+suivreEnvoisDeCopies();
 
 const ENSEIGNANTS = ["formateur", "admin", "vie_scolaire"] as const;
 const LECTEURS = ["etudiant", "formateur", "admin", "vie_scolaire"] as const;

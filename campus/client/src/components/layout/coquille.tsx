@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown } from "lucide-react";
 import { useMoiConnecte, seDeconnecter } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
-import { rafraichir } from "@/lib/queryClient";
+import { queryClient, rafraichir } from "@/lib/queryClient";
 import { navigationDuRole, estActif } from "@/navigation";
 import { cn, nomComplet } from "@/lib/utils";
 import { Avatar } from "@/components/ui/divers";
@@ -198,7 +198,12 @@ function EcouteGlobale() {
   useTousEvenements((e) => {
     if (e.type === "notification") void rafraichir("/api/notifications");
     if (e.type === "message") void rafraichir("/api/notifications/compteur");
-    if (e.type === "live") void rafraichir("/api/live/en-cours");
+    // Démarrage ou fin d'un live : l'événement porte mon état « en cours » ; à défaut,
+    // on relit, chacun après un délai aléatoire (pas tous au même instant).
+    if (e.type === "live") {
+      if (e.data?.enCours) queryClient.setQueryData<EnCours>(["/api/live/en-cours"], e.data.enCours);
+      else setTimeout(() => void rafraichir("/api/live/en-cours"), Math.random() * 5000);
+    }
   });
   return null;
 }

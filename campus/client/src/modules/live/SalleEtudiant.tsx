@@ -17,7 +17,7 @@ import { Scene } from "./scene";
 import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, VignettesSalles, BoutonsRessentis, CarteRattrapage, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
 import { CONSOMMATION, cleDirect, estimationMo, formatMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
-import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto } from "@shared/schema";
+import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
 
 type Panneau = "questions" | "campus" | "assistant";
 
@@ -64,7 +64,7 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
         setErreurCode(`Ce code est celui d'une autre séance (${r.titre}).`);
         return;
       }
-      toast(`✓ Présent · ${r.site}`);
+      toast(r.horsCampus ? `✓ Présent · ${r.site} (hors de ton campus${r.monSite ? ` ${r.monSite}` : ""} : la vie scolaire le verra)` : `✓ Présent · ${r.site}`);
       await queryClient.invalidateQueries({ queryKey: [`/api/seances/${seance.id}`] });
       onChoix("compagnon");
     } catch (e) {
@@ -163,27 +163,25 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   const [octetsVisio, setOctetsVisio] = useState(0);
   const [octetsRadio, setOctetsRadio] = useState(0);
   const arrivee = useRef(Date.now());
-  const dernierBattement = useRef<number>(Date.now());
   const { data: etat } = useEtatDirect(seance.id, false);
 
   const enDirect = (etat?.statut ?? seance.statut) === "en_direct";
   const maMain: MainDirectDto | undefined = etat?.mains[0];
   const jaiLaParole = etat?.parole?.type === "etudiant" && etat.parole.utilisateurId === moi.id;
 
-  // Présence : un battement par minute pendant le direct ; au retour d'une coupure de plus de 2 min, le rattrapage.
+  // Présence : un battement par minute pendant le direct. Au retour d'une coupure
+  // de plus de 2 min, le serveur donne l'heure (la sienne) du battement précédent :
+  // « Voici ce que tu as raté » part de là, jamais de l'horloge du téléphone.
   useEffect(() => {
     if (!enDirect) return;
     let actif = true;
     const battre = async () => {
       try {
-        await post(`/api/seances/${seance.id}/presence`, { mode });
-        const absence = Date.now() - dernierBattement.current;
-        if (absence > 2 * 60_000 && actif) {
-          const depuis = new Date(dernierBattement.current).toISOString();
-          const r = await get<RattrapageDto>(`/api/seances/${seance.id}/rattrapage?depuis=${encodeURIComponent(depuis)}`);
-          setRattrapage(r);
+        const b = await post<BattementPresenceDto>(`/api/seances/${seance.id}/presence`, { mode });
+        if (b.compte && b.absenceDepuis && actif) {
+          const r = await get<RattrapageDto>(`/api/seances/${seance.id}/rattrapage?depuis=${encodeURIComponent(b.absenceDepuis)}`);
+          if (actif) setRattrapage(r);
         }
-        dernierBattement.current = Date.now();
       } catch {
         /* hors réseau : on réessaie à la prochaine minute, les minutes ne sont pas perdues */
       }

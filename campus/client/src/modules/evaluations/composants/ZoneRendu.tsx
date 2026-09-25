@@ -2,7 +2,8 @@
 // ordre, suppression, aperçu), « Ajouter un fichier », texte. Tout est gardé
 // sur le téléphone (texte dans localStorage, pages dans IndexedDB) jusqu'à
 // l'envoi, qui passe par la file d'envoi hors ligne : reçu vert tout de suite,
-// ou « En attente de réseau, partira tout seul ».
+// ou « En attente de réseau, partira tout seul » — le brouillon n'est effacé
+// qu'une fois le reçu arrivé.
 import { useEffect, useRef, useState } from "react";
 import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check } from "lucide-react";
 import { Bouton } from "@/components/ui/bouton";
@@ -20,6 +21,8 @@ import {
   lirePagesBrouillon,
   ecrirePagesBrouillon,
   effacerBrouillon,
+  effacerBrouillonAuRecu,
+  oublierEnvoi,
   dateEtHeureCourte,
   type PageBrouillon,
 } from "../outils";
@@ -137,6 +140,9 @@ export function ZoneRendu({
     if (vide) return;
     setEnvoi(true);
     const cle = `rendu-${devoir.id}-${Date.now()}`;
+    // Le brouillon n'est effacé qu'avec le reçu : tout de suite si l'envoi part, sinon à l'arrivée
+    // de « campus:envoi-reussi » pour cette clé (lien posé avant l'envoi, qui peut partir très vite).
+    effacerBrouillonAuRecu(cle, utilisateurId, devoir.id);
     try {
       const r = await envoyerOuMettreEnFile<RecuDepot>({
         cle,
@@ -148,10 +154,14 @@ export function ZoneRendu({
         usageFichiers: "rendu",
         champFichiers: "fichierIds",
       });
-      effacerBrouillon(utilisateurId, devoir.id);
-      if (r.statut === "envoye") onRecu(r.reponse);
-      else onEnFile(cle);
+      if (r.statut === "envoye") {
+        oublierEnvoi(cle);
+        effacerBrouillon(utilisateurId, devoir.id);
+        onRecu(r.reponse);
+      } else onEnFile(cle); // en attente de réseau : le brouillon reste sur le téléphone jusqu'au reçu
     } catch (e) {
+      // Refus immédiat : rien n'est parti, le brouillon reste.
+      oublierEnvoi(cle);
       toastErreur(e);
     } finally {
       setEnvoi(false);

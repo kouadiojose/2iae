@@ -1,16 +1,72 @@
-// Module « pilotage » (vie scolaire et direction) : aucune table nouvelle.
+// Module « pilotage » (vie scolaire et direction).
 //
 // Le pilotage lit les tables des autres domaines (comptes, séances,
 // présences, devoirs, notes, IA) et n'écrit que dans celles du socle qui lui
 // reviennent : utilisateurs, classes, sites, suivis, journal, présences
 // (justifications) et le jeton du relevé parent (utilisateurs.jetonReleve).
+// Ses trois tables à lui : les lots d'import (rejouer un import dont la
+// réponse s'est perdue) et l'historique des changements de classe.
 //
 // Ce fichier porte les règles communes (présence à 70 %, prix de l'IA) et les
 // contrats d'API du module, partagés par le serveur et le client. Les dates
 // voyagent en chaînes ISO.
-import type { Role } from "./base";
+import { serial, text, integer, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
+import { campusSchema, utilisateurs, classes, type Role } from "./base";
 import type { StatutSeance, FournisseurVisio } from "./live";
 import type { Vitrine } from "../api";
+
+// ── Tables ─────────────────────────────────────────────────────────────────
+
+/**
+ * Lot d'import (POST /api/pilotage/import/valider), identifié par le
+ * navigateur. Si la réponse se perd (4G), relancer le même lot ne crée aucun
+ * doublon : les comptes déjà créés reçoivent une nouvelle fiche.
+ */
+export const lotsImport = campusSchema.table("lots_import", {
+  id: text("id").primaryKey(),
+  auteurId: integer("auteur_id")
+    .notNull()
+    .references(() => utilisateurs.id, { onDelete: "cascade" }),
+  /** Le navigateur a bien reçu les fiches (sinon : « Refaire les fiches » sur la page d'import). */
+  remisLe: timestamp("remis_le", { withTimezone: true }),
+  creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Comptes créés par chaque lot d'import. */
+export const comptesLotsImport = campusSchema.table(
+  "comptes_lots_import",
+  {
+    lotId: text("lot_id")
+      .notNull()
+      .references(() => lotsImport.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id")
+      .notNull()
+      .references(() => utilisateurs.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.lotId, t.utilisateurId] }), index("comptes_lots_import_utilisateur_idx").on(t.utilisateurId)],
+);
+
+/**
+ * Changements de classe d'un étudiant (PATCH des comptes) : « dans cette
+ * classe depuis telle date ». Un étudiant n'est attendu qu'aux séances (et
+ * devoirs) de la classe où il était à ce moment-là : arrivé en cours d'année,
+ * il n'est pas absent aux séances passées de sa nouvelle classe, et ses
+ * séances dans l'ancienne classe restent à son dossier. Sans ligne ici : sa
+ * classe actuelle, depuis la création du compte.
+ */
+export const passagesClasses = campusSchema.table(
+  "passages_classes",
+  {
+    id: serial("id").primaryKey(),
+    utilisateurId: integer("utilisateur_id")
+      .notNull()
+      .references(() => utilisateurs.id, { onDelete: "cascade" }),
+    /** null : pas de classe (compte qui n'était pas encore étudiant). */
+    classeId: integer("classe_id").references(() => classes.id, { onDelete: "set null" }),
+    depuis: timestamp("depuis", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("passages_classes_utilisateur_idx").on(t.utilisateurId, t.depuis)],
+);
 
 // ── Règles ─────────────────────────────────────────────────────────────────
 
@@ -27,10 +83,13 @@ export const PRIX_IA = { entree: 5, sortie: 25 } as const;
 export const FCFA_PAR_DOLLAR = 600;
 
 /**
- * Statut d'un étudiant attendu à une séance, du plus sûr au moins sûr :
- * émargé (QR ou code en salle), pointé par le responsable de salle, présent en
- * ligne (≥ 70 %), absent justifié, incident de salle (personne n'est compté
- * absent), partiel (en ligne < 70 %), absent.
+ * Statut d'un étudiant attendu à une séance tenue (démarrée), décidé dans le
+ * même ordre que le module live (statutPresence) : absence justifiée d'abord ;
+ * en salle, émargé (QR ou code) ou pointé PRÉSENT par le responsable ; présent
+ * en ligne (≥ 70 % de la durée tenue) ; incident de sa salle (personne n'est
+ * compté absent) ; partiel (en ligne < 70 %) ; absent. Un étudiant pointé
+ * « absent » garde ses minutes en ligne : il est en ligne, partiel ou absent.
+ * Le taux de présence vaut présents / (attendus − justifiés − incidents).
  */
 export const STATUTS_PRESENCE_PILOTAGE = ["emarge", "pointe", "en_ligne", "justifie", "incident", "partiel", "absent"] as const;
 export type StatutPresencePilotage = (typeof STATUTS_PRESENCE_PILOTAGE)[number];
@@ -47,6 +106,16 @@ export const LIBELLES_PRESENCE_PILOTAGE: Record<StatutPresencePilotage, string> 
 
 export const comptePresent = (s: StatutPresencePilotage) => s === "emarge" || s === "pointe" || s === "en_ligne";
 
+/**
+ * Taux de présence, UNE définition pour tout le campus (pilotage, bilan de
+ * séance du live) : présents / (attendus − justifiés − incidents de salle),
+ * arrondi au pour cent ; null quand il ne reste personne à compter.
+ */
+export function tauxPresence(r: { presents: number; attendus: number; justifies: number; incidents: number }): number | null {
+  const base = r.attendus - r.justifies - r.incidents;
+  return base > 0 ? Math.round((r.presents / base) * 100) : null;
+}
+
 // ── Tableau de pilotage ────────────────────────────────────────────────────
 
 export type IndicateursCampus = {
@@ -59,7 +128,7 @@ export type IndicateursCampus = {
   tauxActivation: number | null;
   /** Étudiants vus sur le campus ces 7 derniers jours. */
   actifs7j: number;
-  /** % de présence aux lives des 30 derniers jours (justifiés et incidents exclus). */
+  /** % de présence aux lives tenus des 30 derniers jours (justifiés et incidents exclus). */
   presence30j: number | null;
   /** % de devoirs rendus parmi ceux échus depuis 30 jours. */
   devoirsRendus: number | null;
@@ -113,8 +182,21 @@ export type AContacter = {
   whatsapp: string | null;
 };
 
-/** GET /api/pilotage/a-contacter */
-export type ListeAContacter = { total: number; parRaison: Record<TypeRaisonContact, number>; lignes: AContacter[] };
+/**
+ * GET /api/pilotage/a-contacter?raison=&site=&q=&page=&parPage= : filtré et
+ * paginé par le serveur (1 000 étudiants, c'est près d'1 Mo en une fois).
+ */
+export type ListeAContacter = {
+  /** Lignes qui passent tous les filtres (pagination). */
+  total: number;
+  /** Même chose sans le filtre de raison (onglet « Tous »). */
+  tous: number;
+  /** Par raison, sans le filtre de raison (compteurs des onglets). */
+  parRaison: Record<TypeRaisonContact, number>;
+  lignes: AContacter[];
+  page: number;
+  parPage: number;
+};
 
 // ── Comptes ────────────────────────────────────────────────────────────────
 
@@ -199,8 +281,33 @@ export type FicheConnexion = {
   expireLe: string;
 };
 
-/** POST /api/pilotage/import/valider et POST /api/pilotage/fiches */
-export type LotFiches = { fiches: FicheConnexion[]; ignores: number };
+/** POST /api/pilotage/import/valider, POST /api/pilotage/fiches, POST /api/pilotage/import/lots/:id/fiches */
+export type LotFiches = {
+  fiches: FicheConnexion[];
+  /** Fiches : désactivés, hors périmètre ou soi-même. Import : comptes du lot déjà activés (pas de nouvelle fiche). */
+  ignores: number;
+  /** Import : identifiant du lot (le relancer ne crée aucun doublon). */
+  lotId?: string;
+  /** Import relancé : comptes déjà créés par ce lot, qui reçoivent une nouvelle fiche. */
+  repris?: number;
+};
+
+/** Étapes d'un travail long (import, fiches), pour la barre de progression. */
+export type EtapeTravail = "verification" | "codes" | "enregistrement" | "liens" | "termine";
+
+export const LIBELLES_ETAPES_TRAVAIL: Record<EtapeTravail, string> = {
+  verification: "Vérification des lignes",
+  codes: "Sécurisation des codes",
+  enregistrement: "Enregistrement des comptes",
+  liens: "Préparation des QR d'activation",
+  termine: "C'est prêt",
+};
+
+/** GET /api/pilotage/progression/:id (le navigateur choisit l'identifiant et l'envoie avec sa demande). */
+export type ProgressionTravail = { etape: EtapeTravail; faits: number; total: number; fini: boolean };
+
+/** GET /api/pilotage/import/lots : imports dont les fiches n'ont jamais été reçues (réponse perdue). */
+export type LotImportEnAttente = { id: string; creeLe: string; comptes: number; nonActives: number };
 
 // ── Classes et sites ───────────────────────────────────────────────────────
 
@@ -340,7 +447,11 @@ export type PresencesSeance = {
   /** Durée qui sert au calcul des 70 % (durée réelle si la séance a eu lieu). */
   dureeReference: number;
   seuil: number;
+  /** Minutes en ligne à atteindre pour être présent (même calcul que le live). */
+  seuilMinutes: number;
   aVenir: boolean;
+  /** Heure passée mais jamais démarrée : personne n'y est compté absent. */
+  nonTenue: boolean;
   total: ResumePresences;
   campus: PresencesCampus[];
 };

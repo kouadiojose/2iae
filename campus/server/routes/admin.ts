@@ -13,8 +13,12 @@
 //   qui ne renvoie que le strict nécessaire.
 import type { Express, RequestHandler } from "express";
 import crypto from "crypto";
+import os from "os";
+import { createRequire } from "module";
+import { Worker } from "worker_threads";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
 import {
@@ -55,6 +59,11 @@ import {
   STATUTS_PRESENCE_PILOTAGE,
   LIBELLES_PRESENCE_PILOTAGE,
   comptePresent,
+  tauxPresence,
+  lotsImport,
+  comptesLotsImport,
+  passagesClasses,
+  reinitialisations,
   type Role,
   type Utilisateur,
   type StatutPresencePilotage,
@@ -73,6 +82,9 @@ import {
   type ApercuImport,
   type FicheConnexion,
   type LotFiches,
+  type EtapeTravail,
+  type ProgressionTravail,
+  type LotImportEnAttente,
   type ClasseLigne,
   type SiteLigne,
   type ReferencesPilotage,
@@ -245,12 +257,60 @@ type FiltreAttendus = {
 };
 
 /**
- * Une ligne par (séance, étudiant attendu) avec son statut de présence :
- * émargé (QR ou code en salle) · pointé par le responsable · présent en ligne
- * (≥ 70 % de la durée) · absent justifié · incident de salle · partiel ·
- * absent. La durée de référence est la durée prévue, ou la durée réelle si la
- * séance a été plus courte. Un étudiant inscrit après la séance n'y est pas
- * attendu.
+ * Durée de référence des 70 %, EXACTEMENT comme le live (seuilMinutes dans
+ * server/routes/live.ts) : la durée prévue, ou la durée réellement tenue
+ * (arrondie à la minute) si elle est plus courte.
+ */
+function dureeReference(s: Pick<typeof seances.$inferSelect, "dureeMinutes" | "demarreeLe" | "termineeLe">): number {
+  let duree = s.dureeMinutes;
+  if (s.demarreeLe && s.termineeLe) {
+    const reelle = Math.round((s.termineeLe.getTime() - s.demarreeLe.getTime()) / 60_000);
+    if (reelle > 0) duree = Math.min(duree, reelle);
+  }
+  return duree;
+}
+/** Minutes en ligne à atteindre pour être « présent en ligne ». */
+const seuilMinutes = (duree: number) => Math.max(1, Math.ceil(duree * SEUIL_PRESENCE_EN_LIGNE));
+
+/** Même calcul en SQL (Math.round(x) = floor(x + 0,5) ; float8 = double JavaScript). */
+const SQL_DUREE_REFERENCE = sql`
+  CASE WHEN s.demarree_le IS NOT NULL AND s.terminee_le IS NOT NULL
+      AND floor(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le)) / 60 + 0.5) > 0
+    THEN LEAST(s.duree_minutes, floor(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le)) / 60 + 0.5)::int)
+    ELSE s.duree_minutes
+  END`;
+
+/** Incident signalé par la salle de l'étudiant (même règle que sitesEnIncident du live). */
+const SQL_INCIDENT_SALLE = sql`e.incident IS NOT NULL`;
+
+/**
+ * Classe d'un étudiant à un instant donné (colonne SQL « t ») : son dernier
+ * passage de classe avant t (table passages_classes, écrite par le PATCH des
+ * comptes), sinon sa classe actuelle. À joindre après l'utilisateur « u » ;
+ * la classe se lit ensuite dans SQL_CLASSE_A.
+ */
+const sqlPassageAvant = (t: SQL) => sql`
+  LEFT JOIN LATERAL (
+    SELECT pc.classe_id, pc.depuis FROM campus.passages_classes pc
+    WHERE pc.utilisateur_id = u.id AND pc.depuis <= ${t}
+    ORDER BY pc.depuis DESC, pc.id DESC LIMIT 1
+  ) h ON true`;
+const SQL_CLASSE_A = sql`(CASE WHEN h.depuis IS NULL THEN u.classe_id ELSE h.classe_id END)`;
+
+/**
+ * Une ligne par (séance, étudiant attendu) avec son statut de présence, décidé
+ * dans le même ordre que le live (statutPresence) : absence justifiée ·
+ * émargé en salle (QR ou code) · pointé présent en salle par le responsable ·
+ * présent en ligne (≥ 70 % de la durée de référence) · incident de sa salle ·
+ * partiel · absent. Un étudiant pointé « absent » ou « justifié » n'est donc
+ * jamais compté présent parce qu'il a été pointé.
+ *
+ * Seules les séances TENUES comptent (démarrées : demarree_le renseigné) ; une
+ * séance jamais démarrée (terminée d'office par le live) n'a pas d'absents.
+ * Un étudiant n'est attendu que s'il était déjà inscrit (compte créé, arrivé
+ * dans la classe du cours, ou inscrit au cours) avant la fin prévue.
+ * Retard : arrivée en salle plus de 15 min après le DÉMARRAGE réel (pas
+ * l'heure prévue), jamais pour un étudiant pointé par le responsable.
  */
 function sqlAttendus(f: FiltreAttendus): SQL {
   const conds: SQL[] = [sql`s.statut <> 'annulee'`, sql`c.statut <> 'brouillon'`];
@@ -260,37 +320,40 @@ function sqlAttendus(f: FiltreAttendus): SQL {
   if (f.depuis) conds.push(sql`s.debut >= ${f.depuis.toISOString()}::timestamptz`);
   if (f.jusqua) conds.push(sql`s.debut < ${f.jusqua.toISOString()}::timestamptz`);
   if (!f.inclureAVenir) {
-    conds.push(f.inclureEnCours ? sql`s.debut <= now()` : sql`s.debut + make_interval(mins => s.duree_minutes) <= now()`);
+    conds.push(sql`s.demarree_le IS NOT NULL`);
+    if (!f.inclureEnCours) conds.push(sql`(s.statut = 'terminee' OR s.debut + make_interval(mins => s.duree_minutes) <= now())`);
   }
   if (f.sites) conds.push(sql`u.site_id = ANY(${entiers(f.sites)})`);
   return sql`
     SELECT s.id AS seance_id, s.cours_id, s.debut, s.titre AS seance_titre, c.code AS cours_code,
-      u.id AS uid, u.site_id,
+      u.id AS uid, u.site_id, ${SQL_CLASSE_A} AS classe_id,
       COALESCE(p.minutes, 0)::int AS minutes, p.arrivee_le, p.justification,
       CASE
-        WHEN p.emarge_qr THEN 'emarge'
-        WHEN p.pointe_par_id IS NOT NULL THEN 'pointe'
+        WHEN NULLIF(p.justification, '') IS NOT NULL THEN 'justifie'
+        WHEN p.mode = 'salle' AND p.emarge_qr THEN 'emarge'
+        WHEN p.mode = 'salle' AND p.pointe_par_id IS NOT NULL THEN 'pointe'
         WHEN p.mode = 'salle' THEN 'emarge'
-        WHEN p.minutes >= ${SEUIL_PRESENCE_EN_LIGNE}::float8 * d.duree THEN 'en_ligne'
-        WHEN p.justification IS NOT NULL THEN 'justifie'
-        WHEN e.incident IS NOT NULL THEN 'incident'
+        WHEN p.minutes >= d.seuil THEN 'en_ligne'
+        WHEN ${SQL_INCIDENT_SALLE} THEN 'incident'
         WHEN p.minutes > 0 THEN 'partiel'
         ELSE 'absent'
       END AS statut,
-      COALESCE(p.mode = 'salle' AND p.arrivee_le > s.debut + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard
+      COALESCE(NULLIF(p.justification, '') IS NULL AND p.mode = 'salle' AND p.pointe_par_id IS NULL
+        AND p.arrivee_le > COALESCE(s.demarree_le, s.debut) + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard
     FROM campus.seances s
     JOIN campus.cours c ON c.id = s.cours_id
     CROSS JOIN LATERAL (
-      SELECT GREATEST(1, LEAST(s.duree_minutes::float8,
-        COALESCE(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le))::float8 / 60, s.duree_minutes::float8))) AS duree
+      SELECT GREATEST(1, ceil(r.duree::float8 * ${SEUIL_PRESENCE_EN_LIGNE}::float8))::int AS seuil,
+        s.debut + make_interval(mins => s.duree_minutes) AS fin
+      FROM (SELECT ${SQL_DUREE_REFERENCE} AS duree) r
     ) d
-    JOIN campus.utilisateurs u ON u.role = 'etudiant'
-      AND u.cree_le <= s.debut + make_interval(mins => s.duree_minutes)
-      AND (u.classe_id IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = s.cours_id)
-        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = s.cours_id AND i.utilisateur_id = u.id))
+    JOIN campus.utilisateurs u ON u.role = 'etudiant' AND u.cree_le <= d.fin
+    ${sqlPassageAvant(sql`d.fin`)}
     LEFT JOIN campus.presences p ON p.seance_id = s.id AND p.utilisateur_id = u.id
     LEFT JOIN campus.effectifs_salles e ON e.seance_id = s.id AND e.site_id = u.site_id
-    WHERE ${sql.join(conds, sql` AND `)}`;
+    WHERE ${sql.join(conds, sql` AND `)}
+      AND (${SQL_CLASSE_A} IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = s.cours_id)
+        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = s.cours_id AND i.utilisateur_id = u.id AND i.cree_le <= d.fin))`;
 }
 
 type LigneAttendu = {
@@ -301,6 +364,8 @@ type LigneAttendu = {
   cours_code: string;
   uid: number;
   site_id: number | null;
+  /** Classe de l'étudiant au moment de la séance. */
+  classe_id: number | null;
   minutes: number;
   arrivee_le: Date | null;
   justification: string | null;
@@ -330,7 +395,7 @@ function versResume(l: Partial<LigneResume> | undefined): ResumePresences {
     absent: l?.absent ?? 0,
   };
   const presents = r.emarge + r.pointe + r.en_ligne;
-  return { ...r, presents, taux: pourcent(presents, r.attendus - r.justifie - r.incident) };
+  return { ...r, presents, taux: tauxPresence({ presents, attendus: r.attendus, justifies: r.justifie, incidents: r.incident }) };
 }
 
 /** Résume une liste de lignes déjà chargées. */
@@ -343,6 +408,8 @@ function resumeDe(lignes: { statut: StatutPresencePilotage }[]): ResumePresences
 /**
  * Devoirs échus (publiés, d'un cours ouvert) et, pour chaque étudiant
  * attendu, s'il l'a rendu : copie rendue ou corrigée, ou interrogation terminée.
+ * Comme pour les séances, un étudiant n'est attendu qu'aux devoirs échus
+ * après son arrivée (compte, classe du cours ou inscription au cours).
  */
 function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: number }): SQL {
   const conds: SQL[] = [
@@ -362,9 +429,10 @@ function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: nu
     FROM campus.devoirs d
     JOIN campus.cours c ON c.id = d.cours_id
     JOIN campus.utilisateurs u ON u.role = 'etudiant'
-      AND (u.classe_id IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = d.cours_id)
-        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = d.cours_id AND i.utilisateur_id = u.id))
-    WHERE ${sql.join(conds, sql` AND `)}`;
+    ${sqlPassageAvant(sql`d.date_limite`)}
+    WHERE ${sql.join(conds, sql` AND `)}
+      AND (${SQL_CLASSE_A} IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = d.cours_id)
+        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = d.cours_id AND i.utilisateur_id = u.id AND i.cree_le < d.date_limite))`;
 }
 
 /**
@@ -870,11 +938,33 @@ function trouverSite(brut: string, refs: SiteRef[]): SiteRef[] {
   return refs.filter((s) => n.includes(normaliser(s.nomCourt)) || n.includes(normaliser(s.slug)));
 }
 
+/** Compte déjà créé par un lot d'import (relance du même lot). */
+type CompteDuLot = { id: number; matricule: string; actif: boolean; doitChanger: boolean };
+
+/**
+ * Comptes déjà créés par ce lot d'import, par matricule. Le lot d'une autre
+ * personne répond 404 (on ne révèle pas qu'il existe).
+ */
+async function comptesDuLot(u: Utilisateur, lotId: string | undefined): Promise<Map<string, CompteDuLot>> {
+  if (!lotId) return new Map();
+  const [lot] = await db.select({ auteurId: lotsImport.auteurId }).from(lotsImport).where(eq(lotsImport.id, lotId));
+  if (!lot) return new Map();
+  if (lot.auteurId !== u.id) throw introuvable("Import");
+  const lignes = await db
+    .select({ id: utilisateurs.id, matricule: utilisateurs.matricule, actif: utilisateurs.actif, doitChanger: utilisateurs.doitChangerMotDePasse })
+    .from(comptesLotsImport)
+    .innerJoin(utilisateurs, eq(utilisateurs.id, comptesLotsImport.utilisateurId))
+    .where(eq(comptesLotsImport.lotId, lotId));
+  return new Map(lignes.filter((l) => l.matricule).map((l) => [l.matricule!, { ...l, matricule: l.matricule! }]));
+}
+
 /**
  * Contrôles communs à l'aperçu et à la validation : doublons dans le lot,
- * matricules et e-mails déjà pris. Modifie les lignes en place.
+ * matricules et e-mails déjà pris. Modifie les lignes en place. Les comptes
+ * déjà créés par ce même lot (relance après une réponse perdue) ne sont pas
+ * des erreurs : ils recevront une nouvelle fiche.
  */
-async function controlerLot(u: Utilisateur, lignes: LigneImport[]) {
+async function controlerLot(u: Utilisateur, lignes: LigneImport[], duLot: Map<string, CompteDuLot> = new Map()) {
   const vus = new Map<string, number>();
   const emailsVus = new Set<string>();
   for (const l of lignes) {
@@ -896,20 +986,43 @@ async function controlerLot(u: Utilisateur, lignes: LigneImport[]) {
       .from(utilisateurs)
       .where(inArray(utilisateurs.matricule, matricules));
     const deja = new Map(existants.map((e) => [e.matricule, e]));
+    // Comptes créés par un de SES imports dont les fiches ne sont jamais arrivées : on dit quoi faire.
+    const nonRecus = new Set(
+      deja.size
+        ? (
+            await db
+              .select({ matricule: utilisateurs.matricule })
+              .from(comptesLotsImport)
+              .innerJoin(lotsImport, eq(lotsImport.id, comptesLotsImport.lotId))
+              .innerJoin(utilisateurs, eq(utilisateurs.id, comptesLotsImport.utilisateurId))
+              .where(and(eq(lotsImport.auteurId, u.id), isNull(lotsImport.remisLe), inArray(utilisateurs.matricule, [...deja.keys()] as string[])))
+          ).map((x) => x.matricule)
+        : [],
+    );
     for (const l of lignes) {
       const e = deja.get(l.matricule);
       if (!e) continue;
+      if (duLot.has(l.matricule)) {
+        l.avertissements.push("Compte déjà créé par cet import (réponse perdue) : sa fiche sera refaite, sans doublon.");
+        continue;
+      }
       // Hors périmètre, on ne dit pas à qui il appartient.
-      l.erreurs.push(peutGerer(u, e) ? `Ce matricule a déjà un compte (${e.prenom} ${e.nom}).` : "Ce matricule a déjà un compte.");
+      l.erreurs.push(
+        !peutGerer(u, e)
+          ? "Ce matricule a déjà un compte."
+          : nonRecus.has(l.matricule)
+            ? `Ce matricule a déjà un compte (${e.prenom} ${e.nom}), créé par un import dont les fiches ne sont pas arrivées : utilisez « Refaire les fiches » en haut de la page d'import.`
+            : `Ce matricule a déjà un compte (${e.prenom} ${e.nom}).`,
+      );
     }
   }
-  const emails = lignes.map((l) => l.email).filter((e): e is string => Boolean(e));
+  const emails = lignes.filter((l) => !duLot.has(l.matricule)).map((l) => l.email).filter((e): e is string => Boolean(e));
   if (emails.length) {
     const pris = new Set(
       (await db.select({ email: utilisateurs.email }).from(utilisateurs).where(inArray(utilisateurs.email, emails))).map((e) => e.email),
     );
     for (const l of lignes) {
-      if (l.email && pris.has(l.email)) {
+      if (l.email && pris.has(l.email) && !duLot.has(l.matricule)) {
         l.avertissements.push("E-mail déjà utilisé par un autre compte : ignoré.");
         l.email = null;
       }
@@ -918,6 +1031,332 @@ async function controlerLot(u: Utilisateur, lignes: LigneImport[]) {
 }
 
 const MAX_LIGNES_IMPORT = 1500;
+
+// ── Codes provisoires : hachage en parallèle ───────────────────────────────
+//
+// bcryptjs calcule en JavaScript, sur le fil principal : ~170 ms par code,
+// soit plus de 4 minutes pour 1 500 étudiants dans une seule requête (et un
+// serveur ralenti pour tout le monde pendant ce temps). Les codes des imports
+// et des fiches sont donc hachés par quelques fils d'exécution
+// (worker_threads), 4 au plus, partagés par toutes les requêtes ; même coût
+// que hacher() (server/auth.ts). Repli sur hacher() si un fil ne démarre pas.
+
+const FILS_HACHAGE = Math.max(1, Math.min(4, os.availableParallelism()));
+const SOURCE_FIL_HACHAGE = `
+const { parentPort, workerData } = require("worker_threads");
+const bcrypt = require(workerData.bcrypt);
+parentPort.on("message", ({ code, cout }) => {
+  try { parentPort.postMessage({ hash: bcrypt.hashSync(code, cout) }); }
+  catch (e) { parentPort.postMessage({ erreur: String((e && e.message) || e) }); }
+});`;
+let coutHachage: Promise<number> | null = null;
+const filsLibres: Worker[] = [];
+const attenteFil: ((w: Worker | null) => void)[] = [];
+let filsCrees = 0;
+let filsEnPanne = false;
+let veilleFils: NodeJS.Timeout | null = null;
+
+/** Coût bcrypt de hacher(), lu sur un de ses hachages (une fois). */
+const coutBcrypt = () => (coutHachage ??= hacher("000000").then((h) => bcrypt.getRounds(h)));
+
+function prendreFil(): Promise<Worker | null> {
+  if (filsEnPanne) return Promise.resolve(null);
+  const libre = filsLibres.pop();
+  if (libre) return Promise.resolve(libre);
+  if (filsCrees >= FILS_HACHAGE) return new Promise((ok) => attenteFil.push(ok));
+  filsCrees++;
+  try {
+    const w = new Worker(SOURCE_FIL_HACHAGE, { eval: true, workerData: { bcrypt: createRequire(import.meta.url).resolve("bcryptjs") } });
+    w.unref();
+    w.on("error", () => undefined); // l'erreur est traitée par la tâche en cours (hacherSurFil)
+    w.once("exit", () => {
+      filsCrees--;
+      const i = filsLibres.indexOf(w);
+      if (i >= 0) filsLibres.splice(i, 1);
+    });
+    return Promise.resolve(w);
+  } catch {
+    filsCrees--;
+    abandonnerFils();
+    return Promise.resolve(null);
+  }
+}
+
+function rendreFil(w: Worker) {
+  const suivant = attenteFil.shift();
+  if (suivant) return suivant(w);
+  filsLibres.push(w);
+  // Fils rendus au système après une minute sans travail.
+  if (veilleFils) clearTimeout(veilleFils);
+  veilleFils = setTimeout(() => {
+    for (const f of filsLibres.splice(0)) void f.terminate();
+  }, 60_000);
+  veilleFils.unref();
+}
+
+/** Plus de fils (module introuvable, mémoire…) : tout le monde hache sur le fil principal. */
+function abandonnerFils() {
+  filsEnPanne = true;
+  for (const f of filsLibres.splice(0)) void f.terminate();
+  for (const attente of attenteFil.splice(0)) attente(null);
+}
+
+function hacherSurFil(w: Worker, code: string, c: number): Promise<string> {
+  return new Promise((ok, ko) => {
+    const finir = () => {
+      w.off("message", surMessage);
+      w.off("error", surErreur);
+      w.off("exit", surSortie);
+    };
+    const surMessage = (m: { hash?: string; erreur?: string }) => (finir(), m.hash ? ok(m.hash) : ko(new Error(m.erreur)));
+    const surErreur = (e: Error) => (finir(), ko(e));
+    const surSortie = () => (finir(), ko(new Error("fil de hachage arrêté")));
+    w.on("message", surMessage);
+    w.on("error", surErreur);
+    w.on("exit", surSortie);
+    w.postMessage({ code, cout: c });
+  });
+}
+
+async function hacherCode(code: string): Promise<string> {
+  const c = await coutBcrypt();
+  const w = await prendreFil();
+  if (!w) return hacher(code);
+  try {
+    const h = await hacherSurFil(w, code, c);
+    rendreFil(w);
+    return h;
+  } catch (e) {
+    console.error("[pilotage] fil de hachage indisponible, repli sur le fil principal :", (e as Error).message);
+    void w.terminate();
+    abandonnerFils();
+    return hacher(code);
+  }
+}
+
+/** Hache une liste de codes, 4 à la fois au plus ; « surCode » est appelé à chaque code haché. */
+function hacherTous(codes: string[], surCode: () => void = () => undefined): Promise<string[]> {
+  return Promise.all(codes.map((c) => hacherCode(c).then((h) => (surCode(), h))));
+}
+
+/** Applique f à chaque élément, n à la fois au plus, en gardant l'ordre des résultats. */
+async function parGroupes<T, R>(elements: T[], n: number, f: (x: T, i: number) => Promise<R>): Promise<R[]> {
+  const resultats = new Array<R>(elements.length);
+  let suivant = 0;
+  const ouvrier = async () => {
+    while (suivant < elements.length) {
+      const i = suivant++;
+      resultats[i] = await f(elements[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, elements.length) }, ouvrier));
+  return resultats;
+}
+
+// ── Travaux longs (import, fiches) : progression et reprise ────────────────
+//
+// Le navigateur choisit l'identifiant du travail (pour un import : le lot) et
+// suit sa progression (GET /api/pilotage/progression/:id). Le travail continue
+// même si la connexion se coupe ; relancé avec le même identifiant, il renvoie
+// le même résultat (mêmes codes) pendant 15 minutes, au lieu de tout refaire.
+
+type Travail = { auteurId: number; etape: EtapeTravail; faits: number; total: number; resultat?: Promise<LotFiches>; finiLe?: number };
+const travaux = new Map<string, Travail>();
+const GARDE_RESULTAT_MS = 15 * 60_000;
+setInterval(() => {
+  const limite = Date.now() - GARDE_RESULTAT_MS;
+  for (const [id, t] of travaux) if (t.finiLe && t.finiLe < limite) travaux.delete(id);
+}, 60_000).unref();
+
+const schemaIdTravail = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "identifiant de suivi invalide");
+
+const etape = (t: Travail | undefined, e: EtapeTravail, total?: number) => {
+  if (!t) return;
+  t.etape = e;
+  t.faits = 0;
+  if (total !== undefined) t.total = total;
+};
+const avancer = (t: Travail | undefined) => () => {
+  if (t) t.faits++;
+};
+
+/**
+ * Lance (ou rejoint) le travail « id » de cette personne : un second appel
+ * pendant le travail, ou juste après, reçoit le même résultat.
+ */
+async function travailUnique(u: Utilisateur, id: string, total: number, faire: (t: Travail) => Promise<LotFiches>): Promise<LotFiches> {
+  const existant = travaux.get(id);
+  if (existant) {
+    if (existant.auteurId !== u.id) throw introuvable("Travail");
+    if (existant.resultat) return existant.resultat;
+  }
+  const t: Travail = { auteurId: u.id, etape: "verification", faits: 0, total };
+  t.resultat = faire(t).then(
+    (r) => {
+      t.etape = "termine";
+      t.finiLe = Date.now();
+      return r;
+    },
+    (e) => {
+      travaux.delete(id); // une erreur (lignes à corriger…) ne se garde pas : on pourra relancer
+      throw e;
+    },
+  );
+  travaux.set(id, t);
+  return t.resultat;
+}
+
+type CompteAFicher = { id: number; prenom: string; nom: string; role: Role; matricule: string | null; email: string | null; classe: string | null; site: string | null };
+
+/**
+ * Nouveau code provisoire et nouveau QR pour chaque compte : mêmes étapes que
+ * reinitialiserCode (server/activation.ts), mais les codes sont hachés en
+ * parallèle et les comptes traités 4 à la fois. Codes déjà hachés possibles.
+ */
+async function remettreCodes(u: Utilisateur, comptes: CompteAFicher[], t?: Travail, prepares?: { code: string; hash: string }[]): Promise<FicheConnexion[]> {
+  let codes = prepares?.map((p) => p.code);
+  let hashs = prepares?.map((p) => p.hash);
+  if (!codes || !hashs) {
+    etape(t, "codes", comptes.length);
+    codes = comptes.map(() => codeProvisoire());
+    hashs = await hacherTous(codes, avancer(t));
+    etape(t, "liens", comptes.length);
+  }
+  const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
+  return parGroupes(comptes, 4, async (c, i) => {
+    await db.update(utilisateurs).set({ motDePasseHash: hashs![i], doitChangerMotDePasse: true, motDePasseExpireLe: expireLe }).where(eq(utilisateurs.id, c.id));
+    // Les anciens jetons d'activation de ce compte deviennent inutilisables.
+    await db
+      .update(reinitialisations)
+      .set({ utiliseLe: new Date() })
+      .where(and(eq(reinitialisations.utilisateurId, c.id), isNull(reinitialisations.utiliseLe)));
+    const jeton = await creerJeton(c.id, "activation");
+    await fermerAutresSessions(c.id);
+    await db.insert(journal).values({ utilisateurId: u.id, action: "nouveau_code", details: { pour: c.id } });
+    oublierUtilisateur(c.id);
+    avancer(t)();
+    return {
+      id: c.id,
+      prenom: c.prenom,
+      nom: c.nom,
+      role: c.role,
+      identifiant: c.matricule ?? c.email ?? "",
+      classe: c.classe,
+      site: c.site,
+      code: codes![i],
+      lien: lienActivation(jeton),
+      expireLe: expireLe.toISOString(),
+    };
+  });
+}
+
+const schemaLigneRecue = z.object({
+  numero: z.number().int().optional(),
+  matricule: schemaMatricule,
+  nom: texteCourt(80),
+  prenom: texteCourt(80),
+  telephone: optionnel(z.string().trim().max(30)),
+  email: optionnel(z.string().trim().toLowerCase().email().max(160)),
+  classeId: z.number().int().positive(),
+});
+
+/**
+ * Crée les comptes d'un lot d'import et leurs fiches. Rejouable : les comptes
+ * déjà créés par ce même lot (réponse perdue, serveur redémarré…) ne sont pas
+ * recréés, ils reçoivent une nouvelle fiche s'ils ne sont pas encore activés.
+ */
+async function importerLot(u: Utilisateur, lotId: string, recues: z.infer<typeof schemaLigneRecue>[], t: Travail): Promise<LotFiches> {
+  // On ne fait jamais confiance à l'aperçu : tout est revérifié ici.
+  const refs = await referencesImport(u);
+  const duLot = await comptesDuLot(u, lotId);
+  const lignes: LigneImport[] = recues.map((r, i) => {
+    const classe = refs.classes.find((c) => c.id === r.classeId);
+    const tel = r.telephone ? normaliserTelephone(r.telephone) : null;
+    return {
+      numero: r.numero ?? i + 2,
+      matricule: r.matricule,
+      nom: espaces(r.nom),
+      prenom: espaces(r.prenom),
+      telephone: tel && tel.length >= 8 && tel.length <= 15 ? tel : null,
+      email: r.email ?? null,
+      classeId: classe?.id ?? null,
+      classe: classe?.nom ?? null,
+      siteId: classe?.siteId ?? null,
+      site: classe?.site ?? null,
+      erreurs: classe ? [] : ["Classe inconnue ou hors de votre périmètre."],
+      avertissements: [],
+    };
+  });
+  await controlerLot(u, lignes, duLot);
+  const enErreur = lignes.filter((l) => l.erreurs.length);
+  if (enErreur.length) {
+    throw new ErreurHttp(
+      409,
+      `${enErreur.length} ligne${enErreur.length > 1 ? "s ont" : " a"} une erreur. Ligne ${enErreur[0].numero} : ${enErreur[0].erreurs[0]} Refaites l'aperçu.`,
+      enErreur.map((l) => ({ numero: l.numero, erreurs: l.erreurs })),
+    );
+  }
+  const nouvelles = lignes.filter((l) => !duLot.has(l.matricule));
+  const reprises = lignes.filter((l) => duLot.has(l.matricule));
+  // Relance : nouvelle fiche pour les comptes du lot, sauf ceux qui ont déjà choisi leur code secret.
+  const aRefaire = reprises.filter((l) => duLot.get(l.matricule)!.actif && duLot.get(l.matricule)!.doitChanger);
+
+  etape(t, "codes", nouvelles.length + aRefaire.length);
+  const codes = [...nouvelles, ...aRefaire].map(() => codeProvisoire());
+  const hashs = await hacherTous(codes, avancer(t));
+
+  etape(t, "enregistrement", nouvelles.length);
+  const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
+  // Comptes et lot dans la même transaction : un lot enregistré a tous ses comptes, ou aucun.
+  const crees = await db.transaction(async (tx) => {
+    await tx.insert(lotsImport).values({ id: lotId, auteurId: u.id }).onConflictDoNothing();
+    if (!nouvelles.length) return [];
+    const ids = await tx
+      .insert(utilisateurs)
+      .values(
+        nouvelles.map((l, i) => ({
+          role: "etudiant" as const,
+          prenom: l.prenom,
+          nom: l.nom,
+          matricule: l.matricule,
+          email: l.email,
+          telephone: l.telephone,
+          motDePasseHash: hashs[i],
+          doitChangerMotDePasse: true,
+          motDePasseExpireLe: expireLe,
+          siteId: l.siteId,
+          classeId: l.classeId,
+        })),
+      )
+      .returning({ id: utilisateurs.id, matricule: utilisateurs.matricule });
+    await tx.insert(comptesLotsImport).values(ids.map((c) => ({ lotId, utilisateurId: c.id })));
+    return ids;
+  });
+
+  etape(t, "liens", nouvelles.length + aRefaire.length);
+  const idDe = new Map(crees.map((c) => [c.matricule, c.id]));
+  const fichesNouvelles = await parGroupes(nouvelles, 4, async (l, i): Promise<FicheConnexion> => {
+    const id = idDe.get(l.matricule)!;
+    const jeton = await creerJeton(id, "activation");
+    avancer(t)();
+    return { id, prenom: l.prenom, nom: l.nom, role: "etudiant", identifiant: l.matricule, classe: l.classe, site: l.site, code: codes[i], lien: lienActivation(jeton), expireLe: expireLe.toISOString() };
+  });
+  const fichesReprises = await remettreCodes(
+    u,
+    aRefaire.map((l) => ({ id: duLot.get(l.matricule)!.id, prenom: l.prenom, nom: l.nom, role: "etudiant", matricule: l.matricule, email: null, classe: l.classe, site: l.site })),
+    t,
+    aRefaire.map((_, i) => ({ code: codes[nouvelles.length + i], hash: hashs[nouvelles.length + i] })),
+  );
+  const parMatricule = new Map([...fichesNouvelles, ...fichesReprises].map((f) => [f.identifiant, f]));
+  await journaliser(u, "import_comptes", { nombre: nouvelles.length, repris: aRefaire.length, lotId, classes: [...new Set(lignes.map((l) => l.classeId))] });
+  return {
+    // Dans l'ordre du tableau collé.
+    fiches: lignes.map((l) => parMatricule.get(l.matricule)).filter((f): f is FicheConnexion => Boolean(f)),
+    ignores: reprises.length - aRefaire.length,
+    lotId,
+    repris: aRefaire.length,
+  };
+}
 
 // ── Relevé parent ──────────────────────────────────────────────────────────
 
@@ -1015,16 +1454,43 @@ export function enregistrerAdmin(app: Express) {
     }),
   );
 
+  // Filtré et paginé ici : avec 1 000 étudiants, la liste entière pèse près d'1 Mo.
   app.get(
     `${P}/a-contacter`,
     EQUIPE,
     route(async (req, res) => {
-      const lignes = await calculerAContacter(moi(req));
+      const f = valider(
+        z.object({
+          raison: z.enum(ORDRE_RAISONS as [TypeRaisonContact, ...TypeRaisonContact[]]).optional(),
+          site: z.coerce.number().int().positive().optional(),
+          q: z.string().trim().max(80).optional(),
+          page: z.coerce.number().int().min(1).default(1),
+          parPage: z.coerce.number().int().min(1).max(100).default(20),
+        }),
+        req.query,
+      );
+      let lignes = await calculerAContacter(moi(req));
+      if (f.site) lignes = lignes.filter((l) => l.etudiant.siteId === f.site);
+      if (f.q) {
+        const q = sansAccents(f.q);
+        lignes = lignes.filter(({ etudiant: e }) =>
+          [`${e.prenom} ${e.nom}`, `${e.nom} ${e.prenom}`, e.matricule ?? ""].some((x) => sansAccents(x).includes(q)),
+        );
+      }
       const parRaison = Object.fromEntries(ORDRE_RAISONS.map((t) => [t, lignes.filter((l) => l.raisons.some((r) => r.type === t)).length])) as Record<
         TypeRaisonContact,
         number
       >;
-      const liste: ListeAContacter = { total: lignes.length, parRaison, lignes };
+      const tous = lignes.length;
+      if (f.raison) lignes = lignes.filter((l) => l.raisons.some((r) => r.type === f.raison));
+      const liste: ListeAContacter = {
+        total: lignes.length,
+        tous,
+        parRaison,
+        lignes: lignes.slice((f.page - 1) * f.parPage, f.page * f.parPage),
+        page: f.page,
+        parPage: f.parPage,
+      };
       res.json(liste);
     }),
   );
@@ -1269,7 +1735,19 @@ export function enregistrerAdmin(app: Express) {
       await verifierUnicite({ matricule: maj.matricule, email: maj.email }, avant.id);
 
       if (!Object.keys(maj).length) return res.json(await compteParId(avant.id));
-      await db.update(utilisateurs).set(maj).where(eq(utilisateurs.id, avant.id));
+      // Arrivée dans une classe (changement de classe, ou compte qui devient étudiant) : notée pour qu'il ne
+      // soit attendu qu'aux séances et devoirs d'après son arrivée, sans perdre ceux de son ancienne classe.
+      const arrivee = role === "etudiant" && maj.classeId !== undefined && (maj.classeId !== avant.classeId || avant.role !== "etudiant");
+      await db.transaction(async (tx) => {
+        await tx.update(utilisateurs).set(maj).where(eq(utilisateurs.id, avant.id));
+        if (!arrivee) return;
+        const [connu] = await tx.select({ id: passagesClasses.id }).from(passagesClasses).where(eq(passagesClasses.utilisateurId, avant.id)).limit(1);
+        // Premier passage noté : d'abord d'où il vient (sa classe depuis la création du compte).
+        if (!connu) {
+          await tx.insert(passagesClasses).values({ utilisateurId: avant.id, classeId: avant.role === "etudiant" ? avant.classeId : null, depuis: avant.creeLe });
+        }
+        await tx.insert(passagesClasses).values({ utilisateurId: avant.id, classeId: maj.classeId ?? null, depuis: new Date() });
+      });
       oublierUtilisateur(avant.id);
       if (maj.actif === false) await fermerAutresSessions(avant.id);
       const action = maj.actif === false ? "compte_desactive" : maj.actif === true ? "compte_reactive" : maj.role ? "role_change" : "compte_modifie";
@@ -1300,10 +1778,12 @@ export function enregistrerAdmin(app: Express) {
     EQUIPE,
     route(async (req, res) => {
       const u = moi(req);
-      const { texte, classeId: classeParDefaut } = valider(
+      const { texte, classeId: classeParDefaut, lotId } = valider(
         z.object({
           texte: z.string().max(600_000, "texte trop long : importez par morceaux de 1 500 lignes"),
           classeId: z.number().int().positive().nullable().optional(),
+          /** Lot en cours dans le navigateur : ses comptes déjà créés ne sont pas des erreurs. */
+          lotId: schemaIdTravail.optional(),
         }),
         req.body,
       );
@@ -1403,7 +1883,7 @@ export function enregistrerAdmin(app: Express) {
         lignes.push(l);
       }
       if (!lignes.length) throw invalide("Aucune ligne sous les en-têtes : collez aussi les étudiants.");
-      await controlerLot(u, lignes);
+      await controlerLot(u, lignes, await comptesDuLot(u, lotId));
 
       const apercu: ApercuImport = {
         separateur: sep === "\t" ? "tabulation" : sep === ";" ? "point-virgule" : "virgule",
@@ -1416,105 +1896,100 @@ export function enregistrerAdmin(app: Express) {
     }),
   );
 
+  // Rejouable : le navigateur envoie l'identifiant de son lot. Si la réponse se perd (4G), relancer le même lot
+  // renvoie les mêmes fiches (15 min) ou refait celles des comptes déjà créés, jamais « matricule déjà inscrit ».
   app.post(
     `${P}/import/valider`,
     EQUIPE,
     route(async (req, res) => {
       const u = moi(req);
-      const { lignes: recues } = valider(
+      const { lignes: recues, lotId: lotDemande } = valider(
         z.object({
-          lignes: z
-            .array(
-              z.object({
-                numero: z.number().int().optional(),
-                matricule: schemaMatricule,
-                nom: texteCourt(80),
-                prenom: texteCourt(80),
-                telephone: optionnel(z.string().trim().max(30)),
-                email: optionnel(z.string().trim().toLowerCase().email().max(160)),
-                classeId: z.number().int().positive(),
-              }),
-            )
-            .min(1, "aucune ligne à créer")
-            .max(MAX_LIGNES_IMPORT),
+          lotId: schemaIdTravail.optional(),
+          lignes: z.array(schemaLigneRecue).min(1, "aucune ligne à créer").max(MAX_LIGNES_IMPORT),
         }),
         req.body,
       );
-      // On ne fait jamais confiance à l'aperçu : tout est revérifié ici.
-      const refs = await referencesImport(u);
-      const lignes: LigneImport[] = recues.map((r, i) => {
-        const classe = refs.classes.find((c) => c.id === r.classeId);
-        const tel = r.telephone ? normaliserTelephone(r.telephone) : null;
-        return {
-          numero: r.numero ?? i + 2,
-          matricule: r.matricule,
-          nom: espaces(r.nom),
-          prenom: espaces(r.prenom),
-          telephone: tel && tel.length >= 8 && tel.length <= 15 ? tel : null,
-          email: r.email ?? null,
-          classeId: classe?.id ?? null,
-          classe: classe?.nom ?? null,
-          siteId: classe?.siteId ?? null,
-          site: classe?.site ?? null,
-          erreurs: classe ? [] : ["Classe inconnue ou hors de votre périmètre."],
-          avertissements: [],
-        };
-      });
-      await controlerLot(u, lignes);
-      const enErreur = lignes.filter((l) => l.erreurs.length);
-      if (enErreur.length) {
-        throw new ErreurHttp(
-          409,
-          `${enErreur.length} ligne${enErreur.length > 1 ? "s ont" : " a"} une erreur. Ligne ${enErreur[0].numero} : ${enErreur[0].erreurs[0]} Refaites l'aperçu.`,
-          enErreur.map((l) => ({ numero: l.numero, erreurs: l.erreurs })),
-        );
-      }
-
-      const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
-      const codes = lignes.map(() => codeProvisoire());
-      const hashs: string[] = [];
-      for (const c of codes) hashs.push(await hacher(c));
-      const crees = await db.transaction(async (tx) =>
-        tx
-          .insert(utilisateurs)
-          .values(
-            lignes.map((l, i) => ({
-              role: "etudiant" as const,
-              prenom: l.prenom,
-              nom: l.nom,
-              matricule: l.matricule,
-              email: l.email,
-              telephone: l.telephone,
-              motDePasseHash: hashs[i],
-              doitChangerMotDePasse: true,
-              motDePasseExpireLe: expireLe,
-              siteId: l.siteId,
-              classeId: l.classeId,
-            })),
-          )
-          .returning({ id: utilisateurs.id, matricule: utilisateurs.matricule }),
-      );
-      const idDe = new Map(crees.map((c) => [c.matricule, c.id]));
-      const fiches: FicheConnexion[] = [];
-      for (const [i, l] of lignes.entries()) {
-        const id = idDe.get(l.matricule)!;
-        const jeton = await creerJeton(id, "activation");
-        fiches.push({
-          id,
-          prenom: l.prenom,
-          nom: l.nom,
-          role: "etudiant",
-          identifiant: l.matricule,
-          classe: l.classe,
-          site: l.site,
-          code: codes[i],
-          lien: lienActivation(jeton),
-          expireLe: expireLe.toISOString(),
-        });
-      }
-      await journaliser(u, "import_comptes", { nombre: fiches.length, classes: [...new Set(lignes.map((l) => l.classeId))] });
-      const lot: LotFiches = { fiches, ignores: 0 };
+      // Sans identifiant (ancienne page encore ouverte) : lot à usage unique.
+      const lotId = lotDemande ?? crypto.randomUUID();
+      const lot = await travailUnique(u, lotId, recues.length, (t) => importerLot(u, lotId, recues, t));
       res.status(201).json(lot);
+    }),
+  );
+
+  // Progression d'un import ou d'une préparation de fiches (identifiant choisi par le navigateur).
+  app.get(
+    `${P}/progression/:id([A-Za-z0-9_-]{8,64})`,
+    EQUIPE,
+    route(async (req, res) => {
+      const t = travaux.get(String(req.params.id));
+      if (!t || t.auteurId !== moi(req).id) throw introuvable("Travail");
+      const p: ProgressionTravail = { etape: t.etape, faits: t.faits, total: t.total, fini: Boolean(t.finiLe) };
+      res.json(p);
+    }),
+  );
+
+  // Imports de la personne dont les fiches ne sont jamais arrivées au navigateur (réponse perdue, page fermée).
+  app.get(
+    `${P}/import/lots`,
+    EQUIPE,
+    route(async (req, res) => {
+      const u = moi(req);
+      const r = await db.execute<{ id: string; cree_le: Date; comptes: number; non_actives: number }>(sql`
+        SELECT l.id, l.cree_le, count(*)::int AS comptes,
+          count(*) FILTER (WHERE e.actif AND e.doit_changer_mot_de_passe)::int AS non_actives
+        FROM campus.lots_import l
+        JOIN campus.comptes_lots_import c ON c.lot_id = l.id
+        JOIN campus.utilisateurs e ON e.id = c.utilisateur_id
+        WHERE l.auteur_id = ${u.id} AND l.remis_le IS NULL AND l.cree_le > now() - interval '30 days'
+        GROUP BY l.id, l.cree_le
+        ORDER BY l.cree_le DESC
+        LIMIT 10`);
+      const liste: LotImportEnAttente[] = r.rows
+        // Un lot encore en cours de création n'est pas « perdu ».
+        .filter((l) => l.non_actives > 0 && !(travaux.get(l.id) && !travaux.get(l.id)!.finiLe))
+        .map((l) => ({ id: l.id, creeLe: iso(l.cree_le)!, comptes: l.comptes, nonActives: l.non_actives }));
+      res.json(liste);
+    }),
+  );
+
+  // « Refaire les fiches » d'un lot : les mêmes si l'import vient de finir, sinon de nouveaux codes pour ses
+  // comptes pas encore activés (les fiches perdues n'ont été vues par personne).
+  app.post(
+    `${P}/import/lots/:lot([A-Za-z0-9_-]{8,64})/fiches`,
+    EQUIPE,
+    route(async (req, res) => {
+      const u = moi(req);
+      const lotId = String(req.params.lot);
+      const enCours = travaux.get(lotId);
+      if (enCours?.resultat && enCours.auteurId === u.id) return res.json(await enCours.resultat);
+      const [lot] = await db.select().from(lotsImport).where(eq(lotsImport.id, lotId));
+      if (!lot || lot.auteurId !== u.id) throw introuvable("Import");
+      const resultat = await travailUnique(u, lotId, 0, async (t) => {
+        const duLot = await selectionComptes()
+          .innerJoin(comptesLotsImport, eq(comptesLotsImport.utilisateurId, utilisateurs.id))
+          .where(eq(comptesLotsImport.lotId, lotId));
+        const aRefaire = duLot.filter((c) => c.actif && c.doitChanger && peutGerer(u, { role: c.role, siteId: c.siteId }));
+        const fiches = await remettreCodes(u, aRefaire, t);
+        fiches.sort((a, b) => (a.classe ?? "").localeCompare(b.classe ?? "") || a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
+        await journaliser(u, "fiches_imprimees", { nombre: fiches.length, lotId });
+        return { fiches, ignores: duLot.length - fiches.length, lotId };
+      });
+      res.json(resultat);
+    }),
+  );
+
+  // Les fiches du lot sont bien arrivées : il ne figure plus parmi les imports à reprendre.
+  app.post(
+    `${P}/import/lots/:lot([A-Za-z0-9_-]{8,64})/remis`,
+    EQUIPE,
+    route(async (req, res) => {
+      const u = moi(req);
+      await db
+        .update(lotsImport)
+        .set({ remisLe: new Date() })
+        .where(and(eq(lotsImport.id, String(req.params.lot)), eq(lotsImport.auteurId, u.id), isNull(lotsImport.remisLe)));
+      res.json({ ok: true });
     }),
   );
 
@@ -1525,31 +2000,21 @@ export function enregistrerAdmin(app: Express) {
     EQUIPE,
     route(async (req, res) => {
       const u = moi(req);
-      const { utilisateurIds } = valider(z.object({ utilisateurIds: z.array(z.number().int().positive()).min(1, "aucun compte choisi").max(400) }), req.body);
+      const { utilisateurIds, suivi } = valider(
+        z.object({ utilisateurIds: z.array(z.number().int().positive()).min(1, "aucun compte choisi").max(400), suivi: schemaIdTravail.optional() }),
+        req.body,
+      );
       const demandes = [...new Set(utilisateurIds)];
-      const trouves = await selectionComptes().where(and(inArray(utilisateurs.id, demandes), eq(utilisateurs.actif, true), comptesVisibles(u)));
-      const gerables = trouves.filter((c) => c.id !== u.id && peutGerer(u, { role: c.role, siteId: c.siteId }));
-      const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
-      const fiches: FicheConnexion[] = [];
-      for (const c of gerables) {
-        const { code, lien } = await reinitialiserCode(c.id, u.id);
-        fiches.push({
-          id: c.id,
-          prenom: c.prenom,
-          nom: c.nom,
-          role: c.role,
-          identifiant: c.matricule ?? c.email ?? "",
-          classe: c.classe,
-          site: c.site,
-          code,
-          lien,
-          expireLe: expireLe.toISOString(),
-        });
-      }
-      fiches.sort((a, b) => (a.classe ?? "").localeCompare(b.classe ?? "") || a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
-      await journaliser(u, "fiches_imprimees", { nombre: fiches.length });
-      const lot: LotFiches = { fiches, ignores: demandes.length - fiches.length };
-      res.json(lot);
+      const preparer = async (t?: Travail): Promise<LotFiches> => {
+        const trouves = await selectionComptes().where(and(inArray(utilisateurs.id, demandes), eq(utilisateurs.actif, true), comptesVisibles(u)));
+        const gerables = trouves.filter((c) => c.id !== u.id && peutGerer(u, { role: c.role, siteId: c.siteId }));
+        const fiches = await remettreCodes(u, gerables, t);
+        fiches.sort((a, b) => (a.classe ?? "").localeCompare(b.classe ?? "") || a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
+        await journaliser(u, "fiches_imprimees", { nombre: fiches.length });
+        return { fiches, ignores: demandes.length - fiches.length };
+      };
+      // Avec un identifiant de suivi : progression visible, et une relance renvoie les mêmes fiches.
+      res.json(suivi ? await travailUnique(u, suivi, demandes.length, preparer) : await preparer());
     }),
   );
 
@@ -1826,7 +2291,7 @@ export function enregistrerAdmin(app: Express) {
       SELECT a.*, e.prenom, e.nom, e.matricule, cl.nom AS classe, st.nom_court AS site, st.ordre AS site_ordre
       FROM (${sqlAttendus({ seanceId, sites: p, inclureAVenir: true })}) a
       JOIN campus.utilisateurs e ON e.id = a.uid
-      LEFT JOIN campus.classes cl ON cl.id = e.classe_id
+      LEFT JOIN campus.classes cl ON cl.id = a.classe_id
       LEFT JOIN campus.sites st ON st.id = a.site_id
       ORDER BY st.ordre NULLS LAST, e.nom, e.prenom`);
     return r.rows;
@@ -1843,8 +2308,7 @@ export function enregistrerAdmin(app: Express) {
       const effectifs = await db.select().from(effectifsSalles).where(eq(effectifsSalles.seanceId, s.id));
       const listeSites = await db.select().from(sites).where(surSites(sites.id, p)).orderBy(asc(sites.ordre));
 
-      const reelle = s.demarreeLe && s.termineeLe ? (s.termineeLe.getTime() - s.demarreeLe.getTime()) / 60_000 : s.dureeMinutes;
-      const dureeReference = Math.max(1, Math.round(Math.min(s.dureeMinutes, reelle)));
+      const duree = dureeReference(s);
       const parSite = new Map<number | null, typeof lignes>();
       for (const l of lignes) parSite.set(l.site_id, [...(parSite.get(l.site_id) ?? []), l]);
       // Les campus sans étudiant attendu mais avec une salle déclarée apparaissent aussi.
@@ -1892,9 +2356,12 @@ export function enregistrerAdmin(app: Express) {
           statut: s.statut,
           formateur: formateurPrenom ? `${formateurPrenom} ${formateurNom}` : null,
         },
-        dureeReference,
+        dureeReference: duree,
         seuil: SEUIL_PRESENCE_EN_LIGNE,
-        aVenir: s.debut.getTime() > Date.now(),
+        seuilMinutes: seuilMinutes(duree),
+        aVenir: !s.demarreeLe && s.debut.getTime() > Date.now(),
+        // Heure passée sans démarrage (terminée d'office par le live) : pas d'absents à cette séance.
+        nonTenue: !s.demarreeLe && s.debut.getTime() <= Date.now() && s.statut !== "en_direct",
         total: resumeDe(lignes),
         campus,
       };
@@ -1908,6 +2375,7 @@ export function enregistrerAdmin(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { s, code } = await seanceGeree(u, idParam(req));
+      if (!s.demarreeLe) throw invalide(s.debut.getTime() > Date.now() ? "Cette séance n'a pas encore eu lieu." : "Cette séance n'a jamais démarré : pas de feuille de présence.");
       const lignes = await presencesDeSeance(u, s.id);
       const heureAbidjan = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" });
       const cellule = (v: string | number | null) => {
@@ -1991,7 +2459,9 @@ export function enregistrerAdmin(app: Express) {
       );
       const e = await etudiantGere(u, d.etudiantId);
       const { s } = await seanceGeree(u, d.seanceId);
-      if (s.debut.getTime() > Date.now()) throw invalide("Cette séance n'a pas encore eu lieu.");
+      if (!s.demarreeLe) {
+        throw invalide(s.debut.getTime() > Date.now() ? "Cette séance n'a pas encore eu lieu." : "Cette séance n'a jamais démarré : personne n'y est compté absent.");
+      }
       const [attendu] = await db.execute<LigneAttendu>(sqlAttendus({ seanceId: s.id, etudiantId: e.id, sites: null, inclureEnCours: true })).then((r) => r.rows);
       if (!attendu) throw invalide("Cet étudiant n'était pas attendu à cette séance.");
       await db

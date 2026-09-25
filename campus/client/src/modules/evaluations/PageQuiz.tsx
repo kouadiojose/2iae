@@ -243,42 +243,55 @@ function Passage({ enCours, onFin }: { enCours: QuizEnCours; onFin: (r: Resultat
     }
   }, [reponses, enAttente, tentative.id]);
 
-  const envoyerReponse = useCallback(
-    async (questionId: number, reponse: (number | string)[]) => {
-      setEnvoiEnCours((s) => new Set(s).add(questionId));
-      try {
-        await put(`/api/quiz/tentatives/${tentative.id}/reponse`, { questionId, reponse });
-        setEnAttente((s) => {
-          const n = new Set(s);
-          n.delete(questionId);
-          return n;
-        });
-        return true;
-      } catch (e) {
-        if (e instanceof ErreurApi && e.statut === 409) {
-          // Temps écoulé : le serveur a terminé l'interrogation avec les réponses reçues.
-          void terminer(true);
-          return false;
-        }
-        setEnAttente((s) => new Set(s).add(questionId));
-        return false;
-      } finally {
-        setEnvoiEnCours((s) => {
-          const n = new Set(s);
-          n.delete(questionId);
-          return n;
-        });
-      }
-    },
-    // terminer() ne dépend que de références stables (tentative, onFin, refs).
-    [tentative.id],
-  );
-
-  // Réponses restées sur le téléphone : on réessaie régulièrement et au retour du réseau.
+  // Réponses restées sur le téléphone : tenues à jour tout de suite (ref), pas seulement au prochain rendu,
+  // pour que « terminer » voie aussi une réponse touchée à la dernière seconde.
   const reponsesRef = useRef(reponses);
   reponsesRef.current = reponses;
   const attenteRef = useRef(enAttente);
   attenteRef.current = enAttente;
+  const marquerEnAttente = useCallback((questionId: number, oui: boolean) => {
+    const n = new Set(attenteRef.current);
+    if (oui) n.add(questionId);
+    else n.delete(questionId);
+    attenteRef.current = n;
+    setEnAttente(n);
+  }, []);
+  // Envois de réponse en cours : « terminer » les attend avant de partir.
+  const envoisRef = useRef(new Set<Promise<boolean>>());
+
+  const envoyerReponse = useCallback(
+    (questionId: number, reponse: (number | string)[]) => {
+      const envoi = (async () => {
+        setEnvoiEnCours((s) => new Set(s).add(questionId));
+        try {
+          await put(`/api/quiz/tentatives/${tentative.id}/reponse`, { questionId, reponse });
+          marquerEnAttente(questionId, false);
+          return true;
+        } catch (e) {
+          if (e instanceof ErreurApi && e.statut === 409) {
+            // Temps écoulé : le serveur a terminé l'interrogation avec les réponses reçues.
+            void terminer(true);
+            return false;
+          }
+          marquerEnAttente(questionId, true);
+          return false;
+        } finally {
+          setEnvoiEnCours((s) => {
+            const n = new Set(s);
+            n.delete(questionId);
+            return n;
+          });
+        }
+      })();
+      envoisRef.current.add(envoi);
+      void envoi.finally(() => envoisRef.current.delete(envoi));
+      return envoi;
+    },
+    // terminer() ne dépend que de références stables (tentative, onFin, refs).
+    [tentative.id, marquerEnAttente],
+  );
+
+  // Réponses restées sur le téléphone : on réessaie régulièrement et au retour du réseau.
   const vider = useCallback(async () => {
     for (const qid of [...attenteRef.current]) {
       const r = reponsesRef.current[String(qid)];
@@ -302,7 +315,10 @@ function Passage({ enCours, onFin }: { enCours: QuizEnCours; onFin: (r: Resultat
     setFinEnCours(true);
     setErreurFin(null);
     try {
-      if (!horsDelai) await vider();
+      // Toujours, même à la fin du chrono : les réponses en cours d'envoi, puis celles restées sur le
+      // téléphone, partent AVANT « terminer » (le serveur les accepte encore pendant la marge de 2 min).
+      await Promise.allSettled([...envoisRef.current]);
+      await vider();
       const r = await post<ResultatQuiz>(`/api/quiz/tentatives/${tentative.id}/terminer`);
       try {
         localStorage.removeItem(cleLocale(tentative.id));
@@ -343,7 +359,8 @@ function Passage({ enCours, onFin }: { enCours: QuizEnCours; onFin: (r: Resultat
       nouvelle = String(valeur).trim() ? [String(valeur)] : [];
     } else nouvelle = [Number(valeur)];
     setReponses((r) => ({ ...r, [String(question.id)]: nouvelle }));
-    setEnAttente((s) => new Set(s).add(question.id));
+    reponsesRef.current = { ...reponsesRef.current, [String(question.id)]: nouvelle };
+    marquerEnAttente(question.id, true);
     void envoyerReponse(question.id, nouvelle);
   }
 

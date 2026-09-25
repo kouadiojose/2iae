@@ -3,14 +3,13 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient, rafraichir } from "@/lib/queryClient";
-import { useCanal, useFluxConnecte, type EvenementFlux } from "@/lib/flux";
-import { get } from "@/lib/api";
+import { useCanal, useFluxConnecte, useTousEvenements, type EvenementFlux } from "@/lib/flux";
 import type {
   EtatDirectDto,
   QuestionDirectDto,
   SeanceDetailDto,
   ModeSuivi,
-  MainDirectDto,
+  EvenementMainsDto,
   StatutPresence,
   FournisseurVisio,
   StatutSeance,
@@ -204,14 +203,19 @@ export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenemen
   useCanal(`seance:${seanceId}`, (e) => {
     queryClient.setQueryData<EtatDirectDto>(cle, (etat) => (etat ? appliquer(etat, e, privilegie) : etat));
     // Le formateur reçoit la file nominative et les auteurs réels par un appel dédié.
+    // Les étudiants et les salles ne relisent rien sur « mains » : l'état de leur
+    // main leur arrive sur leur canal personnel (« live:mains »).
     if (privilegie && (e.type === "mains" || e.type === "question" || e.type === "question:signalee")) relireBientot();
-    if (e.type === "mains" && !privilegie) {
-      void get<MainDirectDto[]>(`/api/seances/${seanceId}/mains`).then((mains) =>
-        queryClient.setQueryData<EtatDirectDto>(cle, (etat) => (etat ? { ...etat, mains } : etat)),
-      );
-    }
     if (e.type === "statut" || e.type === "seance" || e.type === "planb" || e.type === "fiche") void rafraichir(`/api/seances/${seanceId}`);
     surEvenement?.(e);
+  });
+
+  // Ma main (étudiant) ou celle de ma salle (écran de salle), envoyée à moi seul.
+  useTousEvenements((e) => {
+    if (e.type !== "live:mains" || privilegie) return;
+    const d = e.data as EvenementMainsDto;
+    if (d?.seanceId !== seanceId) return;
+    queryClient.setQueryData<EtatDirectDto>(cle, (etat) => (etat ? { ...etat, mains: d.mains } : etat));
   });
 
   // Reconnexion du temps réel : on relit tout.

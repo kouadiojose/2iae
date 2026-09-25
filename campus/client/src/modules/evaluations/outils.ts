@@ -142,3 +142,65 @@ export function effacerBrouillon(utilisateurId: number, devoirId: number) {
   ecrireTexteBrouillon(utilisateurId, devoirId, "");
   void ecrirePagesBrouillon(utilisateurId, devoirId, []);
 }
+
+// ── Brouillon d'une copie partie dans la file d'envoi ──────────────────────
+// Hors ligne, la copie attend dans la file d'envoi (lib/file-envoi) : son
+// brouillon reste sur le téléphone jusqu'au reçu, pour ne rien perdre si
+// l'envoi est finalement refusé (date limite passée entre-temps, copie déjà
+// corrigée…). Le lien « clé d'envoi → brouillon » est gardé dans
+// localStorage, il survit à la fermeture du campus ; l'écoute, branchée dès
+// le démarrage (routes.tsx), efface le brouillon quand « campus:envoi-reussi »
+// arrive pour cette clé, et l'oublie (brouillon gardé) sur « campus:envoi-refuse ».
+
+const CLE_ENVOIS = "campus:brouillons-en-envoi";
+type BrouillonEnEnvoi = { utilisateurId: number; devoirId: number };
+
+function lireEnvois(): Record<string, BrouillonEnEnvoi> {
+  try {
+    return JSON.parse(localStorage.getItem(CLE_ENVOIS) ?? "{}") ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function ecrireEnvois(envois: Record<string, BrouillonEnEnvoi>) {
+  try {
+    if (Object.keys(envois).length) localStorage.setItem(CLE_ENVOIS, JSON.stringify(envois));
+    else localStorage.removeItem(CLE_ENVOIS);
+  } catch {
+    /* stockage indisponible : le brouillon reste simplement sur le téléphone */
+  }
+}
+
+/** Le brouillon de ce devoir sera effacé à l'arrivée du reçu de l'envoi « cle » (et gardé s'il est refusé). */
+export function effacerBrouillonAuRecu(cle: string, utilisateurId: number, devoirId: number) {
+  ecrireEnvois({ ...lireEnvois(), [cle]: { utilisateurId, devoirId } });
+}
+
+/** Oublie le lien d'un envoi (parti tout de suite, ou refusé) : le brouillon n'est plus effacé par lui. */
+export function oublierEnvoi(cle: string) {
+  const envois = lireEnvois();
+  if (!envois[cle]) return;
+  delete envois[cle];
+  ecrireEnvois(envois);
+}
+
+let envoisSuivis = false;
+
+/** Branche une fois pour toutes l'écoute des envois de copies (appelée au démarrage du campus). */
+export function suivreEnvoisDeCopies() {
+  if (envoisSuivis || typeof window === "undefined") return;
+  envoisSuivis = true;
+  const cleDe = (e: Event) => (e as CustomEvent<{ cle?: string }>).detail?.cle;
+  window.addEventListener("campus:envoi-reussi", (e) => {
+    const cle = cleDe(e);
+    const envoi = cle ? lireEnvois()[cle] : undefined;
+    if (!cle || !envoi) return;
+    effacerBrouillon(envoi.utilisateurId, envoi.devoirId);
+    oublierEnvoi(cle);
+  });
+  window.addEventListener("campus:envoi-refuse", (e) => {
+    const cle = cleDe(e);
+    if (cle) oublierEnvoi(cle);
+  });
+}

@@ -71,6 +71,11 @@ export default function PageEmargement({ code: codeUrl }: { code: string }) {
               <br />
               <span className="font-semibold text-encre">{etat.r.titre}</span>
             </p>
+            {etat.r.horsCampus && (
+              <p className="rounded-2xl bg-alerte-clair px-4 py-3 text-[15px] font-semibold text-encre" role="status">
+                Ce n'est pas la salle de ton campus{etat.r.monSite ? ` (${etat.r.monSite})` : ""} : ta présence est enregistrée à {etat.r.site}, et la vie scolaire en est informée.
+              </p>
+            )}
             <p className="rounded-2xl bg-creme px-4 py-3 text-[15px] text-texte-doux">
               {moi.prenom}, garde le son coupé sur ton téléphone : le cours passe par l'écran de la salle.
             </p>

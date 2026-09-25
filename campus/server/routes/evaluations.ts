@@ -13,7 +13,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import fs from "fs";
 import path from "path";
 import { z } from "zod";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
 import { estEquipe, exigerConnexion, exigerRole, moi, perimetreSites } from "../auth";
@@ -28,6 +28,8 @@ import {
   MARGE_QUIZ_MS,
   recuPour,
   corrigerTentative,
+  echeance,
+  finEcheance,
   finPrevuePour,
   finDe,
   terminerTentative,
@@ -225,13 +227,28 @@ function statutEtudiant(d: Devoir, r: RenduLeger | undefined, quizEnCours: boole
   if (r?.statut === "corrige") return "corrige";
   if (r?.statut === "rendu") return r.vuLe ? "vu" : "rendu";
   if (d.type === "quiz" && quizEnCours) return "en_cours";
-  if (maintenant.getTime() > d.dateLimite.getTime()) return d.type === "depot" && d.accepteRetard ? "en_retard" : "manque";
+  if (maintenant.getTime() > echeance(d).getTime()) return d.type === "depot" && d.accepteRetard ? "en_retard" : "manque";
   return "a_rendre";
 }
 
-const compteursVides = (): CompteursCopies => ({ inscrits: 0, rendus: 0, enRetard: 0, aCorriger: 0, corrigees: 0, publiees: 0 });
+/**
+ * La note posée vaut pour la copie ACTUELLE : elle a été enregistrée après
+ * l'arrivée de cette copie. Remplacer une copie efface sa correction
+ * (enregistrerRendu) ; cette règle, commune aux compteurs, à la liste des
+ * copies, au carnet et à « Publier les notes », empêche en plus qu'une note
+ * antérieure à la copie soit comptée « à publier » ou publiée.
+ */
+const correctionAJour = (r: Pick<Rendu, "note" | "corrigeLe" | "renduLe">) =>
+  r.note !== null && r.corrigeLe !== null && (!r.renduLe || r.corrigeLe.getTime() >= r.renduLe.getTime());
+const correctionAJourSql = and(isNotNull(rendus.note), isNotNull(rendus.corrigeLe), or(isNull(rendus.renduLe), gte(rendus.corrigeLe, rendus.renduLe)))!;
 
-/** Compteurs de copies par devoir, limités aux étudiants que la personne peut voir. */
+const compteursVides = (): CompteursCopies => ({ inscrits: 0, rendus: 0, enRetard: 0, aCorriger: 0, aPublier: 0, publiees: 0 });
+
+/**
+ * Compteurs de copies par devoir, limités aux étudiants que la personne peut
+ * voir : « à corriger » (rendues, sans note), « à publier » (notées, pas
+ * encore publiées), « publiées ».
+ */
 async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<number, CompteursCopies>> {
   const resultat = new Map<number, CompteursCopies>();
   if (!liste.length) return resultat;
@@ -240,7 +257,15 @@ async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<numbe
     inscritsParCours.set(coursId, new Set((await inscritsVisibles(u, coursId)).map((e) => e.id)));
   }
   const lignes = await db
-    .select({ devoirId: rendus.devoirId, etudiantId: rendus.etudiantId, statut: rendus.statut, enRetard: rendus.enRetard, note: rendus.note })
+    .select({
+      devoirId: rendus.devoirId,
+      etudiantId: rendus.etudiantId,
+      statut: rendus.statut,
+      enRetard: rendus.enRetard,
+      note: rendus.note,
+      corrigeLe: rendus.corrigeLe,
+      renduLe: rendus.renduLe,
+    })
     .from(rendus)
     .where(and(inArray(rendus.devoirId, liste.map((d) => d.id)), ne(rendus.statut, "brouillon")));
   const coursDe = new Map(liste.map((d) => [d.id, d.coursId]));
@@ -252,7 +277,7 @@ async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<numbe
     c.rendus++;
     if (l.enRetard) c.enRetard++;
     if (l.statut === "corrige") c.publiees++;
-    else if (l.note !== null) c.corrigees++;
+    else if (correctionAJour(l)) c.aPublier++;
     else c.aCorriger++;
   }
   return resultat;
@@ -266,7 +291,8 @@ const baseResume = (d: Devoir, c: Pick<Cours, "code" | "titre" | "couleur">) => 
   coursCode: c.code,
   coursTitre: c.titre,
   couleur: c.couleur,
-  dateLimite: d.dateLimite.toISOString(),
+  // Échéance effective (« avant 23h59 » court jusqu'à 23:59:59.999) : le téléphone compte comme le serveur.
+  dateLimite: echeance(d).toISOString(),
   ouvertureLe: iso(d.ouvertureLe),
   bareme: d.bareme,
   coefficient: d.coefficient,
@@ -335,7 +361,7 @@ async function listeEnseignant(u: Utilisateur, coursIds: number[]): Promise<Devo
 /** « Nouveau devoir » aux inscrits, une seule fois, dès que le devoir est publié et ouvert. */
 async function annoncerSiOuvert(d: Devoir, c: Pick<Cours, "code">) {
   const maintenant = new Date();
-  if (!d.publie || !ouvert(d, maintenant) || d.dateLimite.getTime() <= maintenant.getTime()) return;
+  if (!d.publie || !ouvert(d, maintenant) || echeance(d).getTime() <= maintenant.getTime()) return;
   const [reserve] = await db
     .insert(rappelsDevoirs)
     .values({ devoirId: d.id, type: "ouverture", echeance: d.dateLimite })
@@ -405,7 +431,8 @@ export async function envoyerRappelsDevoirs(maintenant = new Date()): Promise<{ 
       .onConflictDoUpdate({
         target: [rappelsDevoirs.devoirId, rappelsDevoirs.type],
         set: { echeance: d.dateLimite, envoyeLe: maintenant },
-        setWhere: sql`${rappelsDevoirs.echeance} <> ${d.dateLimite}`,
+        // Comparées à la minute : 23:59:00 réenregistrée en 23:59:59.999 (finEcheance) n'est pas une nouvelle échéance.
+        setWhere: sql`date_trunc('minute', ${rappelsDevoirs.echeance}) <> date_trunc('minute', ${d.dateLimite}::timestamptz)`,
       })
       .returning();
     if (!reserve) continue;
@@ -529,7 +556,7 @@ const questionsDe = (devoirId: number) =>
   db.select().from(questionsQuiz).where(eq(questionsQuiz.devoirId, devoirId)).orderBy(asc(questionsQuiz.ordre), asc(questionsQuiz.id));
 
 /** La correction détaillée d'une interrogation est-elle visible maintenant ? */
-const correctionOuverte = (d: Devoir, maintenant = new Date()) => d.correctionVisible && maintenant.getTime() > d.dateLimite.getTime();
+const correctionOuverte = (d: Devoir, maintenant = new Date()) => d.correctionVisible && maintenant.getTime() > echeance(d).getTime();
 
 // ── Détails ────────────────────────────────────────────────────────────────
 
@@ -565,13 +592,13 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
       enCours: enCours ? { id: enCours.id, finPrevueLe: iso(finDe(enCours, d)) } : null,
       meilleureNote: meilleure?.note ?? null,
       correction: meilleure && correctionOuverte(d, maintenant) ? corrigerTentative(questions, meilleure.reponses, d.bareme).detail : null,
-      correctionLe: d.correctionVisible ? d.dateLimite.toISOString() : null,
+      correctionLe: d.correctionVisible ? echeance(d).toISOString() : null,
     };
   }
 
   const [rAJour] = d.type === "quiz" ? await db.select().from(rendus).where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, u.id))) : [r];
   const statut = statutEtudiant(d, rAJour, quizEnCours, maintenant);
-  const avantEcheance = maintenant.getTime() <= d.dateLimite.getTime();
+  const avantEcheance = maintenant.getTime() <= echeance(d).getTime();
   const peutRendre =
     d.type === "depot" && ouvert(d, maintenant) && rAJour?.statut !== "corrige" && (avantEcheance || (d.accepteRetard && rAJour?.statut !== "rendu"));
   const publie = rAJour?.statut === "corrige";
@@ -693,9 +720,19 @@ const schemaRendu = z.object({
 });
 const schemaRendre = schemaRendu.extend({ prepareLe: dateIso.nullable().optional() });
 
+/** Le formateur a commencé à corriger cette copie (note, commentaire, vocal ou proposition de l'IA). */
+const correctionCommencee = (r: Rendu) =>
+  r.note !== null || r.noteDetail !== null || Boolean(r.commentaire) || r.commentaireAudioId !== null || r.propositionIa !== null || r.corrigeLe !== null;
+
 /**
  * Enregistre une copie rendue (par l'étudiant ou, pour une copie papier, par
  * la vie scolaire). Renvoie le reçu de dépôt.
+ *
+ * Une copie qui en remplace une autre repart SANS correction : note, détail,
+ * commentaires, proposition de l'IA et ✓✓ de l'ancienne ne valent pas pour la
+ * nouvelle (le formateur doit la revoir). L'ancienne correction est archivée
+ * au journal avec la copie remplacée. Une copie déjà publiée (« corrigé »)
+ * n'est jamais remplacée, même par une requête arrivée en même temps.
  */
 async function enregistrerRendu(
   auteur: Utilisateur,
@@ -705,24 +742,20 @@ async function enregistrerRendu(
   corps: { texte: string; fichierIds: number[]; prepareLe?: Date | null; enRetard?: boolean },
 ): Promise<RecuDepot> {
   const maintenant = new Date();
-  const [avant] = await db.select().from(rendus).where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, etudiantId)));
-  const enRetard = corps.enRetard ?? maintenant.getTime() > d.dateLimite.getTime();
-  const [r] = await db
-    .insert(rendus)
-    .values({
-      devoirId: d.id,
-      etudiantId,
-      texte: corps.texte,
-      fichierIds: corps.fichierIds,
-      statut: "rendu",
-      renduLe: maintenant,
-      prepareLe: corps.prepareLe ?? null,
-      enRetard,
-      deposeParId: auteur.id === etudiantId ? null : auteur.id,
-    })
-    .onConflictDoUpdate({
-      target: [rendus.devoirId, rendus.etudiantId],
-      set: {
+  const enRetard = corps.enRetard ?? maintenant.getTime() > echeance(d).getTime();
+  const { avant, r } = await db.transaction(async (tx) => {
+    // Copie existante verrouillée : la correction archivée est la dernière enregistrée,
+    // et une correction en cours d'enregistrement ne se pose pas sur la nouvelle copie.
+    const [avant] = await tx
+      .select()
+      .from(rendus)
+      .where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, etudiantId)))
+      .for("update");
+    const [r] = await tx
+      .insert(rendus)
+      .values({
+        devoirId: d.id,
+        etudiantId,
         texte: corps.texte,
         fichierIds: corps.fichierIds,
         statut: "rendu",
@@ -730,12 +763,36 @@ async function enregistrerRendu(
         prepareLe: corps.prepareLe ?? null,
         enRetard,
         deposeParId: auteur.id === etudiantId ? null : auteur.id,
-        // Une nouvelle copie n'a pas encore été ouverte par le formateur.
-        vuLe: null,
-        majLe: maintenant,
-      },
-    })
-    .returning();
+      })
+      .onConflictDoUpdate({
+        target: [rendus.devoirId, rendus.etudiantId],
+        set: {
+          texte: corps.texte,
+          fichierIds: corps.fichierIds,
+          statut: "rendu",
+          renduLe: maintenant,
+          prepareLe: corps.prepareLe ?? null,
+          enRetard,
+          deposeParId: auteur.id === etudiantId ? null : auteur.id,
+          // Une nouvelle copie n'a pas encore été ouverte ni corrigée par le formateur.
+          vuLe: null,
+          note: null,
+          noteDetail: null,
+          commentaire: null,
+          commentaireAudioId: null,
+          propositionIa: null,
+          correcteurId: null,
+          corrigeLe: null,
+          majLe: maintenant,
+        },
+        setWhere: ne(rendus.statut, "corrige"),
+      })
+      .returning();
+    return { avant, r };
+  });
+  if (!r) {
+    throw new ErreurHttp(409, selon(auteur, "Ta copie vient d'être corrigée : elle ne peut plus être remplacée.", "Cette copie vient d'être corrigée : elle ne peut plus être remplacée."));
+  }
   const recu = r.recu ?? recuPour(r.id);
   if (!r.recu) await db.update(rendus).set({ recu }).where(eq(rendus.id, r.id));
   const remplace = avant?.statut === "rendu";
@@ -747,7 +804,30 @@ async function enregistrerRendu(
     enRetard,
     fichierIds: corps.fichierIds,
     prepareLe: iso(corps.prepareLe),
-    ...(remplace ? { precedent: { renduLe: iso(avant.renduLe), fichierIds: avant.fichierIds, longueurTexte: avant.texte.length } } : {}),
+    ...(remplace
+      ? {
+          precedent: {
+            renduLe: iso(avant.renduLe),
+            fichierIds: avant.fichierIds,
+            longueurTexte: avant.texte.length,
+            // Correction de la copie remplacée, archivée ici : elle ne s'applique pas à la nouvelle.
+            ...(correctionCommencee(avant)
+              ? {
+                  correction: {
+                    note: avant.note,
+                    noteDetail: avant.noteDetail,
+                    commentaire: avant.commentaire,
+                    commentaireAudioId: avant.commentaireAudioId,
+                    propositionIa: avant.propositionIa,
+                    correcteurId: avant.correcteurId,
+                    corrigeLe: iso(avant.corrigeLe),
+                    vuLe: iso(avant.vuLe),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
   });
   // Les formateurs du cours voient la copie arriver dans leur liste.
   for (const f of await formateursDuCours(d.coursId)) publierUtilisateur(f.id, "copie-recue", { devoirId: d.id });
@@ -899,9 +979,9 @@ async function carnetDuCours(u: Utilisateur, c: Cours): Promise<CarnetCours> {
     for (const d of listeDevoirs) {
       const r = renduDe.get(cle(d.id, e.id));
       let cellule: CelluleCarnet;
-      if (!r) cellule = { note: null, etat: maintenant.getTime() > d.dateLimite.getTime() ? "non_rendu" : "en_attente", enRetard: false };
+      if (!r) cellule = { note: null, etat: maintenant.getTime() > echeance(d).getTime() ? "non_rendu" : "en_attente", enRetard: false };
       else if (r.statut === "corrige") cellule = { note: r.note, etat: "publiee", enRetard: r.enRetard };
-      else if (r.note !== null) cellule = { note: r.note, etat: "brouillon", enRetard: r.enRetard };
+      else if (correctionAJour(r)) cellule = { note: r.note, etat: "brouillon", enRetard: r.enRetard };
       else cellule = { note: null, etat: "a_corriger", enRetard: r.enRetard };
       notes[String(d.id)] = cellule;
       if (cellule.etat === "publiee" && cellule.note !== null) publiees.push({ note: cellule.note, bareme: d.bareme, coefficient: d.coefficient });
@@ -926,7 +1006,7 @@ async function carnetDuCours(u: Utilisateur, c: Cours): Promise<CarnetCours> {
       type: d.type,
       bareme: d.bareme,
       coefficient: d.coefficient,
-      dateLimite: d.dateLimite.toISOString(),
+      dateLimite: echeance(d).toISOString(),
       publie: d.publie,
     })),
     etudiants,
@@ -1038,7 +1118,8 @@ export function enregistrerEvaluations(app: Express) {
       const v = valider(schemaDevoir, req.body);
       const c = await coursEnseigne(u, v.coursId);
       const ouvertureLe = v.ouvertureLe ? new Date(v.ouvertureLe) : null;
-      const dateLimite = new Date(v.dateLimite);
+      // « Avant 23h59 » : enregistrée à 23:59:59.999 (règle de finEcheance).
+      const dateLimite = finEcheance(new Date(v.dateLimite));
       verifierDevoir({ ...v, ouvertureLe, dateLimite });
       await verifierFichiers(u, v.fichierIds, "devoir");
       const [d] = await db
@@ -1087,7 +1168,7 @@ export function enregistrerEvaluations(app: Express) {
       const fusion = {
         type,
         ouvertureLe: v.ouvertureLe === undefined ? d.ouvertureLe : v.ouvertureLe ? new Date(v.ouvertureLe) : null,
-        dateLimite: v.dateLimite ? new Date(v.dateLimite) : d.dateLimite,
+        dateLimite: v.dateLimite ? finEcheance(new Date(v.dateLimite)) : d.dateLimite,
         bareme: v.bareme ?? d.bareme,
         grille: v.grille ?? d.grille,
       };
@@ -1171,7 +1252,7 @@ export function enregistrerEvaluations(app: Express) {
       const maintenant = new Date();
       const [avant] = await db.select().from(rendus).where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, u.id)));
       if (avant?.statut === "corrige") throw new ErreurHttp(409, "Ta copie est déjà corrigée : elle ne peut plus être remplacée.");
-      const apresEcheance = maintenant.getTime() > d.dateLimite.getTime();
+      const apresEcheance = maintenant.getTime() > echeance(d).getTime();
       if (apresEcheance && avant?.statut === "rendu") {
         throw new ErreurHttp(409, "La date limite est passée : ta copie déjà rendue est gardée, elle ne peut plus être remplacée.");
       }
@@ -1226,14 +1307,16 @@ export function enregistrerEvaluations(app: Express) {
       const copies: CopieResume[] = inscrits
         .map((e) => {
           const r = renduDe.get(e.id);
+          // Une note antérieure à la copie actuelle ne compte pas : la copie est « à corriger ».
+          const noteValable = Boolean(r && (r.statut === "corrige" || correctionAJour(r)));
           return {
             etudiant: versEtudiantCopie(e, sitesNoms),
             renduId: r?.id ?? null,
             etat: !r ? ("non_rendu" as const) : r.enRetard ? ("en_retard" as const) : ("rendu" as const),
             renduLe: iso(r?.renduLe),
             vuLe: iso(r?.vuLe),
-            note: r?.note ?? null,
-            noteBrouillon: Boolean(r && r.statut === "rendu" && r.note !== null),
+            note: noteValable ? r!.note : null,
+            noteBrouillon: Boolean(r && r.statut === "rendu" && noteValable),
             publiee: r?.statut === "corrige",
             nbFichiers: r?.fichierIds.length ?? 0,
             aPropositionIa: Boolean(r?.propositionIa),
@@ -1253,7 +1336,7 @@ export function enregistrerEvaluations(app: Express) {
           type: d.type,
           bareme: d.bareme,
           grille: d.grille,
-          dateLimite: d.dateLimite.toISOString(),
+          dateLimite: echeance(d).toISOString(),
           coursId: c.id,
           coursCode: c.code,
           coursTitre: c.titre,
@@ -1296,7 +1379,13 @@ export function enregistrerEvaluations(app: Express) {
     note: z.number().min(0).max(1000).nullable().optional(),
     commentaire: z.string().max(10_000).nullable().optional(),
     commentaireAudioId: z.number().int().positive().nullable().optional(),
+    /** Heure d'arrivée de la copie que le formateur a sous les yeux : une copie remplacée entre-temps n'hérite pas de sa note. */
+    renduLe: dateIso.nullable().optional(),
   });
+
+  /** Copie remplacée par l'étudiant pendant que le formateur corrigeait l'ancienne. */
+  const copieRemplacee = () =>
+    new ErreurHttp(409, "L'étudiant vient de remplacer sa copie : votre correction n'a pas été enregistrée. La nouvelle copie s'affiche, elle est à corriger.");
 
   app.patch(
     "/api/rendus/:id/correction",
@@ -1306,6 +1395,7 @@ export function enregistrerEvaluations(app: Express) {
       const { r, d, e } = await renduEnseigne(u, idParam(req));
       if (r.statut === "brouillon") throw new ErreurHttp(409, "Cette copie n'a pas encore été rendue.");
       const v = valider(schemaCorrection, req.body);
+      if (v.renduLe !== undefined && (v.renduLe ? new Date(v.renduLe).getTime() : null) !== (r.renduLe?.getTime() ?? null)) throw copieRemplacee();
       let noteDetail: LigneNoteDetail[] | null | undefined = v.noteDetail;
       if (noteDetail) {
         for (const l of noteDetail) if (l.obtenu > l.points) throw invalide(`« ${l.critere} » : ${l.obtenu} dépasse le maximum (${l.points}).`);
@@ -1329,8 +1419,10 @@ export function enregistrerEvaluations(app: Express) {
           corrigeLe: maintenant,
           majLe: maintenant,
         })
-        .where(eq(rendus.id, r.id))
+        // Même copie que celle lue plus haut : un remplacement arrivé entre-temps l'emporte.
+        .where(and(eq(rendus.id, r.id), r.renduLe ? eq(rendus.renduLe, r.renduLe) : isNull(rendus.renduLe)))
         .returning();
+      if (!maj) throw copieRemplacee();
       const noteChangee = note !== undefined && note !== r.note;
       if (noteChangee || v.commentaire !== undefined || v.commentaireAudioId !== undefined) {
         await tracer(u, r.statut === "corrige" ? "note_modifiee" : "correction", {
@@ -1411,7 +1503,13 @@ export function enregistrerEvaluations(app: Express) {
         alerte: ia.alerte?.trim() ? ia.alerte.trim().slice(0, 500) : null,
         creeLe: new Date().toISOString(),
       };
-      const [maj] = await db.update(rendus).set({ propositionIa: proposition, majLe: new Date() }).where(eq(rendus.id, r.id)).returning();
+      // La proposition vaut pour la copie lue : si l'étudiant l'a remplacée pendant que l'IA travaillait, elle n'est pas gardée.
+      const [maj] = await db
+        .update(rendus)
+        .set({ propositionIa: proposition, majLe: new Date() })
+        .where(and(eq(rendus.id, r.id), ne(rendus.statut, "brouillon"), r.renduLe ? eq(rendus.renduLe, r.renduLe) : isNull(rendus.renduLe)))
+        .returning();
+      if (!maj) throw new ErreurHttp(409, "L'étudiant vient de remplacer sa copie : la proposition de l'IA portait sur l'ancienne. Relancez-la sur la nouvelle copie.");
       await tracer(u, "proposition_ia", { renduId: r.id, devoirId: d.id, noteProposee: proposition.note, alerte: Boolean(proposition.alerte) });
       res.json(await copieDetail(maj, d, e));
     }),
@@ -1424,27 +1522,36 @@ export function enregistrerEvaluations(app: Express) {
       const u = moi(req);
       const { d, c } = await devoirEnseigne(u, idParam(req));
       const visibles = new Set((await inscritsVisibles(u, d.coursId)).map((e) => e.id));
-      const prets = (
+      // Seules les notes posées sur la copie ACTUELLE partent (correctionAJour) :
+      // jamais celle d'une copie remplacée depuis.
+      const candidats = (
         await db
           .select({ id: rendus.id, etudiantId: rendus.etudiantId })
           .from(rendus)
-          .where(and(eq(rendus.devoirId, d.id), eq(rendus.statut, "rendu"), isNotNull(rendus.note)))
+          .where(and(eq(rendus.devoirId, d.id), eq(rendus.statut, "rendu"), correctionAJourSql))
       ).filter((r) => visibles.has(r.etudiantId));
+      // Conditions revérifiées dans la mise à jour : une copie remplacée entre-temps n'est pas publiée.
+      const prets = candidats.length
+        ? await db
+            .update(rendus)
+            .set({ statut: "corrige", majLe: new Date() })
+            .where(and(inArray(rendus.id, candidats.map((r) => r.id)), eq(rendus.statut, "rendu"), correctionAJourSql))
+            .returning({ id: rendus.id, etudiantId: rendus.etudiantId })
+        : [];
       if (prets.length) {
-        await db
-          .update(rendus)
-          .set({ statut: "corrige", majLe: new Date() })
-          .where(inArray(rendus.id, prets.map((r) => r.id)));
         const ids = prets.map((r) => r.etudiantId);
         // Jamais la note dans la notification (écran verrouillé, téléphones partagés).
         await notifier(ids, { type: "note", titre: "Nouvelle note disponible", corps: `${c.code} · « ${d.titre} »`, lien: `/devoirs/${d.id}` });
         for (const id of ids) publierUtilisateur(id, "devoir-corrige", { devoirId: d.id });
         await tracer(u, "publier_notes", { devoirId: d.id, nombre: prets.length, etudiants: ids });
       }
-      const [{ restantes }] = await db
-        .select({ restantes: sql<number>`count(*)::int` })
-        .from(rendus)
-        .where(and(eq(rendus.devoirId, d.id), eq(rendus.statut, "rendu"), isNull(rendus.note)));
+      // Copies encore à corriger : sans note, ou notée avant l'arrivée de la copie actuelle.
+      const restantes = (
+        await db
+          .select({ etudiantId: rendus.etudiantId })
+          .from(rendus)
+          .where(and(eq(rendus.devoirId, d.id), eq(rendus.statut, "rendu"), sql`not (${correctionAJourSql})`))
+      ).filter((r) => visibles.has(r.etudiantId)).length;
       res.json({ publiees: prets.length, sansNote: restantes });
     }),
   );
@@ -1633,30 +1740,40 @@ export function enregistrerEvaluations(app: Express) {
       const questions = await questionsDe(d.id);
       if (!questions.length) throw new ErreurHttp(409, "Cette interrogation n'a pas encore de question. Reviens plus tard.");
 
-      // Reprise après une coupure : la tentative en cours continue, avec le temps restant du serveur.
+      // Tentatives abandonnées dont le temps (et la marge) est écoulé : terminées maintenant, reprise impossible.
       const ouvertes = await db
         .select()
         .from(tentativesQuiz)
-        .where(and(eq(tentativesQuiz.devoirId, d.id), eq(tentativesQuiz.etudiantId, u.id), isNull(tentativesQuiz.finLe)))
-        .orderBy(desc(tentativesQuiz.debutLe));
-      let tentative = null;
+        .where(and(eq(tentativesQuiz.devoirId, d.id), eq(tentativesQuiz.etudiantId, u.id), isNull(tentativesQuiz.finLe)));
       for (const t of ouvertes) {
-        if (!tentative && finDe(t, d).getTime() + MARGE_QUIZ_MS > maintenant.getTime()) tentative = t;
-        else await terminerTentative(t.id, true);
+        if (finDe(t, d).getTime() + MARGE_QUIZ_MS <= maintenant.getTime()) await terminerTentative(t.id, true);
       }
-      const reprise = Boolean(tentative);
-      if (!tentative) {
-        if (maintenant.getTime() >= d.dateLimite.getTime()) throw new ErreurHttp(409, "L'interrogation est close : la date limite est passée.");
-        const { faites } = await meilleureNoteQuiz(d.id, u.id);
-        if (faites >= d.tentativesMax) {
+
+      // Reprise ou nouvelle tentative, décidée sous un verrou propre à (interrogation, étudiant) et
+      // revérifiée dans la même transaction : des démarrages simultanés (double toucher, deux onglets,
+      // rafale de requêtes) reprennent tous la même tentative, et le nombre de tentatives permises
+      // (tentativesMax) ne peut pas être dépassé. Toute tentative commencée compte, terminée ou non.
+      const { tentative, reprise } = await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(${d.id}, ${u.id})`);
+        const lignes = await tx
+          .select()
+          .from(tentativesQuiz)
+          .where(and(eq(tentativesQuiz.devoirId, d.id), eq(tentativesQuiz.etudiantId, u.id)))
+          .orderBy(desc(tentativesQuiz.debutLe));
+        // Reprise après une coupure : la tentative en cours continue, avec le temps restant du serveur.
+        const enCours = lignes.find((t) => !t.finLe && finDe(t, d).getTime() + MARGE_QUIZ_MS > maintenant.getTime());
+        if (enCours) return { tentative: enCours, reprise: true };
+        if (maintenant.getTime() >= echeance(d).getTime()) throw new ErreurHttp(409, "L'interrogation est close : la date limite est passée.");
+        if (lignes.length >= d.tentativesMax) {
           throw new ErreurHttp(409, d.tentativesMax > 1 ? `Tu as déjà utilisé tes ${d.tentativesMax} tentatives.` : "Tu as déjà fait cette interrogation.");
         }
-        [tentative] = await db
+        const [nouvelle] = await tx
           .insert(tentativesQuiz)
           .values({ devoirId: d.id, etudiantId: u.id, debutLe: maintenant, finPrevueLe: finPrevuePour(d, maintenant) })
           .returning();
-        await tracer(u, "quiz_commence", { devoirId: d.id, tentativeId: tentative.id });
-      }
+        return { tentative: nouvelle, reprise: false };
+      });
+      if (!reprise) await tracer(u, "quiz_commence", { devoirId: d.id, tentativeId: tentative.id });
       const reponse: QuizEnCours = {
         tentative: {
           id: tentative.id,
@@ -1738,7 +1855,7 @@ export function enregistrerEvaluations(app: Express) {
         meilleureNote: meilleure ?? resultat.note,
         tentativesRestantes: Math.max(0, d.tentativesMax - faites),
         correction: correctionOuverte(d) ? resultat.detail : null,
-        correctionLe: d.correctionVisible ? d.dateLimite.toISOString() : null,
+        correctionLe: d.correctionVisible ? echeance(d).toISOString() : null,
         horsDelai: fin?.horsDelai ?? horsDelai,
       };
       if (fin) await tracer(u, "quiz_termine", { devoirId: d.id, tentativeId: t.id, note: reponse.note, horsDelai: reponse.horsDelai });
@@ -1777,14 +1894,14 @@ export function enregistrerEvaluations(app: Express) {
                 ? "note"
                 : r && r.statut !== "brouillon"
                   ? "en_correction"
-                  : maintenant.getTime() > d.dateLimite.getTime()
+                  : maintenant.getTime() > echeance(d).getTime()
                     ? "non_rendu"
                     : "a_venir";
               return {
                 devoirId: d.id,
                 titre: d.titre,
                 type: d.type,
-                dateLimite: d.dateLimite.toISOString(),
+                dateLimite: echeance(d).toISOString(),
                 bareme: d.bareme,
                 coefficient: d.coefficient,
                 note: publiee ? r!.note : null,

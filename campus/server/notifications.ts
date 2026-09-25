@@ -4,10 +4,11 @@
 //
 // Politique du téléphone (CONCEPTION §9.16) : au-delà de 3 par jour,
 // l'étudiant coupe tout et on le perd. Donc :
-//   - au plus 3 envois par jour et par personne, hors rappels de live ;
+//   - au plus 3 envois par jour et par personne, hors notifications urgentes
+//     (`urgent` : le rappel 15 min avant un live et « En direct ») ;
 //   - heures calmes de 21 h à 6 h (heure d'Abidjan) : rien ne sonne la nuit,
-//     sauf un rappel de live ; un seul rappel groupé part le matin pour ce
-//     qui est resté non lu ;
+//     sauf une notification urgente ; un seul rappel groupé part le matin pour
+//     ce qui est resté non lu (rappel de la veille, live déplacé ou annulé…) ;
 //   - contenu sensible masqué sur l'écran verrouillé (« Nouvelle note
 //     disponible », jamais la note).
 // La notification en base et le temps réel partent toujours, sans condition.
@@ -34,11 +35,18 @@ export type NouvelleNotification = {
   push?: boolean;
   /** Masquer titre et texte sur l'écran verrouillé (en plus des notes, toujours masquées). */
   sensible?: boolean;
+  /**
+   * Sonne tout de suite, même en heures calmes, et hors plafond du jour. Réservé
+   * à ce qui n'attend pas : le rappel 15 min avant un live et « En direct ».
+   * Les autres notifications de live (rappel de la veille, live déplacé ou
+   * annulé) suivent les règles normales.
+   */
+  urgent?: boolean;
 };
 
 // ── Règles du téléphone ────────────────────────────────────────────────────
 
-/** Envois par jour et par personne, hors rappels de live. */
+/** Envois par jour et par personne, hors notifications urgentes. */
 export const PLAFOND_PUSH_JOUR = 3;
 /** Heures calmes, heure d'Abidjan : de 21 h à 6 h. */
 export const HEURES_CALMES = { debut: 21, fin: 6 } as const;
@@ -88,10 +96,10 @@ export type RepartitionPush = { envoyer: number[]; differer: number[]; ignorer: 
  * maintenant, attend le matin (heures calmes) ou reste silencieuse
  * (plafond atteint : elle reste dans la cloche).
  */
-export async function repartirPush(utilisateurIds: number[], type: NouvelleNotification["type"], maintenant = new Date()): Promise<RepartitionPush> {
+export async function repartirPush(utilisateurIds: number[], options: Pick<NouvelleNotification, "urgent"> = {}, maintenant = new Date()): Promise<RepartitionPush> {
   const ids = [...new Set(utilisateurIds)].filter(Boolean);
-  // Le rappel d'un live qui commence ne compte pas et passe toujours.
-  if (type === "live") return { envoyer: ids, differer: [], ignorer: [] };
+  // Urgent (le live commence) : ne compte pas et passe toujours.
+  if (options.urgent) return { envoyer: ids, differer: [], ignorer: [] };
   if (estHeureCalme(maintenant)) return { envoyer: [], differer: ids, ignorer: [] };
   const envoyer = await reserverEnvois(ids, maintenant);
   const accordes = new Set(envoyer);
@@ -122,7 +130,7 @@ async function envoyerPush(ids: number[], n: NouvelleNotification, notificationD
   if (!abonnements.length) return;
   // Seules les personnes qui ont un téléphone abonné entrent dans le plafond.
   const abonnes = [...new Set(abonnements.map((a) => a.utilisateurId))];
-  const { envoyer, differer } = await repartirPush(abonnes, n.type);
+  const { envoyer, differer } = await repartirPush(abonnes, { urgent: n.urgent });
 
   if (differer.length) {
     const lignes = differer

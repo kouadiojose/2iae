@@ -435,6 +435,29 @@ export default function AccueilPage() {
         </div>
       </section>
 
+      {/* Appel à témoignages des anciens — 20 ans de l'école */}
+      <section className="py-12 bg-[#0d2c54]" data-testid="bande-anciens">
+        <div className="container mx-auto px-4 max-w-5xl text-center">
+          <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">
+            Avis aux anciens étudiants · 20 ans du Groupe 2IAE
+          </p>
+          <h2 className="font-serif text-3xl md:text-4xl text-white mb-4 leading-tight">
+            Vous êtes passé par 2IAE ? Racontez-nous la suite.
+          </h2>
+          <p className="text-white/85 leading-relaxed max-w-3xl mx-auto mb-6">
+            L'entreprise que vous avez créée, le poste que vous occupez, le
+            chemin parcouru depuis votre diplôme : votre parcours dira à un
+            bachelier qui hésite aujourd'hui ce que vaut cette école. Nous
+            fêterons les 20 ans avec vos témoignages.
+          </p>
+          <Link href="/temoignages">
+            <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto">
+              Je témoigne de mon parcours
+            </Button>
+          </Link>
+        </div>
+      </section>
+
       {/* Résultats BTS 2026 — l'affiche officielle et les preuves */}
       <section className="bg-background border-b border-border mobile-no-overflow">
         <div className="container mx-auto mobile-padding py-14 grid lg:grid-cols-2 gap-10 items-center">
@@ -1151,29 +1174,6 @@ export default function AccueilPage() {
               </Link>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* Appel à témoignages des anciens — 20 ans de l'école */}
-      <section className="py-12 bg-[#0d2c54]" data-testid="bande-anciens">
-        <div className="container mx-auto px-4 max-w-5xl text-center">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">
-            Avis aux anciens étudiants · 20 ans du Groupe 2IAE
-          </p>
-          <h2 className="font-serif text-3xl md:text-4xl text-white mb-4 leading-tight">
-            Vous êtes passé par 2IAE ? Racontez-nous la suite.
-          </h2>
-          <p className="text-white/85 leading-relaxed max-w-3xl mx-auto mb-6">
-            L'entreprise que vous avez créée, le poste que vous occupez, le
-            chemin parcouru depuis votre diplôme : votre parcours dira à un
-            bachelier qui hésite aujourd'hui ce que vaut cette école. Nous
-            fêterons les 20 ans avec vos témoignages.
-          </p>
-          <Link href="/temoignages">
-            <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto">
-              Je témoigne de mon parcours
-            </Button>
-          </Link>
         </div>
       </section>
 

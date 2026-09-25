@@ -4,7 +4,7 @@
 export const FAQS: { q: string; r: string }[] = [
   {
     q: "Quels sont les frais de scolarité au Groupe 2IAE pour la rentrée 2026-2027 ?",
-    r: "Le droit d'inscription est de 100 000 F CFA sur tous les campus. Avec les frais annexes, la première année de BTS revient à 250 000 F CFA au total (280 000 F CFA à la Riviera Palmeraie). Les fiches officielles par campus, avec l'échéancier de paiement au verso, sont téléchargeables sur www.2iae.com/tarifs.",
+    r: "Le droit d'inscription est de 100 000 F CFA sur tous les campus. Avec les frais annexes, la première année de BTS revient à 250 000 F CFA au total (280 000 F CFA à la Riviera Palmeraie). Cette somme ne se paie pas en une seule fois : elle est échelonnée en plusieurs versements répartis sur l'année scolaire. Les fiches officielles par campus, avec l'échéancier de paiement au verso, sont téléchargeables sur www.2iae.com/tarifs.",
   },
   {
     q: "2IAE est-elle une bonne école ? Est-elle reconnue en Côte d'Ivoire ?",
@@ -44,7 +44,7 @@ export const FAQS: { q: string; r: string }[] = [
   },
   {
     q: "Comment payer les frais de scolarité ?",
-    r: "Aucun paiement en espèces n'est accepté aux caisses : les paiements se font par virement bancaire, chèque, Wave ou Orange Money — chaque versement est donc traçable et sécurisé. L'échéancier détaillé figure au verso de la fiche officielle de chaque campus, disponible sur www.2iae.com/tarifs.",
+    r: "La scolarité est échelonnée : vous réglez en plusieurs tranches au fil de l'année, jamais la totalité à l'inscription. Aucun paiement en espèces n'est accepté aux caisses : les paiements se font par virement bancaire, chèque, Wave ou Orange Money — chaque versement est donc traçable et sécurisé. L'échéancier détaillé figure au verso de la fiche officielle de chaque campus, disponible sur www.2iae.com/tarifs.",
   },
   {
     q: "Comment contacter le Groupe 2IAE ?",

@@ -338,6 +338,7 @@ ADMISSION:
 - Candidats libres : préinscription en ligne puis dossier finalisé avec un conseiller.
 
 PAIEMENT (règle stricte):
+- LA SCOLARITÉ EST ÉCHELONNÉE : elle se règle en plusieurs versements répartis sur l'année scolaire, jamais en une seule fois. Dis-le spontanément dès que tu annonces un montant — beaucoup de familles renoncent en croyant devoir tout payer à l'inscription.
 - AUCUN paiement en espèces aux caisses. Moyens acceptés : virement bancaire, chèque, Wave, Orange Money.
 - Les fiches officielles de rentrée (PDF par campus, avec échéancier au verso) sont téléchargeables sur www.2iae.com/tarifs.
 
@@ -399,7 +400,7 @@ async function construirePromptSysteme(): Promise<string> {
               `- ${t.site}${t.location ? ` (${t.location})` : ""} : droit d'inscription ${fcfa(t.inscriptionFee)} + frais annexes ${fcfa(t.fraisAnnexes)} = TOTAL ${fcfa(t.totalFee)}${t.phone ? ` — tél. ${t.phone}` : ""}`,
           )
           .join("\n") +
-        "\nFiches officielles PDF et échéancier : www.2iae.com/tarifs.";
+        "\nCes totaux se règlent en plusieurs versements sur l'année, pas en une seule fois. Fiches officielles PDF et échéancier : www.2iae.com/tarifs.";
     }
   } catch (e) {
     console.error("Chatbot: tarifs indisponibles pour le prompt:", e);

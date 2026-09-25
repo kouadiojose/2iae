@@ -65,8 +65,8 @@ export default function Tarifs() {
             Des tarifs clairs. Aucune surprise.
           </h1>
           <p className="text-xl text-white/85 max-w-3xl mx-auto">
-            Les frais officiels de chaque campus, la fiche à télécharger, et un
-            paiement 100 % traçable — virement, chèque, Wave ou Orange Money.
+            Les frais officiels de chaque campus, la fiche à télécharger, et
+            un paiement échelonné : vous ne réglez pas tout en une fois.
           </p>
         </div>
       </section>
@@ -77,6 +77,10 @@ export default function Tarifs() {
           <span className="flex items-center gap-2 font-semibold text-foreground">
             <ShieldCheck className="h-5 w-5 text-green-600" />
             Aucun paiement en espèces aux caisses
+          </span>
+          <span className="flex items-center gap-2 font-semibold text-foreground">
+            <ShieldCheck className="h-5 w-5 text-green-600" />
+            Paiement échelonné, jamais en une seule fois
           </span>
           <span className="text-muted-foreground">
             Moyens acceptés : <strong className="text-foreground">Virement bancaire · Chèque · Wave · Orange Money</strong>
@@ -100,7 +104,7 @@ export default function Tarifs() {
                     <CardContent className="p-6 flex-1 flex flex-col">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <h2 className="text-xl font-bold text-foreground">{t.site}</h2>
-                        <Badge variant="secondary">{t.programDuration || "2 ans"}</Badge>
+                        <Badge variant="secondary" className="shrink-0">20 ans d'excellence</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground flex items-center gap-1 mb-5">
                         <MapPin className="h-4 w-4 shrink-0" /> {t.location}
@@ -119,6 +123,11 @@ export default function Tarifs() {
                           <span className="font-bold text-foreground">Total 1ère année</span>
                           <span className="font-serif text-2xl font-semibold text-primary">{fcfa(t.totalFee)}</span>
                         </div>
+                        <p className="text-xs text-muted-foreground pt-1">
+                          Ce montant se règle <strong className="text-foreground">en plusieurs
+                          versements</strong> répartis sur l'année : l'échéancier figure au
+                          verso de la fiche du campus.
+                        </p>
                       </div>
 
                       {t.accountInfo && (
@@ -154,9 +163,11 @@ export default function Tarifs() {
             </div>
           )}
           <p className="text-center text-sm text-muted-foreground mt-8">
-            L'échéancier de paiement détaillé figure au verso de la fiche
-            officielle de chaque campus, et reste disponible auprès du service
-            des admissions.
+            Aucune famille ne paie la scolarité en une seule fois : chaque
+            campus applique un échéancier réparti sur l'année scolaire. Le
+            détail des tranches figure au verso de la fiche officielle du
+            campus, et le service des admissions l'explique volontiers au
+            téléphone.
           </p>
         </div>
       </section>

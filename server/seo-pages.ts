@@ -91,7 +91,7 @@ const PAGES: Record<string, MetaPage> = {
   "/tarifs": {
     titre: "Tarifs Rentrée 2026-2027 — frais officiels du BTS par campus | Groupe 2IAE",
     description:
-      "Frais officiels 2026-2027 : 100 000 F d'inscription, 250 000 à 280 000 F au total selon le campus. Fiches PDF, échéancier, paiement sécurisé par virement, chèque, Wave ou Orange Money — aucun paiement en espèces.",
+      "Frais officiels 2026-2027 : 100 000 F d'inscription, 250 000 à 280 000 F au total selon le campus. Paiement échelonné en plusieurs versements sur l'année, jamais en une seule fois. Fiches PDF par campus, virement, chèque, Wave ou Orange Money — aucun paiement en espèces.",
     jsonLd: [filAriane("Tarifs", "/tarifs")],
   },
   "/preinscription": {

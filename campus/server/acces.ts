@@ -82,7 +82,9 @@ export async function enseigneCours(u: Utilisateur, coursId: number): Promise<bo
 export async function coursVisible(u: Utilisateur, coursId: number): Promise<Cours> {
   const [c] = await db.select().from(cours).where(eq(cours.id, coursId));
   if (!c) throw introuvable("Cours");
-  if (!(await peutVoirCours(u, coursId))) throw new ErreurHttp(403, "Tu n'es pas inscrit à ce cours.");
+  if (!(await peutVoirCours(u, coursId))) {
+    throw new ErreurHttp(403, u.role === "etudiant" ? "Tu n'es pas inscrit à ce cours." : "Ce cours ne fait pas partie de vos cours.");
+  }
   return c;
 }
 
@@ -90,7 +92,9 @@ export async function coursVisible(u: Utilisateur, coursId: number): Promise<Cou
 export async function coursEnseigne(u: Utilisateur, coursId: number): Promise<Cours> {
   const [c] = await db.select().from(cours).where(eq(cours.id, coursId));
   if (!c) throw introuvable("Cours");
-  if (!(await enseigneCours(u, coursId))) throw new ErreurHttp(403, "Seul le formateur du cours peut faire cela.");
+  if (!(await enseigneCours(u, coursId))) {
+    throw new ErreurHttp(403, u.role === "etudiant" ? "Cette action est réservée au formateur du cours." : "Seul le formateur de ce cours peut faire cela.");
+  }
   return c;
 }
 

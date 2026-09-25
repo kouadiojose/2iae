@@ -228,7 +228,7 @@ function CompteursEmarges({ etat, grand, liste }: { etat: EtatDirectDto; grand?:
       {etat.campus.map((c) => (
         <div key={c.siteId} className={cn("rounded-2xl p-3 text-center", c.salleConnectee ? "bg-nuit-carte" : "bg-nuit-panneau")}>
           <div className={cn("font-black tabular-nums text-white", grand ? "text-5xl" : "text-3xl")}>{c.emarges}</div>
-          <div className={cn("mt-1 truncate font-bold", grand ? "text-base" : "text-sm", c.salleConnectee ? "text-orange-peche" : "text-nuit-gris")}>{c.nomCourt}</div>
+          <div className={cn("mt-1 break-words font-bold leading-tight", grand ? "text-[clamp(12px,1vw,17px)]" : "text-sm", c.salleConnectee ? "text-orange-peche" : "text-nuit-gris")}>{c.nomCourt}</div>
         </div>
       ))}
     </div>

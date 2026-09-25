@@ -90,7 +90,7 @@ export default function PageReleve({ jeton }: { jeton: string }) {
                 <div className="mt-1 text-5xl font-black">{data.presence.taux === null ? "–" : `${data.presence.taux} %`}</div>
                 <div className="mt-1 text-sm">
                   {data.presence.seances
-                    ? `Présent à ${data.presence.presents} ${data.presence.presents > 1 ? "séances" : "séance"} sur ${data.presence.seances}${data.presence.justifiees ? `, dont ${pluriel(data.presence.justifiees, "absence justifiée", "absences justifiées")} non comptée${data.presence.justifiees > 1 ? "s" : ""}` : ""}.`
+                    ? `Présence à ${data.presence.presents} ${data.presence.presents > 1 ? "séances" : "séance"} sur ${data.presence.seances}${data.presence.justifiees ? `, dont ${pluriel(data.presence.justifiees, "absence justifiée", "absences justifiées")} non comptée${data.presence.justifiees > 1 ? "s" : ""}` : ""}.`
                     : "Aucun cours en direct pour l'instant."}
                 </div>
               </div>
@@ -127,7 +127,7 @@ export default function PageReleve({ jeton }: { jeton: string }) {
 
             <footer className="flex flex-col gap-3 border-t border-ligne pt-5 text-sm text-texte-pale">
               <p>
-                Relevé établi le {dateComplete(data.date)} par le campus numérique du Groupe 2IAE International. Les moyennes tiennent compte des coefficients des devoirs ; la présence en ligne est comptée à partir de 70 % de la durée du cours.
+                Relevé établi le {dateComplete(data.date).toLowerCase()} par le campus numérique du Groupe 2IAE International. Les moyennes tiennent compte des coefficients des devoirs ; la présence en ligne est comptée à partir de 70 % de la durée du cours.
               </p>
               <p>Ce lien est personnel : la vie scolaire peut le désactiver à tout moment. Pour toute question, contactez la vie scolaire du campus.</p>
               <button

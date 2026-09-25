@@ -10,11 +10,11 @@ const CONTOUR =
 
 /** Position des campus sur la carte (les trois sites d'Abidjan et environs sont légèrement écartés pour rester lisibles). */
 const POSITIONS: Record<string, { x: number; y: number; ancre: "start" | "end"; dx: number; dy: number }> = {
-  riviera: { x: 300, y: 330, ancre: "start", dx: 14, dy: 16 },
-  yopougon: { x: 268, y: 340, ancre: "end", dx: -14, dy: 18 },
-  azaguie: { x: 292, y: 304, ancre: "start", dx: 14, dy: -4 },
-  mbatto: { x: 266, y: 262, ancre: "start", dx: 14, dy: 4 },
-  yamoussoukro: { x: 211, y: 245, ancre: "end", dx: -14, dy: 4 },
+  riviera: { x: 302, y: 332, ancre: "start", dx: 16, dy: 20 },
+  yopougon: { x: 266, y: 342, ancre: "end", dx: -16, dy: 20 },
+  azaguie: { x: 294, y: 302, ancre: "start", dx: 16, dy: -2 },
+  mbatto: { x: 262, y: 258, ancre: "start", dx: 16, dy: 6 },
+  yamoussoukro: { x: 205, y: 240, ancre: "end", dx: -16, dy: 6 },
 };
 
 function cleSite(nomCourt: string): string {
@@ -28,7 +28,7 @@ function cleSite(nomCourt: string): string {
 export function CarteCoteIvoire({ campus, villeFormateur, className, enDirect }: { campus: CampusDirectDto[]; villeFormateur?: string | null; className?: string; enDirect?: boolean }) {
   const allumes = campus.filter((c) => c.salleConnectee).length;
   return (
-    <svg viewBox="-20 -110 460 540" className={cn("h-auto w-full", className)} role="img" aria-label={`Carte des campus : ${allumes} salle${allumes > 1 ? "s" : ""} connectée${allumes > 1 ? "s" : ""} sur ${campus.length}`}>
+    <svg viewBox="0 -70 440 480" className={cn("h-auto w-full", className)} role="img" aria-label={`Carte des campus : ${allumes} salle${allumes > 1 ? "s" : ""} connectée${allumes > 1 ? "s" : ""} sur ${campus.length}`}>
       <defs>
         <radialGradient id="halo-campus">
           <stop offset="0%" stopColor="#E4793A" stopOpacity="0.55" />
@@ -37,11 +37,11 @@ export function CarteCoteIvoire({ campus, villeFormateur, className, enDirect }:
       </defs>
       <path d={CONTOUR} fill="#1E1C1A" stroke="#3A3431" strokeWidth="2.5" strokeLinejoin="round" />
       {/* Arc depuis la ville du formateur (hors carte, au nord) jusqu'à Abidjan */}
-      <circle cx="400" cy="-80" r="7" fill="#FFD2B3" />
-      <text x="388" y="-94" textAnchor="end" fill="#FFD2B3" fontFamily="IBM Plex Mono, monospace" fontSize="15">
+      <circle cx="405" cy="-45" r="8" fill="#FFD2B3" />
+      <text x="390" y="-54" textAnchor="end" fill="#FFD2B3" fontFamily="IBM Plex Mono, monospace" fontSize="20">
         {villeFormateur ?? "Formateur"}
       </text>
-      <path d="M400 -80 Q 470 150 292 322" fill="none" stroke="#E4793A" strokeWidth="2.5" strokeDasharray="7 7" >
+      <path d="M405 -45 Q 470 160 292 322" fill="none" stroke="#E4793A" strokeWidth="2.5" strokeDasharray="7 7" >
         {enDirect && <animate attributeName="stroke-dashoffset" from="28" to="0" dur="1.2s" repeatCount="indefinite" />}
       </path>
       {campus.map((c) => {
@@ -58,11 +58,11 @@ export function CarteCoteIvoire({ campus, villeFormateur, className, enDirect }:
               </circle>
             )}
             <circle cx={p.x} cy={p.y} r={r} fill={c.salleConnectee ? "#E4793A" : "#3A3431"} stroke={c.salleConnectee ? "#FFD2B3" : "#5E554F"} strokeWidth="2" />
-            <text x={p.x + p.dx} y={p.y + p.dy} textAnchor={p.ancre} fill={c.salleConnectee ? "#FFFFFF" : "#8A7F76"} stroke="#0F0E0D" strokeWidth="5" paintOrder="stroke" fontFamily="Archivo, sans-serif" fontWeight="800" fontSize="17">
+            <text x={p.x + p.dx} y={p.y + p.dy} textAnchor={p.ancre} fill={c.salleConnectee ? "#FFFFFF" : "#8A7F76"} stroke="#0F0E0D" strokeWidth="5" paintOrder="stroke" fontFamily="Archivo, sans-serif" fontWeight="800" fontSize="22">
               {c.nomCourt}
             </text>
             {c.salleConnectee && (
-              <text x={p.x + p.dx} y={p.y + p.dy + 17} textAnchor={p.ancre} fill="#FFD2B3" stroke="#0F0E0D" strokeWidth="4" paintOrder="stroke" fontFamily="IBM Plex Mono, monospace" fontSize="12">
+              <text x={p.x + p.dx} y={p.y + p.dy + 20} textAnchor={p.ancre} fill="#FFD2B3" stroke="#0F0E0D" strokeWidth="4" paintOrder="stroke" fontFamily="IBM Plex Mono, monospace" fontSize="15">
                 {c.emarges} en salle
               </text>
             )}

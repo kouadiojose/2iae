@@ -449,8 +449,9 @@ export type PresencesSeance = {
   seuil: number;
   /** Minutes en ligne à atteindre pour être présent (même calcul que le live). */
   seuilMinutes: number;
+  /** Pas encore démarrée. */
   aVenir: boolean;
-  /** Heure passée mais jamais démarrée : personne n'y est compté absent. */
+  /** Close sans avoir été démarrée (« Séance non tenue ») : feuille vide, personne n'y est compté absent. */
   nonTenue: boolean;
   total: ResumePresences;
   campus: PresencesCampus[];

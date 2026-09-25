@@ -2246,7 +2246,7 @@ export function enregistrerLive(app: Express) {
       const memoire = incident
         ? { incidentLe: avant?.incidentLe ?? maintenant, incidentMotif: incident, incidentResoluLe: null }
         : incident === null && avant?.incident
-          ? { incidentResoluLe: maintenant }
+          ? { incidentLe: avant.incidentLe ?? avant.majLe, incidentMotif: avant.incidentMotif ?? avant.incident, incidentResoluLe: maintenant }
           : {};
       const valeurs = {
         ...(d.nombre !== undefined && { nombre: d.nombre }),

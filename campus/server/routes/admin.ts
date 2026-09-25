@@ -272,6 +272,17 @@ function dureeReference(s: Pick<typeof seances.$inferSelect, "dureeMinutes" | "d
 /** Minutes en ligne à atteindre pour être « présent en ligne ». */
 const seuilMinutes = (duree: number) => Math.max(1, Math.ceil(duree * SEUIL_PRESENCE_EN_LIGNE));
 
+/**
+ * Une séance ne compte que si elle a été démarrée. Close sans l'avoir été
+ * (terminée ou annulée d'office par le live, « Séance non tenue ») : ni
+ * présents ni absents, comme seanceNonTenue du live. Pas encore démarrée :
+ * à venir.
+ */
+function tenueDe(s: Pick<typeof seances.$inferSelect, "demarreeLe" | "statut">): "tenue" | "non_tenue" | "a_venir" {
+  if (s.demarreeLe) return "tenue";
+  return s.statut === "terminee" || s.statut === "annulee" ? "non_tenue" : "a_venir";
+}
+
 /** Même calcul en SQL (Math.round(x) = floor(x + 0,5) ; float8 = double JavaScript). */
 const SQL_DUREE_REFERENCE = sql`
   CASE WHEN s.demarree_le IS NOT NULL AND s.terminee_le IS NOT NULL
@@ -289,18 +300,36 @@ const SQL_INCIDENT_SALLE = sql`(NULLIF(e.incident, '') IS NOT NULL
   OR (e.incident_le IS NOT NULL AND (e.incident_resolu_le IS NULL OR e.incident_resolu_le > COALESCE(s.demarree_le, s.debut))))`;
 
 /**
- * Classe d'un étudiant à un instant donné (colonne SQL « t ») : son dernier
- * passage de classe avant t (table passages_classes, écrite par le PATCH des
- * comptes), sinon sa classe actuelle. À joindre après l'utilisateur « u » ;
- * la classe se lit ensuite dans SQL_CLASSE_A.
+ * Étudiants qui PEUVENT être attendus à un cours (cours_id, uid) : par leur
+ * classe actuelle, une classe où ils ont été (passages_classes) ou une
+ * inscription individuelle. Jointure par égalité (rapide), affinée ensuite
+ * par sqlAttenduAuCours.
  */
-const sqlPassageAvant = (t: SQL) => sql`
-  LEFT JOIN LATERAL (
-    SELECT pc.classe_id, pc.depuis FROM campus.passages_classes pc
-    WHERE pc.utilisateur_id = u.id AND pc.depuis <= ${t}
-    ORDER BY pc.depuis DESC, pc.id DESC LIMIT 1
-  ) h ON true`;
-const SQL_CLASSE_A = sql`(CASE WHEN h.depuis IS NULL THEN u.classe_id ELSE h.classe_id END)`;
+const SQL_CANDIDATS_COURS = sql`(
+  SELECT cc.cours_id, e.id AS uid FROM campus.cours_classes cc JOIN campus.utilisateurs e ON e.classe_id = cc.classe_id
+  UNION SELECT cc.cours_id, pc.utilisateur_id FROM campus.cours_classes cc JOIN campus.passages_classes pc ON pc.classe_id = cc.classe_id
+  UNION SELECT i.cours_id, i.utilisateur_id FROM campus.inscriptions i)`;
+
+/**
+ * Classe de l'étudiant « u » à l'instant t (colonne SQL), lue ensuite dans
+ * h.classe_id : son dernier passage de classe avant t (passages_classes,
+ * écrit par le PATCH des comptes), sinon sa classe actuelle. L'historique
+ * n'est lu que pour les étudiants qui en ont un.
+ */
+const sqlClasseA = (t: SQL) => sql`
+  LEFT JOIN (SELECT DISTINCT utilisateur_id FROM campus.passages_classes) hp ON hp.utilisateur_id = u.id
+  CROSS JOIN LATERAL (
+    SELECT CASE WHEN hp.utilisateur_id IS NULL THEN u.classe_id ELSE (
+      SELECT pc.classe_id FROM campus.passages_classes pc
+      WHERE pc.utilisateur_id = u.id AND pc.depuis <= ${t}
+      ORDER BY pc.depuis DESC, pc.id DESC LIMIT 1
+    ) END AS classe_id
+  ) h`;
+
+/** Attendu à ce cours à l'instant t : sa classe d'alors suit le cours, ou il y était déjà inscrit. */
+const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
+  ((${coursId}, h.classe_id) IN (SELECT cc.cours_id, cc.classe_id FROM campus.cours_classes cc)
+    OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = ${coursId} AND i.utilisateur_id = u.id AND i.cree_le <= ${t}))`;
 
 /**
  * Une ligne par (séance, étudiant attendu) avec son statut de présence, décidé
@@ -331,7 +360,7 @@ function sqlAttendus(f: FiltreAttendus): SQL {
   if (f.sites) conds.push(sql`u.site_id = ANY(${entiers(f.sites)})`);
   return sql`
     SELECT s.id AS seance_id, s.cours_id, s.debut, s.titre AS seance_titre, c.code AS cours_code,
-      u.id AS uid, u.site_id, ${SQL_CLASSE_A} AS classe_id,
+      u.id AS uid, u.site_id, h.classe_id,
       COALESCE(p.minutes, 0)::int AS minutes, p.justification,
       CASE WHEN p.mode = 'salle' THEN COALESCE(p.arrivee_salle_le, p.arrivee_le) ELSE p.arrivee_le END AS arrivee_le,
       CASE
@@ -353,13 +382,12 @@ function sqlAttendus(f: FiltreAttendus): SQL {
         s.debut + make_interval(mins => s.duree_minutes) AS fin
       FROM (SELECT ${SQL_DUREE_REFERENCE} AS duree) r
     ) d
-    JOIN campus.utilisateurs u ON u.role = 'etudiant' AND u.cree_le <= d.fin
-    ${sqlPassageAvant(sql`d.fin`)}
+    JOIN ${SQL_CANDIDATS_COURS} cand ON cand.cours_id = s.cours_id
+    JOIN campus.utilisateurs u ON u.id = cand.uid AND u.role = 'etudiant' AND u.cree_le <= d.fin
+    ${sqlClasseA(sql`d.fin`)}
     LEFT JOIN campus.presences p ON p.seance_id = s.id AND p.utilisateur_id = u.id
     LEFT JOIN campus.effectifs_salles e ON e.seance_id = s.id AND e.site_id = u.site_id
-    WHERE ${sql.join(conds, sql` AND `)}
-      AND (${SQL_CLASSE_A} IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = s.cours_id)
-        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = s.cours_id AND i.utilisateur_id = u.id AND i.cree_le <= d.fin))`;
+    WHERE ${sql.join(conds, sql` AND `)} AND ${sqlAttenduAuCours(sql`s.cours_id`, sql`d.fin`)}`;
 }
 
 type LigneAttendu = {
@@ -434,11 +462,10 @@ function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: nu
         OR EXISTS (SELECT 1 FROM campus.tentatives_quiz t WHERE t.devoir_id = d.id AND t.etudiant_id = u.id AND t.fin_le IS NOT NULL)) AS rendu
     FROM campus.devoirs d
     JOIN campus.cours c ON c.id = d.cours_id
-    JOIN campus.utilisateurs u ON u.role = 'etudiant'
-    ${sqlPassageAvant(sql`d.date_limite`)}
-    WHERE ${sql.join(conds, sql` AND `)}
-      AND (${SQL_CLASSE_A} IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = d.cours_id)
-        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = d.cours_id AND i.utilisateur_id = u.id AND i.cree_le < d.date_limite))`;
+    JOIN ${SQL_CANDIDATS_COURS} cand ON cand.cours_id = d.cours_id
+    JOIN campus.utilisateurs u ON u.id = cand.uid AND u.role = 'etudiant'
+    ${sqlClasseA(sql`d.date_limite`)}
+    WHERE ${sql.join(conds, sql` AND `)} AND ${sqlAttenduAuCours(sql`d.cours_id`, sql`d.date_limite`)}`;
 }
 
 /**
@@ -2310,7 +2337,9 @@ export function enregistrerAdmin(app: Express) {
       const u = moi(req);
       const { s, code, coursTitre, formateurPrenom, formateurNom } = await seanceGeree(u, idParam(req));
       const p = perimetreSites(u);
-      const lignes = await presencesDeSeance(u, s.id);
+      // Close sans avoir été démarrée : feuille vide, ni présents ni absents.
+      const tenue = tenueDe(s);
+      const lignes = tenue === "non_tenue" ? [] : await presencesDeSeance(u, s.id);
       const effectifs = await db.select().from(effectifsSalles).where(eq(effectifsSalles.seanceId, s.id));
       const listeSites = await db.select().from(sites).where(surSites(sites.id, p)).orderBy(asc(sites.ordre));
 
@@ -2365,9 +2394,8 @@ export function enregistrerAdmin(app: Express) {
         dureeReference: duree,
         seuil: SEUIL_PRESENCE_EN_LIGNE,
         seuilMinutes: seuilMinutes(duree),
-        aVenir: !s.demarreeLe && s.debut.getTime() > Date.now(),
-        // Heure passée sans démarrage (terminée d'office par le live) : pas d'absents à cette séance.
-        nonTenue: !s.demarreeLe && s.debut.getTime() <= Date.now() && s.statut !== "en_direct",
+        aVenir: tenue === "a_venir",
+        nonTenue: tenue === "non_tenue",
         total: resumeDe(lignes),
         campus,
       };
@@ -2381,7 +2409,9 @@ export function enregistrerAdmin(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { s, code } = await seanceGeree(u, idParam(req));
-      if (!s.demarreeLe) throw invalide(s.debut.getTime() > Date.now() ? "Cette séance n'a pas encore eu lieu." : "Cette séance n'a jamais démarré : pas de feuille de présence.");
+      if (tenueDe(s) !== "tenue") {
+        throw invalide(tenueDe(s) === "a_venir" ? "Cette séance n'a pas encore eu lieu." : "Cette séance n'a jamais démarré : pas de feuille de présence.");
+      }
       const lignes = await presencesDeSeance(u, s.id);
       const heureAbidjan = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" });
       const cellule = (v: string | number | null) => {
@@ -2465,8 +2495,8 @@ export function enregistrerAdmin(app: Express) {
       );
       const e = await etudiantGere(u, d.etudiantId);
       const { s } = await seanceGeree(u, d.seanceId);
-      if (!s.demarreeLe) {
-        throw invalide(s.debut.getTime() > Date.now() ? "Cette séance n'a pas encore eu lieu." : "Cette séance n'a jamais démarré : personne n'y est compté absent.");
+      if (tenueDe(s) !== "tenue") {
+        throw invalide(tenueDe(s) === "a_venir" ? "Cette séance n'a pas encore eu lieu." : "Cette séance n'a jamais démarré : personne n'y est compté absent.");
       }
       const [attendu] = await db.execute<LigneAttendu>(sqlAttendus({ seanceId: s.id, etudiantId: e.id, sites: null, inclureEnCours: true })).then((r) => r.rows);
       if (!attendu) throw invalide("Cet étudiant n'était pas attendu à cette séance.");

@@ -31,11 +31,17 @@ export default function PageSuivi() {
   const [page, setPage] = useState(1);
   const [suivi, setSuivi] = useState<{ id: number; prenom: string; nom: string } | null>(null);
 
+  // Changer un filtre ramène à la première page (dans le même rendu : pas de requête pour une page vide).
   useEffect(() => {
-    const t = setTimeout(() => setQDiffere(q.trim()), 300);
+    const t = setTimeout(() => {
+      if (q.trim() === qDiffere) return;
+      setQDiffere(q.trim());
+      setPage(1);
+    }, 300);
     return () => clearTimeout(t);
-  }, [q]);
-  useEffect(() => setPage(1), [filtre, site, qDiffere]);
+  }, [q, qDiffere]);
+  const choisirFiltre = (f: Filtre) => (setFiltre(f), setPage(1));
+  const choisirSite = (x: string) => (setSite(x), setPage(1));
 
   const url = useMemo(() => {
     const p = new URLSearchParams();
@@ -67,14 +73,14 @@ export default function PageSuivi() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Onglets<Filtre>
               valeur={filtre}
-              onChange={setFiltre}
+              onChange={choisirFiltre}
               options={[
                 { valeur: "tous", libelle: "Tous", compteur: data.tous },
                 ...(Object.keys(LIBELLES_RAISONS) as TypeRaisonContact[]).map((t) => ({ valeur: t, libelle: LIBELLES_RAISONS[t], compteur: data.parRaison[t] })),
               ]}
             />
             {refs.data?.toutLeGroupe && (
-              <Selection aria-label="Campus" value={site} onChange={(e) => setSite(e.target.value)} className="sm:w-56">
+              <Selection aria-label="Campus" value={site} onChange={(e) => choisirSite(e.target.value)} className="sm:w-56">
                 <option value="">Tous les campus</option>
                 {refs.data.sites.map((s) => (
                   <option key={s.id} value={s.id}>

@@ -16,7 +16,7 @@ import { upsertLead, changerStage, traiterMessageChat } from "./crm";
 import { insertLeadSchema, updateLeadSchema, leads as tableLeads } from "@shared/schema";
 import { desc as descOrder, eq as eqLead } from "drizzle-orm";
 import { db as dbCrm } from "./db";
-import { notifierContact } from "./mail";
+import { notifierContact, envoyerAEquipe } from "./mail";
 
 // Pour ES modules, obtenir __dirname équivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +72,42 @@ const uploadConfig = multer({
       cb(new Error('Type de fichier non autorisé. Utilisez JPG, PNG, GIF ou WebP.'));
     }
   }
+});
+
+// Témoignages vidéo des anciens étudiants : un ancien filme 30 à 60 secondes
+// avec son téléphone et dépose le fichier. Écriture directe sur le disque
+// (le volume persistant de Railway), jamais en mémoire : une vidéo de
+// 100 Mo chargée en RAM ferait tomber le serveur. Le nom du fichier est
+// tiré au hasard — la vidéo n'est donc pas devinable tant que l'équipe ne
+// l'a pas publiée.
+const DOSSIER_TEMOIGNAGES = "temoignages";
+const FORMATS_VIDEO: Record<string, string> = {
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/webm": ".webm",
+  "video/3gpp": ".3gp",
+  "video/x-m4v": ".m4v",
+  "video/x-matroska": ".mkv",
+};
+
+const temoignageVideoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const dossier = safeJoin(UPLOADS_DIR, DOSSIER_TEMOIGNAGES);
+      if (!dossier) return cb(new Error("Chemin de dépôt invalide"), "");
+      fs.mkdirSync(dossier, { recursive: true });
+      cb(null, dossier);
+    },
+    filename: (_req, file, cb) => {
+      const ext = FORMATS_VIDEO[file.mimetype] ?? ".mp4";
+      cb(null, `temoignage-${randomUUID()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 100 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (FORMATS_VIDEO[file.mimetype]) return cb(null, true);
+    cb(new Error("Format vidéo non pris en charge. Filmez avec votre téléphone (MP4, MOV ou 3GP)."));
+  },
 });
 
 // DIGITALOCEAN SPACES CONFIGURATION
@@ -614,6 +650,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Contact form submission
+  // Témoignage vidéo d'un ancien étudiant. Public : l'ancien ne crée pas de
+  // compte, il filme et dépose. La vidéo n'est pas publiée automatiquement —
+  // elle part à l'équipe, qui décide de ce qui paraît sur le site.
+  app.post("/api/temoignage-video", (req, res) => {
+    temoignageVideoUpload.single("video")(req, res, async (erreur: unknown) => {
+      if (erreur) {
+        const message = erreur instanceof Error ? erreur.message : "Envoi impossible";
+        const trop = message.includes("File too large");
+        return res.status(400).json({
+          success: false,
+          message: trop
+            ? "Votre vidéo dépasse 100 Mo. Filmez une version plus courte (30 à 60 secondes suffisent), ou envoyez-la-nous sur WhatsApp."
+            : message,
+        });
+      }
+      try {
+        const f = req.file;
+        if (!f) {
+          return res.status(400).json({ success: false, message: "Aucune vidéo reçue." });
+        }
+        const champ = (nom: string) => String((req.body?.[nom] ?? "")).trim().slice(0, 300);
+        const nom = champ("name");
+        const telephone = champ("phone");
+        if (nom.length < 3 || telephone.length < 8) {
+          fs.unlink(f.path, () => {});
+          return res.status(400).json({
+            success: false,
+            message: "Votre nom et votre numéro de téléphone sont nécessaires pour vous recontacter.",
+          });
+        }
+        if (champ("consentement") !== "oui") {
+          fs.unlink(f.path, () => {});
+          return res.status(400).json({
+            success: false,
+            message: "Votre autorisation de publication est nécessaire avant l'envoi.",
+          });
+        }
+
+        const lien = `${SITE_URL}/api/assets/${DOSSIER_TEMOIGNAGES}/${f.filename}`;
+        const poids = (f.size / (1024 * 1024)).toFixed(1);
+        const details =
+          `Témoignage vidéo d'ancien étudiant\n` +
+          `Localisation : ${champ("localisation") || "non précisée"}\n` +
+          `Entreprise créée ou poste occupé : ${champ("poste") || "non précisé"}\n` +
+          `Années d'expérience : ${champ("experience") || "non précisé"}\n` +
+          `Filière et année de sortie : ${champ("promotion") || "non précisées"}\n` +
+          `Autorisation de publication : accordée\n` +
+          `Vidéo (${poids} Mo) : ${lien}`;
+
+        // Trace dans l'administration, au même endroit que les autres messages.
+        await storage.createContact({
+          name: nom,
+          email: champ("email") || "temoignage@2iae.com",
+          phone: telephone,
+          message: details,
+        }).catch((e) => console.error("Témoignage vidéo — enregistrement :", (e as Error).message));
+
+        void envoyerAEquipe({
+          subject: `🎥 Témoignage vidéo d'un ancien : ${nom}`,
+          text:
+            `${nom} vient de déposer un témoignage vidéo sur www.2iae.com/temoignages.\n\n` +
+            `${details}\n\n` +
+            `Téléphone : ${telephone}\n\n` +
+            `Regardez la vidéo avec le lien ci-dessus, puis appelez-le pour le remercier : un ancien qui prend la peine de se filmer est un ambassadeur, et il en connaît d'autres.\n\n` +
+            `La vidéo n'est pas publiée sur le site tant que vous ne l'avez pas validée.`,
+        });
+
+        console.log(`🎥 Témoignage vidéo reçu de ${nom} (${poids} Mo) → ${f.filename}`);
+        res.json({ success: true, message: "Témoignage bien reçu" });
+      } catch (e) {
+        console.error("Témoignage vidéo :", e);
+        res.status(500).json({ success: false, message: "Erreur lors de l'envoi de votre vidéo." });
+      }
+    });
+  });
+
   app.post("/api/contact", async (req, res) => {
     try {
       const validatedData = insertContactSchema.parse(req.body);

@@ -26,7 +26,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { coursEnseigne, seanceVisible, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
+import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
@@ -93,6 +93,7 @@ import {
   type BattementPresenceDto,
   type EffectifSalle,
   type MainLevee,
+  tauxPresence,
 } from "@shared/schema";
 import type { SeanceResume, EnCours } from "@shared/api";
 
@@ -2178,7 +2179,7 @@ export function enregistrerLive(app: Express) {
         }),
         req.body,
       );
-      const inscrits = await etudiantsDuCours(s.coursId);
+      const inscrits = await etudiantsAttendusSeance(s);
       const etudiant = inscrits.find((e) => e.id === d.utilisateurId);
       if (!etudiant) throw introuvable("Étudiant inscrit à ce cours");
       if (!etudiant.siteId || !agitSurSite(u, etudiant.siteId)) throw interdit("Cet étudiant n'est pas dans votre périmètre.");
@@ -2351,7 +2352,17 @@ export function enregistrerLive(app: Express) {
         tenue: Boolean(s.demarreeLe),
         seuilMinutes: seuilMinutes(s),
         sites: sitesBilan,
-        totaux: { inscrits, presents, taux: inscrits ? Math.round((presents / inscrits) * 100) : 0 },
+        totaux: {
+          inscrits,
+          presents,
+          // Même définition que le pilotage : les absences justifiées et les incidents de salle ne comptent pas contre la séance.
+          taux: tauxPresence({
+            presents,
+            attendus: inscrits,
+            justifies: sitesBilan.reduce((a, b) => a + b.justifies, 0),
+            incidents: sitesBilan.reduce((a, b) => a + b.incident, 0),
+          }),
+        },
         questionsNonTraitees: toutes.filter((q) => !q.repondue && !q.masquee),
         questionsTotal: toutes.length,
         sondages: sondagesBilan,
@@ -2650,7 +2661,7 @@ export function enregistrerLive(app: Express) {
 async function feuillePresence(u: Utilisateur, s: Seance): Promise<LignePresenceDto[]> {
   if (seanceNonTenue(s)) return [];
   const perimetre = perimetreSites(u);
-  const inscrits = (await etudiantsDuCours(s.coursId)).filter((e) => !perimetre || (e.siteId !== null && perimetre.includes(e.siteId)));
+  const inscrits = (await etudiantsAttendusSeance(s)).filter((e) => !perimetre || (e.siteId !== null && perimetre.includes(e.siteId)));
   const lignes = await db.select().from(presences).where(eq(presences.seanceId, s.id));
   const parEtudiant = new Map(lignes.map((p) => [p.utilisateurId, p]));
   const incidents = new Set((await sitesEnIncident(s)).keys());

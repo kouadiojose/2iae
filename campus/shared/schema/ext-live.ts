@@ -324,7 +324,8 @@ export type BilanDto = {
   /** Seuil de présence en ligne (70 % de la durée). */
   seuilMinutes: number;
   sites: BilanSiteDto[];
-  totaux: { inscrits: number; presents: number; taux: number };
+  /** taux : présents / (attendus − justifiés − incidents), null s'il ne reste personne à compter (tauxPresence). */
+  totaux: { inscrits: number; presents: number; taux: number | null };
   questionsNonTraitees: QuestionDirectDto[];
   questionsTotal: number;
   sondages: (SondageDto & { resultats: ResultatsSondageDto })[];

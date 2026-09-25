@@ -156,6 +156,30 @@ export async function etudiantsDuCours(coursId: number): Promise<Utilisateur[]> 
     );
 }
 
+/**
+ * Étudiants attendus à une séance, même règle que le pilotage (sqlAttendus) :
+ * compte créé avant la fin prévue, et soit sa classe d'alors suit le cours
+ * (dernier passage de classe avant la fin, sinon sa classe actuelle), soit il
+ * y était déjà inscrit individuellement. Un étudiant arrivé en cours d'année
+ * n'est donc pas compté absent aux séances d'avant son arrivée.
+ */
+export async function etudiantsAttendusSeance(s: { coursId: number; debut: Date; dureeMinutes: number }): Promise<Utilisateur[]> {
+  const fin = new Date(s.debut.getTime() + s.dureeMinutes * 60_000).toISOString();
+  const { rows } = await db.execute<{ id: number }>(sql`
+    SELECT u.id FROM campus.utilisateurs u
+    WHERE u.role = 'etudiant' AND u.actif AND u.cree_le <= ${fin}::timestamptz
+      AND (
+        COALESCE(
+          (SELECT pc.classe_id FROM campus.passages_classes pc
+            WHERE pc.utilisateur_id = u.id AND pc.depuis <= ${fin}::timestamptz ORDER BY pc.depuis DESC, pc.id DESC LIMIT 1),
+          CASE WHEN EXISTS (SELECT 1 FROM campus.passages_classes pc WHERE pc.utilisateur_id = u.id) THEN NULL ELSE u.classe_id END
+        ) IN (SELECT cc.classe_id FROM campus.cours_classes cc WHERE cc.cours_id = ${s.coursId})
+        OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = ${s.coursId} AND i.utilisateur_id = u.id AND i.cree_le <= ${fin}::timestamptz)
+      )`);
+  if (!rows.length) return [];
+  return db.select().from(utilisateurs).where(inArray(utilisateurs.id, rows.map((r) => r.id)));
+}
+
 /** Formateurs d'un cours (principal + co-formateurs). */
 export async function formateursDuCours(coursId: number): Promise<Utilisateur[]> {
   const [c] = await db.select({ formateurId: cours.formateurId }).from(cours).where(eq(cours.id, coursId));

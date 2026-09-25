@@ -581,7 +581,7 @@ function SectionBilan({ seance }: { seance: SeanceDetailDto }) {
         <Chiffre
           libelle="Présents"
           valeur={nonTenue ? "—" : `${bilan.totaux.presents} / ${bilan.totaux.inscrits}`}
-          detail={nonTenue ? "Séance non tenue" : `${bilan.totaux.taux} % des inscrits · en ligne : ${bilan.seuilMinutes} min minimum`}
+          detail={nonTenue ? "Séance non tenue" : `${bilan.totaux.taux === null ? "—" : `${bilan.totaux.taux} %`} de présence (hors justifiés) · en ligne : ${bilan.seuilMinutes} min minimum`}
           ton="orange"
         />
         <Chiffre libelle="Questions posées" valeur={bilan.questionsTotal} detail={`${bilan.questionsNonTraitees.length} sans réponse`} />

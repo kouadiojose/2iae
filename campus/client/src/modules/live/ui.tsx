@@ -129,7 +129,7 @@ export function LigneSeance({ s, enseignant, lien }: { s: SeanceResume; enseigna
   const href = lien ?? (s.statut === "terminee" ? `/replays/${s.id}` : enseignant ? `/enseigner/seances/${s.id}` : `/live/${s.id}`);
   const jour = jourLong(s.debut);
   return (
-    <Link href={href} className="grid grid-cols-[56px_1fr_auto] items-center gap-3.5 border-b border-ligne py-3 text-encre no-underline hover:text-encre">
+    <Link href={href} className="grid w-full min-w-0 grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-ligne py-3 text-encre no-underline hover:text-encre">
       <PastilleDate jour={p.jour} mois={p.mois} ton={s.statut === "en_direct" ? "orange" : "creme"} />
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate text-[16px] font-bold">{s.titre}</span>

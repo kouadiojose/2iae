@@ -280,8 +280,13 @@ const SQL_DUREE_REFERENCE = sql`
     ELSE s.duree_minutes
   END`;
 
-/** Incident signalé par la salle de l'étudiant (même règle que sitesEnIncident du live). */
-const SQL_INCIDENT_SALLE = sql`e.incident IS NOT NULL`;
+/**
+ * L'incident de la salle de l'étudiant a touché la séance (même règle que
+ * incidentSurvenu / sitesEnIncident du live) : en cours, ou résolu après le
+ * démarrage — sa résolution n'efface pas la cause des absences.
+ */
+const SQL_INCIDENT_SALLE = sql`(NULLIF(e.incident, '') IS NOT NULL
+  OR (e.incident_le IS NOT NULL AND (e.incident_resolu_le IS NULL OR e.incident_resolu_le > COALESCE(s.demarree_le, s.debut))))`;
 
 /**
  * Classe d'un étudiant à un instant donné (colonne SQL « t ») : son dernier
@@ -309,8 +314,8 @@ const SQL_CLASSE_A = sql`(CASE WHEN h.depuis IS NULL THEN u.classe_id ELSE h.cla
  * séance jamais démarrée (terminée d'office par le live) n'a pas d'absents.
  * Un étudiant n'est attendu que s'il était déjà inscrit (compte créé, arrivé
  * dans la classe du cours, ou inscrit au cours) avant la fin prévue.
- * Retard : arrivée en salle plus de 15 min après le DÉMARRAGE réel (pas
- * l'heure prévue), jamais pour un étudiant pointé par le responsable.
+ * Retard : arrivée EN SALLE (émargement) plus de 15 min après le DÉMARRAGE
+ * réel (pas l'heure prévue), jamais pour un étudiant pointé par le responsable.
  */
 function sqlAttendus(f: FiltreAttendus): SQL {
   const conds: SQL[] = [sql`s.statut <> 'annulee'`, sql`c.statut <> 'brouillon'`];
@@ -327,7 +332,8 @@ function sqlAttendus(f: FiltreAttendus): SQL {
   return sql`
     SELECT s.id AS seance_id, s.cours_id, s.debut, s.titre AS seance_titre, c.code AS cours_code,
       u.id AS uid, u.site_id, ${SQL_CLASSE_A} AS classe_id,
-      COALESCE(p.minutes, 0)::int AS minutes, p.arrivee_le, p.justification,
+      COALESCE(p.minutes, 0)::int AS minutes, p.justification,
+      CASE WHEN p.mode = 'salle' THEN COALESCE(p.arrivee_salle_le, p.arrivee_le) ELSE p.arrivee_le END AS arrivee_le,
       CASE
         WHEN NULLIF(p.justification, '') IS NOT NULL THEN 'justifie'
         WHEN p.mode = 'salle' AND p.emarge_qr THEN 'emarge'
@@ -339,7 +345,7 @@ function sqlAttendus(f: FiltreAttendus): SQL {
         ELSE 'absent'
       END AS statut,
       COALESCE(NULLIF(p.justification, '') IS NULL AND p.mode = 'salle' AND p.pointe_par_id IS NULL
-        AND p.arrivee_le > COALESCE(s.demarree_le, s.debut) + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard
+        AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > COALESCE(s.demarree_le, s.debut) + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard
     FROM campus.seances s
     JOIN campus.cours c ON c.id = s.cours_id
     CROSS JOIN LATERAL (

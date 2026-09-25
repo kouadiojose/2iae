@@ -720,6 +720,14 @@ const schemaRendu = z.object({
 });
 const schemaRendre = schemaRendu.extend({ prepareLe: dateIso.nullable().optional() });
 
+/**
+ * La ligne porte toujours la copie lue : même heure d'arrivée (comparée à la
+ * milliseconde, précision des dates JavaScript). Un remplacement arrivé
+ * entre-temps change renduLe, et la mise à jour ne s'applique plus.
+ */
+const memeCopie = (r: Pick<Rendu, "id" | "renduLe">) =>
+  and(eq(rendus.id, r.id), r.renduLe ? sql`date_trunc('milliseconds', ${rendus.renduLe}) = ${r.renduLe}` : isNull(rendus.renduLe));
+
 /** Le formateur a commencé à corriger cette copie (note, commentaire, vocal ou proposition de l'IA). */
 const correctionCommencee = (r: Rendu) =>
   r.note !== null || r.noteDetail !== null || Boolean(r.commentaire) || r.commentaireAudioId !== null || r.propositionIa !== null || r.corrigeLe !== null;
@@ -1420,7 +1428,7 @@ export function enregistrerEvaluations(app: Express) {
           majLe: maintenant,
         })
         // Même copie que celle lue plus haut : un remplacement arrivé entre-temps l'emporte.
-        .where(and(eq(rendus.id, r.id), r.renduLe ? eq(rendus.renduLe, r.renduLe) : isNull(rendus.renduLe)))
+        .where(memeCopie(r))
         .returning();
       if (!maj) throw copieRemplacee();
       const noteChangee = note !== undefined && note !== r.note;
@@ -1507,7 +1515,7 @@ export function enregistrerEvaluations(app: Express) {
       const [maj] = await db
         .update(rendus)
         .set({ propositionIa: proposition, majLe: new Date() })
-        .where(and(eq(rendus.id, r.id), ne(rendus.statut, "brouillon"), r.renduLe ? eq(rendus.renduLe, r.renduLe) : isNull(rendus.renduLe)))
+        .where(and(memeCopie(r), ne(rendus.statut, "brouillon")))
         .returning();
       if (!maj) throw new ErreurHttp(409, "L'étudiant vient de remplacer sa copie : la proposition de l'IA portait sur l'ancienne. Relancez-la sur la nouvelle copie.");
       await tracer(u, "proposition_ia", { renduId: r.id, devoirId: d.id, noteProposee: proposition.note, alerte: Boolean(proposition.alerte) });

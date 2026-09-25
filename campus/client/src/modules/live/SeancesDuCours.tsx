@@ -30,25 +30,25 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
       )}
       {direct && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-[22px] bg-encre p-5 text-white">
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 flex-col gap-1">
             <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-[#FF8A6B]">
               <span className="point-direct" /> En direct
             </span>
-            <span className="text-xl font-extrabold">{direct.titre}</span>
+            <span className="break-words text-xl font-extrabold">{direct.titre}</span>
           </div>
           <LienBouton href={`/live/${direct.id}`}>{enseignant ? "Ouvrir le studio" : "Rejoindre le live"}</LienBouton>
         </div>
       )}
       {!direct && prochaine && !enseignant && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-[22px] bg-orange p-5 text-encre">
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 flex-col gap-1">
             <span className="font-mono text-xs uppercase tracking-wider">Prochain live dans <DecompteCourt cible={prochaine.debut} /></span>
-            <span className="text-xl font-extrabold">{prochaine.titre}</span>
+            <span className="break-words text-xl font-extrabold">{prochaine.titre}</span>
           </div>
           <LienAgenda seanceId={prochaine.id} className="rounded-xl border-[1.5px] border-encre px-4 py-3 text-encre hover:bg-encre hover:text-white" />
         </div>
       )}
-      <section>
+      <section className="min-w-0">
         <TitreSection titre="À venir" />
         {avenir.length ? (
           avenir.map((s) => <LigneSeance key={s.id} s={s} enseignant={enseignant} />)
@@ -61,7 +61,7 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
         )}
       </section>
       {passees.length > 0 && (
-        <section>
+        <section className="min-w-0">
           <TitreSection titre="Déjà passés" />
           {passees.map((s) => (
             <LigneSeance key={s.id} s={s} enseignant={enseignant} lien={enseignant ? `/enseigner/seances/${s.id}` : `/replays/${s.id}`} />

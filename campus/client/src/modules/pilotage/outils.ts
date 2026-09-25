@@ -1,8 +1,9 @@
 // Petits outils du module pilotage (vie scolaire et direction).
 import { useQuery } from "@tanstack/react-query";
-import type { FicheConnexion, ReferencesPilotage, StatutPresencePilotage, CompteLigne } from "@shared/schema";
+import type { FicheConnexion, ReferencesPilotage, StatutPresencePilotage, CompteLigne, ProgressionTravail } from "@shared/schema";
 import { LIBELLES_ROLES } from "@shared/schema";
 import type { Ton } from "@/components/ui/divers";
+import { api, get, ErreurApi } from "@/lib/api";
 import { dateCourte, relatif } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 
@@ -116,4 +117,64 @@ export function libelleSemaine(lundi: string): string {
 /** Lit un paramètre de l'adresse (?seance=12). */
 export function parametre(nom: string): string | null {
   return new URLSearchParams(window.location.search).get(nom);
+}
+
+// ── Travaux longs (import, fiches) ─────────────────────────────────────────
+
+/** Identifiant aléatoire d'un travail (lot d'import, préparation de fiches), choisi par le navigateur. */
+export function nouvelIdentifiant(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (o) => o.toString(16).padStart(2, "0")).join("");
+}
+
+export type EtatTravail = { progression: ProgressionTravail | null; coupure: boolean };
+
+const pause = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
+/**
+ * Demande longue qui survit aux coupures (4G) : la progression est suivie à
+ * côté (GET /api/pilotage/progression/:id). Si la réponse se perd (réseau,
+ * erreur du serveur, ou serveur qui a fini sans que la réponse arrive), la
+ * même demande est renvoyée avec le même identifiant : le serveur rend alors
+ * le même résultat (mêmes codes), sans rien créer deux fois.
+ */
+export async function travailLong<T>(url: string, corps: unknown, id: string, surEtat: (e: EtatTravail) => void): Promise<T> {
+  const etat: EtatTravail = { progression: null, coupure: false };
+  let controleur = new AbortController();
+  let finiDepuis = 0;
+  let actif = true;
+  void (async () => {
+    while (actif) {
+      await pause(1000);
+      if (!actif) break;
+      try {
+        etat.progression = await get<ProgressionTravail>(`/api/pilotage/progression/${id}`);
+        if (etat.progression.fini && !finiDepuis) finiDepuis = Date.now();
+        // Le serveur a fini, mais la réponse n'arrive pas (connexion morte) : on la redemande.
+        if (finiDepuis && Date.now() - finiDepuis > 8000) controleur.abort();
+      } catch {
+        // Pas encore commencé, déjà oublié par le serveur, ou hors ligne : on réessaie à la seconde suivante.
+      }
+      if (actif) surEtat({ ...etat });
+    }
+  })();
+  let erreursServeur = 0;
+  try {
+    for (let essai = 1; ; essai++) {
+      try {
+        return await api<T>(url, { methode: "POST", corps, signal: controleur.signal });
+      } catch (e) {
+        const reseau = (e as Error).name === "AbortError" || (e instanceof ErreurApi && e.statut === 0);
+        // 502/503 pendant un redémarrage : quelques essais ; une vraie erreur du serveur n'insiste pas.
+        const serveur = e instanceof ErreurApi && e.statut >= 500 && ++erreursServeur <= 6;
+        if (!(reseau || serveur) || essai >= 40) throw e;
+        etat.coupure = true;
+        surEtat({ ...etat });
+        controleur = new AbortController();
+        finiDepuis = 0;
+        await pause(Math.min(15_000, 1000 + essai * 1000));
+      }
+    }
+  } finally {
+    actif = false;
+  }
 }

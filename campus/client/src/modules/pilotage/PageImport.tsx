@@ -1,20 +1,28 @@
 // /pilotage/comptes/import : coller la liste de la scolarité depuis Excel
 // (ou un CSV), voir l'aperçu avec les erreurs en rouge, créer les comptes,
 // puis imprimer les fiches de connexion.
+//
+// Un import de 1 500 étudiants prend une à deux minutes : la progression
+// s'affiche, et le lot porte un identifiant. Si la connexion se coupe, le
+// serveur continue et la page récupère les fiches toute seule ; si la page a
+// été fermée, « Refaire les fiches » les redonne (jamais de doublon).
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ClipboardPaste, CheckCircle2, Printer, RotateCcw, TriangleAlert, CircleX, ArrowLeft } from "lucide-react";
-import type { ApercuImport, LigneImport, LotFiches } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import { ClipboardPaste, CheckCircle2, Printer, RotateCcw, TriangleAlert, CircleX, ArrowLeft, History } from "lucide-react";
+import type { ApercuImport, LigneImport, LotFiches, LotImportEnAttente } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Selection } from "@/components/ui/champs";
 import { Badge } from "@/components/ui/divers";
 import { toast } from "@/components/ui/toast";
 import { post, ErreurApi } from "@/lib/api";
+import { dateEtHeure } from "@/lib/dates";
 import { rafraichir } from "@/lib/queryClient";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
-import { useReferences, telephoneLisible, memoriserFiches, lienFiches } from "./outils";
+import { SuiviTravail } from "./composants/SuiviTravail";
+import { useReferences, telephoneLisible, memoriserFiches, lienFiches, nouvelIdentifiant, travailLong, type EtatTravail } from "./outils";
 
 const EXEMPLE = "Matricule\tNom\tPrénoms\tTéléphone\tClasse\n24GC0123\tKOUASSI\tAya Grâce\t07 07 12 34 56\tBTS Gestion commerciale · 1re année";
 
@@ -25,20 +33,38 @@ export default function PageImport() {
   const [classeId, setClasseId] = useState("");
   const [apercu, setApercu] = useState<ApercuImport | null>(null);
   const [resultat, setResultat] = useState<LotFiches | null>(null);
+  const [refaite, setRefaite] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const [etat, setEtat] = useState<EtatTravail | null>(null);
+  // Identifiant du lot : gardé tant qu'on n'a pas reçu ses fiches (relancer ne crée aucun doublon).
+  const [lotId, setLotId] = useState(nouvelIdentifiant);
+  const [lotRepris, setLotRepris] = useState<string | null>(null);
+  const enAttente = useQuery<LotImportEnAttente[]>({ queryKey: ["/api/pilotage/import/lots"] });
 
   const voirApercu = async () => {
     setEnvoi(true);
     setErreur(null);
     try {
-      setApercu(await post<ApercuImport>("/api/pilotage/import/apercu", { texte, classeId: classeId ? Number(classeId) : null }));
+      setApercu(await post<ApercuImport>("/api/pilotage/import/apercu", { texte, classeId: classeId ? Number(classeId) : null, lotId }));
       window.scrollTo({ top: 0 });
     } catch (e) {
       setErreur(e instanceof ErreurApi ? e.message : "Une erreur est survenue.");
     } finally {
       setEnvoi(false);
     }
+  };
+
+  /** Fiches reçues : on le dit au serveur (le lot ne sera plus proposé à « Refaire les fiches »). */
+  const recu = async (lot: LotFiches, estRefaite: boolean) => {
+    memoriserFiches(lot.fiches);
+    setResultat(lot);
+    setRefaite(estRefaite);
+    if (lot.lotId) await post(`/api/pilotage/import/lots/${lot.lotId}/remis`).catch(() => undefined);
+    const crees = lot.fiches.length - (lot.repris ?? 0);
+    toast(estRefaite || !crees ? pluriel(lot.fiches.length, "fiche prête", "fiches prêtes") : pluriel(crees, "compte créé", "comptes créés"));
+    await rafraichir("/api/pilotage");
+    window.scrollTo({ top: 0 });
   };
 
   const creer = async () => {
@@ -46,32 +72,67 @@ export default function PageImport() {
     const valides = apercu.lignes.filter((l) => !l.erreurs.length);
     setEnvoi(true);
     setErreur(null);
+    setEtat(null);
     try {
-      const lot = await post<LotFiches>("/api/pilotage/import/valider", {
-        lignes: valides.map(({ numero, matricule, nom, prenom, telephone, email, classeId: c }) => ({ numero, matricule, nom, prenom, telephone, email, classeId: c })),
-      });
-      memoriserFiches(lot.fiches);
-      setResultat(lot);
-      toast(`${pluriel(lot.fiches.length, "compte créé", "comptes créés")}`);
-      await rafraichir("/api/pilotage");
-      window.scrollTo({ top: 0 });
+      const lot = await travailLong<LotFiches>(
+        "/api/pilotage/import/valider",
+        { lotId, lignes: valides.map(({ numero, matricule, nom, prenom, telephone, email, classeId: c }) => ({ numero, matricule, nom, prenom, telephone, email, classeId: c })) },
+        lotId,
+        setEtat,
+      );
+      await recu(lot, false);
     } catch (e) {
-      setErreur(e instanceof ErreurApi ? e.message : "Une erreur est survenue.");
+      setErreur(
+        e instanceof ErreurApi && e.statut > 0
+          ? e.message
+          : "La connexion ne revient pas. Les comptes déjà créés ne sont pas perdus : touchez « Créer » à nouveau dès le retour du réseau (sans doublon), ou rouvrez cette page plus tard pour « Refaire les fiches ».",
+      );
     } finally {
       setEnvoi(false);
+      setEtat(null);
     }
+  };
+
+  /** Import dont les fiches ne sont jamais arrivées : les mêmes (import récent) ou de nouveaux codes. */
+  const refaire = async (l: LotImportEnAttente) => {
+    setEnvoi(true);
+    setLotRepris(l.id);
+    setErreur(null);
+    setEtat(null);
+    try {
+      await recu(await travailLong<LotFiches>(`/api/pilotage/import/lots/${l.id}/fiches`, {}, l.id, setEtat), true);
+    } catch (e) {
+      setErreur(e instanceof ErreurApi && e.statut > 0 ? e.message : "La connexion ne revient pas : réessayez dans un instant.");
+    } finally {
+      setEnvoi(false);
+      setLotRepris(null);
+      setEtat(null);
+    }
+  };
+
+  const oublierLot = async (l: LotImportEnAttente) => {
+    await post(`/api/pilotage/import/lots/${l.id}/remis`).catch(() => undefined);
+    await enAttente.refetch();
   };
 
   const recommencer = () => {
     setTexte("");
     setApercu(null);
     setResultat(null);
+    setRefaite(false);
     setErreur(null);
+    setLotId(nouvelIdentifiant());
   };
 
   // ── Étape 3 : c'est fait ────────────────────────────────────────────────
   if (resultat) {
     const ids = resultat.fiches.map((f) => f.id);
+    const crees = resultat.fiches.length - (resultat.repris ?? 0);
+    const titre = refaite
+      ? pluriel(resultat.fiches.length, "fiche prête", "fiches prêtes")
+      : crees > 0
+        ? pluriel(crees, "compte créé", "comptes créés")
+        : pluriel(resultat.repris ?? 0, "fiche refaite", "fiches refaites");
     return (
       <Page>
         <SousNav />
@@ -79,14 +140,29 @@ export default function PageImport() {
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-succes-clair text-succes">
             <CheckCircle2 className="h-8 w-8" />
           </span>
-          <h1 className="titre-page">{pluriel(resultat.fiches.length, "compte créé", "comptes créés")}.</h1>
+          <h1 className="titre-page">{titre}.</h1>
           <p className="max-w-2xl text-base text-texte-doux">
+            {refaite
+              ? "Nouveaux codes pour les comptes de cet import qui n'ont pas encore choisi leur code secret : les fiches perdues ne marchent plus. "
+              : ""}
             Chaque étudiant a un code provisoire à 6 chiffres, valable 30 jours, et un QR qui l'emmène choisir son propre code. Imprimez les fiches maintenant : les codes ne seront plus affichés ensuite (il faudrait en créer de nouveaux).
           </p>
+          {!refaite && (resultat.repris ?? 0) > 0 && (
+            <p className="max-w-2xl text-[15px] text-texte-doux">
+              {pluriel(resultat.repris!, "compte était déjà créé", "comptes étaient déjà créés")} par ce même import (réponse perdue en route) : {resultat.repris! > 1 ? "leurs fiches sont refaites" : "sa fiche est refaite"}, sans doublon.
+            </p>
+          )}
+          {resultat.ignores > 0 && (
+            <p className="max-w-2xl text-[15px] text-texte-doux">
+              {pluriel(resultat.ignores, "compte a", "comptes ont")} déjà choisi leur code secret : pas de nouvelle fiche pour eux.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3">
-            <Bouton taille="lg" icone={<Printer className="h-5 w-5" />} onClick={() => naviguer(lienFiches(ids))}>
-              Imprimer les {resultat.fiches.length} fiches
-            </Bouton>
+            {resultat.fiches.length > 0 && (
+              <Bouton taille="lg" icone={<Printer className="h-5 w-5" />} onClick={() => naviguer(lienFiches(ids))}>
+                Imprimer les {resultat.fiches.length} fiches
+              </Bouton>
+            )}
             <Bouton taille="lg" variante="contour" icone={<RotateCcw className="h-5 w-5" />} onClick={recommencer}>
               Importer un autre lot
             </Bouton>
@@ -143,7 +219,8 @@ export default function PageImport() {
           </p>
         )}
         <div className="bas-sur sticky bottom-[72px] z-10 -mx-4 flex flex-wrap gap-3 border-t border-ligne-douce bg-white/95 px-4 py-3 backdrop-blur lg:bottom-0">
-          <Bouton variante="contour" icone={<ArrowLeft className="h-4 w-4" />} onClick={() => setApercu(null)} className="px-4">
+          {envoi && <SuiviTravail etat={etat} attente={`Envoi des ${valides.length} lignes…`} />}
+          <Bouton variante="contour" icone={<ArrowLeft className="h-4 w-4" />} onClick={() => setApercu(null)} className="px-4" disabled={envoi}>
             Modifier
           </Bouton>
           <Bouton taille="lg" className="flex-1 whitespace-nowrap sm:flex-none" onClick={creer} chargement={envoi} disabled={!valides.length}>
@@ -163,6 +240,29 @@ export default function PageImport() {
         titre="Importer des étudiants"
         sousTitre="Dans Excel, sélectionnez le tableau AVEC sa ligne d'en-têtes, copiez (Ctrl+C), puis collez-le ci-dessous (Ctrl+V). Un fichier CSV ouvert dans le Bloc-notes marche aussi."
       />
+      {(enAttente.data ?? []).map((l) => (
+        <section key={l.id} className="flex flex-col gap-3 rounded-2xl border border-alerte bg-alerte-clair p-5 text-alerte" aria-label="Import dont les fiches ne sont pas arrivées">
+          <div className="flex items-start gap-3">
+            <History className="mt-0.5 h-5 w-5 shrink-0" />
+            <p className="text-[15px]">
+              <strong>Import du {dateEtHeure(l.creeLe)}</strong> : {pluriel(l.comptes, "compte créé", "comptes créés")}, mais leurs fiches ne sont jamais arrivées (connexion coupée ou page fermée).{" "}
+              {l.nonActives < l.comptes ? `${pluriel(l.nonActives, "compte n'est", "comptes ne sont")} pas encore activé${l.nonActives > 1 ? "s" : ""}.` : ""} Refaites les fiches : de nouveaux codes, et aucun compte en double.
+            </p>
+          </div>
+          {envoi && lotRepris === l.id ? (
+            <SuiviTravail etat={etat} attente="Préparation des fiches…" />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Bouton icone={<Printer className="h-4 w-4" />} onClick={() => refaire(l)} disabled={envoi}>
+                {l.nonActives > 1 ? `Refaire les ${l.nonActives} fiches` : "Refaire la fiche"}
+              </Bouton>
+              <Bouton variante="contour" onClick={() => oublierLot(l)} disabled={envoi}>
+                Les fiches sont déjà imprimées
+              </Bouton>
+            </div>
+          )}
+        </section>
+      ))}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-4">
           <label htmlFor="texte-import" className="text-sm font-bold">

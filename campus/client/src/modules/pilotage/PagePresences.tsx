@@ -172,7 +172,7 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
         titre={d.seance.titre}
         sousTitre={dateEtHeure(d.seance.debut)}
         actions={
-          !d.aVenir && d.total.attendus > 0 ? (
+          !d.aVenir && !d.nonTenue && d.total.attendus > 0 ? (
             <a
               href={`/api/pilotage/presences/seance/${d.seance.id}/export`}
               className="inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-orange px-5 font-bold text-encre no-underline hover:bg-encre hover:text-white"
@@ -185,6 +185,11 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
       />
       {d.aVenir ? (
         <EtatVide titre="Cette séance n'a pas encore eu lieu." texte={`${pluriel(d.total.attendus, "étudiant attendu", "étudiants attendus")}. La feuille se remplira pendant le live : émargement en salle et présence en ligne.`} />
+      ) : d.nonTenue ? (
+        <EtatVide
+          titre="Cette séance n'a jamais démarré."
+          texte="Personne n'y est compté absent : elle n'entre ni dans les taux de présence, ni dans « À contacter », ni dans les dossiers et relevés des étudiants."
+        />
       ) : (
         <>
           <Carte className="flex flex-col gap-3 bg-creme">
@@ -196,7 +201,7 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
               <Decompte r={d.total} />
             </div>
             <p className="text-sm text-texte-pale">
-              Présent en ligne à partir de {Math.round(d.seuil * 100)} % de {d.dureeReference} min, soit {Math.ceil(d.seuil * d.dureeReference)} min. Les absences justifiées et les incidents de salle ne comptent pas dans le taux.
+              Présent en ligne à partir de {Math.round(d.seuil * 100)} % de {d.dureeReference} min, soit {d.seuilMinutes} min. Les absences justifiées et les incidents de salle ne comptent pas dans le taux.
             </p>
           </Carte>
           <Onglets<FiltreStatut>

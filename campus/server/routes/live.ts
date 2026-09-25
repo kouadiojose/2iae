@@ -2017,7 +2017,8 @@ export function enregistrerLive(app: Express) {
       const reference = (s.demarreeLe ?? s.debut).getTime();
       const minuteDe = (t: number) => Math.max(0, Math.floor((t - reference) / MINUTE));
       const minute = minuteDe(maintenant.getTime());
-      const plafond = Math.max(1, Math.ceil((maintenant.getTime() - reference) / MINUTE));
+      // Jamais plus que la durée écoulée depuis le démarrage (arrondie à la minute).
+      const plafond = Math.max(1, Math.round((maintenant.getTime() - reference) / MINUTE));
       const chercher = async () => (await db.select().from(presences).where(and(eq(presences.seanceId, s.id), eq(presences.utilisateurId, u.id))))[0];
       let p = await chercher();
       let ligne: Presence | undefined;

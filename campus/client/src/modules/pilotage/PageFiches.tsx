@@ -7,11 +7,11 @@ import { Printer, ArrowLeft, ScanLine, KeyRound, GraduationCap, TriangleAlert } 
 import type { FicheConnexion, LotFiches } from "@shared/schema";
 import { Bouton } from "@/components/ui/bouton";
 import { toastErreur } from "@/components/ui/toast";
-import { post } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { pluriel } from "@/lib/utils";
 import { Qr } from "./composants/Qr";
-import { fichesMemorisees, memoriserFiches } from "./outils";
+import { SuiviTravail } from "./composants/SuiviTravail";
+import { fichesMemorisees, memoriserFiches, nouvelIdentifiant, travailLong, type EtatTravail } from "./outils";
 
 const PAR_FEUILLE = 8;
 const LARGEUR_A4_PX = 794; // 210 mm à 96 ppp
@@ -31,6 +31,7 @@ export default function PageFiches() {
   const [fiches, setFiches] = useState<FicheConnexion[] | null>(() => fichesMemorisees(ids));
   const [ignores, setIgnores] = useState(0);
   const [envoi, setEnvoi] = useState(false);
+  const [etat, setEtat] = useState<EtatTravail | null>(null);
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
@@ -43,8 +44,11 @@ export default function PageFiches() {
 
   const preparer = async () => {
     setEnvoi(true);
+    setEtat(null);
+    // Identifiant de suivi : progression affichée, et une réponse perdue se récupère sans refaire les codes.
+    const suivi = nouvelIdentifiant();
     try {
-      const lot = await post<LotFiches>("/api/pilotage/fiches", { utilisateurIds: ids });
+      const lot = await travailLong<LotFiches>("/api/pilotage/fiches", { utilisateurIds: ids, suivi }, suivi, setEtat);
       memoriserFiches(lot.fiches);
       setFiches(lot.fiches);
       setIgnores(lot.ignores);
@@ -53,6 +57,7 @@ export default function PageFiches() {
       toastErreur(e);
     } finally {
       setEnvoi(false);
+      setEtat(null);
     }
   };
 
@@ -105,6 +110,7 @@ export default function PageFiches() {
               <Bouton taille="lg" onClick={preparer} chargement={envoi} icone={<Printer className="h-5 w-5" />} className="min-h-[56px]">
                 Préparer les fiches
               </Bouton>
+              {envoi && <SuiviTravail etat={etat} attente="Préparation des fiches…" />}
             </>
           )}
         </div>

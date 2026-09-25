@@ -72,8 +72,9 @@ export default function PageDirect() {
         />
       )}
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <section>
+      {/* grid-cols-1 (minmax(0, 1fr)) et min-w-0 : un titre de séance très long se tronque au lieu d'élargir la page. */}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <section className="min-w-0">
           <TitreSection titre={enseignant ? "Prochaines séances" : "À venir"} />
           {avenir.error ? (
             <Erreur message={(avenir.error as Error).message} reessayer={() => void avenir.refetch()} />
@@ -87,7 +88,7 @@ export default function PageDirect() {
             </div>
           )}
         </section>
-        <section>
+        <section className="min-w-0">
           <TitreSection titre="Déjà passés" />
           {passees.error ? (
             <Erreur message={(passees.error as Error).message} reessayer={() => void passees.refetch()} />
@@ -96,10 +97,10 @@ export default function PageDirect() {
               Les replays de tes lives apparaîtront ici : vidéo, transcription et fiche de révision, avec leur poids affiché avant de les charger.
             </p>
           ) : (
-            <div className="flex flex-col gap-3 rounded-[20px] bg-encre p-5 text-white">
+            <div className="flex min-w-0 flex-col gap-3 rounded-[20px] bg-encre p-5 text-white">
               <span className="font-mono text-xs text-orange-peche">Replays récents</span>
               {passees.data.map((s) => (
-                <LienBouton key={s.id} href={`/replays/${s.id}`} variante="encre" className="justify-start gap-3.5 bg-transparent px-0 py-1.5 text-left hover:bg-transparent hover:text-orange-peche">
+                <LienBouton key={s.id} href={`/replays/${s.id}`} variante="encre" className="w-full min-w-0 justify-start gap-3.5 overflow-hidden bg-transparent px-0 py-1.5 text-left hover:bg-transparent hover:text-orange-peche">
                   <span className="grid h-12 w-[76px] shrink-0 place-items-center rounded-[10px] bg-nuit-ligne font-mono text-[11px] text-orange">
                     {s.replayDisponible ? <PlayCircle className="h-5 w-5" /> : `${s.dureeMinutes} min`}
                   </span>
@@ -123,11 +124,11 @@ export default function PageDirect() {
 function CarteDirect({ s }: { s: SeanceResume }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-5 rounded-[24px] bg-encre p-6 text-white sm:p-7">
-      <div className="flex flex-col gap-1.5">
+      <div className="flex min-w-0 flex-col gap-1.5">
         <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-[#FF8A6B]">
           <span className="point-direct" /> En direct maintenant
         </span>
-        <span className="text-2xl font-extrabold tracking-[-0.02em]">{s.titre}</span>
+        <span className="break-words text-2xl font-extrabold tracking-[-0.02em]">{s.titre}</span>
         <span className="text-[15px] text-nuit-doux">
           {s.coursCode} · {s.formateur ? `${s.formateur.prenom} ${s.formateur.nom}` : "Formateur"}
         </span>
@@ -146,11 +147,11 @@ function CarteProchaine({ s, enseignant }: { s: SeanceResume; enseignant: boolea
   const passe = new Date(s.debut).getTime() <= maintenant;
   return (
     <div className="grid gap-6 rounded-[28px] bg-encre p-6 text-white sm:p-8 lg:grid-cols-[1fr_380px] lg:items-center">
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <span className="font-mono text-xs uppercase tracking-wider text-orange-peche">
           {passe ? "C'est l'heure · en attente du formateur" : <>Prochain live · dans <DecompteCourt cible={s.debut} /></>}
         </span>
-        <span className="text-[28px] font-black leading-tight tracking-serre sm:text-[34px]">{s.titre}</span>
+        <span className="break-words text-[28px] font-black leading-tight tracking-serre sm:text-[34px]">{s.titre}</span>
         <span className="text-[15px] text-nuit-doux">
           {s.coursCode} · {s.coursTitre}
         </span>

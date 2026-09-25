@@ -22,7 +22,8 @@ import { pourcent } from "./outils";
 export default function PageTableau() {
   const moi = useMoiConnecte();
   const tableau = useQuery<TableauPilotage>({ queryKey: ["/api/pilotage/tableau"] });
-  const aContacter = useQuery<ListeAContacter>({ queryKey: ["/api/pilotage/a-contacter"] });
+  // Les 4 premiers suffisent ici (la liste complète, paginée, est sur /pilotage/suivi).
+  const aContacter = useQuery<ListeAContacter>({ queryKey: ["/api/pilotage/a-contacter?parPage=4"] });
   const [suivi, setSuivi] = useState<{ id: number; prenom: string; nom: string } | null>(null);
   const t = tableau.data;
   const nb = aContacter.data?.total ?? t?.total.aContacter ?? 0;

@@ -567,54 +567,73 @@ function SectionBilan({ seance }: { seance: SeanceDetailDto }) {
   if (isLoading) return <Chargement lignes={3} />;
   if (error || !bilan) return <Erreur message={(error as Error)?.message ?? "Bilan indisponible."} reessayer={() => void refetch()} />;
   const pasCommencee = seance.statut === "planifiee";
+  // Jamais démarrée (« Séance non tenue ») : ni présents ni absents.
+  const nonTenue = !bilan.tenue && !pasCommencee;
   return (
     <div className="flex flex-col gap-8">
       {pasCommencee && <p className="rounded-2xl bg-creme p-4 text-[15px] text-texte-pale">La séance n'a pas encore eu lieu : le bilan se remplit pendant le direct.</p>}
+      {nonTenue && (
+        <p className="rounded-2xl bg-creme p-4 text-[15px] text-texte-pale">
+          Cette séance n'a jamais été démarrée{seance.motifAnnulation ? ` (${seance.motifAnnulation})` : ""} : aucune présence ni absence n'est comptée.
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Chiffre libelle="Présents" valeur={`${bilan.totaux.presents} / ${bilan.totaux.inscrits}`} detail={`${bilan.totaux.taux} % des inscrits · en ligne : ${bilan.seuilMinutes} min minimum`} ton="orange" />
+        <Chiffre
+          libelle="Présents"
+          valeur={nonTenue ? "—" : `${bilan.totaux.presents} / ${bilan.totaux.inscrits}`}
+          detail={nonTenue ? "Séance non tenue" : `${bilan.totaux.taux} % des inscrits · en ligne : ${bilan.seuilMinutes} min minimum`}
+          ton="orange"
+        />
         <Chiffre libelle="Questions posées" valeur={bilan.questionsTotal} detail={`${bilan.questionsNonTraitees.length} sans réponse`} />
         <Chiffre libelle="Sondages" valeur={bilan.sondages.length} detail={bilan.sondages.length ? `${bilan.sondages.reduce((a, s) => a + s.resultats.total, 0)} réponses au total` : "Aucun sondage lancé"} />
       </div>
 
-      <section>
-        <TitreSection titre="Présences par campus" />
-        <div className="overflow-x-auto rounded-2xl border border-ligne">
-          <table className="w-full min-w-[720px] text-left text-[14px]">
-            <thead className="bg-creme font-mono text-[11px] uppercase tracking-wider text-texte-gris">
-              <tr>
-                {["Campus", "Inscrits", "En salle", "En ligne", "Retard", "Partiel", "Absents", "Justifiés", "Incident", "Effectif déclaré"].map((t) => (
-                  <th key={t} className="px-3 py-2.5 font-normal">
-                    {t}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bilan.sites.map((s) => (
-                <tr key={s.site} className="border-t border-ligne-douce">
-                  <td className="px-3 py-2.5 font-bold">
-                    {s.site}
-                    {s.incidentSalle && <span className="ml-2 rounded bg-danger-clair px-1.5 py-0.5 text-[11px] font-bold text-danger">{s.incidentSalle}</span>}
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.inscrits}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.enSalle}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.enLigne}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.retard}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.partiel}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.absents}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.justifies}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{s.incident}</td>
-                  <td className="px-3 py-2.5 tabular-nums">
-                    {s.effectifDeclare ?? "—"}
-                    {s.ecart ? <span className={cn("ml-1.5 font-mono text-[12px]", Math.abs(s.ecart) > 2 ? "font-bold text-danger" : "text-texte-gris")}>(écart {s.ecart > 0 ? `+${s.ecart}` : s.ecart})</span> : null}
-                  </td>
+      {!nonTenue && (
+        <section>
+          <TitreSection titre="Présences par campus" />
+          <div className="overflow-x-auto rounded-2xl border border-ligne">
+            <table className="w-full min-w-[720px] text-left text-[14px]">
+              <thead className="bg-creme font-mono text-[11px] uppercase tracking-wider text-texte-gris">
+                <tr>
+                  {["Campus", "Inscrits", "En salle", "En ligne", "Retard", "Partiel", "Absents", "Justifiés", "Incident", "Effectif déclaré"].map((t) => (
+                    <th key={t} className="px-3 py-2.5 font-normal">
+                      {t}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <FeuillePresence seance={seance} />
-      </section>
+              </thead>
+              <tbody>
+                {bilan.sites.map((s) => (
+                  <tr key={s.site} className="border-t border-ligne-douce">
+                    <td className="px-3 py-2.5 font-bold">
+                      {s.site}
+                      {s.incidentSalle && <span className="ml-2 rounded bg-danger-clair px-1.5 py-0.5 text-[11px] font-bold text-danger">{s.incidentSalle}</span>}
+                      {s.horsCampus > 0 && (
+                        <span className="ml-2 rounded bg-alerte-clair px-1.5 py-0.5 text-[11px] font-bold text-encre" title="Émargés dans cette salle alors qu'ils sont rattachés à un autre campus">
+                          {s.horsCampus} hors campus
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.inscrits}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.enSalle}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.enLigne}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.retard}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.partiel}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.absents}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.justifies}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{s.incident}</td>
+                    <td className="px-3 py-2.5 tabular-nums">
+                      {s.effectifDeclare ?? "—"}
+                      {s.ecart ? <span className={cn("ml-1.5 font-mono text-[12px]", Math.abs(s.ecart) > 2 ? "font-bold text-danger" : "text-texte-gris")}>(écart {s.ecart > 0 ? `+${s.ecart}` : s.ecart})</span> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <FeuillePresence seance={seance} />
+        </section>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         <section>
@@ -718,11 +737,17 @@ function FeuillePresence({ seance }: { seance: SeanceDetailDto }) {
                     </span>
                     <span className="block font-mono text-[11px] text-texte-gris">{l.matricule}</span>
                   </td>
-                  <td className="px-3 py-2.5">{nomSite(l.siteId)}</td>
+                  <td className="px-3 py-2.5">
+                    {nomSite(l.siteId)}
+                    {l.horsCampus && (
+                      <span className="mt-0.5 block w-fit rounded bg-alerte-clair px-1.5 py-0.5 text-[11px] font-bold text-encre">Hors de son campus · inscrit à {nomSite(l.siteInscription)}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5">
                     <Badge ton={l.statut === "salle" || l.statut === "en_ligne" ? "succes" : l.statut === "absent" ? "danger" : l.statut === "incident" || l.statut === "justifie" ? "gris" : "alerte"}>{LIBELLES_PRESENCE[l.statut]}</Badge>
                     {l.emargeQr && <span className="ml-1.5 font-mono text-[11px] text-texte-gris">code</span>}
                     {l.pointe && <span className="ml-1.5 font-mono text-[11px] text-texte-gris">pointé</span>}
+                    {l.arriveeSalleLe && l.mode === "salle" && <span className="ml-1.5 font-mono text-[11px] text-texte-gris">arrivé {heureDouble(l.arriveeSalleLe).split(" ")[0]}</span>}
                   </td>
                   <td className="px-3 py-2.5 tabular-nums">{l.minutes}</td>
                   {peutPointer && (

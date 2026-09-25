@@ -10,13 +10,38 @@ import { usageIa } from "@shared/schema";
 
 let client: Anthropic | null = null;
 
+/**
+ * Panne du compte Anthropic (crédit épuisé, clé révoquée) : inutile d'insister
+ * à chaque question. L'assistant se met en pause 15 minutes, l'interface le
+ * dit clairement, puis un nouvel essai est tenté.
+ */
+const DUREE_PANNE_MS = 15 * 60_000;
+let panneJusqua = 0;
+
 export function iaDisponible(): boolean {
-  return Boolean(config.ia.cle);
+  return Boolean(config.ia.cle) && Date.now() >= panneJusqua;
 }
+
+/** « configuration » : pas de clé ; « panne » : le compte d'IA refuse les appels. */
+export const raisonIndisponible = (): "configuration" | "panne" | null =>
+  !config.ia.cle ? "configuration" : Date.now() < panneJusqua ? "panne" : null;
+
+/** Repère les refus qui viennent du compte (et non de la question) avant que le SDK ne lève l'erreur. */
+const fetchSurveille: typeof fetch = async (entree, init) => {
+  const r = await fetch(entree, init);
+  if (r.status === 401 || r.status === 403 || r.status === 400) {
+    const texte = await r.clone().text().catch(() => "");
+    if (r.status !== 400 || /credit balance|billing/i.test(texte)) {
+      if (Date.now() >= panneJusqua) console.error(`[ia] compte Anthropic indisponible (${r.status}) : crédit ou clé à vérifier. Assistant en pause 15 minutes.`);
+      panneJusqua = Date.now() + DUREE_PANNE_MS;
+    }
+  }
+  return r;
+};
 
 function getClient(): Anthropic {
   if (!config.ia.cle) throw new ErreurIa("L'assistant IA n'est pas configuré (ANTHROPIC_API_KEY manquante).", 503);
-  if (!client) client = new Anthropic({ apiKey: config.ia.cle });
+  if (!client) client = new Anthropic({ apiKey: config.ia.cle, fetch: fetchSurveille });
   return client;
 }
 

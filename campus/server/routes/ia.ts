@@ -24,6 +24,7 @@ import { route, valider, idParam, introuvable, invalide, ErreurHttp } from "../h
 import { coursVisible, coursEnseigne, enseigneCours, idsCoursAccessibles, devoirVisible } from "../acces";
 import {
   iaDisponible,
+  raisonIndisponible,
   demanderClaude,
   fluxClaude,
   demanderJson,
@@ -128,7 +129,9 @@ function verifierDisponible(u: Utilisateur) {
     503,
     estEtudiant(u)
       ? "L'assistant est en pause pour le moment. Réessaie plus tard, ou pose ta question à ton formateur dans la messagerie du cours."
-      : "L'assistant est en pause pour le moment : le service d'IA n'est pas configuré sur ce campus.",
+      : raisonIndisponible() === "panne"
+        ? "L'assistant est en pause : le service d'IA refuse les demandes (crédit ou clé à vérifier par la direction). Nouvel essai automatique dans quelques minutes."
+        : "L'assistant est en pause pour le moment : le service d'IA n'est pas configuré sur ce campus.",
   );
 }
 
@@ -159,7 +162,7 @@ function traduireErreur(e: unknown): ErreurIa | ErreurHttp {
   if (e instanceof Anthropic.APIError) {
     console.error(`[ia] erreur de l'API (${e.status ?? "réseau"}) :`, e.message);
     return new ErreurIa(
-      (e.status ?? 500) >= 500 || e.status === undefined
+      (e.status ?? 500) >= 500 || e.status === undefined || !iaDisponible()
         ? "L'assistant est momentanément indisponible. Nouvel essai possible dans quelques minutes."
         : "L'assistant n'a pas pu traiter cette demande. Nouvel essai possible dans un instant.",
       502,

@@ -267,7 +267,7 @@ function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
                     </legend>
                     <div className="flex flex-col gap-1">
                       {s.classes.map((cl) => (
-                        <label key={cl.id} className={cn("flex min-h-[44px] items-center gap-3", s.modifiable ? "cursor-pointer" : "cursor-not-allowed opacity-70")}>
+                        <label key={cl.id} className={cn("flex min-h-[48px] items-center gap-3", s.modifiable ? "cursor-pointer" : "cursor-not-allowed opacity-70")}>
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-[#E4793A]"

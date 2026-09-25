@@ -39,7 +39,7 @@ export function SousNav({ className }: { className?: string }) {
                 href={p.href}
                 aria-current={actif ? "page" : undefined}
                 className={cn(
-                  "flex min-h-[40px] items-center whitespace-nowrap rounded-full border px-4 text-sm font-bold no-underline transition-colors",
+                  "flex min-h-[44px] items-center whitespace-nowrap rounded-full border px-4 text-sm font-bold no-underline transition-colors",
                   actif ? "border-encre bg-encre text-white hover:text-white" : "border-ligne bg-white text-texte-doux hover:border-orange hover:text-encre",
                 )}
               >

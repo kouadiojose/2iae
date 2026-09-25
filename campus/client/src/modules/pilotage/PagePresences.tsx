@@ -164,7 +164,7 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
 
   return (
     <>
-      <button type="button" onClick={onRetour} className="-mb-2 inline-flex min-h-[40px] items-center gap-1.5 self-start text-sm font-bold text-texte-pale hover:text-encre">
+      <button type="button" onClick={onRetour} className="-mb-2 inline-flex min-h-[44px] items-center gap-1.5 self-start text-sm font-bold text-texte-pale hover:text-encre">
         <ArrowLeft className="h-4 w-4" /> Toutes les séances
       </button>
       <EnTetePage
@@ -274,7 +274,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
               </div>
               <Badge ton={TON_PRESENCE[e.statut]}>{LIBELLES_PRESENCE_PILOTAGE[e.statut]}</Badge>
               {(e.statut === "absent" || e.statut === "partiel" || e.statut === "justifie") && (
-                <button type="button" onClick={() => onJustifier(e)} className="min-h-[44px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
+                <button type="button" onClick={() => onJustifier(e)} className="min-h-[48px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
                   {e.justification ? "Modifier" : "Justifier"}
                 </button>
               )}
@@ -328,7 +328,7 @@ function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; o
                     setQ("");
                     naviguer(`/pilotage/presences?etudiant=${c.id}`, { replace: true });
                   }}
-                  className={cn("min-h-[44px] rounded-full border px-4 text-sm font-bold", String(c.id) === etudiantId ? "border-encre bg-encre text-white" : "border-ligne bg-white hover:border-orange")}
+                  className={cn("min-h-[48px] rounded-full border px-4 text-sm font-bold", String(c.id) === etudiantId ? "border-encre bg-encre text-white" : "border-ligne bg-white hover:border-orange")}
                 >
                   {c.prenom} {c.nom} <span className="font-mono font-normal text-texte-gris">{c.matricule}</span>
                 </button>
@@ -381,7 +381,7 @@ function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; o
                     <button
                       type="button"
                       onClick={() => onJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: d.etudiant.id, nom: `${d.etudiant.prenom} ${d.etudiant.nom}`, justification: s.justification })}
-                      className="min-h-[44px] px-1 text-sm font-bold text-orange-fonce hover:text-encre"
+                      className="min-h-[48px] px-1 text-sm font-bold text-orange-fonce hover:text-encre"
                     >
                       {s.justification ? "Modifier" : "Justifier"}
                     </button>

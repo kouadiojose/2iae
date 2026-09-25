@@ -64,7 +64,7 @@ export default function PageEtudiant({ id }: { id: string }) {
   return (
     <Page>
       <SousNav />
-      <Link href="/pilotage/comptes" className="-mb-2 inline-flex min-h-[40px] items-center gap-1.5 text-sm font-bold text-texte-pale no-underline hover:text-encre print:hidden">
+      <Link href="/pilotage/comptes" className="-mb-2 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-bold text-texte-pale no-underline hover:text-encre print:hidden">
         <ArrowLeft className="h-4 w-4" /> Comptes
       </Link>
 
@@ -207,7 +207,7 @@ function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier: (s: Li
                     {s.retard ? " · retard" : ""}
                   </Badge>
                   {!comptePresent(s.statut) && s.statut !== "incident" && (
-                    <button type="button" onClick={() => onJustifier(s)} className="min-h-[40px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
+                    <button type="button" onClick={() => onJustifier(s)} className="min-h-[44px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
                       {s.justification ? "Modifier" : "Justifier"}
                     </button>
                   )}

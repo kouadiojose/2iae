@@ -204,13 +204,13 @@ export function FenetreCompte({
               {compte.role === "etudiant" && (
                 <Link
                   href={`/pilotage/etudiants/${compte.id}`}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border-[1.5px] border-encre bg-white px-4 text-sm font-bold text-encre no-underline hover:bg-orange-pale hover:text-encre"
+                  className="inline-flex min-h-[48px] items-center gap-1.5 rounded-xl border-[1.5px] border-encre bg-white px-4 text-sm font-bold text-encre no-underline hover:bg-orange-pale hover:text-encre"
                 >
                   <FolderOpen className="h-4 w-4" /> Dossier
                 </Link>
               )}
               {compte.actif && compte.id !== moi.id && !confirmerCode && (
-                <Bouton variante="encre" taille="sm" className="min-h-[44px]" icone={<KeyRound className="h-4 w-4" />} onClick={() => setConfirmerCode(true)}>
+                <Bouton variante="encre" taille="sm" className="min-h-[48px]" icone={<KeyRound className="h-4 w-4" />} onClick={() => setConfirmerCode(true)}>
                   Nouveau code
                 </Bouton>
               )}

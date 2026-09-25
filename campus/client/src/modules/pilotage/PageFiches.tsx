@@ -66,7 +66,7 @@ export default function PageFiches() {
 
       <header className="sans-impression sticky top-0 z-10 border-b border-ligne bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-[900px] flex-wrap items-center gap-3 px-4 py-3">
-          <Link href="/pilotage/comptes" className="flex min-h-[44px] items-center gap-2 font-bold text-encre no-underline">
+          <Link href="/pilotage/comptes" className="flex min-h-[48px] items-center gap-2 font-bold text-encre no-underline">
             <ArrowLeft className="h-5 w-5" /> Comptes
           </Link>
           <div className="min-w-0 flex-1">

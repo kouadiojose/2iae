@@ -162,7 +162,7 @@ export default function PageComptes() {
                 ? `${(data.page - 1) * PAR_PAGE + 1}–${Math.min(data.page * PAR_PAGE, data.total)} sur ${data.total} comptes`
                 : pluriel(data.total, "compte")}
             </span>
-            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 font-semibold text-encre">
+            <label className="flex min-h-[48px] cursor-pointer items-center gap-2 font-semibold text-encre">
               <input
                 type="checkbox"
                 className="h-5 w-5 accent-[#E4793A]"
@@ -203,7 +203,7 @@ export default function PageComptes() {
         <div className="bas-sur fixed inset-x-0 bottom-[72px] z-20 px-4 lg:bottom-6">
           <div className="mx-auto flex max-w-xl items-center gap-3 rounded-2xl bg-encre p-3 pl-5 text-white shadow-carte">
             <span className="flex-1 text-[15px] font-semibold">{pluriel(selection.size, "compte coché", "comptes cochés")}</span>
-            <button type="button" onClick={() => setSelection(new Set())} className="min-h-[44px] px-2 text-sm font-semibold text-nuit-doux hover:text-white">
+            <button type="button" onClick={() => setSelection(new Set())} className="min-h-[48px] px-2 text-sm font-semibold text-nuit-doux hover:text-white">
               Décocher
             </button>
             <Bouton icone={<Printer className="h-4 w-4" />} onClick={() => naviguer(lienFiches([...selection]))}>

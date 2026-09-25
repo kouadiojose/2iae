@@ -99,7 +99,7 @@ export default function PageClasses() {
                 )}
               </div>
               {refs.data?.estDirection && (
-                <Bouton variante="contour" taille="sm" icone={<Pencil className="h-4 w-4" />} onClick={() => setSite(s)} className="mt-1 min-h-[44px] self-start">
+                <Bouton variante="contour" taille="sm" icone={<Pencil className="h-4 w-4" />} onClick={() => setSite(s)} className="mt-1 min-h-[48px] self-start">
                   Modifier
                 </Bouton>
               )}
@@ -165,19 +165,19 @@ function CarteClasse({ c, onModifier }: { c: ClasseLigne; onModifier: () => void
       )}
       <div className="text-sm text-texte-pale">{c.cours ? `Suit ${pluriel(c.cours, "cours", "cours")}` : "Ne suit encore aucun cours"}</div>
       <div className="mt-auto flex flex-wrap gap-2 border-t border-ligne-douce pt-3">
-        <Link href={`/pilotage/comptes?classe=${c.id}`} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl bg-creme px-3 text-sm font-bold text-encre no-underline hover:bg-orange-clair hover:text-encre">
+        <Link href={`/pilotage/comptes?classe=${c.id}`} className="inline-flex min-h-[48px] items-center gap-1.5 rounded-xl bg-creme px-3 text-sm font-bold text-encre no-underline hover:bg-orange-clair hover:text-encre">
           <Users className="h-4 w-4" /> Étudiants
         </Link>
         {nonActives > 0 && (
-          <Bouton variante="doux" taille="sm" className="min-h-[44px]" icone={<Printer className="h-4 w-4" />} onClick={fichesNonActives} chargement={envoi}>
+          <Bouton variante="doux" taille="sm" className="min-h-[48px]" icone={<Printer className="h-4 w-4" />} onClick={fichesNonActives} chargement={envoi}>
             {nonActives} fiche{nonActives > 1 ? "s" : ""} à remettre
           </Bouton>
         )}
-        <Bouton variante="fantome" taille="sm" className="min-h-[44px]" icone={<Pencil className="h-4 w-4" />} onClick={onModifier} aria-label={`Modifier ${c.nom}`}>
+        <Bouton variante="fantome" taille="sm" className="min-h-[48px]" icone={<Pencil className="h-4 w-4" />} onClick={onModifier} aria-label={`Modifier ${c.nom}`}>
           Modifier
         </Bouton>
         {c.etudiants === 0 && (
-          <Bouton variante="fantome" taille="sm" className="min-h-[44px] text-danger" icone={<Trash2 className="h-4 w-4" />} onClick={supprimer} aria-label={`Supprimer ${c.nom}`}>
+          <Bouton variante="fantome" taille="sm" className="min-h-[48px] text-danger" icone={<Trash2 className="h-4 w-4" />} onClick={supprimer} aria-label={`Supprimer ${c.nom}`}>
             Supprimer
           </Bouton>
         )}

@@ -190,8 +190,20 @@ export const chargerUtilisateur: RequestHandler = async (req, _res, next) => {
     const id = req.session?.utilisateurId;
     if (id) {
       const u = await utilisateurParId(id);
-      if (u?.actif) req.utilisateur = u;
-      else req.session.utilisateurId = undefined;
+      if (u?.actif) {
+        req.utilisateur = u;
+        // Activité réelle (les sessions durent des semaines) : au plus une écriture par heure.
+        const derniere = u.derniereConnexion?.getTime() ?? 0;
+        if (Date.now() - derniere > 60 * 60 * 1000) {
+          const maintenant = new Date();
+          u.derniereConnexion = maintenant;
+          void db
+            .update(utilisateurs)
+            .set({ derniereConnexion: maintenant })
+            .where(eq(utilisateurs.id, u.id))
+            .catch(() => undefined);
+        }
+      } else req.session.utilisateurId = undefined;
     }
     next();
   } catch (e) {

@@ -315,6 +315,8 @@ const versParolePublique = (p: ParoleInterne | null): ParoleDto | null => {
 type ContexteQuestions = {
   role: RoleSeance;
   moiId: number;
+  /** Vie scolaire d'un site : auteurs réels visibles seulement pour ce site (null = tous). */
+  perimetre?: number[] | null;
   mesVotes: Set<number>;
   auteurs: Map<number, Pick<Utilisateur, "id" | "prenom" | "nom" | "role">>;
   sitesParId: Map<number, Site>;
@@ -344,7 +346,8 @@ function versQuestion(q: QuestionLive, c: ContexteQuestions): QuestionDirectDto 
     jaiVote: c.mesVotes.has(q.id),
     mienne: q.auteurId === c.moiId,
   };
-  if (privilegie) {
+  const dansPerimetre = !c.perimetre || (q.siteId !== null && c.perimetre.includes(q.siteId));
+  if (privilegie && dansPerimetre) {
     dto.auteurReel = auteur ? (deLaSalle ? `Écran de salle · ${site ?? ""}` : `${auteur.prenom} ${auteur.nom}`) : "";
     dto.signalements = c.signalements.get(q.id) ?? 0;
   }
@@ -373,6 +376,7 @@ async function contexteQuestions(u: Utilisateur, role: RoleSeance, liste: Questi
   return {
     role,
     moiId: u.id,
+    perimetre: role === "equipe" ? perimetreSites(u) : null,
     mesVotes: new Set(votes.map((v) => v.q)),
     auteurs: new Map(auteurs.map((a) => [a.id, a])),
     sitesParId,
@@ -418,8 +422,10 @@ async function mainsPour(u: Utilisateur, role: RoleSeance, seanceId: number): Pr
   const sitesParId = await nomsSites();
   const deja = await dejaParle(seanceId);
   const privilegie = role === "formateur" || role === "equipe";
+  const perimetre = role === "equipe" ? perimetreSites(u) : null;
   return lignes
     .filter(({ m, role: r }) => {
+      if (perimetre) return m.siteId !== null && perimetre.includes(m.siteId);
       if (privilegie) return true;
       if (role === "salle") return m.siteId === u.siteId && (r === "salle" || r === "vie_scolaire");
       return m.utilisateurId === u.id;
@@ -1000,7 +1006,7 @@ export function enregistrerLive(app: Express) {
         // Nouvel horaire : les rappels repartent de zéro et les inscrits sont prévenus.
         await db.delete(rappelsLive).where(eq(rappelsLive.seanceId, s.id));
         const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
-        const heure = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(debut);
+        const heure = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(debut).replace(":", "h");
         await notifier(await destinatairesSeance(s, false), {
           type: "live",
           titre: `Live déplacé : ${maj.titre}`,

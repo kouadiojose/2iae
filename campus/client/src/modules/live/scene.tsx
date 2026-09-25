@@ -47,7 +47,9 @@ export function Scene(p: PropsScene) {
 
   const parole = etat.parole;
   // Radio et compagnon : la diapo garde son format 16/9 et le reste s'empile dessous.
-  const libre = !planB && role === "etudiant" && (mode === "radio" || mode === "compagnon");
+  // Visio du campus côté formateur : la grille des cinq salles prend la hauteur dont elle a
+  // besoin (sur téléphone, 2 colonnes × 3 rangées ne tiennent pas dans un cadre 16/9).
+  const libre = !planB && ((role === "etudiant" && (mode === "radio" || mode === "compagnon")) || (role === "formateur" && seance.fournisseur === "campus"));
   return (
     <div
       className={cn(

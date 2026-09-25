@@ -282,3 +282,21 @@ Chaque module possède ses fichiers ; il ne modifie pas ceux des autres.
 16. **Push** : 3 par jour au maximum hors rappels de live, heures calmes 21 h–6 h (Abidjan), contenu sensible masqué (« Nouvelle note disponible », jamais la note).
 17. **Données personnelles** : charte acceptée à l'activation (`charteAccepteeLe`), mention d'enregistrement affichée en salle, seuls des agrégats et des contenus validés partent vers le site. Déclaration ARTCI et accords de sous-traitance (hébergement, IA, visio hors Côte d'Ivoire) à engager par l'école.
 18. **Hors v1** (données captées dès maintenant, écrans en v1.1) : WhatsApp Business / SMS automatiques, replays audio compressés hors ligne, transcription serveur, pré-correction IA des copies manuscrites, carte de la semaine en image, TOTP, relevé d'heures des formateurs, bascule d'année scolaire.
+
+---
+
+## 10. La classe en direct : trois couches de diffusion
+
+La visio doit marcher **dès le premier jour, même sans compte chez un
+fournisseur**, et rester supportable en 3G/4G. Trois couches coexistent :
+
+| Couche | Pour qui | Technique | Consommation | Configuration |
+|---|---|---|---|---|
+| **Daily.co** (fournisseur principal) | formateur ↔ 5 salles, étudiants en vidéo | visio SFU hébergée (`@daily-co/daily-js`, salles privées `campus-2iae-<id>`, jetons par rôle, enregistrement cloud → replay) | vidéo 150–250 Mo/h | `DAILY_API_KEY` |
+| **Visio intégrée « campus »** (repli / Plan B) | formateur ↔ 5 salles (+ quelques étudiants) | WebRTC pair-à-pair en étoile autour du formateur, signalisation par le temps réel du campus, relais de la parole par le navigateur du formateur | idem vidéo ; son seul ≈ 20 Mo/h | aucune ; `TURN_URLS`/`TURN_USERNAME`/`TURN_CREDENTIAL` recommandés pour les réseaux mobiles |
+| **Radio du cours** (tous fournisseurs) | étudiants en ligne en 3G/4G, jusqu'à des centaines | son du formateur (WebM/Opus 24 kbit/s) envoyé au serveur par tranches d'une seconde et rediffusé en flux HTTP, + diapos synchronisées + sous-titres | ≈ 11–15 Mo/h | aucune |
+
+Le mode compagnon (étudiant présent en salle) ne consomme presque rien
+(< 5 Mo/h) : ni son ni image, seulement questions, votes, sondages et
+ressenti. L'écran de la salle de conférence rejoint la visio comme un
+participant « Salle … » avec la caméra et le micro de la salle.

@@ -25,7 +25,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { config } from "./config";
 import { hacher, verifier, motDePasseProvisoire, codeProvisoire, DUREE_CODE_PROVISOIRE_MS } from "./auth";
@@ -3590,7 +3590,7 @@ async function semerDirectPasse(c: Contexte, se: SeanceSemee, co: CoursSeme, for
 
   // Présences : émargées en salle, en ligne, partielles, justifiées, absents.
   const incidentSite = def.incident ? c.sites.get(def.incident.site)!.id : null;
-  const attendus = co.inscrits.filter((e) => !e.jamaisConnecte || e.id < 0);
+  const attendus = co.inscrits.filter((e) => !e.jamaisConnecte);
   const lignesPresence: (typeof presences.$inferInsert)[] = [];
   const enSalleParSite = new Map<number, number>();
   const enLigne: EtudiantSeme[] = [];

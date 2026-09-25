@@ -56,6 +56,7 @@ export function arreter(piste: MediaStreamTrack | null | undefined) {
 export function messageErreurMedia(e: unknown, tu: boolean, quoi: "micro" | "caméra" | "micro et caméra" = "micro et caméra"): string {
   const nom = (e as { name?: string } | null)?.name ?? "";
   const le = quoi === "caméra" ? "la caméra" : quoi === "micro" ? "le micro" : "le micro et la caméra";
+  const aLe = quoi === "caméra" ? "à la caméra" : quoi === "micro" ? "au micro" : "au micro et à la caméra";
   if (!mediasDisponibles()) {
     return tu
       ? "Ton navigateur ne donne pas accès au micro. Ouvre le campus avec Chrome, à une adresse qui commence par https."
@@ -65,18 +66,20 @@ export function messageErreurMedia(e: unknown, tu: boolean, quoi: "micro" | "cam
     case "NotAllowedError":
     case "PermissionDeniedError":
       return tu
-        ? `Tu as refusé l'accès à ${le}. Touche le cadenas à gauche de l'adresse, choisis « Autoriser », puis réessaie.`
-        : `L'accès à ${le} a été refusé. Cliquez sur le cadenas à gauche de l'adresse, choisissez « Autoriser », puis réessayez.`;
+        ? `Tu as refusé l'accès ${aLe}. Touche le cadenas à gauche de l'adresse, choisis « Autoriser », puis réessaie.`
+        : `L'accès ${aLe} a été refusé. Cliquez sur le cadenas à gauche de l'adresse, choisissez « Autoriser », puis réessayez.`;
     case "NotFoundError":
     case "DevicesNotFoundError":
       return tu
         ? `Aucun ${quoi === "caméra" ? "appareil photo" : "micro"} trouvé. Branche des écouteurs avec micro, puis réessaie.`
         : `Aucun${quoi === "caméra" ? "e caméra trouvée" : " micro trouvé"}. Vérifiez le branchement, puis réessayez.`;
     case "NotReadableError":
-    case "TrackStartError":
+    case "TrackStartError": {
+      const occupe = quoi === "caméra" ? "La caméra est déjà utilisée" : quoi === "micro" ? "Le micro est déjà utilisé" : "Le micro ou la caméra est déjà utilisé";
       return tu
-        ? `${le.charAt(0).toUpperCase()}${le.slice(1)} est déjà utilisé par une autre application (appel WhatsApp, autre onglet…). Ferme-la, puis réessaie.`
-        : `${le.charAt(0).toUpperCase()}${le.slice(1)} est déjà utilisé par une autre application (Teams, Zoom, autre onglet…). Fermez-la, puis réessayez.`;
+        ? `${occupe} par une autre application (appel WhatsApp, autre onglet…). Ferme-la, puis réessaie.`
+        : `${occupe} par une autre application (Teams, Zoom, autre onglet…). Fermez-la, puis réessayez.`;
+    }
     case "OverconstrainedError":
       return tu ? "Ton appareil ne permet pas cette qualité. Réessaie." : "Votre appareil ne permet pas cette qualité. Réessayez.";
     case "SecurityError":

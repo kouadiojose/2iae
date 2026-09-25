@@ -10,7 +10,7 @@ import { LIBELLES_ROLES, ROLES } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Avatar, Badge, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
-import { Champ, Selection } from "@/components/ui/champs";
+import { Selection } from "@/components/ui/champs";
 import { cn, pluriel } from "@/lib/utils";
 import { useMoiConnecte } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
@@ -35,7 +35,7 @@ export default function PageComptes() {
   const [page, setPage] = useState(1);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [ouvert, setOuvert] = useState<CompteLigne | "nouveau" | null>(null);
-  const [code, setCode] = useState<{ remis: CodeRemis; compte: CompteLigne } | null>(null);
+  const [code, setCode] = useState<{ remis: CodeRemis; compte: CompteLigne; nouveau: boolean } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setQDiffere(q.trim()), 300);
@@ -218,9 +218,10 @@ export default function PageComptes() {
         compte={ouvert === "nouveau" ? null : ouvert}
         roleParDefaut={role || "etudiant"}
         onFermer={() => setOuvert(null)}
-        onCode={(remis, compte) => setCode({ remis, compte })}
+        onCode={(remis, compte, nouveau) => setCode({ remis, compte, nouveau })}
       />
       <FenetreCode
+        nouveauCompte={code?.nouveau}
         remis={code?.remis ?? null}
         personne={
           code

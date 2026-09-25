@@ -1,7 +1,7 @@
 // /pilotage : le tableau de la vie scolaire et de la direction. Les grands
 // chiffres du périmètre, chaque campus d'un coup d'œil, puis les étudiants à
 // contacter aujourd'hui et les raccourcis du quotidien.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper } from "lucide-react";
@@ -160,7 +160,7 @@ function CarteCampus({ c }: { c: IndicateursCampus }) {
   );
 }
 
-function Raccourci({ href, icone, titre, texte }: { href: string; icone: React.ReactNode; titre: string; texte: string }) {
+function Raccourci({ href, icone, titre, texte }: { href: string; icone: ReactNode; titre: string; texte: string }) {
   return (
     <CarteLien href={href} className="flex min-h-[112px] flex-col gap-2 p-4">
       <span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-clair text-orange-fonce">{icone}</span>

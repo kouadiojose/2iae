@@ -70,7 +70,7 @@ export function FenetreCompte({
   roleParDefaut?: Role;
   onFermer: () => void;
   /** Un code vient d'être remis (création ou nouveau code) : à montrer une seule fois. */
-  onCode: (remis: CodeRemis, compte: CompteLigne) => void;
+  onCode: (remis: CodeRemis, compte: CompteLigne, nouveauCompte: boolean) => void;
 }) {
   const moi = useMoiConnecte();
   const refs = useReferences();
@@ -122,7 +122,7 @@ export function FenetreCompte({
         toast(`Compte de ${r.compte.prenom} créé`);
         await rafraichir("/api/pilotage/comptes", "/api/pilotage/tableau", "/api/pilotage/classes");
         onFermer();
-        onCode(r, r.compte);
+        onCode(r, r.compte, true);
       } else {
         await patch<CompteLigne>(`/api/pilotage/comptes/${compte.id}`, corps());
         toast("Modifications enregistrées");
@@ -143,7 +143,7 @@ export function FenetreCompte({
       const r = await post<CodeRemis>(`/api/pilotage/comptes/${compte.id}/nouveau-code`);
       await rafraichir("/api/pilotage/comptes", "/api/pilotage/etudiants", "/api/pilotage/a-contacter");
       onFermer();
-      onCode(r, compte);
+      onCode(r, compte, false);
     } catch (e) {
       toastErreur(e);
     } finally {

@@ -59,7 +59,7 @@ export function FenetreJustifier({ cible, onFermer }: { cible: CibleJustificatio
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap gap-2">
           {MOTIFS.map((m) => (
-            <button key={m} type="button" onClick={() => setTexte(m)} className="min-h-[40px] rounded-full border border-ligne px-3 text-sm font-semibold text-texte-doux hover:border-orange hover:text-encre">
+            <button key={m} type="button" onClick={() => setTexte(m)} className="min-h-[40px] rounded-full border border-ligne px-3 py-1.5 text-left text-sm font-semibold text-texte-doux hover:border-orange hover:text-encre">
               {m}
             </button>
           ))}

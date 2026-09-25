@@ -43,8 +43,18 @@ const A_PRECHARGER = [
 
 /** Requêtes qui ouvrent ou ferment une session : les données de la personne précédente sont oubliées (téléphones partagés). */
 const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|compte\/(reinitialiser|deconnecter-partout))/;
-/** Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels. */
-const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|auth\/(?!moi$))/;
+/** Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels, sonde de santé. */
+const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|health$|auth\/(?!moi$))/;
+/** Le profil courant est gardé même « non connecté » (401) : sans réseau, les pages publiques s'ouvrent aussitôt. */
+const PROFIL = "/api/auth/moi";
+
+/**
+ * Écran jamais ouvert, sans réseau : son fichier JS n'est pas sur le téléphone.
+ * À la place, un petit module qui mène à /hors-ligne (plutôt qu'une page blanche).
+ */
+const MODULE_HORS_LIGNE = `const p = location.pathname + location.search;
+if (!location.pathname.startsWith("/hors-ligne")) location.replace("/hors-ligne?page=" + encodeURIComponent(p));
+export default function HorsLigne() { return null; }`;
 
 /** Page de dernier recours, sans aucune ressource externe. */
 const PAGE_SECOURS = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pas de réseau · Campus 2IAE</title><meta name="theme-color" content="#141414"></head>
@@ -158,6 +168,9 @@ async function cacheDabord(requete, nomCache) {
     if (reponse.ok && reponse.type === "basic") await cache.put(requete, reponse.clone());
     return reponse;
   } catch {
+    if (new URL(requete.url).pathname.endsWith(".js")) {
+      return new Response(MODULE_HORS_LIGNE, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
+    }
     return new Response("", { status: 503, statusText: "Hors ligne" });
   }
 }
@@ -167,7 +180,8 @@ async function reseauDabord(requete) {
   try {
     const reponse = await fetch(requete);
     const nonGardable = /no-store/.test(reponse.headers.get("Cache-Control") || "");
-    if (reponse.ok && reponse.type === "basic" && !nonGardable) {
+    const gardable = reponse.ok || (reponse.status === 401 && new URL(requete.url).pathname === PROFIL);
+    if (gardable && reponse.type === "basic" && !nonGardable) {
       const cache = await caches.open(CACHE_DONNEES);
       await cache.put(requete, reponse.clone());
       void limiter(CACHE_DONNEES, MAX_DONNEES);

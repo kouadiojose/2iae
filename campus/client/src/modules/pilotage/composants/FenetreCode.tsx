@@ -10,15 +10,19 @@ import { toast } from "@/components/ui/toast";
 import { dateCourte } from "@/lib/dates";
 import { Qr } from "./Qr";
 import { copier, memoriserFiches, lienFiches } from "../outils";
+import { cn } from "@/lib/utils";
 
 export function FenetreCode({
   remis,
   personne,
   onFermer,
+  nouveauCompte,
 }: {
   remis: CodeRemis | null;
   personne: Omit<FicheConnexion, "code" | "lien" | "expireLe"> | null;
   onFermer: () => void;
+  /** Compte tout juste créé : pas d'ancien code à invalider. */
+  nouveauCompte?: boolean;
 }) {
   const [, naviguer] = useLocation();
   if (!remis || !personne) return null;
@@ -53,9 +57,12 @@ export function FenetreCode({
       <div className="flex flex-col items-center gap-5 pb-2 sm:flex-row sm:items-start">
         <div className="w-full rounded-2xl bg-creme p-5 text-center sm:flex-1">
           <div className="etiquette">Identifiant</div>
-          <div className="mt-1 break-all font-mono text-lg font-semibold">{personne.identifiant}</div>
+          <div className="mt-1 break-words font-mono text-lg font-semibold">{personne.identifiant}</div>
           <div className="etiquette mt-4">Code provisoire</div>
-          <div className="mt-1 font-mono text-[44px] font-bold leading-none tracking-[0.12em] tabular-nums" aria-live="polite">
+          <div
+            className={cn("mt-1 font-mono font-bold leading-none tabular-nums", remis.code.length > 8 ? "whitespace-nowrap text-[26px] tracking-normal" : "text-[44px] tracking-[0.12em]")}
+            aria-live="polite"
+          >
             {remis.code}
           </div>
           <div className="mt-3 text-sm text-texte-pale">Valable jusqu'au {dateCourte(remis.expireLe)} · à usage unique</div>
@@ -65,10 +72,12 @@ export function FenetreCode({
           <span className="text-center text-[13px] text-texte-gris">À scanner avec l'appareil photo</span>
         </div>
       </div>
-      <div className="mt-3 flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
-        <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>Les anciens codes et fiches de ce compte ne marchent plus. Les appareils déjà connectés devront se reconnecter.</span>
-      </div>
+      {!nouveauCompte && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Les anciens codes et fiches de ce compte ne marchent plus. Les appareils déjà connectés devront se reconnecter.</span>
+        </div>
+      )}
       <button
         type="button"
         onClick={async () => toast((await copier(message)) ? "Message copié" : "Copie impossible : sélectionnez le texte à la main.", "info")}

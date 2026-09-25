@@ -136,9 +136,22 @@ export default function TemoignagesPage() {
               c'est ensemble que nous fêterons les 20 ans de votre école,
               l'école des entrepreneurs.
             </p>
-            <p className="text-sm text-muted-foreground mt-6 pt-6 border-t border-border">
-              Département Communication, Groupe Écoles 2IAE International.
-            </p>
+            <div className="mt-6 pt-6 border-t border-border">
+              <p className="text-sm text-muted-foreground mb-2">
+                Département Communication, Groupe Écoles 2IAE International.
+              </p>
+              <p className="text-sm text-foreground">
+                Vous préférez le téléphone ? Appelez-nous au{" "}
+                <a
+                  href="tel:+2250707887704"
+                  className="font-semibold text-primary"
+                  data-testid="lien-telephone-communication"
+                >
+                  (+225) 07 07 88 77 04
+                </a>
+                .
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -313,14 +326,15 @@ export default function TemoignagesPage() {
 
                 <p className="text-xs text-muted-foreground text-center">
                   Les champs marqués d'une étoile sont nécessaires pour vous
-                  recontacter. Vous préférez écrire ?{" "}
+                  recontacter. Vous pouvez aussi appeler le Département
+                  Communication au (+225) 07 07 88 77 04, ou{" "}
                   <a
                     href={WHATSAPP}
                     target="_blank"
                     rel="noreferrer"
                     className="text-primary underline"
                   >
-                    Témoignez sur WhatsApp
+                    témoigner sur WhatsApp
                   </a>
                   .
                 </p>

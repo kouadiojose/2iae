@@ -45,15 +45,17 @@ import TemoignagesPage from "@/pages/temoignages";
 import Resultats2026Page from "@/pages/resultats-2026";
 import NotFound from "@/pages/not-found";
 import { MessageCircle } from "lucide-react";
-import { BandeauRTI } from "@/components/annonce-rti";
+import { BandeauRTI, annonceRtiActive } from "@/components/annonce-rti";
 import { BandeauAnciens } from "@/components/bandeau-anciens";
 
 // Layout for public website pages
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
-      <BandeauRTI />
-      <BandeauAnciens />
+      {/* Une seule bande au-dessus de l'en-tête : une annonce télé est datée
+          et se périme, elle passe donc devant l'appel aux anciens, qui, lui,
+          est permanent et reprend sa place dès la diffusion terminée. */}
+      {annonceRtiActive() ? <BandeauRTI /> : <BandeauAnciens />}
       <Header />
       {children}
       <Footer />

@@ -260,6 +260,7 @@ function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVis
       audioSeul={false}
       siteALaParole={etat.parole?.type === "salle" ? etat.parole.siteId : null}
       utilisateurALaParole={etat.parole?.type === "etudiant" ? etat.parole.utilisateurId : null}
+      enDirect={etat.statut === "en_direct"}
       onEtat={onEtatVisio}
       onFluxLocal={onFluxLocal}
       className="h-full w-full"

@@ -573,6 +573,12 @@ export function enregistrerCours(app: Express) {
       // Le formateur n'enseigne que ce que idsCoursAccessibles lui renvoie.
       const enseigne = equipe || u.role === "formateur";
       const effectifs = enseigne ? await effectifsDesCours(ids) : new Map<number, number>();
+      // La vie scolaire d'un campus voit les cours que suit son campus, mais ne modifie que ceux
+      // qu'il est seul à suivre (enseigneCours) : « Modifier » n'apparaît que sur ceux-là.
+      const modifiables = new Set<number>();
+      if (equipe && perimetreSites(u)) {
+        for (const id of ids) if (await enseigneCours(u, id)) modifiables.add(id);
+      }
 
       const resultat: CoursResume[] = liste.map((c) => {
         const s = statsDe.get(c.id);
@@ -593,7 +599,7 @@ export function enregistrerCours(app: Express) {
           nbTerminees: faites,
           progression: faites === null ? null : nbLecons ? Math.round((faites / nbLecons) * 100) : 0,
           prochaineSeance: seancesDe.get(c.id) ?? null,
-          enseignant: enseigne,
+          enseignant: enseigne && (!equipe || !perimetreSites(u) || modifiables.has(c.id)),
           nbBrouillons: enseigne ? (s?.brouillons ?? 0) : 0,
           nbClasses: classesDe.get(c.id) ?? 0,
           nbEtudiants: enseigne ? (effectifs.get(c.id) ?? 0) : null,

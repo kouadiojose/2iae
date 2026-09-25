@@ -76,7 +76,9 @@ function SeanceExistante({ id }: { id: number }) {
     return <Page><EtatVide titre="Cette page est réservée au formateur du cours." action={<LienBouton href={`/live/${seance.id}`}>Voir le live</LienBouton>} /></Page>;
   }
   const apres = seance.statut === "terminee";
-  const courant: Onglet = onglet ?? (apres ? "bilan" : "preparer");
+  // Vie scolaire d'un campus sur un cours partagé : le bilan et la présence de son site, sans préparer.
+  const lectureSeule = !seance.peutModifier;
+  const courant: Onglet = lectureSeule ? "bilan" : (onglet ?? (apres ? "bilan" : "preparer"));
 
   const dupliquer = async () => {
     try {
@@ -118,23 +120,31 @@ function SeanceExistante({ id }: { id: number }) {
                 Voir le replay
               </LienBouton>
             )}
-            <Bouton variante="doux" icone={<Copy className="h-4 w-4" />} onClick={dupliquer}>
-              Dupliquer
-            </Bouton>
+            {!lectureSeule && (
+              <Bouton variante="doux" icone={<Copy className="h-4 w-4" />} onClick={dupliquer}>
+                Dupliquer
+              </Bouton>
+            )}
           </>
         }
       />
       {seance.statut === "annulee" && <Erreur message={`Séance annulée : ${seance.motifAnnulation ?? ""}`} />}
-      <Onglets
-        valeur={courant}
-        onChange={setOnglet}
-        options={[
-          { valeur: "preparer", libelle: "Préparer" },
-          { valeur: "bilan", libelle: "Bilan" },
-          { valeur: "fiche", libelle: "Fiche de révision" },
-        ]}
-        className="w-fit"
-      />
+      {lectureSeule ? (
+        <p className="rounded-2xl bg-creme px-5 py-3.5 text-[15px] text-texte-doux">
+          Ce cours est suivi par plusieurs campus : son formateur et la direction préparent la séance. Vous suivez ici la présence de votre campus.
+        </p>
+      ) : (
+        <Onglets
+          valeur={courant}
+          onChange={setOnglet}
+          options={[
+            { valeur: "preparer", libelle: "Préparer" },
+            { valeur: "bilan", libelle: "Bilan" },
+            { valeur: "fiche", libelle: "Fiche de révision" },
+          ]}
+          className="w-fit"
+        />
+      )}
       {courant === "preparer" && (
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-4">

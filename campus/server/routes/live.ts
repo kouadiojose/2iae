@@ -26,7 +26,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { coursEnseigne, seanceVisible, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, enseigneCours } from "../acces";
+import { coursEnseigne, seanceVisible, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
@@ -183,6 +183,19 @@ async function seanceAccessible(u: Utilisateur, id: number): Promise<Seance> {
 /** Séance que la personne anime (formateur du cours ou équipe). */
 async function seanceAnimee(u: Utilisateur, id: number): Promise<Seance> {
   const s = await chargerSeance(id);
+  await coursEnseigne(u, s.coursId);
+  return s;
+}
+
+/**
+ * Séance suivie par l'équipe (bilan, feuille de présence) : aussi la vie
+ * scolaire d'un campus pour les cours que suit son campus, même partagés avec
+ * d'autres campus — les données nominatives restent limitées à son site
+ * (feuillePresence). Préparer ou animer reste réservé à seanceAnimee.
+ */
+async function seanceSuivie(u: Utilisateur, id: number): Promise<Seance> {
+  const s = await chargerSeance(id);
+  if (estEquipe(u) && !(await enseigneCours(u, s.coursId)) && (await peutVoirCours(u, s.coursId))) return s;
   await coursEnseigne(u, s.coursId);
   return s;
 }
@@ -739,6 +752,7 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     resumeValide: s.resumeValide,
     formateur: formateur ?? null,
     monRole: role,
+    peutModifier: role === "formateur" || (role === "equipe" && (await enseigneCours(u, s.coursId))),
     monSite: monSite ? versSiteLive(monSite) : null,
     maPresence,
     sites: sitesListe.map(versSiteLive),
@@ -1977,7 +1991,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceSuivie(u, idParam(req));
       res.json(await feuillePresence(u, s));
     }),
   );
@@ -2030,7 +2044,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceSuivie(u, idParam(req));
       const role = await roleDans(u, s);
       const sitesParId = await nomsSites();
       const perimetre = perimetreSites(u);

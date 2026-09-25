@@ -35,6 +35,8 @@ export type PropsSceneVisioCampus = {
   siteALaParole?: number | null;
   /** Utilisateur (étudiant en ligne) qui a la parole en audio. */
   utilisateurALaParole?: number | null;
+  /** La séance est en direct (faux dans les coulisses, avant « Démarrer » : la visio est « prête », pas « en direct »). */
+  enDirect?: boolean;
   onEtat?: (etat: EtatVisio) => void;
   /** Formateur : flux micro/caméra local, pour la radio et l'aperçu. */
   onFluxLocal?: (flux: MediaStream | null) => void;
@@ -50,8 +52,8 @@ export function SceneVisioCampus(props: PropsSceneVisioCampus) {
 
 // ── Aides communes ─────────────────────────────────────────────────────────
 
-function pastilleDe(etat: EtatVisio, attente: boolean): { ton: TonPastille; texte: string } {
-  if (etat === "connecte") return { ton: "direct", texte: "En direct" };
+function pastilleDe(etat: EtatVisio, attente: boolean, enDirect = true): { ton: TonPastille; texte: string } {
+  if (etat === "connecte") return enDirect ? { ton: "direct", texte: "En direct" } : { ton: "neutre", texte: "Visio prête" };
   if (etat === "reconnexion") return { ton: "alerte", texte: "Reconnexion…" };
   if (etat === "echec") return { ton: "alerte", texte: "Connexion impossible" };
   if (etat === "ferme") return { ton: "neutre", texte: "Visio fermée" };
@@ -136,7 +138,7 @@ function SceneFormateur(p: PropsSceneVisioCampus & { moiId: number }) {
   const { data: pairs } = useQuery<PairsVisio>({ queryKey: ["/api/visio", p.seanceId, "pairs"], refetchInterval: 15_000 });
 
   if (!vue) return null;
-  const pastille = pastilleDe(vue.etat, false);
+  const pastille = pastilleDe(vue.etat, false, p.enDirect ?? true);
   const sites = pairs?.sites ?? [];
   const sallesConnues = new Set(sites.map((s) => s.id));
   // Une salle par site (la plus récente) + les salles d'un site inconnu de la liste.
@@ -322,7 +324,7 @@ function ScenePeripherie(p: PropsSceneVisioCampus & { role: "salle" | "etudiant"
     );
   }
 
-  const pastille = pastilleDe(vue.etat, vue.attenteFormateur);
+  const pastille = pastilleDe(vue.etat, vue.attenteFormateur, p.enDirect ?? true);
   const video = vue.formateur.camera ? vue.formateur.video : null;
   const texteSansImage = vue.attenteFormateur
     ? tu

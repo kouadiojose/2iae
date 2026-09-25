@@ -49,7 +49,7 @@ export async function envoyerQuestion(
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new ErreurApi(0, "Pas de connexion internet. Vérifie ton réseau et réessaie.");
+    throw new ErreurApi(0, "Pas de connexion internet pour le moment : nouvel essai possible dès le retour du réseau.");
   }
   noterHeureServeur(reponse.headers.get("date"));
   if (!reponse.ok) {

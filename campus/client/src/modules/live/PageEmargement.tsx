@@ -25,7 +25,9 @@ export default function PageEmargement({ code: codeUrl }: { code: string }) {
     try {
       const r = await post<EmargementDto>("/api/emargement", { code: c });
       setEtat({ type: "ok", r });
-      if (navigator.vibrate) navigator.vibrate(120);
+      // Arrivé par le QR, sans avoir touché l'écran : le navigateur refuse la vibration (et le signale en console).
+      const active = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive ?? true;
+      if (navigator.vibrate && active) navigator.vibrate(120);
     } catch (e) {
       const horsLigne = e instanceof ErreurApi && e.statut === 0;
       setEtat({

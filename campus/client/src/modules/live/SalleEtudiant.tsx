@@ -44,12 +44,15 @@ export default function SalleEtudiant({ seance }: { seance: SeanceDetailDto }) {
 
 function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: ModeSuivi) => void }) {
   const moi = useMoiConnecte();
-  const [choix, setChoix] = useState<ModeSuivi>(moi.preferences?.modeSuivi === "salle" ? "compagnon" : moi.preferences?.donneesReduites === false && moi.preferences?.modeSuivi === "ordinateur" ? "video" : "radio");
+  const dejaEnSalle = seance.maPresence?.mode === "salle";
+  // Déjà émargé dans sa salle (QR ou code de la salle) : le mode compagnon est proposé d'office.
+  const [choix, setChoix] = useState<ModeSuivi>(
+    dejaEnSalle || moi.preferences?.modeSuivi === "salle" ? "compagnon" : moi.preferences?.donneesReduites === false && moi.preferences?.modeSuivi === "ordinateur" ? "video" : "radio",
+  );
   const [code, setCode] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [erreurCode, setErreurCode] = useState<string | null>(null);
   const [micOk, setMicOk] = useState(false);
-  const dejaEnSalle = seance.maPresence?.mode === "salle";
 
   const entrer = async () => {
     if (choix !== "compagnon" || dejaEnSalle) return onChoix(choix);

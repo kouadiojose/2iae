@@ -1395,6 +1395,10 @@ export function enregistrerEvaluations(app: Express) {
         maxTokens: 4000,
         utilisateurId: u.id,
       });
+      // Réponse hors du format demandé : un message clair plutôt qu'une erreur 500.
+      if (!ia || !Array.isArray(ia.detail)) {
+        throw new ErreurHttp(502, "L'IA n'a pas rendu de correction exploitable. Réessayez dans un instant, ou corrigez la copie avec la grille.");
+      }
       const detail = grille.map((g, i) => {
         const trouve = ia.detail.find((x) => x.critere.trim().toLowerCase() === g.critere.trim().toLowerCase()) ?? ia.detail[i];
         const obtenu = Math.min(g.points, Math.max(0, auQuart(Number(trouve?.obtenu) || 0)));

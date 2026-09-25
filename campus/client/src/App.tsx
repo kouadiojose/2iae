@@ -28,11 +28,15 @@ function EcranChargement() {
 
 function PageInterdite() {
   const { moi } = useMoi();
+  // Tutoiement pour les étudiants, vouvoiement pour les formateurs et l'équipe (CONCEPTION §1.6).
+  const tu = !moi || moi.role === "etudiant";
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-6 py-24 text-center">
       <span className="etiquette">Accès réservé</span>
-      <h1 className="text-3xl font-black">Cette page n'est pas pour ton compte.</h1>
-      <p className="text-texte-pale">Elle est réservée à un autre profil du campus. Tu peux revenir à ton accueil.</p>
+      <h1 className="text-3xl font-black">{tu ? "Cette page n'est pas pour ton compte." : "Cette page n'est pas pour votre compte."}</h1>
+      <p className="text-texte-pale">
+        {tu ? "Elle est réservée à un autre profil du campus. Tu peux revenir à ton accueil." : "Elle est réservée à un autre profil du campus. Vous pouvez revenir à votre accueil."}
+      </p>
       <LienBouton href={moi ? accueilDuRole(moi.role) : "/"}>Revenir à mon accueil</LienBouton>
     </div>
   );

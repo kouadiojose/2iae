@@ -191,10 +191,14 @@ function ChoixCoursNouvelleSeance({ ouverte, onFermer }: { ouverte: boolean; onF
   const { data: liste } = useQuery<CoursResume[]>({ queryKey: ["/api/cours"], enabled: ouverte, retry: false });
   const { data: seances } = useQuery<SeanceResume[]>({ queryKey: ["/api/seances?limite=100"], enabled: ouverte });
   const [coursId, setCoursId] = useState("");
-  // Cours du module « cours », complétés par ceux des séances déjà connues.
+  // Cours que la personne peut programmer (module « cours » : « enseignant ») ; à défaut
+  // de cette liste, ceux des séances déjà connues.
   const parId = new Map<number, CoursResume>();
-  for (const c of Array.isArray(liste) ? liste : []) if (c?.id) parId.set(c.id, { id: c.id, code: c.code, titre: c.titre });
-  for (const s of seances ?? []) if (!parId.has(s.coursId)) parId.set(s.coursId, { id: s.coursId, code: s.coursCode, titre: s.coursTitre });
+  if (Array.isArray(liste)) {
+    for (const c of liste as (CoursResume & { enseignant?: boolean })[]) if (c?.id && c.enseignant !== false) parId.set(c.id, { id: c.id, code: c.code, titre: c.titre });
+  } else {
+    for (const s of seances ?? []) if (!parId.has(s.coursId)) parId.set(s.coursId, { id: s.coursId, code: s.coursCode, titre: s.coursTitre });
+  }
   const cours = [...parId.values()];
   return (
     <Fenetre

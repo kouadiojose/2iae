@@ -118,8 +118,9 @@ export function PanneauLectures({ annonceId, expiree }: { annonceId: number; exp
         <div className="flex flex-col gap-3">
           <p className="text-sm font-bold">Pas encore lue par :</p>
           <ul className="flex flex-wrap gap-1.5">
-            {noms.map((n) => (
-              <li key={n} className="rounded-full bg-creme px-3 py-1.5 text-[13px] text-texte-doux">
+            {/* Des homonymes existent (deux « Aya Koné ») : la clé ne peut pas être le seul nom. */}
+            {noms.map((n, i) => (
+              <li key={`${i}-${n}`} className="rounded-full bg-creme px-3 py-1.5 text-[13px] text-texte-doux">
                 {n}
               </li>
             ))}

@@ -33,7 +33,7 @@ app.disable("x-powered-by");
 if (estProduction) {
   app.use((req, res, next) => {
     const proto = req.headers["x-forwarded-proto"];
-    if (typeof proto === "string" && proto.split(",")[0].trim() === "http") {
+    if (typeof proto === "string" && proto.split(",")[0].trim() === "http" && req.path !== "/api/health") {
       return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
     }
     res.setHeader("Strict-Transport-Security", "max-age=15552000");

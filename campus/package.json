@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "NODE_ENV=development tsx --env-file-if-exists=.env server/index.ts",
-    "build": "vite build && esbuild server/index.ts server/scripts/migrate.ts server/scripts/seed.ts --platform=node --packages=external --bundle --format=esm --outdir=dist --define:process.env.NODE_ENV=\\\"production\\\"",
+    "build": "vite build && esbuild server/index.ts server/scripts/migrate.ts server/scripts/seed.ts server/scripts/purger-demo.ts --platform=node --packages=external --bundle --format=esm --outdir=dist --define:process.env.NODE_ENV=\\\"production\\\"",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "db:generate": "drizzle-kit generate && node server/scripts/corriger-migrations.mjs",
@@ -18,7 +18,9 @@
     "db:migrate": "node dist/scripts/migrate.js",
     "db:migrate:dev": "tsx --env-file-if-exists=.env server/scripts/migrate.ts",
     "db:seed": "tsx --env-file-if-exists=.env server/scripts/seed.ts",
-    "db:seed:prod": "node dist/scripts/seed.js"
+    "db:seed:prod": "node dist/scripts/seed.js",
+    "db:purge-demo": "tsx --env-file-if-exists=.env server/scripts/purger-demo.ts",
+    "db:purge-demo:prod": "node dist/scripts/purger-demo.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

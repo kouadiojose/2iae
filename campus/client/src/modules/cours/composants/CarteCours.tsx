@@ -95,11 +95,13 @@ export function CarteCoursEnseignant({ cours, montrerFormateur }: { cours: Cours
         )}
         <LigneSeance cours={cours} formateur />
       </Link>
-      <div className="mt-auto flex items-center justify-end gap-2 border-t border-ligne-douce px-4 py-2.5">
-        <LienBouton href={`/enseigner/cours/${cours.id}`} variante="contour" taille="sm" icone={<PenLine className="h-4 w-4" />} className="min-h-[44px]">
-          Modifier
-        </LienBouton>
-      </div>
+      {cours.enseignant && (
+        <div className="mt-auto flex items-center justify-end gap-2 border-t border-ligne-douce px-4 py-2.5">
+          <LienBouton href={`/enseigner/cours/${cours.id}`} variante="contour" taille="sm" icone={<PenLine className="h-4 w-4" />} className="min-h-[44px]">
+            Modifier
+          </LienBouton>
+        </div>
+      )}
     </div>
   );
 }

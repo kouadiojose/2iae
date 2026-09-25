@@ -105,6 +105,12 @@ export type SeanceDetailDto = {
   resumeValide: boolean;
   formateur: { id: number; prenom: string; nom: string; localisation: string | null; photoUrl: string | null } | null;
   monRole: RoleSeance;
+  /**
+   * Préparer, modifier, dupliquer : formateur du cours, direction, vie scolaire
+   * d'un cours propre à son campus. Faux pour la vie scolaire d'un campus sur
+   * un cours partagé : elle suit le bilan et la présence de son site.
+   */
+  peutModifier: boolean;
   monSite: SiteLive | null;
   maPresence: { mode: ModePresence; minutes: number; emargeQr: boolean; statut: StatutPresence } | null;
   sites: SiteLive[];

@@ -191,7 +191,7 @@ async function reseauDabord(requete) {
       entetes.set("X-Campus-Cache", "1");
       return new Response(trouve.body, { status: trouve.status, statusText: trouve.statusText, headers: entetes });
     }
-    return new Response(JSON.stringify({ message: "Pas de connexion internet. Vérifie ton réseau et réessaie." }), {
+    return new Response(JSON.stringify({ message: "Pas de connexion internet pour le moment : nouvel essai possible dès le retour du réseau." }), {
       status: 503,
       headers: { "Content-Type": "application/json; charset=utf-8" },
     });

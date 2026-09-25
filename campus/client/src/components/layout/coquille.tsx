@@ -126,6 +126,7 @@ function MenuProfil() {
 }
 
 function BandeauHorsLigne() {
+  const moi = useMoiConnecte();
   const [horsLigne, setHorsLigne] = useState(typeof navigator !== "undefined" && !navigator.onLine);
   useEffect(() => {
     const on = () => setHorsLigne(false);
@@ -141,7 +142,9 @@ function BandeauHorsLigne() {
   return (
     <div className="flex items-center justify-center gap-2 bg-encre px-4 py-2 text-center text-[13px] font-semibold text-white">
       <WifiOff className="h-4 w-4 text-orange" />
-      Pas de réseau : tu consultes la dernière version enregistrée. Tout se remettra à jour au retour de la connexion.
+      {moi.role === "etudiant"
+        ? "Pas de réseau : tu consultes la dernière version enregistrée. Tout se remettra à jour au retour de la connexion."
+        : "Pas de réseau : vous consultez la dernière version enregistrée. Tout se remettra à jour au retour de la connexion."}
     </div>
   );
 }

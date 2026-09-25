@@ -18,14 +18,16 @@ function sansSlashFinal(url: string | undefined): string | undefined {
 
 export const estProduction = process.env.NODE_ENV === "production";
 
+const port = Number(process.env.PORT) || 5100;
+
 export const config = {
-  port: Number(process.env.PORT) || 5100,
+  port,
   sessionSecret: env("SESSION_SECRET") || "dev-campus-2iae-ne-pas-utiliser-en-production",
 
   /** Adresse publique du campus (liens dans les e-mails, QR codes, vitrine). */
   urlCampus:
     sansSlashFinal(env("CAMPUS_PUBLIC_URL", "APP_URL")) ||
-    (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : "http://localhost:5100"),
+    (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `http://localhost:${port}`),
 
   /** Site vitrine du groupe : origines autorisées (CORS) et webhook de rafraîchissement. */
   urlSite: sansSlashFinal(env("SITE_URL")) || "https://www.2iae.com",

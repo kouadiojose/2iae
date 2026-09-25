@@ -22,7 +22,7 @@ export async function api<T = unknown>(url: string, options: Options = {}): Prom
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
-    throw new ErreurApi(0, "Pas de connexion internet. Vérifie ton réseau et réessaie.");
+    throw new ErreurApi(0, "Pas de connexion internet pour le moment : nouvel essai possible dès le retour du réseau.");
   }
   // Une réponse servie par le cache hors ligne porte une date ancienne : on l'ignore.
   if (!reponse.headers.get("x-campus-cache")) noterHeureServeur(reponse.headers.get("date"));

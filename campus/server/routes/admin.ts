@@ -1735,9 +1735,10 @@ export function enregistrerAdmin(app: Express) {
       // La vie scolaire d'un campus voit les séances qui concernent sa salle.
       if (p) liste = liste.filter((s) => s.sites.some((x) => p.includes(x.id)));
 
-      // Conflits : deux séances qui se chevauchent dans une même salle de conférence.
+      // Conflits : deux séances qui se chevauchent dans une même salle de conférence. Même règle que
+      // le module live (conflitsDeSalle) : une séance annulée ou terminée a libéré la salle.
       const conflits: ConflitSalle[] = [];
-      const actives = liste.filter((s) => s.statut !== "annulee");
+      const actives = liste.filter((s) => s.statut === "planifiee" || s.statut === "en_direct");
       for (let i = 0; i < actives.length; i++) {
         for (let j = i + 1; j < actives.length; j++) {
           const a = actives[i];

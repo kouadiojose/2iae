@@ -131,7 +131,7 @@ export default function PageSuivi() {
               <Bouton variante="contour" icone={<ChevronLeft className="h-4 w-4" />} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                 Précédents
               </Bouton>
-              <span className="font-mono text-sm text-texte-gris">
+              <span className="whitespace-nowrap font-mono text-sm text-texte-gris">
                 page {data.page} / {pages}
               </span>
               <Bouton variante="contour" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>

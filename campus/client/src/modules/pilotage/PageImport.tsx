@@ -17,7 +17,7 @@ import { Selection } from "@/components/ui/champs";
 import { Badge } from "@/components/ui/divers";
 import { toast } from "@/components/ui/toast";
 import { post, ErreurApi } from "@/lib/api";
-import { dateEtHeure } from "@/lib/dates";
+import { heure, jourLong } from "@/lib/dates";
 import { rafraichir } from "@/lib/queryClient";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
@@ -245,7 +245,9 @@ export default function PageImport() {
           <div className="flex items-start gap-3">
             <History className="mt-0.5 h-5 w-5 shrink-0" />
             <p className="text-[15px]">
-              <strong>Import du {dateEtHeure(l.creeLe)}</strong> : {pluriel(l.comptes, "compte créé", "comptes créés")}, mais leurs fiches ne sont jamais arrivées (connexion coupée ou page fermée).{" "}
+              <strong>
+                Import du {jourLong(l.creeLe)} à {heure(l.creeLe)}
+              </strong> : {pluriel(l.comptes, "compte créé", "comptes créés")}, mais leurs fiches ne sont jamais arrivées (connexion coupée ou page fermée).{" "}
               {l.nonActives < l.comptes ? `${pluriel(l.nonActives, "compte n'est", "comptes ne sont")} pas encore activé${l.nonActives > 1 ? "s" : ""}.` : ""} Refaites les fiches : de nouveaux codes, et aucun compte en double.
             </p>
           </div>

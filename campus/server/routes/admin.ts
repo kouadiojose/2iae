@@ -1193,7 +1193,16 @@ async function parGroupes<T, R>(elements: T[], n: number, f: (x: T, i: number) =
 // même si la connexion se coupe ; relancé avec le même identifiant, il renvoie
 // le même résultat (mêmes codes) pendant 15 minutes, au lieu de tout refaire.
 
-type Travail = { auteurId: number; etape: EtapeTravail; faits: number; total: number; resultat?: Promise<LotFiches>; finiLe?: number };
+type Travail = {
+  auteurId: number;
+  /** Empreinte de la demande : un même identifiant avec une autre demande (lignes modifiées) est refait. */
+  empreinte: string;
+  etape: EtapeTravail;
+  faits: number;
+  total: number;
+  resultat?: Promise<LotFiches>;
+  finiLe?: number;
+};
 const travaux = new Map<string, Travail>();
 const GARDE_RESULTAT_MS = 15 * 60_000;
 setInterval(() => {
@@ -1214,16 +1223,20 @@ const avancer = (t: Travail | undefined) => () => {
 };
 
 /**
- * Lance (ou rejoint) le travail « id » de cette personne : un second appel
- * pendant le travail, ou juste après, reçoit le même résultat.
+ * Lance (ou rejoint) le travail « id » de cette personne : la même demande,
+ * pendant le travail ou juste après, reçoit le même résultat. Une demande
+ * différente sous le même identifiant attend la première, puis est refaite.
  */
-async function travailUnique(u: Utilisateur, id: string, total: number, faire: (t: Travail) => Promise<LotFiches>): Promise<LotFiches> {
-  const existant = travaux.get(id);
-  if (existant) {
+async function travailUnique(u: Utilisateur, id: string, total: number, faire: (t: Travail) => Promise<LotFiches>, empreinte = ""): Promise<LotFiches> {
+  for (;;) {
+    const existant = travaux.get(id);
+    if (!existant) break;
     if (existant.auteurId !== u.id) throw introuvable("Travail");
-    if (existant.resultat) return existant.resultat;
+    if (existant.empreinte === empreinte) return existant.resultat!;
+    if (existant.finiLe) break;
+    await existant.resultat!.catch(() => undefined);
   }
-  const t: Travail = { auteurId: u.id, etape: "verification", faits: 0, total };
+  const t: Travail = { auteurId: u.id, empreinte, etape: "verification", faits: 0, total };
   t.resultat = faire(t).then(
     (r) => {
       t.etape = "termine";
@@ -1945,7 +1958,8 @@ export function enregistrerAdmin(app: Express) {
       );
       // Sans identifiant (ancienne page encore ouverte) : lot à usage unique.
       const lotId = lotDemande ?? crypto.randomUUID();
-      const lot = await travailUnique(u, lotId, recues.length, (t) => importerLot(u, lotId, recues, t));
+      const empreinte = crypto.createHash("sha256").update(JSON.stringify(recues)).digest("hex");
+      const lot = await travailUnique(u, lotId, recues.length, (t) => importerLot(u, lotId, recues, t), empreinte);
       res.status(201).json(lot);
     }),
   );
@@ -2007,7 +2021,7 @@ export function enregistrerAdmin(app: Express) {
         fiches.sort((a, b) => (a.classe ?? "").localeCompare(b.classe ?? "") || a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
         await journaliser(u, "fiches_imprimees", { nombre: fiches.length, lotId });
         return { fiches, ignores: duLot.length - fiches.length, lotId };
-      });
+      }, "refaire");
       res.json(resultat);
     }),
   );
@@ -2047,7 +2061,7 @@ export function enregistrerAdmin(app: Express) {
         return { fiches, ignores: demandes.length - fiches.length };
       };
       // Avec un identifiant de suivi : progression visible, et une relance renvoie les mêmes fiches.
-      res.json(suivi ? await travailUnique(u, suivi, demandes.length, preparer) : await preparer());
+      res.json(suivi ? await travailUnique(u, suivi, demandes.length, preparer, [...demandes].sort((a, b) => a - b).join(",")) : await preparer());
     }),
   );
 

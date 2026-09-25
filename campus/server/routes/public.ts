@@ -490,9 +490,34 @@ function cors(req: Request, res: Response, next: NextFunction) {
 
 const echapper = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-function balises(p: { titre: string; description: string; chemin: string; type?: "website" | "profile" | "article" }): string {
+type ImagePartage = { url: string; alt: string; largeur?: number; hauteur?: number };
+
+/** Image de partage par défaut (PNG 1200 × 630 : WhatsApp et Facebook ignorent le SVG). */
+const IMAGE_CAMPUS = (): ImagePartage => ({
+  url: urlCampus("/og-campus.png"),
+  alt: "Campus numérique 2IAE : un cours, cinq campus, en direct.",
+  largeur: 1200,
+  hauteur: 630,
+});
+
+/**
+ * Image propre à un cours ou à un formateur pour l'aperçu, si c'est une vraie
+ * photo PNG ou JPEG (jamais un SVG) ; sinon l'image du campus.
+ */
+async function imagePartage(url: string | null, routePublique: string, alt: string): Promise<ImagePartage> {
+  if (!url) return IMAGE_CAMPUS();
+  if (/^https?:\/\/.+\.(png|jpe?g)(\?.*)?$/i.test(url)) return { url, alt };
+  const id = idFichierInterne(url);
+  if (id) {
+    const [f] = await db.select({ mime: fichiers.mime }).from(fichiers).where(eq(fichiers.id, id));
+    if (f && /^image\/(png|jpeg)$/.test(f.mime)) return { url: urlCampus(routePublique), alt };
+  }
+  return IMAGE_CAMPUS();
+}
+
+function balises(p: { titre: string; description: string; chemin: string; type?: "website" | "profile" | "article"; image?: ImagePartage }): string {
   const url = urlCampus(p.chemin);
-  const image = urlCampus("/og-campus.png");
+  const image = p.image ?? IMAGE_CAMPUS();
   const t = echapper(p.titre);
   const d = echapper(p.description.length > 200 ? `${p.description.slice(0, 197)}…` : p.description);
   return [
@@ -505,14 +530,15 @@ function balises(p: { titre: string; description: string; chemin: string; type?:
     `<meta property="og:title" content="${t}" />`,
     `<meta property="og:description" content="${d}" />`,
     `<meta property="og:url" content="${echapper(url)}" />`,
-    `<meta property="og:image" content="${image}" />`,
-    `<meta property="og:image:width" content="1200" />`,
-    `<meta property="og:image:height" content="630" />`,
-    `<meta property="og:image:alt" content="Campus numérique 2IAE : un cours, cinq campus, en direct." />`,
+    `<meta property="og:image" content="${echapper(image.url)}" />`,
+    ...(image.largeur && image.hauteur
+      ? [`<meta property="og:image:width" content="${image.largeur}" />`, `<meta property="og:image:height" content="${image.hauteur}" />`]
+      : []),
+    `<meta property="og:image:alt" content="${echapper(image.alt)}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${t}" />`,
     `<meta name="twitter:description" content="${d}" />`,
-    `<meta name="twitter:image" content="${image}" />`,
+    `<meta name="twitter:image" content="${echapper(image.url)}" />`,
   ].join("\n    ");
 }
 
@@ -535,7 +561,13 @@ async function metaPage(url: string): Promise<string | null> {
     const campus = (await campusParCours([c.id])).get(c.id)?.length ?? 0;
     const quand = c.dateDebut && c.dateDebut.getTime() > Date.now() ? ` Dès le ${fmtDate.format(c.dateDebut)}.` : "";
     const ou = campus > 1 ? ` En direct dans ${campus} campus 2IAE.` : " En direct au campus numérique 2IAE.";
-    return balises({ titre: `${c.titre} · ${NOM_CAMPUS}`, description: `${accrocheDe(c)}${quand}${ou}`, chemin: `/cours-ouverts/${c.slug}`, type: "article" });
+    return balises({
+      titre: `${c.titre} · ${NOM_CAMPUS}`,
+      description: `${accrocheDe(c)}${quand}${ou}`,
+      chemin: `/cours-ouverts/${c.slug}`,
+      type: "article",
+      image: await imagePartage(c.imageUrl, `/api/public/cours/${c.slug}/image`, c.titre),
+    });
   }
   const mFormateur = chemin.match(/^\/formateurs\/([^/]+)$/);
   if (mFormateur) {
@@ -548,6 +580,7 @@ async function metaPage(url: string): Promise<string | null> {
       description: bio,
       chemin: `/formateurs/${slugFormateur(f)}`,
       type: "profile",
+      image: await imagePartage(f.photoUrl, `/api/public/formateurs/${slugFormateur(f)}/photo`, `${f.prenom} ${f.nom}`),
     });
   }
   return null;

@@ -61,7 +61,7 @@ export default function PageFiches() {
   const hote = window.location.host;
 
   return (
-    <div className="min-h-dvh bg-[#EFE7E0] print:bg-white">
+    <div className="min-h-dvh bg-[#EFE7E0] print:min-h-0 print:bg-white">
       <style>{CSS_IMPRESSION}</style>
 
       <header className="sans-impression sticky top-0 z-10 border-b border-ligne bg-white/95 backdrop-blur">
@@ -161,7 +161,7 @@ function Fiche({ f, hote }: { f: FicheConnexion; hote: string }) {
             {f.prenom} <span className="uppercase">{f.nom}</span>
           </div>
           <div className="mt-[0.6mm] line-clamp-2 text-[7pt] leading-snug text-texte-doux">
-            {[f.classe, f.site ? `Campus ${f.site}` : null].filter(Boolean).join(" · ") || "Personnel du campus"}
+            {[f.classe, f.site && !(f.classe ?? "").includes(f.site) ? `Campus ${f.site}` : null].filter(Boolean).join(" · ") || "Personnel du campus"}
           </div>
           <div className="mt-[2mm] grid grid-cols-[auto_1fr] items-baseline gap-x-[2mm] gap-y-[0.8mm]">
             <span className="font-mono text-[6pt] uppercase tracking-wider text-texte-gris">Identifiant</span>
@@ -170,11 +170,11 @@ function Fiche({ f, hote }: { f: FicheConnexion; hote: string }) {
             <span className="font-mono text-[15pt] font-bold leading-none tracking-[0.14em]">{f.code}</span>
           </div>
           <div className="mt-[1.2mm] text-[6pt] leading-snug text-texte-pale">
-            Valable jusqu'au {fmtDate.format(new Date(f.expireLe))}. {tu ? "Sans QR : ouvre" : "Sans QR : ouvrez"} <span className="font-mono">{hote}</span>
+            Valable jusqu'au {fmtDate.format(new Date(f.expireLe))}. Sans QR : {tu ? "ouvre" : "ouvrez"} <span className="font-mono">{hote}</span> et {tu ? "tape" : "tapez"} l'identifiant et le code.
           </div>
         </div>
-        <div className="flex w-[26mm] shrink-0 flex-col items-center gap-[1mm]">
-          <Qr texte={f.lien} className="w-[25mm]" titre={`QR d'activation de ${f.prenom}`} />
+        <div className="flex w-[28mm] shrink-0 flex-col items-center gap-[1mm]">
+          <Qr texte={f.lien} className="w-[27mm]" titre={`QR d'activation de ${f.prenom}`} />
           <span className="font-mono text-[6pt] uppercase tracking-wider text-texte-gris">{tu ? "Scanne-moi" : "À scanner"}</span>
         </div>
       </div>
@@ -220,7 +220,7 @@ const CSS_IMPRESSION = `
   html, body { background: #fff !important; }
   .sans-impression { display: none !important; }
   .feuille-a4 { zoom: 1 !important; box-shadow: none !important; break-after: page; page-break-after: always; }
-  .feuille-a4:last-child { break-after: auto; page-break-after: auto; }
+  .feuille-a4:last-of-type { break-after: auto; page-break-after: auto; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 `;

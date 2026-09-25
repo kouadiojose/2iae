@@ -223,7 +223,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
       <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
         <div className="flex max-w-md flex-col items-center gap-4 text-center">
           <span className="etiquette text-orange-peche">À bientôt</span>
-          <p className="text-3xl font-black tracking-serre">Ce cours t'a coûté environ {formatMo(sortie.mo)}.</p>
+          <p className="text-3xl font-black tracking-serre">Ce cours t'a coûté {sortie.mo < 1 ? "moins de 1 Mo" : `environ ${formatMo(sortie.mo)}`}.</p>
           <p className="text-[15px] text-nuit-doux">
             {sortie.mesure ? "Consommation mesurée sur ton téléphone" : `Estimation pour le mode « ${CONSOMMATION[mode].titre} »`} · {sortie.minutes} min de cours.
             {mode === "radio" && " En vidéo, c'est environ dix fois plus."}
@@ -232,7 +232,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
             <Bouton variante="nuit" onClick={() => setSortie(null)}>
               Revenir dans la classe
             </Bouton>
-            <LienBouton href="/direct">Terminer</LienBouton>
+            <LienBouton href="/direct">Retour à mes lives</LienBouton>
           </div>
         </div>
       </div>

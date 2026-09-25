@@ -143,10 +143,10 @@ export default function PageImport() {
           </p>
         )}
         <div className="bas-sur sticky bottom-[72px] z-10 -mx-4 flex flex-wrap gap-3 border-t border-ligne-douce bg-white/95 px-4 py-3 backdrop-blur lg:bottom-0">
-          <Bouton variante="contour" icone={<ArrowLeft className="h-4 w-4" />} onClick={() => setApercu(null)}>
-            Modifier le texte
+          <Bouton variante="contour" icone={<ArrowLeft className="h-4 w-4" />} onClick={() => setApercu(null)} className="px-4">
+            Modifier
           </Bouton>
-          <Bouton taille="lg" className="flex-1 sm:flex-none" onClick={creer} chargement={envoi} disabled={!valides.length}>
+          <Bouton taille="lg" className="flex-1 whitespace-nowrap sm:flex-none" onClick={creer} chargement={envoi} disabled={!valides.length}>
             {envoi ? `Création de ${valides.length} comptes…` : valides.length ? `Créer ${pluriel(valides.length, "compte")}` : "Aucune ligne à créer"}
           </Bouton>
         </div>
@@ -173,6 +173,7 @@ export default function PageImport() {
             value={texte}
             onChange={(e) => setTexte(e.target.value)}
             rows={12}
+            wrap="off"
             spellCheck={false}
             placeholder={EXEMPLE}
             className="min-h-[260px] w-full rounded-2xl border border-ligne bg-white p-4 font-mono text-[13px] leading-relaxed outline-none focus:border-orange focus:ring-2 focus:ring-orange/20"

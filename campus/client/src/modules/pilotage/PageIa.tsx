@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
 
 const nombre = new Intl.NumberFormat("fr-FR");
-const dollars = (n: number) => `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+const dollars = (n: number) => `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u00a0$`;
 const fcfa = (n: number) => `≈ ${nombre.format(Math.round((n * FCFA_PAR_DOLLAR) / 100) * 100)} FCFA`;
 const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n));
 const jourCourt = (iso: string) => new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`));
@@ -30,7 +30,7 @@ export default function PageIa() {
       <EnTetePage
         etiquette="Pilotage · Budget IA"
         titre="Budget de l'assistant IA"
-        sousTitre={data ? `30 derniers jours, au prix de ${data.modele} : ${data.prix.entree} $ par million de jetons lus, ${data.prix.sortie} $ par million de jetons écrits.` : "Consommation des 30 derniers jours."}
+        sousTitre={data ? `30 derniers jours, au prix de ${data.modele} : ${data.prix.entree}\u00a0$ par million de jetons lus, ${data.prix.sortie}\u00a0$ par million de jetons écrits.` : "Consommation des 30 derniers jours."}
       />
       {data && !data.iaDisponible && (
         <div className="flex items-start gap-3 rounded-2xl bg-alerte-clair p-4 text-[15px] text-alerte">
@@ -47,7 +47,7 @@ export default function PageIa() {
       ) : data ? (
         <>
           <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Chiffres clés">
-            <Chiffre libelle="Coût estimé · 30 j" valeur={dollars(data.total.cout)} detail={fcfa(data.total.cout)} ton="orange" />
+            <Chiffre libelle="Coût estimé" valeur={dollars(data.total.cout)} detail={`sur 30 jours, ${fcfa(data.total.cout)}`} ton="orange" />
             <Chiffre libelle="Moyenne par jour" valeur={dollars(data.total.cout / 30)} detail={fcfa(data.total.cout / 30)} />
             <Chiffre libelle="Questions posées" valeur={nombre.format(data.total.requetes)} detail={`quota : ${data.quotaJour} par étudiant et par jour`} />
             <Chiffre libelle="Jetons" valeur={compact(data.total.jetonsEntree + data.total.jetonsSortie)} detail={`${compact(data.total.jetonsEntree)} lus · ${compact(data.total.jetonsSortie)} écrits`} />
@@ -187,7 +187,7 @@ function Histogramme({ jours }: { jours: BudgetIa["parJour"] }) {
           <g key={t}>
             <line x1={marge.gauche} x2={largeur - marge.droite} y1={y(t)} y2={y(t)} stroke="#EFE7E0" strokeWidth={1} />
             <text x={marge.gauche - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-texte-gris font-mono text-[11px]">
-              {t.toLocaleString("fr-FR")} $
+              {t.toLocaleString("fr-FR")}{"\u00a0"}$
             </text>
           </g>
         ))}
@@ -220,13 +220,23 @@ function Histogramme({ jours }: { jours: BudgetIa["parJour"] }) {
           );
         })}
         <line x1={marge.gauche} x2={largeur - marge.droite} y1={marge.haut + zone.h} y2={marge.haut + zone.h} stroke="#E6DCD3" strokeWidth={1} />
-        {jours.map((d, i) =>
-          i % Math.ceil(jours.length / Math.max(2, Math.floor(zone.l / 64))) === 0 || i === jours.length - 1 ? (
-            <text key={d.jour} x={marge.gauche + i * pasX + pasX / 2} y={hauteur - 8} textAnchor="middle" className="fill-texte-gris font-mono text-[11px]">
+        {jours.map((d, i) => {
+          // Étiquettes régulières, calées sur le dernier jour (toujours affiché, aligné à droite).
+          const pas = Math.ceil(jours.length / Math.max(2, Math.floor(zone.l / 84)));
+          const dernier = i === jours.length - 1;
+          if ((jours.length - 1 - i) % pas !== 0) return null;
+          return (
+            <text
+              key={d.jour}
+              x={dernier ? largeur - marge.droite : marge.gauche + i * pasX + pasX / 2}
+              y={hauteur - 8}
+              textAnchor={dernier ? "end" : "middle"}
+              className="fill-texte-gris font-mono text-[11px]"
+            >
               {jourCourt(d.jour)}
             </text>
-          ) : null,
-        )}
+          );
+        })}
       </svg>
       {j && survol !== null && (
         <div

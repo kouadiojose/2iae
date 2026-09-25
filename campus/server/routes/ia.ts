@@ -773,6 +773,12 @@ export function enregistrerIa(app: Express) {
       }
       await avantAppel(u);
 
+      // Contexte stable (cours) et consignes préparés AVANT d'enregistrer la
+      // question : une erreur ici ne laisse pas de question orpheline.
+      const programme = c ? await programmePublie(c.id) : [];
+      const contexte = c ? await contexteDuCours(c, lecon?.id) : undefined;
+      const systeme = estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
+
       const [question] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "user", contenu: corps.contenu }).returning();
       const premiere = conv.titre === TITRE_PAR_DEFAUT;
       const titre = premiere ? titreDepuis(corps.contenu) : conv.titre;
@@ -789,7 +795,6 @@ export function enregistrerIa(app: Express) {
 
       // Le contexte propre à CETTE question est joint à la dernière question
       // (les consignes et le cours, eux, restent stables pour le cache).
-      const programme = c ? await programmePublie(c.id) : [];
       const precisions: string[] = [];
       if (lecon) {
         const n = programme.find((l) => l.id === lecon!.id);
@@ -807,8 +812,6 @@ export function enregistrerIa(app: Express) {
         content: m.id === question.id && precisions.length ? `${precisions.join("\n\n")}\n\n${m.contenu}` : m.contenu,
       }));
 
-      const contexte = c ? await contexteDuCours(c, lecon?.id) : undefined;
-      const systeme = estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
 
       // En-têtes du flux : texte brut fragmenté, sans compression ni mise en
       // tampon (sinon rien n'arrive avant la fin sur un réseau mobile).
@@ -827,39 +830,46 @@ export function enregistrerIa(app: Express) {
 
       let diffuse = "";
       const fin: FinFluxIa = { titre };
+      // Une fois les en-têtes partis, aucune erreur ne doit laisser la réponse
+      // ouverte : le « finally » écrit toujours la fin du flux.
       try {
-        const reponse = await fluxClaude(
-          { systeme, contexte, messages, effort: "medium", maxTokens: 6000, utilisateurId: u.id },
-          (morceau) => {
-            const propre = morceau.replaceAll(SEPARATEUR_FIN_FLUX, "");
-            diffuse += propre;
-            ecrire(propre);
-          },
-        );
-        const definitif = reponse.trim() || "Je n'ai pas su répondre à cette question. Peux-tu la reformuler autrement ?";
-        if (definitif !== diffuse.trim()) fin.remplacer = definitif;
-        const [enregistre] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "assistant", contenu: definitif }).returning();
-        fin.messageId = enregistre.id;
-      } catch (e) {
-        const erreur = traduireErreur(e);
-        fin.erreur = erreur.message;
-        if (diffuse.trim()) {
-          // Réponse coupée en route : on garde ce qui a été écrit, signalé comme tel.
-          const partiel = `${diffuse.trim()}\n\n_(Réponse interrompue.)_`;
-          const [enregistre] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "assistant", contenu: partiel }).returning();
+        try {
+          const reponse = await fluxClaude(
+            { systeme, contexte, messages, effort: "medium", maxTokens: 6000, utilisateurId: u.id },
+            (morceau) => {
+              const propre = morceau.replaceAll(SEPARATEUR_FIN_FLUX, "");
+              diffuse += propre;
+              ecrire(propre);
+            },
+          );
+          const definitif = reponse.trim() || "Je n'ai pas su répondre à cette question. Peux-tu la reformuler autrement ?";
+          if (definitif !== diffuse.trim()) fin.remplacer = definitif;
+          const [enregistre] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "assistant", contenu: definitif }).returning();
           fin.messageId = enregistre.id;
-          fin.remplacer = partiel;
-        } else {
-          // Rien n'est venu : la question est retirée pour pouvoir la reposer proprement.
-          await db.delete(messagesIa).where(eq(messagesIa.id, question.id));
-          if (premiere) await db.update(conversationsIa).set({ titre: TITRE_PAR_DEFAUT }).where(eq(conversationsIa.id, conv.id));
-          delete fin.titre;
+        } catch (e) {
+          fin.erreur = traduireErreur(e).message;
+          if (diffuse.trim()) {
+            // Réponse coupée en route : on garde ce qui a été écrit, signalé comme tel.
+            const partiel = `${diffuse.trim()}\n\n_(Réponse interrompue.)_`;
+            const [enregistre] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "assistant", contenu: partiel }).returning();
+            fin.messageId = enregistre.id;
+            fin.remplacer = partiel;
+          } else {
+            // Rien n'est venu : la question est retirée pour pouvoir la reposer proprement.
+            await db.delete(messagesIa).where(eq(messagesIa.id, question.id));
+            if (premiere) await db.update(conversationsIa).set({ titre: TITRE_PAR_DEFAUT }).where(eq(conversationsIa.id, conv.id));
+            delete fin.titre;
+          }
         }
+        await db.update(conversationsIa).set({ majLe: new Date() }).where(eq(conversationsIa.id, conv.id));
+        fin.restantes = await restantesDe(u);
+      } catch (e) {
+        console.error("[ia] fin du flux :", e);
+        fin.erreur ??= "La réponse n'a pas pu être enregistrée. Recharge la conversation dans un instant.";
+      } finally {
+        ecrire(`${SEPARATEUR_FIN_FLUX}${JSON.stringify(fin)}`);
+        res.end();
       }
-      await db.update(conversationsIa).set({ majLe: new Date() }).where(eq(conversationsIa.id, conv.id));
-      fin.restantes = await restantesDe(u);
-      ecrire(`${SEPARATEUR_FIN_FLUX}${JSON.stringify(fin)}`);
-      res.end();
     }),
   );
 

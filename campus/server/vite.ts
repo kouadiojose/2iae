@@ -37,7 +37,13 @@ export async function brancherVite(app: Express, serveur: Server) {
     // VITE_HMR=off : pas de rechargement à chaud (utile quand plusieurs
     // personnes modifient le code en même temps) ; VITE_CACHE_DIR : cache
     // des dépendances séparé par serveur de développement.
-    server: { middlewareMode: true, hmr: process.env.VITE_HMR === "off" ? false : { server: serveur } },
+    // (hmr:false ferait boucler le client Vite : on garde la connexion mais on
+    // ne surveille plus les fichiers.)
+    server: {
+      middlewareMode: true,
+      hmr: { server: serveur },
+      watch: process.env.VITE_HMR === "off" ? { ignored: ["**/*"] } : undefined,
+    },
     cacheDir: process.env.VITE_CACHE_DIR || undefined,
     appType: "custom",
   });

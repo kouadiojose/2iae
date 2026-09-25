@@ -202,13 +202,15 @@ function MenuBulle({ actions, ouvert, setOuvert, deMoi }: { actions: Action[]; o
 function useAppuiLong(surAppui: () => void) {
   const minuterie = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const depart = useRef<{ x: number; y: number } | null>(null);
+  const tactile = useRef(false);
   const stop = () => {
     clearTimeout(minuterie.current);
     depart.current = null;
   };
   return {
     onPointerDown: (e: React.PointerEvent) => {
-      if (e.pointerType === "mouse") return;
+      tactile.current = e.pointerType !== "mouse";
+      if (!tactile.current) return;
       if ((e.target as HTMLElement).closest("a,button,audio,[role=slider]")) return;
       depart.current = { x: e.clientX, y: e.clientY };
       minuterie.current = setTimeout(() => {
@@ -222,8 +224,9 @@ function useAppuiLong(surAppui: () => void) {
     onPointerUp: stop,
     onPointerCancel: stop,
     onContextMenu: (e: React.MouseEvent) => {
-      // Le menu du navigateur (sélection) laisse place au nôtre, qui propose « Copier ».
-      if (!(e.target as HTMLElement).closest("a,img")) e.preventDefault();
+      // Au doigt, le menu du navigateur (sélection) laisse place au nôtre, qui propose « Copier ».
+      // À la souris, le clic droit garde le menu habituel du navigateur.
+      if (tactile.current && !(e.target as HTMLElement).closest("a,img")) e.preventDefault();
     },
   };
 }

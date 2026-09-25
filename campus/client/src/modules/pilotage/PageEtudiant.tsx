@@ -194,7 +194,7 @@ function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier: (s: Li
             <ul className="flex flex-col divide-y divide-ligne-douce">
               {d.presences.seances.slice(0, 12).map((s) => (
                 <li key={s.seanceId} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-[10rem] flex-1">
                     <div className="truncate text-[15px] font-semibold">{s.titre}</div>
                     <div className="text-[13px] text-texte-gris">
                       {s.coursCode} · {jourLong(s.debut)} · {heure(s.debut)}

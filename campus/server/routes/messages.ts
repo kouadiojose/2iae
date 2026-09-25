@@ -154,12 +154,12 @@ function correspond(p: { prenom: string; nom: string; matricule?: string | null 
     .every((mot) => cible.includes(mot));
 }
 
-/** Anti-rafale : 20 messages par minute et par personne. */
+/** Anti-rafale : 30 messages par minute et par personne (large : une file d'envoi hors ligne se vide d'un coup). */
 const envoisRecents = new Map<number, number[]>();
 function verifierCadence(utilisateurId: number) {
   const maintenant = Date.now();
   const liste = (envoisRecents.get(utilisateurId) ?? []).filter((t) => maintenant - t < 60_000);
-  if (liste.length >= 20) throw new ErreurHttp(429, "Beaucoup de messages d'un coup : attendez une minute avant d'en envoyer d'autres.");
+  if (liste.length >= 30) throw new ErreurHttp(429, "Beaucoup de messages d'un coup : attendez une minute avant d'en envoyer d'autres.");
   liste.push(maintenant);
   envoisRecents.set(utilisateurId, liste);
 }

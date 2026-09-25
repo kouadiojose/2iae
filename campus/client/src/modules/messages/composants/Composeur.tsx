@@ -5,7 +5,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Paperclip, Camera, FileText, Mic, SendHorizontal, Trash2, X, Link2, ChevronLeft } from "lucide-react";
 import { post } from "@/lib/api";
-import { toast, toastErreur } from "@/components/ui/toast";
+import { toast } from "@/components/ui/toast";
 import { cn, taille as poids } from "@/lib/utils";
 import type { CitationMessage, Role } from "@shared/schema";
 import { Citation } from "./Bulle";
@@ -165,9 +165,16 @@ export const Composeur = forwardRef<PoigneeComposeur, Props>(function Composeur(
     try {
       await enreg.demarrer();
       navigator.vibrate?.(20);
-    } catch (e) {
+    } catch {
       setMode(null);
-      toastErreur(e);
+      toast(
+        selonRole(
+          p.role,
+          "Autorise le micro pour enregistrer une note vocale (réglages du navigateur).",
+          "Autorisez le micro pour enregistrer une note vocale (réglages du navigateur).",
+        ),
+        "erreur",
+      );
     }
   }
 

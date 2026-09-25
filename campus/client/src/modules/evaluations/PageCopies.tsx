@@ -3,10 +3,10 @@
 // texte, fichiers), la notation par critère, le commentaire écrit et vocal,
 // la correction proposée par l'IA (brouillon à valider), les touches J/K pour
 // passer d'une copie à l'autre, et « Publier les notes ».
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronLeft, ChevronRight, Send, Sparkles, AlertTriangle, CheckCheck, Upload, BookOpenCheck, PenLine, Keyboard } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Send, Sparkles, AlertTriangle, CheckCheck, Upload, BookOpenCheck, PenLine, Keyboard, FileImage } from "lucide-react";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
@@ -19,7 +19,7 @@ import { useCanal } from "@/lib/flux";
 import { patch, post, televerser } from "@/lib/api";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { jourLong, heure, heureDouble } from "@/lib/dates";
-import { cn, pluriel } from "@/lib/utils";
+import { cn, pluriel, taille } from "@/lib/utils";
 import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, RecuDepot } from "@shared/schema";
 import { Visionneuse, EnregistreurVocal } from "./composants/Correction";
 import { CorrectionQuiz } from "./composants/CorrectionQuiz";
@@ -472,7 +472,7 @@ function PanneauNotation({
         <div>
           <span className="font-mono text-xs uppercase tracking-wider text-texte-gris">Note</span>
           <div className="text-[44px] font-black leading-none tracking-tres-serre tabular-nums">
-            {total === null || Number.isNaN(total) ? "–" : nombre(total)}
+            {total === null || Number.isNaN(total) ? <span className="font-normal text-texte-gris">…</span> : nombre(total)}
             <span className="text-xl text-texte-gris">/{nombre(bareme)}</span>
           </div>
         </div>
@@ -605,6 +605,7 @@ function PanneauNotation({
 function CopieAbsente({ copie, devoirId, peutDeposer, quiz }: { copie: CopieResume; devoirId: number; peutDeposer: boolean; quiz: boolean }) {
   const [fichiers, setFichiers] = useState<File[]>([]);
   const [aLHeure, setALHeure] = useState(true);
+  const choix = useRef<HTMLInputElement>(null);
   const [envoi, setEnvoi] = useState(false);
 
   async function deposer() {
@@ -637,7 +638,22 @@ function CopieAbsente({ copie, devoirId, peutDeposer, quiz }: { copie: CopieResu
         <Carte className="flex flex-col gap-3">
           <h3 className="text-lg font-extrabold">Déposer une copie papier</h3>
           <p className="text-sm text-texte-pale">Scannez ou photographiez la copie remise à la vie scolaire. Le dépôt est tracé au journal et l'étudiant reçoit son reçu.</p>
-          <input type="file" multiple accept="image/*,application/pdf" onChange={(e) => setFichiers(Array.from(e.target.files ?? []))} className="text-sm" />
+          <input ref={choix} type="file" multiple accept="image/*,application/pdf" onChange={(e) => setFichiers(Array.from(e.target.files ?? []))} className="hidden" />
+          <Bouton variante="doux" icone={<FileImage className="h-4 w-4" />} onClick={() => choix.current?.click()} className="min-h-[48px] self-start">
+            {fichiers.length ? "Changer les pages" : "Choisir les pages scannées"}
+          </Bouton>
+          {fichiers.length > 0 && (
+            <ul className="flex flex-col gap-1 text-sm text-texte-doux">
+              {fichiers.map((f, i) => (
+                <li key={i} className="flex justify-between gap-3 rounded-lg bg-creme px-3 py-2">
+                  <span className="truncate">
+                    {i + 1}. {f.name}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs text-texte-gris">{taille(f.size)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <CaseACocher checked={aLHeure} onChange={setALHeure} libelle="Copie remise à l'heure en main propre" aide="Décoché : l'heure du dépôt fait foi (retard possible)." />
           <Bouton icone={<Upload className="h-4 w-4" />} onClick={() => void deposer()} disabled={!fichiers.length} chargement={envoi} className="min-h-[48px] self-start">
             Déposer pour {copie.etudiant.prenom}

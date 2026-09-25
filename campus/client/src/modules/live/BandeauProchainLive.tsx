@@ -4,12 +4,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMoi } from "@/lib/auth";
 import { LienBouton } from "@/components/ui/bouton";
-import { DecompteCourt } from "@/components/ui/compte-a-rebours";
+import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { LienAgenda } from "./ui";
 import type { EnCours } from "@shared/api";
 
 export function BandeauProchainLive() {
   const { moi } = useMoi();
+  const maintenant = useMaintenant(15_000);
   const { data } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], refetchInterval: 60_000, staleTime: 20_000, enabled: Boolean(moi) });
   if (!data || (!data.enDirect && !data.prochaine)) return null;
   const lieu = moi?.site ? `${moi.site.salleConference}, campus ${moi.site.nomCourt} · ou en ligne` : "En ligne, depuis ton téléphone ou ton ordinateur";
@@ -36,7 +37,7 @@ export function BandeauProchainLive() {
     <div className="flex flex-wrap items-center justify-between gap-5 rounded-[24px] bg-orange px-6 py-6 sm:px-7">
       <div className="flex min-w-0 flex-col gap-1.5">
         <span className="font-mono text-xs uppercase tracking-[0.08em] text-encre">
-          Dans <DecompteCourt cible={s.debut} />
+          {new Date(s.debut).getTime() <= maintenant ? "C'est l'heure · le formateur arrive" : <>Dans <DecompteCourt cible={s.debut} /></>}
         </span>
         <span className="text-[24px] font-extrabold leading-tight tracking-[-0.02em] text-encre sm:text-[26px]">{s.titre}</span>
         <span className="text-[15px] text-[#2B211B]">{lieu}</span>

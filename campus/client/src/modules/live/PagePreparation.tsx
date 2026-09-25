@@ -555,9 +555,9 @@ function SectionBilan({ seance }: { seance: SeanceDetailDto }) {
     <div className="flex flex-col gap-8">
       {pasCommencee && <p className="rounded-2xl bg-creme p-4 text-[15px] text-texte-pale">La séance n'a pas encore eu lieu : le bilan se remplit pendant le direct.</p>}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Chiffre libelle="Présents" valeur={`${bilan.totaux.presents} / ${bilan.totaux.inscrits}`} detail={`${bilan.totaux.taux} % des inscrits`} ton="orange" />
+        <Chiffre libelle="Présents" valeur={`${bilan.totaux.presents} / ${bilan.totaux.inscrits}`} detail={`${bilan.totaux.taux} % des inscrits · en ligne : ${bilan.seuilMinutes} min minimum`} ton="orange" />
         <Chiffre libelle="Questions posées" valeur={bilan.questionsTotal} detail={`${bilan.questionsNonTraitees.length} sans réponse`} />
-        <Chiffre libelle="Sondages" valeur={bilan.sondages.length} detail={`Présent en ligne dès ${bilan.seuilMinutes} min`} />
+        <Chiffre libelle="Sondages" valeur={bilan.sondages.length} detail={bilan.sondages.length ? `${bilan.sondages.reduce((a, s) => a + s.resultats.total, 0)} réponses au total` : "Aucun sondage lancé"} />
       </div>
 
       <section>

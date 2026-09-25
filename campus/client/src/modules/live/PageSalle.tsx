@@ -99,8 +99,9 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   const { data: etat } = useEtatDirect(seanceId, false);
   if (!seance || !etat) return <div className="min-h-dvh" aria-busy="true" />;
   const statut = etat.statut;
+  // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden">
       <BandeauHaut seance={seance} siteId={siteId} />
       {statut === "annulee" ? (
         <Message titre="Cours annulé" texte={etat.motifAnnulation ?? seance.motifAnnulation ?? "Le formateur a un empêchement."} seance={seance} />
@@ -177,21 +178,30 @@ function BlocCode({ seance, siteId, compact }: { seance: SeanceDetailDto; siteId
   if (!code) return <div className="rounded-[28px] bg-nuit-panneau p-6 text-xl text-nuit-doux">{erreur ?? "Chargement du code…"}</div>;
   const chemin = code.url.replace(/^https?:\/\//, "").replace(/\/emargement\/\d+$/, "/emargement");
   return (
-    <div className={cn("flex gap-6 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "flex-col p-7 xl:flex-row xl:items-center")}>
-      <div className="flex flex-1 flex-col gap-3">
+    <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "items-center p-6 lg:p-7")}>
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
         <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">Émargement · {code.salle}</p>
-        <p className={cn("font-black tabular-nums leading-none tracking-[0.12em] text-white", compact ? "text-[clamp(56px,6vw,96px)]" : "text-[clamp(88px,11vw,200px)]")} aria-live="polite">
-          {code.code.split("").join(" ")}
+        <p
+          className={cn("whitespace-nowrap font-black tabular-nums leading-none tracking-[0.08em] text-white", compact ? "text-[clamp(48px,4.6vw,88px)]" : "text-[clamp(64px,7.2vw,150px)]")}
+          aria-live="polite"
+          aria-label={`Code d'émargement ${code.code.split("").join(" ")}`}
+        >
+          {code.code}
         </p>
         <div className="h-2.5 overflow-hidden rounded-full bg-nuit-ligne" aria-hidden>
           <div className="h-full rounded-full bg-orange transition-[width] duration-1000 ease-linear" style={{ width: `${(restant / 60) * 100}%` }} />
         </div>
-        <p className={cn("text-nuit-doux", compact ? "text-base" : "text-xl")}>
-          Tape ce code dans le campus, ou scanne le QR. Il change chaque minute.
+        <p className={cn("text-nuit-doux", compact ? "text-base" : "text-lg lg:text-xl")}>
+          Tape ce code dans le campus ou scanne le QR : il change chaque minute.
           {!compact && <span className="block font-mono text-base text-nuit-gris">{chemin}</span>}
         </p>
       </div>
-      <div className={cn("shrink-0 rounded-2xl bg-white p-3", compact ? "w-40 self-center" : "w-56 self-center")} dangerouslySetInnerHTML={{ __html: code.qrSvg }} aria-label={`QR d'émargement, code ${code.code}`} role="img" />
+      <div
+        className={cn("shrink-0 rounded-2xl bg-white p-2.5", compact ? "hidden" : "w-36 sm:w-44 xl:w-52")}
+        dangerouslySetInnerHTML={{ __html: code.qrSvg }}
+        aria-label={`QR d'émargement, code ${code.code}`}
+        role="img"
+      />
     </div>
   );
 }
@@ -254,22 +264,28 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
   const maintenant = useMaintenant(1000);
   const avantDebutMin = (new Date(seance.debut).getTime() - maintenant) / 60_000;
   return (
-    <main className="grid flex-1 gap-8 px-6 py-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:px-10">
-      <div className="flex flex-col gap-6">
+    <main className="grid flex-1 gap-6 px-6 py-5 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
+      <div className="flex flex-col gap-5 lg:min-h-0">
         <div className="flex flex-col gap-2">
-          <span className="font-mono text-lg text-orange-peche">{seance.coursCode} · {avantDebutMin < 10 ? "La salle ouvre, installez-vous" : "Prochain cours"}</span>
-          <h1 className="text-[clamp(40px,4.6vw,84px)] font-black leading-[0.98] tracking-serre">{seance.titre}</h1>
-          <p className="text-[clamp(20px,1.8vw,30px)] text-nuit-doux">
+          <span className="font-mono text-lg text-orange-peche">
+            {seance.coursCode} · {avantDebutMin <= 0 ? "Le formateur arrive" : avantDebutMin < 10 ? "La salle ouvre, installez-vous" : "Prochain cours"}
+          </span>
+          <h1 className="text-[clamp(38px,4.2vw,80px)] font-black leading-[0.98] tracking-serre">{seance.titre}</h1>
+          <p className="text-[clamp(20px,1.7vw,30px)] text-nuit-doux">
             {seance.formateur ? `${seance.formateur.prenom} ${seance.formateur.nom}` : "Formateur"}
             {ville ? `, depuis ${ville}` : ""} · début {heure(seance.debut)}
           </p>
         </div>
-        <GrandCompteARebours cible={seance.debut} />
-        <div className="max-w-2xl">
-          <CarteCoteIvoire campus={etat.campus} villeFormateur={ville} />
+        {avantDebutMin > 0 ? (
+          <GrandCompteARebours cible={seance.debut} />
+        ) : (
+          <p className="rounded-[20px] bg-[#242120] px-6 py-5 text-[clamp(24px,2.4vw,44px)] font-black">Le cours commence dès que le formateur ouvre l'antenne.</p>
+        )}
+        <div className="flex min-h-[260px] justify-center lg:min-h-0 lg:flex-1">
+          <CarteCoteIvoire campus={etat.campus} villeFormateur={ville} className="h-full max-h-[520px] w-auto max-w-full" />
         </div>
       </div>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-5 lg:min-h-0">
         <BlocCode seance={seance} siteId={siteId} />
         <div className="flex flex-col gap-3">
           <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
@@ -288,37 +304,39 @@ function PendantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; eta
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
   const sondage = etat.sondage;
   return (
-    <main className="grid flex-1 gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10">
-      <div className="flex min-w-0 flex-col gap-4">
+    <main className="grid flex-1 gap-6 px-6 py-4 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10">
+      <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
         {aLaParole && (
-          <div className="animate-monte rounded-[22px] bg-orange px-6 py-4 text-center text-[clamp(26px,3vw,52px)] font-black uppercase tracking-serre text-encre" role="alert">
+          <div className="animate-monte shrink-0 rounded-[22px] bg-orange px-6 py-3 text-center text-[clamp(26px,2.8vw,50px)] font-black uppercase tracking-serre text-encre" role="alert">
             C'est à vous : passez le micro
           </div>
         )}
-        <Scene seance={seance} etat={etat} role="salle" micro={aLaParole} camera grand className="min-h-[56vh]" />
+        <div className="min-h-[40vh] lg:min-h-0 lg:flex-1">
+          <Scene seance={seance} etat={etat} role="salle" micro={aLaParole} camera grand className="h-full" />
+        </div>
         {/* Sous-titres sous la scène : lisibles du fond de la salle, sans cacher la diapo. */}
         {derniereLigne && (
-          <p className="rounded-2xl bg-black px-6 py-3 text-center text-[clamp(22px,2.2vw,40px)] font-semibold leading-snug text-white" aria-live="polite">
+          <p className="shrink-0 rounded-2xl bg-black px-6 py-3 text-center text-[clamp(22px,2vw,38px)] font-semibold leading-snug text-white" aria-live="polite">
             {derniereLigne.texte}
           </p>
         )}
         {questionEnCours && (
-          <div className="animate-monte rounded-[24px] bg-creme p-6 text-encre">
-            <p className="font-mono text-lg uppercase tracking-wider text-orange-fonce">Question de {questionEnCours.site ?? "la classe en ligne"}</p>
-            <p className="mt-2 text-[clamp(28px,3vw,56px)] font-black leading-tight tracking-serre">{questionEnCours.texte}</p>
+          <div className="animate-monte shrink-0 rounded-[24px] bg-creme px-6 py-4 text-encre">
+            <p className="font-mono text-base uppercase tracking-wider text-orange-fonce">Question de {questionEnCours.site ?? "la classe en ligne"}</p>
+            <p className="mt-1 line-clamp-2 text-[clamp(26px,2.6vw,48px)] font-black leading-tight tracking-serre">{questionEnCours.texte}</p>
           </div>
         )}
       </div>
-      <aside className="flex flex-col gap-5">
+      <aside className="flex flex-col gap-4 lg:min-h-0 lg:overflow-hidden">
         {sondage && (
-          <div className="rounded-[24px] bg-nuit-panneau p-6">
+          <div className="rounded-[24px] bg-nuit-panneau p-5">
             <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{sondage.ouvert ? "Sondage en cours · réponds sur ton téléphone" : "Résultats du sondage"}</p>
-            <p className="mb-4 mt-2 text-[clamp(24px,2vw,40px)] font-black leading-tight">{sondage.question}</p>
+            <p className="mb-4 mt-2 text-[clamp(22px,1.8vw,36px)] font-black leading-tight">{sondage.question}</p>
             {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
           </div>
         )}
         <BlocCode seance={seance} siteId={siteId} compact />
-        <CompteursEmarges etat={etat} liste />
+        {!sondage && <CompteursEmarges etat={etat} liste />}
       </aside>
     </main>
   );
@@ -353,7 +371,7 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
   };
   const bouton = "flex min-h-12 items-center gap-2 rounded-2xl px-4 text-[15px] font-bold transition-colors";
   return (
-    <footer className="sticky bottom-0 mt-auto border-t border-nuit-ligne bg-nuit-panneau/95 px-4 py-3 backdrop-blur lg:px-10">
+    <footer className="sticky bottom-0 mt-auto shrink-0 border-t border-nuit-ligne bg-nuit-panneau/95 px-4 py-3 backdrop-blur lg:static lg:px-10">
       <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-center gap-2.5">
         <span className="mr-2 hidden font-mono text-[12px] uppercase tracking-wider text-nuit-gris md:inline">Responsable de salle</span>
         {peutLever && (

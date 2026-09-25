@@ -368,8 +368,8 @@ export function SondageSuperpose({ seanceId, etat }: { seanceId: number; etat: E
     }
   };
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center p-3 sm:absolute sm:inset-0 sm:items-center sm:bg-black/60 sm:p-6" role="dialog" aria-modal="false" aria-label="Sondage">
-      <div className="animate-monte flex max-h-[80dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-[24px] border border-nuit-bord bg-nuit-panneau p-5 shadow-2xl">
+    <div className="fixed inset-x-0 bottom-[76px] z-40 flex justify-center p-3 sm:absolute sm:inset-0 sm:bottom-0 sm:items-center sm:bg-black/60 sm:p-6" role="dialog" aria-modal="false" aria-label="Sondage">
+      <div className="animate-monte flex max-h-[70dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-[24px] border border-nuit-bord bg-nuit-panneau p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <span className="font-mono text-[11px] uppercase tracking-wider text-orange-peche">
             {s.ouvert ? "Sondage en direct" : "Résultats du sondage"} {s.parIa && "· question proposée par l'IA, validée par le formateur"}
@@ -450,7 +450,7 @@ export function Barometre({ barometre }: { barometre: BarometreSiteDto[] }) {
         const total = Math.max(1, b.total);
         const perdus = Math.round(((b.perdu + b.lent) / total) * 100);
         return (
-          <div key={b.site} className="grid grid-cols-[92px_1fr_auto] items-center gap-2.5 text-[13px]">
+          <div key={b.site} className="grid grid-cols-[112px_1fr_auto] items-center gap-2.5 text-[13px]">
             <span className="truncate font-bold text-white">{b.site}</span>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-nuit-ligne" aria-label={`${b.site} : ${b.compris} compris, ${b.perdu} perdus, ${b.lent} plus lentement, ${b.bravo} bravo`}>
               <div className="h-full bg-[#6FCF97]" style={{ width: `${((b.compris + b.bravo) / total) * 100}%` }} />

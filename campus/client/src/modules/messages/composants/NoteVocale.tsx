@@ -70,7 +70,7 @@ export function useEnregistreur(surLimite: () => void) {
       return true;
     } catch {
       liberer();
-      throw new Error("Autorise le micro pour enregistrer une note vocale (réglages du navigateur).");
+      throw new Error("micro-refuse");
     }
   }, [liberer]);
 

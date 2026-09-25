@@ -41,7 +41,7 @@ export function CarteCoteIvoire({ campus, villeFormateur, className, enDirect }:
       <text x="388" y="-94" textAnchor="end" fill="#FFD2B3" fontFamily="IBM Plex Mono, monospace" fontSize="15">
         {villeFormateur ?? "Formateur"}
       </text>
-      <path d="M400 -80 Q 470 150 292 322" fill="none" stroke="#E4793A" strokeWidth="2.5" strokeDasharray="7 7" className={cn(enDirect && "arc-direct")}>
+      <path d="M400 -80 Q 470 150 292 322" fill="none" stroke="#E4793A" strokeWidth="2.5" strokeDasharray="7 7" >
         {enDirect && <animate attributeName="stroke-dashoffset" from="28" to="0" dur="1.2s" repeatCount="indefinite" />}
       </path>
       {campus.map((c) => {
@@ -58,11 +58,11 @@ export function CarteCoteIvoire({ campus, villeFormateur, className, enDirect }:
               </circle>
             )}
             <circle cx={p.x} cy={p.y} r={r} fill={c.salleConnectee ? "#E4793A" : "#3A3431"} stroke={c.salleConnectee ? "#FFD2B3" : "#5E554F"} strokeWidth="2" />
-            <text x={p.x + p.dx} y={p.y + p.dy} textAnchor={p.ancre} fill={c.salleConnectee ? "#FFFFFF" : "#8A7F76"} fontFamily="Archivo, sans-serif" fontWeight="800" fontSize="17">
+            <text x={p.x + p.dx} y={p.y + p.dy} textAnchor={p.ancre} fill={c.salleConnectee ? "#FFFFFF" : "#8A7F76"} stroke="#0F0E0D" strokeWidth="5" paintOrder="stroke" fontFamily="Archivo, sans-serif" fontWeight="800" fontSize="17">
               {c.nomCourt}
             </text>
             {c.salleConnectee && (
-              <text x={p.x + p.dx} y={p.y + p.dy + 17} textAnchor={p.ancre} fill="#FFD2B3" fontFamily="IBM Plex Mono, monospace" fontSize="12">
+              <text x={p.x + p.dx} y={p.y + p.dy + 17} textAnchor={p.ancre} fill="#FFD2B3" stroke="#0F0E0D" strokeWidth="4" paintOrder="stroke" fontFamily="IBM Plex Mono, monospace" fontSize="12">
                 {c.emarges} en salle
               </text>
             )}

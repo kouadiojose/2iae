@@ -59,7 +59,8 @@ abstract class BaseVisio {
   fluxConnecte(ok: boolean) {
     if (this.arrete || this.suspendu) return;
     if (ok) this.planifierRejoindre(0);
-    else if (this.rejoint) this.definirEtat("reconnexion", "Connexion au campus perdue. On se reconnecte…");
+    // Les médias passent en direct entre navigateurs : tant qu'ils circulent, la classe continue.
+    else if (this.rejoint && !this.mediasActifs()) this.definirEtat("reconnexion", "Connexion au campus perdue. On se reconnecte…");
   }
 
   arreter() {
@@ -79,6 +80,8 @@ abstract class BaseVisio {
   protected abstract surParti(vers: string): void;
   protected abstract surBattement(formateur: { pairId: string } | null): void;
   protected abstract surReseauRevenu(): void;
+  /** Au moins une connexion directe fonctionne. */
+  protected abstract mediasActifs(): boolean;
 
   protected definirEtat(etat: EtatVisio, message: string | null) {
     const change = etat !== this.etat;
@@ -166,7 +169,12 @@ export type EntreeCentre = {
   reseauFaible: boolean;
   echecs: number;
   minuteurRecreation: ReturnType<typeof setTimeout> | null;
+  /** Absent de la liste du serveur (redémarré ?) mais encore connecté : on attend qu'il se réannonce. */
+  aConfirmerDepuis: number | null;
 };
+
+/** Délai de grâce après un redémarrage du serveur : chacun a le temps de se réannoncer sans couper les médias. */
+const GRACE_MS = 25_000;
 
 export type VueCentre = {
   etat: EtatVisio;
@@ -279,15 +287,25 @@ export class CentreVisio extends BaseVisio {
   }
 
   protected apresRejoindre(r: ReponseRejoindreVisio) {
-    // La liste du serveur fait foi : ceux qu'il ne connaît plus sont partis.
+    // Ceux que le serveur ne connaît plus sont partis… sauf s'ils sont encore
+    // connectés en direct : le serveur a peut-être redémarré, ils vont se
+    // réannoncer (les médias ne passent pas par lui, inutile de couper).
     const presents = new Set(r.participants.map((p) => p.pairId));
-    for (const id of [...this.entrees.keys()]) if (!presents.has(id)) this.retirer(id, false);
+    for (const [id, e] of [...this.entrees]) {
+      if (presents.has(id)) continue;
+      if (e.pair && e.etat === "connecte") e.aConfirmerDepuis ??= Date.now();
+      else this.retirer(id, false);
+    }
     for (const p of r.participants) this.ajouter(p);
     this.definirEtat("connecte", null);
   }
 
   protected surParti(vers: string) {
     this.retirer(vers, false);
+  }
+
+  protected mediasActifs() {
+    return [...this.entrees.values()].some((e) => e.etat === "connecte");
   }
 
   protected surBattement() {
@@ -303,6 +321,7 @@ export class CentreVisio extends BaseVisio {
     const existante = this.entrees.get(info.pairId);
     if (existante) {
       existante.info = info;
+      existante.aConfirmerDepuis = null;
       // Déjà connectée : rien à refaire (simple nouvelle présentation après une coupure du temps réel).
       if (existante.pair && existante.etat === "connecte") {
         this.appliquerPistes();
@@ -322,6 +341,7 @@ export class CentreVisio extends BaseVisio {
       reseauFaible: false,
       echecs: 0,
       minuteurRecreation: null,
+      aConfirmerDepuis: null,
     };
     this.entrees.set(info.pairId, e);
     this.creerPair(e);
@@ -487,6 +507,8 @@ export class CentreVisio extends BaseVisio {
   /** Indicateur « réseau faible » par salle (pertes > 5 % ou aller-retour > 700 ms). */
   private async mesurer() {
     let change = false;
+    // Délai de grâce écoulé sans nouvelle du participant : il est vraiment parti.
+    for (const [id, e] of [...this.entrees]) if (e.aConfirmerDepuis && Date.now() - e.aConfirmerDepuis > GRACE_MS) this.retirer(id, false);
     for (const e of this.entrees.values()) {
       if (!e.pair || e.etat !== "connecte") continue;
       const m = await e.pair.mesurer().catch(() => null);
@@ -535,6 +557,8 @@ export class PeripherieVisio extends BaseVisio {
   private minuteurOffre: ReturnType<typeof setTimeout> | null = null;
   private minuteurEchec: ReturnType<typeof setTimeout> | null = null;
   private minuteurCache: ReturnType<typeof setTimeout> | null = null;
+  /** Le serveur ne connaît plus le formateur alors qu'on lui est connecté en direct (serveur redémarré ?). */
+  private formateurAbsentDepuis: number | null = null;
 
   constructor(
     seanceId: number,
@@ -637,6 +661,7 @@ export class PeripherieVisio extends BaseVisio {
       return;
     }
     const f = r.formateur?.pairId ?? null;
+    if (this.formateurManquant(f)) return;
     if (f !== this.formateurPairId) this.fermerPair();
     this.formateurPairId = f;
     if (!f) {
@@ -654,8 +679,13 @@ export class PeripherieVisio extends BaseVisio {
     // Le formateur est parti entre-temps : le serveur nous le dira au prochain battement.
   }
 
+  protected mediasActifs() {
+    return this.pair?.etat === "connecte";
+  }
+
   protected surBattement(formateur: { pairId: string } | null) {
     const f = formateur?.pairId ?? null;
+    if (this.formateurManquant(f)) return;
     if (f === this.formateurPairId) return;
     // Un événement s'est perdu : on se remet d'aplomb.
     this.fermerPair();
@@ -666,6 +696,20 @@ export class PeripherieVisio extends BaseVisio {
 
   protected surReseauRevenu() {
     if (this.pair && this.pair.etat !== "connecte") this.pair.pc.restartIce();
+  }
+
+  /**
+   * Le serveur dit « pas de formateur » alors que la connexion directe avec
+   * lui fonctionne : on la garde le temps qu'il se réannonce (délai de grâce).
+   * Renvoie vrai tant qu'on patiente.
+   */
+  private formateurManquant(f: string | null): boolean {
+    if (f !== null || !this.pair || this.pair.etat !== "connecte") {
+      this.formateurAbsentDepuis = null;
+      return false;
+    }
+    this.formateurAbsentDepuis ??= Date.now();
+    return Date.now() - this.formateurAbsentDepuis < GRACE_MS;
   }
 
   private recevoirVideo() {

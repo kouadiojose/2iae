@@ -14,7 +14,7 @@ import { Carte, TitreSection } from "@/components/ui/carte";
 import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Selection } from "@/components/ui/champs";
-import { CompteARebours, DecompteCourt } from "@/components/ui/compte-a-rebours";
+import { CompteARebours, DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { LigneSeance } from "./ui";
 import type { EnCours, SeanceResume } from "@shared/api";
 
@@ -141,11 +141,15 @@ function CarteDirect({ s }: { s: SeanceResume }) {
 
 function CarteProchaine({ s, enseignant }: { s: SeanceResume; enseignant: boolean }) {
   const ville = s.formateur?.localisation?.split(",")[0];
-  const bientot = new Date(s.debut).getTime() - Date.now() < 30 * 60_000;
+  const maintenant = useMaintenant(15_000);
+  const bientot = new Date(s.debut).getTime() - maintenant < 30 * 60_000;
+  const passe = new Date(s.debut).getTime() <= maintenant;
   return (
     <div className="grid gap-6 rounded-[28px] bg-encre p-6 text-white sm:p-8 lg:grid-cols-[1fr_380px] lg:items-center">
       <div className="flex flex-col gap-2">
-        <span className="font-mono text-xs uppercase tracking-wider text-orange-peche">Prochain live · dans <DecompteCourt cible={s.debut} /></span>
+        <span className="font-mono text-xs uppercase tracking-wider text-orange-peche">
+          {passe ? "C'est l'heure · en attente du formateur" : <>Prochain live · dans <DecompteCourt cible={s.debut} /></>}
+        </span>
         <span className="text-[28px] font-black leading-tight tracking-serre sm:text-[34px]">{s.titre}</span>
         <span className="text-[15px] text-nuit-doux">
           {s.coursCode} · {s.coursTitre}
@@ -172,7 +176,11 @@ function CarteProchaine({ s, enseignant }: { s: SeanceResume; enseignant: boolea
           )}
         </div>
       </div>
-      <CompteARebours cible={s.debut} />
+      {passe ? (
+        <p className="rounded-[18px] bg-nuit-carte p-5 text-[15px] leading-relaxed text-nuit-doux">La classe s'ouvre dès que le formateur démarre le direct. Tu recevras une notification.</p>
+      ) : (
+        <CompteARebours cible={s.debut} />
+      )}
     </div>
   );
 }

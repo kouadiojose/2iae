@@ -7,7 +7,7 @@
 // et respirer sur un téléphone de 390 px.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, CalendarDays, CheckCircle2, ChevronRight, ClipboardList, Megaphone, MessageCircle, Radio, BookOpen } from "lucide-react";
+import { ArrowRight, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardList, Megaphone, MessageCircle, Radio, BookOpen } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
@@ -20,7 +20,7 @@ import { Badge, BadgeDirect, BarreProgression, EtatVide, Erreur, PastilleDate, S
 import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { BandeauProchainLive } from "@/modules/live/BandeauProchainLive";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
-import type { AccueilEtudiant, AnnonceResume, CoursAccueil, ElementAFaire } from "@shared/schema";
+import type { AccueilEtudiant, AnnonceResume, CoursAccueil, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
 import type { EnCours } from "@shared/api";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 
@@ -33,6 +33,8 @@ export default function PageAccueil() {
   const maintenant = useMaintenant(60_000);
   // Même requête que la coquille et le bandeau du prochain live (servie par le cache).
   const { data: enCours } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], staleTime: 20_000 });
+  // Parcours de bienvenue (module compte) : le devoir d'essai est-il fait ?
+  const { data: parcours } = useQuery<ParcoursBienvenue>({ queryKey: ["/api/compte/parcours"], staleTime: 5 * 60_000 });
 
   useTousEvenements((e) => {
     if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil");
@@ -74,6 +76,7 @@ export default function PageAccueil() {
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">
           <CarteAFaire element={data.aFaire} />
+          {parcours && parcours.essai === null && <InviteDevoirEssai />}
           {!carteEstUnLive && <BandeauProchainLive />}
           <Ensuite elements={ensuite} />
         </div>
@@ -169,6 +172,28 @@ function CarteAFaire({ element }: { element: ElementAFaire }) {
         <ArrowRight className="h-5 w-5" aria-hidden />
       </LienBouton>
     </section>
+  );
+}
+
+/**
+ * Devoir d'essai pas encore fait : une invitation discrète SOUS la grande carte
+ * (jamais à sa place : un vrai live ou un vrai devoir passe toujours avant).
+ */
+function InviteDevoirEssai() {
+  return (
+    <Link
+      href="/bienvenue?essai=1"
+      className="-mt-3 flex min-h-[64px] items-center gap-3 rounded-2xl border border-dashed border-orange px-4 py-3 text-encre no-underline hover:bg-orange-pale hover:text-encre"
+    >
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange-clair text-orange-fonce">
+        <Camera className="h-5 w-5" aria-hidden />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-bold leading-snug">Rends ton premier devoir en 2 minutes</span>
+        <span className="text-sm leading-snug text-texte-pale">Photographie n'importe quelle feuille : le jour d'un vrai devoir, ce sera exactement pareil.</span>
+      </span>
+      <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
+    </Link>
   );
 }
 

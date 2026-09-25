@@ -40,6 +40,7 @@ const ETUDIANT: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
+  { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
 ];
 
@@ -50,6 +51,7 @@ const FORMATEUR: ElementNav[] = [
   { href: "/corrections", libelle: "Corrections", icone: CheckSquare, mobile: true, prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
+  { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
 ];
 

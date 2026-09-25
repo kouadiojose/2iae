@@ -53,7 +53,7 @@ export function Scene(p: PropsScene) {
       className={cn(
         "relative overflow-hidden rounded-[22px] border-2 bg-nuit-carte",
         parole ? "border-orange" : "border-nuit-ligne",
-        p.grand ? "min-h-[50vh]" : libre ? "" : "aspect-video",
+        p.grand ? "h-full min-h-[40vh]" : libre ? "" : "aspect-video",
         p.className,
       )}
     >

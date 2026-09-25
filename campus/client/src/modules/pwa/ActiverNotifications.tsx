@@ -1,4 +1,4 @@
-// Carte « Recevoir les rappels sur ce téléphone » (Web Push).
+// Carte « Recevoir les rappels sur ce téléphone » (Web Push, par appareil).
 //
 // L'explication vient TOUJOURS avant la fenêtre système de Chrome, qui est
 // sèche et fait refuser. États : non supporté (conseil : Chrome, ou installer
@@ -36,7 +36,7 @@ async function travailleurPret(): Promise<ServiceWorkerRegistration> {
   const reg = await obtenirEnregistrement();
   if (!reg) throw new Error("Ce navigateur ne peut pas recevoir les rappels.");
   const delai = new Promise<never>((_, ko) =>
-    setTimeout(() => ko(new Error("Le téléphone n'a pas pu préparer les rappels. Réessaie dans un instant.")), 10_000),
+    setTimeout(() => ko(new Error("Les rappels n'ont pas pu être préparés. Réessaie dans un instant.")), 10_000),
   );
   return Promise.race([navigator.serviceWorker.ready, delai]);
 }
@@ -55,6 +55,10 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
   const [etat, setEtat] = useState<Etat>("chargement");
   const [occupe, setOccupe] = useState<"activer" | "essai" | "desactiver" | null>(null);
   const [aide, setAide] = useState(false);
+  // « ce téléphone » ou « cet ordinateur » : les rappels sont liés à l'appareil, pas au compte.
+  const appareil = plateforme() === "ordinateur" ? "ordinateur" : "téléphone";
+  const ici = appareil === "ordinateur" ? "cet ordinateur" : "ce téléphone";
+  const Ici = ici.charAt(0).toUpperCase() + ici.slice(1);
 
   const verifier = useCallback(async () => {
     if (!cle) return setEtat("masque");
@@ -93,10 +97,10 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(cle) }));
       await post("/api/push/abonnement", abo.toJSON());
       setEtat("actif");
-      toast("Rappels activés sur ce téléphone.");
+      toast(`Rappels activés sur ${ici}.`);
       void rechargerMoi();
     } catch (e) {
-      toastErreur(e instanceof Error && e.name !== "Error" ? new Error("Le téléphone a refusé l'inscription aux rappels. Réessaie dans un instant.") : e);
+      toastErreur(e instanceof Error && e.name !== "Error" ? new Error("L'inscription aux rappels a échoué. Réessaie dans un instant.") : e);
     } finally {
       setOccupe(null);
     }
@@ -111,7 +115,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         await abo.unsubscribe().catch(() => false);
       }
       setEtat("inactif");
-      toast(f("Tu ne recevras plus de rappels sur ce téléphone.", "Vous ne recevrez plus de rappels sur ce téléphone."), "info");
+      toast(f(`Tu ne recevras plus de rappels sur ${ici}.`, `Vous ne recevrez plus de rappels sur ${ici}.`), "info");
       void rechargerMoi();
     } catch (e) {
       toastErreur(e);
@@ -124,14 +128,14 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
     setOccupe("essai");
     try {
       const r = await post<ResultatEssaiPush>("/api/push/test");
-      if (r.envoye) toast(f("Essai envoyé : regarde ton téléphone.", "Essai envoyé : regardez votre téléphone."));
+      if (r.envoye) toast(f(`Essai envoyé : regarde ton ${appareil}.`, `Essai envoyé : regardez votre ${appareil}.`));
       else if (r.raison === "heures_calmes")
         toast("Il est tard : rien ne sonne entre 21 h et 6 h. L'essai est dans la cloche et arrivera le matin.", "info");
       else if (r.raison === "plafond")
         toast(f("Tu as déjà reçu 3 rappels aujourd'hui : l'essai est dans la cloche.", "Vous avez déjà reçu 3 rappels aujourd'hui : l'essai est dans la cloche."), "info");
       else if (r.raison === "aucun_appareil") {
         setEtat("inactif");
-        toast(f("Ce téléphone n'est plus inscrit. Réactive les rappels.", "Ce téléphone n'est plus inscrit. Réactivez les rappels."), "erreur");
+        toast(f(`${Ici} n'est plus inscrit. Réactive les rappels.`, `${Ici} n'est plus inscrit. Réactivez les rappels.`), "erreur");
       } else toast("Les rappels ne sont pas disponibles pour le moment.", "erreur");
     } catch (e) {
       toastErreur(e);
@@ -156,7 +160,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
       ouverte={aide}
       onFermer={() => setAide(false)}
       titre="Débloquer les rappels"
-      description={f("Ton téléphone a bloqué les rappels du campus. Voici comment les autoriser.", "Votre téléphone a bloqué les rappels du campus. Voici comment les autoriser.")}
+      description={f(`Ton ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`, `Votre ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`)}
       pied={
         <Bouton
           onClick={() => {
@@ -185,7 +189,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
           {etat === "actif" ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-base font-bold">Rappels sur ce téléphone</p>
+          <p className="text-base font-bold">Rappels sur {ici}</p>
           <p className="text-sm text-texte-pale">{etat === "non_supporte" ? texteNonSupporte : libelles[etat]}</p>
         </div>
         {etat === "inactif" && (
@@ -222,7 +226,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         <div className="flex min-w-0 flex-col gap-1.5">
           {etat === "inactif" && (
             <>
-              <h3 className="text-lg font-extrabold leading-tight">Recevoir les rappels sur ce téléphone</h3>
+              <h3 className="text-lg font-extrabold leading-tight">Recevoir les rappels sur {ici}</h3>
               <p className="text-base leading-relaxed text-texte-pale">
                 {f(
                   "On te prévient 15 minutes avant chaque cours en direct, la veille d'un devoir et quand un formateur te répond. Jamais la nuit, et 3 rappels par jour au plus.",
@@ -235,7 +239,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-extrabold leading-tight">Rappels activés</h3>
-                <Badge ton="succes">Ce téléphone</Badge>
+                <Badge ton="succes">{Ici}</Badge>
               </div>
               <p className="text-base leading-relaxed text-texte-pale">
                 {f("Tu seras prévenu avant chaque cours en direct, même quand le campus est fermé.", "Vous serez prévenu avant chaque cours en direct, même quand le campus est fermé.")}
@@ -244,7 +248,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
           )}
           {etat === "refuse" && (
             <>
-              <h3 className="text-lg font-extrabold leading-tight">Les rappels sont bloqués sur ce téléphone</h3>
+              <h3 className="text-lg font-extrabold leading-tight">Les rappels sont bloqués sur {ici}</h3>
               <p className="text-base leading-relaxed text-texte-pale">
                 {f(
                   "Sans rappel, tu risques de rater le début d'un cours en direct. Tu peux les débloquer en trois gestes.",
@@ -268,7 +272,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
             Oui, me prévenir
           </Bouton>
           <p className="text-sm text-texte-gris">
-            {f("Ton téléphone va demander l'autorisation : touche « Autoriser ».", "Votre téléphone va demander l'autorisation : touchez « Autoriser ».")}
+            {f(`Ton ${appareil} va demander l'autorisation : touche « Autoriser ».`, `Votre ${appareil} va demander l'autorisation : touchez « Autoriser ».`)}
           </p>
         </div>
       )}

@@ -297,6 +297,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
   const detailQ = useQuery<ConversationDetail>({ queryKey: [`/api/conversations/${id}`] });
   const pageQ = useQuery<PageMessages>({ queryKey: [urlMessages] });
   const d = detailQ.data;
+  const erreur = (detailQ.error ?? pageQ.error) as Error | null;
   const salon = d?.type === "cours";
   const etudiant = moi.role === "etudiant";
   const estEquipe = moi.role === "admin" || moi.role === "vie_scolaire";
@@ -320,6 +321,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
   const [surligne, setSurligne] = useState<number | null>(null);
   const [nouveaux, setNouveaux] = useState(0);
   const [chargeAnciens, setChargeAnciens] = useState(false);
+  const [annonce, setAnnonce] = useState("");
 
   const zone = useRef<HTMLDivElement>(null);
   const contenu = useRef<HTMLDivElement>(null);
@@ -456,6 +458,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
       if (m.auteur.id !== moi.id) {
         if (!presDuBas.current) setNouveaux((n) => n + 1);
         setSaisie(null);
+        setAnnonce(`Nouveau message de ${m.auteur.prenom} ${m.auteur.nom} : ${m.texte || (m.type === "audio" ? "note vocale" : m.type === "photo" ? "photo" : "fichier")}`);
       }
       dispatch({ type: "message", message: m });
       if (m.cle) retirerLocal(m.cle);
@@ -549,7 +552,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
     ro.observe(z);
     ro.observe(c);
     return () => ro.disconnect();
-  }, []);
+  }, [erreur === null]);
 
   const chargerAnciens = useCallback(async () => {
     const premier = etat.messages[0];
@@ -574,7 +577,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
     const io = new IntersectionObserver((entrees) => entrees.some((x) => x.isIntersecting) && void chargerAnciens(), { root: zone.current, rootMargin: "200px 0px 0px 0px" });
     io.observe(s);
     return () => io.disconnect();
-  }, [etat.plusAnciens, chargerAnciens]);
+  }, [etat.plusAnciens, chargerAnciens, erreur === null]);
 
   function voirMessage(idCite: number) {
     const el = document.getElementById(`message-${idCite}`);
@@ -621,7 +624,6 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
   }
 
   // ── Rendu ────────────────────────────────────────────────────────────────
-  const erreur = (detailQ.error ?? pageQ.error) as Error | null;
   const vide = !etat.messages.length && !enAttente.length;
   const phrases = d && etudiant ? suggestions(d) : [];
 
@@ -721,7 +723,11 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
       )}
 
       <div className="relative min-h-0 flex-1">
-        <div ref={zone} onScroll={surDefilement} className="defile-fin absolute inset-0 overflow-y-auto overscroll-contain bg-creme px-3 pb-4 sm:px-5" aria-live="polite" aria-relevant="additions">
+        {/* Lecteurs d'écran : seul le message qui arrive est annoncé, pas tout le fil au chargement. */}
+        <p className="sr-only" aria-live="polite">
+          {annonce}
+        </p>
+        <div ref={zone} onScroll={surDefilement} className="defile-fin absolute inset-0 overflow-y-auto overscroll-contain bg-creme px-3 pb-4 sm:px-5">
           {/* Comme sur WhatsApp : peu de messages ? Ils se posent en bas, près de la zone de saisie. */}
           <div ref={contenu} className="flex min-h-full flex-col justify-end">
             <div ref={sentinelle} />

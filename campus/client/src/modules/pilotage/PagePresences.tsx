@@ -257,7 +257,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
         <ul className="divide-y divide-ligne-douce">
           {visibles.map((e) => (
             <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
-              <div className="min-w-0 flex-1">
+              <div className="min-w-[10rem] flex-1">
                 <Link href={`/pilotage/etudiants/${e.id}`} className="font-bold text-encre no-underline hover:text-orange-fonce">
                   {e.prenom} {e.nom}
                 </Link>
@@ -366,7 +366,7 @@ function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; o
             <ul className="divide-y divide-ligne-douce">
               {lignes.map((s) => (
                 <li key={s.seanceId} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-[10rem] flex-1">
                     <Link href={`/pilotage/presences?seance=${s.seanceId}`} className="font-semibold text-encre no-underline hover:text-orange-fonce">
                       {s.titre}
                     </Link>

@@ -2472,10 +2472,18 @@ planifier("live-rappels", MINUTE, async () => {
     const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(s.debut).replace(":", "h");
     // Abidjan vit à l'heure UTC : le jour d'Abidjan est la date UTC.
     const quand = s.debut.toISOString().slice(0, 10) === new Date(maintenant).toISOString().slice(0, 10) ? "Aujourd'hui" : "Demain";
-    await notifier(await destinatairesSeance(s), {
+    const titre = type === "15min" ? `Dans 15 min : ${s.titre}` : `${quand} à ${heure} : ${s.titre}`;
+    // Tutoiement pour les étudiants, vouvoiement pour les formateurs (CONCEPTION §1.6).
+    await notifier(await destinatairesSeance(s, false), {
       type: "live",
-      titre: type === "15min" ? `Dans 15 min : ${s.titre}` : `${quand} à ${heure} : ${s.titre}`,
+      titre,
       corps: type === "15min" ? `${code} · entre dans la classe ou installe-toi dans ta salle de conférence.` : `${code} · live multi-campus. Ajoute-le à ton agenda.`,
+      lien: `/live/${s.id}`,
+    });
+    await notifier((await formateursDuCours(s.coursId)).map((f) => f.id), {
+      type: "live",
+      titre,
+      corps: type === "15min" ? `${code} · ouvrez le studio : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan et vos diapos.`,
       lien: `/live/${s.id}`,
     });
   }

@@ -3158,4 +3158,1336 @@ const CONVERSATIONS_IA: { cours: CodeCours; lecon?: [number, number]; devoir?: s
   },
 ];
 
-// @@SUITE_SEMIS@@
+// ═══════════════════════════════════════════════════════════════════════════
+// Le semis
+// ═══════════════════════════════════════════════════════════════════════════
+
+type Personne = { id: number; role: Role; prenom: string; nom: string; siteId: number | null; email: string | null; matricule: string | null };
+type LeconSemee = { id: number; titre: string; publiee: boolean; chapitre: number; rang: number; numero: string };
+type CoursSeme = { id: number; code: string; def: DefCours; debut: Date; lecons: LeconSemee[]; inscrits: EtudiantSeme[] };
+type SeanceSemee = { id: number; def: DefSeance; debut: Date; demarreeLe: Date | null; termineeLe: Date | null; presents: Set<number> };
+type DevoirSeme = { id: number; def: DefDevoir; limite: Date; ouverture: Date | null; questions: QuestionQuiz[] };
+
+type Contexte = {
+  tx: Tx;
+  t0: Date;
+  h: Hasard;
+  sites: Map<SlugSite, Site>;
+  classes: Map<CleClasse, { id: number; siteId: number; nom: string }>;
+  classesCreees: number[];
+  personnes: Map<Qui, Personne>;
+  etudiants: EtudiantSeme[];
+  formateurs: Map<CleFormateur, Personne>;
+  vieScolaire: Map<SlugSite, Personne>;
+  salles: Map<SlugSite, Personne>;
+  cours: Map<CodeCours, CoursSeme>;
+  seances: Map<string, SeanceSemee>;
+  devoirs: Map<string, DevoirSeme>;
+  annonces: Map<string, number>;
+  conversations: Map<string, number>;
+  fichiersEcrits: string[];
+  compte: Record<string, number>;
+  avertissements: string[];
+};
+
+type Bilan = {
+  compte: Record<string, number>;
+  formateurs: { email: string; nom: string; cours: string[] }[];
+  vieScolaire: { email: string; nom: string; site: string }[];
+  salles: { email: string; site: string }[];
+  etudiants: { matricule: string; nom: string; site: string; classe: string }[];
+  jamaisConnecte: { matricule: string; nom: string };
+  aya: { matricule: string };
+  avertissements: string[];
+};
+
+const compter = (c: Contexte, cle: string, n = 1) => {
+  c.compte[cle] = (c.compte[cle] ?? 0) + n;
+};
+
+/** Insère par paquets (limite de paramètres de PostgreSQL). */
+async function insererParPaquets<T>(liste: T[], taille: number, inserer: (paquet: T[]) => Promise<unknown>) {
+  for (let i = 0; i < liste.length; i += taille) await inserer(liste.slice(i, i + taille));
+}
+
+const personne = (c: Contexte, qui: Qui): Personne => {
+  const p = c.personnes.get(qui);
+  if (!p) throw new Error(`Démonstration : personne inconnue « ${qui} »`);
+  return p;
+};
+
+/** Date au hasard entre a et b. */
+const entreDates = (h: Hasard, a: Date, b: Date) => new Date(a.getTime() + h.reel() * Math.max(0, b.getTime() - a.getTime()));
+/** Jamais dans le futur (les horodatages de démonstration restent crédibles). */
+const auPlusTard = (d: Date, t0: Date, marge = MINUTE) => (d.getTime() > t0.getTime() - marge ? new Date(t0.getTime() - marge) : d);
+
+// ── Sites et classes ───────────────────────────────────────────────────────
+
+async function semerSites(c: Contexte) {
+  const { SITES_2IAE } = await import("./amorcage");
+  const existants = await c.tx.select().from(sites);
+  const manquants = SITES_2IAE.filter((s) => !existants.some((e) => e.slug === s.slug));
+  if (manquants.length) await c.tx.insert(sites).values(manquants);
+  // Le numéro WhatsApp du groupe, sans écraser un numéro déjà réglé par l'école.
+  await c.tx
+    .update(sites)
+    .set({ whatsappVieScolaire: WHATSAPP_VIE_SCOLAIRE })
+    .where(sql`coalesce(${sites.whatsappVieScolaire}, '') = ''`);
+  for (const s of await c.tx.select().from(sites)) c.sites.set(s.slug as SlugSite, s);
+
+  for (const def of CLASSES) {
+    const site = c.sites.get(def.site)!;
+    const nom = `${def.libelle} · ${site.nomCourt}`;
+    const [existante] = await c.tx
+      .select({ id: classes.id })
+      .from(classes)
+      .where(and(eq(classes.nom, nom), eq(classes.siteId, site.id), eq(classes.anneeScolaire, ANNEE_SCOLAIRE)));
+    if (existante) {
+      c.classes.set(def.cle, { id: existante.id, siteId: site.id, nom });
+      continue;
+    }
+    const [cree] = await c.tx
+      .insert(classes)
+      .values({ nom, siteId: site.id, filiere: def.filiere, niveau: def.niveau, anneeScolaire: ANNEE_SCOLAIRE, creeLe: plus(c.t0, -40 * JOUR) })
+      .returning({ id: classes.id });
+    c.classes.set(def.cle, { id: cree.id, siteId: site.id, nom });
+    c.classesCreees.push(cree.id);
+    compter(c, "classes");
+  }
+}
+
+// ── Comptes ────────────────────────────────────────────────────────────────
+
+async function semerComptes(c: Contexte, hash: string, hashCode: string) {
+  const { t0, h } = c;
+  const creeEtudiants = plus(t0, -30 * JOUR);
+  const creePersonnel = plus(t0, -38 * JOUR);
+  const prefs = (extra: PreferencesUtilisateur = {}): PreferencesUtilisateur => ({ demo: true, visiteFaite: true, ...extra });
+  type Ligne = typeof utilisateurs.$inferInsert & { qui: Qui };
+  const lignes: Ligne[] = [];
+
+  for (const v of VIE_SCOLAIRE) {
+    lignes.push({
+      qui: `v:${v.site}`,
+      role: "vie_scolaire",
+      prenom: v.prenom,
+      nom: v.nom,
+      email: `${v.email}@${DOMAINE_DEMO}`,
+      telephone: v.telephone,
+      motDePasseHash: hash,
+      doitChangerMotDePasse: false,
+      siteId: c.sites.get(v.site)!.id,
+      charteAccepteeLe: plus(creePersonnel, 2 * HEURE),
+      preferences: prefs(),
+      derniereConnexion: plus(t0, -h.entre(20, 600) * MINUTE),
+      creeLe: creePersonnel,
+    });
+  }
+  for (const [slug, s] of c.sites) {
+    lignes.push({
+      qui: `s:${slug}`,
+      role: "salle",
+      prenom: "Salle",
+      nom: s.salleConference.replace(/^Salle\s+/i, ""),
+      email: `salle.${slug}@${DOMAINE_DEMO}`,
+      motDePasseHash: hash,
+      doitChangerMotDePasse: false,
+      siteId: s.id,
+      charteAccepteeLe: plus(creePersonnel, 3 * HEURE),
+      preferences: prefs(),
+      derniereConnexion: plus(t0, -h.entre(3, 30) * HEURE),
+      creeLe: creePersonnel,
+    });
+  }
+
+  // Slugs publics des formateurs : sans collision avec une fiche réelle.
+  const pris = new Set(
+    (await c.tx.select({ slug: utilisateurs.slug }).from(utilisateurs).where(inArray(utilisateurs.slug, FORMATEURS.map((f) => f.slug)))).map((l) => l.slug),
+  );
+  for (const f of FORMATEURS) {
+    const slug = pris.has(f.slug) ? `${f.slug}-2iae` : f.slug;
+    if (slug !== f.slug) c.avertissements.push(`Le slug « ${f.slug} » est déjà pris : la fiche de démonstration utilise « ${slug} ».`);
+    lignes.push({
+      qui: `f:${f.cle}`,
+      role: "formateur",
+      prenom: f.prenom,
+      nom: f.nom,
+      email: `${f.email}@${DOMAINE_DEMO}`,
+      motDePasseHash: hash,
+      doitChangerMotDePasse: false,
+      siteId: f.site ? c.sites.get(f.site)!.id : null,
+      slug,
+      titre: f.titre,
+      bio: f.bio,
+      localisation: f.localisation,
+      consentementSite: true,
+      proposeSurSite: f.publierSurSite,
+      publierSurSite: f.publierSurSite,
+      annonceLe: f.annonceIlYaJours ? plus(t0, -f.annonceIlYaJours * JOUR) : null,
+      charteAccepteeLe: plus(creePersonnel, 5 * HEURE),
+      preferences: prefs(),
+      derniereConnexion: f.cle === "diallo" ? plus(t0, -95 * MINUTE) : plus(t0, -h.entre(2, 40) * HEURE),
+      creeLe: creePersonnel,
+    });
+  }
+
+  const vus: Record<Profil, [number, number]> = { assidu: [0.2, 20], regulier: [20, 70], fragile: [75, 140], decroche: [215, 310] };
+  for (const e of ETUDIANTS) {
+    const classe = c.classes.get(e.classe)!;
+    const def = CLASSES.find((x) => x.cle === e.classe)!;
+    const [a, b] = vus[e.profil];
+    const base = {
+      qui: `e:${e.matricule}`,
+      role: "etudiant" as const,
+      prenom: e.prenom,
+      nom: e.nom,
+      matricule: e.matricule,
+      telephone: e.telephone,
+      siteId: c.sites.get(def.site)!.id,
+      classeId: classe.id,
+    };
+    if (e.jamaisConnecte) {
+      const creeLe = plus(t0, -10 * JOUR);
+      lignes.push({
+        ...base,
+        motDePasseHash: hashCode,
+        doitChangerMotDePasse: true,
+        motDePasseExpireLe: plus(creeLe, DUREE_CODE_PROVISOIRE_MS),
+        preferences: { demo: true },
+        creeLe,
+      });
+      continue;
+    }
+    lignes.push({
+      ...base,
+      motDePasseHash: hash,
+      doitChangerMotDePasse: false,
+      charteAccepteeLe: plus(creeEtudiants, h.entre(1, 72) * HEURE),
+      preferences: prefs({ modeSuivi: e.suivi, donneesReduites: e.suivi === "telephone" && h.chance(0.4) }),
+      derniereConnexion: e.matricule === MATRICULE_AYA ? plus(t0, -25 * MINUTE) : plus(t0, -(a + h.reel() * (b - a)) * HEURE),
+      creeLe: creeEtudiants,
+    });
+  }
+
+  const inseres = await c.tx
+    .insert(utilisateurs)
+    .values(lignes.map(({ qui: _q, ...l }) => l))
+    .returning({ id: utilisateurs.id, role: utilisateurs.role, prenom: utilisateurs.prenom, nom: utilisateurs.nom, siteId: utilisateurs.siteId, email: utilisateurs.email, matricule: utilisateurs.matricule });
+  for (const u of inseres) {
+    const qui = u.matricule ? `e:${u.matricule}` : lignes.find((l) => l.email === u.email)!.qui;
+    c.personnes.set(qui, u);
+  }
+  compter(c, "comptes", inseres.length);
+
+  for (const f of FORMATEURS) c.formateurs.set(f.cle, personne(c, `f:${f.cle}`));
+  for (const v of VIE_SCOLAIRE) c.vieScolaire.set(v.site, personne(c, `v:${v.site}`));
+  for (const slug of c.sites.keys()) c.salles.set(slug, personne(c, `s:${slug}`));
+  ETUDIANTS.forEach((e, rang) => {
+    const p = personne(c, `e:${e.matricule}`);
+    const def = CLASSES.find((x) => x.cle === e.classe)!;
+    c.etudiants.push({ ...e, id: p.id, siteId: p.siteId!, classeId: c.classes.get(e.classe)!.id, site: def.site, rang });
+  });
+}
+
+// ── Cours, chapitres, leçons ───────────────────────────────────────────────
+
+async function semerCours(c: Contexte) {
+  const { t0 } = c;
+  const existants = await c.tx
+    .select({ code: cours.code, slug: cours.slug })
+    .from(cours)
+    .where(or(inArray(cours.code, [...CODES_COURS_DEMO]), inArray(cours.slug, COURS.map((x) => x.slug)))!);
+  for (const def of COURS) {
+    const codePris = existants.some((e) => e.code === def.code);
+    const slugPris = existants.some((e) => e.slug === def.slug);
+    const code = codePris ? `${def.code}-D` : def.code;
+    const slug = slugPris ? `${def.slug}-demo` : def.slug;
+    if (codePris) c.avertissements.push(`Un cours ${def.code} existe déjà : le cours de démonstration s'appelle ${code}.`);
+    const debut = jourA(t0, -def.debutIlYaJours, 8);
+    const [cr] = await c.tx
+      .insert(cours)
+      .values({
+        code,
+        slug,
+        titre: def.titre,
+        description: def.description,
+        objectifs: def.objectifs,
+        couleur: def.couleur,
+        formateurId: c.formateurs.get(def.formateur)!.id,
+        statut: "publie",
+        dateDebut: debut,
+        dateFin: plus(debut, def.semaines * 7 * JOUR),
+        proposeSurSite: def.publierSurSite,
+        publierSurSite: def.publierSurSite,
+        accrocheSite: def.accroche,
+        creeLe: plus(t0, -35 * JOUR),
+        majLe: plus(t0, -2 * JOUR),
+      })
+      .returning({ id: cours.id });
+    await c.tx.insert(coursClasses).values(def.classes.map((cle) => ({ coursId: cr.id, classeId: c.classes.get(cle)!.id })));
+    const inscrits = c.etudiants.filter((e) => def.classes.includes(e.classe));
+    const semes: LeconSemee[] = [];
+    for (const [i, ch] of def.chapitres.entries()) {
+      const [m] = await c.tx.insert(modules).values({ coursId: cr.id, titre: ch.titre, ordre: i + 1 }).returning({ id: modules.id });
+      const lignes = await c.tx
+        .insert(lecons)
+        .values(
+          ch.lecons.map((l, j) => ({
+            moduleId: m.id,
+            coursId: cr.id,
+            titre: l.titre,
+            type: l.type ?? ("texte" as const),
+            contenu: l.contenu,
+            url: l.url ?? null,
+            dureeMinutes: l.duree,
+            ordre: j + 1,
+            publiee: l.publiee ?? true,
+            creeLe: plus(t0, -(33 - i * 7) * JOUR),
+          })),
+        )
+        .returning({ id: lecons.id, ordre: lecons.ordre });
+      let rang = 0;
+      for (const [j, l] of ch.lecons.entries()) {
+        const publiee = l.publiee ?? true;
+        semes.push({ id: lignes.find((x) => x.ordre === j + 1)!.id, titre: l.titre, publiee, chapitre: i, rang: j, numero: publiee ? `${i + 1}.${++rang}` : "" });
+      }
+      compter(c, "lecons", ch.lecons.length);
+    }
+    c.cours.set(def.code, { id: cr.id, code, def, debut, lecons: semes, inscrits });
+    compter(c, "cours");
+  }
+
+  for (const f of FICHES_LECONS) {
+    const co = c.cours.get(f.cours)!;
+    const l = co.lecons.find((x) => x.chapitre === f.chapitre && x.rang === f.lecon)!;
+    await c.tx.insert(fichesRevision).values({
+      coursId: co.id,
+      leconId: l.id,
+      titre: `L'essentiel en 5 points · ${l.titre}`,
+      contenu: f.contenu,
+      validee: true,
+      creeLe: plus(t0, -(f.chapitre === 0 ? 12 : 6) * JOUR),
+    });
+    compter(c, "fiches");
+  }
+}
+
+// ── Progression dans les leçons ────────────────────────────────────────────
+
+async function semerProgressions(c: Contexte) {
+  const { t0, h } = c;
+  const parts: Record<Profil, [number, number]> = { assidu: [0.6, 1], regulier: [0.35, 0.7], fragile: [0.1, 0.35], decroche: [0, 0.2] };
+  const ayaParCours: Partial<Record<CodeCours, number>> = { "IA-101": 6, "ENT-210": 5, "INF-230": 3 };
+  const lignesProgression: (typeof progressions.$inferInsert)[] = [];
+  const lignesLecture: (typeof lecturesCours.$inferInsert)[] = [];
+  for (const co of c.cours.values()) {
+    const publiees = co.lecons.filter((l) => l.publiee);
+    for (const e of co.inscrits) {
+      if (e.jamaisConnecte) continue;
+      const [a, b] = parts[e.profil];
+      let n = Math.round(publiees.length * (a + h.reel() * (b - a)));
+      if (e.matricule === MATRICULE_AYA) n = ayaParCours[co.def.code] ?? n;
+      n = Math.min(publiees.length, n);
+      const fin = e.profil === "decroche" ? plus(t0, -9 * JOUR) : plus(t0, -2 * HEURE);
+      const debut = plus(co.debut, JOUR);
+      let derniere = debut;
+      for (let k = 0; k < n; k++) {
+        const t = new Date(debut.getTime() + ((k + 1) / (n + 1)) * (fin.getTime() - debut.getTime()) + (h.reel() - 0.5) * 6 * HEURE);
+        derniere = auPlusTard(t < derniere ? plus(derniere, 20 * MINUTE) : t, t0);
+        lignesProgression.push({ utilisateurId: e.id, leconId: publiees[k].id, termineeLe: derniere });
+      }
+      if (n > 0 || e.profil !== "decroche") {
+        const suivante = publiees[Math.min(n, publiees.length - 1)];
+        lignesLecture.push({ utilisateurId: e.id, coursId: co.id, leconId: suivante.id, lueLe: auPlusTard(plus(derniere, h.entre(5, 90) * MINUTE), t0) });
+      }
+    }
+  }
+  await insererParPaquets(lignesProgression, 500, (p) => c.tx.insert(progressions).values(p));
+  await insererParPaquets(lignesLecture, 500, (p) => c.tx.insert(lecturesCours).values(p));
+  compter(c, "progressions", lignesProgression.length);
+}
+
+// ── Séances en direct ──────────────────────────────────────────────────────
+
+const PRESENCE: Record<Profil, number> = { assidu: 0.95, regulier: 0.8, fragile: 0.5, decroche: 0 };
+
+function choisirPondere(h: Hasard, poids: number[]): number {
+  const total = poids.reduce((s, x) => s + x, 0);
+  let r = h.reel() * total;
+  for (let i = 0; i < poids.length; i++) {
+    r -= poids[i];
+    if (r < 0) return i;
+  }
+  return poids.length - 1;
+}
+
+async function semerSeances(c: Contexte) {
+  const { t0, h, tx } = c;
+  for (const def of SEANCES) {
+    const co = c.cours.get(def.cours)!;
+    const formateur = c.formateurs.get(co.def.formateur)!;
+    const debut = def.debut(t0);
+    const sitesDuCours = [...new Set(co.def.classes.map((cle) => CLASSES.find((x) => x.cle === cle)!.site))];
+    const dernierT = def.transcription?.at(-1)?.[0] ?? (def.duree - 5) * 60;
+    const demarreeLe = def.passee ? plus(debut, 2 * MINUTE) : null;
+    const termineeLe = def.passee ? plus(demarreeLe!, (dernierT + 150) * 1000) : null;
+    const transcription = (def.transcription ?? []).map(([t, texte]) => `[${minutage(t)}] ${texte}`).join("\n");
+    const [s] = await tx
+      .insert(seances)
+      .values({
+        coursId: co.id,
+        titre: def.titre,
+        description: def.description,
+        debut,
+        dureeMinutes: def.duree,
+        statut: def.passee ? "terminee" : "planifiee",
+        fournisseur: "daily",
+        plan: def.plan,
+        demarreeLe,
+        termineeLe,
+        transcription,
+        resumeIa: def.fiche ?? null,
+        resumeIaLe: def.fiche && termineeLe ? plus(termineeLe, 5 * HEURE) : null,
+        resumeValide: Boolean(def.fiche && def.ficheValidee),
+        resumeParIa: Boolean(def.fiche),
+        proposeSurSite: Boolean(def.publierSurSite),
+        publierSurSite: Boolean(def.publierSurSite),
+        lienSecours: def.lienSecours ?? null,
+        creeLe: new Date(Math.min(plus(debut, -10 * JOUR).getTime(), plus(t0, -HEURE).getTime())),
+      })
+      .returning({ id: seances.id });
+    const semee: SeanceSemee = { id: s.id, def, debut, demarreeLe, termineeLe, presents: new Set() };
+    c.seances.set(def.cle, semee);
+    compter(c, "seances");
+
+    if (!def.passee) {
+      if (def.sondages?.length) {
+        await tx.insert(sondages).values(
+          def.sondages.map((so) => ({ seanceId: s.id, question: so.question, options: so.options, bonneReponse: so.bonne, explication: so.explication ?? null, parIa: Boolean(so.parIa), ouvert: false })),
+        );
+        compter(c, "sondages", def.sondages.length);
+      }
+      continue;
+    }
+
+    await semerDirectPasse(c, semee, co, formateur, sitesDuCours);
+  }
+}
+
+async function semerDirectPasse(c: Contexte, se: SeanceSemee, co: CoursSeme, formateur: Personne, sitesDuCours: SlugSite[]) {
+  const { t0, h, tx } = c;
+  const def = se.def;
+  const demarree = se.demarreeLe!;
+  const terminee = se.termineeLe!;
+  const a = (t: number) => plus(demarree, t * 1000);
+  const dureeReelle = Math.round((terminee.getTime() - demarree.getTime()) / MINUTE);
+
+  // Sous-titres horodatés (la transcription de la séance en est l'assemblage).
+  if (def.transcription?.length) {
+    await tx.insert(sousTitres).values(def.transcription.map(([t, texte]) => ({ seanceId: se.id, t, texte, creeLe: a(t) })));
+    compter(c, "sousTitres", def.transcription.length);
+  }
+
+  // Présences : émargées en salle, en ligne, partielles, justifiées, absents.
+  const incidentSite = def.incident ? c.sites.get(def.incident.site)!.id : null;
+  const attendus = co.inscrits.filter((e) => !e.jamaisConnecte || e.id < 0);
+  const lignesPresence: (typeof presences.$inferInsert)[] = [];
+  const enSalleParSite = new Map<number, number>();
+  const enLigne: EtudiantSeme[] = [];
+  const tous: EtudiantSeme[] = [];
+  for (const e of attendus) {
+    let p = PRESENCE[e.profil];
+    if (e.siteId === incidentSite) p -= 0.25;
+    const present = e.matricule === MATRICULE_AYA || h.chance(p);
+    if (!present) {
+      if (e.profil !== "decroche" && h.chance(0.3)) {
+        lignesPresence.push({
+          seanceId: se.id,
+          utilisateurId: e.id,
+          siteId: e.siteId,
+          mode: "en_ligne",
+          minutes: 0,
+          justification: h.choix(["Rendez-vous médical (certificat remis)", "Décès dans la famille", "Convocation administrative", "Malade, certificat remis à la vie scolaire"]),
+          arriveeLe: demarree,
+          derniereActivite: demarree,
+        });
+      }
+      continue;
+    }
+    se.presents.add(e.id);
+    tous.push(e);
+    if (e.suivi === "salle") {
+      const retard = h.chance(0.1);
+      const arrivee = plus(se.debut, (retard ? h.entre(16, 26) : h.entre(-12, 10)) * MINUTE);
+      const pointe = !retard && h.chance(0.15);
+      lignesPresence.push({
+        seanceId: se.id,
+        utilisateurId: e.id,
+        siteId: e.siteId,
+        mode: "salle",
+        emargeQr: !pointe,
+        pointeParId: pointe ? c.vieScolaire.get(e.site)!.id : null,
+        arriveeLe: arrivee,
+        derniereActivite: terminee,
+        minutes: 0,
+      });
+      enSalleParSite.set(e.siteId, (enSalleParSite.get(e.siteId) ?? 0) + 1);
+    } else {
+      const partiel = e.matricule !== MATRICULE_AYA && h.chance(e.profil === "fragile" ? 0.4 : 0.12);
+      const minutes = partiel ? h.entre(18, 45) : Math.min(dureeReelle, h.entre(Math.ceil(dureeReelle * 0.78), dureeReelle));
+      const arrivee = plus(demarree, h.entre(0, partiel ? 30 : 6) * MINUTE);
+      lignesPresence.push({
+        seanceId: se.id,
+        utilisateurId: e.id,
+        siteId: e.siteId,
+        mode: "en_ligne",
+        arriveeLe: arrivee,
+        derniereActivite: plus(arrivee, minutes * MINUTE),
+        minutes,
+      });
+      enLigne.push(e);
+    }
+  }
+  await tx.insert(presences).values(lignesPresence);
+  compter(c, "presences", lignesPresence.length);
+
+  // Effectifs déclarés par les responsables de salle (un petit écart à Yamoussoukro en séance 2).
+  await tx.insert(effectifsSalles).values(
+    sitesDuCours.map((slug) => {
+      const site = c.sites.get(slug)!;
+      const emarges = enSalleParSite.get(site.id) ?? 0;
+      return {
+        seanceId: se.id,
+        siteId: site.id,
+        nombre: emarges + (def.cle === "ia-s2" && slug === "yamoussoukro" ? 1 : 0),
+        prete: true,
+        incident: def.incident && def.incident.site === slug ? def.incident.texte : null,
+        majLe: plus(se.debut, -8 * MINUTE),
+      };
+    }),
+  );
+
+  // Questions votées, signées par campus.
+  const votants = [...tous.map((e) => e.id), ...sitesDuCours.map((slug) => c.salles.get(slug)!.id)];
+  for (const [i, q] of (def.questions ?? []).entries()) {
+    const site = c.sites.get(q.site)!;
+    let auteurId: number;
+    if (q.par === "salle") auteurId = c.salles.get(q.site)!.id;
+    else {
+      const candidats = tous.filter((e) => e.site === q.site);
+      const aya = def.cle === "ia-s1" && q.site === "yopougon" && i < 3 ? candidats.find((e) => e.matricule === MATRICULE_AYA) : undefined;
+      auteurId = (aya ?? (candidats.length ? h.choix(candidats) : c.etudiants.find((e) => e.site === q.site)!)).id;
+    }
+    const votes = Math.min(q.votes, votants.length);
+    const [ql] = await tx
+      .insert(questionsLive)
+      .values({
+        seanceId: se.id,
+        auteurId,
+        siteId: site.id,
+        texte: q.texte,
+        votes,
+        anonyme: q.par === "salle" || Boolean(q.anonyme),
+        repondue: q.repondueT !== undefined,
+        reponduLe: q.repondueT !== undefined ? a(q.repondueT) : null,
+        creeLe: a(q.t),
+      })
+      .returning({ id: questionsLive.id });
+    const autres = h.melanger(votants.filter((id) => id !== auteurId)).slice(0, votes - 1);
+    await tx.insert(votesQuestions).values([auteurId, ...autres].map((utilisateurId) => ({ questionId: ql.id, utilisateurId })));
+    compter(c, "questions");
+  }
+
+  // Événements du fil : démarrage, paroles, incident, fin.
+  const evts: (typeof evenementsSeances.$inferInsert)[] = [{ seanceId: se.id, type: "demarrage", donnees: { par: formateur.id }, creeLe: demarree }];
+  for (const m of def.mains ?? []) {
+    const site = c.sites.get(m.site)!;
+    const qui =
+      m.par === "salle" ? c.salles.get(m.site)!.id : (enLigne.find((e) => e.site === m.site) ?? tous.find((e) => e.site === m.site) ?? c.etudiants.find((e) => e.site === m.site)!).id;
+    const [main] = await tx
+      .insert(mainsLevees)
+      .values({
+        seanceId: se.id,
+        utilisateurId: qui,
+        siteId: site.id,
+        leveeLe: a(m.t),
+        paroleDonneeLe: m.paroleT !== undefined ? a(m.paroleT) : null,
+        baisseeLe: m.finT !== undefined ? a(m.finT) : terminee,
+      })
+      .returning({ id: mainsLevees.id });
+    if (m.paroleT !== undefined) {
+      evts.push({
+        seanceId: se.id,
+        type: "parole",
+        donnees: {
+          type: m.par === "salle" ? "salle" : "etudiant",
+          siteId: site.id,
+          site: site.nomCourt,
+          utilisateurId: m.par === "salle" ? null : qui,
+          libelle: m.par === "salle" ? site.nomCourt : `Un étudiant en ligne · ${site.nomCourt}`,
+          depuis: a(m.paroleT).toISOString(),
+          mainId: main.id,
+        },
+        creeLe: a(m.paroleT),
+      });
+      const fin = m.finT ?? m.paroleT + 60;
+      evts.push({
+        seanceId: se.id,
+        type: "parole_fin",
+        donnees: { siteId: site.id, utilisateurId: m.par === "salle" ? null : qui, secondes: fin - m.paroleT },
+        creeLe: a(fin),
+      });
+    }
+  }
+  if (def.incident) {
+    const site = c.sites.get(def.incident.site)!;
+    evts.push({ seanceId: se.id, type: "incident", donnees: { siteId: site.id, incident: def.incident.texte }, creeLe: a(def.incident.t) });
+  }
+  evts.push({ seanceId: se.id, type: "fin", donnees: { par: formateur.id, automatique: false }, creeLe: terminee });
+  await tx.insert(evenementsSeances).values(evts);
+
+  // Sondages éclair et réponses par campus.
+  for (const so of def.sondages ?? []) {
+    const ouvertLe = a(so.t ?? 0);
+    const [ligne] = await tx
+      .insert(sondages)
+      .values({
+        seanceId: se.id,
+        question: so.question,
+        options: so.options,
+        bonneReponse: so.bonne,
+        explication: so.explication ?? null,
+        ouvert: false,
+        ouvertLe,
+        fermeLe: plus(ouvertLe, (so.duree ?? 120) * 1000),
+        parIa: Boolean(so.parIa),
+        creeLe: plus(ouvertLe, -30 * MINUTE),
+      })
+      .returning({ id: sondages.id });
+    const attendue = so.bonne ?? 1;
+    const reponses = tous
+      .filter(() => h.chance(0.88))
+      .map((e) => {
+        const penchant = so.penchant?.[e.site];
+        let choix: number;
+        if (penchant !== undefined && penchant === so.bonne) choix = penchant;
+        else if (penchant !== undefined && h.chance(0.55)) choix = penchant;
+        else if (h.chance(so.reussite ?? 0.7)) choix = attendue;
+        else choix = h.choix(so.options.map((_o, i) => i).filter((i) => i !== attendue));
+        return { sondageId: ligne.id, utilisateurId: e.id, choix, siteId: e.siteId };
+      });
+    if (reponses.length) await tx.insert(reponsesSondages).values(reponses);
+    compter(c, "sondages");
+  }
+
+  // Baromètre de compréhension (ressentis horodatés, par campus).
+  const lignesRessentis: (typeof ressentis.$inferInsert)[] = [];
+  const noms: Ressenti[] = ["compris", "perdu", "lent", "bravo"];
+  for (const e of tous) {
+    const poids = def.climat?.[e.site] ?? [7, 1, 1, 2];
+    for (let k = h.entre(1, 3); k > 0; k--) {
+      lignesRessentis.push({ seanceId: se.id, utilisateurId: e.id, siteId: e.siteId, ressenti: noms[choisirPondere(h, poids)], creeLe: a(h.entre(300, Math.max(400, dureeReelle * 60 - 300))) });
+    }
+    if (def.cle === "ia-s2" && e.site === "yamoussoukro" && h.chance(0.7)) {
+      lignesRessentis.push({ seanceId: se.id, utilisateurId: e.id, siteId: e.siteId, ressenti: "lent", creeLe: a(h.entre(4080, 4230)) });
+    }
+  }
+  if (lignesRessentis.length) await tx.insert(ressentis).values(lignesRessentis);
+
+  // Replays revus (suivis à part, jamais comptés comme présence).
+  if (def.transcription?.length) {
+    const vues = co.inscrits
+      .filter((e) => !e.jamaisConnecte && e.profil !== "decroche" && h.chance(se.presents.has(e.id) ? 0.3 : 0.6))
+      .map((e) => {
+        const premiere = auPlusTard(plus(terminee, h.entre(3, 60) * HEURE), t0);
+        return { seanceId: se.id, utilisateurId: e.id, premiereVue: premiere, derniereVue: auPlusTard(plus(premiere, h.entre(0, 30) * HEURE), t0) };
+      });
+    if (vues.length) await tx.insert(vuesReplay).values(vues);
+  }
+}
+
+// ── Devoirs, interrogations, copies ────────────────────────────────────────
+
+/** Répartit une note sur les critères de la grille (au quart de point). */
+function repartir(note: number, grille: CritereGrille[], h: Hasard): { critere: string; points: number; obtenu: number }[] {
+  const total = grille.reduce((s, g) => s + g.points, 0);
+  let reste = note;
+  const lignes = grille.map((g, i) => {
+    if (i === grille.length - 1) return { critere: g.critere, points: g.points, obtenu: 0 };
+    const o = Math.min(g.points, Math.max(0, auQuart(g.points * (note / total) * (0.88 + h.reel() * 0.24))));
+    reste -= o;
+    return { critere: g.critere, points: g.points, obtenu: o };
+  });
+  const derniere = lignes[lignes.length - 1];
+  derniere.obtenu = Math.min(derniere.points, Math.max(0, auQuart(reste)));
+  return lignes;
+}
+
+const NOTE_PAR_PROFIL: Record<Profil, [number, number]> = { assidu: [14.5, 18.5], regulier: [11, 15], fragile: [7.5, 11.5], decroche: [5, 9] };
+const REUSSITE_QUIZ: Record<Profil, number> = { assidu: 0.88, regulier: 0.72, fragile: 0.52, decroche: 0.4 };
+
+/** Réponse donnée à une question : juste ou fausse (erreur plausible). */
+function reponseA(q: QuestionQuiz, juste: boolean, h: Hasard, faux: string[] | undefined): (number | string)[] {
+  if (juste) return q.type === "reponse_courte" ? [String(q.bonnesReponses[0])] : [...q.bonnesReponses];
+  if (q.type === "reponse_courte") return [h.choix(faux?.length ? faux : ["je ne sais pas"])];
+  const bonnes = q.bonnesReponses.map(Number);
+  const autres = q.options.map((_o, i) => i).filter((i) => !bonnes.includes(i));
+  if (q.type === "choix_multiple") {
+    // Une bonne réponse oubliée, ou une mauvaise ajoutée.
+    return bonnes.length > 1 && h.chance(0.6) ? bonnes.slice(0, -1) : [...bonnes, h.choix(autres)].sort((x, y) => x - y);
+  }
+  return [h.choix(autres)];
+}
+
+async function semerDevoirs(c: Contexte) {
+  const { t0, h, tx } = c;
+  for (const def of DEVOIRS) {
+    const co = c.cours.get(def.cours)!;
+    const formateur = c.formateurs.get(co.def.formateur)!;
+    const limite = jourA(t0, def.limite.jours, def.limite.h, def.limite.m);
+    const ouverture = def.ouvertureJours === null ? null : jourA(t0, def.ouvertureJours, 8);
+    const [d] = await tx
+      .insert(devoirs)
+      .values({
+        coursId: co.id,
+        auteurId: formateur.id,
+        type: def.type,
+        titre: def.titre,
+        consigne: def.consigne,
+        ouvertureLe: ouverture,
+        dateLimite: limite,
+        bareme: def.bareme,
+        coefficient: def.coefficient,
+        accepteRetard: def.accepteRetard,
+        dureeMinutes: def.dureeMinutes ?? null,
+        tentativesMax: def.tentativesMax ?? 1,
+        correctionVisible: true,
+        grille: def.grille ?? [],
+        publie: true,
+        creeLe: plus(ouverture ?? limite, -2 * JOUR),
+      })
+      .returning({ id: devoirs.id });
+    let questions: QuestionQuiz[] = [];
+    if (def.questions?.length) {
+      questions = await tx
+        .insert(questionsQuiz)
+        .values(
+          def.questions.map((q, i) => ({
+            devoirId: d.id,
+            type: q.type,
+            enonce: q.enonce,
+            options: q.type === "vrai_faux" ? ["Vrai", "Faux"] : q.type === "reponse_courte" ? [] : (q.options ?? []),
+            bonnesReponses: q.bonnes,
+            explication: q.explication,
+            points: q.points ?? 1,
+            ordre: i + 1,
+          })),
+        )
+        .returning();
+    }
+    const semeDevoir: DevoirSeme = { id: d.id, def, limite, ouverture, questions };
+    c.devoirs.set(def.cle, semeDevoir);
+    compter(c, def.type === "quiz" ? "interrogations" : "depots");
+
+    // Rappels déjà envoyés (la tâche des rappels ne les renverra pas).
+    const inscrits = co.inscrits.filter((e) => !e.jamaisConnecte);
+    const rappels: (typeof rappelsDevoirs.$inferInsert)[] = [];
+    if (ouverture && ouverture <= t0) rappels.push({ devoirId: d.id, type: "ouverture", echeance: limite, destinataires: co.inscrits.length, envoyeLe: ouverture });
+    if (limite <= t0) rappels.push({ devoirId: d.id, type: "veille", echeance: limite, destinataires: Math.ceil(co.inscrits.length / 3), envoyeLe: plus(limite, -20 * HEURE) });
+    if (rappels.length) await tx.insert(rappelsDevoirs).values(rappels);
+
+    if (def.type === "quiz") await semerTentatives(c, semeDevoir, inscrits);
+    else await semerCopies(c, semeDevoir, inscrits, formateur);
+  }
+}
+
+async function semerTentatives(c: Contexte, d: DevoirSeme, inscrits: EtudiantSeme[]) {
+  const { t0, h, tx } = c;
+  const def = d.def;
+  const ferme = def.scenario === "quiz_ferme";
+  const participation: Record<Profil, number> = ferme ? { assidu: 0.97, regulier: 0.85, fragile: 0.55, decroche: 0 } : { assidu: 0.45, regulier: 0.2, fragile: 0.05, decroche: 0 };
+  const duree = def.dureeMinutes ?? 20;
+  const debutFenetre = plus(d.ouverture ?? plus(d.limite, -7 * JOUR), HEURE);
+  const finFenetre = ferme ? plus(d.limite, -(duree + 5) * MINUTE) : plus(t0, -(duree + 10) * MINUTE);
+  const fauxParQuestion = new Map(d.questions.map((q, i) => [q.id, def.questions?.[i]?.faux]));
+  for (const e of inscrits) {
+    const aya = e.matricule === MATRICULE_AYA;
+    if (!aya && !h.chance(participation[e.profil])) continue;
+    if (aya && !ferme) continue;
+    const nbTentatives = aya ? 2 : (def.tentativesMax ?? 1) > 1 && h.chance(0.35) ? 2 : 1;
+    const notes: { note: number; fin: Date }[] = [];
+    let debut = entreDates(h, debutFenetre, finFenetre);
+    for (let k = 0; k < nbTentatives; k++) {
+      // Aya : 4/6 puis 5/6 (elle a retravaillé la question à choix multiple… pas encore la réponse courte).
+      const fautesAya = k === 0 ? [2, 4] : [2];
+      const reponses: Record<string, (number | string)[]> = {};
+      d.questions.forEach((q, i) => {
+        const juste = aya ? !fautesAya.includes(i) : h.chance(Math.min(0.97, REUSSITE_QUIZ[e.profil] + k * 0.1));
+        reponses[String(q.id)] = reponseA(q, juste, h, fauxParQuestion.get(q.id));
+      });
+      const resultat = corrigerTentative(d.questions, reponses, def.bareme);
+      const finPrevue = new Date(Math.min(plus(debut, duree * MINUTE).getTime(), d.limite.getTime()));
+      const fin = auPlusTard(new Date(Math.min(plus(debut, h.entre(Math.min(6, duree - 1), duree - 1) * MINUTE).getTime(), finPrevue.getTime())), t0);
+      await tx.insert(tentativesQuiz).values({ devoirId: d.id, etudiantId: e.id, debutLe: debut, finPrevueLe: finPrevue, finLe: fin, reponses, score: resultat.score, note: resultat.note });
+      notes.push({ note: resultat.note, fin });
+      compter(c, "tentatives");
+      const prochain = plus(fin, h.entre(2, 30) * HEURE);
+      if (prochain.getTime() > finFenetre.getTime()) break;
+      debut = prochain;
+    }
+    const meilleure = Math.max(...notes.map((n) => n.note));
+    const [r] = await tx
+      .insert(rendus)
+      .values({ devoirId: d.id, etudiantId: e.id, statut: "corrige", renduLe: notes[0].fin, enRetard: false, note: meilleure, corrigeLe: notes.at(-1)!.fin, majLe: notes.at(-1)!.fin })
+      .returning({ id: rendus.id });
+    await tx.update(rendus).set({ recu: recuPour(r.id) }).where(eq(rendus.id, r.id));
+    compter(c, "copies");
+  }
+}
+
+async function semerCopies(c: Contexte, d: DevoirSeme, inscrits: EtudiantSeme[], formateur: Personne) {
+  const { t0, h, tx } = c;
+  const def = d.def;
+  const chances: Record<Scenario, Record<Profil, number>> = {
+    corrige: { assidu: 1, regulier: 0.92, fragile: 0.6, decroche: 0 },
+    a_venir: { assidu: 0.55, regulier: 0.25, fragile: 0.08, decroche: 0 },
+    retard: { assidu: 0.95, regulier: 0.7, fragile: 0.2, decroche: 0 },
+    quiz_ferme: { assidu: 0, regulier: 0, fragile: 0, decroche: 0 },
+    quiz_ouvert: { assidu: 0, regulier: 0, fragile: 0, decroche: 0 },
+  };
+  const retardProba: Record<Profil, number> = def.scenario === "retard" ? { assidu: 0.05, regulier: 0.5, fragile: 1, decroche: 1 } : { assidu: 0.05, regulier: 0.12, fragile: 0.5, decroche: 1 };
+  const debutFenetre = plus(d.ouverture ?? plus(d.limite, -7 * JOUR), 2 * HEURE);
+  const ayaRend = def.cle === "ent-d1" || def.cle === "ent-d2";
+  let brouillonNote = def.cle === "ia-d2";
+  let propositionIa = def.cle === "ia-d2";
+  const photos = def.cle === "ges-d1" ? await ecrireImagesCopies(c) : new Map<string, number[]>();
+
+  for (const e of inscrits) {
+    const aya = e.matricule === MATRICULE_AYA;
+    const rend = aya ? ayaRend : h.chance(chances[def.scenario][e.profil]);
+    if (!rend) continue;
+    const enRetard = !aya && def.scenario !== "a_venir" && h.chance(retardProba[e.profil]);
+    let renduLe: Date;
+    if (aya && def.cle === "ent-d2") renduLe = auPlusTard(jourA(t0, -1, 22, 41), t0);
+    else if (enRetard) renduLe = auPlusTard(plus(d.limite, h.entre(2, 30) * HEURE), t0);
+    else renduLe = auPlusTard(entreDates(h, debutFenetre, new Date(Math.min(plus(d.limite, -2 * HEURE).getTime(), t0.getTime()))), t0);
+    const prepareLe = h.chance(0.15) ? plus(renduLe, -h.entre(10, 90) * MINUTE) : null;
+    const fichierIds = photos.get(e.matricule) ?? [];
+    const texte = fichierIds.length ? "Photo de mon cahier : les cinq écritures au journal." : (def.copie?.(e, h) ?? "");
+
+    type Ligne = typeof rendus.$inferInsert;
+    const ligne: Ligne = { devoirId: d.id, etudiantId: e.id, texte, fichierIds, statut: "rendu", renduLe, prepareLe, enRetard, majLe: renduLe };
+    const vu = auPlusTard(plus(renduLe, h.entre(2, 20) * HEURE), t0);
+
+    if (def.scenario === "corrige") {
+      const [a, b] = NOTE_PAR_PROFIL[e.profil];
+      const grille = def.grille ?? [{ critere: "Note globale", points: def.bareme }];
+      const detail =
+        aya && def.cle === "ent-d1"
+          ? grille.map((g, i) => ({ critere: g.critere, points: g.points, obtenu: [4.5, 4, 3, 4][i] }))
+          : repartir(auQuart(a + h.reel() * (b - a)), grille, h);
+      const note = arrondi(detail.reduce((s, l) => s + l.obtenu, 0));
+      const niveau = note >= 14.5 ? "haut" : note >= 10.5 ? "moyen" : "bas";
+      const corrigeLe = auPlusTard(plus(d.limite, (48 + h.entre(0, 20)) * HEURE), t0);
+      Object.assign(ligne, {
+        statut: "corrige",
+        note,
+        noteDetail: detail,
+        commentaire:
+          aya && def.cle === "ent-d1"
+            ? "Très bon travail, Aya ! Ton projet de jus de bissap répond à un vrai besoin et ton enquête auprès de 40 voyageurs est sérieuse. Point à renforcer : les concurrents (les vendeurs de sodas ont aussi des atouts : le prix, l'habitude). Ton prix de 500 FCFA est bien justifié."
+            : (def.commentaire?.(e, niveau) ?? null),
+        vuLe: new Date(Math.min(vu.getTime(), corrigeLe.getTime() - HEURE)),
+        correcteurId: formateur.id,
+        corrigeLe,
+        majLe: corrigeLe,
+      } satisfies Partial<Ligne>);
+    } else if (def.scenario === "retard") {
+      if (!enRetard && h.chance(0.5)) ligne.vuLe = vu;
+    } else if (!aya && h.chance(0.45)) {
+      ligne.vuLe = vu;
+    }
+
+    // IA-101 : une copie déjà corrigée mais pas encore publiée, une autre avec la correction proposée par l'IA.
+    if (!aya && def.cle === "ia-d2" && e.profil === "assidu") {
+      if (brouillonNote) {
+        brouillonNote = false;
+        const grille = def.grille!;
+        Object.assign(ligne, {
+          note: 16.5,
+          noteDetail: grille.map((g, i) => ({ critere: g.critere, points: g.points, obtenu: [8, 5.5, 3][i] })),
+          commentaire: "Des consignes précises et bien construites. Ta vérification du prix est exactement ce qu'on attend : bravo.",
+          vuLe: ligne.vuLe ?? vu,
+          correcteurId: formateur.id,
+          corrigeLe: auPlusTard(plus(t0, -5 * HEURE), t0),
+        } satisfies Partial<Ligne>);
+      } else if (propositionIa) {
+        propositionIa = false;
+        const grille = def.grille!;
+        const justifications = [
+          "Les trois consignes contiennent un rôle et une tâche ; le format manque dans la consigne 3.",
+          "Une vérification est décrite pour la première réponse seulement.",
+          "Présentation claire, quelques fautes de frappe.",
+        ];
+        const obtenus = [7.5, 4.75, 2];
+        ligne.vuLe = ligne.vuLe ?? vu;
+        ligne.propositionIa = {
+          note: 14.25,
+          detail: grille.map((g, i) => ({ critere: g.critere, points: g.points, obtenu: obtenus[i], justification: justifications[i] })),
+          commentaire: "Bon travail : tes consignes sont concrètes et adaptées à l'entreprise. Pense à préciser le format attendu dans chaque consigne et à vérifier toutes les réponses, pas seulement la première.",
+          alerte: null,
+          creeLe: auPlusTard(plus(t0, -3 * HEURE), t0).toISOString(),
+        };
+      }
+    }
+
+    const [r] = await tx.insert(rendus).values(ligne).returning({ id: rendus.id });
+    await tx.update(rendus).set({ recu: recuPour(r.id) }).where(eq(rendus.id, r.id));
+    compter(c, "copies");
+  }
+}
+
+// ── Photos de copies manuscrites ───────────────────────────────────────────
+
+/**
+ * Photos de cahier (journal comptable écrit à la main), rendues par deux
+ * étudiants de GES-120. Écrites dans UPLOADS_DIR/demo/ ; la purge les efface.
+ */
+async function ecrireImagesCopies(c: Contexte): Promise<Map<string, number[]>> {
+  const resultat = new Map<string, number[]>();
+  const images = IMAGES_COPIES.filter((i) => i.base64);
+  if (!images.length) return resultat;
+  const dossier = path.join(config.dossierFichiers, "demo");
+  fs.mkdirSync(dossier, { recursive: true });
+  const auteurs = ["26CO0203", "25CO0217"];
+  for (const [i, matricule] of auteurs.entries()) {
+    const e = c.etudiants.find((x) => x.matricule === matricule);
+    const image = images[i % images.length];
+    if (!e) continue;
+    const contenu = Buffer.from(image.base64, "base64");
+    const cle = `demo/${crypto.randomBytes(12).toString("hex")}.jpg`;
+    const chemin = path.join(config.dossierFichiers, cle);
+    fs.writeFileSync(chemin, contenu);
+    c.fichiersEcrits.push(chemin);
+    const [f] = await c.tx
+      .insert(fichiers)
+      .values({ proprietaireId: e.id, nomOriginal: image.nom, mime: "image/jpeg", taille: contenu.length, cle, usage: "rendu", creeLe: plus(c.t0, -9 * JOUR) })
+      .returning({ id: fichiers.id });
+    resultat.set(matricule, [f.id]);
+    compter(c, "fichiers");
+  }
+  return resultat;
+}
+
+// ── Messages ───────────────────────────────────────────────────────────────
+
+async function semerMessages(c: Contexte) {
+  const { t0, tx } = c;
+  for (const [n, conv] of CONVERSATIONS.entries()) {
+    const horodates = conv.messages.map((m) => ({ ...m, le: auPlusTard(m.quand(t0), t0) }));
+    let cleUnique: string;
+    let coursId: number | null = null;
+    if (conv.type === "direct") {
+      const [a, b] = conv.entre.map((q) => personne(c, q).id);
+      cleUnique = `direct:${Math.min(a, b)}-${Math.max(a, b)}`;
+    } else {
+      coursId = c.cours.get(conv.cours)!.id;
+      cleUnique = `cours:${coursId}`;
+    }
+    const [cv] = await tx
+      .insert(conversations)
+      .values({ type: conv.type, coursId, cleUnique, dernierMessageLe: horodates.at(-1)!.le, creeLe: plus(horodates[0].le, -MINUTE) })
+      .returning({ id: conversations.id });
+    c.conversations.set(conv.type === "direct" ? `direct-${n}` : `cours-${conv.cours}`, cv.id);
+    await tx.insert(messages).values(horodates.map((m) => ({ conversationId: cv.id, auteurId: personne(c, m.qui).id, texte: m.texte, contexte: m.contexte ?? null, creeLe: m.le })));
+    compter(c, "messages", horodates.length);
+    const lecteurs = conv.type === "direct" ? conv.entre : (Object.keys(conv.lu) as Qui[]);
+    await tx.insert(participants).values(
+      lecteurs.map((q) => {
+        const i = conv.lu[q] ?? -1;
+        return { conversationId: cv.id, utilisateurId: personne(c, q).id, luJusquA: i >= 0 ? horodates[i].le : conv.type === "cours" ? plus(t0, -7 * JOUR) : null };
+      }),
+    );
+  }
+}
+
+// ── Annonces, événements ───────────────────────────────────────────────────
+
+async function semerAnnonces(c: Contexte) {
+  const { t0, h, tx } = c;
+  const seance3 = c.seances.get("ia-s3")!;
+  const actifs = c.etudiants.filter((e) => !e.jamaisConnecte);
+  const personnel = [...c.vieScolaire.values(), ...c.formateurs.values()];
+  for (const def of ANNONCES) {
+    const auteur = personne(c, def.auteur);
+    const publieeLe = def.publieeLe(t0);
+    const siteId = def.site ? c.sites.get(def.site)!.id : null;
+    const co = def.cours ? c.cours.get(def.cours)! : null;
+    const [a] = await tx
+      .insert(annonces)
+      .values({
+        auteurId: auteur.id,
+        titre: def.titre,
+        corps: def.corps,
+        cible: def.cible,
+        siteId,
+        coursId: co?.id ?? null,
+        importante: Boolean(def.importante),
+        epinglee: Boolean(def.epinglee),
+        proposeSurSite: Boolean(def.publierSurSite),
+        publierSurSite: Boolean(def.publierSurSite),
+        publieeLe,
+        expireLe: def.expireApresSeance3 ? plus(seance3.debut, (seance3.def.duree + 30) * MINUTE) : null,
+      })
+      .returning({ id: annonces.id });
+    c.annonces.set(def.cle, a.id);
+    compter(c, "annonces");
+
+    // Qui l'a lue (Aya a lu l'accueil et l'annonce de son campus, pas encore les deux plus récentes).
+    const concernes: { id: number; etudiant?: EtudiantSeme }[] =
+      def.cible === "tous"
+        ? [...actifs.map((e) => ({ id: e.id, etudiant: e })), ...personnel.map((p) => ({ id: p.id }))]
+        : def.cible === "site"
+          ? [...actifs.filter((e) => e.siteId === siteId).map((e) => ({ id: e.id, etudiant: e })), ...personnel.filter((p) => p.siteId === siteId).map((p) => ({ id: p.id }))]
+          : [...co!.inscrits.filter((e) => !e.jamaisConnecte).map((e) => ({ id: e.id, etudiant: e }))];
+    const lectures = concernes
+      .filter((p) => p.id !== auteur.id)
+      .filter((p) => {
+        if (p.etudiant?.matricule === MATRICULE_AYA) return def.cle === "bienvenue" || def.cle === "yopougon-salle";
+        if (p.id === c.formateurs.get("diallo")!.id) return def.cle === "bienvenue";
+        if (p.etudiant?.profil === "decroche") return def.cle === "bienvenue" && h.chance(0.5);
+        return h.chance(def.lecture);
+      })
+      .map((p) => ({
+        annonceId: a.id,
+        utilisateurId: p.id,
+        luLe: auPlusTard(plus(publieeLe, h.entre(1, def.cle === "bienvenue" ? 72 : 20) * HEURE), p.etudiant?.profil === "decroche" ? plus(t0, -12 * JOUR) : t0),
+      }));
+    if (lectures.length) await tx.insert(lecturesAnnonces).values(lectures);
+  }
+}
+
+async function semerEvenements(c: Contexte) {
+  const { t0, tx } = c;
+  const lignes: (typeof evenements.$inferInsert)[] = [];
+  for (const [slug, site] of c.sites) {
+    const vs = c.vieScolaire.get(slug);
+    for (const ev of evenementsDuSite(site, slug)) {
+      const debut = ev.debut(t0);
+      lignes.push({
+        titre: ev.titre,
+        description: ev.description,
+        debut,
+        fin: plus(debut, ev.heures * HEURE),
+        lieu: ev.lieu,
+        cible: "site",
+        siteId: site.id,
+        auteurId: vs?.id ?? null,
+        creeLe: plus(t0, -h2j(slug) * JOUR),
+      });
+    }
+  }
+  await tx.insert(evenements).values(lignes);
+  compter(c, "evenements", lignes.length);
+}
+const h2j = (slug: SlugSite) => ({ riviera: 6, yopougon: 5, yamoussoukro: 7, azaguie: 4, mbatto: 8 })[slug];
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+const formatDateFr = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" });
+/** « jeudi 1 octobre à 23h59 » (même format que les rappels du module évaluations). */
+const dateFr = (d: Date) => formatDateFr.format(d).replace(/(\d{2}):(\d{2})/, "$1h$2");
+
+async function semerNotifications(c: Contexte) {
+  const { t0, tx } = c;
+  const aya = personne(c, AYA);
+  const karim = c.formateurs.get("diallo")!;
+  const s2 = c.seances.get("ia-s2")!;
+  const iaD2 = c.devoirs.get("ia-d2")!;
+  const entD1 = c.devoirs.get("ent-d1")!;
+  const infD1 = c.devoirs.get("inf-d1")!;
+  const infQ2 = c.devoirs.get("inf-q2")!;
+  const annonceMardi = c.annonces.get("ia-mardi")!;
+  const heure = (d: Date) => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(d).replace(":", "h");
+  type N = typeof notifications.$inferInsert;
+  const lu = (d: Date, apres: number) => auPlusTard(plus(d, apres), t0);
+  const liste: N[] = [
+    // Aya
+    { utilisateurId: aya.id, type: "live", titre: `Demain à ${heure(s2.debut)} : ${s2.def.titre}`, corps: "IA-101 · live multi-campus. Ajoute-le à ton agenda.", lien: `/live/${s2.id}`, creeLe: plus(s2.debut, -23 * HEURE), luLe: plus(s2.debut, -20 * HEURE) },
+    { utilisateurId: aya.id, type: "cours", titre: `Fiche de révision : ${s2.def.titre}`, corps: "IA-101 · la fiche du live est prête. Relis-la en 5 minutes.", lien: `/replays/${s2.id}`, creeLe: plus(s2.termineeLe!, 5 * HEURE), luLe: plus(s2.termineeLe!, 7 * HEURE) },
+    { utilisateurId: aya.id, type: "devoir", titre: `Nouveau devoir : ${iaD2.def.titre}`, corps: `IA-101 · à rendre avant le ${dateFr(iaD2.limite)} (heure d'Abidjan).`, lien: `/devoirs/${iaD2.id}`, creeLe: iaD2.ouverture!, luLe: lu(iaD2.ouverture!, 3 * HEURE) },
+    { utilisateurId: aya.id, type: "note", titre: "Nouvelle note disponible", corps: `ENT-210 · « ${entD1.def.titre} »`, lien: `/devoirs/${entD1.id}`, creeLe: auPlusTard(plus(entD1.limite, 50 * HEURE), t0), luLe: auPlusTard(plus(entD1.limite, 53 * HEURE), t0) },
+    { utilisateurId: aya.id, type: "devoir", titre: `Nouvelle interrogation : ${infQ2.def.titre}`, corps: `INF-230 · à faire avant le ${dateFr(infQ2.limite)} (heure d'Abidjan).`, lien: `/quiz/${infQ2.id}`, creeLe: infQ2.ouverture!, luLe: null },
+    { utilisateurId: aya.id, type: "devoir", titre: `Rappel : « ${infD1.def.titre} » à rendre`, corps: `INF-230 · il te reste jusqu'au ${dateFr(infD1.limite)} (heure d'Abidjan).`, lien: `/devoirs/${infD1.id}`, creeLe: plus(infD1.limite, -20 * HEURE), luLe: null },
+    { utilisateurId: aya.id, type: "annonce", titre: "Le cours d'intelligence artificielle commence mardi", corps: "Mardi à 10 h (heure d'Abidjan), Dr Karim Diallo retrouve les cinq campus en direct depuis Lyon…", lien: `/annonces/${annonceMardi}`, creeLe: plus(t0, -26 * HEURE), luLe: null },
+    // Karim Diallo
+    { utilisateurId: karim.id, type: "cours", titre: `Un cours vous est confié : ${c.cours.get("IA-101")!.code}`, corps: "Initiation à l'intelligence artificielle", lien: `/enseigner/cours/${c.cours.get("IA-101")!.id}`, creeLe: plus(t0, -35 * JOUR), luLe: plus(t0, -34 * JOUR) },
+    { utilisateurId: karim.id, type: "live", titre: `Demain à ${heure(s2.debut)} : ${s2.def.titre}`, corps: "IA-101 · live multi-campus. Ajoute-le à ton agenda.", lien: `/live/${s2.id}`, creeLe: plus(s2.debut, -23 * HEURE), luLe: plus(s2.debut, -22 * HEURE) },
+    { utilisateurId: karim.id, type: "annonce", titre: "Le cours d'intelligence artificielle commence mardi", corps: "Mardi à 10 h (heure d'Abidjan), la grande séance commune aux cinq campus.", lien: `/annonces/${annonceMardi}`, creeLe: plus(t0, -26 * HEURE), luLe: null },
+  ];
+  await tx.insert(notifications).values(liste);
+  compter(c, "notifications", liste.length);
+}
+
+// ── Vie scolaire : suivis, relevé partagé, devoirs d'essai ─────────────────
+
+async function semerVieScolaire(c: Contexte) {
+  const { t0, h, tx } = c;
+  const suivisDefs: { matricule: string; site: SlugSite; notes: [number, string][] }[] = [
+    {
+      matricule: "26GC0144",
+      site: "yopougon",
+      notes: [
+        [4, "Appel à sa mère : Ibrahim a perdu son téléphone il y a deux semaines. En attendant, il peut suivre les lives depuis la salle Kédjénou. Je lui ai proposé de passer récupérer une nouvelle fiche de connexion."],
+        [1, "Ibrahim est passé à la vie scolaire, nouvelle fiche remise. Il reprend les cours en salle dès mardi. À surveiller pour le devoir de création d'entreprise."],
+      ],
+    },
+    {
+      matricule: "26GC0403",
+      site: "mbatto",
+      notes: [
+        [3, "Absent aux deux derniers lives et aux interrogations. Son père indique qu'il aide aux champs pendant la récolte. Rendez-vous fixé vendredi pour organiser le rattrapage (replays et fiches de révision)."],
+      ],
+    },
+  ];
+  for (const s of suivisDefs) {
+    const e = personne(c, `e:${s.matricule}`);
+    await tx.insert(suivis).values(s.notes.map(([jours, texte]) => ({ etudiantId: e.id, auteurId: c.vieScolaire.get(s.site)!.id, texte, creeLe: jourA(t0, -jours, 10, h.entre(0, 50)) })));
+    compter(c, "suivis", s.notes.length);
+  }
+
+  // Relevé d'Aya partagé à ses parents (consulté deux fois).
+  const aya = personne(c, AYA);
+  await tx.update(utilisateurs).set({ jetonReleve: crypto.randomBytes(24).toString("base64url") }).where(eq(utilisateurs.id, aya.id));
+  await tx.insert(journal).values([
+    { utilisateurId: c.vieScolaire.get("yopougon")!.id, action: "releve_partage", details: { etudiantId: aya.id }, creeLe: jourA(t0, -5, 11, 20) },
+    { utilisateurId: null, action: "releve_consulte", details: { etudiantId: aya.id }, creeLe: jourA(t0, -5, 19, 4) },
+    { utilisateurId: null, action: "releve_consulte", details: { etudiantId: aya.id }, creeLe: jourA(t0, -2, 20, 31) },
+  ]);
+
+  // Devoir d'essai du parcours de bienvenue (reçu vert du premier jour).
+  const recus = new Set<string>();
+  const essais = c.etudiants
+    .filter((e) => !e.jamaisConnecte && e.profil !== "decroche" && (e.matricule === MATRICULE_AYA || h.chance(0.85)))
+    .map((e) => {
+      let recu = recuEssai(h);
+      while (recus.has(recu)) recu = recuEssai(h);
+      recus.add(recu);
+      return { utilisateurId: e.id, recu, fichierIds: [] as number[], creeLe: plus(t0, -(28 - h.entre(0, 3)) * JOUR) };
+    });
+  await tx.insert(essaisDepot).values(essais).onConflictDoNothing();
+}
+
+// ── Assistant IA : conversations et consommation ───────────────────────────
+
+async function semerIa(c: Contexte) {
+  const { t0, h, tx } = c;
+  const aya = personne(c, AYA);
+  for (const conv of CONVERSATIONS_IA) {
+    const co = c.cours.get(conv.cours)!;
+    const debut = auPlusTard(conv.quand(t0), t0, 3 * HEURE);
+    const lecon = conv.lecon ? co.lecons.find((l) => l.chapitre === conv.lecon![0] && l.rang === conv.lecon![1]) : undefined;
+    const fin = plus(debut, conv.messages.length * 2 * MINUTE);
+    const [cv] = await tx
+      .insert(conversationsIa)
+      .values({ utilisateurId: aya.id, coursId: co.id, leconId: lecon?.id ?? null, devoirId: conv.devoir ? c.devoirs.get(conv.devoir)!.id : null, titre: conv.titre, creeLe: debut, majLe: fin })
+      .returning({ id: conversationsIa.id });
+    await tx.insert(messagesIa).values(conv.messages.map(([role, contenu], i) => ({ conversationId: cv.id, role, contenu, creeLe: plus(debut, i * 2 * MINUTE) })));
+    compter(c, "conversationsIa");
+  }
+
+  // Quatorze jours de consommation : de quoi remplir la page « Budget IA ».
+  const lignes: (typeof usageIa.$inferInsert)[] = [];
+  const jour = (n: number) => jourA(t0, -n, 0).toISOString().slice(0, 10);
+  const ajouter = (utilisateurId: number, n: number, requetes: number, entree: [number, number], sortie: [number, number]) => {
+    if (requetes <= 0) return;
+    let je = 0;
+    let js = 0;
+    for (let k = 0; k < requetes; k++) {
+      je += h.entre(entree[0], entree[1]);
+      js += h.entre(sortie[0], sortie[1]);
+    }
+    lignes.push({ utilisateurId, jour: jour(n), requetes, jetonsEntree: je, jetonsSortie: js });
+  };
+  const personnel: [CleFormateur, number, number][] = [
+    ["diallo", 0.5, 6],
+    ["bamba", 0.35, 3],
+    ["kouassi", 0.2, 2],
+    ["coulibaly", 0.2, 2],
+    ["yao", 0.15, 2],
+  ];
+  const frequence: Record<Profil, [number, number]> = { assidu: [0.35, 5], regulier: [0.2, 3], fragile: [0.08, 2], decroche: [0, 0] };
+  for (let n = 13; n >= 0; n--) {
+    for (const [cle, p, max] of personnel) if (h.chance(p)) ajouter(c.formateurs.get(cle)!.id, n, h.entre(1, max), [3000, 7000], [800, 1800]);
+    for (const e of c.etudiants) {
+      if (e.jamaisConnecte) continue;
+      if (e.matricule === MATRICULE_AYA) {
+        const requetes = n === 0 ? 3 : n === 1 ? 4 : n === 2 ? 6 : h.chance(0.45) ? h.entre(1, 4) : 0;
+        ajouter(e.id, n, requetes, [1800, 4200], [300, 800]);
+        continue;
+      }
+      const [p, max] = frequence[e.profil];
+      if (h.chance(n === 0 ? p / 2 : p)) ajouter(e.id, n, h.entre(1, max), [1500, 3800], [250, 750]);
+    }
+  }
+  await insererParPaquets(lignes, 400, (p) => tx.insert(usageIa).values(p));
+  compter(c, "joursIa", lignes.length);
+}
+
+// ── Orchestration ──────────────────────────────────────────────────────────
+
+async function semer(tx: Tx, t0: Date, hash: string, hashCode: string, fichiersEcrits: string[]): Promise<Bilan> {
+  const c: Contexte = {
+    tx,
+    t0,
+    h: generateur(20_262_027),
+    sites: new Map(),
+    classes: new Map(),
+    classesCreees: [],
+    personnes: new Map(),
+    etudiants: [],
+    formateurs: new Map(),
+    vieScolaire: new Map(),
+    salles: new Map(),
+    cours: new Map(),
+    seances: new Map(),
+    devoirs: new Map(),
+    annonces: new Map(),
+    conversations: new Map(),
+    fichiersEcrits,
+    compte: {},
+    avertissements: [],
+  };
+  await semerSites(c);
+  await semerComptes(c, hash, hashCode);
+  await semerCours(c);
+  await semerProgressions(c);
+  await semerSeances(c);
+  await semerDevoirs(c);
+  await semerMessages(c);
+  await semerAnnonces(c);
+  await semerEvenements(c);
+  await semerNotifications(c);
+  await semerVieScolaire(c);
+  await semerIa(c);
+
+  // Trace du semis : la purge sait quelles classes elle a créées.
+  await tx.insert(journal).values({
+    utilisateurId: null,
+    action: ACTION_JOURNAL_DEMO,
+    details: {
+      le: t0.toISOString(),
+      classes: c.classesCreees,
+      cours: [...c.cours.values()].map((x) => x.id),
+      comptes: c.personnes.size,
+    },
+  });
+
+  const aya = c.etudiants.find((e) => e.matricule === MATRICULE_AYA)!;
+  const nouveau = c.etudiants.find((e) => e.jamaisConnecte)!;
+  return {
+    compte: c.compte,
+    formateurs: FORMATEURS.map((f) => ({
+      email: `${f.email}@${DOMAINE_DEMO}`,
+      nom: `${f.prenom} ${f.nom}`,
+      cours: COURS.filter((x) => x.formateur === f.cle).map((x) => c.cours.get(x.code)!.code),
+    })),
+    vieScolaire: VIE_SCOLAIRE.map((v) => ({ email: `${v.email}@${DOMAINE_DEMO}`, nom: `${v.prenom} ${v.nom}`, site: c.sites.get(v.site)!.nomCourt })),
+    salles: [...c.sites.entries()].map(([slug, s]) => ({ email: `salle.${slug}@${DOMAINE_DEMO}`, site: `${s.nomCourt} · ${s.salleConference}` })),
+    etudiants: c.etudiants
+      .filter((e) => !e.jamaisConnecte)
+      .map((e) => ({ matricule: e.matricule, nom: `${e.prenom} ${e.nom}`, site: c.sites.get(e.site)!.nomCourt, classe: CLASSES.find((x) => x.cle === e.classe)!.libelle })),
+    jamaisConnecte: { matricule: nouveau.matricule, nom: `${nouveau.prenom} ${nouveau.nom}` },
+    aya: { matricule: aya.matricule },
+    avertissements: c.avertissements,
+  };
+}
+
+function afficherBilan(b: Bilan, o: { motDePasse: string; genere: boolean; code: string; ms: number }) {
+  const n = b.compte;
+  const lignes = [
+    `✓ Données de démonstration semées en ${(o.ms / 1000).toFixed(1).replace(".", ",")} s :`,
+    `  ${n.comptes ?? 0} comptes, ${n.classes ?? 0} classes créées, ${n.cours ?? 0} cours, ${n.lecons ?? 0} leçons, ${n.seances ?? 0} séances, ${(n.depots ?? 0) + (n.interrogations ?? 0)} devoirs et interrogations,`,
+    `  ${n.copies ?? 0} copies, ${n.tentatives ?? 0} tentatives, ${n.presences ?? 0} présences, ${n.questions ?? 0} questions votées, ${n.messages ?? 0} messages, ${n.annonces ?? 0} annonces, ${n.evenements ?? 0} événements.`,
+    "",
+    o.genere
+      ? `  Mot de passe commun des comptes de démonstration : ${o.motDePasse}`
+      : "  Mot de passe commun des comptes de démonstration : celui de CAMPUS_DEMO_MOT_DE_PASSE.",
+    o.genere ? "  (tiré au sort : définissez CAMPUS_DEMO_MOT_DE_PASSE pour le choisir)" : "",
+    "",
+    "  Formateurs :",
+    ...b.formateurs.map((f) => `    ${f.email.padEnd(38)} ${f.nom} (${f.cours.join(", ")})`),
+    "  Vie scolaire :",
+    ...b.vieScolaire.map((v) => `    ${v.email.padEnd(38)} ${v.nom} (${v.site})`),
+    "  Écrans de salle :",
+    ...b.salles.map((s) => `    ${s.email.padEnd(38)} ${s.site}`),
+    `  Étudiants (identifiant : matricule) — ${b.etudiants.length} comptes, dont :`,
+    ...b.etudiants
+      .filter((e, i) => e.matricule === b.aya.matricule || i % 6 === 0)
+      .map((e) => `    ${e.matricule.padEnd(10)} ${e.nom.padEnd(24)} ${e.site} · ${e.classe}${e.matricule === b.aya.matricule ? "   ← étudiante mise en avant" : ""}`),
+    `  Première connexion : ${b.jamaisConnecte.matricule} (${b.jamaisConnecte.nom}) · code provisoire ${o.code} (valable 30 jours)`,
+    ...b.avertissements.map((a) => `  ⚠️  ${a}`),
+    "  Pour tout effacer : npm run db:purge-demo (production : npm run db:purge-demo:prod).",
+  ].filter((l, i, t) => !(l === "" && t[i - 1] === ""));
+  console.log(lignes.join("\n"));
+}
+
+/** Démonstration déjà présente : rien n'est recréé ; le mot de passe commun suit CAMPUS_DEMO_MOT_DE_PASSE s'il a changé. */
+async function dejaSemee(temoin: typeof utilisateurs.$inferSelect, motDePasseEnv: string | null) {
+  if (temoin.preferences?.demo !== true) {
+    console.warn(`⚠️  ${EMAIL_TEMOIN} existe mais n'est pas un compte de démonstration : semis de démonstration annulé.`);
+    return;
+  }
+  if (motDePasseEnv && !(await verifier(motDePasseEnv, temoin.motDePasseHash))) {
+    const hash = await hacher(motDePasseEnv);
+    const maj = await db
+      .update(utilisateurs)
+      .set({ motDePasseHash: hash })
+      .where(and(sql`${utilisateurs.preferences}->>'demo' = 'true'`, eq(utilisateurs.doitChangerMotDePasse, false)))
+      .returning({ id: utilisateurs.id });
+    console.log(`✓ Données de démonstration déjà présentes : mot de passe commun remplacé par CAMPUS_DEMO_MOT_DE_PASSE (${maj.length} comptes).`);
+    return;
+  }
+  console.log("✓ Données de démonstration déjà présentes : rien à faire (pour les rajeunir : npm run db:purge-demo puis npm run db:seed).");
+}
+
+export async function semerDemo(): Promise<void> {
+  const debut = Date.now();
+  const motDePasseEnv = process.env.CAMPUS_DEMO_MOT_DE_PASSE?.trim() || null;
+
+  const [temoin] = await db.select().from(utilisateurs).where(eq(utilisateurs.email, EMAIL_TEMOIN));
+  if (temoin) return dejaSemee(temoin, motDePasseEnv);
+
+  if (motDePasseEnv && motDePasseEnv.length < 10) {
+    console.warn("⚠️  CAMPUS_DEMO_MOT_DE_PASSE fait moins de 10 caractères : accepté pour la démonstration, mais trop court pour un compte du personnel.");
+  }
+  const motDePasse = motDePasseEnv ?? motDePasseProvisoire();
+  const code = codeProvisoire();
+  // Hachés une seule fois, hors transaction (bcrypt est lent) : un même hash pour tous les comptes.
+  const [hash, hashCode] = await Promise.all([hacher(motDePasse), hacher(code)]);
+
+  const fichiersEcrits: string[] = [];
+  let bilan: Bilan | null;
+  try {
+    bilan = await db.transaction(async (tx) => {
+      // Deux démarrages simultanés (plusieurs répliques) : un seul sème.
+      await tx.execute(sql`select pg_advisory_xact_lock(${VERROU_SEMIS})`);
+      const [deja] = await tx.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.email, EMAIL_TEMOIN));
+      if (deja) return null;
+      return semer(tx, new Date(), hash, hashCode, fichiersEcrits);
+    });
+  } catch (e) {
+    // La transaction est annulée : on retire aussi les photos déjà écrites sur le disque.
+    for (const f of fichiersEcrits) fs.rmSync(f, { force: true });
+    throw e;
+  }
+  if (!bilan) {
+    console.log("✓ Données de démonstration semées entre-temps par un autre processus : rien à faire.");
+    return;
+  }
+  afficherBilan(bilan, { motDePasse, genere: !motDePasseEnv, code, ms: Date.now() - debut });
+  prevenirSite("données de démonstration");
+}
+
+// @@SUITE_IMAGES@@
+const IMAGES_COPIES: { nom: string; base64: string }[] = [];

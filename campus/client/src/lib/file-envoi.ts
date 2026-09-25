@@ -5,6 +5,7 @@
 // réseau. L'étudiant voit « En attente de réseau », puis reçoit son reçu.
 import { useEffect, useState } from "react";
 import { api, televerser, ErreurApi } from "./api";
+import { queryClient } from "./queryClient";
 
 export type ElementFile = {
   cle: string;
@@ -18,10 +19,17 @@ export type ElementFile = {
   usageFichiers?: "rendu" | "message";
   /** « fichierIds » (tableau) ou « fichierId » (un seul). */
   champFichiers?: string;
+  /** Compte qui a préparé l'envoi : sur un téléphone partagé, il ne part jamais au nom d'un autre. */
+  utilisateurId?: number;
   creeLe: number;
   tentatives: number;
   derniereErreur?: string;
+  /** Trop d'échecs du serveur : on attend une relance manuelle (« Réessayer »). */
+  echec?: boolean;
 };
+
+/** Au-delà, l'élément passe en « à relancer » au lieu d'être réessayé toutes les minutes (forfaits prépayés). */
+const MAX_TENTATIVES = 5;
 
 const BASE = "campus-2iae";
 const MAGASIN = "file-envoi";
@@ -45,7 +53,14 @@ async function transaction<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) 
   });
 }
 
-export const listerFile = () => transaction<ElementFile[]>("readonly", (s) => s.getAll() as IDBRequest<ElementFile[]>);
+const moiId = () => queryClient.getQueryData<{ id: number } | null>(["/api/auth/moi"])?.id;
+
+const listerTout = () => transaction<ElementFile[]>("readonly", (s) => s.getAll() as IDBRequest<ElementFile[]>);
+/** Éléments de la personne connectée (ceux d'un autre compte attendent son retour). */
+export const listerFile = async () => {
+  const id = moiId();
+  return (await listerTout()).filter((e) => e.utilisateurId === undefined || e.utilisateurId === id);
+};
 const ecrire = (e: ElementFile) => transaction("readwrite", (s) => s.put(e));
 const retirer = (cle: string) => transaction("readwrite", (s) => s.delete(cle));
 
@@ -54,41 +69,49 @@ const prevenir = () => abonnes.forEach((f) => f());
 
 type Resultat<T> = { statut: "envoye"; reponse: T } | { statut: "en_file" };
 
-async function executer<T>(e: ElementFile): Promise<T> {
+/** Téléverse les fichiers de l'élément et renvoie l'élément à jour (identifiants dans le corps, plus de fichiers à renvoyer). */
+async function televerserFichiers(e: ElementFile): Promise<ElementFile> {
+  if (!e.fichiers?.length) return e;
+  const recus = await televerser(
+    e.fichiers.map((f) => new File([f.blob], f.nom, { type: f.type })),
+    e.usageFichiers ?? "rendu",
+  );
   const corps = { ...e.corps };
-  if (e.fichiers?.length) {
-    const recus = await televerser(
-      e.fichiers.map((f) => new File([f.blob], f.nom, { type: f.type })),
-      e.usageFichiers ?? "rendu",
-    );
-    const champ = e.champFichiers ?? "fichierIds";
-    const existants = Array.isArray(corps[champ]) ? (corps[champ] as number[]) : [];
-    corps[champ] = champ === "fichierId" ? recus[0]?.id : [...existants, ...recus.map((r) => r.id)];
-  }
-  return api<T>(e.url, { methode: e.methode, corps });
+  const champ = e.champFichiers ?? "fichierIds";
+  const existants = Array.isArray(corps[champ]) ? (corps[champ] as number[]) : [];
+  corps[champ] = champ === "fichierId" ? recus[0]?.id : [...existants, ...recus.map((r) => r.id)];
+  return { ...e, corps, fichiers: undefined };
 }
 
-/** Une erreur « réseau » (on réessaiera) plutôt qu'un refus du serveur (inutile de réessayer). */
-const estErreurReseau = (e: unknown) => e instanceof ErreurApi ? e.statut === 0 || e.statut >= 500 : true;
+type NatureErreur = "reseau" | "serveur" | "connexion" | "refus";
+function natureErreur(e: unknown): NatureErreur {
+  if (!(e instanceof ErreurApi)) return "reseau";
+  if (e.statut === 0) return "reseau";
+  if (e.statut === 401) return "connexion"; // session fermée : on attend la reconnexion, rien n'est perdu
+  if (e.statut >= 500 || e.statut === 408 || e.statut === 429) return "serveur";
+  return "refus";
+}
 
 /**
  * Envoie tout de suite si possible ; sinon range dans la file et renvoie
- * { statut: "en_file" }. Les erreurs du serveur (400, 403…) sont levées.
+ * { statut: "en_file" }. Les refus du serveur (400, 403, 409…) sont levés.
  */
 export async function envoyerOuMettreEnFile<T = unknown>(
-  e: Omit<ElementFile, "creeLe" | "tentatives" | "fichiers"> & { fichiers?: File[] },
+  e: Omit<ElementFile, "creeLe" | "tentatives" | "fichiers" | "utilisateurId"> & { fichiers?: File[] },
 ): Promise<Resultat<T>> {
-  const element: ElementFile = {
+  let element: ElementFile = {
     ...e,
     fichiers: e.fichiers?.map((f) => ({ nom: f.name, type: f.type, blob: f })),
+    utilisateurId: moiId(),
     creeLe: Date.now(),
     tentatives: 0,
   };
   if (navigator.onLine) {
     try {
-      return { statut: "envoye", reponse: await executer<T>(element) };
+      element = await televerserFichiers(element);
+      return { statut: "envoye", reponse: await api<T>(element.url, { methode: element.methode, corps: element.corps }) };
     } catch (err) {
-      if (!estErreurReseau(err)) throw err;
+      if (natureErreur(err) === "refus") throw err;
     }
   }
   await ecrire(element);
@@ -101,22 +124,34 @@ let enCours = false;
 
 /** Vide la file (appelé au retour du réseau, au démarrage et régulièrement). */
 export async function viderFile(surEnvoi?: (e: ElementFile, reponse: unknown) => void) {
-  if (enCours || !navigator.onLine) return;
+  if (enCours || !navigator.onLine || !moiId()) return;
   enCours = true;
   try {
-    for (const e of await listerFile()) {
+    for (const initial of await listerFile()) {
+      if (initial.echec) continue;
+      let e = initial;
       try {
-        const reponse = await executer(e);
+        if (e.fichiers?.length) {
+          e = await televerserFichiers(e);
+          await ecrire(e); // les photos ne seront plus renvoyées si la suite échoue
+        }
+        const reponse = await api(e.url, { methode: e.methode, corps: e.corps });
         await retirer(e.cle);
         surEnvoi?.(e, reponse);
         window.dispatchEvent(new CustomEvent("campus:envoi-reussi", { detail: { cle: e.cle, description: e.description, reponse } }));
       } catch (err) {
-        if (!estErreurReseau(err)) {
+        const nature = natureErreur(err);
+        if (nature === "refus") {
           // Refus définitif (délai dépassé, droits…) : on retire et on prévient.
           await retirer(e.cle);
           window.dispatchEvent(new CustomEvent("campus:envoi-refuse", { detail: { cle: e.cle, description: e.description, message: (err as Error).message } }));
+        } else if (nature === "serveur") {
+          const tentatives = e.tentatives + 1;
+          await ecrire({ ...e, tentatives, derniereErreur: (err as Error).message, echec: tentatives >= MAX_TENTATIVES });
+          // Un élément en difficulté ne bloque pas les suivants.
         } else {
-          await ecrire({ ...e, tentatives: e.tentatives + 1, derniereErreur: (err as Error).message });
+          // Plus de réseau, ou session fermée : on s'arrête là et on reprendra plus tard.
+          await ecrire({ ...e, derniereErreur: (err as Error).message });
           break;
         }
       }
@@ -125,6 +160,21 @@ export async function viderFile(surEnvoi?: (e: ElementFile, reponse: unknown) =>
     enCours = false;
     prevenir();
   }
+}
+
+/** Relance manuelle d'un élément en échec. */
+export async function relancerEnvoi(cle: string) {
+  const e = (await listerFile()).find((x) => x.cle === cle);
+  if (!e) return;
+  await ecrire({ ...e, echec: false, tentatives: 0 });
+  prevenir();
+  await viderFile();
+}
+
+/** Abandon d'un élément (après confirmation de l'étudiant). */
+export async function abandonnerEnvoi(cle: string) {
+  await retirer(cle);
+  prevenir();
 }
 
 function demanderSynchronisation() {

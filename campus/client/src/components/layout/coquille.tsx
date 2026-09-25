@@ -12,7 +12,7 @@ import { cn, nomComplet } from "@/lib/utils";
 import { Avatar } from "@/components/ui/divers";
 import { Menu, ElementMenu, SeparateurMenu } from "@/components/ui/menu";
 import { PanneauNotifications } from "./notifications";
-import { useFileEnvoi } from "@/lib/file-envoi";
+import { useFileEnvoi, relancerEnvoi, abandonnerEnvoi } from "@/lib/file-envoi";
 import { toast } from "@/components/ui/toast";
 import { LIBELLES_ROLES } from "@shared/schema";
 import type { EnCours, CompteurNotifications } from "@shared/api";
@@ -160,11 +160,33 @@ function BandeauEnvois() {
     };
   }, []);
   if (!elements.length) return null;
+  const enEchec = elements.filter((e) => e.echec);
+  const enAttente = elements.filter((e) => !e.echec);
   return (
-    <div className="flex items-center justify-center gap-2 bg-orange px-4 py-2 text-center text-[13px] font-bold text-encre">
-      <CloudUpload className="h-4 w-4" />
-      {elements.length === 1 ? `1 envoi en attente de réseau : ${elements[0].description}` : `${elements.length} envois en attente de réseau`}. Ils partiront tout seuls.
-    </div>
+    <>
+      {enAttente.length > 0 && (
+        <div className="flex items-center justify-center gap-2 bg-orange px-4 py-2 text-center text-[13px] font-bold text-encre">
+          <CloudUpload className="h-4 w-4 shrink-0" />
+          {enAttente.length === 1 ? `1 envoi en attente de réseau : ${enAttente[0].description}` : `${enAttente.length} envois en attente de réseau`}. Ils partiront tout seuls.
+        </div>
+      )}
+      {enEchec.map((e) => (
+        <div key={e.cle} className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-danger-clair px-4 py-2 text-center text-[13px] font-semibold text-danger">
+          <span>Envoi bloqué : {e.description}.</span>
+          <button onClick={() => void relancerEnvoi(e.cle)} className="rounded-lg bg-white px-2.5 py-1 font-bold hover:bg-danger hover:text-white">
+            Réessayer
+          </button>
+          <button
+            onClick={() => {
+              if (window.confirm(`Abandonner l'envoi « ${e.description} » ? Il sera supprimé de ce téléphone.`)) void abandonnerEnvoi(e.cle);
+            }}
+            className="underline underline-offset-2"
+          >
+            Abandonner
+          </button>
+        </div>
+      ))}
+    </>
   );
 }
 

@@ -24,7 +24,8 @@ export async function api<T = unknown>(url: string, options: Options = {}): Prom
     if ((e as Error).name === "AbortError") throw e;
     throw new ErreurApi(0, "Pas de connexion internet. Vérifie ton réseau et réessaie.");
   }
-  noterHeureServeur(reponse.headers.get("date"));
+  // Une réponse servie par le cache hors ligne porte une date ancienne : on l'ignore.
+  if (!reponse.headers.get("x-campus-cache")) noterHeureServeur(reponse.headers.get("date"));
   const type = reponse.headers.get("content-type") || "";
   const contenu = type.includes("application/json") ? await reponse.json().catch(() => null) : await reponse.text().catch(() => "");
   if (!reponse.ok) {

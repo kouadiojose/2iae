@@ -185,7 +185,12 @@ async function reseauDabord(requete) {
     return reponse;
   } catch {
     const trouve = await (await caches.open(CACHE_DONNEES)).match(requete, { ignoreVary: true });
-    if (trouve) return trouve;
+    if (trouve) {
+      // Marquée « depuis le cache » : son en-tête Date est ancien et ne doit pas régler l'horloge.
+      const entetes = new Headers(trouve.headers);
+      entetes.set("X-Campus-Cache", "1");
+      return new Response(trouve.body, { status: trouve.status, statusText: trouve.statusText, headers: entetes });
+    }
     return new Response(JSON.stringify({ message: "Pas de connexion internet. Vérifie ton réseau et réessaie." }), {
       status: 503,
       headers: { "Content-Type": "application/json; charset=utf-8" },

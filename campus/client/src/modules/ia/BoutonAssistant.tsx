@@ -52,7 +52,16 @@ export function BoutonAssistant({ coursId, leconId, devoirId, variante = "flotta
           {libelle}
         </Bouton>
       )}
-      <FeuilleAssistant ouverte={ouverte} onFermer={() => setOuverte(false)} coursId={coursId} leconId={leconId} devoirId={devoirId} enseignant={enseignant} />
+      {/* Clé = contexte : passer à la leçon suivante repart d'une conversation neuve. */}
+      <FeuilleAssistant
+        key={`${coursId ?? ""}-${leconId ?? ""}-${devoirId ?? ""}`}
+        ouverte={ouverte}
+        onFermer={() => setOuverte(false)}
+        coursId={coursId}
+        leconId={leconId}
+        devoirId={devoirId}
+        enseignant={enseignant}
+      />
     </>
   );
 }

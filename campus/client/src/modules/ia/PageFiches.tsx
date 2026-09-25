@@ -4,8 +4,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, FileCheck2, PencilLine, Trash2, CheckCircle2, Undo2 } from "lucide-react";
-import { patch, suppr } from "@/lib/api";
+import { ArrowLeft, FileCheck2, PencilLine, Trash2, CheckCircle2, Undo2, RefreshCw } from "lucide-react";
+import { patch, post, suppr } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { dateCourte } from "@/lib/dates";
 import { Page, EnTetePage } from "@/components/layout/coquille";
@@ -17,7 +17,7 @@ import { Fenetre } from "@/components/ui/fenetre";
 import { Markdown } from "@/components/ui/markdown";
 import { toast, toastErreur } from "@/components/ui/toast";
 import type { FicheRevisionDto } from "@shared/schema/ext-ia";
-import { useCoursAssistant } from "./api-ia";
+import { useCoursAssistant, useEtatIa, blocageDe } from "./api-ia";
 import { EtiquetteIa } from "./composants";
 
 type Filtre = "a-relire" | "validees";
@@ -36,6 +36,25 @@ export default function PageFiches() {
   const validees = toutes.filter((f) => f.validee);
   const liste = filtre === "a-relire" ? aRelire : validees;
   const mesCours = useMemo(() => (coursQ.data ?? []).filter((c) => c.enseignant), [coursQ.data]);
+
+  const { data: etat } = useEtatIa();
+  const [regeneration, setRegeneration] = useState<number | null>(null);
+
+  /** Nouvelle proposition de l'IA pour la leçon (elle repasse « à relire »). */
+  const regenerer = async (f: FicheRevisionDto) => {
+    if (!f.leconId) return;
+    setRegeneration(f.id);
+    try {
+      await post(`/api/ia/lecons/${f.leconId}/essentiel`, { regenerer: true });
+      toast("Nouvelle proposition prête : relisez-la avant de la valider");
+      setFiltre("a-relire");
+      void rafraichir("/api/ia/fiches", "/api/ia/etat");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setRegeneration(null);
+    }
+  };
 
   const basculer = async (f: FicheRevisionDto, validee: boolean) => {
     try {
@@ -138,6 +157,18 @@ export default function PageFiches() {
                 <Bouton variante="doux" icone={<PencilLine className="h-4 w-4" />} onClick={() => setEdition(f)} className="min-h-12">
                   Corriger
                 </Bouton>
+                {f.leconId && (
+                  <Bouton
+                    variante="fantome"
+                    icone={<RefreshCw className="h-4 w-4" />}
+                    onClick={() => void regenerer(f)}
+                    chargement={regeneration === f.id}
+                    disabled={Boolean(blocageDe(etat))}
+                    className="min-h-12"
+                  >
+                    Nouvelle proposition
+                  </Bouton>
+                )}
                 <Bouton variante="fantome" icone={<Trash2 className="h-4 w-4" />} onClick={() => setASupprimer(f)} className="min-h-12">
                   Supprimer
                 </Bouton>

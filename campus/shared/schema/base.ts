@@ -56,6 +56,8 @@ export type PreferencesUtilisateur = {
   push?: boolean;
   /** Visite guidée terminée. */
   visiteFaite?: boolean;
+  /** Compte de démonstration (supprimé par « npm run db:purge-demo »). */
+  demo?: boolean;
 };
 
 export const utilisateurs = campusSchema.table(

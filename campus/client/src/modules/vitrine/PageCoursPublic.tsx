@@ -41,7 +41,10 @@ export default function PageCoursPublic({ slug }: { slug: string }) {
     <div className="min-h-dvh bg-white">
       <EnTetePublic liveEnDirect={live?.enDirect ? live : null} />
       <main className="conteneur flex flex-col gap-12 pb-16 pt-6 sm:pt-8">
-        <Link href="/" className="inline-flex min-h-[44px] items-center gap-2 self-start font-mono text-xs uppercase tracking-[0.12em] text-texte-gris no-underline hover:text-encre">
+        <Link
+          href="/"
+          className="inline-flex min-h-[44px] items-center gap-2 self-start font-mono text-xs uppercase tracking-[0.12em] text-texte-gris no-underline hover:text-encre"
+        >
           <ArrowLeft className="h-4 w-4" /> Campus numérique · cours ouverts
         </Link>
 
@@ -95,13 +98,7 @@ export default function PageCoursPublic({ slug }: { slug: string }) {
                   texte={`${c.titre} : un cours en direct au campus numérique 2IAE${c.dateDebut && new Date(c.dateDebut).getTime() > maintenant ? `, dès le ${dateComplete(c.dateDebut).toLowerCase()}` : ""}. ${window.location.origin}/cours-ouverts/${c.slug}`}
                 />
               </div>
-              <CarteProchainLive
-                live={live}
-                coursRepli={live ? null : c}
-                salles={sallesDepuisCampus(c.campus)}
-                titreSeance
-                className="lg:sticky lg:top-24"
-              />
+              <CarteProchainLive live={live} coursRepli={live ? null : c} salles={sallesDepuisCampus(c.campus)} titreSeance className="lg:sticky lg:top-24" />
             </section>
 
             <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-12">

@@ -55,8 +55,8 @@ export default function PageEssai() {
         </h2>
         <p className="text-base text-texte-pale">
           {t(
-            "Quand ton forfait est petit, tu peux suivre le cours « à la radio » : le son du formateur seulement, environ 11 Mo par heure. Fais l'essai : parle, et tu t'entendras comme à la radio.",
-            "Les étudiants au petit forfait suivent le cours « à la radio » : votre son seulement, environ 11 Mo par heure. Faites l'essai : parlez, vous vous entendrez comme eux vous entendront.",
+            "Quand ton forfait est petit, tu peux suivre le cours « à la radio » : le son du formateur seulement, environ 11 Mo par heure. Fais l'essai : parle, et tu t'entendras comme à la radio.",
+            "Les étudiants au petit forfait suivent le cours « à la radio » : votre son seulement, environ 11 Mo par heure. Faites l'essai : parlez, vous vous entendrez comme eux vous entendront.",
           )}
         </p>
         <EssaiRadio tu={tu} />

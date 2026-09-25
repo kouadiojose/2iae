@@ -25,8 +25,7 @@ type Etat = "chargement" | "masque" | "non_supporte" | "refuse" | "inactif" | "a
 const EVENEMENT_MAJ = "campus:rappels-maj";
 const prevenirAutresCartes = () => window.dispatchEvent(new Event(EVENEMENT_MAJ));
 
-const pushSupporte = () =>
-  typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushSupporte = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 
 /** Clé VAPID (base64url) → octets attendus par pushManager.subscribe. */
 function cleEnOctets(cle: string): Uint8Array {
@@ -39,9 +38,7 @@ function cleEnOctets(cle: string): Uint8Array {
 async function travailleurPret(): Promise<ServiceWorkerRegistration> {
   const reg = await obtenirEnregistrement();
   if (!reg) throw new Error("Ce navigateur ne peut pas recevoir les rappels.");
-  const delai = new Promise<never>((_, ko) =>
-    setTimeout(() => ko(new Error("Les rappels n'ont pas pu être préparés. Réessaie dans un instant.")), 10_000),
-  );
+  const delai = new Promise<never>((_, ko) => setTimeout(() => ko(new Error("Les rappels n'ont pas pu être préparés. Réessaie dans un instant.")), 10_000));
   return Promise.race([navigator.serviceWorker.ready, delai]);
 }
 
@@ -100,8 +97,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
       }
       const reg = await travailleurPret();
       const abo =
-        (await reg.pushManager.getSubscription()) ??
-        (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(cle) }));
+        (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(cle) }));
       await post("/api/push/abonnement", abo.toJSON());
       setEtat("actif");
       prevenirAutresCartes();
@@ -138,10 +134,12 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
     try {
       const r = await post<ResultatEssaiPush>("/api/push/test");
       if (r.envoye) toast(f(`Essai envoyé : regarde ton ${appareil}.`, `Essai envoyé : regardez votre ${appareil}.`));
-      else if (r.raison === "heures_calmes")
-        toast("Il est tard : rien ne sonne entre 21 h et 6 h. L'essai est dans la cloche et arrivera le matin.", "info");
+      else if (r.raison === "heures_calmes") toast("Il est tard : rien ne sonne entre 21 h et 6 h. L'essai est dans la cloche et arrivera le matin.", "info");
       else if (r.raison === "plafond")
-        toast(f("Tu as déjà reçu 3 rappels aujourd'hui : l'essai est dans la cloche.", "Vous avez déjà reçu 3 rappels aujourd'hui : l'essai est dans la cloche."), "info");
+        toast(
+          f("Tu as déjà reçu 3 rappels aujourd'hui : l'essai est dans la cloche.", "Vous avez déjà reçu 3 rappels aujourd'hui : l'essai est dans la cloche."),
+          "info",
+        );
       else if (r.raison === "aucun_appareil") {
         setEtat("inactif");
         toast(f(`${Ici} n'est plus inscrit. Réactive les rappels.`, `${Ici} n'est plus inscrit. Réactivez les rappels.`), "erreur");
@@ -162,14 +160,20 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
           "Sur iPhone, installe d'abord le campus sur l'écran d'accueil (Partager, puis « Sur l'écran d'accueil »), puis active les rappels depuis l'icône.",
           "Sur iPhone, installez d'abord le campus sur l'écran d'accueil (Partager, puis « Sur l'écran d'accueil »), puis activez les rappels depuis l'icône.",
         )
-      : f("Ce navigateur ne reçoit pas les rappels. Ouvre le campus dans Chrome pour les activer.", "Ce navigateur ne reçoit pas les rappels. Ouvrez le campus dans Chrome pour les activer.");
+      : f(
+          "Ce navigateur ne reçoit pas les rappels. Ouvre le campus dans Chrome pour les activer.",
+          "Ce navigateur ne reçoit pas les rappels. Ouvrez le campus dans Chrome pour les activer.",
+        );
 
   const aideDeblocage = (
     <Fenetre
       ouverte={aide}
       onFermer={() => setAide(false)}
       titre="Débloquer les rappels"
-      description={f(`Ton ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`, `Votre ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`)}
+      description={f(
+        `Ton ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`,
+        `Votre ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`,
+      )}
       pied={
         <Bouton
           onClick={() => {
@@ -194,7 +198,12 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
     };
     return (
       <div className="flex min-h-[56px] flex-wrap items-center gap-3 py-2">
-        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", etat === "actif" ? "bg-succes-clair text-succes" : "bg-orange-clair text-orange-fonce")}>
+        <span
+          className={cn(
+            "grid h-10 w-10 shrink-0 place-items-center rounded-full",
+            etat === "actif" ? "bg-succes-clair text-succes" : "bg-orange-clair text-orange-fonce",
+          )}
+        >
           {etat === "actif" ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
         </span>
         <div className="min-w-0 flex-1">
@@ -227,10 +236,22 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         <span
           className={cn(
             "grid h-12 w-12 shrink-0 place-items-center rounded-full",
-            etat === "actif" ? "bg-succes-clair text-succes" : etat === "refuse" || etat === "non_supporte" ? "bg-creme text-texte-pale" : "bg-orange-clair text-orange-fonce",
+            etat === "actif"
+              ? "bg-succes-clair text-succes"
+              : etat === "refuse" || etat === "non_supporte"
+                ? "bg-creme text-texte-pale"
+                : "bg-orange-clair text-orange-fonce",
           )}
         >
-          {etat === "actif" ? <Check className="h-6 w-6" /> : etat === "non_supporte" ? <Smartphone className="h-6 w-6" /> : etat === "refuse" ? <BellOff className="h-6 w-6" /> : <BellRing className="h-6 w-6" />}
+          {etat === "actif" ? (
+            <Check className="h-6 w-6" />
+          ) : etat === "non_supporte" ? (
+            <Smartphone className="h-6 w-6" />
+          ) : etat === "refuse" ? (
+            <BellOff className="h-6 w-6" />
+          ) : (
+            <BellRing className="h-6 w-6" />
+          )}
         </span>
         <div className="flex min-w-0 flex-col gap-1.5">
           {etat === "inactif" && (
@@ -251,7 +272,10 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
                 <Badge ton="succes">{Ici}</Badge>
               </div>
               <p className="text-base leading-relaxed text-texte-pale">
-                {f("Tu seras prévenu avant chaque cours en direct, même quand le campus est fermé.", "Vous serez prévenu avant chaque cours en direct, même quand le campus est fermé.")}
+                {f(
+                  "Tu seras prévenu avant chaque cours en direct, même quand le campus est fermé.",
+                  "Vous serez prévenu avant chaque cours en direct, même quand le campus est fermé.",
+                )}
               </p>
             </>
           )}
@@ -277,7 +301,14 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
 
       {etat === "inactif" && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Bouton taille="lg" className="sm:w-auto" pleineLargeur icone={<BellRing className="h-5 w-5" />} chargement={occupe === "activer"} onClick={() => void activer()}>
+          <Bouton
+            taille="lg"
+            className="sm:w-auto"
+            pleineLargeur
+            icone={<BellRing className="h-5 w-5" />}
+            chargement={occupe === "activer"}
+            onClick={() => void activer()}
+          >
             Oui, me prévenir
           </Bouton>
           <p className="text-sm text-texte-gris">
@@ -316,7 +347,10 @@ function AideDeblocage({ installee, f }: { installee: boolean; f: (tu: string, v
         f("Touche Notifications et active-les.", "Touchez Notifications et activez-les."),
       ]
     : [
-        f("Touche le cadenas (ou ⓘ) à gauche de l'adresse du campus, en haut de Chrome.", "Touchez le cadenas (ou ⓘ) à gauche de l'adresse du campus, en haut de Chrome."),
+        f(
+          "Touche le cadenas (ou ⓘ) à gauche de l'adresse du campus, en haut de Chrome.",
+          "Touchez le cadenas (ou ⓘ) à gauche de l'adresse du campus, en haut de Chrome.",
+        ),
         f("Touche Autorisations, puis Notifications.", "Touchez Autorisations, puis Notifications."),
         f("Choisis « Autoriser », puis reviens ici.", "Choisissez « Autoriser », puis revenez ici."),
       ];

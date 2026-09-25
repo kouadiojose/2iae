@@ -58,7 +58,7 @@ function pastilleDe(etat: EtatVisio, attente: boolean): { ton: TonPastille; text
   return { ton: "attente", texte: attente ? "En attente du formateur" : "Connexion…" };
 }
 
-/** Écoute les événements « visio » du canal personnel et suit le temps réel du campus. */
+/** Écoute les événements « visio » du canal personnel et suit le temps réel du campus. */
 function useBrancherMoteur(moiId: number, seanceId: number, moteur: { current: CentreVisio | PeripherieVisio | null }) {
   useCanal(`u:${moiId}`, (e) => {
     const d = e.data as EvenementVisio | null;
@@ -329,7 +329,7 @@ function ScenePeripherie(p: PropsSceneVisioCampus & { role: "salle" | "etudiant"
       ? "Le cours commence dès que le formateur arrive."
       : "La classe commence dès que le formateur arrive."
     : vue.etat !== "connecte"
-      ? "Connexion au formateur…"
+      ? vue.message ?? "Connexion au formateur…"
       : !vue.videoAccordee && tu
         ? "Toutes les places vidéo sont prises : tu reçois le son du formateur."
         : p.audioSeul && tu
@@ -339,7 +339,7 @@ function ScenePeripherie(p: PropsSceneVisioCampus & { role: "salle" | "etudiant"
   const relaisVisible = Boolean(vue.relaisVideoSalle && vue.parole.salle);
   let bandeau: string | null = null;
   if (vue.parole.vous) bandeau = tu ? "Tu as la parole : parle, le formateur t'entend." : "Vous avez la parole : parlez près du micro.";
-  // L'image relayée porte déjà « M'Batto a la parole » : pas de doublon.
+  // L'image relayée porte déjà « M'Batto a la parole » : pas de doublon.
   else if (vue.parole.salle && !relaisVisible) bandeau = `${vue.parole.salle} a la parole`;
   else if (vue.parole.etudiant) bandeau = "Un étudiant en ligne a la parole";
 
@@ -352,15 +352,15 @@ function ScenePeripherie(p: PropsSceneVisioCampus & { role: "salle" | "etudiant"
       {video ? (
         <Video piste={video} ajuster="contain" libelle="Image du formateur" />
       ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-          <span className="grid h-16 w-16 place-items-center rounded-full bg-orange text-encre sm:h-20 sm:w-20">
-            <Radio className="h-8 w-8" />
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 pt-8 text-center sm:pt-0">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-orange text-encre sm:h-20 sm:w-20">
+            <Radio className="h-6 w-6 sm:h-8 sm:w-8" />
           </span>
           <p className="max-w-sm text-[15px] text-nuit-doux sm:text-base">{texteSansImage}</p>
         </div>
       )}
 
-      <div className="absolute left-2.5 top-2.5 flex flex-wrap items-center gap-2 sm:left-4 sm:top-4">
+      <div className={cn("absolute left-2.5 top-2.5 flex flex-wrap items-center gap-2 sm:left-4 sm:top-4", p.role === "salle" && vue.local.video && "max-w-[calc(100%-7rem)] sm:max-w-[calc(100%-13rem)]")}>
         <Pastille ton={pastille.ton}>{pastille.texte}</Pastille>
         {vue.local.micro && (
           <span className="flex items-center gap-1 rounded-full bg-orange px-2.5 py-1.5 font-mono text-xs font-bold text-encre">
@@ -371,7 +371,7 @@ function ScenePeripherie(p: PropsSceneVisioCampus & { role: "salle" | "etudiant"
 
       {/* La salle se voit en petit : elle sait ce que le formateur voit. */}
       {p.role === "salle" && vue.local.video && (
-        <div className="absolute right-2.5 top-2.5 aspect-video w-24 overflow-hidden rounded-xl border-2 border-nuit-ligne sm:right-4 sm:top-4 sm:w-44">
+        <div className="absolute right-2.5 top-2.5 aspect-video w-20 overflow-hidden rounded-xl border-2 border-nuit-ligne sm:right-4 sm:top-4 sm:w-44">
           <Video piste={vue.local.video} miroir libelle="Image de votre salle" />
         </div>
       )}
@@ -386,7 +386,8 @@ function ScenePeripherie(p: PropsSceneVisioCampus & { role: "salle" | "etudiant"
         </div>
       )}
 
-      {(bandeau || vue.message || vue.erreurMedia) && vue.etat !== "echec" && (
+      {/* Sans image, le message d'attente est déjà au centre : pas de doublon en bas. */}
+      {(bandeau || vue.erreurMedia || (video && vue.message)) && vue.etat !== "echec" && (
         <div className="absolute bottom-2.5 left-2.5 max-w-[60%] sm:bottom-4 sm:left-4">
           {bandeau ? (
             <span className={cn("block rounded-xl px-3 py-2 text-sm font-bold sm:text-base", vue.parole.vous ? "bg-orange text-encre" : "bg-black/70 text-white")}>{bandeau}</span>

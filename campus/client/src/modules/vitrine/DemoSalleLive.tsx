@@ -57,8 +57,7 @@ export function DemoSalleLive() {
   const ecoule = Math.max(0, Math.floor((maintenant - debut) / 1000));
   const connectes = SALLES.reduce((s, x) => s + x.effectif, 0) + EN_LIGNE + (main ? 1 : 0);
 
-  const voter = (id: number) =>
-    setQuestions((qs) => qs.map((q) => (q.id === id ? { ...q, votes: q.votes + (q.moi ? -1 : 1), moi: !q.moi } : q)));
+  const voter = (id: number) => setQuestions((qs) => qs.map((q) => (q.id === id ? { ...q, votes: q.votes + (q.moi ? -1 : 1), moi: !q.moi } : q)));
   const envoyer = (e: FormEvent) => {
     e.preventDefault();
     const t = brouillon.trim();
@@ -112,7 +111,11 @@ export function DemoSalleLive() {
                   <LienBouton href="/connexion" variante="nuit-actif">
                     Accéder à mon campus
                   </LienBouton>
-                  <button type="button" onClick={() => setQuitte(false)} className="min-h-[48px] rounded-xl px-4 text-[15px] font-bold text-nuit-doux hover:text-white">
+                  <button
+                    type="button"
+                    onClick={() => setQuitte(false)}
+                    className="min-h-[48px] rounded-xl px-4 text-[15px] font-bold text-nuit-doux hover:text-white"
+                  >
                     Revenir à la démo
                   </button>
                 </div>
@@ -121,13 +124,17 @@ export function DemoSalleLive() {
           </div>
 
           {/* Les cinq salles */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
             {SALLES.map((s, i) => {
               const levee = i === 3 || (i === 1 && main);
               return (
                 <div
                   key={s.nom}
-                  className={cn("relative aspect-[16/10] overflow-hidden rounded-[14px] border-2 bg-nuit-carte", i === 3 ? "border-orange" : "border-nuit-ligne", i === 4 && "col-span-2 aspect-[32/10] sm:col-span-1 sm:aspect-[16/10]")}
+                  className={cn(
+                    "relative aspect-[16/10] overflow-hidden rounded-[14px] border-2 bg-nuit-carte",
+                    i === 3 ? "border-orange" : "border-nuit-ligne",
+                    i === 4 && "col-span-2 aspect-[32/10] sm:col-span-1 sm:aspect-[16/10]",
+                  )}
                 >
                   <span className="absolute right-2 top-2 font-mono text-[11px] text-texte-gris">{s.effectif} en salle</span>
                   <div className="absolute inset-x-2 bottom-2 flex items-center justify-between gap-1.5">
@@ -172,7 +179,10 @@ export function DemoSalleLive() {
                 role="tab"
                 aria-selected={panneau === k}
                 onClick={() => setPanneau(k)}
-                className={cn("min-h-[44px] flex-1 rounded-[10px] px-2 text-[13px] font-bold transition-colors", panneau === k ? "bg-orange text-encre" : "text-nuit-doux hover:text-white")}
+                className={cn(
+                  "min-h-[44px] flex-1 rounded-[10px] px-2 text-[13px] font-bold transition-colors",
+                  panneau === k ? "bg-orange text-encre" : "text-nuit-doux hover:text-white",
+                )}
               >
                 {l}
               </button>

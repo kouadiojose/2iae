@@ -66,35 +66,47 @@ export function EnTetePublic({ ancres = [], liveEnDirect }: { ancres?: AncreNav[
 }
 
 /** Pied de page : préinscription, site du groupe, les cinq campus. */
-export function PiedPublic({ sites, sansAppel = false }: { sites: SitePublic[]; /** La page porte déjà son appel à la préinscription. */ sansAppel?: boolean }) {
+export function PiedPublic({
+  sites,
+  sansAppel = false,
+}: {
+  sites: SitePublic[];
+  /** La page porte déjà son appel à la préinscription. */ sansAppel?: boolean;
+}) {
   const annee = new Date(useMaintenant(3_600_000)).getUTCFullYear();
   return (
     <footer className="bg-encre text-white">
       <div className="conteneur flex flex-col gap-10 py-14 sm:py-16">
         {!sansAppel && (
-        <div className="relative flex flex-col gap-6 overflow-hidden rounded-[28px] bg-orange p-7 text-encre sm:flex-row sm:items-end sm:justify-between sm:p-10">
-          <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border-[36px] border-encre/10" />
-          <div className="relative flex max-w-xl flex-col gap-2">
-            <span className="font-mono text-xs uppercase tracking-[0.12em]">Préinscription en ligne</span>
-            <h2 className="text-[30px] font-black leading-[1.02] tracking-serre sm:text-[40px]">Pas encore étudiant à 2IAE ?</h2>
-            <p className="text-base leading-relaxed text-[#2B211B] sm:text-[17px]">
-              La préinscription se fait en quelques minutes sur le site du groupe. Vous suivrez ensuite vos cours ici, dans votre campus ou sur votre téléphone.
-            </p>
+          <div className="relative flex flex-col gap-6 overflow-hidden rounded-[28px] bg-orange p-7 text-encre sm:flex-row sm:items-end sm:justify-between sm:p-10">
+            <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border-[36px] border-encre/10" />
+            <div className="relative flex max-w-xl flex-col gap-2">
+              <span className="font-mono text-xs uppercase tracking-[0.12em]">Préinscription en ligne</span>
+              <h2 className="text-[30px] font-black leading-[1.02] tracking-serre sm:text-[40px]">Pas encore étudiant à 2IAE ?</h2>
+              <p className="text-base leading-relaxed text-[#2B211B] sm:text-[17px]">
+                La préinscription se fait en quelques minutes sur le site du groupe. Vous suivrez ensuite vos cours ici, dans votre campus ou sur votre
+                téléphone.
+              </p>
+            </div>
+            <div className="relative flex flex-col gap-2 sm:items-end">
+              <a
+                href={lienPreinscription()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-[14px] bg-encre px-6 text-base font-bold text-white no-underline hover:bg-white hover:text-encre"
+              >
+                Faire ma préinscription <ArrowUpRight className="h-5 w-5" />
+              </a>
+              <a
+                href={URL_SITE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-2 text-[15px] font-semibold text-encre underline-offset-4 hover:text-encre hover:underline"
+              >
+                Découvrir le Groupe 2IAE
+              </a>
+            </div>
           </div>
-          <div className="relative flex flex-col gap-2 sm:items-end">
-            <a
-              href={lienPreinscription()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-[14px] bg-encre px-6 text-base font-bold text-white no-underline hover:bg-white hover:text-encre"
-            >
-              Faire ma préinscription <ArrowUpRight className="h-5 w-5" />
-            </a>
-            <a href={URL_SITE} target="_blank" rel="noopener noreferrer" className="px-2 py-2 text-[15px] font-semibold text-encre underline-offset-4 hover:text-encre hover:underline">
-              Découvrir le Groupe 2IAE
-            </a>
-          </div>
-        </div>
         )}
 
         <div className="grid gap-8 sm:grid-cols-[1.2fr_1fr_1fr]">
@@ -121,7 +133,12 @@ export function PiedPublic({ sites, sansAppel = false }: { sites: SitePublic[]; 
                 </Link>
               </li>
               <li>
-                <a href={lienPreinscription()} target="_blank" rel="noopener noreferrer" className="inline-block py-1.5 text-white no-underline hover:text-orange">
+                <a
+                  href={lienPreinscription()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block py-1.5 text-white no-underline hover:text-orange"
+                >
                   Préinscription
                 </a>
               </li>
@@ -183,11 +200,25 @@ export function CarteProchainLive({
   const imminent = !enDirect && ecart !== null && ecart <= 10 * 60_000;
 
   return (
-    <div className={cn("relative flex flex-col gap-5 overflow-hidden rounded-[28px] bg-encre p-5 text-white sm:gap-[22px] sm:p-7", className)} aria-live="polite">
-      <div aria-hidden className="pointer-events-none absolute -right-[90px] -top-[90px] h-[260px] w-[260px] rounded-full border-[40px] border-orange opacity-90" />
+    <div
+      className={cn("relative flex flex-col gap-5 overflow-hidden rounded-[28px] bg-encre p-5 text-white sm:gap-[22px] sm:p-7", className)}
+      aria-live="polite"
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-[90px] -top-[90px] h-[260px] w-[260px] rounded-full border-[40px] border-orange opacity-90"
+      />
       <span className="relative flex items-center gap-2 font-mono text-xs uppercase tracking-[0.08em] text-orange-peche">
         <span className={cn("point-direct", !enDirect && !cible && "animate-none bg-orange")} />
-        {enDirect ? "En direct maintenant" : imminent ? "La salle ouvre" : titre && live ? "Prochain cours en direct" : titre ? "Prochain cours" : "Bientôt au campus numérique"}
+        {enDirect
+          ? "En direct maintenant"
+          : imminent
+            ? "La salle ouvre"
+            : titre && live
+              ? "Prochain cours en direct"
+              : titre
+                ? "Prochain cours"
+                : "Bientôt au campus numérique"}
       </span>
 
       {chargement ? (
@@ -219,7 +250,7 @@ export function CarteProchainLive({
               <span className="flex items-center gap-2 font-mono text-sm uppercase tracking-wider text-[#FF8A6B]">
                 <span className="point-direct" /> En direct depuis {heure(live!.debut)}
               </span>
-              <p className="text-[15px] text-nuit-doux">Les cinq salles et les étudiants connectés suivent le cours en ce moment.</p>
+              <p className="text-[15px] text-nuit-doux">Les salles de conférence et les étudiants connectés suivent le cours en ce moment.</p>
               <LienBouton href={`/live/${live!.id}`} taille="lg" className="w-full sm:w-auto">
                 Je suis étudiant : rejoindre le live
               </LienBouton>
@@ -240,7 +271,9 @@ export function CarteProchainLive({
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="text-[15px] font-bold">
                 {formateur ? `${formateur.prenom} ${formateur.nom}` : "Formateur du réseau 2IAE"}
-                {formateur && ville(formateur.localisation) ? <span className="font-normal text-nuit-doux"> · depuis {ville(formateur.localisation)}</span> : null}
+                {formateur && ville(formateur.localisation) ? (
+                  <span className="font-normal text-nuit-doux"> · depuis {ville(formateur.localisation)}</span>
+                ) : null}
               </span>
               <span className="text-[13px] text-nuit-gris">Diffusé en direct dans les salles de conférence</span>
             </div>
@@ -391,7 +424,11 @@ export function ListeLives({ lives, avecCours = false }: { lives: VitrineLive[];
                   </>
                 )}
               </span>
-              {avecCours && <span className="font-mono text-xs text-texte-gris">{l.coursCode} · {l.titre}</span>}
+              {avecCours && (
+                <span className="font-mono text-xs text-texte-gris">
+                  {l.coursCode} · {l.titre}
+                </span>
+              )}
             </div>
           </li>
         );
@@ -439,7 +476,10 @@ export function BoutonPartager({ texte, className }: { texte: string; className?
       href={lienWhatsapp(texte)}
       target="_blank"
       rel="noopener noreferrer"
-      className={cn("inline-flex min-h-[48px] items-center gap-2 rounded-xl px-3 text-[15px] font-semibold text-texte-doux no-underline hover:bg-creme hover:text-encre", className)}
+      className={cn(
+        "inline-flex min-h-[48px] items-center gap-2 rounded-xl px-3 text-[15px] font-semibold text-texte-doux no-underline hover:bg-creme hover:text-encre",
+        className,
+      )}
     >
       <Share2 className="h-4 w-4 text-succes" /> Partager sur WhatsApp
     </a>
@@ -447,7 +487,19 @@ export function BoutonPartager({ texte, className }: { texte: string; className?
 }
 
 /** Titre de section de la maquette : très gras, serré, avec un texte d'accompagnement à droite. */
-export function TitreSectionPublic({ etiquette, titre, texte, id, className }: { etiquette?: string; titre: ReactNode; texte?: ReactNode; id?: string; className?: string }) {
+export function TitreSectionPublic({
+  etiquette,
+  titre,
+  texte,
+  id,
+  className,
+}: {
+  etiquette?: string;
+  titre: ReactNode;
+  texte?: ReactNode;
+  id?: string;
+  className?: string;
+}) {
   return (
     <div id={id} className={cn("mb-7 flex scroll-mt-24 flex-wrap items-end justify-between gap-x-6 gap-y-3", className)}>
       <div className="flex max-w-3xl flex-col gap-2.5">

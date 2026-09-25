@@ -65,7 +65,8 @@ export default function PageHorsLigne() {
         </p>
         {!enLigne && (
           <p className="max-w-md rounded-2xl bg-creme px-5 py-4 text-[15px] leading-relaxed text-texte-pale">
-            Les pages déjà consultées (accueil, cours, devoirs) restent disponibles sans réseau. Un devoir ou un message écrit maintenant partira tout seul au retour de la connexion.
+            Les pages déjà consultées (accueil, cours, devoirs) restent disponibles sans réseau. Un devoir ou un message écrit maintenant partira tout seul au
+            retour de la connexion.
           </p>
         )}
         <div className="flex w-full max-w-sm flex-col gap-3">

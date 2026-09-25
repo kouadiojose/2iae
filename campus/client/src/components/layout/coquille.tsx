@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload } from "lucide-react";
+import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown } from "lucide-react";
 import { useMoiConnecte, seDeconnecter } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
@@ -178,9 +178,12 @@ function EcouteGlobale() {
   return null;
 }
 
+/** Entrées visibles dans l'en-tête sur ordinateur ; les suivantes vont dans « Plus ». */
+const NAV_VISIBLES = 6;
+
 export function Coquille({ children, pleinEcran = false }: { children: ReactNode; pleinEcran?: boolean }) {
   const moi = useMoiConnecte();
-  const [chemin] = useLocation();
+  const [chemin, naviguer] = useLocation();
   const nav = navigationDuRole(moi.role);
   const { data: enCours } = useEnCours();
   const { data: compteur } = useCompteur();
@@ -197,15 +200,15 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
       <header className="sticky top-0 z-30 border-b border-ligne-douce bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-4 py-2.5 sm:px-7 sm:py-3">
           <Marque sousTitre={false} />
-          <nav className="hidden flex-1 flex-wrap justify-center gap-1 lg:flex" aria-label="Navigation principale">
-            {nav.map((el) => {
+          <nav className="hidden flex-1 justify-center gap-1 lg:flex" aria-label="Navigation principale">
+            {nav.slice(0, NAV_VISIBLES).map((el) => {
               const actif = estActif(el, chemin);
               return (
                 <Link
                   key={el.href}
                   href={el.href}
                   className={cn(
-                    "rounded-full px-4 py-2 text-sm font-semibold no-underline transition-colors",
+                    "whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold no-underline transition-colors",
                     actif ? "bg-encre text-white hover:text-white" : "text-texte-doux hover:bg-creme hover:text-encre",
                   )}
                   aria-current={actif ? "page" : undefined}
@@ -217,6 +220,32 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
                 </Link>
               );
             })}
+            {nav.length > NAV_VISIBLES && (
+              <Menu
+                align="end"
+                declencheur={
+                  <button
+                    className={cn(
+                      "flex items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold transition-colors",
+                      nav.slice(NAV_VISIBLES).some((el) => estActif(el, chemin))
+                        ? "bg-encre text-white"
+                        : "text-texte-doux hover:bg-creme hover:text-encre",
+                    )}
+                  >
+                    Plus <ChevronDown className="h-4 w-4" />
+                  </button>
+                }
+              >
+                {nav.slice(NAV_VISIBLES).map((el) => {
+                  const Icone = el.icone;
+                  return (
+                    <ElementMenu key={el.href} icone={<Icone className="h-4 w-4" />} onSelect={() => naviguer(el.href)}>
+                      <span className={cn(estActif(el, chemin) && "text-orange-fonce")}>{el.libelle}</span>
+                    </ElementMenu>
+                  );
+                })}
+              </Menu>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2 lg:ml-0">
             <div className="hidden sm:block">
@@ -233,8 +262,8 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
 
       <main className={cn(!pleinEcran && "pb-28 lg:pb-16")}>{children}</main>
 
-      {/* Barre d'onglets du téléphone */}
-      {nav.some((n) => n.mobile) && (
+      {/* Barre d'onglets du téléphone (masquée en plein écran : salle live) */}
+      {!pleinEcran && nav.some((n) => n.mobile) && (
         <nav className="bas-sur fixed inset-x-0 bottom-0 z-30 border-t border-ligne-douce bg-white/95 backdrop-blur-md lg:hidden" aria-label="Navigation">
           <div className="mx-auto flex max-w-lg items-end justify-around px-2 pt-1.5">
             {nav

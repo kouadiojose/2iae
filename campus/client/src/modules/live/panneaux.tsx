@@ -309,7 +309,7 @@ export function ResultatsParCampus({ sondage, resultats, grand }: { sondage: Son
                 <span className={cn("font-bold text-white", bonne === i && "text-[#6FCF97]")}>
                   {LETTRES[i]}. {o} {bonne === i && "✓"}
                 </span>
-                <span className="font-mono text-nuit-doux">{pct} %</span>
+                <span className="shrink-0 whitespace-nowrap font-mono text-nuit-doux">{pct} %</span>
               </div>
               <div className={cn("overflow-hidden rounded-full bg-nuit-ligne", grand ? "h-4" : "h-2.5")}>
                 <div className={cn("h-full rounded-full transition-[width] duration-500", bonne === i ? "bg-[#6FCF97]" : "bg-orange")} style={{ width: `${pct}%` }} />
@@ -335,7 +335,7 @@ export function ResultatsParCampus({ sondage, resultats, grand }: { sondage: Son
                     />
                   ))}
                 </div>
-                <span className="font-mono text-nuit-doux">{pctBonne !== null ? `${pctBonne} % juste` : `${s.total} rép.`}</span>
+                <span className="whitespace-nowrap font-mono text-nuit-doux">{pctBonne !== null ? `${pctBonne} % juste` : `${s.total} rép.`}</span>
               </div>
             );
           })}

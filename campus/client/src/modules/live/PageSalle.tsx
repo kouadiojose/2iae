@@ -162,7 +162,7 @@ function useCodeSalle(seanceId: number, siteId: number | null, actif: boolean) {
   return { code, erreur };
 }
 
-function BlocCode({ seance, siteId, compact }: { seance: SeanceDetailDto; siteId: number | null; compact?: boolean }) {
+function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; siteId: number | null; compact?: boolean; mini?: boolean }) {
   const ouvert = seance.statut === "en_direct" || new Date(seance.debut).getTime() - maintenantServeur() < 60 * 60_000;
   const { code, erreur } = useCodeSalle(seance.id, siteId, ouvert);
   const maintenant = useMaintenant(1000);
@@ -176,6 +176,17 @@ function BlocCode({ seance, siteId, compact }: { seance: SeanceDetailDto; siteId
     );
   }
   if (!code) return <div className="rounded-[28px] bg-nuit-panneau p-6 text-xl text-nuit-doux">{erreur ?? "Chargement du code…"}</div>;
+  if (mini) {
+    // Pendant un sondage : le code reste visible pour les retardataires, sur une seule ligne.
+    return (
+      <div className="flex items-center justify-between gap-4 rounded-[20px] bg-nuit-panneau px-5 py-3">
+        <span className="font-mono text-sm uppercase tracking-[0.12em] text-orange-peche">Émargement</span>
+        <span className="text-4xl font-black tabular-nums tracking-[0.08em]" aria-live="polite">
+          {code.code}
+        </span>
+      </div>
+    );
+  }
   const chemin = code.url.replace(/^https?:\/\//, "").replace(/\/emargement\/\d+$/, "/emargement");
   return (
     <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "flex-col p-6 sm:flex-row sm:items-center lg:p-7")}>
@@ -351,7 +362,7 @@ function PendantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; eta
             {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
           </div>
         )}
-        <BlocCode seance={seance} siteId={siteId} compact />
+        <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage)} />
         {!sondage && <CompteursEmarges etat={etat} liste />}
       </aside>
     </main>

@@ -9,7 +9,9 @@ function Telephone({ children, sombre, className }: { children: ReactNode; sombr
   return (
     <div className={cn("h-[446px] w-[216px] shrink-0 md:h-[620px] md:w-[300px]", className)}>
       <div className="h-[620px] w-[300px] origin-top-left scale-[.72] rounded-[44px] bg-encre p-2.5 shadow-telephone md:scale-100">
-        <div className={cn("flex h-full w-full flex-col overflow-hidden rounded-[36px]", sombre ? "bg-nuit text-white" : "bg-white text-encre")}>{children}</div>
+        <div className={cn("flex h-full w-full flex-col overflow-hidden rounded-[36px]", sombre ? "bg-nuit text-white" : "bg-white text-encre")}>
+          {children}
+        </div>
       </div>
     </div>
   );

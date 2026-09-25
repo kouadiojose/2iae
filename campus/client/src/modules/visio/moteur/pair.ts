@@ -1,9 +1,9 @@
 // Une connexion WebRTC entre le formateur (centre de l'étoile) et une salle
 // ou un étudiant.
 //
-// Négociation « parfaite » (perfect negotiation) : le formateur est le côté
-// « impoli » (son offre gagne en cas de collision), la salle ou l'étudiant
-// le côté « poli ». C'est TOUJOURS le formateur qui ouvre la connexion : il
+// Négociation « parfaite » (perfect negotiation) : le formateur est le côté
+// « impoli » (son offre gagne en cas de collision), la salle ou l'étudiant
+// le côté « poli ». C'est TOUJOURS le formateur qui ouvre la connexion : il
 // prépare une ligne par piste, avec son rôle, pour ne plus jamais avoir à
 // renégocier quand la parole change de main (on remplace la piste d'une
 // ligne existante avec replaceTrack) :
@@ -115,7 +115,7 @@ export class PairWebRTC {
     this.connexionId = o.connexion ?? idAleatoire(16);
     this.pc = new RTCPeerConnection({ iceServers: o.iceServers, bundlePolicy: "max-bundle", rtcpMuxPolicy: "require" });
 
-    // Canal de données « négocié » : les deux côtés le créent avec le même numéro, sans échange supplémentaire.
+    // Canal de données « négocié » : les deux côtés le créent avec le même numéro, sans échange supplémentaire.
     this.canal = this.pc.createDataChannel("campus", { negotiated: true, id: 0 });
     this.canal.onopen = () => {
       for (const m of this.messagesEnAttente.values()) this.canal.send(JSON.stringify(m));
@@ -204,7 +204,7 @@ export class PairWebRTC {
     return r;
   }
 
-  /** Ferme la connexion ; `prevenir` envoie « raccrocher » à l'autre côté. */
+  /** Ferme la connexion ; `prevenir` envoie « raccrocher » à l'autre côté. */
   fermer(prevenir = true) {
     if (this.ferme) return;
     this.ferme = true;

@@ -38,10 +38,11 @@ const ETUDIANT: ElementNav[] = [
   { href: "/direct", libelle: "Live", icone: Radio, mobile: true, central: true, prefixes: ["/direct", "/live"] },
   { href: "/devoirs", libelle: "Devoirs", icone: ClipboardList, mobile: true, prefixes: ["/devoirs", "/quiz", "/notes"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
+  // « On apprend avec l'IA » : l'assistant reste visible dans l'en-tête.
+  { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
-  { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
 ];
 
 const FORMATEUR: ElementNav[] = [
@@ -50,9 +51,9 @@ const FORMATEUR: ElementNav[] = [
   { href: "/direct", libelle: "Studio", icone: Radio, mobile: true, central: true, prefixes: ["/direct", "/live", "/enseigner/seances"] },
   { href: "/corrections", libelle: "Corrections", icone: CheckSquare, mobile: true, prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
+  { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
-  { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
 ];
 
 const EQUIPE: ElementNav[] = [

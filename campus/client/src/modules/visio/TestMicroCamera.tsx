@@ -142,12 +142,12 @@ export function TestMicroCamera({ camera = true, onPret, nuit }: { camera?: bool
           <p className={cn("text-base leading-relaxed", texte)}>
             {camera
               ? t(
-                  "On vérifie ton micro, ta caméra et ton haut-parleur. Le navigateur va te demander l'autorisation : touche « Autoriser ».",
-                  "Vérifions votre micro, votre caméra et votre haut-parleur. Le navigateur va vous demander l'autorisation : choisissez « Autoriser ».",
+                  "On vérifie ton micro, ta caméra et ton haut-parleur. Le navigateur va te demander l'autorisation : touche « Autoriser ».",
+                  "Vérifions votre micro, votre caméra et votre haut-parleur. Le navigateur va vous demander l'autorisation : choisissez « Autoriser ».",
                 )
               : t(
-                  "On vérifie ton micro et ton haut-parleur. Le navigateur va te demander l'autorisation : touche « Autoriser ».",
-                  "Vérifions votre micro et votre haut-parleur. Le navigateur va vous demander l'autorisation : choisissez « Autoriser ».",
+                  "On vérifie ton micro et ton haut-parleur. Le navigateur va te demander l'autorisation : touche « Autoriser ».",
+                  "Vérifions votre micro et votre haut-parleur. Le navigateur va vous demander l'autorisation : choisissez « Autoriser ».",
                 )}
           </p>
           <Bouton taille="lg" pleineLargeur chargement={phase === "demande"} icone={camera ? <Camera className="h-5 w-5" /> : <Mic className="h-5 w-5" />} onClick={demarrer} className="min-h-[56px]">
@@ -222,8 +222,8 @@ export function TestMicroCamera({ camera = true, onPret, nuit }: { camera?: bool
             {bip === "pas-entendu" && (
               <p className={cn("text-[15px] leading-relaxed", texte)}>
                 {t(
-                  "Monte le volume avec les boutons du téléphone, vérifie que le mode silencieux est coupé, ou branche tes écouteurs. Puis touche encore « Tester le son ».",
-                  "Montez le volume de l'ordinateur ou des enceintes, vérifiez la sortie son choisie, puis cliquez encore sur « Tester le son ».",
+                  "Monte le volume avec les boutons du téléphone, vérifie que le mode silencieux est coupé, ou branche tes écouteurs. Puis touche encore « Tester le son ».",
+                  "Montez le volume de l'ordinateur ou des enceintes, vérifiez la sortie son choisie, puis cliquez encore sur « Tester le son ».",
                 )}
               </p>
             )}

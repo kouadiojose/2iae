@@ -32,14 +32,7 @@ const TAILLE_MAX_FICHIER = 8 * 1024 * 1024;
 
 const CLE_COQUILLE = "/";
 const HORS_LIGNE = "/hors-ligne";
-const A_PRECHARGER = [
-  "/manifest.webmanifest",
-  "/marque-2iae.svg",
-  "/icons/icone.svg",
-  "/icons/icone-192.png",
-  "/icons/icone-512.png",
-  "/icons/badge-96.png",
-];
+const A_PRECHARGER = ["/manifest.webmanifest", "/marque-2iae.svg", "/icons/icone.svg", "/icons/icone-192.png", "/icons/icone-512.png", "/icons/badge-96.png"];
 
 /** Requêtes qui ouvrent ou ferment une session : les données de la personne précédente sont oubliées (téléphones partagés). */
 const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|compte\/(reinitialiser|deconnecter-partout))/;
@@ -281,8 +274,7 @@ self.addEventListener("pushsubscriptionchange", (evenement) => {
     (async () => {
       const ancien = evenement.oldSubscription;
       const nouveau =
-        evenement.newSubscription ||
-        (ancien && ancien.options && (await self.registration.pushManager.subscribe(ancien.options).catch(() => null)));
+        evenement.newSubscription || (ancien && ancien.options && (await self.registration.pushManager.subscribe(ancien.options).catch(() => null)));
       if (!nouveau) return;
       await fetch("/api/push/abonnement", {
         method: "POST",

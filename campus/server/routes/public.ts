@@ -60,7 +60,7 @@ export const NOM_CAMPUS = "Campus numérique 2IAE";
 export function slugifier(texte: string): string {
   return texte
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/\p{M}/gu, "") // accents détachés par NFD
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -102,7 +102,10 @@ function imagePublique(url: string | null): string | null {
 function accrocheDe(c: Pick<Cours, "accrocheSite" | "description">): string {
   const choisie = c.accrocheSite?.trim();
   if (choisie) return choisie;
-  const texte = c.description.replace(/[#*_>`]/g, "").replace(/\s+/g, " ").trim();
+  const texte = c.description
+    .replace(/[#*_>`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (texte.length <= 160) return texte;
   const coupe = texte.slice(0, 157);
   return `${coupe.slice(0, Math.max(coupe.lastIndexOf(" "), 120))}…`;
@@ -184,8 +187,16 @@ type Catalogue = { cours: VitrineCours[]; formateurs: VitrineFormateur[] };
 /** Cours annoncés et formateurs annoncés, reliés entre eux. */
 async function construireCatalogue(maintenant: Date): Promise<Catalogue> {
   const [lignes, formateursPublics] = await Promise.all([
-    db.select().from(cours).where(filtreCoursVitrine(maintenant)).orderBy(sql`${cours.dateDebut} asc nulls last`, asc(cours.titre)),
-    db.select(colonnesFormateur).from(utilisateurs).where(filtreFormateurPublic).orderBy(sql`${utilisateurs.annonceLe} desc nulls last`, asc(utilisateurs.nom)),
+    db
+      .select()
+      .from(cours)
+      .where(filtreCoursVitrine(maintenant))
+      .orderBy(sql`${cours.dateDebut} asc nulls last`, asc(cours.titre)),
+    db
+      .select(colonnesFormateur)
+      .from(utilisateurs)
+      .where(filtreFormateurPublic)
+      .orderBy(sql`${utilisateurs.annonceLe} desc nulls last`, asc(utilisateurs.nom)),
   ]);
   const ids = lignes.map((c) => c.id);
   const [campus, coFormateurs] = await Promise.all([
@@ -289,7 +300,9 @@ async function annoncesPubliques(maintenant: Date): Promise<VitrineAnnonce[]> {
 
 /** Chiffres agrégés : jamais un nom, seulement des totaux. */
 async function chiffres(): Promise<Vitrine["chiffres"]> {
-  const [r] = await db.execute<{ etudiants: number; formateurs: number; cours: number; heures: number }>(sql`
+  const [r] = await db
+    .execute<{ etudiants: number; formateurs: number; cours: number; heures: number }>(
+      sql`
     select
       (select count(*)::int from ${utilisateurs} where ${utilisateurs.role} = 'etudiant' and ${utilisateurs.actif}) as etudiants,
       (select count(*)::int from ${utilisateurs} where ${utilisateurs.role} = 'formateur' and ${utilisateurs.actif}) as formateurs,
@@ -297,7 +310,9 @@ async function chiffres(): Promise<Vitrine["chiffres"]> {
       (select coalesce(floor(sum(
          coalesce(extract(epoch from (${seances.termineeLe} - ${seances.demarreeLe})) / 3600.0, ${seances.dureeMinutes} / 60.0)
        )), 0)::int from ${seances} where ${seances.statut} = 'terminee') as heures
-  `).then((res) => res.rows);
+  `,
+    )
+    .then((res) => res.rows);
   return { etudiants: r.etudiants, formateurs: r.formateurs, cours: r.cours, heuresDeDirect: r.heures };
 }
 
@@ -369,11 +384,19 @@ async function coursAnnonceParSlug(slug: string): Promise<Cours | undefined> {
 
 /** Formateur annoncé par son slug (colonne slug, ou repli « prenom-nom-<id> »). */
 async function formateurAnnonceParSlug(slug: string): Promise<LigneFormateur | undefined> {
-  const [parSlug] = await db.select(colonnesFormateur).from(utilisateurs).where(and(filtreFormateurPublic, eq(utilisateurs.slug, slug))).limit(1);
+  const [parSlug] = await db
+    .select(colonnesFormateur)
+    .from(utilisateurs)
+    .where(and(filtreFormateurPublic, eq(utilisateurs.slug, slug)))
+    .limit(1);
   if (parSlug) return parSlug;
   const m = slug.match(/-(\d+)$/);
   if (!m) return undefined;
-  const [parId] = await db.select(colonnesFormateur).from(utilisateurs).where(and(filtreFormateurPublic, eq(utilisateurs.id, Number(m[1])))).limit(1);
+  const [parId] = await db
+    .select(colonnesFormateur)
+    .from(utilisateurs)
+    .where(and(filtreFormateurPublic, eq(utilisateurs.id, Number(m[1]))))
+    .limit(1);
   return parId && slugFormateur(parId) === slug ? parId : undefined;
 }
 
@@ -401,7 +424,11 @@ async function ficheCours(slug: string): Promise<FicheCoursPublique | null> {
       .orderBy(asc(modules.ordre), asc(modules.id)),
     livesPublics(maintenant, [c.id]),
     c.formateurId
-      ? db.select(colonnesFormateur).from(utilisateurs).where(and(filtreFormateurPublic, eq(utilisateurs.id, c.formateurId))).limit(1)
+      ? db
+          .select(colonnesFormateur)
+          .from(utilisateurs)
+          .where(and(filtreFormateurPublic, eq(utilisateurs.id, c.formateurId)))
+          .limit(1)
       : Promise.resolve([] as LigneFormateur[]),
   ]);
   const listeCampus = campus.get(c.id) ?? [];
@@ -450,7 +477,10 @@ async function ficheFormateur(slug: string): Promise<FicheFormateurPublique | nu
   return {
     ...fiche,
     coursDetail: vitrine.cours.filter((c) => slugs.has(c.slug)),
-    lives: await livesPublics(new Date(), siens.map((c) => c.id)),
+    lives: await livesPublics(
+      new Date(),
+      siens.map((c) => c.id),
+    ),
   };
 }
 
@@ -485,7 +515,9 @@ async function envoyerImage(res: Response, id: number) {
   res.setHeader("Content-Type", f.mime);
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.setHeader("X-Content-Type-Options", "nosniff");
-  fs.createReadStream(chemin).pipe(res);
+  fs.createReadStream(chemin)
+    .on("error", () => res.destroy())
+    .pipe(res);
 }
 
 // ── CORS : le site www.2iae.com lit la vitrine depuis le navigateur ────────

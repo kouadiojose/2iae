@@ -248,7 +248,7 @@ function FileMains({ seanceId, etat, lectureSeule }: { seanceId: number; etat: E
         <div key={site} className="flex flex-col gap-1.5">
           <span className="font-mono text-[11px] uppercase tracking-wider text-orange-peche">{site}</span>
           {mains.map((m) => (
-            <div key={m.id} className="flex items-center justify-between gap-2 rounded-[14px] bg-nuit-bulle px-3.5 py-2.5">
+            <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] bg-nuit-bulle px-3.5 py-2.5">
               <div className="flex min-w-0 flex-col">
                 <span className="flex items-center gap-2 text-[15px] font-bold">
                   <Hand className="h-4 w-4 shrink-0 text-orange" />

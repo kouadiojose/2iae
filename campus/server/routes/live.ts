@@ -2468,9 +2468,11 @@ planifier("live-rappels", MINUTE, async () => {
     const inseres = await db.insert(rappelsLive).values({ seanceId: s.id, type }).onConflictDoNothing().returning();
     if (!inseres.length) continue;
     const heure = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(s.debut).replace(":", "h");
+    // Abidjan vit à l'heure UTC : le jour d'Abidjan est la date UTC.
+    const quand = s.debut.toISOString().slice(0, 10) === new Date(maintenant).toISOString().slice(0, 10) ? "Aujourd'hui" : "Demain";
     await notifier(await destinatairesSeance(s), {
       type: "live",
-      titre: type === "15min" ? `Dans 15 min : ${s.titre}` : `Demain à ${heure} : ${s.titre}`,
+      titre: type === "15min" ? `Dans 15 min : ${s.titre}` : `${quand} à ${heure} : ${s.titre}`,
       corps: type === "15min" ? `${code} · entre dans la classe ou installe-toi dans ta salle de conférence.` : `${code} · live multi-campus. Ajoute-le à ton agenda.`,
       lien: `/live/${s.id}`,
     });

@@ -90,7 +90,12 @@ export function AvertissementNavigateur({ vouvoiement = false, className }: { vo
             </a>
           )}
         </div>
-        <button type="button" onClick={fermer} className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-texte-pale hover:bg-white hover:text-encre" aria-label="Fermer">
+        <button
+          type="button"
+          onClick={fermer}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-texte-pale hover:bg-white hover:text-encre"
+          aria-label="Fermer"
+        >
           <X className="h-5 w-5" />
         </button>
       </div>

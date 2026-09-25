@@ -2,7 +2,7 @@
 //
 // Un simple <audio> sur l'adresse d'écoute (WebM/Opus en flux continu). Les
 // navigateurs n'autorisent le son qu'après un geste : d'où le gros bouton
-// « Écouter le cours ». Ensuite tout est automatique : reprise après une
+// « Écouter le cours ». Ensuite tout est automatique : reprise après une
 // coupure (essais de plus en plus espacés), relance quand le formateur
 // redémarre son émission, rattrapage du retard accumulé.
 import { useEffect, useRef, useState } from "react";
@@ -131,6 +131,8 @@ export function LecteurRadio({ seanceId, nuit, onConsommation }: { seanceId: num
       couperLecture();
       setPhase("attente");
     } else {
+      // « redemarrage » puis « debut » arrivent souvent ensemble : une seule relance.
+      annulerMinuteurs();
       essais.current = 0;
       if (phaseRef.current !== "connexion") setPhase("reconnexion");
       minuteur.current = setTimeout(brancher, 400);

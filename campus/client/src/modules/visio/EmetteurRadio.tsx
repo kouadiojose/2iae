@@ -1,6 +1,6 @@
-// Côté formateur : diffuse le son du micro en « radio » (flux HTTP très léger) aux étudiants en ligne.
+// Côté formateur : diffuse le son du micro en « radio » (flux HTTP très léger) aux étudiants en ligne.
 //
-// Témoin discret « Radio : 23 auditeurs ». L'envoi reprend tout seul après
+// Témoin discret « Radio : 23 auditeurs ». L'envoi reprend tout seul après
 // une coupure (voir moteur/radio.ts). Aucun bouton : c'est le studio (module
 // live) qui décide quand la radio est active.
 import { useEffect, useRef, useState } from "react";

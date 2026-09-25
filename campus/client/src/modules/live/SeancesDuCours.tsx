@@ -62,7 +62,7 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
       </section>
       {passees.length > 0 && (
         <section>
-          <TitreSection titre="Replays" />
+          <TitreSection titre="Déjà passés" />
           {passees.map((s) => (
             <LigneSeance key={s.id} s={s} enseignant={enseignant} lien={enseignant ? `/enseigner/seances/${s.id}` : `/replays/${s.id}`} />
           ))}

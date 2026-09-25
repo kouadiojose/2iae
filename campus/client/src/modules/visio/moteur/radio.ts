@@ -42,7 +42,7 @@ export class EmetteurRadioMoteur {
   auditeurs = 0;
 
   constructor(
-    /** « /api/radio/12 » ou « /api/radio/essai ». */
+    /** « /api/radio/12 » ou « /api/radio/essai ». */
     private base: string,
     private piste: MediaStreamTrack,
     private surEtat: (etat: EtatEmission) => void,

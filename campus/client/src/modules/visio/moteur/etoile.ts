@@ -265,7 +265,7 @@ export class CentreVisio extends BaseVisio {
     }
   }
 
-  /** Reprendre la main après « remplace ». */
+  /** Reprendre la main après « remplace ». */
   reprendre() {
     this.suspendu = false;
     this.definirEtat("connexion", "Reprise de la classe…");
@@ -504,7 +504,7 @@ export class CentreVisio extends BaseVisio {
     this.rappels.maj();
   }
 
-  /** Indicateur « réseau faible » par salle (pertes > 5 % ou aller-retour > 700 ms). */
+  /** Indicateur « réseau faible » par salle (pertes > 5 % ou aller-retour > 700 ms). */
   private async mesurer() {
     let change = false;
     // Délai de grâce écoulé sans nouvelle du participant : il est vraiment parti.
@@ -607,8 +607,9 @@ export class PeripherieVisio extends BaseVisio {
   definirAudioSeul(audioSeul: boolean) {
     if (this.audioSeul === audioSeul) return;
     this.audioSeul = audioSeul;
-    // Repasser en vidéo demande une place vidéo au serveur.
-    if (!audioSeul && this.rejoint && !this.videoAccordee) this.planifierRejoindre(0);
+    // On le dit au serveur : le son seul libère une place vidéo (et un encodage chez le
+    // formateur) ; repasser en vidéo en redemande une. La connexion en cours est gardée.
+    if (this.rejoint && this.role === "etudiant") this.planifierRejoindre(0);
     this.pair?.definirReceptionVideo(this.recevoirVideo());
     this.rappels.maj();
   }
@@ -699,7 +700,7 @@ export class PeripherieVisio extends BaseVisio {
   }
 
   /**
-   * Le serveur dit « pas de formateur » alors que la connexion directe avec
+   * Le serveur dit « pas de formateur » alors que la connexion directe avec
    * lui fonctionne : on la garde le temps qu'il se réannonce (délai de grâce).
    * Renvoie vrai tant qu'on patiente.
    */

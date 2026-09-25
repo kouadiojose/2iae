@@ -29,7 +29,7 @@ export function Video({ piste, miroir, ajuster = "cover", className, libelle }: 
 /**
  * Son d'une piste distante. Les navigateurs bloquent parfois la lecture sans
  * geste de l'utilisateur (écran de salle allumé sans clic) : `onBloque`
- * permet d'afficher le bouton « Activer le son ».
+ * permet d'afficher le bouton « Activer le son ».
  */
 export function Son({ piste, onBloque }: { piste: MediaStreamTrack; onBloque?: () => void }) {
   const ref = useRef<HTMLAudioElement>(null);
@@ -49,14 +49,14 @@ export function Son({ piste, onBloque }: { piste: MediaStreamTrack; onBloque?: (
   return <audio ref={ref} autoPlay data-visio-son="" className="hidden" />;
 }
 
-/** Relance tous les sons d'une scène après un geste (bouton « Activer le son »). */
+/** Relance tous les sons d'une scène après un geste (bouton « Activer le son »). */
 export function relancerSons(racine: HTMLElement | null) {
   racine?.querySelectorAll<HTMLAudioElement>("audio[data-visio-son]").forEach((a) => void a.play().catch(() => undefined));
 }
 
 export type TonPastille = "direct" | "attente" | "alerte" | "neutre";
 
-/** Pastille d'état en haut de la scène : « ● En direct », « Connexion… », « Reconnexion… ». */
+/** Pastille d'état en haut de la scène : « ● En direct », « Connexion… », « Reconnexion… ». */
 export function Pastille({ ton, children, className }: { ton: TonPastille; children: ReactNode; className?: string }) {
   return (
     <span
@@ -83,7 +83,7 @@ export function Pastille({ ton, children, className }: { ton: TonPastille; child
   );
 }
 
-/** Étiquette posée sur une image (« Yopougon », « Vous »). */
+/** Étiquette posée sur une image (« Yopougon », « Vous »). */
 export function Etiquette({ children, className }: { children: ReactNode; className?: string }) {
   return <span className={cn("rounded-lg bg-black/70 px-2 py-1 text-[13px] font-bold text-white", className)}>{children}</span>;
 }

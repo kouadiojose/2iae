@@ -59,12 +59,32 @@ const MODES = [
 
 const FONCTIONS = [
   { tag: "Cours", titre: "Modules et parcours", texte: "Chapitres, ressources PDF, vidéos et progression par étudiant, organisés par filière et par campus." },
-  { tag: "Live", titre: "Classe virtuelle", texte: "Visioconférence intégrée : salles de campus, main levée, questions votées, sondages éclair et diapositives." },
-  { tag: "Replay", titre: "Revoir chaque séance", texte: "Chaque séance est enregistrée et publiée dans le cours, avec sa fiche de révision et sa transcription." },
-  { tag: "Évaluation", titre: "Devoirs et interrogations", texte: "Rendre un devoir en photo, reçu horodaté, interrogations chronométrées et carnet de notes." },
-  { tag: "Échanges", titre: "Messages et salons de cours", texte: "Écrire à ses formateurs comme sur WhatsApp. Questions du cours modérées par les formateurs." },
+  {
+    tag: "Live",
+    titre: "Classe virtuelle",
+    texte: "Visioconférence intégrée : salles de campus, main levée, questions votées, sondages éclair et diapositives.",
+  },
+  {
+    tag: "Replay",
+    titre: "Revoir chaque séance",
+    texte: "Chaque séance est enregistrée et publiée dans le cours, avec sa fiche de révision et sa transcription.",
+  },
+  {
+    tag: "Évaluation",
+    titre: "Devoirs et interrogations",
+    texte: "Rendre un devoir en photo, reçu horodaté, interrogations chronométrées et carnet de notes.",
+  },
+  {
+    tag: "Échanges",
+    titre: "Messages et salons de cours",
+    texte: "Écrire à ses formateurs comme sur WhatsApp. Questions du cours modérées par les formateurs.",
+  },
   { tag: "IA", titre: "Assistant pédagogique", texte: "Fiches de révision, explications et exercices tirés du cours. L'IA propose, le formateur valide." },
-  { tag: "Hors ligne", titre: "Le réseau coupe, le campus continue", texte: "Les pages consultées restent sur le téléphone ; un devoir écrit sans réseau part tout seul au retour." },
+  {
+    tag: "Hors ligne",
+    titre: "Le réseau coupe, le campus continue",
+    texte: "Les pages consultées restent sur le téléphone ; un devoir écrit sans réseau part tout seul au retour.",
+  },
   { tag: "Émargement", titre: "Présence en un code", texte: "En salle, un code à 4 chiffres affiché à l'écran ; en ligne, la présence se compte toute seule." },
 ];
 
@@ -129,7 +149,8 @@ export default function PageAccueilPublique() {
               <span className="text-orange">En direct.</span>
             </h1>
             <p className="max-w-[520px] text-[17px] leading-[1.55] text-texte-doux sm:text-[19px]">
-              Le campus numérique du Groupe 2IAE réunit les étudiants d'Abidjan, Yamoussoukro, M'Batto et Azaguié autour des mêmes formateurs, depuis leur téléphone, leur ordinateur ou la salle de conférence de leur campus.
+              Le campus numérique du Groupe 2IAE réunit les étudiants d'Abidjan, Yamoussoukro, M'Batto et Azaguié autour des mêmes formateurs, depuis leur
+              téléphone, leur ordinateur ou la salle de conférence de leur campus.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <LienBouton href="/connexion" taille="lg" className="min-h-[56px] px-[26px] text-base font-extrabold">
@@ -178,7 +199,9 @@ export default function PageAccueilPublique() {
           <div className="flex flex-col gap-8 rounded-[32px] bg-creme p-5 sm:p-[clamp(24px,4vw,48px)]">
             <div className="flex max-w-[640px] flex-col gap-2.5">
               <span className="etiquette">Tout le campus au même endroit</span>
-              <h2 className="text-[28px] font-black leading-[1.02] tracking-serre sm:text-[clamp(28px,3.2vw,44px)]">Cours, classes live, devoirs et replays dans un seul espace.</h2>
+              <h2 className="text-[28px] font-black leading-[1.02] tracking-serre sm:text-[clamp(28px,3.2vw,44px)]">
+                Cours, classes live, devoirs et replays dans un seul espace.
+              </h2>
             </div>
             <div className="grid gap-px overflow-hidden rounded-[20px] bg-ligne sm:grid-cols-2 xl:grid-cols-4">
               {FONCTIONS.map((f) => (
@@ -214,7 +237,8 @@ export default function PageAccueilPublique() {
             <div className="flex flex-col gap-4">
               <h2 className="text-[30px] font-black leading-[1.02] tracking-serre sm:text-[clamp(28px,3.2vw,44px)]">Un réseau de salles connectées.</h2>
               <p className="max-w-[460px] text-base leading-[1.55] text-texte-moyen">
-                Chaque campus dispose d'une salle de conférence équipée : écran, caméra et micro de salle. Les étudiants se réunissent, le formateur les voit et leur donne la parole.
+                Chaque campus dispose d'une salle de conférence équipée : écran, caméra et micro de salle. Les étudiants se réunissent, le formateur les voit et
+                leur donne la parole.
               </p>
               {chiffres.length > 0 && (
                 <dl className="mt-2 grid max-w-[460px] grid-cols-2 gap-3">
@@ -229,7 +253,10 @@ export default function PageAccueilPublique() {
             </div>
             <ul className="flex flex-col border-t-2 border-encre">
               {sites.map((s) => (
-                <li key={s.slug} className="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-1 border-b border-ligne py-4 sm:grid-cols-[1fr_auto_auto] sm:py-[18px]">
+                <li
+                  key={s.slug}
+                  className="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-1 border-b border-ligne py-4 sm:grid-cols-[1fr_auto_auto] sm:py-[18px]"
+                >
                   <span className="text-xl font-extrabold tracking-[-0.01em] sm:text-[22px]">{nomCampus(s)}</span>
                   <span className="order-3 font-mono text-xs text-texte-gris sm:order-none">{s.salle}</span>
                   <span className="row-span-2 self-center whitespace-nowrap rounded-full bg-orange-clair px-2.5 py-[5px] font-mono text-xs text-orange-profond sm:row-span-1">
@@ -248,7 +275,8 @@ export default function PageAccueilPublique() {
               <span className="etiquette">Application mobile</span>
               <h2 className="text-[36px] font-black leading-[.98] tracking-tres-serre sm:text-[clamp(36px,4.6vw,64px)]">Le campus dans la poche.</h2>
               <p className="max-w-[460px] text-[17px] leading-[1.55] text-texte-doux">
-                Suivre le live, lever la main, poser une question, revoir le replay et rendre un devoir depuis un téléphone. Mode données réduites pour les connexions mobiles.
+                Suivre le live, lever la main, poser une question, revoir le replay et rendre un devoir depuis un téléphone. Mode données réduites pour les
+                connexions mobiles.
               </p>
               <ul className="grid max-w-[520px] gap-3 sm:grid-cols-2">
                 {[
@@ -274,7 +302,8 @@ export default function PageAccueilPublique() {
                   <p className="max-w-[460px] rounded-2xl bg-creme px-4 py-3 text-[15px] leading-relaxed text-texte-pale">
                     {plateforme() === "ios" ? (
                       <>
-                        Sur iPhone : ouvrez le campus dans Safari, touchez <strong className="text-encre">Partager</strong> puis <strong className="text-encre">« Sur l'écran d'accueil »</strong>.
+                        Sur iPhone : ouvrez le campus dans Safari, touchez <strong className="text-encre">Partager</strong> puis{" "}
+                        <strong className="text-encre">« Sur l'écran d'accueil »</strong>.
                       </>
                     ) : (
                       <>

@@ -9,16 +9,7 @@ import { Avatar, EtatVide, Squelette } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { ErreurApi } from "@/lib/api";
 import type { FicheFormateurPublique, SitePublic } from "@shared/schema";
-import {
-  BoutonPartager,
-  BoutonsAcces,
-  CarteCoursPublic,
-  CarteProchainLive,
-  EnTetePublic,
-  ListeLives,
-  PiedPublic,
-  sallesDepuisSites,
-} from "./composants";
+import { BoutonPartager, BoutonsAcces, CarteCoursPublic, CarteProchainLive, EnTetePublic, ListeLives, PiedPublic, sallesDepuisSites } from "./composants";
 import { liveAMettreEnAvant, SITES_DE_SECOURS, useTitreDocument, ville } from "./outils";
 
 export default function PageFormateurPublic({ slug }: { slug: string }) {
@@ -37,7 +28,10 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
     <div className="min-h-dvh bg-white">
       <EnTetePublic liveEnDirect={live?.enDirect ? live : null} />
       <main className="conteneur flex flex-col gap-12 pb-16 pt-6 sm:pt-8">
-        <Link href="/" className="inline-flex min-h-[44px] items-center gap-2 self-start font-mono text-xs uppercase tracking-[0.12em] text-texte-gris no-underline hover:text-encre">
+        <Link
+          href="/"
+          className="inline-flex min-h-[44px] items-center gap-2 self-start font-mono text-xs uppercase tracking-[0.12em] text-texte-gris no-underline hover:text-encre"
+        >
           <ArrowLeft className="h-4 w-4" /> Campus numérique · formateurs
         </Link>
 

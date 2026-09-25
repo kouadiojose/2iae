@@ -66,8 +66,8 @@ export function messageErreurMedia(e: unknown, tu: boolean, quoi: "micro" | "cam
     case "NotAllowedError":
     case "PermissionDeniedError":
       return tu
-        ? `Tu as refusé l'accès ${aLe}. Touche le cadenas à gauche de l'adresse, choisis « Autoriser », puis réessaie.`
-        : `L'accès ${aLe} a été refusé. Cliquez sur le cadenas à gauche de l'adresse, choisissez « Autoriser », puis réessayez.`;
+        ? `Tu as refusé l'accès ${aLe}. Touche le cadenas à gauche de l'adresse, choisis « Autoriser », puis réessaie.`
+        : `L'accès ${aLe} a été refusé. Cliquez sur le cadenas à gauche de l'adresse, choisissez « Autoriser », puis réessayez.`;
     case "NotFoundError":
     case "DevicesNotFoundError":
       return tu

@@ -128,9 +128,7 @@ export function enregistrerPush(app: Express) {
         await notifier([u.id], {
           type: "systeme",
           titre: "Les rappels fonctionnent",
-          corps: etudiant
-            ? "Tu seras prévenu ici avant chaque cours en direct."
-            : "Vous serez prévenu ici avant chaque cours en direct.",
+          corps: etudiant ? "Tu seras prévenu ici avant chaque cours en direct." : "Vous serez prévenu ici avant chaque cours en direct.",
           lien: "/profil",
           push: true,
         });

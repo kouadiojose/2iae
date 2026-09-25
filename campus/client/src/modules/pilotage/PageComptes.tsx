@@ -12,6 +12,7 @@ import { Avatar, Badge, Chargement, Erreur, EtatVide } from "@/components/ui/div
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Champ, Selection } from "@/components/ui/champs";
 import { cn, pluriel } from "@/lib/utils";
+import { useMoiConnecte } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreCompte } from "./composants/FenetreCompte";
 import { FenetreCode } from "./composants/FenetreCode";
@@ -23,6 +24,7 @@ type Etat = "" | "non_actives" | "actives" | "desactives";
 export default function PageComptes() {
   const depart = new URLSearchParams(useSearch());
   const [, naviguer] = useLocation();
+  const moi = useMoiConnecte();
   const refs = useReferences();
   const [q, setQ] = useState(depart.get("q") ?? "");
   const [qDiffere, setQDiffere] = useState(q);
@@ -63,7 +65,7 @@ export default function PageComptes() {
       else n.add(id);
       return n;
     });
-  const pageSelectionnable = (data?.lignes ?? []).filter((c) => c.actif);
+  const pageSelectionnable = (data?.lignes ?? []).filter((c) => c.actif && c.id !== moi.id);
   const toutePage = pageSelectionnable.length > 0 && pageSelectionnable.every((c) => selection.has(c.id));
 
   return (
@@ -241,10 +243,13 @@ export default function PageComptes() {
 
 function LigneCompte({ c, coche, onCocher, onOuvrir }: { c: CompteLigne; coche: boolean; onCocher: () => void; onOuvrir: () => void }) {
   const etat = etatCompte(c);
+  const moi = useMoiConnecte();
+  // Son propre code se change dans son profil, jamais par une fiche.
+  const cochable = c.actif && c.id !== moi.id;
   return (
     <li className={cn("flex items-center gap-3 px-3 py-3 sm:px-4", coche && "bg-orange-pale", !c.actif && "opacity-70")}>
       <label className="grid h-12 w-10 shrink-0 cursor-pointer place-items-center" aria-label={`Cocher ${c.prenom} ${c.nom} pour imprimer sa fiche`}>
-        <input type="checkbox" className="h-5 w-5 accent-[#E4793A]" checked={coche} onChange={onCocher} disabled={!c.actif} />
+        <input type="checkbox" className="h-5 w-5 accent-[#E4793A]" checked={coche} onChange={onCocher} disabled={!cochable} />
       </label>
       <button type="button" onClick={onOuvrir} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <Avatar prenom={c.prenom} nom={c.nom} taille={40} className="hidden sm:grid" />
@@ -260,14 +265,14 @@ function LigneCompte({ c, coche, onCocher, onOuvrir }: { c: CompteLigne; coche: 
               .filter(Boolean)
               .join(" · ")}
           </span>
+          <span className="mt-1.5 block sm:hidden">
+            <Badge ton={etat.ton}>{etat.texte}</Badge>
+          </span>
         </span>
         <span className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
           <Badge ton={etat.ton}>{etat.texte}</Badge>
           <span className="text-xs text-texte-gris">Connexion : {vuLe(c.derniereConnexion)}</span>
         </span>
-        <Badge ton={etat.ton} className="shrink-0 sm:hidden">
-          {etat.texte.split(" · ")[0]}
-        </Badge>
       </button>
     </li>
   );

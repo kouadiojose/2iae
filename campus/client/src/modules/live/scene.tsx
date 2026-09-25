@@ -46,12 +46,14 @@ export function Scene(p: PropsScene) {
   else contenu = <SceneDemo {...p} />;
 
   const parole = etat.parole;
+  // Radio et compagnon : la diapo garde son format 16/9 et le reste s'empile dessous.
+  const libre = !planB && role === "etudiant" && (mode === "radio" || mode === "compagnon");
   return (
     <div
       className={cn(
         "relative overflow-hidden rounded-[22px] border-2 bg-nuit-carte",
         parole ? "border-orange" : "border-nuit-ligne",
-        p.grand ? "min-h-[50vh]" : "aspect-video",
+        p.grand ? "min-h-[50vh]" : libre ? "" : "aspect-video",
         p.className,
       )}
     >
@@ -81,21 +83,9 @@ export function DiapoCourante({ etat, className, vide }: { etat: EtatDirectDto; 
   return (
     <div className={cn("relative h-full w-full bg-black", className)}>
       <img src={diapo.url} alt={`Diapo ${diapo.index + 1} sur ${diapo.total}`} className="h-full w-full object-contain" />
-      <span className="absolute bottom-3 right-3 rounded-lg bg-black/70 px-2.5 py-1 font-mono text-xs text-orange-peche">
+      <span className="absolute right-3 top-3 rounded-lg bg-black/70 px-2.5 py-1 font-mono text-xs text-orange-peche">
         Diapo {diapo.index + 1} / {diapo.total}
       </span>
-    </div>
-  );
-}
-
-function DernierSousTitre({ etat, grand }: { etat: EtatDirectDto; grand?: boolean }) {
-  const dernier = etat.sousTitres[etat.sousTitres.length - 1];
-  if (!dernier) return null;
-  return (
-    <div className={cn("pointer-events-none absolute inset-x-3 bottom-3 flex justify-center", grand && "inset-x-8 bottom-8")}>
-      <p className={cn("max-w-3xl rounded-xl bg-black/75 px-4 py-2 text-center font-semibold leading-snug text-white", grand ? "text-[clamp(22px,2.4vw,40px)]" : "text-[15px]")}>
-        {dernier.texte}
-      </p>
     </div>
   );
 }
@@ -120,9 +110,10 @@ function PortraitFormateur({ seance, sousTitre }: { seance: SeanceDetailDto; sou
 // ── Radio : son du formateur + diapo + sous-titres (≈ 15 à 20 Mo/h) ────────
 
 function SceneRadio({ seance, etat, onConsommationRadio }: PropsScene) {
+  const dernier = etat.sousTitres[etat.sousTitres.length - 1];
   return (
-    <div className="relative flex h-full flex-col">
-      <div className="relative min-h-0 flex-1">
+    <div className="flex flex-col">
+      <div className="relative aspect-video">
         <DiapoCourante
           etat={etat}
           vide={
@@ -136,8 +127,12 @@ function SceneRadio({ seance, etat, onConsommationRadio }: PropsScene) {
             />
           }
         />
-        <DernierSousTitre etat={etat} />
       </div>
+      {dernier && (
+        <p className="border-t border-nuit-ligne px-4 py-3 text-center text-[15px] font-semibold leading-snug text-white" aria-live="polite">
+          {dernier.texte}
+        </p>
+      )}
       <div className="border-t border-nuit-ligne bg-nuit-panneau px-3 py-2">
         {seance.fournisseur === "demo" ? (
           <p className="text-center text-[13px] text-nuit-doux">Démonstration : pas de son pour cette séance. Diapos et sous-titres arrivent en direct.</p>
@@ -151,11 +146,11 @@ function SceneRadio({ seance, etat, onConsommationRadio }: PropsScene) {
 
 function SceneCompagnon({ seance, etat }: PropsScene) {
   return (
-    <div className="relative flex h-full flex-col">
+    <div className="flex flex-col">
       <div className="bg-orange px-4 py-2 text-center text-sm font-bold text-encre">
         En salle{seance.monSite ? ` à ${seance.monSite.nomCourt}` : ""} · son coupé, suis sur l'écran de la salle
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div className="relative aspect-video">
         <DiapoCourante etat={etat} vide={<PortraitFormateur seance={seance} />} />
       </div>
     </div>
@@ -164,20 +159,20 @@ function SceneCompagnon({ seance, etat }: PropsScene) {
 
 function ScenePlanB({ lien, grand }: { lien: string; grand?: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-2.5 p-4 text-center sm:gap-4 sm:p-6">
       <span className="etiquette text-orange-peche">Plan B</span>
-      <p className={cn("max-w-xl font-black tracking-serre text-white", grand ? "text-[clamp(28px,4vw,56px)]" : "text-2xl")}>
+      <p className={cn("max-w-xl font-black leading-tight tracking-serre text-white", grand ? "text-[clamp(28px,4vw,56px)]" : "text-xl sm:text-2xl")}>
         Le cours continue sur le lien de secours.
       </p>
-      <p className="max-w-md text-[15px] text-nuit-doux">Les questions, les sondages et l'émargement continuent ici, sur le campus.</p>
-      <LienBouton href={lien} externe taille="lg" icone={<ExternalLink className="h-5 w-5" />}>
+      <p className="hidden max-w-md text-[15px] text-nuit-doux sm:block">Les questions, les sondages et l'émargement continuent ici, sur le campus.</p>
+      <LienBouton href={lien} externe taille={grand ? "lg" : "md"} icone={<ExternalLink className="h-5 w-5" />}>
         Ouvrir le lien de secours
       </LienBouton>
     </div>
   );
 }
 
-function SceneDemo({ seance, etat, grand }: PropsScene) {
+function SceneDemo({ seance, etat }: PropsScene) {
   return (
     <div className="relative h-full">
       <DiapoCourante
@@ -193,7 +188,6 @@ function SceneDemo({ seance, etat, grand }: PropsScene) {
           />
         }
       />
-      <DernierSousTitre etat={etat} grand={grand} />
     </div>
   );
 }

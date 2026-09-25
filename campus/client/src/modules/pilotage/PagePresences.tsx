@@ -83,7 +83,7 @@ function ListeSeances() {
           texte="Les feuilles de présence apparaissent ici dès qu'une séance commence. Changez de semaine avec les flèches."
         />
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {data.seances.map((s) => (
             <li key={s.id}>
               <Link href={`/pilotage/presences?seance=${s.id}`} className="block rounded-2xl border border-ligne bg-white p-5 text-encre no-underline transition-colors hover:border-orange hover:text-encre">
@@ -210,7 +210,7 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
               { valeur: "justifies", libelle: "Justifiés", compteur: d.total.justifie + d.total.incident },
             ]}
           />
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {d.campus.map((c) => (
               <BlocCampus key={c.siteId ?? "aucun"} c={c} garde={garde} onJustifier={(e) => onJustifier({ seanceId: d.seance.id, seanceTitre: d.seance.titre, etudiantId: e.id, nom: `${e.prenom} ${e.nom}`, justification: e.justification })} />
             ))}

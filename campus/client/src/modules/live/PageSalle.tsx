@@ -196,7 +196,23 @@ function BlocCode({ seance, siteId, compact }: { seance: SeanceDetailDto; siteId
   );
 }
 
-function CompteursEmarges({ etat, grand }: { etat: EtatDirectDto; grand?: boolean }) {
+function CompteursEmarges({ etat, grand, liste }: { etat: EtatDirectDto; grand?: boolean; liste?: boolean }) {
+  if (liste) {
+    return (
+      <div className="flex flex-col rounded-[24px] bg-nuit-panneau px-5 py-3">
+        <p className="py-2 font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
+        {etat.campus.map((c) => (
+          <div key={c.siteId} className="flex items-center justify-between border-t border-nuit-ligne py-2.5">
+            <span className={cn("flex items-center gap-2.5 text-xl font-bold", c.salleConnectee ? "text-white" : "text-nuit-gris")}>
+              <span className={cn("h-2.5 w-2.5 rounded-full", c.salleConnectee ? "bg-orange" : "bg-nuit-bord")} />
+              {c.nomCourt}
+            </span>
+            <span className="text-3xl font-black tabular-nums">{c.emarges}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-5 gap-2">
       {etat.campus.map((c) => (
@@ -279,14 +295,13 @@ function PendantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; eta
             C'est à vous : passez le micro
           </div>
         )}
-        <div className="relative">
-          <Scene seance={seance} etat={etat} role="salle" micro={aLaParole} camera grand className="min-h-[58vh]" />
-          {derniereLigne && seance.fournisseur !== "demo" && (
-            <div className="pointer-events-none absolute inset-x-8 bottom-8 flex justify-center">
-              <p className="max-w-5xl rounded-2xl bg-black/75 px-6 py-3 text-center text-[clamp(22px,2.4vw,40px)] font-semibold leading-snug">{derniereLigne.texte}</p>
-            </div>
-          )}
-        </div>
+        <Scene seance={seance} etat={etat} role="salle" micro={aLaParole} camera grand className="min-h-[56vh]" />
+        {/* Sous-titres sous la scène : lisibles du fond de la salle, sans cacher la diapo. */}
+        {derniereLigne && (
+          <p className="rounded-2xl bg-black px-6 py-3 text-center text-[clamp(22px,2.2vw,40px)] font-semibold leading-snug text-white" aria-live="polite">
+            {derniereLigne.texte}
+          </p>
+        )}
         {questionEnCours && (
           <div className="animate-monte rounded-[24px] bg-creme p-6 text-encre">
             <p className="font-mono text-lg uppercase tracking-wider text-orange-fonce">Question de {questionEnCours.site ?? "la classe en ligne"}</p>
@@ -303,7 +318,7 @@ function PendantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; eta
           </div>
         )}
         <BlocCode seance={seance} siteId={siteId} compact />
-        <CompteursEmarges etat={etat} />
+        <CompteursEmarges etat={etat} liste />
       </aside>
     </main>
   );

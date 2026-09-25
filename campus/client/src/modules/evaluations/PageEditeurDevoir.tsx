@@ -252,7 +252,7 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
         </div>
       )}
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex flex-col gap-6">
           {(nouveau || !typeVerrouille) && (
             <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Type">
@@ -363,7 +363,7 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
               </Selection>
             )}
             {typeVerrouille && (
-              <Badge ton="gris" className="self-start">
+              <Badge ton="gris" className="self-start whitespace-normal">
                 {quiz ? "Interrogation" : "Devoir à rendre"} · type verrouillé (copies reçues)
               </Badge>
             )}

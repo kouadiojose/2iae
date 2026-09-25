@@ -23,7 +23,7 @@ import { ZoneRendu } from "./composants/ZoneRendu";
 import { EcranRecu, EcranEnAttente, ListePieces, Vignette } from "./composants/Recu";
 import { Coches } from "./composants/CarteDevoir";
 import { useEvenementsDevoirs } from "./PageDevoirs";
-import { dateEtHeureCourte, lienEcrireAuFormateur, nombre } from "./outils";
+import { dateEtHeureCourte, envoyeeEnDiffere, lienEcrireAuFormateur, nombre } from "./outils";
 
 export default function PageDevoir({ id }: { id: string }) {
   const moi = useMoiConnecte();
@@ -127,7 +127,7 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
       />
 
       {/* Téléphone : état de la copie, puis consigne, puis « Rendre ». Ordinateur : consigne à gauche, le reste à droite. */}
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] lg:gap-6">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] lg:gap-6">
         {!recu && (
           <div className="flex flex-col gap-5 empty:hidden lg:col-start-2 lg:row-start-1">
             <EtatCopie d={d} onRemplacer={() => setRemplacer(true)} remplacement={remplacer} enAttente={Boolean(enAttente || cleEnFile)} />
@@ -246,7 +246,7 @@ function EtatCopie({ d, onRemplacer, remplacement, enAttente }: { d: DevoirDetai
               Reçu le {rendu.renduLe ? dateEtHeureCourte(rendu.renduLe) : ""}
               {rendu.deposeParEquipe ? " · copie papier déposée par la vie scolaire" : ""}
             </span>
-            {rendu.prepareLe && <span className="text-sm text-texte-pale">Préparé sur ton téléphone à {heure(rendu.prepareLe)}, envoyé au retour du réseau.</span>}
+            {envoyeeEnDiffere(rendu.prepareLe, rendu.renduLe) && rendu.prepareLe && <span className="text-sm text-texte-pale">Préparé sur ton téléphone à {heure(rendu.prepareLe)}, envoyé au retour du réseau.</span>}
             <span className="mt-1 flex items-center gap-1.5 text-[15px] font-semibold">
               <Coches vu={statut === "vu"} className="h-5 w-5" />
               {statut === "vu" ? "Ton formateur a ouvert ta copie." : "Ton formateur ne l'a pas encore ouverte."}

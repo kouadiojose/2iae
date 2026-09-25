@@ -113,7 +113,7 @@ export default function PagePlanning() {
           <div className={cn("grid gap-3 transition-opacity lg:grid-cols-7", isFetching && "opacity-70", !data?.seances.length && "hidden lg:grid")}>
             {jours.map((j) => (
               <section key={j.cle} className={cn("flex flex-col gap-2 lg:min-h-[240px] lg:rounded-2xl lg:bg-creme lg:p-2", !j.seances.length && "hidden lg:flex")} aria-label={jourLong(j.date)}>
-                <h3 className={cn("px-1 text-sm font-extrabold capitalize", j.cle === aujourdhui && "text-orange-fonce")}>
+                <h3 className={cn("px-1 text-sm font-extrabold first-letter:uppercase", j.cle === aujourdhui && "text-orange-fonce")}>
                   {jourLong(j.date)}
                   {j.cle === aujourdhui && <span className="ml-2 font-mono text-[11px] font-normal uppercase">aujourd'hui</span>}
                 </h3>

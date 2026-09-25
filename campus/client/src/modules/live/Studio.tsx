@@ -11,12 +11,11 @@ import { heureDouble } from "@/lib/dates";
 import { Bouton } from "@/components/ui/bouton";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Champ, ZoneTexte, Interrupteur } from "@/components/ui/champs";
-import { Onglets } from "@/components/ui/onglets";
 import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { EmetteurRadio, TestMicroCamera } from "@/modules/visio";
 import { Scene } from "./scene";
-import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus } from "./panneaux";
+import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance } from "./ui";
 import { cleDirect, useEcranAllume, useEtatDirect } from "./outils";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
@@ -114,7 +113,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           }
         />
 
-        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_380px] lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="grid gap-4 xl:grid-cols-[250px_minmax(0,1fr)_400px] lg:grid-cols-[minmax(0,1fr)_380px]">
           {/* Colonne du plan (sous la scène sur les écrans moyens) */}
           <div className="order-3 flex flex-col gap-4 lg:order-3 xl:order-1">
             <ChronoPlan seance={seance} etat={etat} />
@@ -138,14 +137,18 @@ export default function Studio({ seance, observation = false }: { seance: Seance
               paroleSiteId={paroleSiteId}
               onChoisir={observation || !enDirect ? undefined : (c) => donnerParole(seance.id, { siteId: c.siteId })}
             />
-            {!observation && (
+            {!observation && (seance.fournisseur === "daily" || seance.fournisseur === "campus" || etat.parole) && !etat.planB && (
               <div className="flex flex-wrap items-center justify-center gap-2">
+                {(seance.fournisseur === "daily" || seance.fournisseur === "campus") && (
+                  <>
                 <Bouton variante={micro ? "nuit-actif" : "nuit"} onClick={() => setMicro((m) => !m)} icone={micro ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}>
                   {micro ? "Micro activé" : "Micro coupé"}
                 </Bouton>
                 <Bouton variante={camera ? "nuit-actif" : "nuit"} onClick={() => setCamera((c) => !c)} icone={camera ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}>
                   {camera ? "Caméra activée" : "Caméra coupée"}
                 </Bouton>
+                  </>
+                )}
                 {etat.parole && (
                   <Bouton variante="nuit" onClick={() => reprendreParole(seance.id)}>
                     Reprendre la parole
@@ -157,20 +160,16 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           </div>
 
           <aside className="order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau lg:order-2 xl:order-3">
-            <div className="border-b border-nuit-ligne p-2.5">
-              <Onglets
-                nuit
-                valeur={onglet}
-                onChange={setOnglet}
-                options={[
+            <OngletsPanneau
+              valeur={onglet}
+              onChange={setOnglet}
+              options={[
                   { valeur: "mains", libelle: "Mains", compteur: nbMains || undefined },
                   { valeur: "questions", libelle: "Questions", compteur: etat.questions.filter((q) => !q.repondue && !q.masquee).length || undefined },
                   { valeur: "sondages", libelle: "Sondages" },
                   { valeur: "campus", libelle: "Campus" },
                 ]}
-                className="p-0"
-              />
-            </div>
+            />
             {onglet === "mains" && <FileMains seanceId={seance.id} etat={etat} lectureSeule={observation} />}
             {onglet === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role={observation ? "equipe" : "formateur"} enDirect={enDirect} />}
             {onglet === "sondages" && <PanneauSondages seance={seance} etat={etat} lectureSeule={observation} />}
@@ -526,7 +525,7 @@ function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirec
       {demarree ? (
         <div className="text-[44px] font-black leading-none tabular-nums tracking-serre">
           {resteMin >= 0 ? resteMin : 0}
-          <span className="ml-1 text-base font-bold text-nuit-gris">min restantes</span>
+          <span className="ml-2 text-base font-bold tracking-normal text-nuit-gris">min restantes</span>
         </div>
       ) : (
         <CompteARebours cible={seance.debut} />
@@ -574,15 +573,11 @@ function BandeDiapos({ seance, etat, onChanger }: { seance: SeanceDetailDto; eta
   return (
     <div className="flex flex-col gap-2 rounded-[18px] bg-nuit-panneau p-3">
       <div className="flex items-center justify-between gap-2">
-        <Bouton variante="nuit" taille="sm" onClick={() => onChanger(-1)} disabled={etat.diapo.index === 0} icone={<ChevronLeft className="h-4 w-4" />} aria-label="Diapo précédente">
-          ←
-        </Bouton>
+        <Bouton variante="nuit" taille="sm" onClick={() => onChanger(-1)} disabled={etat.diapo.index === 0} icone={<ChevronLeft className="h-5 w-5" />} aria-label="Diapo précédente" className="min-h-11 min-w-11" />
         <span className="font-mono text-[12px] text-orange-peche">
           Diapo {etat.diapo.index + 1} / {etat.diapo.total} · touches ← →
         </span>
-        <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={etat.diapo.index >= etat.diapo.total - 1} aria-label="Diapo suivante">
-          → <ChevronRight className="h-4 w-4" />
-        </Bouton>
+        <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={etat.diapo.index >= etat.diapo.total - 1} icone={<ChevronRight className="h-5 w-5" />} aria-label="Diapo suivante" className="min-h-11 min-w-11" />
       </div>
       <div className="defile-fin flex gap-2 overflow-x-auto pb-1">
         {seance.diapos.map((d) => (

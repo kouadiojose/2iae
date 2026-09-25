@@ -60,7 +60,7 @@ export function CarteCoursEtudiant({ cours }: { cours: CoursResume }) {
 }
 
 /** Carte formateur / équipe : voir le cours, ou le modifier. */
-export function CarteCoursEnseignant({ cours }: { cours: CoursResume }) {
+export function CarteCoursEnseignant({ cours, montrerFormateur }: { cours: CoursResume; montrerFormateur?: boolean }) {
   const tonStatut = cours.statut === "publie" ? "succes" : cours.statut === "archive" ? "gris" : "alerte";
   const details = [
     pluriel(cours.nbLecons, "leçon publiée", "leçons publiées"),
@@ -88,10 +88,14 @@ export function CarteCoursEnseignant({ cours }: { cours: CoursResume }) {
         </div>
         <span className="text-[17px] font-bold leading-snug">{cours.titre}</span>
         <span className="text-[13px] text-texte-gris">{details}</span>
-        {cours.formateur && <span className="text-[13px] text-texte-pale">Formateur : {cours.formateur.prenom} {cours.formateur.nom}</span>}
+        {montrerFormateur && (
+          <span className="text-[13px] text-texte-pale">
+            {cours.formateur ? `Formateur : ${cours.formateur.prenom} ${cours.formateur.nom}` : "Aucun formateur pour l'instant"}
+          </span>
+        )}
         <LigneSeance cours={cours} formateur />
       </Link>
-      <div className="flex items-center justify-end gap-2 border-t border-ligne-douce px-4 py-2.5">
+      <div className="mt-auto flex items-center justify-end gap-2 border-t border-ligne-douce px-4 py-2.5">
         <LienBouton href={`/enseigner/cours/${cours.id}`} variante="contour" taille="sm" icone={<PenLine className="h-4 w-4" />} className="min-h-[44px]">
           Modifier
         </LienBouton>

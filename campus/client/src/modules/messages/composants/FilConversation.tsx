@@ -176,7 +176,19 @@ function Visionneuse({ photo, onFermer }: { photo: { url: string; nom: string } 
 
 // ── En-tête ────────────────────────────────────────────────────────────────
 
-function EnTeteFil({ d, mobile, saisie, estEquipe }: { d: ConversationDetail | undefined; mobile: boolean; saisie: string | null; estEquipe: boolean }) {
+function EnTeteFil({
+  d,
+  mobile,
+  saisie,
+  estEquipe,
+  enErreur = false,
+}: {
+  d: ConversationDetail | undefined;
+  mobile: boolean;
+  saisie: string | null;
+  estEquipe: boolean;
+  enErreur?: boolean;
+}) {
   const [, naviguer] = useLocation();
   const [sourdine, setSourdine] = useState<boolean | null>(null);
   const muet = sourdine ?? d?.sourdine ?? false;
@@ -256,6 +268,8 @@ function EnTeteFil({ d, mobile, saisie, estEquipe }: { d: ConversationDetail | u
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
         </>
+      ) : enErreur ? (
+        <h2 className="flex-1 px-2 text-[17px] font-extrabold">Messages</h2>
       ) : (
         <div className="flex flex-1 items-center gap-3">
           <Squelette className="h-11 w-11 rounded-full" />
@@ -435,7 +449,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
   );
 
   // ── Temps réel (seulement quand l'écran est visible) ─────────────────────
-  useCanal(visible ? `conv:${id}` : null, (e) => {
+  useCanal(visible && d ? `conv:${id}` : null, (e) => {
     if (e.type === "message") {
       const m = e.data as MessageDto;
       if (m.conversationId !== id) return;
@@ -618,11 +632,15 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
     const statut = erreur instanceof ErreurApi ? erreur.statut : 0;
     return (
       <div className={conteneur} style={style}>
-        <EnTeteFil d={undefined} mobile={mobile} saisie={null} estEquipe={estEquipe} />
+        <EnTeteFil d={undefined} mobile={mobile} saisie={null} estEquipe={estEquipe} enErreur />
         <div className="flex flex-1 items-center justify-center p-6">
           <EtatVide
             titre={statut === 404 ? "Conversation introuvable" : statut === 403 ? "Conversation réservée" : "Impossible d'ouvrir la conversation"}
-            texte={erreur.message}
+            texte={
+              statut === 404
+                ? selonRole(moi.role, "Elle n'existe pas, ou elle ne te concerne pas.", "Elle n'existe pas, ou elle ne vous concerne pas.")
+                : erreur.message
+            }
             action={
               statut === 0 || statut >= 500 ? (
                 <Bouton onClick={() => (void detailQ.refetch(), void pageQ.refetch())}>Réessayer</Bouton>
@@ -704,7 +722,8 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
 
       <div className="relative min-h-0 flex-1">
         <div ref={zone} onScroll={surDefilement} className="defile-fin absolute inset-0 overflow-y-auto overscroll-contain bg-creme px-3 pb-4 sm:px-5" aria-live="polite" aria-relevant="additions">
-          <div ref={contenu}>
+          {/* Comme sur WhatsApp : peu de messages ? Ils se posent en bas, près de la zone de saisie. */}
+          <div ref={contenu} className="flex min-h-full flex-col justify-end">
             <div ref={sentinelle} />
             {etat.plusAnciens && (
               <div className="flex justify-center py-3">

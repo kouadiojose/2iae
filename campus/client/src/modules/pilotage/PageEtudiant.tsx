@@ -76,7 +76,7 @@ export default function PageEtudiant({ id }: { id: string }) {
           <h1 className="titre-page mt-1">
             {e.prenom} {e.nom}
           </h1>
-          <p className="mt-1 text-base text-texte-doux">{[e.classe, e.site ? `Campus ${e.site}` : null].filter(Boolean).join(" · ")}</p>
+          <p className="mt-1 text-base text-texte-doux">{[e.classe, e.site && !(e.classe ?? "").includes(e.site) ? `Campus ${e.site}` : null].filter(Boolean).join(" · ")}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {!e.actif && <Badge ton="gris">Compte désactivé</Badge>}
             {d.activation.active ? (
@@ -101,13 +101,13 @@ export default function PageEtudiant({ id }: { id: string }) {
           ) : (
             <span className="col-span-2 text-center text-sm text-texte-gris">Pas de téléphone enregistré</span>
           )}
-          <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px]">
+          <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px] px-3">
             Modifier
           </Bouton>
           <Bouton
             variante="contour"
             icone={<KeyRound className="h-4 w-4" />}
-            className="min-h-[48px]"
+            className="min-h-[48px] whitespace-nowrap px-3"
             disabled={!e.actif}
             onClick={async () => {
               if (!window.confirm(`Créer un nouveau code pour ${e.prenom} ? L'ancien ne marchera plus.`)) return;
@@ -124,7 +124,7 @@ export default function PageEtudiant({ id }: { id: string }) {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
           <Assiduite d={d} onJustifier={(s) => setJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: e.id, nom: `${e.prenom} ${e.nom}`, justification: s.justification })} />
           <Notes d={d} />

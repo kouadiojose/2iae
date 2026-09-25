@@ -13,7 +13,6 @@ import { Carte } from "@/components/ui/carte";
 import { ZoneTexte, CaseACocher } from "@/components/ui/champs";
 import { Avatar, Badge, Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { Fenetre } from "@/components/ui/fenetre";
-import { Onglets } from "@/components/ui/onglets";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { useMoiConnecte, estEquipe } from "@/lib/auth";
 import { useCanal } from "@/lib/flux";
@@ -24,7 +23,7 @@ import { cn, pluriel } from "@/lib/utils";
 import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, RecuDepot } from "@shared/schema";
 import { Visionneuse, EnregistreurVocal } from "./composants/Correction";
 import { CorrectionQuiz } from "./composants/CorrectionQuiz";
-import { nombre } from "./outils";
+import { envoyeeEnDiffere, nombre } from "./outils";
 
 type Filtre = "toutes" | "a_corriger" | "rendues" | "retard" | "non_rendues";
 
@@ -153,20 +152,35 @@ export default function PageCopies({ id }: { id: string }) {
         {!quiz && compteurs.publiees > 0 && <Badge ton="succes">{compteurs.publiees} publiée{compteurs.publiees > 1 ? "s" : ""}</Badge>}
       </div>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* Liste des copies (sur téléphone : masquée quand une copie est ouverte). */}
         <section className={cn("flex flex-col gap-3", courante && "hidden lg:flex")} aria-label="Liste des copies">
-          <Onglets
-            valeur={filtre}
-            onChange={setFiltre}
-            options={[
-              { valeur: "toutes", libelle: "Toutes" },
-              ...(quiz ? [] : [{ valeur: "a_corriger" as Filtre, libelle: "À corriger", compteur: compteurs.aCorriger }]),
-              { valeur: "rendues", libelle: quiz ? "Terminées" : "Rendues" },
-              ...(quiz ? [] : [{ valeur: "retard" as Filtre, libelle: "En retard" }]),
-              { valeur: "non_rendues", libelle: quiz ? "Pas faites" : "Non rendues" },
-            ]}
-          />
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrer les copies">
+            {(
+              [
+                { valeur: "toutes", libelle: "Toutes", n: copies.length },
+                ...(quiz ? [] : [{ valeur: "a_corriger" as Filtre, libelle: "À corriger", n: copies.filter(FILTRES.a_corriger).length }]),
+                { valeur: "rendues", libelle: quiz ? "Terminées" : "Rendues", n: copies.filter(FILTRES.rendues).length },
+                ...(quiz ? [] : [{ valeur: "retard" as Filtre, libelle: "En retard", n: copies.filter(FILTRES.retard).length }]),
+                { valeur: "non_rendues", libelle: quiz ? "Pas faites" : "Non rendues", n: copies.filter(FILTRES.non_rendues).length },
+              ] as { valeur: Filtre; libelle: string; n: number }[]
+            ).map((o) => (
+              <button
+                key={o.valeur}
+                type="button"
+                role="tab"
+                aria-selected={filtre === o.valeur}
+                onClick={() => setFiltre(o.valeur)}
+                className={cn(
+                  "flex min-h-[40px] items-center gap-1.5 rounded-full px-3.5 text-sm font-bold transition-colors",
+                  filtre === o.valeur ? "bg-encre text-white" : "bg-creme text-texte-doux hover:bg-orange-clair",
+                )}
+              >
+                {o.libelle}
+                <span className={cn("font-mono text-[11px]", filtre === o.valeur ? "text-orange-peche" : "text-texte-gris")}>{o.n}</span>
+              </button>
+            ))}
+          </div>
           {visibles.length ? (
             <ul className="flex flex-col gap-1.5 lg:max-h-[calc(100dvh-280px)] lg:overflow-y-auto lg:pr-1">
               {visibles.map((c) => (
@@ -321,7 +335,7 @@ function CopieOuverte({
   if (error || !c) return <Erreur message={(error as Error)?.message ?? "Copie introuvable."} reessayer={() => void refetch()} />;
 
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="flex flex-col gap-4">
         <Carte className="flex flex-col gap-2 p-4">
           <div className="flex items-center gap-3">
@@ -345,7 +359,7 @@ function CopieOuverte({
             {c.recu && <Badge ton="gris">Reçu {c.recu}</Badge>}
             {c.deposePar && <Badge ton="alerte">Copie papier déposée par {c.deposePar.prenom} {c.deposePar.nom}</Badge>}
           </div>
-          {c.prepareLe && <p className="text-sm text-texte-pale">Préparée sur le téléphone à {heure(c.prepareLe)} (hors ligne), arrivée à {c.renduLe ? heure(c.renduLe) : "—"}. L'heure d'arrivée fait foi.</p>}
+          {envoyeeEnDiffere(c.prepareLe, c.renduLe) && c.prepareLe && <p className="text-sm text-texte-pale">Préparée sur le téléphone à {heure(c.prepareLe)} (hors ligne), arrivée à {c.renduLe ? heure(c.renduLe) : "—"}. L'heure d'arrivée fait foi.</p>}
         </Carte>
         {quiz ? (
           c.reponsesQuiz ? (

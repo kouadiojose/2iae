@@ -76,7 +76,7 @@ export default function PageSuivi() {
           texte="La liste se met à jour toute seule : un étudiant y apparaît dès qu'une des quatre règles le concerne, et en sort dès qu'il revient."
         />
       ) : (
-        <ul className="grid gap-3 lg:grid-cols-2" aria-live="polite">
+        <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2" aria-live="polite">
           {lignes.map((l) => (
             <LigneAContacter key={l.etudiant.id} ligne={l} onSuivi={setSuivi} />
           ))}

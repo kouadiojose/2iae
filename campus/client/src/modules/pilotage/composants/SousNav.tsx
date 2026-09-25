@@ -1,5 +1,6 @@
 // Sous-navigation du pilotage : toutes les pages de la vie scolaire à portée
 // de pouce (la barre du bas n'a que cinq places).
+import { useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -20,8 +21,15 @@ const PAGES: { href: string; libelle: string; prefixes?: string[]; direction?: b
 export function SousNav({ className }: { className?: string }) {
   const [chemin] = useLocation();
   const moi = useMoiConnecte();
+  const barre = useRef<HTMLElement>(null);
+  // Sur téléphone, la page ouverte reste visible dans la barre qui défile.
+  useEffect(() => {
+    const nav = barre.current;
+    const actif = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (nav && actif) nav.scrollLeft = Math.max(0, actif.offsetLeft - nav.clientWidth / 2 + actif.clientWidth / 2);
+  }, [chemin]);
   return (
-    <nav aria-label="Pages du pilotage" className={cn("-mx-4 overflow-x-auto px-4 sm:-mx-7 sm:px-7 print:hidden", className)}>
+    <nav ref={barre} aria-label="Pages du pilotage" className={cn("relative -mx-4 overflow-x-auto px-4 sm:-mx-7 sm:px-7 print:hidden", className)}>
       <ul className="flex w-max gap-1.5">
         {PAGES.filter((p) => !p.direction || moi.role === "admin").map((p) => {
           const actif = chemin === p.href || (p.prefixes ?? []).some((x) => chemin === x || chemin.startsWith(`${x}/`));

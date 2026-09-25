@@ -82,7 +82,7 @@ export default function PageLecon({ id, leconId }: { id: string; leconId: string
   const suivante = lecon.suivante;
 
   return (
-    <Page className="max-w-[760px] gap-5">
+    <Page className="max-w-[760px] gap-5 pb-36 lg:pb-24">{/* place pour le bouton flottant de l'assistant */}
       <Link href={`/cours/${lecon.coursId}`} className="-mb-1 inline-flex min-h-[44px] items-center gap-2 self-start text-[15px] font-semibold text-texte-pale no-underline hover:text-encre">
         <ArrowLeft className="h-4 w-4" />
         <span className="font-mono text-[13px] text-orange-fonce">{lecon.coursCode}</span>

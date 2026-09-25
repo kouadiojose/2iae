@@ -45,11 +45,14 @@ export function FenetreLecon({
   chapitres,
   mode,
   onFermer,
+  coursPublie,
 }: {
   coursId: number;
   chapitres: ChapitreDuCours[];
   mode: ModeFenetreLecon | null;
   onFermer: () => void;
+  /** Les étudiants ne sont prévenus d'une leçon que si le cours est publié. */
+  coursPublie: boolean;
 }) {
   const edition = mode?.type === "edition" ? mode.leconId : null;
   const { data: lecon, isLoading, error, isFetchedAfterMount } = useQuery<LeconDetail>({
@@ -123,6 +126,10 @@ export function FenetreLecon({
     return r;
   }
 
+  const messagePublication = coursPublie
+    ? "Leçon publiée : les étudiants sont prévenus."
+    : "Leçon publiée. Les étudiants la verront quand le cours sera publié.";
+
   async function enregistrer() {
     if (!etat || !mode) return;
     const r = verifier(etat);
@@ -141,11 +148,11 @@ export function FenetreLecon({
     try {
       if (mode.type === "creation") {
         await post(`/api/chapitres/${etat.chapitreId}/lecons`, corps);
-        toast(etat.publiee ? "Leçon publiée : les étudiants sont prévenus." : "Leçon enregistrée en brouillon.");
+        toast(etat.publiee ? messagePublication : "Leçon enregistrée en brouillon.");
       } else {
         const avantPubliee = lecon?.publiee;
         await patch(`/api/lecons/${mode.leconId}`, { ...corps, ...(lecon && etat.chapitreId !== lecon.chapitre.id ? { chapitreId: etat.chapitreId } : {}) });
-        toast(!avantPubliee && etat.publiee ? "Leçon publiée : les étudiants sont prévenus." : "Leçon enregistrée.");
+        toast(!avantPubliee && etat.publiee ? messagePublication : "Leçon enregistrée.");
       }
       await rafraichir("/api/cours");
       onFermer();
@@ -322,7 +329,13 @@ export function FenetreLecon({
                 checked={etat.publiee}
                 onChange={(publiee) => maj({ publiee })}
                 libelle="Publier la leçon"
-                aide={etat.publiee ? "Les étudiants la voient. S'il s'agit d'une première publication, ils reçoivent une notification (sans sonnerie)." : "Brouillon : seuls les formateurs et l'équipe la voient."}
+                aide={
+                  !etat.publiee
+                    ? "Brouillon : seuls les formateurs et l'équipe la voient."
+                    : coursPublie
+                      ? "Les étudiants la voient. À la première publication, ils reçoivent une notification (sans sonnerie)."
+                      : "Elle sera visible dès que le cours sera publié."
+                }
               />
             </div>
 

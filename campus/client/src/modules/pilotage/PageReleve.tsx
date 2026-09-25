@@ -79,7 +79,7 @@ export default function PageReleve({ jeton }: { jeton: string }) {
               </dl>
             </section>
 
-            <section className="grid gap-3 sm:grid-cols-2">
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-2xl bg-encre p-5 text-white">
                 <div className="font-mono text-xs uppercase tracking-wider text-nuit-gris">Moyenne générale</div>
                 <div className="mt-1 text-5xl font-black">{data.moyenneGenerale === null ? "–" : note(data.moyenneGenerale)}</div>

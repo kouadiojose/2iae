@@ -66,7 +66,7 @@ export default function PageClasses() {
           return (
             <section key={s.id}>
               <TitreSection titre={`Campus ${s.nomCourt}`} action={<span className="font-mono text-xs text-texte-gris">{pluriel(liste.length, "classe")}</span>} />
-              <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {liste.map((c) => (
                   <CarteClasse key={c.id} c={c} onModifier={() => setEdition(c)} />
                 ))}
@@ -78,7 +78,7 @@ export default function PageClasses() {
 
       <section>
         <TitreSection titre="Les campus" />
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {sites.map((s) => (
             <li key={s.id} className="flex flex-col gap-2 rounded-2xl border border-ligne bg-white p-5">
               <div className="flex items-baseline justify-between gap-2">
@@ -234,7 +234,7 @@ function FenetreClasse({ edition, sites, onFermer }: { edition: ClasseLigne | "n
             </option>
           ))}
         </Selection>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Champ libelle="Filière" value={f.filiere} onChange={maj("filiere")} placeholder="Gestion commerciale" />
           <Champ libelle="Niveau" value={f.niveau} onChange={maj("niveau")} placeholder="BTS 1, Licence 3…" />
         </div>

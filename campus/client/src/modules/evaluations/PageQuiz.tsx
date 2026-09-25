@@ -176,7 +176,7 @@ function Accueil({ d, onCommencer, depart, retour }: { d: DevoirDetailEtudiant; 
 
       {devoir.consigne.trim() && (
         <div className="rounded-2xl bg-creme p-4">
-          <Markdown source={devoir.consigne} />
+          <Markdown source={devoir.consigne} className="[&>:first-child]:mt-0 [&>:last-child]:mb-0" />
         </div>
       )}
 

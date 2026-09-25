@@ -112,7 +112,7 @@ export default function PageMesCours() {
           )}
           {liste.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              {liste.map((c) => (etudiant ? <CarteCoursEtudiant key={c.id} cours={c} /> : <CarteCoursEnseignant key={c.id} cours={c} />))}
+              {liste.map((c) => (etudiant ? <CarteCoursEtudiant key={c.id} cours={c} /> : <CarteCoursEnseignant key={c.id} cours={c} montrerFormateur={equipe} />))}
             </div>
           ) : (
             <EtatVide titre="Aucun cours ne correspond" texte="Essayez avec le code du cours (« IA-101 ») ou le nom du formateur." />

@@ -68,7 +68,7 @@ export default function PageSite() {
           <span className="text-texte-pale">
             {data.webhookConfigure ? "Chaque changement prévient le site aussitôt." : "Le site relit le campus toutes les 5 minutes (variable SITE_WEBHOOK_URL absente)."}
           </span>
-          {!data.peutPublier && <Badge ton="gris">Lecture seule : la publication est réservée à la direction</Badge>}
+          {!data.peutPublier && <span className="w-full font-semibold text-texte-doux">Lecture seule : la publication est réservée à la direction.</span>}
         </div>
       )}
 
@@ -99,7 +99,7 @@ export default function PageSite() {
               }
             />
           ) : (
-            <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {visibles.map((e) => (
                 <CarteElement key={`${e.type}-${e.id}`} e={e} peutPublier={data.peutPublier} />
               ))}

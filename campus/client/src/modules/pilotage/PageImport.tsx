@@ -92,7 +92,7 @@ export default function PageImport() {
             </Bouton>
           </div>
         </div>
-        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {resultat.fiches.map((f) => (
             <li key={f.id} className="rounded-xl border border-ligne px-4 py-3">
               <div className="font-bold">
@@ -163,7 +163,7 @@ export default function PageImport() {
         titre="Importer des étudiants"
         sousTitre="Dans Excel, sélectionnez le tableau AVEC sa ligne d'en-têtes, copiez (Ctrl+C), puis collez-le ci-dessous (Ctrl+V). Un fichier CSV ouvert dans le Bloc-notes marche aussi."
       />
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-4">
           <label htmlFor="texte-import" className="text-sm font-bold">
             Le tableau copié depuis Excel

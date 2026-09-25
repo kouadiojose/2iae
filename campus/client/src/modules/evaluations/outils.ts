@@ -29,6 +29,10 @@ export function echeanceEnMots(dateLimite: string, maintenant: number): { texte:
 /** « dimanche 27 septembre à 23h59 » (heure d'Abidjan). */
 export const dateEtHeureCourte = (x: string) => `${jourLong(x)} à ${heure(x)}`;
 
+/** La copie a attendu le réseau sur le téléphone (plus de 2 minutes entre sa préparation et son arrivée). */
+export const envoyeeEnDiffere = (prepareLe: string | null, renduLe: string | null) =>
+  Boolean(prepareLe && renduLe && new Date(renduLe).getTime() - new Date(prepareLe).getTime() > 2 * 60_000);
+
 export const LIBELLES_STATUT: Record<StatutDevoirEtudiant, string> = {
   a_rendre: "À rendre",
   en_retard: "En retard",

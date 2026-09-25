@@ -20,7 +20,7 @@ export function telephoneLisible(tel: string | null | undefined): string {
 }
 
 /** « 67 % » ou « – » quand il n'y a encore rien à mesurer. */
-export const pourcent = (n: number | null | undefined) => (n === null || n === undefined ? "–" : `${n} %`);
+export const pourcent = (n: number | null | undefined) => (n === null || n === undefined ? "–" : `${n}\u202f%`);
 
 /** « il y a 3 jours », ou « jamais ». */
 export const vuLe = (iso: string | null | undefined) => (iso ? relatif(iso, maintenantServeur()) : "jamais");

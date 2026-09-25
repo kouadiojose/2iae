@@ -1,6 +1,6 @@
 // Écran de reçu vert (la preuve à montrer : « Monsieur, je l'avais envoyé »)
 // et écran « En attente de réseau » quand la copie est rangée dans la file.
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { CheckCircle2, CloudUpload, FileText, Share2, Clock } from "lucide-react";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { heure } from "@/lib/dates";
@@ -28,12 +28,22 @@ function partager(recu: RecuDepot) {
   else window.open(`https://wa.me/?text=${encodeURIComponent(texte)}`, "_blank", "noopener");
 }
 
+/** Amène l'écran dans la vue (le bouton « Envoyer » est souvent tout en bas de la page). */
+function useDansLaVue<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+  return ref;
+}
+
 export function EcranRecu({ recu, onFermer }: { recu: RecuDepot; onFermer?: () => void }) {
+  const ref = useDansLaVue<HTMLElement>();
   const pages = recu.fichiers.filter((f) => f.mime.startsWith("image/")).length;
   const autres = recu.fichiers.length - pages;
   const contenu = [pages ? pluriel(pages, "page") : null, autres ? pluriel(autres, "fichier") : null, recu.aDuTexte ? "texte" : null].filter(Boolean).join(" · ");
   return (
-    <section className="flex flex-col items-center gap-5 rounded-[28px] bg-succes-clair px-5 py-8 text-center animate-monte sm:px-10" aria-live="polite">
+    <section ref={ref} className="flex scroll-mt-24 flex-col items-center gap-5 rounded-[28px] bg-succes-clair px-5 py-8 text-center animate-monte sm:px-10" aria-live="polite">
       <span className="grid h-20 w-20 place-items-center rounded-full bg-succes text-white shadow-carte">
         <CheckCircle2 className="h-11 w-11" strokeWidth={2.2} />
       </span>
@@ -84,6 +94,7 @@ export function EcranRecu({ recu, onFermer }: { recu: RecuDepot; onFermer?: () =
 
 /** La copie est rangée dans le téléphone : elle partira toute seule. */
 export function EcranEnAttente({ cle, titre, onRecu }: { cle?: string; titre: string; onRecu?: (r: RecuDepot) => void }) {
+  const ref = useDansLaVue<HTMLElement>();
   useEffect(() => {
     const ok = (e: Event) => {
       const detail = (e as CustomEvent<{ cle: string; reponse: unknown }>).detail;
@@ -93,7 +104,7 @@ export function EcranEnAttente({ cle, titre, onRecu }: { cle?: string; titre: st
     return () => window.removeEventListener("campus:envoi-reussi", ok);
   }, [cle, onRecu]);
   return (
-    <section className="flex flex-col items-center gap-4 rounded-[28px] bg-orange-clair px-5 py-8 text-center animate-monte" aria-live="polite">
+    <section ref={ref} className="flex scroll-mt-24 flex-col items-center gap-4 rounded-[28px] bg-orange-clair px-5 py-8 text-center animate-monte" aria-live="polite">
       <span className="grid h-16 w-16 place-items-center rounded-full bg-orange text-encre">
         <CloudUpload className="h-8 w-8" />
       </span>

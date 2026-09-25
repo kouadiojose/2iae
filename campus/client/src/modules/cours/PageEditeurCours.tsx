@@ -12,6 +12,7 @@ import { Badge, Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { Menu, ElementMenu } from "@/components/ui/menu";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { ErreurApi, patch, put } from "@/lib/api";
+import { useMoiConnecte, estEquipe } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn, pluriel } from "@/lib/utils";
 import { LIBELLES_STATUT } from "./outils";
@@ -31,6 +32,8 @@ const SECTIONS = [
 ];
 
 export default function PageEditeurCours({ id }: { id: string }) {
+  const moi = useMoiConnecte();
+  const retour = estEquipe(moi.role) ? "Cours" : "Mes cours";
   const coursId = Number(id);
   const cle = ["/api/cours", coursId];
   const { data: cours, isLoading, error, refetch } = useQuery<CoursDetail>({ queryKey: cle });
@@ -181,7 +184,7 @@ export default function PageEditeurCours({ id }: { id: string }) {
   return (
     <Page className="pb-40">
       <Link href="/cours" className="-mb-3 inline-flex min-h-[44px] items-center gap-2 self-start text-[15px] font-semibold text-texte-pale no-underline hover:text-encre">
-        <ArrowLeft className="h-4 w-4" /> Mes cours
+        <ArrowLeft className="h-4 w-4" /> {retour}
       </Link>
 
       <EnTetePage

@@ -101,7 +101,7 @@ export function SectionProgramme({ cours, leconAOuvrir }: { cours: CoursDetail; 
   function basculerPublication(l: LeconDuProgramme) {
     void action(
       () => patch(`/api/lecons/${l.id}`, { publiee: !l.publiee }),
-      l.publiee ? "Leçon repassée en brouillon." : cours.statut === "publie" ? "Leçon publiée : les étudiants sont prévenus." : "Leçon publiée (le cours est encore en brouillon).",
+      l.publiee ? "Leçon repassée en brouillon." : cours.statut === "publie" ? "Leçon publiée : les étudiants sont prévenus." : "Leçon publiée. Les étudiants la verront quand le cours sera publié.",
     );
   }
 
@@ -285,7 +285,7 @@ export function SectionProgramme({ cours, leconAOuvrir }: { cours: CoursDetail; 
         </form>
       </div>
 
-      <FenetreLecon coursId={cours.id} chapitres={cours.chapitres} mode={fenetre} onFermer={() => setFenetre(null)} />
+      <FenetreLecon coursId={cours.id} chapitres={cours.chapitres} mode={fenetre} onFermer={() => setFenetre(null)} coursPublie={cours.statut === "publie"} />
 
       <Confirmation
         ouverte={Boolean(aSupprimer)}

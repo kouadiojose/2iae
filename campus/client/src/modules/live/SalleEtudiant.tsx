@@ -11,11 +11,10 @@ import { cn } from "@/lib/utils";
 import { dateEtHeure } from "@/lib/dates";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { CompteARebours } from "@/components/ui/compte-a-rebours";
-import { Onglets } from "@/components/ui/onglets";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { TestMicroCamera } from "@/modules/visio";
 import { Scene } from "./scene";
-import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, VignettesSalles, BoutonsRessentis, CarteRattrapage } from "./panneaux";
+import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, VignettesSalles, BoutonsRessentis, CarteRattrapage, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
 import { CONSOMMATION, cleDirect, estimationMo, formatMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto } from "@shared/schema";
@@ -246,19 +245,15 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   const micro = jaiLaParole && mode === "video";
   const panneaux = (
     <aside className="flex min-h-[420px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau lg:min-h-0">
-      <div className="border-b border-nuit-ligne p-2.5">
-        <Onglets
-          nuit
-          valeur={panneau}
-          onChange={setPanneau}
-          options={[
+      <OngletsPanneau
+        valeur={panneau}
+        onChange={setPanneau}
+        options={[
             { valeur: "questions", libelle: "Questions", compteur: etat.questions.length || undefined },
             { valeur: "campus", libelle: "Campus" },
             { valeur: "assistant", libelle: "Assistant" },
           ]}
-          className="p-0"
-        />
-      </div>
+      />
       {panneau === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role="etudiant" enDirect={enDirect} />}
       {panneau === "campus" && <PanneauCampus etat={etat} />}
       {panneau === "assistant" && <PanneauAssistant etat={etat} iaDisponible={seance.iaDisponible} />}

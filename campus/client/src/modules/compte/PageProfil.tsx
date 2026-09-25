@@ -6,11 +6,12 @@ import { HelpCircle, LogOut } from "lucide-react";
 import { useMoiConnecte, seDeconnecter } from "@/lib/auth";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Page, EnTetePage } from "@/components/layout/coquille";
+import { ActiverNotifications } from "@/modules/pwa/ActiverNotifications";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { tuOuVous } from "./outils";
 import { CartePhoto } from "./composants/profil/CartePhoto";
 import { Coordonnees } from "./composants/profil/Coordonnees";
-import { Preferences, Rappels } from "./composants/profil/Preferences";
+import { Preferences } from "./composants/profil/Preferences";
 import { Agenda } from "./composants/profil/Agenda";
 import { Charte, Securite } from "./composants/profil/Securite";
 import { FicheSite } from "./composants/profil/FicheSite";
@@ -56,7 +57,10 @@ export default function PageProfil() {
           <Coordonnees moi={moi} />
           {moi.role === "formateur" && <FicheSite moi={moi} />}
           <Preferences moi={moi} />
-          <Rappels moi={moi} />
+          {/* Rappels sur ce téléphone (module pwa) : carte masquée si le campus n'a pas de clé d'envoi. */}
+          <div id="rappels" className="scroll-mt-24 empty:hidden">
+            <ActiverNotifications />
+          </div>
           <InviteInstallation />
           <Agenda moi={moi} />
           <Charte moi={moi} />

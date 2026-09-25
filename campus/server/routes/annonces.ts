@@ -710,8 +710,13 @@ export function enregistrerAnnonces(app: Express) {
       const [a] = await db.select().from(annonces).where(eq(annonces.id, idParam(req)));
       if (!a || !(await peutGererAnnonce(u, a))) throw introuvable("Annonce");
       await db.delete(annonces).where(eq(annonces.id, a.id));
-      // Les notifications qui y menaient ne mèneraient plus nulle part : on les retire des cloches.
-      await db.delete(notifications).where(eq(notifications.lien, `/annonces/${a.id}`));
+      // Les notifications qui y menaient ne mèneraient plus nulle part : on les retire des cloches
+      // (et les cloches ouvertes se remettent à jour).
+      const retirees = await db
+        .delete(notifications)
+        .where(eq(notifications.lien, `/annonces/${a.id}`))
+        .returning({ utilisateurId: notifications.utilisateurId });
+      for (const id of new Set(retirees.map((r) => r.utilisateurId))) publierUtilisateur(id, "notification", { retiree: true });
       await db.insert(journal).values({ utilisateurId: u.id, action: "annonce.supprimee", details: { annonceId: a.id, titre: a.titre } });
       if (a.publierSurSite) prevenirSite("annonce retirée");
       const canal = canalCible(a);

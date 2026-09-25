@@ -415,7 +415,7 @@ function Abonnement({ tu }: { tu: boolean }) {
       </p>
       {!lien ? (
         <Bouton onClick={() => void obtenir()} chargement={chargement} className="min-h-[48px]" icone={<CalendarPlus className="h-4 w-4" />}>
-          {tu ? "M'abonner à mon agenda" : "M'abonner à mon agenda"}
+          M'abonner à mon agenda
         </Bouton>
       ) : (
         <div className="flex flex-col gap-3">
@@ -440,7 +440,7 @@ function Abonnement({ tu }: { tu: boolean }) {
           <p className="text-[13px] leading-relaxed text-texte-gris">
             {tu ? "Ce lien est personnel : ne le partage pas." : "Ce lien est personnel : ne le partagez pas."}{" "}
             <button type="button" className="font-bold text-orange-fonce underline-offset-2 hover:underline" onClick={() => setRenouveler(true)}>
-              {tu ? "Lien partagé par erreur ?" : "Lien partagé par erreur ?"}
+              Lien partagé par erreur ?
             </button>
           </p>
         </div>

@@ -1,11 +1,10 @@
-// Préférences (données réduites, façon de suivre les cours) et rappels sur
-// ce téléphone. Chaque choix est enregistré aussitôt.
+// Préférences : données réduites et façon de suivre les cours.
+// Chaque choix est enregistré aussitôt.
 import { useState } from "react";
-import { BellRing, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { patch, ErreurApi } from "@/lib/api";
 import { Interrupteur } from "@/components/ui/champs";
 import { toast } from "@/components/ui/toast";
-import { ActiverNotifications } from "@/modules/pwa/ActiverNotifications";
 import type { Moi, PreferencesUtilisateur } from "@shared/schema";
 import { majMoi, tuOuVous } from "../../outils";
 import { CarteChoix, GroupeChoix, OPTIONS_SUIVI } from "../Choix";
@@ -69,23 +68,6 @@ export function Preferences({ moi }: { moi: Moi }) {
           </div>
         )}
       </div>
-    </Section>
-  );
-}
-
-export function Rappels({ moi }: { moi: Moi }) {
-  const t = tuOuVous(moi);
-  return (
-    <Section
-      id="rappels"
-      titre="Rappels sur ce téléphone"
-      icone={<BellRing className="h-5 w-5" />}
-      description={t(
-        "Un rappel 15 minutes avant chaque cours en direct et la veille d'un devoir. Jamais entre 21 h et 6 h.",
-        "Un rappel avant chaque séance et quand un étudiant vous écrit. Jamais entre 21 h et 6 h.",
-      )}
-    >
-      <ActiverNotifications />
     </Section>
   );
 }

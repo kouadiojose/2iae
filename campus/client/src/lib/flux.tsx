@@ -21,7 +21,7 @@ export function FournisseurFlux({ children }: { children: ReactNode }) {
   const connexionId = useRef<string | null>(null);
 
   const abonnerServeur = (canal: string) => {
-    if (!connexionId.current || isCanalPersonnel(canal)) return;
+    if (!connexionId.current || canal === "*" || isCanalPersonnel(canal)) return;
     post("/api/flux/abonner", { connexion: connexionId.current, canal }).catch(() => undefined);
   };
 

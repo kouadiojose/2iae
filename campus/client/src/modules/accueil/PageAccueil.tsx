@@ -21,6 +21,7 @@ import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { BandeauProchainLive } from "@/modules/live/BandeauProchainLive";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import type { AccueilEtudiant, AnnonceResume, CoursAccueil, ElementAFaire } from "@shared/schema";
+import type { EnCours } from "@shared/api";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 
 export default function PageAccueil() {
@@ -30,6 +31,8 @@ export default function PageAccueil() {
     refetchInterval: 60_000,
   });
   const maintenant = useMaintenant(60_000);
+  // Même requête que la coquille et le bandeau du prochain live (servie par le cache).
+  const { data: enCours } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], staleTime: 20_000 });
 
   useTousEvenements((e) => {
     if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil");
@@ -43,6 +46,12 @@ export default function PageAccueil() {
     );
   }
   if (isLoading || !data) return <SqueletteAccueil />;
+
+  // Le bandeau du prochain live ne répète pas la grande carte quand c'est déjà un live ;
+  // les lignes « Ensuite » ne répètent pas le live que le bandeau affiche.
+  const carteEstUnLive = data.aFaire.type === "live" || data.aFaire.type === "live_bientot";
+  const liveDuBandeau = !carteEstUnLive && enCours ? (enCours.enDirect ?? enCours.prochaine) : null;
+  const ensuite = liveDuBandeau ? data.prochains.filter((e) => e.lien !== `/live/${liveDuBandeau.id}`) : data.prochains;
 
   return (
     <Page className="gap-7">
@@ -65,12 +74,12 @@ export default function PageAccueil() {
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">
           <CarteAFaire element={data.aFaire} />
-          <BandeauProchainLive />
-          <Ensuite elements={data.prochains} />
+          {!carteEstUnLive && <BandeauProchainLive />}
+          <Ensuite elements={ensuite} />
         </div>
         <div className="flex min-w-0 flex-col gap-7">
           {data.annonceImportante && <AnnonceImportante annonce={data.annonceImportante} />}
-          <LienAnnonces nonLues={data.annoncesNonLues} />
+          <LienAnnonces nonLues={data.annoncesNonLues} serre={Boolean(data.annonceImportante)} />
           <MesCours cours={data.cours} />
         </div>
       </div>
@@ -234,9 +243,9 @@ function AnnonceImportante({ annonce }: { annonce: AnnonceResume }) {
 }
 
 /** Accès à toutes les annonces (elles n'ont pas d'onglet : on y arrive d'ici ou par la cloche). */
-function LienAnnonces({ nonLues }: { nonLues: number }) {
+function LienAnnonces({ nonLues, serre }: { nonLues: number; serre: boolean }) {
   return (
-    <Link href="/annonces" className="-mt-3 flex min-h-[56px] items-center gap-3 rounded-2xl border border-ligne px-4 py-3 text-encre no-underline hover:border-orange hover:text-encre">
+    <Link href="/annonces" className={cn(serre && "-mt-4", "flex min-h-[56px] items-center gap-3 rounded-2xl border border-ligne px-4 py-3 text-encre no-underline hover:border-orange hover:text-encre")}>
       <Megaphone className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="font-bold">Toutes les annonces</span>

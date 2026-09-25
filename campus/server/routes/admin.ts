@@ -373,7 +373,7 @@ function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: nu
 const SQL_DERNIERE_ACTIVITE = sql`
   SELECT uid, max(t) AS t FROM (
     SELECT id AS uid, derniere_connexion AS t FROM campus.utilisateurs WHERE role = 'etudiant'
-    UNION ALL SELECT utilisateur_id, max(derniere_activite) FROM campus.presences GROUP BY 1
+    UNION ALL SELECT utilisateur_id, max(derniere_activite) FROM campus.presences WHERE minutes > 0 OR emarge_qr OR mode = 'salle' GROUP BY 1
     UNION ALL SELECT etudiant_id, max(rendu_le) FROM campus.rendus GROUP BY 1
     UNION ALL SELECT auteur_id, max(cree_le) FROM campus.messages GROUP BY 1
     UNION ALL SELECT utilisateur_id, max(terminee_le) FROM campus.progressions GROUP BY 1
@@ -1989,7 +1989,9 @@ export function enregistrerAdmin(app: Express) {
       if (!attendu) throw invalide("Cet étudiant n'était pas attendu à cette séance.");
       await db
         .insert(presences)
-        .values({ seanceId: s.id, utilisateurId: e.id, siteId: e.siteId, mode: "en_ligne", minutes: 0, justification: d.justification })
+        // Ligne créée pour un absent : ni arrivée ni activité réelles (on date à l'heure de la séance
+        // pour ne pas fausser « vu sur le campus »).
+        .values({ seanceId: s.id, utilisateurId: e.id, siteId: e.siteId, mode: "en_ligne", minutes: 0, justification: d.justification, arriveeLe: s.debut, derniereActivite: s.debut })
         .onConflictDoUpdate({ target: [presences.seanceId, presences.utilisateurId], set: { justification: d.justification } });
       await journaliser(u, "absence_justifiee", { seanceId: s.id, etudiantId: e.id, retiree: d.justification === null });
       const [apres] = await db.execute<LigneAttendu>(sqlAttendus({ seanceId: s.id, etudiantId: e.id, sites: null, inclureEnCours: true })).then((r) => r.rows);

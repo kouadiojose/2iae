@@ -5,7 +5,7 @@
 // d'accueil » (Android) ou Partager « Sur l'écran d'accueil » (iPhone).
 // « Plus tard » est retenu 30 jours sur le téléphone.
 import { useState } from "react";
-import { Download, MoreVertical, Share, X } from "lucide-react";
+import { Download, Share, X } from "lucide-react";
 import { useMoi } from "@/lib/auth";
 import { Bouton } from "@/components/ui/bouton";
 import { toast } from "@/components/ui/toast";
@@ -56,7 +56,7 @@ export function InviteInstallation() {
           { icone: null, texte: f("Touche « Ajouter » : l'icône 2IAE apparaît.", "Touchez « Ajouter » : l'icône 2IAE apparaît.") },
         ]
       : [
-          { icone: <MoreVertical className="h-4 w-4" />, texte: f("Touche le menu ⋮ en haut à droite de Chrome.", "Touchez le menu ⋮ en haut à droite de Chrome.") },
+          { icone: null, texte: f("Touche le menu ⋮ en haut à droite de Chrome.", "Touchez le menu ⋮ en haut à droite de Chrome.") },
           { icone: null, texte: f("Choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »).", "Choisissez « Ajouter à l'écran d'accueil » (ou « Installer l'application »).") },
           { icone: null, texte: f("Confirme : l'icône 2IAE apparaît avec tes autres applications.", "Confirmez : l'icône 2IAE apparaît avec vos autres applications.") },
         ];

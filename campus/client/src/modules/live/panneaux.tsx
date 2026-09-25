@@ -22,6 +22,33 @@ import type {
 
 const LETTRES = ["A", "B", "C", "D", "E"];
 
+// ── Onglets du panneau latéral (boutons de même largeur, comme la maquette) ──
+
+export function OngletsPanneau<T extends string>({ valeur, onChange, options }: { valeur: T; onChange: (v: T) => void; options: { valeur: T; libelle: string; compteur?: number }[] }) {
+  return (
+    <div role="tablist" className="flex gap-1 border-b border-nuit-ligne p-2.5">
+      {options.map((o) => {
+        const actif = o.valeur === valeur;
+        return (
+          <button
+            key={o.valeur}
+            role="tab"
+            aria-selected={actif}
+            onClick={() => onChange(o.valeur)}
+            className={cn(
+              "flex min-h-11 min-w-0 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2.5 text-[13px] font-bold transition-colors",
+              actif ? "bg-orange text-encre" : "text-nuit-doux hover:text-white",
+            )}
+          >
+            <span>{o.libelle}</span>
+            {o.compteur ? <span className={cn("rounded-full px-1.5 font-mono text-[11px]", actif ? "bg-encre text-white" : "bg-nuit-ligne text-nuit-doux")}>{o.compteur}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Questions votées ───────────────────────────────────────────────────────
 
 export function PanneauQuestions({ seanceId, etat, role, enDirect }: { seanceId: number; etat: EtatDirectDto; role: RoleSeance; enDirect: boolean }) {
@@ -441,7 +468,7 @@ export function Barometre({ barometre }: { barometre: BarometreSiteDto[] }) {
   );
 }
 
-export function BoutonsRessentis({ seanceId, compact }: { seanceId: number; compact?: boolean }) {
+export function BoutonsRessentis({ seanceId }: { seanceId: number }) {
   const [dernier, setDernier] = useState<string | null>(null);
   const envoyer = async (ressenti: string) => {
     try {
@@ -453,19 +480,21 @@ export function BoutonsRessentis({ seanceId, compact }: { seanceId: number; comp
     }
   };
   return (
-    <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Ton ressenti">
+    <div className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:justify-center" role="group" aria-label="Ton ressenti">
       {RESSENTIS_UI.map((r) => (
         <button
           key={r.valeur}
           onClick={() => envoyer(r.valeur)}
+          aria-pressed={dernier === r.valeur}
           className={cn(
-            "flex min-h-12 items-center gap-1.5 rounded-[14px] px-3.5 text-[14px] font-bold transition-colors",
+            "flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-[14px] px-2 text-[13px] font-bold leading-tight transition-colors sm:min-h-12 sm:flex-row sm:gap-1.5 sm:px-3.5 sm:text-[14px]",
             dernier === r.valeur ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne",
           )}
         >
-          <span aria-hidden>{r.emoji}</span>
-          {!compact && r.libelle}
-          {compact && <span className="sr-only">{r.libelle}</span>}
+          <span aria-hidden className="text-lg sm:text-base">
+            {r.emoji}
+          </span>
+          {r.libelle}
         </button>
       ))}
     </div>

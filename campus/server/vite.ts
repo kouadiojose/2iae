@@ -34,7 +34,11 @@ export async function brancherVite(app: Express, serveur: Server) {
   const { createServer } = await import("vite");
   const vite = await createServer({
     configFile: path.resolve(import.meta.dirname, "..", "vite.config.ts"),
-    server: { middlewareMode: true, hmr: { server: serveur } },
+    // VITE_HMR=off : pas de rechargement à chaud (utile quand plusieurs
+    // personnes modifient le code en même temps) ; VITE_CACHE_DIR : cache
+    // des dépendances séparé par serveur de développement.
+    server: { middlewareMode: true, hmr: process.env.VITE_HMR === "off" ? false : { server: serveur } },
+    cacheDir: process.env.VITE_CACHE_DIR || undefined,
     appType: "custom",
   });
   app.use(vite.middlewares);

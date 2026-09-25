@@ -72,7 +72,7 @@ export default function PageCours() {
           action={!data?.length ? <Bouton onClick={() => setCreation(true)}>Créer un cours</Bouton> : undefined}
         />
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {liste.map((c) => (
             <li key={c.id}>
               <button type="button" onClick={() => setOuvert(c.id)} className="relative flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl border border-ligne bg-white p-5 pl-6 text-left transition-colors hover:border-orange">
@@ -144,7 +144,7 @@ function FenetreCreationCours({ ouverte, onFermer, onCree }: { ouverte: boolean;
       }
     >
       <div className="flex flex-col gap-4 pb-2">
-        <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
           <Champ libelle="Code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="IA-101" className="font-mono" maxLength={20} />
           <Champ libelle="Titre" value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="Initiation à l'intelligence artificielle" maxLength={140} />
         </div>
@@ -233,7 +233,7 @@ function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
         <Erreur message={(detail.error as Error)?.message ?? "Cours introuvable."} />
       ) : (
         <div className="flex flex-col gap-5 pb-2">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Selection
               libelle="Formateur principal"
               value={c.formateur ? String(c.formateur.id) : ""}

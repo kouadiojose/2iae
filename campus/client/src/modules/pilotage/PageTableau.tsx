@@ -65,7 +65,7 @@ export default function PageTableau() {
           {t.campus.length > 1 && (
             <section>
               <TitreSection titre="Campus par campus" />
-              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {t.campus.map((c) => (
                   <CarteCampus key={c.siteId} c={c} />
                 ))}
@@ -97,7 +97,7 @@ export default function PageTableau() {
             texte="Un étudiant apparaîtra ici s'il n'a pas activé son compte après 7 jours, n'est plus venu depuis 7 jours, a manqué deux lives d'affilée ou n'a pas rendu un devoir."
           />
         ) : (
-          <ul className="grid gap-3 lg:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {aContacter.data.lignes.slice(0, 4).map((l) => (
               <LigneAContacter key={l.etudiant.id} ligne={l} onSuivi={setSuivi} compacte />
             ))}
@@ -139,7 +139,7 @@ function CarteCampus({ c }: { c: IndicateursCampus }) {
     <li className="flex flex-col gap-3 rounded-2xl border border-ligne bg-white p-5">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-lg font-extrabold">{c.nom}</h3>
-        <span className="font-mono text-xs text-texte-gris">{pluriel(c.etudiants, "étudiant")}</span>
+        {c.etudiants > 0 && <span className="whitespace-nowrap font-mono text-xs text-texte-gris">{pluriel(c.etudiants, "étudiant")}</span>}
       </div>
       {c.etudiants === 0 ? (
         <p className="text-sm text-texte-pale">Aucun étudiant inscrit pour l'instant. Importez la liste de la scolarité pour commencer.</p>

@@ -77,7 +77,8 @@ export default function PageNotes() {
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="text-[15px] font-semibold leading-snug">{e.titre}</span>
                         <span className="font-mono text-[11px] text-texte-gris">
-                          {e.type === "quiz" ? "Interrogation" : "Devoir"} · {dateCourte(e.dateLimite)} · coef. {nombre(e.coefficient)}
+                          {e.type === "quiz" ? "Interrogation" : "Devoir"} · <span className="whitespace-nowrap">{dateCourte(e.dateLimite)}</span> ·{" "}
+                          <span className="whitespace-nowrap">coef. {nombre(e.coefficient)}</span>
                         </span>
                       </div>
                       {e.etat === "note" ? (

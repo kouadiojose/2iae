@@ -242,13 +242,13 @@ export function FenetreCompte({
           </Selection>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Champ libelle="Prénom(s)" value={f.prenom} onChange={maj("prenom")} autoComplete="off" required />
           <Champ libelle="Nom" value={f.nom} onChange={maj("nom")} autoComplete="off" required />
         </div>
 
         {estEtudiant && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Champ libelle="Matricule" value={f.matricule} onChange={maj("matricule")} placeholder="24GC0123" aide="C'est son identifiant de connexion." className="font-mono" autoCapitalize="characters" />
             <Selection libelle="Classe" value={f.classeId} onChange={maj("classeId")}>
               <option value="">Choisir la classe…</option>
@@ -278,7 +278,7 @@ export function FenetreCompte({
           </Selection>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Champ libelle="Téléphone" value={f.telephone} onChange={maj("telephone")} inputMode="tel" placeholder="07 07 12 34 56" aide="Pour les messages WhatsApp de la vie scolaire." />
           <Champ
             libelle={estEtudiant ? "E-mail (facultatif)" : "E-mail"}
@@ -292,7 +292,7 @@ export function FenetreCompte({
         </div>
 
         {f.role === "formateur" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Champ libelle="Titre (facultatif)" value={f.titre} onChange={maj("titre")} placeholder="Consultant en intelligence artificielle" />
             <Champ libelle="Ville (facultatif)" value={f.localisation} onChange={maj("localisation")} placeholder="Lyon, France" />
           </div>

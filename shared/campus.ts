@@ -109,3 +109,51 @@ export const SITES_CAMPUS_REPLI: { nom: string; salle: string }[] = [
   { nom: "Azaguié", salle: "Salle de conférence" },
   { nom: "M'Batto", salle: "Salle de conférence" },
 ];
+
+// ── Emploi du temps : GET <campus>/api/public/programme ───────────────────
+// Copie du contrat campus/shared/schema/ext-programme.ts (ProgrammePublicDto),
+// réduite à ce que le site affiche. Heures d'Abidjan (« 08:30 »), dates
+// « AAAA-MM-JJ ».
+
+export type CreneauCampus = {
+  id: number;
+  /** 1 = lundi … 7 = dimanche. */
+  jour: number;
+  heureDebut: string;
+  heureFin: string;
+  type: "cours" | "seminaire" | "evenement";
+  libelle: string;
+  cours: { code: string; titre: string; slug: string; couleur: string } | null;
+  intervenant: { nom: string; titre: string | null; slug: string | null } | null;
+  mention: string;
+};
+
+export type SessionCampus = {
+  id: number;
+  anneeAcademique: string;
+  titre: string;
+  public: string;
+  debut: string;
+  fin: string;
+  pause: { debut: string; fin: string } | null;
+  note: string;
+  signataire: string;
+  creneaux: CreneauCampus[];
+};
+
+export type OccurrenceCampus = {
+  date: string;
+  creneauId: number;
+  debut: string;
+  fin: string;
+  libelle: string;
+  intervenant: string | null;
+  statut: "prevue" | "annulee" | "en_direct" | "terminee";
+};
+
+export type ProgrammeCampus = { sessions: SessionCampus[]; prochaines: OccurrenceCampus[]; genereLe: string };
+
+/** Réponse du site : GET /api/campus/programme. */
+export type ReponseProgrammeCampus =
+  | (ProgrammeCampus & { indisponible?: false; campusUrl: string; aJour: boolean })
+  | { indisponible: true; campusUrl: string };

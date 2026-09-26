@@ -6,6 +6,7 @@
 // pages :
 //
 //   GET  /api/campus/vitrine     la vitrine + l'adresse du campus
+//   GET  /api/campus/programme   l'emploi du temps publié par la direction
 //   POST /api/campus/rafraichir  webhook signé du campus : « relis la vitrine »
 //
 // Règle d'or : le site ne tombe JAMAIS avec le campus. Chaque lecture est
@@ -24,6 +25,8 @@ import type { Express } from "express";
 import { z } from "zod";
 import type {
   EvenementCampus,
+  ProgrammeCampus,
+  ReponseProgrammeCampus,
   ReponseVitrineCampus,
   Vitrine,
   VitrineCours,
@@ -299,10 +302,126 @@ export async function lireVitrine(): Promise<Vitrine | null> {
   return etat.vitrine;
 }
 
+// ── Emploi du temps ──────────────────────────────────────────────────────────
+// Même règle d'or que la vitrine : lecture bornée, dernière version connue
+// conservée, jamais d'erreur vers le visiteur. Le webhook du campus
+// (« programme publié ») le fait relire aussitôt.
+
+const texteSimple = z.string().catch("");
+const heure = z.string().regex(/^\d{2}:\d{2}$/);
+const jourCivil = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const schemaCreneau = z.object({
+  id: z.number().int(),
+  jour: z.number().int().min(1).max(7),
+  heureDebut: heure,
+  heureFin: heure,
+  type: z.enum(["cours", "seminaire", "evenement"]).catch("cours"),
+  libelle: z.string().min(1),
+  cours: z
+    .object({ code: texteSimple, titre: texteSimple, slug: texteSimple, couleur: z.string().catch("#E8720C") })
+    .nullish()
+    .catch(null)
+    .transform((c) => c ?? null),
+  intervenant: z
+    .object({ nom: z.string().min(1), titre: texteFacultatif, slug: texteFacultatif })
+    .nullish()
+    .catch(null)
+    .transform((i) => i ?? null),
+  mention: texteSimple,
+});
+
+const schemaSession = z.object({
+  id: z.number().int(),
+  anneeAcademique: texteSimple,
+  titre: z.string().min(1),
+  public: texteSimple,
+  debut: jourCivil,
+  fin: jourCivil,
+  pause: z
+    .object({ debut: heure, fin: heure })
+    .nullish()
+    .catch(null)
+    .transform((p) => p ?? null),
+  note: texteSimple,
+  signataire: z.string().catch("Le service des études"),
+  creneaux: liste(schemaCreneau),
+});
+
+const schemaOccurrence = z.object({
+  date: jourCivil,
+  creneauId: z.number().int(),
+  debut: z.string(),
+  fin: z.string(),
+  libelle: z.string().min(1),
+  intervenant: texteFacultatif,
+  statut: z.enum(["prevue", "annulee", "en_direct", "terminee"]).catch("prevue"),
+});
+
+const schemaProgramme = z.object({
+  sessions: liste(schemaSession),
+  prochaines: liste(schemaOccurrence),
+  genereLe: z.string().catch(() => new Date().toISOString()),
+});
+
+const etatProgramme: {
+  programme: ProgrammeCampus | null;
+  luLe: number;
+  echecLe: number;
+  erreur: string | null;
+  enCours: Promise<void> | null;
+} = { programme: null, luLe: 0, echecLe: 0, erreur: null, enCours: null };
+
+async function recupererProgramme(): Promise<void> {
+  try {
+    const r = await fetch(`${adresseLecture()}/api/public/programme`, {
+      headers: { Accept: "application/json", "User-Agent": "site-2iae/1.0 (+https://www.2iae.com)" },
+      signal: AbortSignal.timeout(DELAI_LECTURE_MS),
+    });
+    if (!r.ok) throw new Error(`le campus répond ${r.status}`);
+    const texte = await r.text();
+    if (texte.length > TAILLE_MAX_VITRINE) throw new Error("emploi du temps trop volumineux");
+    const lu = schemaProgramme.safeParse(JSON.parse(texte));
+    if (!lu.success) throw new Error(`emploi du temps illisible (${lu.error.issues[0]?.path.join(".") || "racine"})`);
+    etatProgramme.programme = lu.data as ProgrammeCampus;
+    etatProgramme.luLe = Date.now();
+    etatProgramme.echecLe = 0;
+    etatProgramme.erreur = null;
+  } catch (err) {
+    const e = err as Error;
+    const message = e.name === "TimeoutError" || e.name === "AbortError" ? `pas de réponse en ${DELAI_LECTURE_MS / 1000} s` : e.message;
+    if (message !== etatProgramme.erreur) console.warn(`⚠️  Emploi du temps du campus illisible (${message}).`);
+    etatProgramme.echecLe = Date.now();
+    etatProgramme.erreur = message;
+  }
+}
+
+function lancerLectureProgramme(): Promise<void> {
+  if (!etatProgramme.enCours) {
+    etatProgramme.enCours = recupererProgramme().finally(() => {
+      etatProgramme.enCours = null;
+    });
+  }
+  return etatProgramme.enCours;
+}
+
+/** L'emploi du temps à servir (même logique que lireVitrine). Ne lève jamais d'erreur. */
+export async function lireProgramme(): Promise<ProgrammeCampus | null> {
+  const maintenant = Date.now();
+  const perime = !etatProgramme.programme || maintenant - etatProgramme.luLe >= DUREE_CACHE_MS;
+  const enPause = etatProgramme.echecLe > 0 && maintenant - etatProgramme.echecLe < PAUSE_APRES_ECHEC_MS;
+  if (perime && !enPause) {
+    const lecture = lancerLectureProgramme();
+    if (!etatProgramme.programme) await lecture;
+  }
+  return etatProgramme.programme;
+}
+
 /** Relecture immédiate (webhook) : attend une éventuelle lecture partie avant la modification. */
 async function relireMaintenant(): Promise<void> {
   if (etat.enCours) await etat.enCours;
-  await lancerLecture();
+  if (etatProgramme.enCours) await etatProgramme.enCours;
+  await Promise.all([lancerLecture(), lancerLectureProgramme()]);
 }
 
 /** Cours annoncé par son slug (pages et référencement). */
@@ -362,6 +481,15 @@ export function enregistrerCampus(app: Express): void {
     res.json(reponse);
   });
 
+  app.get("/api/campus/programme", async (_req, res) => {
+    const programme = await lireProgramme();
+    res.setHeader("Cache-Control", "public, max-age=30");
+    const reponse: ReponseProgrammeCampus = programme
+      ? { ...programme, campusUrl: campusUrl(), aJour: etatProgramme.erreur === null }
+      : { indisponible: true, campusUrl: campusUrl() };
+    res.json(reponse);
+  });
+
   // Le corps arrive BRUT (Buffer) : server/index.ts pose express.raw sur ce
   // chemin avant le parseur JSON global, car la signature porte sur les
   // octets exacts envoyés par le campus.
@@ -417,5 +545,8 @@ export function enregistrerCampus(app: Express): void {
 
   // Première lecture peu après le démarrage : la vitrine est prête pour le
   // premier visiteur, sans retarder le démarrage lui-même.
-  setTimeout(() => void lireVitrine(), 2_000).unref();
+  setTimeout(() => {
+    void lireVitrine();
+    void lireProgramme();
+  }, 2_000).unref();
 }

@@ -21,6 +21,7 @@ import {
   useMaintenant,
   useVitrineCampus,
 } from "@/components/campus-numerique";
+import { EmploiDuTempsCampus } from "@/components/emploi-du-temps-campus";
 
 const MODES = [
   {
@@ -137,6 +138,9 @@ export default function CampusNumeriquePage() {
           <CarteProchainLive vitrine={vitrine} campusUrl={campusUrl} />
         </div>
       </section>
+
+      {/* Emploi du temps publié par la direction des études (absent tant qu'aucun n'est publié) */}
+      <EmploiDuTempsCampus />
 
       {/* Cours annoncés */}
       <section className="bg-background mobile-no-overflow" aria-labelledby="titre-cours">

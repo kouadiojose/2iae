@@ -17,7 +17,8 @@ import { route, idParam, introuvable, interdit, invalide, ErreurHttp } from "./h
 import { fichiers, utilisateurs, type Fichier, type Utilisateur } from "@shared/schema";
 
 // « site » : photo d'un campus pour le site public (publique seulement une fois choisie par la direction, voir routes/public.ts).
-export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site"] as const;
+// « source-profil » : PDF du profil LinkedIn ou photo d'un formateur pour sa présentation (module showreel, routes/showreel.ts).
+export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site", "source-profil"] as const;
 export type UsageFichier = (typeof USAGES_FICHIER)[number];
 
 const MIMES_AUTORISES = [

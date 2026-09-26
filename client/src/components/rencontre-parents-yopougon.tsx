@@ -71,10 +71,6 @@ export function RencontreParentsYopougon() {
             />
           </div>
 
-          <p className="text-sm text-foreground font-medium mb-6">
-            Les résultats étaient affichés derrière lui. Une minute quarante.
-          </p>
-
           <div className="flex flex-col sm:flex-row gap-4">
             <Link href="/preinscription">
               <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto w-full sm:w-auto">

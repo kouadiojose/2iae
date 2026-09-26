@@ -15,6 +15,13 @@
       "when": 1790305804317,
       "tag": "0001_correctifs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790463534792,
+      "tag": "0002_passage_au_reel",
+      "breakpoints": true
     }
   ]
 }

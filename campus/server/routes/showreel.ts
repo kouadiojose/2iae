@@ -1006,6 +1006,8 @@ export function enregistrerShowreel(app: Express) {
       const majProfil: Partial<typeof utilisateurs.$inferInsert> = { consentementSite: true, publierSurSite: true, proposeSurSite: false };
       if (!c.f.annonceLe) majProfil.annonceLe = maintenant;
       if (!c.f.slug) majProfil.slug = await slugDisponible(c.f);
+      // Un profil sans photo reprend celle de la présentation (même visage sur la fiche, les cours et le direct).
+      if (!c.f.photoUrl && s.photoFichierId) majProfil.photoUrl = `/api/public/presentations/${majProfil.slug ?? c.f.slug}/photo?v=${s.photoFichierId}`;
       await db.update(utilisateurs).set(majProfil).where(eq(utilisateurs.id, c.f.id));
       oublierUtilisateur(c.f.id);
       prevenirSite("présentation d'un formateur publiée");

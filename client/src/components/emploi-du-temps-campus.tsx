@@ -133,7 +133,7 @@ function Grille({ session }: { session: SessionCampus }) {
               return (
                 <div key={`${j}-${i}`} className="border-b border-l border-[#EADFD5] p-2" style={{ gridColumn: colonne + 2, gridRow: `2 / span ${rangees.length}` }}>
                   <div className="flex h-full flex-col justify-center rounded-2xl bg-[#1a1815] p-4 text-center text-white">
-                    <p className="font-serif text-2xl uppercase tracking-[0.2em]">{entier.libelle}</p>
+                    <p className="break-words font-serif text-lg uppercase tracking-[0.12em] xl:text-xl">{entier.libelle}</p>
                     <p className={`${ETIQUETTE} mt-2 text-[10px] text-white/70`}>
                       {affHeure(entier.heureDebut)} – {affHeure(entier.heureFin)}
                     </p>
@@ -229,21 +229,25 @@ export function EmploiDuTempsCampus() {
               les salles de conférence des cinq campus.
             </p>
           </div>
-          <LienCampus href={`${campusUrl}/programme`} className={BOUTON_SECONDAIRE} testId="link-emploi-du-temps-complet">
+          <LienCampus href={`${campusUrl}/programme`} className={`${BOUTON_SECONDAIRE} shrink-0 whitespace-nowrap`} testId="link-emploi-du-temps-complet">
             Voir et imprimer
           </LienCampus>
         </div>
         <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
           <div className="hidden md:block">
             <Grille session={session} />
+            {session.note && <p className="mt-4 text-sm text-[#6b625b]">{session.note}</p>}
+            <p className={`${ETIQUETTE} mt-4 text-right text-[#6b625b]`}>{session.signataire}</p>
           </div>
           <div className="md:hidden">
             <ListeParJour session={session} />
           </div>
           <Prochaines occurrences={programme.prochaines} />
         </div>
-        {session.note && <p className="mt-4 text-sm text-[#6b625b]">{session.note}</p>}
-        <p className={`${ETIQUETTE} mt-6 text-right text-[#6b625b]`}>{session.signataire}</p>
+        <div className="md:hidden">
+          {session.note && <p className="mt-4 text-sm text-[#6b625b]">{session.note}</p>}
+          <p className={`${ETIQUETTE} mt-6 text-[#6b625b]`}>{session.signataire}</p>
+        </div>
       </div>
     </section>
   );

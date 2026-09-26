@@ -22,7 +22,7 @@
 // modification (« Mettre à jour les séances ») : voir synchroniserSession().
 import type { Express } from "express";
 import { z } from "zod";
-import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerConnexion, exigerRole, moi, estEquipe, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
@@ -71,6 +71,7 @@ import {
   ecartJours,
   estTroncCommun,
   heureLisible,
+  instant,
   jourIsoDe,
   libelleDate,
   minutes,
@@ -82,6 +83,9 @@ import {
   sessionsVersDto,
   synchroniserSession,
   visibiliteSeances,
+  coursHorsPerimetre,
+  avertissementsClassesHorsSession,
+  MOTIF_ARCHIVAGE,
   type ResultatSynchro,
 } from "../programme-outils";
 
@@ -149,12 +153,40 @@ async function sitesDeSession(sessionId: number): Promise<number[]> {
   return [...new Set(lignes.map((l) => l.siteId))];
 }
 
-/** La vie scolaire d'un campus voit les sessions qui touchent son campus (ou sans classe) ; elle ne modifie que celles entièrement dans son campus. */
+/**
+ * La vie scolaire d'un campus voit les sessions qui touchent son campus (ou
+ * sans classe) ; elle ne modifie que celles qui ont des classes, toutes dans
+ * son campus. Une session sans classe (la « Première session » saisie avant
+ * le choix des classes) reste à la direction.
+ */
 async function droitsSession(u: Utilisateur, sessionId: number): Promise<{ visible: boolean; modifiable: boolean }> {
   const p = perimetreSites(u);
   if (!p) return { visible: true, modifiable: true };
   const s = await sitesDeSession(sessionId);
-  return { visible: !s.length || s.some((x) => p.includes(x)), modifiable: s.every((x) => p.includes(x)) };
+  return { visible: !s.length || s.some((x) => p.includes(x)), modifiable: s.length > 0 && s.every((x) => p.includes(x)) };
+}
+
+/**
+ * La vie scolaire d'un campus ne programme que les cours suivis uniquement
+ * par son campus, ou par aucune classe (même règle qu'enseigneCours) : la
+ * publication y crée des séances, y rattache des classes et des formateurs.
+ */
+async function verifierCoursProgrammables(u: Utilisateur, coursIds: number[]) {
+  const hors = await coursHorsPerimetre(coursIds, perimetreSites(u));
+  if (!hors.length) return;
+  const codes = (await db.select({ code: cours.code }).from(cours).where(inArray(cours.id, hors))).map((c) => c.code);
+  throw interdit(
+    hors.length > 1
+      ? `Les cours ${enumerer(codes)} concernent d'autres campus : seule la direction peut les programmer.`
+      : `Le cours ${codes[0] ?? ""} concerne d'autres campus : seule la direction peut le programmer.`,
+  );
+}
+
+/** Avant « Publier » : un cours a pu être partagé avec un autre campus depuis la saisie du créneau. */
+async function verifierCoursDeSession(u: Utilisateur, sessionId: number) {
+  if (!perimetreSites(u)) return;
+  const lignes = await db.select({ coursId: creneauxProgramme.coursId }).from(creneauxProgramme).where(eq(creneauxProgramme.sessionId, sessionId));
+  await verifierCoursProgrammables(u, lignes.map((l) => l.coursId).filter((x): x is number => x !== null));
 }
 
 async function sessionEquipe(u: Utilisateur, id: number, modifier = false): Promise<SessionProgramme> {
@@ -224,6 +256,7 @@ async function editionSession(u: Utilisateur, s: SessionProgramme): Promise<Sess
     aRepercuter: aRepercuter(s),
     modifiable: d.modifiable,
     nbSeances,
+    nbSeancesAVenir: (await seancesAVenirDeSession(s.id)).length,
     avertissements: [],
   };
   // Intervenants qui n'ont pas encore activé leur compte (code provisoire jamais remplacé).
@@ -237,7 +270,14 @@ async function editionSession(u: Utilisateur, s: SessionProgramme): Promise<Sess
   dto.avertissements = [
     ...avertissementsSession(s, dto),
     ...inactifs.map((p) => `${p.prenom} ${p.nom} n'a pas encore activé son compte : transmettez-lui son code provisoire.`),
+    ...(await avertissementsClassesHorsSession(s.id)),
   ];
+  if (d.modifiable && s.statut !== "archivee") {
+    const hors = await coursHorsPerimetre(creneaux.map((c) => c.cours?.id).filter((x): x is number => Boolean(x)), perimetreSites(u));
+    for (const c of creneaux.filter((x) => x.cours && hors.includes(x.cours.id))) {
+      dto.avertissements.push(`${libelleCreneau(c)} : le cours ${c.cours!.code} est maintenant suivi par d'autres campus, seule la direction peut le programmer. Choisissez un autre cours ou demandez-lui de publier.`);
+    }
+  }
   return dto;
 }
 
@@ -245,6 +285,30 @@ async function rechargerSession(id: number): Promise<SessionProgramme> {
   const [s] = await db.select().from(sessionsProgramme).where(eq(sessionsProgramme.id, id));
   if (!s) throw introuvable("Emploi du temps");
   return s;
+}
+
+/** Étudiants actifs de ces classes. */
+async function etudiantsDesClasses(classeIds: number[]): Promise<number[]> {
+  if (!classeIds.length) return [];
+  const lignes = await db
+    .select({ id: utilisateurs.id })
+    .from(utilisateurs)
+    .where(and(eq(utilisateurs.role, "etudiant"), eq(utilisateurs.actif, true), inArray(utilisateurs.classeId, classeIds)));
+  return lignes.map((l) => l.id);
+}
+
+/**
+ * Classes de la session qui n'ont pas encore reçu « L'emploi du temps … est
+ * en ligne » (toutes avant la première publication). « reclamer » les marque
+ * prévenues dans la même requête : deux « Publier » simultanés ne préviennent
+ * jamais deux fois la même classe.
+ */
+async function classesAPrevenir(sessionId: number, reclamer: boolean): Promise<number[]> {
+  const condition = and(eq(sessionsClasses.sessionId, sessionId), isNull(sessionsClasses.prevenueLe));
+  const lignes = reclamer
+    ? await db.update(sessionsClasses).set({ prevenueLe: new Date() }).where(condition).returning({ id: sessionsClasses.classeId })
+    : await db.select({ id: sessionsClasses.classeId }).from(sessionsClasses).where(condition);
+  return lignes.map((l) => l.id);
 }
 
 /** Étudiants concernés : ceux des classes destinataires. */
@@ -274,26 +338,39 @@ function diffuserChangements(r: Pick<ResultatSynchro, "changements">) {
 /** « lundi 28 septembre et lundi 5 octobre » */
 const enumerer = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} et ${items[items.length - 1]}`);
 
+/**
+ * Étudiants à prévenir par une publication : les classes pas encore prévenues
+ * reçoivent « est en ligne » (toutes à la première publication, puis celles
+ * ajoutées depuis), les autres « a changé » s'il y a des changements.
+ */
+async function etudiantsAPrevenir(s: SessionProgramme, r: Pick<ResultatSynchro, "premiere" | "changements">, reclamer: boolean): Promise<{ nouveaux: number[]; autres: number[] }> {
+  const aPrevenir = await classesAPrevenir(s.id, reclamer);
+  const nouveaux = await etudiantsDesClasses(aPrevenir);
+  const dejaVus = new Set(nouveaux);
+  const autres = !r.premiere && r.changements.length ? (await etudiantsDeSession(s.id)).filter((id) => !dejaVus.has(id)) : [];
+  return { nouveaux, autres };
+}
+
 /** Une notification par personne après une publication ou une mise à jour. */
 async function prevenirApresPublication(s: SessionProgramme, r: ResultatSynchro): Promise<{ etudiants: number; intervenants: number }> {
   const [dto] = await sessionsVersDto([s], false);
   const occurrences = (await occurrencesDe([dto])).filter((o) => o.statut !== "annulee");
   const periode = `Du ${libelleDate(s.debut)} au ${libelleDate(s.fin)}`;
-  let etudiants: number[] = [];
+  const { nouveaux, autres } = await etudiantsAPrevenir(s, r, true);
   let intervenants: number[] = [];
 
-  if (r.premiere) {
-    etudiants = await etudiantsDeSession(s.id);
+  if (nouveaux.length) {
     const premier = occurrences.find((o) => new Date(o.fin).getTime() > Date.now() && o.type === "cours") ?? occurrences[0];
-    await notifier(etudiants, {
+    await notifier(nouveaux, {
       type: "cours",
       titre: `L'emploi du temps de la ${s.titre} est en ligne`,
       corps: `${periode}.${premier ? ` Premier cours : ${premier.libelle}, ${libelleDate(premier.date)} à ${heureLisible(premier.debut.slice(11, 16))}.` : ""}`,
       lien: "/emploi-du-temps",
     });
+  }
+  if (r.premiere) {
     intervenants = [...new Set(dto.creneaux.map((c) => c.intervenant?.id).filter((x): x is number => Boolean(x)))];
   } else if (r.changements.length) {
-    etudiants = await etudiantsDeSession(s.id);
     const n = (nature: string) => r.changements.filter((c) => c.nature === nature).length;
     // « 1 séance ajoutée, 2 modifiées et 1 annulée » : le nom seulement devant le premier nombre.
     const morceaux = (
@@ -306,7 +383,7 @@ async function prevenirApresPublication(s: SessionProgramme, r: ResultatSynchro)
     )
       .filter(([k]) => k > 0)
       .map(([k, participe], i) => `${k}${i === 0 ? ` séance${k > 1 ? "s" : ""}` : ""} ${participe}${k > 1 ? "s" : ""}`);
-    await notifier(etudiants, {
+    await notifier(autres, {
       type: "cours",
       titre: `L'emploi du temps de la ${s.titre} a changé`,
       corps: `${majuscule(enumerer(morceaux))}. Regarde ta semaine.`,
@@ -316,9 +393,23 @@ async function prevenirApresPublication(s: SessionProgramme, r: ResultatSynchro)
   }
 
   // Intervenants : leurs dates, à l'heure d'Abidjan.
+  let intervenantsPrevenus = 0;
   for (const id of intervenants) {
     const miennes = occurrences.filter((o) => o.intervenantId === id);
-    if (!miennes.length) continue;
+    if (!miennes.length) {
+      // Remplacé (ou son créneau retiré) : il sait qu'il n'est plus attendu.
+      if (!r.premiere) {
+        await notifier([id], {
+          type: "cours",
+          titre: `Emploi du temps modifié : ${s.titre}`,
+          corps: `Vous n'avez plus de séance dans cet emploi du temps (${s.titre} ${s.anneeAcademique}).`,
+          lien: "/emploi-du-temps",
+        });
+        intervenantsPrevenus++;
+      }
+      continue;
+    }
+    intervenantsPrevenus++;
     const parLibelle = new Map<string, OccurrenceDto[]>();
     for (const o of miennes) parLibelle.set(`${o.libelle}|${o.debut.slice(11, 16)}|${o.fin.slice(11, 16)}`, [...(parLibelle.get(`${o.libelle}|${o.debut.slice(11, 16)}|${o.fin.slice(11, 16)}`) ?? []), o]);
     const lignes = [...parLibelle.entries()].map(([cle, os]) => {
@@ -332,7 +423,7 @@ async function prevenirApresPublication(s: SessionProgramme, r: ResultatSynchro)
       lien: "/emploi-du-temps",
     });
   }
-  return { etudiants: etudiants.length, intervenants: intervenants.filter((id) => occurrences.some((o) => o.intervenantId === id)).length };
+  return { etudiants: nouveaux.length + autres.length, intervenants: intervenantsPrevenus };
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────
@@ -383,10 +474,12 @@ function verifierCoherence(d: { debut: string; fin: string; pauseDebut: string |
 
 async function verifierClasses(u: Utilisateur, ids: number[]) {
   const uniques = [...new Set(ids)];
+  const p = perimetreSites(u);
+  // Sans classe, la session n'appartiendrait à aucun campus : elle est réservée à la direction.
+  if (p && !uniques.length) throw invalide("Choisissez au moins une classe de votre campus : une session sans classe est réservée à la direction.");
   if (!uniques.length) return uniques;
   const trouvees = await db.select({ id: classes.id, siteId: classes.siteId }).from(classes).where(inArray(classes.id, uniques));
   if (trouvees.length !== uniques.length) throw invalide("Une des classes choisies n'existe plus.");
-  const p = perimetreSites(u);
   if (p && trouvees.some((c) => !p.includes(c.siteId))) throw interdit("Vous ne pouvez choisir que les classes de votre campus.");
   return uniques;
 }
@@ -407,12 +500,18 @@ const schemaCreneau = z.object({
 });
 type CreneauSaisi = z.infer<typeof schemaCreneau>;
 
-async function verifierCreneau(s: SessionProgramme, d: Omit<CreneauSaisi, "confirmer">, confirmer: boolean | undefined, saufId?: number) {
+/**
+ * « coursChange » : le cours est nouveau ou change. Au PATCH d'un créneau, le
+ * périmètre d'un cours déjà choisi ne se revérifie pas (l'édition reste
+ * possible) : c'est la publication qui refuse un cours partagé depuis.
+ */
+async function verifierCreneau(u: Utilisateur, s: SessionProgramme, d: Omit<CreneauSaisi, "confirmer">, confirmer: boolean | undefined, saufId?: number, coursChange = true) {
   if (minutes(d.heureFin) <= minutes(d.heureDebut)) throw invalide("L'heure de fin doit venir après l'heure de début.");
   if (d.coursId) {
     const [c] = await db.select({ id: cours.id, statut: cours.statut }).from(cours).where(eq(cours.id, d.coursId));
     if (!c) throw invalide("Ce cours n'existe plus.");
     if (c.statut === "archive") throw invalide("Ce cours est archivé : choisissez-en un autre ou désarchivez-le.");
+    if (coursChange) await verifierCoursProgrammables(u, [c.id]);
   }
   if (d.intervenantId) {
     const [p] = await db.select({ role: utilisateurs.role, actif: utilisateurs.actif }).from(utilisateurs).where(eq(utilisateurs.id, d.intervenantId));
@@ -574,7 +673,10 @@ export function enregistrerProgramme(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const p = perimetreSites(u);
-      const ids = await idsCoursAccessibles(u);
+      // Vie scolaire d'un campus : seulement les cours qu'elle peut programmer (suivis par son seul campus, ou sans classe).
+      const accessibles = await idsCoursAccessibles(u);
+      const horsPerimetre = new Set(await coursHorsPerimetre(accessibles, p));
+      const ids = accessibles.filter((id) => !horsPerimetre.has(id));
       const listeCours = ids.length
         ? await db
             .select({ c: cours, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
@@ -884,7 +986,9 @@ export function enregistrerProgramme(app: Express) {
       if (s.statut === "archivee") throw new ErreurHttp(409, "Cet emploi du temps est archivé : désarchivez-le avant de le publier.");
       const nbCreneaux = await db.select({ n: sql<number>`count(*)::int` }).from(creneauxProgramme).where(eq(creneauxProgramme.sessionId, s.id));
       if (!nbCreneaux[0]?.n) throw invalide("Ajoutez au moins un créneau avant de publier.");
-      const r = await synchroniserSession(s.id, { complete: true, publier: true, auteurId: u.id });
+      await verifierCoursDeSession(u, s.id);
+      // Les séances annulées par un archivage sont rétablies (« Désarchiver » puis « Publier »).
+      const r = await synchroniserSession(s.id, { complete: true, publier: true, auteurId: u.id, ranimerMotif: MOTIF_ARCHIVAGE, perimetre: perimetreSites(u) });
       // Les séances déjà créées (et gardées) redeviennent publiques si la session l'était moins.
       await visibiliteSeances(s.id, true);
       const apres = await rechargerSession(s.id);
@@ -915,10 +1019,12 @@ export function enregistrerProgramme(app: Express) {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
       if (s.statut === "archivee") throw new ErreurHttp(409, "Cet emploi du temps est archivé : désarchivez-le avant de le publier.");
-      const r = await synchroniserSession(s.id, { complete: true, publier: true, essai: true, auteurId: u.id });
+      await verifierCoursDeSession(u, s.id);
+      const r = await synchroniserSession(s.id, { complete: true, publier: true, essai: true, auteurId: u.id, ranimerMotif: MOTIF_ARCHIVAGE, perimetre: perimetreSites(u) });
       const [dto] = await sessionsVersDto([s], false);
       const libelleDe = new Map(dto.creneaux.map((c) => [c.id, c.libelle]));
-      const etudiants = r.premiere || r.changements.length ? (await etudiantsDeSession(s.id)).length : 0;
+      const aPrevenir = await etudiantsAPrevenir(s, r, false);
+      const etudiants = aPrevenir.nouveaux.length + aPrevenir.autres.length;
       const intervenants = r.premiere
         ? new Set(dto.creneaux.map((c) => c.intervenant?.id).filter(Boolean)).size
         : r.changements.length
@@ -968,7 +1074,7 @@ export function enregistrerProgramme(app: Express) {
       const s = await sessionEquipe(u, idParam(req), true);
       if (s.statut === "archivee") return res.json(await editionSession(u, s));
       const aVenir = await seancesAVenirDeSession(s.id);
-      const motif = "Emploi du temps retiré par la direction des études";
+      const motif = MOTIF_ARCHIVAGE;
       if (aVenir.length) {
         await db
           .update(seances)
@@ -979,13 +1085,33 @@ export function enregistrerProgramme(app: Express) {
       await db.update(sessionsProgramme).set({ statut: "archivee" }).where(eq(sessionsProgramme.id, s.id));
       await db.insert(journal).values({ utilisateurId: u.id, action: "programme_archive", details: { sessionId: s.id, seancesAnnulees: aVenir.length } });
       diffuserChangements({ changements: aVenir.map((l) => ({ seanceId: l.seance.id, coursId: l.seance.coursId, creneauId: l.creneauId, date: l.date, nature: "annulee" as const, motif })) });
-      if (aVenir.length && s.statut === "publiee") {
+      // Les étudiants ont connu ces séances si la session a été publiée un jour (même retirée depuis : ses séances restaient prévues).
+      if (aVenir.length && s.publieeLe) {
         await notifier(await etudiantsDeSession(s.id), {
           type: "cours",
           titre: `L'emploi du temps de la ${s.titre} est retiré`,
           corps: `${aVenir.length} séance${aVenir.length > 1 ? "s" : ""} à venir ${aVenir.length > 1 ? "sont annulées" : "est annulée"}. La vie scolaire te précisera la suite.`,
           lien: "/emploi-du-temps",
         });
+      }
+      // Chaque intervenant apprend lesquelles de ses séances sont annulées.
+      if (aVenir.length) {
+        const creneauxSession = await db.select().from(creneauxProgramme).where(eq(creneauxProgramme.sessionId, s.id));
+        const intervenantDe = new Map(creneauxSession.map((c) => [c.id, c.intervenantId]));
+        const parIntervenant = new Map<number, string[]>();
+        for (const l of aVenir) {
+          const id = intervenantDe.get(l.creneauId);
+          if (id) parIntervenant.set(id, [...(parIntervenant.get(id) ?? []), l.date]);
+        }
+        for (const [id, dates] of parIntervenant) {
+          const triees = [...new Set(dates)].sort();
+          await notifier([id], {
+            type: "cours",
+            titre: `Emploi du temps retiré : ${s.titre}`,
+            corps: `${triees.length} séance${triees.length > 1 ? "s" : ""} annulée${triees.length > 1 ? "s" : ""} (${enumerer(triees.slice(0, 6).map((d) => libelleDate(d)))}${triees.length > 6 ? "…" : ""}).`,
+            lien: "/emploi-du-temps",
+          });
+        }
       }
       oublierCache();
       prevenirSite("programme archivé");
@@ -1016,7 +1142,7 @@ export function enregistrerProgramme(app: Express) {
       const s = await sessionEquipe(u, idParam(req), true);
       if (s.statut === "archivee") throw new ErreurHttp(409, "Cet emploi du temps est archivé : désarchivez-le pour le modifier.");
       const { confirmer, ...d } = valider(schemaCreneau, req.body);
-      await verifierCreneau(s, d, confirmer);
+      await verifierCreneau(u, s, d, confirmer);
       const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(creneauxProgramme).where(eq(creneauxProgramme.sessionId, s.id));
       if (n >= 60) throw invalide("Une session compte au plus 60 créneaux.");
       await db.insert(creneauxProgramme).values({ sessionId: s.id, ...d, ordre: n });
@@ -1045,7 +1171,7 @@ export function enregistrerProgramme(app: Express) {
         mention: d.mention ?? c.mention,
         fournisseur: d.fournisseur !== undefined ? d.fournisseur : c.fournisseur,
       };
-      await verifierCreneau(s, fusion, confirmer, c.id);
+      await verifierCreneau(u, s, fusion, confirmer, c.id, fusion.coursId !== c.coursId);
       await db.update(creneauxProgramme).set(fusion).where(eq(creneauxProgramme.id, c.id));
       const repercuter = (["jour", "heureDebut", "heureFin", "type", "coursId", "intervenantId", "fournisseur"] as const).some((k) => fusion[k] !== c[k]);
       await toucher(s, repercuter);
@@ -1095,9 +1221,24 @@ export function enregistrerProgramme(app: Express) {
 
   // ── Back-office : exceptions (« Pas de cours ce jour-là ») ───────────────
 
+  /**
+   * Prévient des seuls créneaux vraiment touchés : une séance annulée (jour
+   * posé) ou rétablie ou recréée (jour levé), ou un créneau sans séance
+   * (séminaire) encore à venir. Rien n'est envoyé si rien n'a changé (séance
+   * déjà annulée par son formateur, par exemple).
+   */
   async function prevenirException(s: SessionProgramme, r: ResultatSynchro, date: string, retablie: boolean, motif: string, creneauxVises: CreneauProgramme[]) {
+    diffuserChangements(r);
     const [dto] = await sessionsVersDto([s], false);
-    const vises = dto.creneaux.filter((c) => creneauxVises.some((x) => x.id === c.id));
+    const natures = retablie ? ["retablie", "creee"] : ["annulee"];
+    const vises = dto.creneaux.filter(
+      (c) =>
+        creneauxVises.some((x) => x.id === c.id) &&
+        (c.cours
+          ? r.changements.some((ch) => ch.creneauId === c.id && ch.date === date && natures.includes(ch.nature))
+          : instant(date, c.heureFin).getTime() > Date.now()),
+    );
+    if (!vises.length) return;
     const quoi = enumerer(vises.map((c) => `${c.libelle} (${heureLisible(c.heureDebut)}–${heureLisible(c.heureFin)})`));
     const jour = libelleDate(date);
     const etudiants = s.statut === "publiee" ? await etudiantsDeSession(s.id) : [];
@@ -1105,7 +1246,6 @@ export function enregistrerProgramme(app: Express) {
     const titre = retablie ? `Cours rétabli le ${jour}` : `Pas de cours le ${jour}`;
     await notifier(etudiants, { type: "cours", titre, corps: retablie ? `${quoi} a bien lieu. Regarde ta semaine.` : `${quoi} : ${motif}.`, lien: "/emploi-du-temps" });
     await notifier(intervenants, { type: "cours", titre, corps: retablie ? `${quoi} a bien lieu (heure d'Abidjan).` : `${quoi} : ${motif}.`, lien: "/emploi-du-temps" });
-    diffuserChangements(r);
   }
 
   app.post(
@@ -1134,7 +1274,7 @@ export function enregistrerProgramme(app: Express) {
       let r: ResultatSynchro | null = null;
       if (s.statut === "publiee") {
         const ids = new Set(vises.map((c) => c.id));
-        r = await synchroniserSession(s.id, { complete: false, auteurId: u.id, filtre: (creneauId, date) => date === d.date && ids.has(creneauId) });
+        r = await synchroniserSession(s.id, { complete: false, auteurId: u.id, perimetre: perimetreSites(u), filtre: (creneauId, date) => date === d.date && ids.has(creneauId) });
       }
       await db.insert(journal).values({ utilisateurId: u.id, action: "programme_exception", details: { sessionId: s.id, date: d.date, creneauId: d.creneauId, motif: d.motif } });
       if (s.statut === "publiee" && vises.length) await prevenirException(s, r!, d.date, false, d.motif, vises);
@@ -1160,7 +1300,13 @@ export function enregistrerProgramme(app: Express) {
       let r: ResultatSynchro | null = null;
       if (s.statut === "publiee") {
         const ids = new Set(vises.map((c) => c.id));
-        r = await synchroniserSession(s.id, { complete: false, auteurId: u.id, ranimerMotif: e.motif || "Pas de cours ce jour-là", filtre: (creneauId, date) => date === e.date && ids.has(creneauId) });
+        r = await synchroniserSession(s.id, {
+          complete: false,
+          auteurId: u.id,
+          perimetre: perimetreSites(u),
+          ranimerMotif: e.motif || "Pas de cours ce jour-là",
+          filtre: (creneauId, date) => date === e.date && ids.has(creneauId),
+        });
       }
       await db.insert(journal).values({ utilisateurId: u.id, action: "programme_exception_levee", details: { sessionId: s.id, date: e.date, creneauId: e.creneauId } });
       if (s.statut === "publiee" && vises.length && r) await prevenirException(s, r, e.date, true, e.motif, vises);

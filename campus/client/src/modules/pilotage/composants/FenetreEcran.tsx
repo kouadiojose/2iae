@@ -1,6 +1,6 @@
 // « Installer l'écran de la salle » d'un campus : sur l'ordinateur branché à
 // l'écran de la salle de conférence, ouvrir l'adresse courte et taper le code
-// à 6 chiffres (ou ouvrir le lien reçu). L'ordinateur reste ensuite connecté.
+// de 8 caractères (ou ouvrir le lien reçu). L'ordinateur reste ensuite connecté.
 // Chaque ouverture de la fenêtre prépare un nouveau code : le précédent ne
 // marche plus.
 import { useEffect, useRef, useState } from "react";
@@ -86,11 +86,12 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange font-black text-encre">2</span>
               <div className="min-w-0">
                 <p className="text-[15px] font-bold">Tapez le code :</p>
-                <p className="mt-1 font-mono text-[44px] font-bold leading-none tracking-[0.16em] tabular-nums" aria-label={`Code ${inst.code.split("").join(" ")}`}>
-                  {inst.code.slice(0, 3)}
+                <p className="mt-1 font-mono text-[36px] font-bold leading-none tracking-[0.12em] tabular-nums sm:text-[44px]" aria-label={`Code ${inst.code.split("").join(" ")}`}>
+                  {inst.code.slice(0, 4)}
                   <span className="text-texte-gris"> </span>
-                  {inst.code.slice(3)}
+                  {inst.code.slice(4)}
                 </p>
+                <p className="mt-1.5 text-sm text-texte-pale">Lettres et chiffres, sans 0, O, 1, I ni L : aucune confusion possible.</p>
                 <p className="mt-2 text-sm text-texte-pale">
                   Valable jusqu'au {jourLong(inst.expireLe)} à {heure(inst.expireLe)} (heure d'Abidjan), une seule fois.
                 </p>

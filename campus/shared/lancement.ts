@@ -48,7 +48,13 @@ export type EtatRentree = {
 };
 
 /** GET /api/pilotage/rentree/demo : ce que la purge supprimerait (simulation, rien n'est touché). */
-export type ApercuPurge = { inventaire: [string, number][]; comptes: number; avertissements: string[] };
+export type ApercuPurge = {
+  inventaire: [string, number][];
+  comptes: number;
+  /** Les comptes de démonstration qui partiraient, un par un (seuls ceux que le semis a marqués). */
+  personnes: { id: number; nom: string; identifiant: string | null; role: string }[];
+  avertissements: string[];
+};
 
 /** POST /api/pilotage/rentree/demo/purger */
 export type ResultatPurge = { comptes: number; tables: Record<string, number>; fichiersDisque: number; avertissements: string[] };
@@ -70,8 +76,10 @@ export type InvitationRemise = {
   /** Prochain cours de la personne, s'il est déjà au programme. */
   premierCours: string | null;
   email: { adresse: string | null; disponible: boolean; envoye: boolean };
-  /** Une invitation précédente existait : son lien ne marche plus. */
+  /** Une invitation précédente existait : son lien ne marche plus (qu'il ait servi ou non). */
   remplaceUnLien: boolean;
+  /** Appareils qui avaient ouvert le lien précédent sans finir l'activation : déconnectés. */
+  appareilsDeconnectes: number;
 };
 
 /** POST /api/pilotage/comptes/:id/invitation/email */
@@ -87,7 +95,7 @@ export type InstallationEcran = {
   salle: string;
   /** À ouvrir sur l'ordinateur de la salle : https://…/ecran/<jeton>. */
   lien: string;
-  /** Ou : ouvrir l'adresse courte et taper ce code à 6 chiffres. */
+  /** Ou : ouvrir l'adresse courte et taper ce code de 8 caractères (lettres et chiffres sans ambiguïté). */
   code: string;
   adresseCourte: string;
   expireLe: string;

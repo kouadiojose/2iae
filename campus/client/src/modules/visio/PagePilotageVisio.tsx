@@ -272,12 +272,12 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
         libelle="Étudiants en vidéo par séance, au plus"
         type="number"
         min={0}
-        max={200}
+        max={r.placesDailyMax}
         inputMode="numeric"
         disabled={!modifiable}
         value={String(f.placesDailyEtudiants)}
         onChange={(e) => setF({ ...f, placesDailyEtudiants: Number(e.target.value) })}
-        aide="Au-delà, la salle est complète : les étudiants suivent en son + diapos. Le formateur, les salles et l'équipe ont toujours leur place."
+        aide={`De 0 à ${r.placesDailyMax}. Au-delà, un étudiant qui choisit la vidéo suit en son + diapos. ${r.placesHorsEtudiants} autres places sont gardées dans chaque salle : le formateur, les cinq écrans de salle et l'équipe qui observe y entrent toujours, même en dernier (${Number(f.placesDailyEtudiants) + r.placesHorsEtudiants} personnes au plus par salle).`}
       />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Champ libelle="Prix d'une minute (dollars)" type="number" step="0.0001" min={0} disabled={!modifiable} value={String(f.prixMinuteUsd)} onChange={(e) => setF({ ...f, prixMinuteUsd: Number(e.target.value) })} />

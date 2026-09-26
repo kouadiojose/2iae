@@ -1,8 +1,8 @@
 // /ecran et /ecran/:jeton : l'ordinateur branché à l'écran d'une salle de
 // conférence devient l'écran de la salle. Avec le lien, rien à taper ; sans
-// lien, on tape le code à 6 chiffres préparé depuis le pilotage (« Installer
-// l'écran »). L'écran reste ensuite connecté (session longue) et s'ouvre sur
-// /salle. Page nue, en mode nuit, lisible de loin.
+// lien, on tape le code de 8 caractères (lettres et chiffres) préparé depuis
+// le pilotage (« Installer l'écran »). L'écran reste ensuite connecté (session
+// longue) et s'ouvre sur /salle. Page nue, en mode nuit, lisible de loin.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { MonitorCheck, MonitorSmartphone, TriangleAlert } from "lucide-react";
@@ -12,6 +12,13 @@ import { queryClient } from "@/lib/queryClient";
 import { useMoi } from "@/lib/auth";
 import { Bouton } from "@/components/ui/bouton";
 import { cn } from "@/lib/utils";
+
+/** Longueur du code d'installation (serveur : routes/lancement.ts). */
+const LONGUEUR_CODE = 8;
+/** Ce qui est tapé : majuscules, sans espaces ni tirets (« k7mq-4xp9 » → « K7MQ4XP9 »). */
+const nettoyer = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, LONGUEUR_CODE);
+/** Affiché en deux groupes de 4, comme dans la fenêtre du pilotage. */
+const groupes = (v: string) => (v.length > 4 ? `${v.slice(0, 4)} ${v.slice(4)}` : v);
 
 /** Installe la personne connectée (l'écran) sans rien garder du compte qui était ouvert avant. */
 function installer(m: Moi) {
@@ -57,8 +64,7 @@ export default function PageInstallerEcran({ jeton }: { jeton?: string }) {
 
   const soumettre = (e?: FormEvent) => {
     e?.preventDefault();
-    const chiffres = code.replace(/\D/g, "");
-    if (chiffres.length === 6) void envoyer({ code: chiffres });
+    if (code.length === LONGUEUR_CODE) void envoyer({ code });
   };
 
   const dejaEcran = moi?.role === "salle" && !jeton && !continuer && etat === "saisie";
@@ -106,7 +112,7 @@ export default function PageInstallerEcran({ jeton }: { jeton?: string }) {
           <>
             <h1 className="text-[34px] font-black leading-[1.05] tracking-tres-serre sm:text-[44px]">Installer l'écran de la salle</h1>
             <p className="text-lg leading-relaxed text-nuit-doux">
-              Tapez le code à 6 chiffres préparé par la vie scolaire ou la direction (Pilotage, « Installer l'écran »). Cet ordinateur deviendra l'écran de la salle de conférence et restera connecté.
+              Tapez le code de 8 caractères (lettres et chiffres) préparé par la vie scolaire ou la direction (Pilotage, « Installer l'écran »). Cet ordinateur deviendra l'écran de la salle de conférence et restera connecté.
             </p>
             {autreCompte && (
               <p className="flex w-full items-start gap-2 rounded-2xl bg-nuit-carte px-4 py-3 text-left text-[15px] text-nuit-doux">
@@ -118,23 +124,26 @@ export default function PageInstallerEcran({ jeton }: { jeton?: string }) {
             )}
             <form onSubmit={soumettre} className="flex w-full flex-col items-center gap-4">
               <label htmlFor="code-ecran" className="sr-only">
-                Code d'installation à 6 chiffres
+                Code d'installation de 8 caractères
               </label>
               <input
                 ref={champ}
                 id="code-ecran"
-                value={code}
+                value={groupes(code)}
                 onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  const v = nettoyer(e.target.value);
                   setCode(v);
-                  if (v.length === 6) void envoyer({ code: v });
+                  if (v.length === LONGUEUR_CODE) void envoyer({ code: v });
                 }}
-                inputMode="numeric"
+                inputMode="text"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
                 autoComplete="one-time-code"
                 autoFocus
-                placeholder="••••••"
+                placeholder="•••• ••••"
                 className={cn(
-                  "w-full max-w-[380px] rounded-2xl border-2 bg-nuit-carte px-4 py-4 text-center font-mono text-[36px] font-bold tracking-[0.25em] text-white outline-none placeholder:text-nuit-bord focus:border-orange sm:text-[44px] sm:tracking-[0.3em]",
+                  "w-full max-w-[380px] rounded-2xl border-2 bg-nuit-carte px-4 py-4 text-center font-mono text-[34px] font-bold tracking-[0.16em] text-white outline-none placeholder:text-nuit-bord focus:border-orange sm:text-[44px] sm:tracking-[0.2em]",
                   erreur ? "border-direct" : "border-nuit-bord",
                 )}
               />
@@ -143,7 +152,7 @@ export default function PageInstallerEcran({ jeton }: { jeton?: string }) {
                   {erreur}
                 </p>
               )}
-              <Bouton type="submit" taille="lg" disabled={code.replace(/\D/g, "").length !== 6} className="min-h-[56px] w-full max-w-[380px] text-[17px]">
+              <Bouton type="submit" taille="lg" disabled={code.length !== LONGUEUR_CODE} className="min-h-[56px] w-full max-w-[380px] text-[17px]">
                 Installer cet écran
               </Bouton>
             </form>

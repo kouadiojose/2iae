@@ -36,6 +36,7 @@ import { notifier } from "../notifications";
 import { envoyerEmail, emailReinitialisation } from "../mail";
 import { prevenirSite } from "../site";
 import { urlFichier } from "../fichiers";
+import { adresseDeDemonstration, DOMAINE_DEMO } from "../demo-constantes";
 import {
   utilisateurs,
   sites,
@@ -49,6 +50,13 @@ import {
   type EtatLienReinitialisation,
   type RecuEssai,
 } from "@shared/schema";
+
+declare module "express-session" {
+  interface SessionData {
+    /** Jeton d'activation qui a ouvert cette session (QR de la fiche, lien d'invitation) : une invitation plus récente le périme. */
+    jetonActivationId?: number;
+  }
+}
 
 // ── Outils ─────────────────────────────────────────────────────────────────
 
@@ -260,6 +268,9 @@ export function enregistrerCompte(app: Express) {
       // Le code personnel est déjà choisi : le papier de la fiche ne doit plus ouvrir le compte.
       if (!u.doitChangerMotDePasse) throw lienPerimeActivation();
       await ouvrirSession(req, u);
+      // Le lien qui a ouvert cette session : si la direction renvoie une invitation, il ne permet plus d'activer le compte.
+      const [ligne] = await db.select({ id: reinitialisations.id }).from(reinitialisations).where(eq(reinitialisations.jetonHash, hacherJeton(jeton)));
+      if (ligne) req.session.jetonActivationId = ligne.id;
       await db.insert(journal).values({ utilisateurId: u.id, action: "activation_qr", details: { ip: req.ip } });
       res.json(await versMoi({ ...u, derniereConnexion: new Date() }));
     }),
@@ -412,6 +423,10 @@ export function enregistrerCompte(app: Express) {
         const email = corps.email ? corps.email.toLowerCase() : null;
         if (email !== u.email) {
           if (email && !EMAIL.safeParse(email).success) throw invalide(selonRole(u, "Cette adresse e-mail n'est pas valide.", "Cette adresse e-mail n'est pas valide."));
+          // Adresses réservées à la démonstration (la purge ne s'y fie plus, mais elles n'ont rien à faire sur un vrai compte).
+          if (adresseDeDemonstration(email)) {
+            throw invalide(selonRole(u, `Les adresses @${DOMAINE_DEMO} sont réservées à la démonstration : indique ta vraie adresse e-mail.`, `Les adresses @${DOMAINE_DEMO} sont réservées à la démonstration : indiquez votre vraie adresse e-mail.`));
+          }
           // Le personnel et les salles se connectent avec leur e-mail : il ne peut pas disparaître.
           if (!email && u.role !== "etudiant") throw invalide("Votre e-mail sert à vous connecter : il ne peut pas être retiré.");
           // L'e-mail reçoit les liens « code oublié » : le changer demande le code actuel.

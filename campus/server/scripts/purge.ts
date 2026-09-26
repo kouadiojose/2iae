@@ -4,13 +4,14 @@
 //     (production sans accès au serveur : poser la variable sur Railway et redéployer).
 //
 // Ce qui part, et seulement cela :
-//   - les comptes de démonstration : preferences.demo = true ou adresse
-//     @demo.2iae.com (jamais un compte de la direction, même marqué par erreur) ;
-//   - les cours de démonstration (codes IA-101, ENT-210, INF-230, GES-120,
-//     AGR-110 ou notés au registre du semis, ET tenus par un formateur de
-//     démonstration) avec tout ce qui en dépend : chapitres, leçons,
-//     progressions, séances et replays, présences, questions, sondages,
-//     devoirs, copies, interrogations, salons, annonces, événements, fiches ;
+//   - les comptes de démonstration : ceux que le semis a marqués (preferences.demo = true),
+//     jamais un compte de la direction. L'adresse @demo.2iae.com ne suffit PAS : elle se
+//     choisit (profil, première connexion), le marqueur non ; aucune saisie ne l'accepte plus ;
+//   - les cours de démonstration (notés au registre du semis, ou codes IA-101, ENT-210,
+//     INF-230, GES-120, AGR-110 tenus par un formateur de démonstration) qui ne servent à
+//     rien de réel, avec tout ce qui en dépend : chapitres, leçons, progressions, séances et
+//     replays, présences, questions, sondages, devoirs, copies, interrogations, salons,
+//     annonces, événements, fiches ;
 //   - ce que les comptes de démonstration ont laissé ailleurs : messages et
 //     conversations directes, annonces, événements, notifications, suivis,
 //     journal, usage et conversations de l'assistant, abonnements aux rappels,
@@ -19,11 +20,20 @@
 //   - les notifications et lignes du journal de personnes réelles qui ne
 //     pointent plus que vers de la démonstration supprimée.
 // Ce qui reste : les campus, la direction, et toute donnée réelle.
-// Cas particulier : un cours de démonstration que l'emploi du temps réel a
-// repris (même code, « IA-101 ») n'est pas supprimé, pour ne pas casser le
-// programme et ses séances ; il est VIDÉ de tout ce que la démonstration y
-// avait mis (chapitres, leçons, séances hors programme, devoirs, fiches,
-// textes de présentation, annonce sur le site) et un avertissement le signale.
+//
+// Cas particuliers, annoncés dès la simulation :
+//   - un cours de démonstration qui sert au réel (repris par l'emploi du temps, un vrai
+//     formateur principal ou co-formateur, une inscription, une copie ou une présence d'un
+//     compte réel, un chapitre, une leçon, un devoir, une séance, une annonce ou un message
+//     d'une vraie personne) est GARDÉ. N'en part que ce que le semis y avait mis (noté au
+//     registre, ou antérieur au semis, qui antidate tout) : jamais une séance en direct, ni une
+//     séance ou un devoir qui porte des présences ou des copies réelles. Sa présentation n'est
+//     effacée que si elle est encore celle de la démonstration ; ses classes de démonstration
+//     sont ramenées à celles de l'emploi du temps ; son formateur principal de démonstration
+//     est remplacé par son premier intervenant réel (à défaut, son premier co-formateur réel) ;
+//   - l'écran d'une vraie salle installé sur un compte « salle » de démonstration est gardé :
+//     le compte devient réel (plus de marqueur, d'adresse ni de mot de passe de démonstration)
+//     et l'écran reste connecté.
 //
 // Tout se fait dans UNE transaction, sous le même verrou que le semis : en cas
 // d'erreur, rien n'est supprimé. Le bilan compte les lignes table par table,
@@ -33,8 +43,10 @@ import path from "path";
 import type { PoolClient } from "pg";
 import { pool } from "../db";
 import { config } from "../config";
-import { ACTION_JOURNAL_DEMO, ACTION_JOURNAL_PURGE, CODES_COURS_DEMO, DOMAINE_DEMO, VERROU_SEMIS } from "../demo-constantes";
+import { hacher, jetonAleatoire } from "../auth";
+import { ACTION_JOURNAL_DEMO, ACTION_JOURNAL_PURGE, CODES_COURS_DEMO, DOMAINE_DEMO, VERROU_SEMIS, empreintePresentation } from "../demo-constantes";
 
+export type PersonnePurgee = { id: number; nom: string; identifiant: string | null; role: string };
 
 export type BilanPurge = {
   simulation: boolean;
@@ -42,6 +54,8 @@ export type BilanPurge = {
   comptes: number;
   /** Leurs identifiants (pour fermer aussitôt leurs connexions ouvertes). */
   idsComptes: number[];
+  /** Les mêmes, un par un : la direction voit qui part avant de confirmer. */
+  personnes: PersonnePurgee[];
   parRole: Record<string, number>;
   /** Récapitulatif lisible : [libellé, nombre]. */
   inventaire: [string, number][];
@@ -55,11 +69,44 @@ export type BilanPurge = {
 
 type Q = PoolClient;
 
+/** Ce que le registre du semis a noté (les registres anciens n'ont que la date, les classes et les cours). */
+type Registre = {
+  le?: string;
+  classes?: number[];
+  cours?: number[];
+  contenu?: Partial<Record<"modules" | "lecons" | "devoirs" | "seances" | "fiches", number[]>>;
+  presentations?: Record<string, string>;
+};
+
+/** Ce qu'un cours de démonstration a reçu du réel : une seule de ces traces suffit à le garder. */
+type TraceReelle = {
+  id: number;
+  programme: boolean;
+  formateur_reel: boolean;
+  co_formateurs: number;
+  inscriptions: number;
+  copies: number;
+  presences: number;
+  chapitres: number;
+  lecons: number;
+  devoirs: number;
+  seances: number;
+  fiches: number;
+  annonces: number;
+  messages: number;
+};
+
 const nombre = async (c: Q, requete: string, params: unknown[] = []): Promise<number> =>
   Number((await c.query<{ n: string }>(requete, params)).rows[0]?.n ?? 0);
 
 const ids = async (c: Q, requete: string, params: unknown[] = []): Promise<number[]> =>
   (await c.query<{ id: number }>(requete, params)).rows.map((r) => Number(r.id));
+
+const pluriel = (n: number, s: string, p = `${s}s`) => `${n} ${n > 1 ? p : s}`;
+/** « a, b et c ». */
+const liste = (l: string[]) => (l.length > 1 ? `${l.slice(0, -1).join(", ")} et ${l[l.length - 1]}` : (l[0] ?? ""));
+/** Morceaux non nuls : [[2, "leçon"], [0, "devoir"]] → ["2 leçons"]. */
+const morceaux = (l: [number, string, string?][]) => l.filter(([n]) => n > 0).map(([n, s, p]) => pluriel(n, s, p));
 
 /** Nombre de lignes de chaque table du schéma « campus ». */
 async function compterTables(c: Q): Promise<Record<string, number>> {
@@ -88,7 +135,7 @@ function motifNotifications(o: { seances: number[]; devoirs: number[]; cours: nu
   return parties.length ? `^/(?:${parties.join("|")})(?:[/?#]|$)` : null;
 }
 
-/** Une colonne existe-t-elle ? (le schéma évolue : une purge ne doit pas tomber sur une table d'un autre module) */
+/** Une table existe-t-elle ? (le schéma évolue : une purge ne doit pas tomber sur une table d'un autre module) */
 async function tableExiste(c: Q, table: string): Promise<boolean> {
   return (await nombre(c, `SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = 'campus' AND table_name = $1`, [table])) > 0;
 }
@@ -107,62 +154,228 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     // ── 1. Inventaire ──────────────────────────────────────────────────────
     const direction = config.admin.identifiant.toLowerCase();
     const marques = (
-      await client.query<{ id: number; role: string; prenom: string; nom: string; identifiant: string | null; email: string | null }>(
-        `SELECT id, role, prenom, nom, coalesce(email, matricule) AS identifiant, email
-           FROM campus.utilisateurs
-          WHERE preferences->>'demo' = 'true' OR lower(coalesce(email, '')) LIKE $1
-          ORDER BY role, nom, prenom`,
-        [`%@${DOMAINE_DEMO}`],
+      await client.query<{ id: number; role: string; prenom: string; nom: string; identifiant: string | null; email: string | null; ecran_installe: boolean }>(
+        `SELECT u.id, u.role, u.prenom, u.nom, coalesce(u.email, u.matricule, u.telephone) AS identifiant, u.email,
+                (u.role = 'salle' AND EXISTS (SELECT 1 FROM campus.journal j WHERE j.action = 'ecran_installe' AND j.utilisateur_id = u.id)) AS ecran_installe
+           FROM campus.utilisateurs u
+          WHERE u.preferences->>'demo' = 'true'
+          ORDER BY u.role, u.nom, u.prenom`,
       )
     ).rows;
     const proteges = marques.filter((u) => u.role === "admin" || u.email?.toLowerCase() === direction);
     for (const p of proteges) avertissements.push(`${p.prenom} ${p.nom} (${p.identifiant ?? p.id}) ressemble à un compte de démonstration mais appartient à la direction : gardé.`);
-    const comptes = marques.filter((u) => !proteges.includes(u));
+    // Un vrai écran de salle installé sur un compte « salle » de démonstration : le supprimer couperait l'écran
+    // en plein cours. Il est gardé et devient un compte réel.
+    const ecransRepris = marques.filter((u) => !proteges.includes(u) && u.ecran_installe);
+    for (const e of ecransRepris) {
+      avertissements.push(`L'écran de la salle de ${e.nom} a été installé sur un compte de démonstration : il est gardé et devient un compte réel (sans adresse ni mot de passe de démonstration). L'écran reste connecté.`);
+    }
+    const comptes = marques.filter((u) => !proteges.includes(u) && !ecransRepris.includes(u));
     const idsComptes = comptes.map((u) => u.id);
     const idsTexte = idsComptes.map(String);
     const parRole: Record<string, number> = {};
     for (const u of comptes) parRole[u.role] = (parRole[u.role] ?? 0) + 1;
+    const personnes: PersonnePurgee[] = comptes.map((u) => ({ id: u.id, nom: `${u.prenom} ${u.nom}`.trim(), identifiant: u.identifiant, role: u.role }));
 
-    // Registre du semis (classes et cours créés).
-    const registre = (await client.query<{ details: { classes?: number[]; cours?: number[] } | null }>(`SELECT details FROM campus.journal WHERE action = $1`, [ACTION_JOURNAL_DEMO])).rows;
-    const classesRegistre = [...new Set(registre.flatMap((r) => r.details?.classes ?? []))];
-    const coursRegistre = [...new Set(registre.flatMap((r) => r.details?.cours ?? []))];
+    // Une adresse de démonstration sans le marqueur : un compte réel qui l'a choisie. Il reste, on le signale.
+    const adressesDemo = (
+      await client.query<{ nom: string; identifiant: string | null }>(
+        `SELECT prenom || ' ' || nom AS nom, coalesce(matricule, email) AS identifiant FROM campus.utilisateurs
+          WHERE coalesce(preferences->>'demo', 'false') <> 'true' AND lower(coalesce(email, '')) LIKE $1 ORDER BY nom`,
+        [`%@${DOMAINE_DEMO}`],
+      )
+    ).rows;
+    if (adressesDemo.length) {
+      avertissements.push(
+        `${pluriel(adressesDemo.length, "compte réel utilise", "comptes réels utilisent")} une adresse @${DOMAINE_DEMO} (${adressesDemo.map((a) => `${a.nom}, ${a.identifiant}`).join(" ; ")}) : ce ne sont pas des comptes de démonstration, ils restent. Corrigez leur adresse (Pilotage, Comptes).`,
+      );
+    }
+
+    // Registre du semis : date, classes, cours et contenus créés, empreintes des présentations.
+    const registre = (await client.query<{ details: Registre | null }>(`SELECT details FROM campus.journal WHERE action = $1`, [ACTION_JOURNAL_DEMO])).rows.map((r) => r.details ?? {});
+    const classesRegistre = [...new Set(registre.flatMap((r) => r.classes ?? []))];
+    const coursRegistre = [...new Set(registre.flatMap((r) => r.cours ?? []))];
+    const semes = (cle: keyof NonNullable<Registre["contenu"]>) => [...new Set(registre.flatMap((r) => r.contenu?.[cle] ?? []))];
+    const presentationsSemees = new Map<number, string>(registre.flatMap((r) => Object.entries(r.presentations ?? {}).map(([id, e]) => [Number(id), e] as [number, string])));
+    // Date du semis : il antidate tout ce qu'il crée. Ce qu'un cours de démonstration a reçu APRÈS vient de vraies
+    // personnes. Registre perdu : borne prudente (le plus récent des comptes de démonstration, antidatés eux aussi) ;
+    // un contenu plus récent est alors traité comme réel, donc gardé.
+    const datesSemis = registre.map((r) => (r.le ? new Date(r.le).getTime() : NaN)).filter((t) => !Number.isNaN(t));
+    let semeLe: Date | null = datesSemis.length ? new Date(Math.max(...datesSemis)) : null;
+    if (!semeLe && idsComptes.length) {
+      semeLe = (await client.query<{ le: Date | null }>(`SELECT max(cree_le) AS le FROM campus.utilisateurs WHERE id = ANY($1::int[])`, [idsComptes])).rows[0]?.le ?? null;
+    }
 
     const avecProgramme = await tableExiste(client, "creneaux_programme");
     const avecSessionsClasses = await tableExiste(client, "sessions_classes");
+    const avecSeancesCreneaux = await tableExiste(client, "seances_creneaux");
+    const horsProgramme = (alias: string) => (avecSeancesCreneaux ? `AND ${alias}.id NOT IN (SELECT seance_id FROM campus.seances_creneaux)` : "");
 
-    // Cours de démonstration : code de démonstration (ou registre) ET formateur de démonstration.
+    // Cours de démonstration : notés au registre du semis (quel que soit leur formateur aujourd'hui), ou, sans
+    // registre, un code de démonstration tenu par un formateur de démonstration.
     const codes = [...CODES_COURS_DEMO, ...CODES_COURS_DEMO.map((c) => `${c}-D`)];
     const candidats = (
       await client.query<{ id: number; code: string }>(
         `SELECT id, code FROM campus.cours
-          WHERE formateur_id = ANY($1::int[]) AND (code = ANY($2::text[]) OR id = ANY($3::int[]))
+          WHERE id = ANY($3::int[]) OR (formateur_id = ANY($1::int[]) AND code = ANY($2::text[]))
           ORDER BY code`,
         [idsComptes, codes, coursRegistre],
       )
     ).rows;
-    // …sauf s'il sert à l'emploi du temps réel : le supprimer casserait le programme publié.
-    const utilises = avecProgramme
-      ? new Set(
-          await ids(
-            client,
-            `SELECT DISTINCT cours_id AS id FROM campus.creneaux_programme WHERE cours_id = ANY($1::int[])
-             UNION SELECT DISTINCT s.cours_id FROM campus.seances s JOIN campus.seances_creneaux sc ON sc.seance_id = s.id WHERE s.cours_id = ANY($1::int[])`,
-            [candidats.map((c) => c.id)],
-          ),
+    const candIds = candidats.map((c) => c.id);
+
+    // Ce que le semis a mis dans ces cours : noté au registre, ou antérieur au semis (il antidate tout),
+    // ou (devoirs) écrit par un compte de démonstration.
+    const leconsSemees = await ids(client, `SELECT id FROM campus.lecons WHERE cours_id = ANY($1::int[]) AND (id = ANY($2::int[]) OR cree_le < $3::timestamptz)`, [candIds, semes("lecons"), semeLe]);
+    const seancesSemees = await ids(client, `SELECT id FROM campus.seances WHERE cours_id = ANY($1::int[]) AND (id = ANY($2::int[]) OR cree_le < $3::timestamptz)`, [candIds, semes("seances"), semeLe]);
+    const devoirsSemes = await ids(client, `SELECT id FROM campus.devoirs WHERE cours_id = ANY($1::int[]) AND (id = ANY($2::int[]) OR auteur_id = ANY($3::int[]))`, [candIds, semes("devoirs"), idsComptes]);
+    const fichesSemees = await ids(
+      client,
+      `SELECT id FROM campus.fiches_revision WHERE cours_id = ANY($1::int[]) AND (id = ANY($2::int[]) OR cree_le < $3::timestamptz OR lecon_id = ANY($4::int[]))`,
+      [candIds, semes("fiches"), semeLe, leconsSemees],
+    );
+    const modulesSemes = await ids(
+      client,
+      `SELECT m.id FROM campus.modules m WHERE m.cours_id = ANY($1::int[])
+          AND (m.id = ANY($2::int[]) OR EXISTS (SELECT 1 FROM campus.lecons l WHERE l.module_id = m.id AND l.id = ANY($3::int[])))`,
+      [candIds, semes("modules"), leconsSemees],
+    );
+
+    // Ce que le réel a laissé dans chaque cours de démonstration.
+    const traces = new Map<number, TraceReelle>(
+      (
+        await client.query<TraceReelle>(
+          `SELECT c.id,
+                  ${
+                    avecProgramme
+                      ? `(EXISTS (SELECT 1 FROM campus.creneaux_programme cp WHERE cp.cours_id = c.id)
+                          ${avecSeancesCreneaux ? "OR EXISTS (SELECT 1 FROM campus.seances s JOIN campus.seances_creneaux sc ON sc.seance_id = s.id WHERE s.cours_id = c.id)" : ""})`
+                      : "false"
+                  } AS programme,
+                  (c.formateur_id IS NOT NULL AND NOT (c.formateur_id = ANY($2::int[]))) AS formateur_reel,
+                  (SELECT count(*) FROM campus.cours_formateurs cf WHERE cf.cours_id = c.id AND NOT (cf.formateur_id = ANY($2::int[])))::int AS co_formateurs,
+                  (SELECT count(*) FROM campus.inscriptions i WHERE i.cours_id = c.id AND NOT (i.utilisateur_id = ANY($2::int[])))::int AS inscriptions,
+                  ((SELECT count(*) FROM campus.rendus r JOIN campus.devoirs d ON d.id = r.devoir_id WHERE d.cours_id = c.id AND NOT (r.etudiant_id = ANY($2::int[])))
+                   + (SELECT count(*) FROM campus.tentatives_quiz t JOIN campus.devoirs d ON d.id = t.devoir_id WHERE d.cours_id = c.id AND NOT (t.etudiant_id = ANY($2::int[]))))::int AS copies,
+                  (SELECT count(*) FROM campus.presences p JOIN campus.seances s ON s.id = p.seance_id WHERE s.cours_id = c.id AND NOT (p.utilisateur_id = ANY($2::int[])))::int AS presences,
+                  (SELECT count(*) FROM campus.modules m WHERE m.cours_id = c.id AND NOT (m.id = ANY($3::int[])))::int AS chapitres,
+                  (SELECT count(*) FROM campus.lecons l WHERE l.cours_id = c.id AND NOT (l.id = ANY($4::int[])))::int AS lecons,
+                  (SELECT count(*) FROM campus.devoirs d WHERE d.cours_id = c.id AND NOT (d.id = ANY($5::int[])))::int AS devoirs,
+                  (SELECT count(*) FROM campus.seances s WHERE s.cours_id = c.id AND NOT (s.id = ANY($6::int[])) ${horsProgramme("s")})::int AS seances,
+                  (SELECT count(*) FROM campus.fiches_revision f WHERE f.cours_id = c.id AND NOT (f.id = ANY($7::int[])))::int AS fiches,
+                  (SELECT count(*) FROM campus.annonces a WHERE a.cours_id = c.id AND NOT (a.auteur_id = ANY($2::int[])))::int AS annonces,
+                  (SELECT count(*) FROM campus.messages me JOIN campus.conversations cv ON cv.id = me.conversation_id
+                    WHERE cv.cours_id = c.id AND NOT (me.auteur_id = ANY($2::int[])))::int AS messages
+             FROM campus.cours c WHERE c.id = ANY($1::int[])`,
+          [candIds, idsComptes, modulesSemes, leconsSemees, devoirsSemes, seancesSemees, fichesSemees],
         )
-      : new Set<number>();
-    const coursDemo = candidats.filter((c) => !utilises.has(c.id));
-    const coursRepris = candidats.filter((x) => utilises.has(x.id));
-    for (const c of coursRepris) {
-      avertissements.push(`Le cours ${c.code} vient de la démonstration mais l'emploi du temps l'utilise : il est gardé, vidé de son contenu de démonstration. Vérifiez son titre et sa présentation (Pilotage, Cours).`);
-    }
+      ).rows.map((t) => [Number(t.id), t]),
+    );
+    const sertAuReel = (t: TraceReelle | undefined) =>
+      Boolean(t && (t.programme || t.formateur_reel || t.co_formateurs || t.inscriptions || t.copies || t.presences || t.chapitres || t.lecons || t.devoirs || t.seances || t.fiches || t.annonces || t.messages));
+    const coursDemo = candidats.filter((c) => !sertAuReel(traces.get(c.id)));
+    const coursRepris = candidats.filter((c) => sertAuReel(traces.get(c.id)));
     const coursIds = coursDemo.map((c) => c.id);
     const reprisIds = coursRepris.map((c) => c.id);
-    const coursGardes = (
-      await client.query<{ code: string }>(`SELECT code FROM campus.cours WHERE formateur_id = ANY($1::int[]) AND NOT (id = ANY($2::int[])) AND NOT (id = ANY($3::int[]))`, [idsComptes, coursIds, reprisIds])
+
+    // Dans un cours repris, ne part que ce que le semis y avait mis : ni une séance en direct, ni une séance
+    // de l'emploi du temps, ni une séance ou un devoir qui porte des présences ou des copies réelles.
+    const seancesRetirees = reprisIds.length
+      ? await ids(
+          client,
+          `SELECT s.id FROM campus.seances s
+            WHERE s.cours_id = ANY($1::int[]) AND s.id = ANY($2::int[]) AND s.statut <> 'en_direct' ${horsProgramme("s")}
+              AND NOT EXISTS (SELECT 1 FROM campus.presences p WHERE p.seance_id = s.id AND NOT (p.utilisateur_id = ANY($3::int[])))`,
+          [reprisIds, seancesSemees, idsComptes],
+        )
+      : [];
+    const devoirsRetires = reprisIds.length
+      ? await ids(
+          client,
+          `SELECT d.id FROM campus.devoirs d
+            WHERE d.cours_id = ANY($1::int[]) AND d.id = ANY($2::int[])
+              AND NOT EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND NOT (r.etudiant_id = ANY($3::int[])))
+              AND NOT EXISTS (SELECT 1 FROM campus.tentatives_quiz t WHERE t.devoir_id = d.id AND NOT (t.etudiant_id = ANY($3::int[])))`,
+          [reprisIds, devoirsSemes, idsComptes],
+        )
+      : [];
+    const leconsRetirees = reprisIds.length ? await ids(client, `SELECT id FROM campus.lecons WHERE cours_id = ANY($1::int[]) AND id = ANY($2::int[])`, [reprisIds, leconsSemees]) : [];
+    const fichesRetirees = reprisIds.length ? await ids(client, `SELECT id FROM campus.fiches_revision WHERE cours_id = ANY($1::int[]) AND id = ANY($2::int[])`, [reprisIds, fichesSemees]) : [];
+    // Un chapitre du semis où une vraie personne a ajouté une leçon reste (avec cette leçon).
+    const modulesRetires = reprisIds.length
+      ? await ids(
+          client,
+          `SELECT m.id FROM campus.modules m
+            WHERE m.cours_id = ANY($1::int[]) AND m.id = ANY($2::int[])
+              AND NOT EXISTS (SELECT 1 FROM campus.lecons l WHERE l.module_id = m.id AND NOT (l.id = ANY($3::int[])))`,
+          [reprisIds, modulesSemes, leconsRetirees],
+        )
+      : [];
+
+    // Présentation encore celle de la démonstration (empreinte du registre ; registre ancien : jamais modifiée depuis
+    // le semis, ou qui nomme un formateur de démonstration) : effacée, et le cours quitte le site jusqu'à sa réécriture.
+    const presentations = reprisIds.length
+      ? (
+          await client.query<{ id: number; description: string; objectifs: string; accroche: string | null; intacte: boolean; nomme_demo: boolean }>(
+            `SELECT c.id, c.description, c.objectifs, c.accroche_site AS accroche,
+                    ($2::timestamptz IS NOT NULL AND c.maj_le <= $2::timestamptz) AS intacte,
+                    EXISTS (SELECT 1 FROM campus.utilisateurs f WHERE f.id = ANY($3::int[]) AND f.role = 'formateur'
+                              AND position(lower(f.prenom || ' ' || f.nom) IN lower(c.description || ' ' || coalesce(c.accroche_site, ''))) > 0) AS nomme_demo
+               FROM campus.cours c WHERE c.id = ANY($1::int[])`,
+            [reprisIds, semeLe, idsComptes],
+          )
+        ).rows
+      : [];
+    const presentationDemo = new Set(
+      presentations
+        .filter((p) => {
+          const e = presentationsSemees.get(Number(p.id));
+          return e ? e === empreintePresentation(p) : p.intacte || p.nomme_demo;
+        })
+        .map((p) => Number(p.id)),
+    );
+
+    // Classes de démonstration d'un cours repris que l'emploi du temps ne justifie pas : sinon les étudiants réels
+    // importés dans ces classes (autres campus) verraient le cours, recevraient ses « En direct » et seraient
+    // attendus à ses séances. (Un cours repris hors emploi du temps garde ses classes : signalé plus bas.)
+    const reprisAuProgramme = coursRepris.filter((c) => traces.get(c.id)?.programme).map((c) => c.id);
+    const detacher = avecProgramme && avecSessionsClasses && reprisAuProgramme.length && classesRegistre.length;
+    const conditionDetacher = `cc.cours_id = ANY($1::int[]) AND cc.classe_id = ANY($2::int[])
+         AND NOT EXISTS (SELECT 1 FROM campus.creneaux_programme cp JOIN campus.sessions_classes sc ON sc.session_id = cp.session_id
+                          WHERE cp.cours_id = cc.cours_id AND sc.classe_id = cc.classe_id)`;
+    const aDetacher = detacher
+      ? (await client.query<{ cours_id: number; n: number }>(`SELECT cc.cours_id, count(*)::int AS n FROM campus.cours_classes cc WHERE ${conditionDetacher} GROUP BY cc.cours_id`, [reprisAuProgramme, classesRegistre])).rows
+      : [];
+    const detachees = new Map(aDetacher.map((r) => [Number(r.cours_id), Number(r.n)]));
+
+    // Cours gardés dont le formateur principal est un compte de démonstration : leur premier intervenant réel à
+    // l'emploi du temps le remplace (à défaut, leur premier co-formateur réel), sinon personne.
+    const remplacants = (
+      await client.query<{ id: number; code: string; repris: boolean; nouveau: number | null; nom: string | null }>(
+        `SELECT x.id, x.code, x.id = ANY($3::int[]) AS repris, x.nouveau, f.prenom || ' ' || f.nom AS nom
+           FROM (SELECT c.id, c.code,
+                        coalesce(
+                          ${
+                            avecProgramme
+                              ? `(SELECT cp.intervenant_id FROM campus.creneaux_programme cp
+                                   JOIN campus.sessions_programme sp ON sp.id = cp.session_id
+                                   JOIN campus.utilisateurs i ON i.id = cp.intervenant_id
+                                  WHERE cp.cours_id = c.id AND i.role = 'formateur' AND NOT (i.id = ANY($1::int[]))
+                                  ORDER BY (sp.statut = 'archivee'), (sp.statut = 'publiee') DESC, sp.debut, cp.jour, cp.heure_debut, cp.ordre, cp.id LIMIT 1),`
+                              : ""
+                          }
+                          (SELECT cf.formateur_id FROM campus.cours_formateurs cf JOIN campus.utilisateurs i ON i.id = cf.formateur_id
+                            WHERE cf.cours_id = c.id AND i.role = 'formateur' AND NOT (i.id = ANY($1::int[]))
+                            ORDER BY i.actif DESC, cf.formateur_id LIMIT 1)
+                        ) AS nouveau
+                   FROM campus.cours c
+                  WHERE c.formateur_id = ANY($1::int[]) AND NOT (c.id = ANY($2::int[]))) x
+           LEFT JOIN campus.utilisateurs f ON f.id = x.nouveau
+          ORDER BY x.code`,
+        [idsComptes, coursIds, reprisIds],
+      )
     ).rows;
-    if (coursGardes.length) avertissements.push(`Cours réels gardés, dont le formateur de démonstration est simplement retiré : ${coursGardes.map((c) => c.code).join(", ")}.`);
+    const remplacantDe = new Map(remplacants.map((r) => [Number(r.id), r]));
 
     // Classes du semis (registre) qu'on peut retirer : aucune personne réelle n'y est (ni n'y a été),
     // aucune annonce ni aucun événement écrit par une personne réelle ne les vise. Les liens qu'un cours
@@ -194,12 +407,86 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
       if (creneaux) avertissements.push(`${creneaux} créneau(x) de l'emploi du temps avaient un intervenant de démonstration : il faudra leur choisir un vrai formateur.`);
     }
 
+    // Ce que la simulation annonce, cours repris par cours repris : pourquoi il reste, ce qui part, ce qui reste.
+    const restantesDemo = (coursId: number) =>
+      nombre(client, `SELECT count(*) AS n FROM campus.cours_classes WHERE cours_id = $1 AND classe_id = ANY($2::int[]) AND NOT (classe_id = ANY($3::int[]))`, [coursId, classesRegistre, classeIds]);
+    const compterDans = async (table: string, colonne: string, liste: number[], coursId: number) =>
+      liste.length ? nombre(client, `SELECT count(*) AS n FROM campus.${table} WHERE cours_id = $1 AND ${colonne} = ANY($2::int[])`, [coursId, liste]) : 0;
+    for (const c of coursRepris) {
+      const t = traces.get(c.id)!;
+      const raisons = [
+        ...(t.programme ? ["l'emploi du temps"] : []),
+        ...(t.formateur_reel ? ["un vrai formateur principal"] : []),
+        ...morceaux([
+          [t.co_formateurs, "co-formateur réel", "co-formateurs réels"],
+          [t.inscriptions, "inscription réelle", "inscriptions réelles"],
+          [t.copies, "copie d'un étudiant réel", "copies d'étudiants réels"],
+          [t.presences, "présence réelle", "présences réelles"],
+        ]),
+      ];
+      const creeParLeReel = morceaux([
+        [t.chapitres, "chapitre"],
+        [t.lecons, "leçon"],
+        [t.devoirs, "devoir"],
+        [t.seances, "séance"],
+        [t.fiches, "fiche"],
+        [t.annonces, "annonce"],
+        [t.messages, "message"],
+      ]);
+      if (creeParLeReel.length) raisons.push(`${liste(creeParLeReel)} créés par de vraies personnes`);
+      const retires = morceaux([
+        [await compterDans("lecons", "id", leconsRetirees, c.id), "leçon"],
+        [await compterDans("modules", "id", modulesRetires, c.id), "chapitre"],
+        [await compterDans("devoirs", "id", devoirsRetires, c.id), "devoir"],
+        [await compterDans("seances", "id", seancesRetirees, c.id), "séance"],
+        [await compterDans("fiches_revision", "id", fichesRetirees, c.id), "fiche"],
+      ]);
+      const gardes: [number, string][] = [
+        [(await compterDans("devoirs", "id", devoirsSemes, c.id)) - (await compterDans("devoirs", "id", devoirsRetires, c.id)), "devoir"],
+        [(await compterDans("seances", "id", seancesSemees, c.id)) - (await compterDans("seances", "id", seancesRetirees, c.id)), "séance"],
+        [(await compterDans("modules", "id", modulesSemes, c.id)) - (await compterDans("modules", "id", modulesRetires, c.id)), "chapitre"],
+      ];
+      const gardesSemes = morceaux(gardes);
+      const plusieursGardes = gardes.reduce((a, [n]) => a + n, 0) > 1;
+      const lectures = leconsRetirees.length
+        ? await nombre(client, `SELECT count(*) AS n FROM campus.progressions WHERE lecon_id = ANY($1::int[]) AND NOT (utilisateur_id = ANY($2::int[])) AND lecon_id IN (SELECT id FROM campus.lecons WHERE cours_id = $3)`, [
+            leconsRetirees,
+            idsComptes,
+            c.id,
+          ])
+        : 0;
+      const r = remplacantDe.get(c.id);
+      const classesDemoRestantes = t.programme ? 0 : await restantesDemo(c.id);
+      const phrases = [
+        `Le cours ${c.code} vient de la démonstration mais sert au réel (${liste(raisons)}) : il est gardé, avec tout ce que de vraies personnes y ont fait.`,
+        retires.length ? `N'en part que ce que la démonstration y avait mis : ${liste(retires)}.` : "La démonstration n'y a plus rien à retirer.",
+        ...(gardesSemes.length
+          ? [`Restent aussi ${liste(gardesSemes)} de la démonstration, qui ${plusieursGardes ? "portent" : "porte"} un direct en cours, des copies, des présences ou des leçons réelles.`]
+          : []),
+        ...(lectures ? [`${pluriel(lectures, "lecture", "lectures")} de ces leçons de démonstration par des étudiants réels ${lectures > 1 ? "partent" : "part"} avec elles.`] : []),
+        ...(r ? [r.nouveau ? `Formateur principal de démonstration remplacé par ${r.nom}.` : "Son formateur principal de démonstration est retiré : choisissez-en un (Pilotage, Cours)."] : []),
+        ...(detachees.get(c.id) ? [`Ses classes sont ramenées à celles de l'emploi du temps (${pluriel(detachees.get(c.id)!, "classe de la démonstration retirée", "classes de la démonstration retirées")}).`] : []),
+        ...(classesDemoRestantes
+          ? [`Il ne figure pas à l'emploi du temps et reste rattaché à ${pluriel(classesDemoRestantes, "classe créée par la démonstration", "classes créées par la démonstration")} où sont inscrits des étudiants réels : vérifiez ses classes (Pilotage, Cours).`]
+          : []),
+        presentationDemo.has(c.id)
+          ? "Sa présentation de démonstration est effacée et il quitte le site vitrine : réécrivez-la (Pilotage, Cours)."
+          : "Sa présentation a été modifiée depuis la démonstration : elle est gardée, relisez-la (Pilotage, Cours).",
+      ];
+      avertissements.push(phrases.join(" "));
+    }
+    const coursGardes = remplacants.filter((r) => !r.repris);
+    if (coursGardes.length) {
+      avertissements.push(
+        `Cours réels gardés dont le formateur principal était un compte de démonstration : ${coursGardes
+          .map((r) => (r.nouveau ? `${r.code} (désormais ${r.nom})` : `${r.code} (sans formateur principal : à choisir dans Pilotage, Cours)`))
+          .join(", ")}.`,
+      );
+    }
+
     // Objets rattachés (récapitulatif, journal et notifications).
-    const seancesReprises = reprisIds.length
-      ? await ids(client, `SELECT id FROM campus.seances WHERE cours_id = ANY($1::int[]) AND id NOT IN (SELECT seance_id FROM campus.seances_creneaux)`, [reprisIds])
-      : [];
-    const seanceIds = [...(await ids(client, `SELECT id FROM campus.seances WHERE cours_id = ANY($1::int[])`, [coursIds])), ...seancesReprises];
-    const devoirIds = await ids(client, `SELECT id FROM campus.devoirs WHERE cours_id = ANY($1::int[]) OR cours_id = ANY($2::int[])`, [coursIds, reprisIds]);
+    const seanceIds = [...(await ids(client, `SELECT id FROM campus.seances WHERE cours_id = ANY($1::int[])`, [coursIds])), ...seancesRetirees];
+    const devoirIds = [...(await ids(client, `SELECT id FROM campus.devoirs WHERE cours_id = ANY($1::int[])`, [coursIds])), ...devoirsRetires];
     const annonceIds = await ids(client, `SELECT id FROM campus.annonces WHERE auteur_id = ANY($1::int[]) OR cours_id = ANY($2::int[])`, [idsComptes, coursIds]);
     const evenementIds = await ids(client, `SELECT id FROM campus.evenements WHERE auteur_id = ANY($1::int[]) OR cours_id = ANY($2::int[])`, [idsComptes, coursIds]);
     const conversationIds = await ids(
@@ -242,7 +529,7 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     const inventaire: [string, number][] = [
       ["comptes de démonstration", idsComptes.length],
       ["cours de démonstration", coursIds.length],
-      ["leçons", await nombre(client, `SELECT count(*) AS n FROM campus.lecons WHERE cours_id = ANY($1::int[]) OR cours_id = ANY($2::int[])`, [coursIds, reprisIds])],
+      ["leçons", (await nombre(client, `SELECT count(*) AS n FROM campus.lecons WHERE cours_id = ANY($1::int[])`, [coursIds])) + leconsRetirees.length],
       ["séances en direct", seanceIds.length],
       ["présences", await nombre(client, `SELECT count(*) AS n FROM campus.presences WHERE seance_id = ANY($1::int[]) OR utilisateur_id = ANY($2::int[])`, [seanceIds, idsComptes])],
       ["devoirs et interrogations", devoirIds.length],
@@ -260,10 +547,18 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
       ["classes de démonstration", classeIds.length],
     ];
 
-    const rien = idsComptes.length === 0 && coursIds.length === 0 && reprisIds.length === 0 && classeIds.length === 0 && fichierIds.length === 0 && inventaire.every(([, n]) => n === 0);
+    const rien =
+      idsComptes.length === 0 &&
+      ecransRepris.length === 0 &&
+      coursIds.length === 0 &&
+      reprisIds.length === 0 &&
+      remplacants.length === 0 &&
+      classeIds.length === 0 &&
+      fichierIds.length === 0 &&
+      inventaire.every(([, n]) => n === 0);
     if (rien || simulation) {
       await client.query("ROLLBACK");
-      const bilan: BilanPurge = { simulation, comptes: idsComptes.length, idsComptes, parRole, inventaire, tables: {}, fichiersDisque: 0, avertissements, ms: Date.now() - debut };
+      const bilan: BilanPurge = { simulation, comptes: idsComptes.length, idsComptes, personnes, parRole, inventaire, tables: {}, fichiersDisque: 0, avertissements, ms: Date.now() - debut };
       if (rien) {
         dire("✓ Aucune donnée de démonstration à supprimer.");
         // Des fichiers orphelins peuvent rester sur le disque (semis interrompu) : on les retire quand même.
@@ -280,23 +575,43 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     const avant = await compterTables(client);
     const regex = motifNotifications({ seances: seanceIds, devoirs: devoirIds, cours: coursIds, annonces: annonceIds, conversations: conversationIds, comptes: idsComptes });
 
+    // Écrans de vraies salles installés sur un compte de démonstration : ils deviennent des comptes réels (ni marqueur,
+    // ni adresse, ni mot de passe commun de la démonstration) et gardent leur connexion.
+    if (ecransRepris.length) {
+      // Mot de passe tiré au sort et jamais montré : l'écran se réinstalle par un lien ou un code, comme un écran créé par le pilotage.
+      const hashEcranRepris = await hacher(`${jetonAleatoire(18)}-${jetonAleatoire(18)}`);
+      await q(
+        `UPDATE campus.utilisateurs
+            SET preferences = coalesce(preferences, '{}'::jsonb) - 'demo',
+                email = CASE WHEN lower(coalesce(email, '')) LIKE $2 THEN NULL ELSE email END,
+                mot_de_passe_hash = $3
+          WHERE id = ANY($1::int[])`,
+        [ecransRepris.map((e) => e.id), `%@${DOMAINE_DEMO}`, hashEcranRepris],
+      );
+    }
     await q(`DELETE FROM campus.session WHERE sess->>'utilisateurId' = ANY($1::text[])`, [idsTexte]);
     // Le journal d'abord (il ne référence les comptes que par utilisateur_id, sans cascade).
     await q(`DELETE FROM campus.journal WHERE ${conditionJournal}`, paramsJournal);
-    // Les cours de démonstration et tout ce qui en dépend (cascade), puis les formateurs retirés des cours réels.
+    // Les cours de démonstration et tout ce qui en dépend (cascade).
     await q(`DELETE FROM campus.cours WHERE id = ANY($1::int[])`, [coursIds]);
-    // Cours repris par l'emploi du temps : gardés, mais vidés de la démonstration.
+    // Cours repris par le réel : gardés, seul ce que le semis y avait mis part.
     if (reprisIds.length) {
-      await q(`DELETE FROM campus.seances WHERE id = ANY($1::int[])`, [seancesReprises]);
-      await q(`DELETE FROM campus.devoirs WHERE cours_id = ANY($1::int[])`, [reprisIds]);
-      await q(`DELETE FROM campus.fiches_revision WHERE cours_id = ANY($1::int[])`, [reprisIds]);
-      await q(`DELETE FROM campus.modules WHERE cours_id = ANY($1::int[])`, [reprisIds]);
-      await q(`DELETE FROM campus.lecons WHERE cours_id = ANY($1::int[])`, [reprisIds]);
+      await q(`DELETE FROM campus.seances WHERE id = ANY($1::int[])`, [seancesRetirees]);
+      await q(`DELETE FROM campus.devoirs WHERE id = ANY($1::int[])`, [devoirsRetires]);
+      await q(`DELETE FROM campus.fiches_revision WHERE id = ANY($1::int[])`, [fichesRetirees]);
+      await q(`DELETE FROM campus.lecons WHERE id = ANY($1::int[])`, [leconsRetirees]);
+      await q(`DELETE FROM campus.modules WHERE id = ANY($1::int[])`, [modulesRetires]);
+      if (detacher) await q(`DELETE FROM campus.cours_classes cc WHERE ${conditionDetacher}`, [reprisAuProgramme, classesRegistre]);
       await q(
         `UPDATE campus.cours SET description = '', objectifs = '', accroche_site = NULL, image_url = NULL, propose_sur_site = false, publier_sur_site = false, maj_le = now()
           WHERE id = ANY($1::int[])`,
-        [reprisIds],
+        [[...presentationDemo]],
       );
+    }
+    // Formateur principal de démonstration : remplacé par le premier intervenant réel (qui cesse d'être co-formateur), sinon retiré.
+    for (const r of remplacants.filter((x) => x.nouveau)) {
+      await q(`UPDATE campus.cours SET formateur_id = $2, maj_le = now() WHERE id = $1`, [r.id, r.nouveau]);
+      await q(`DELETE FROM campus.cours_formateurs WHERE cours_id = $1 AND formateur_id = $2`, [r.id, r.nouveau]);
     }
     await q(`UPDATE campus.cours SET formateur_id = NULL WHERE formateur_id = ANY($1::int[])`, [idsComptes]);
     // Conversations directes avec un compte de démonstration, puis messages écrits ailleurs.
@@ -330,13 +645,23 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     const apres = await compterTables(client);
     const tables: Record<string, number> = {};
     for (const [t, n] of Object.entries(avant)) if (n !== (apres[t] ?? 0)) tables[t] = n - (apres[t] ?? 0);
-    const restants = await nombre(client, `SELECT count(*) AS n FROM campus.utilisateurs WHERE (preferences->>'demo' = 'true' OR lower(coalesce(email, '')) LIKE $1) AND role <> 'admin'`, [`%@${DOMAINE_DEMO}`]);
+    const restants = await nombre(client, `SELECT count(*) AS n FROM campus.utilisateurs WHERE preferences->>'demo' = 'true' AND role <> 'admin' AND NOT (id = ANY($1::int[]))`, [
+      proteges.map((p) => p.id),
+    ]);
     if (restants) throw new Error(`${restants} compte(s) de démonstration toujours présents après la purge : annulation.`);
 
     // Trace de la purge : en production, la démonstration ne pourra plus être semée dans cette base.
     await q(`INSERT INTO campus.journal (utilisateur_id, action, details) VALUES (NULL, $1, $2)`, [
       ACTION_JOURNAL_PURGE,
-      JSON.stringify({ comptes: idsComptes.length, parRole, tables, cours: coursDemo.map((c) => c.code), classes: classes.map((c) => c.nom) }),
+      JSON.stringify({
+        comptes: idsComptes.length,
+        parRole,
+        tables,
+        cours: coursDemo.map((c) => c.code),
+        repris: coursRepris.map((c) => c.code),
+        ecransRepris: ecransRepris.map((e) => e.id),
+        classes: classes.map((c) => c.nom),
+      }),
     ]);
     await client.query("COMMIT");
 
@@ -356,7 +681,7 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     }
     effaces += nettoyerDossierDemo(new Set(fichiersDemo.map((f) => f.cle)));
 
-    const bilan: BilanPurge = { simulation, comptes: idsComptes.length, idsComptes, parRole, inventaire, tables, fichiersDisque: effaces, avertissements, ms: Date.now() - debut };
+    const bilan: BilanPurge = { simulation, comptes: idsComptes.length, idsComptes, personnes, parRole, inventaire, tables, fichiersDisque: effaces, avertissements, ms: Date.now() - debut };
     dire(`✓ Démonstration supprimée en ${(bilan.ms / 1000).toFixed(1).replace(".", ",")} s : ${idsComptes.length} comptes (${Object.entries(parRole).map(([r, n]) => `${r} ${n}`).join(", ")}), ${coursIds.length} cours, ${classeIds.length} classes, ${effaces} fichier(s) sur le disque.`);
     dire("  Lignes retirées, table par table :");
     for (const [t, n] of Object.entries(tables).sort((a, b) => b[1] - a[1])) dire(`  ${String(n).padStart(7)}  ${t}`);

@@ -37,6 +37,7 @@ import { creerJeton, lienActivation, reinitialiserCode } from "../activation";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { prevenirSite } from "../site";
 import { iaDisponible } from "../ia";
+import { adresseDeDemonstration, ADRESSE_DEMO_REFUSEE, DOMAINE_DEMO } from "../demo-constantes";
 import { lireVitrine, oublierVitrine } from "./public";
 import {
   ROLES,
@@ -347,7 +348,12 @@ const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
  * réel (pas l'heure prévue), jamais pour un étudiant pointé par le responsable.
  */
 function sqlAttendus(f: FiltreAttendus): SQL {
-  const conds: SQL[] = [sql`s.statut <> 'annulee'`, sql`c.statut <> 'brouillon'`];
+  const conds: SQL[] = [
+    sql`s.statut <> 'annulee'`,
+    sql`c.statut <> 'brouillon'`,
+    // Essai de visio (direct immédiat sans prévenir) : personne n'était attendu, il ne compte jamais.
+    sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id AND NOT di.prevenir)`,
+  ];
   if (f.seanceId !== undefined) conds.push(sql`s.id = ${f.seanceId}`);
   if (f.etudiantId !== undefined) conds.push(sql`u.id = ${f.etudiantId}`);
   else conds.push(sql`u.actif`);
@@ -824,12 +830,21 @@ const schemaMatricule = z
   .transform((s) => s.toUpperCase().replace(/\s+/g, ""))
   .pipe(z.string().regex(/^[A-Z0-9][A-Z0-9\-/.]{2,29}$/, "matricule illisible (lettres et chiffres, 3 à 30 caractères)"));
 
+/** E-mail saisi pour un compte : jamais une adresse du domaine de démonstration (réservée au semis). */
+const schemaEmailCompte = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email("adresse e-mail invalide")
+  .max(160)
+  .refine((e) => !adresseDeDemonstration(e), ADRESSE_DEMO_REFUSEE);
+
 const schemaCreationCompte = z.object({
   role: z.enum(ROLES),
   prenom: texteCourt(80),
   nom: texteCourt(80),
   matricule: optionnel(schemaMatricule),
-  email: optionnel(z.string().trim().toLowerCase().email("adresse e-mail invalide").max(160)),
+  email: optionnel(schemaEmailCompte),
   telephone: optionnel(z.string().trim().max(30)),
   siteId: z.number().int().positive().nullable().optional(),
   classeId: z.number().int().positive().nullable().optional(),
@@ -842,7 +857,7 @@ const schemaModificationCompte = z.object({
   prenom: texteCourt(80).optional(),
   nom: texteCourt(80).optional(),
   matricule: optionnel(schemaMatricule),
-  email: optionnel(z.string().trim().toLowerCase().email("adresse e-mail invalide").max(160)),
+  email: optionnel(schemaEmailCompte),
   telephone: optionnel(z.string().trim().max(30)),
   siteId: z.number().int().positive().nullable().optional(),
   classeId: z.number().int().positive().nullable().optional(),
@@ -1310,7 +1325,7 @@ const schemaLigneRecue = z.object({
   nom: texteCourt(80),
   prenom: texteCourt(80),
   telephone: optionnel(z.string().trim().max(30)),
-  email: optionnel(z.string().trim().toLowerCase().email().max(160)),
+  email: optionnel(schemaEmailCompte),
   classeId: z.number().int().positive(),
 });
 
@@ -1900,7 +1915,8 @@ export function enregistrerAdmin(app: Express) {
         if (tel.avertissement) l.avertissements.push(tel.avertissement);
         const email = val("email").toLowerCase();
         if (email) {
-          if (z.string().email().safeParse(email).success) l.email = email;
+          if (adresseDeDemonstration(email)) l.avertissements.push(`Adresse réservée à la démonstration (« ${email} », @${DOMAINE_DEMO}) : ignorée.`);
+          else if (z.string().email().safeParse(email).success) l.email = email;
           else l.avertissements.push(`E-mail illisible (« ${email} ») : ignoré.`);
         }
 

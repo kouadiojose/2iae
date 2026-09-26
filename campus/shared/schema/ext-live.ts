@@ -61,6 +61,24 @@ export const vuesReplay = campusSchema.table(
   (t) => [primaryKey({ columns: [t.seanceId, t.utilisateurId] })],
 );
 
+/**
+ * Morceaux de l'enregistrement Daily d'une séance, dans l'ordre, quand le
+ * replay en compte plusieurs (enregistrement relancé après une erreur, classe
+ * rouverte après une coupure) : rien n'est perdu. Le premier morceau est
+ * aussi seances.enregistrement_id ; replay_duree_secondes est leur somme.
+ */
+export const morceauxReplay = campusSchema.table(
+  "morceaux_replay",
+  {
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    numero: integer("numero").notNull(),
+    enregistrementId: text("enregistrement_id").notNull(),
+    debut: timestamp("debut", { withTimezone: true }).notNull(),
+    dureeSecondes: integer("duree_secondes").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.seanceId, t.numero] })],
+);
+
 // ── Contrats d'API du module live ──────────────────────────────────────────
 
 /** Rôle de la personne dans une séance. */
@@ -346,7 +364,14 @@ export type RattrapageDto = {
 
 export type ReplayDto = {
   seance: { id: number; titre: string; coursId: number; coursCode: string; coursTitre: string; debut: string; dureeMinutes: number; statut: StatutSeance; formateur: string | null };
-  video: { disponible: boolean; source: "daily" | "lien" | null; dureeSecondes: number | null; poidsEstimeMo: number | null };
+  video: {
+    disponible: boolean;
+    source: "daily" | "lien" | null;
+    dureeSecondes: number | null;
+    poidsEstimeMo: number | null;
+    /** Enregistrement en plusieurs morceaux (numéro, durée, début en secondes depuis le début du premier) ; absent : un seul. */
+    morceaux?: { numero: number; dureeSecondes: number; decalageSecondes: number }[];
+  };
   fiche: { contenu: string; le: string | null } | null;
   /** Formateur : brouillon non validé. */
   brouillon: { contenu: string; parIa: boolean } | null;

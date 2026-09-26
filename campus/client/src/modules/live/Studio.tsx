@@ -35,6 +35,11 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const statut = etat?.statut ?? seance.statut;
   const enDirect = statut === "en_direct";
   const flux = useFluxRadio(seance, enDirect && radio && !observation, fluxVisio);
+  // « Micro coupé » coupe aussi la radio : la piste reste ouverte (la radio continue en silence, les
+  // auditeurs gardent leur lecture) mais n'envoie plus rien. Avec Daily, c'est un micro séparé de la visio.
+  useEffect(() => {
+    flux?.getAudioTracks().forEach((t) => (t.enabled = micro));
+  }, [flux, micro]);
 
   const agir = async (chemin: string, corps?: unknown, message?: string) => {
     try {
@@ -118,7 +123,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           <div className="order-3 flex flex-col gap-4 lg:order-3 xl:order-1">
             <ChronoPlan seance={seance} etat={etat} />
             {!observation && (
-              <OutilsDiffusion seance={seance} enDirect={enDirect} radio={radio} setRadio={setRadio} fluxRadio={flux} />
+              <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={flux} />
             )}
           </div>
 
@@ -131,6 +136,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
               micro={!observation && micro}
               camera={!observation && camera}
               onFluxLocal={setFluxVisio}
+              onMicroDaily={observation ? undefined : setMicro}
             />
             <VignettesSalles
               campus={etat.campus}
@@ -666,16 +672,35 @@ type Reconnaissance = {
   onerror: ((e: { error: string }) => void) | null;
 };
 
-function OutilsDiffusion({ seance, enDirect, radio, setRadio, fluxRadio }: { seance: SeanceDetailDto; enDirect: boolean; radio: boolean; setRadio: (v: boolean) => void; fluxRadio: MediaStream | null }) {
+function OutilsDiffusion({
+  seance,
+  enDirect,
+  micro,
+  radio,
+  setRadio,
+  fluxRadio,
+}: {
+  seance: SeanceDetailDto;
+  enDirect: boolean;
+  /** Micro du formateur : coupé, ni la radio ni les sous-titres ne l'écoutent. */
+  micro: boolean;
+  radio: boolean;
+  setRadio: (v: boolean) => void;
+  fluxRadio: MediaStream | null;
+}) {
   const [sousTitres, setSousTitres] = useState(false);
   const [provisoire, setProvisoire] = useState("");
   const Classe = typeof window !== "undefined" ? ((window as unknown as { SpeechRecognition?: new () => Reconnaissance; webkitSpeechRecognition?: new () => Reconnaissance }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => Reconnaissance }).webkitSpeechRecognition) : undefined;
   const reco = useRef<Reconnaissance | null>(null);
   const tampon = useRef<{ texte: string }[]>([]);
 
-  // Sous-titres : reconnaissance vocale du navigateur (fr-FR), envoyés par lots toutes les 4 s.
+  // Sous-titres : reconnaissance vocale du navigateur (fr-FR), envoyés par lots toutes les 4 s ; arrêtée
+  // micro coupé (elle écoute le micro directement : une conversation privée n'irait pas sur les écrans).
   useEffect(() => {
-    if (!sousTitres || !enDirect || !Classe) return;
+    if (!sousTitres || !enDirect || !micro || !Classe) {
+      setProvisoire("");
+      return;
+    }
     let actif = true;
     const r = new Classe();
     r.lang = "fr-FR";
@@ -725,7 +750,7 @@ function OutilsDiffusion({ seance, enDirect, radio, setRadio, fluxRadio }: { sea
       r.stop();
       reco.current = null;
     };
-  }, [sousTitres, enDirect, seance.id]);
+  }, [sousTitres, enDirect, micro, seance.id]);
 
   return (
     <div className="flex flex-col gap-3 rounded-[22px] bg-nuit-panneau p-4">
@@ -739,7 +764,7 @@ function OutilsDiffusion({ seance, enDirect, radio, setRadio, fluxRadio }: { sea
         <Interrupteur actif={radio} onChange={setRadio} libelle="Radio pour les étudiants en ligne" />
       </div>
       {seance.fournisseur === "demo" && radio && <span className="text-[12px] text-nuit-gris">Pas de radio en démonstration (aucun micro utilisé).</span>}
-      <EmetteurRadio seanceId={seance.id} flux={fluxRadio} actif={radio && enDirect && Boolean(fluxRadio)} />
+      <EmetteurRadio seanceId={seance.id} flux={fluxRadio} actif={radio && enDirect && Boolean(fluxRadio)} muet={!micro} />
       <div className="flex items-start justify-between gap-3 border-t border-nuit-ligne pt-3">
         <div className="flex flex-col">
           <span className="flex items-center gap-2 text-[15px] font-bold">
@@ -751,6 +776,7 @@ function OutilsDiffusion({ seance, enDirect, radio, setRadio, fluxRadio }: { sea
         </div>
         <Interrupteur actif={sousTitres} onChange={(v) => (Classe && enDirect ? setSousTitres(v) : toast(Classe ? "Les sous-titres démarrent avec le direct." : "Sous-titres indisponibles dans ce navigateur.", "info"))} libelle="Sous-titres" />
       </div>
+      {sousTitres && enDirect && !micro && <p className="text-[12px] text-nuit-gris">Micro coupé : les sous-titres reprennent quand vous rallumez le micro.</p>}
       {sousTitres && provisoire && <p className="rounded-xl bg-nuit-bulle p-2.5 text-[13px] italic text-nuit-doux">{provisoire}</p>}
     </div>
   );

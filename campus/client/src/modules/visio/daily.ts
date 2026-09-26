@@ -128,6 +128,19 @@ function conseilReseau(role: RoleVisio, tu: boolean): string {
     : "Votre réseau bloque peut-être la visio. Passez à la radio, ou essayez un partage de connexion 4G.";
 }
 
+/** Salle pleine : l'étudiant passe en « son + diapos » ; le formateur et les écrans de salle, dont les places sont gardées, réessaient tout seuls. */
+function conseilSallePleine(role: RoleVisio): string {
+  if (role === "etudiant") return "Suis le cours en « son + diapos » (radio) : tu entends tout, avec les diapos, pour beaucoup moins de données.";
+  if (role === "formateur" || role === "salle") return "Une place se libère dès qu'une personne sort : nouvel essai automatique dans quelques secondes. En attendant, le son du cours passe par la radio.";
+  return "Les places de la visio sont gardées au formateur et aux salles. Réessayez dans un moment, ou suivez le cours à la radio.";
+}
+
+/** Le cadre réessaie-t-il tout seul après ce problème ? Oui pour le formateur et l'écran de salle (aucun clic sur l'écran d'une salle), tant que le problème peut passer. */
+export function relanceAutomatique(role: RoleVisio, pb: ProblemeVisio | null): boolean {
+  if (!pb || (role !== "formateur" && role !== "salle")) return false;
+  return pb.genre === "pleine" || pb.genre === "reseau" || pb.genre === "compte" || pb.genre === "acces" || pb.genre === "autre";
+}
+
 /** Erreur fatale Daily (événement « error » ou refus de join()) traduite en français. */
 export function traduireErreurDaily(ev: { errorMsg?: string; error?: { type?: string; msg?: string } | null } | Error | null | undefined, role: RoleVisio, tu: boolean): ProblemeVisio {
   const t = (a: string, b: string) => (tu ? a : b);
@@ -144,12 +157,7 @@ export function traduireErreurDaily(ev: { errorMsg?: string; error?: { type?: st
     case "nbf-room":
       return { genre: "fermee", texte: "Cette salle n'est pas encore ouverte.", conseil: t("Reviens un peu avant le début du cours.", "Revenez un peu avant le début."), relancer: false };
     case "meeting-full":
-      return {
-        genre: "pleine",
-        texte: t("La visio est complète.", "La salle de visio est complète."),
-        conseil: role === "etudiant" ? "Suis le cours en « son + diapos » (radio) : tu entends tout, pour beaucoup moins de données." : "La direction peut augmenter le nombre de places dans « Visio » du pilotage.",
-        relancer: false,
-      };
+      return { genre: "pleine", texte: t("La visio est complète.", "La salle de visio est complète."), conseil: conseilSallePleine(role), relancer: false };
     case "ejected":
       return {
         genre: "sortie",
@@ -181,6 +189,8 @@ export function problemeDepuisApi(e: unknown, role: RoleVisio, tu: boolean): Pro
   const code = e instanceof ErreurApi ? (e.details as { code?: string } | undefined)?.code : undefined;
   const message = e instanceof Error ? e.message : "La visio n'est pas disponible pour le moment.";
   if (code === "daily_compte") return { genre: "compte", texte: message, conseil: null, relancer: false };
+  // Places vidéo étudiantes (ou d'observation) toutes prises : le serveur le dit avant même d'entrer.
+  if (code === "daily_plein") return { genre: "pleine", texte: message, conseil: role === "etudiant" ? null : conseilSallePleine(role), relancer: false };
   if (code === "daily_absent") return { genre: "absente", texte: message, conseil: null, relancer: false };
   if (code === "daily_injoignable" || code === "daily_occupe" || code === "daily_refus") return { genre: "reseau", texte: message, conseil: null, relancer: false };
   if (e instanceof ErreurApi && e.statut === 409) return { genre: "fermee", texte: message, conseil: null, relancer: false };

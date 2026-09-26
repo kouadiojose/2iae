@@ -309,9 +309,13 @@ export default function PageEditeur({ id }: { id: string }) {
           titre={confirmation === "archiver" ? "Archiver cette session ?" : confirmation === "retirer" ? "Retirer de la publication ?" : "Supprimer cette session ?"}
           description={
             confirmation === "archiver"
-              ? publiee
-                ? "Elle disparaît du site et de l'espace de chacun. Ses séances encore à venir sont annulées et les étudiants prévenus. Les séances passées restent dans l'historique."
-                : "Elle disparaît de la liste des sessions en cours. Vous pourrez la désarchiver."
+              ? [
+                  publiee ? "Elle disparaît du site et de l'espace de chacun." : "Elle disparaît de la liste des sessions en cours.",
+                  s.nbSeancesAVenir
+                    ? `${pluriel(s.nbSeancesAVenir, "séance à venir sera annulée", "séances à venir seront annulées")} ; les intervenants${s.publieeLe ? " et les étudiants" : ""} sont prévenus. Les séances passées restent dans l'historique.`
+                    : "Aucune séance à venir n'est annulée.",
+                  `Vous pourrez la désarchiver puis la republier${s.nbSeancesAVenir ? " : ses séances seront alors rétablies" : ""}.`,
+                ].join(" ")
               : confirmation === "retirer"
                 ? "Elle repasse en brouillon et disparaît du site et de l'espace des étudiants. Les séances déjà créées restent prévues dans le direct, sans être annoncées publiquement."
                 : "Ce brouillon n'a jamais été publié : il est supprimé avec ses créneaux."
@@ -369,10 +373,13 @@ function FenetrePublication({ session, onFermer, surPublie }: { session: Session
       setEnvoi(false);
     }
   };
+  // Les séances rétablies (jour levé, session désarchivée) comptent parmi les mises à jour : on les nomme à part.
+  const retablies = a ? a.changements.filter((c) => c.nature === "retablie").length : 0;
   const lignes = a
     ? [
         a.seancesCreees && pluriel(a.seancesCreees, "séance du direct sera créée", "séances du direct seront créées"),
-        a.seancesMisesAJour && pluriel(a.seancesMisesAJour, "séance sera modifiée", "séances seront modifiées"),
+        a.seancesMisesAJour - retablies > 0 && pluriel(a.seancesMisesAJour - retablies, "séance sera modifiée", "séances seront modifiées"),
+        retablies && pluriel(retablies, "séance annulée sera rétablie", "séances annulées seront rétablies"),
         a.seancesAnnulees && pluriel(a.seancesAnnulees, "séance sera annulée", "séances seront annulées"),
       ].filter(Boolean)
     : [];

@@ -159,10 +159,14 @@ export function FenetreInvitation({ personne, onFermer }: { personne: PersonneAI
             )}
           </section>
 
-          {invitation.remplaceUnLien && (
+          {(invitation.remplaceUnLien || invitation.appareilsDeconnectes > 0) && (
             <p className="flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              Le lien envoyé précédemment ne marche plus : seul celui-ci est valable.
+              <span>
+                Le lien envoyé précédemment ne marche plus : seul celui-ci est valable.
+                {invitation.appareilsDeconnectes > 0 &&
+                  ` Il avait été ouvert sur ${invitation.appareilsDeconnectes > 1 ? `${invitation.appareilsDeconnectes} appareils` : "un appareil"} sans que le compte soit activé : ${invitation.appareilsDeconnectes > 1 ? "ils sont déconnectés" : "il est déconnecté"}. Vérifiez le numéro ou l'adresse avant d'envoyer ce nouveau lien.`}
+              </span>
             </p>
           )}
         </div>

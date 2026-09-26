@@ -12,9 +12,10 @@
 //
 // Les heures sont celles d'Abidjan (GMT, pas d'heure d'été) : « 08:30 ».
 // Les dates voyagent en « AAAA-MM-JJ » (jour civil, sans fuseau).
-import { serial, text, integer, timestamp, date, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { serial, text, integer, boolean, timestamp, date, primaryKey, index, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, classes } from "./base";
-import { cours } from "./cours";
+import { cours, coursClasses } from "./cours";
 import { seances, type FournisseurVisio, type StatutSeance } from "./live";
 
 // ── Tables ─────────────────────────────────────────────────────────────────
@@ -72,6 +73,11 @@ export const sessionsClasses = campusSchema.table(
     classeId: integer("classe_id")
       .notNull()
       .references(() => classes.id, { onDelete: "cascade" }),
+    /**
+     * Ses étudiants ont reçu « L'emploi du temps … est en ligne » : une classe
+     * ajoutée après la première publication est prévenue à la mise à jour suivante.
+     */
+    prevenueLe: timestamp("prevenue_le", { withTimezone: true }),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.classeId] })],
 );
@@ -122,6 +128,15 @@ export const seancesCreneaux = campusSchema.table(
       .notNull()
       .references(() => creneauxProgramme.id, { onDelete: "cascade" }),
     date: date("date", { mode: "string" }).notNull(),
+    /**
+     * Ce que le formateur (ou l'équipe) a retouché à la main sur la séance
+     * (PATCH /api/seances/:id) : « titre », « horaire » (début ou durée),
+     * « visio », « description ». La mise à jour des séances garde ces
+     * retouches telles quelles au lieu de les réaligner sur le créneau.
+     */
+    retouches: text("retouches").array().notNull().default(sql`'{}'::text[]`),
+    /** Intervenant du créneau à la dernière génération : un changement d'intervenant est une modification de la séance. */
+    intervenantId: integer("intervenant_id").references(() => utilisateurs.id, { onDelete: "set null" }),
   },
   // Deux « Publier » simultanés ne créent jamais deux fois la même séance.
   (t) => [uniqueIndex("seances_creneaux_unique").on(t.creneauId, t.date)],
@@ -143,6 +158,46 @@ export const exceptionsProgramme = campusSchema.table(
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("exceptions_programme_session_idx").on(t.sessionId, t.date)],
+);
+
+/**
+ * Classes qu'une publication a rattachées à un cours (lignes de cours_classes
+ * qu'elle a créées). La publication ne détache que celles-là, quand plus
+ * aucune session publiée ne les veut ; une classe cochée à la main dans
+ * l'écran du cours n'y figure pas. Décochée à la main, la ligne disparaît avec
+ * le rattachement (clé étrangère en cascade).
+ */
+export const classesProgramme = campusSchema.table(
+  "classes_programme",
+  {
+    coursId: integer("cours_id").notNull(),
+    classeId: integer("classe_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.coursId, t.classeId] }),
+    foreignKey({ columns: [t.coursId, t.classeId], foreignColumns: [coursClasses.coursId, coursClasses.classeId], name: "classes_programme_cours_classes_fk" }).onDelete("cascade"),
+  ],
+);
+
+/**
+ * Formateurs qu'une publication a donnés à un cours : co-formateurs
+ * (cours_formateurs) ou formateur principal faute d'autre. La publication ne
+ * retire que ceux-là, quand ils n'interviennent plus sur aucun créneau de ce
+ * cours dans une session publiée ; un co-formateur nommé autrement reste.
+ */
+export const formateursProgramme = campusSchema.table(
+  "formateurs_programme",
+  {
+    coursId: integer("cours_id")
+      .notNull()
+      .references(() => cours.id, { onDelete: "cascade" }),
+    formateurId: integer("formateur_id")
+      .notNull()
+      .references(() => utilisateurs.id, { onDelete: "cascade" }),
+    /** Nommé formateur principal (le cours n'en avait pas), sinon co-formateur. */
+    principal: boolean("principal").notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.coursId, t.formateurId] })],
 );
 
 export type SessionProgramme = typeof sessionsProgramme.$inferSelect;
@@ -336,6 +391,8 @@ export type SessionEditionDto = Omit<SessionDto, "creneaux"> & {
   aRepercuter: boolean;
   modifiable: boolean;
   nbSeances: number;
+  /** Séances prévues et encore à venir (annulées si la session est archivée). */
+  nbSeancesAVenir: number;
   /** Points à vérifier avant de publier (créneau sans cours, pause qui chevauche un créneau…). */
   avertissements: string[];
 };

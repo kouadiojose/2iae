@@ -10,7 +10,7 @@ import { cn, pluriel } from "@/lib/utils";
 import type { EtatRadio } from "@shared/schema";
 import { EmetteurRadioMoteur, type EtatEmission } from "./moteur/radio";
 
-export function EmetteurRadio({ seanceId, flux, actif }: { seanceId: number; flux: MediaStream | null; actif: boolean }) {
+export function EmetteurRadio({ seanceId, flux, actif, muet = false }: { seanceId: number; flux: MediaStream | null; actif: boolean; /** Micro coupé par le formateur : la radio continue en silence. */ muet?: boolean }) {
   const piste = flux?.getAudioTracks()[0] ?? null;
   const [etat, setEtat] = useState<EtatEmission>("arret");
   const moteur = useRef<EmetteurRadioMoteur | null>(null);
@@ -45,7 +45,9 @@ export function EmetteurRadio({ seanceId, flux, actif }: { seanceId: number; flu
   const texte =
     etat === "indisponible"
       ? "Radio indisponible sur ce navigateur"
-      : etat === "reprise"
+      : muet && piste
+        ? `Radio en silence : micro coupé · ${pluriel(auditeurs, "auditeur")}`
+        : etat === "reprise"
         ? "Radio : reprise…"
         : etat === "connexion" || etat === "arret"
           ? piste

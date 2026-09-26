@@ -48,12 +48,45 @@ export const NOM_SALLE_ESSAI = `${PREFIXE_SALLE}essai`;
 /** Enregistrement cloud lancé automatiquement quand le formateur est en direct (désactivable). */
 const ENREGISTREMENT_AUTO = process.env.DAILY_ENREGISTREMENT_AUTO?.trim() !== "non";
 
-/** Personnes au-delà des étudiants dans une salle de séance : formateur, co-formateurs, 5 salles, équipe. */
-const PLACES_HORS_ETUDIANTS = 15;
+/**
+ * Places réservées dans une salle de séance, en plus des étudiants en vidéo :
+ * le formateur et ses co-formateurs, les cinq écrans de salle, l'équipe qui
+ * observe. Daily compte TOUTE personne présente (propriétaire compris) dans
+ * max_participants : les étudiants et l'équipe sont donc comptés à l'entrée
+ * (reserverPlaceDaily) pour que le formateur et les salles trouvent toujours
+ * leur place, même s'ils arrivent en dernier.
+ */
+const PLACES_FORMATEURS = 3;
+const PLACES_SALLES = 5;
+const PLACES_OBSERVATEURS = 7;
+export const PLACES_HORS_ETUDIANTS = PLACES_FORMATEURS + PLACES_SALLES + PLACES_OBSERVATEURS;
+
+/**
+ * Plafond de max_participants accepté par le forfait Daily : 200 par défaut
+ * (« Contact us if you need to set the limit above 200 »). Un compte que
+ * Daily a relevé le déclare par DAILY_MAX_PARTICIPANTS.
+ */
+const PLAFOND_DAILY = (() => {
+  const n = Number(process.env.DAILY_MAX_PARTICIPANTS);
+  return Number.isInteger(n) && n >= 20 ? n : 200;
+})();
+/** Valeur par défaut de Daily : l'API ne renvoie pas max_participants quand il vaut 200. */
+const MAX_PARTICIPANTS_DEFAUT_DAILY = 200;
+
+/** Étudiants en vidéo par séance, au plus, que le réglage peut demander (185 avec le forfait standard). */
+export const placesDailyEtudiantsMax = () => PLAFOND_DAILY - PLACES_HORS_ETUDIANTS;
+
+/** Salle d'essai : trente personnes au plus, dont quinze étudiants (ils ne prennent jamais toute la salle). */
+const TAILLE_SALLE_ESSAI = 30;
+const PLACES_ESSAI_ETUDIANTS = 15;
 
 /** Une visite dans la salle d'essai (ou une répétition) s'arrête seule au bout d'une heure : un onglet oublié ne coûte pas une nuit. */
 export const DUREE_MAX_ESSAI_S = 60 * 60;
+/** Un étudiant teste son micro en quelques minutes : sa visite s'arrête au bout d'un quart d'heure et libère sa place. */
+export const DUREE_MAX_ESSAI_ETUDIANT_S = 15 * 60;
 export const DUREE_MAX_REPETITION_S = 90 * 60;
+/** Enregistrement du replay : la durée du cours plus 2 h de débordement (Daily coupe à 3 h sans consigne). */
+export const dureeMaxEnregistrement = (s: Pick<Seance, "dureeMinutes">) => s.dureeMinutes * 60 + 2 * 3600;
 
 export const dailyDisponible = () => Boolean(config.visio.dailyCle);
 export const jitsiDisponible = () => Boolean(config.visio.jitsiDomaine);
@@ -243,8 +276,11 @@ function erreurDaily(statut: number, donnees: unknown): ErreurHttp {
   return new ErreurHttp(502, "Le service de visio a refusé la demande. Réessayez, ou passez à la visio du campus ou à la radio.", { code: "daily_refus" });
 }
 
-/** Taille maximale d'une salle de séance : les places vidéo étudiantes + formateur, salles et équipe. */
-const tailleSalleSeance = () => Math.max(10, reglages.placesDailyEtudiants + PLACES_HORS_ETUDIANTS);
+/** Places vidéo étudiantes d'une séance : le réglage, dans la limite du forfait Daily (un ancien réglage trop haut ne prend pas les places réservées). */
+const placesEtudiants = () => Math.max(0, Math.min(reglages.placesDailyEtudiants, placesDailyEtudiantsMax()));
+
+/** Taille maximale d'une salle de séance : les places vidéo étudiantes + formateur, salles et équipe, dans la limite du forfait Daily. */
+const tailleSalleSeance = () => Math.min(PLAFOND_DAILY, Math.max(10, placesEtudiants() + PLACES_HORS_ETUDIANTS));
 
 /** Propriétés communes : pas d'écran d'attente Daily (nos pré-tests le remplacent), pas de discussion Daily (les questions du campus la remplacent). */
 const PROPRIETES_COMMUNES = {
@@ -260,6 +296,22 @@ const PROPRIETES_COMMUNES = {
 };
 
 /**
+ * Met à jour une salle existante et vérifie la réponse. Si Daily refuse (taille
+ * hors forfait, par exemple), on le journalise et, quand la salle devait être
+ * prolongée, on retente la seule prolongation : sinon tout le monde serait
+ * éjecté à l'ancienne heure de fin (eject_at_room_exp).
+ */
+async function mettreAJourSalle(nom: string, proprietes: { exp: number; max_participants?: number }, prolonger: boolean): Promise<void> {
+  const chemin = `/rooms/${encodeURIComponent(nom)}`;
+  const r = await appelDaily<{ info?: string; error?: string }>(chemin, { methode: "POST", corps: { properties: proprietes } });
+  if (r.statut === 200) return;
+  console.warn(`[visio] mise à jour de la salle ${nom} refusée (${r.statut}) : ${r.donnees?.error ?? ""} ${r.donnees?.info ?? ""}`.trim());
+  if (!prolonger || proprietes.max_participants === undefined) return;
+  const seule = await appelDaily<{ info?: string; error?: string }>(chemin, { methode: "POST", corps: { properties: { exp: proprietes.exp } } });
+  if (seule.statut !== 200) console.warn(`[visio] prolongation de la salle ${nom} refusée (${seule.statut}) : ${seule.donnees?.error ?? ""} ${seule.donnees?.info ?? ""}`.trim());
+}
+
+/**
  * Crée (ou retrouve) la salle Daily de la séance : privée, caméra et micro
  * coupés à l'entrée, sans écran d'attente ni discussion Daily, interface en
  * français, enregistrement cloud, taille plafonnée.
@@ -272,27 +324,36 @@ export async function obtenirSalleDaily(s: Pick<Seance, "id" | "debut" | "dureeM
   if (existante.statut === 200 && existante.donnees) {
     // Prolonge la salle si la séance a été déplacée ou déborde ; suit le réglage des places.
     const cfg = existante.donnees.config ?? {};
-    if ((cfg.exp ?? 0) < exp || cfg.max_participants !== taille) {
-      await appelDaily(`/rooms/${encodeURIComponent(nom)}`, { methode: "POST", corps: { properties: { exp: Math.max(exp, cfg.exp ?? 0), max_participants: taille } } });
+    const tailleActuelle = cfg.max_participants ?? MAX_PARTICIPANTS_DEFAUT_DAILY;
+    const prolonger = (cfg.exp ?? 0) < exp;
+    if (prolonger || tailleActuelle !== taille) {
+      await mettreAJourSalle(nom, { exp: Math.max(exp, cfg.exp ?? 0), max_participants: taille }, prolonger);
     }
     return { nom, url: existante.donnees.url };
   }
-  const creee = await appelDaily<SalleDaily>("/rooms", {
-    methode: "POST",
-    corps: {
-      name: nom,
-      privacy: "private",
-      properties: {
-        ...PROPRIETES_COMMUNES,
-        exp,
-        eject_at_room_exp: true,
-        start_video_off: true,
-        start_audio_off: true,
-        max_participants: taille,
-        enable_recording: "cloud",
+  const creer = (max_participants?: number) =>
+    appelDaily<SalleDaily & { info?: string }>("/rooms", {
+      methode: "POST",
+      corps: {
+        name: nom,
+        privacy: "private",
+        properties: {
+          ...PROPRIETES_COMMUNES,
+          exp,
+          eject_at_room_exp: true,
+          start_video_off: true,
+          start_audio_off: true,
+          ...(max_participants !== undefined && { max_participants }),
+          enable_recording: "cloud",
+        },
       },
-    },
-  });
+    });
+  let creee = await creer(taille);
+  // Taille refusée par le forfait (DAILY_MAX_PARTICIPANTS trop haut) : la classe s'ouvre quand même, à la taille par défaut de Daily.
+  if (creee.statut === 400 && /max_participants/i.test(creee.donnees?.info ?? "")) {
+    console.warn(`[visio] taille ${taille} refusée par Daily pour ${nom} : salle créée à sa taille par défaut (${MAX_PARTICIPANTS_DEFAUT_DAILY}). Vérifiez DAILY_MAX_PARTICIPANTS.`);
+    creee = await creer();
+  }
   if (creee.statut === 200 && creee.donnees) return { nom, url: creee.donnees.url };
   // Deux personnes entrées au même instant : la salle vient d'être créée par l'autre.
   const rattrapage = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
@@ -302,19 +363,26 @@ export async function obtenirSalleDaily(s: Pick<Seance, "id" | "debut" | "dureeM
 
 /**
  * Salle d'essai permanente (« campus-2iae-essai ») : privée, sans date de fin,
- * douze personnes au plus (formateur, cinq salles, direction, collègues),
- * jamais enregistrée. Créée à la première demande.
+ * trente personnes au plus (formateur, cinq salles, direction, collègues, et
+ * quinze étudiants au plus : reserverPlaceDaily), jamais enregistrée. Créée à
+ * la première demande ; une salle créée plus petite est agrandie.
  */
 export async function obtenirSalleEssai(): Promise<{ nom: string; url: string }> {
   const nom = NOM_SALLE_ESSAI;
   const existante = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
-  if (existante.statut === 200 && existante.donnees) return { nom, url: existante.donnees.url };
+  if (existante.statut === 200 && existante.donnees) {
+    if ((existante.donnees.config?.max_participants ?? MAX_PARTICIPANTS_DEFAUT_DAILY) !== TAILLE_SALLE_ESSAI) {
+      const r = await appelDaily<{ info?: string }>(`/rooms/${encodeURIComponent(nom)}`, { methode: "POST", corps: { properties: { max_participants: TAILLE_SALLE_ESSAI } } });
+      if (r.statut !== 200) console.warn(`[visio] agrandissement de la salle d'essai refusé (${r.statut}) : ${r.donnees?.info ?? ""}`);
+    }
+    return { nom, url: existante.donnees.url };
+  }
   const creee = await appelDaily<SalleDaily>("/rooms", {
     methode: "POST",
     corps: {
       name: nom,
       privacy: "private",
-      properties: { ...PROPRIETES_COMMUNES, start_video_off: false, start_audio_off: true, max_participants: 12 },
+      properties: { ...PROPRIETES_COMMUNES, start_video_off: false, start_audio_off: true, max_participants: TAILLE_SALLE_ESSAI },
     },
   });
   if (creee.statut === 200 && creee.donnees) return { nom, url: creee.donnees.url };
@@ -343,6 +411,8 @@ export async function jetonDaily(o: {
   exp: number;
   /** Enregistrement cloud dès l'entrée du formateur (séance en direct seulement). */
   enregistrer?: boolean;
+  /** Durée maximale de cet enregistrement, en secondes (sans elle, Daily l'arrête au bout de 3 h). */
+  enregistrementMaxS?: number;
   /** Le propriétaire peut-il enregistrer ? Non dans la salle d'essai ni en répétition (un essai ne doit jamais devenir le replay). */
   enregistrementPermis?: boolean;
   /** Sortie automatique au bout de N secondes (salle d'essai, répétition). */
@@ -365,7 +435,10 @@ export async function jetonDaily(o: {
   if (proprietaire) {
     if (o.enregistrementPermis !== false) {
       proprietes.enable_recording = "cloud";
-      if (o.enregistrer && ENREGISTREMENT_AUTO) proprietes.start_cloud_recording = true;
+      if (o.enregistrer && ENREGISTREMENT_AUTO) {
+        proprietes.start_cloud_recording = true;
+        if (o.enregistrementMaxS) proprietes.start_cloud_recording_opts = { maxDuration: Math.round(o.enregistrementMaxS) };
+      }
     }
   } else {
     const envoi = o.envoi !== undefined ? o.envoi : o.profil === "salle" ? (["video", "audio"] as const) : false;
@@ -397,6 +470,84 @@ export async function presenceSalle(nom: string): Promise<PresenceSalleVisio> {
     depuis: p.joinTime ? new Date(p.joinTime).toISOString() : p.join_time ? new Date(p.join_time * 1000).toISOString() : lu,
   }));
   return { salle: nom, presents, lu, disponible: true };
+}
+
+// ── Places comptées : étudiants et équipe qui observe ──────────────────────
+
+/** Jetons remis par salle (profil, heure) : ceux qui ne sont pas encore entrés comptent aussi. */
+const jetonsRemis = new Map<string, Map<number, { profil: ProfilJeton; t: number }>>();
+/** Un jeton remis compte 2 min, le temps d'entrer ; ensuite seule la présence lue chez Daily compte. */
+const ATTENTE_ENTREE_MS = 2 * 60_000;
+/** Mémoire du profil des personnes entrées (redémarrage du serveur : on retombe sur leur rôle). */
+const MEMOIRE_PROFILS_MS = 12 * 3600_000;
+const cachePresents = new Map<string, { exp: number; ids: number[] }>();
+
+/** Comptes présents dans une salle Daily (user_id des jetons), 3 s de cache ; null si Daily ne répond pas. */
+async function comptesPresents(nom: string): Promise<number[] | null> {
+  const c = cachePresents.get(nom);
+  if (c && c.exp > Date.now()) return c.ids;
+  try {
+    const r = await appelDaily<{ data?: { userId?: string | null; user_id?: string | null }[] }>(`/rooms/${encodeURIComponent(nom)}/presence`);
+    if (r.statut !== 200) return null;
+    const ids = (r.donnees?.data ?? []).map((p) => Number(p.userId ?? p.user_id)).filter((n) => Number.isInteger(n) && n > 0);
+    cachePresents.set(nom, { exp: Date.now() + 3000, ids });
+    return ids;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Réserve la place d'un étudiant, ou d'une personne de l'équipe qui observe,
+ * avant de lui remettre un jeton. Au-delà des places prévues : 409
+ * « daily_plein » (l'étudiant suit alors en son + diapos). Le formateur et les
+ * écrans de salle ne sont jamais comptés : leurs places restent libres même
+ * s'ils entrent en dernier, au « Démarrer ».
+ * Occupé = présents lus chez Daily (API presence) + jetons remis depuis moins
+ * de 2 min (arrivées au même instant). Une personne déjà comptée (page
+ * rechargée, second onglet) garde sa place ; une personne « prioritaire »
+ * (l'étudiant qui a la parole) est comptée sans jamais être refusée.
+ */
+export async function reserverPlaceDaily(o: { salle: string; profil: ProfilJeton; utilisateurId: number; essai?: boolean; prioritaire?: boolean }): Promise<void> {
+  const limite =
+    o.profil === "etudiant" ? (o.essai ? PLACES_ESSAI_ETUDIANTS : placesEtudiants()) : o.profil === "observateur" && !o.essai ? PLACES_OBSERVATEURS : null;
+  const remis = jetonsRemis.get(o.salle) ?? new Map<number, { profil: ProfilJeton; t: number }>();
+  jetonsRemis.set(o.salle, remis);
+  if (limite !== null) {
+    const presents = limite > 0 ? ((await comptesPresents(o.salle)) ?? []) : [];
+    const inconnus = presents.filter((id) => !remis.has(id));
+    const roles = new Map(
+      inconnus.length ? (await db.select({ id: utilisateurs.id, role: utilisateurs.role }).from(utilisateurs).where(inArray(utilisateurs.id, inconnus))).map((l) => [l.id, l.role]) : [],
+    );
+    const profilDe = (id: number): ProfilJeton | null => {
+      const connu = remis.get(id)?.profil;
+      if (connu) return connu;
+      const role = roles.get(id);
+      return role === "etudiant" ? "etudiant" : role === "admin" || role === "vie_scolaire" ? "observateur" : null;
+    };
+    // Plus aucune attente d'ici la décision : deux demandes simultanées ne peuvent pas prendre la même place.
+    const maintenant = Date.now();
+    const occupes = new Set(presents.filter((id) => profilDe(id) === o.profil));
+    for (const [id, j] of remis) if (j.profil === o.profil && maintenant - j.t < ATTENTE_ENTREE_MS) occupes.add(id);
+    if (!o.prioritaire && !occupes.has(o.utilisateurId) && occupes.size >= limite) {
+      let message = "Les places d'observation de la visio sont prises. Le formateur et les salles gardent les leurs. Réessayez dans un moment.";
+      if (o.profil === "etudiant" && o.essai) {
+        message = `La salle d'essai est complète pour le moment (${limite} étudiants à la fois). Réessaie dans quelques minutes : chaque visite d'étudiant dure un quart d'heure.`;
+      } else if (o.profil === "etudiant") {
+        message =
+          limite === 0
+            ? "La vidéo n'est pas ouverte aux étudiants pour cette classe. Suis le cours en « son + diapos » : tu entends tout, avec les diapos."
+            : `La visio est complète (${limite} étudiants en vidéo au plus). Suis le cours en « son + diapos » : tu entends tout, avec les diapos.`;
+      }
+      throw new ErreurHttp(409, message, { code: "daily_plein" });
+    }
+  }
+  const maintenant = Date.now();
+  for (const [id, j] of remis) if (maintenant - j.t > MEMOIRE_PROFILS_MS) remis.delete(id);
+  remis.set(o.utilisateurId, { profil: o.profil, t: maintenant });
+  if (jetonsRemis.size > 500) {
+    for (const [salle, liste] of jetonsRemis) if (![...liste.values()].some((j) => maintenant - j.t < MEMOIRE_PROFILS_MS)) jetonsRemis.delete(salle);
+  }
 }
 
 export type EnregistrementDaily = { id: string; statut: string; debut: number; dureeSecondes: number | null };

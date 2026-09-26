@@ -23,7 +23,7 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage", page: lazy(() => import("./PageTableau")), acces: EQUIPE },
   // Public : le lien envoyé aux parents sur WhatsApp.
   { chemin: "/releve/:jeton", page: lazy(() => import("./PageReleve")), acces: "public", coquille: "aucune" },
-  // Public : l'ordinateur de la salle de conférence s'installe (lien, ou code à 6 chiffres).
+  // Public : l'ordinateur de la salle de conférence s'installe (lien, ou code de 8 caractères).
   { chemin: "/ecran/:jeton", page: lazy(() => import("./PageInstallerEcran")), acces: "public", coquille: "aucune" },
   { chemin: "/ecran", page: lazy(() => import("./PageInstallerEcran")), acces: "public", coquille: "aucune" },
 ];

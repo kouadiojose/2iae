@@ -46,7 +46,7 @@ import { emailDisponible, envoyerEmail, emailInvitation, nomAffiche } from "../m
 import { prevenirSite } from "../site";
 import { invaliderJetons } from "./compte";
 import { sallePasEncoreNommee, SALLES_INVENTEES } from "../amorcage";
-import { DOMAINE_DEMO, ACTION_JOURNAL_DEMO } from "../demo-constantes";
+import { ACTION_JOURNAL_DEMO, adresseDeDemonstration } from "../demo-constantes";
 import { utilisateurs, sites, journal, reinitialisations, type Utilisateur, type Role } from "@shared/schema";
 import type {
   EtatRentree,
@@ -134,6 +134,14 @@ async function existe(table: string, colonne?: string): Promise<boolean> {
   cacheSchema.set(cle, { oui, exp: Date.now() + 60_000 });
   return oui;
 }
+
+/**
+ * Un compte « salle » qui compte comme l'écran réel d'une salle : jamais un compte de la démonstration (ses
+ * cinq écrans fictifs sont semés « installés » et « vus » récemment, et la purge les supprime), sauf si un
+ * vrai écran y a été installé avant que l'installation ne crée toujours un compte réel (la purge le garde alors).
+ */
+const ECRAN_REEL = (e: string) =>
+  `(coalesce(${e}.preferences->>'demo', 'false') <> 'true' OR EXISTS (SELECT 1 FROM campus.journal j WHERE j.action = 'ecran_installe' AND j.utilisateur_id = ${e}.id))`;
 
 /** Date du dernier essai visio réussi, lue dans les préférences (écrites par le module visio). */
 function essaiReussiLe(preferences: unknown): Date | null {
@@ -275,7 +283,7 @@ async function calculerRentree(u: Utilisateur): Promise<EtatRentree> {
       `SELECT s.id, s.nom, s.nom_court, s.salle_conference,
               (SELECT json_agg(json_build_object('id', e.id, 'installe', NOT e.doit_changer_mot_de_passe, 'vu', e.derniere_connexion, 'prefs', e.preferences)
                                ORDER BY e.derniere_connexion DESC NULLS LAST, e.id)
-                 FROM campus.utilisateurs e WHERE e.role = 'salle' AND e.site_id = s.id AND e.actif) AS ecrans
+                 FROM campus.utilisateurs e WHERE e.role = 'salle' AND e.site_id = s.id AND e.actif AND ${ECRAN_REEL("e")}) AS ecrans
          FROM campus.sites s
         WHERE ($1::int[] IS NULL OR s.id = ANY($1::int[]))
         ORDER BY s.ordre, s.id`,
@@ -677,11 +685,12 @@ async function calculerRentree(u: Utilisateur): Promise<EtatRentree> {
   if (direction) {
     const [d] = (
       await pool.query<{ comptes: number; cours: number; registre: number }>(
-        `SELECT (SELECT count(*) FROM campus.utilisateurs WHERE role <> 'admin' AND (preferences->>'demo' = 'true' OR lower(coalesce(email, '')) LIKE $1))::int AS comptes,
+        // Démonstration = marqueur du semis (preferences.demo), comme pour la purge : une adresse @demo.2iae.com ne suffit pas.
+        `SELECT (SELECT count(*) FROM campus.utilisateurs WHERE role <> 'admin' AND preferences->>'demo' = 'true')::int AS comptes,
                 (SELECT count(*) FROM campus.cours c JOIN campus.utilisateurs f ON f.id = c.formateur_id
-                  WHERE f.preferences->>'demo' = 'true' OR lower(coalesce(f.email, '')) LIKE $1)::int AS cours,
-                (SELECT count(*) FROM campus.journal WHERE action = $2)::int AS registre`,
-        [`%@${DOMAINE_DEMO}`, ACTION_JOURNAL_DEMO],
+                  WHERE f.preferences->>'demo' = 'true')::int AS cours,
+                (SELECT count(*) FROM campus.journal WHERE action = $1)::int AS registre`,
+        [ACTION_JOURNAL_DEMO],
       )
     ).rows;
     const [{ n: sallesInventees }] = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM campus.sites WHERE salle_conference = ANY($1::text[])`, [[...SALLES_INVENTEES]])).rows;
@@ -801,8 +810,38 @@ async function envoyerInvitationEmail(c: Utilisateur, adresse: string, lienTexte
 // ── Écrans de salle ────────────────────────────────────────────────────────
 
 const hacherCodeEcran = (code: string) => hacherJeton(`ecran:${code}`);
-/** Échecs d'installation sur l'heure, toutes adresses confondues (garde-fou contre l'essai de tous les codes). */
-let echecsEcran: number[] = [];
+
+/**
+ * Code d'installation d'un écran : 8 caractères pris parmi 31 lettres et chiffres sans ambiguïté (ni 0/O,
+ * ni 1/I/L), soit 31^8, environ 850 milliards de codes. Deviner l'un des cinq codes en circulation reste hors
+ * de portée même avec des milliers d'adresses pendant les 3 jours de validité : il n'y a donc plus de plafond
+ * d'échecs commun à tout le campus, que quelques adresses suffisaient à remplir pour bloquer l'installation
+ * des vraies salles. Restent les essais limités par adresse (ou par réseau IPv6).
+ */
+const ALPHABET_CODE_ECRAN = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const LONGUEUR_CODE_ECRAN = 8;
+const codeEcran = () => Array.from({ length: LONGUEUR_CODE_ECRAN }, () => ALPHABET_CODE_ECRAN[crypto.randomInt(ALPHABET_CODE_ECRAN.length)]).join("");
+/** Ce qui a été tapé, en majuscules, sans espaces ni tirets. */
+const lireCodeEcran = (brut: string) => brut.toUpperCase().replace(/[^A-Z0-9]/g, "");
+/** « K7MQ 4XP9 » : lisible de loin, facile à recopier. */
+const codeEcranLisible = (code: string) => `${code.slice(0, 4)} ${code.slice(4)}`;
+
+/**
+ * Qui essaie, pour la limite d'essais : l'adresse IPv4, ou le réseau /64 d'une adresse IPv6 (un abonné en
+ * dispose en entier : compter adresse par adresse lui donnerait des essais sans limite).
+ */
+function reseauClient(ip: string | undefined): string {
+  const a = (ip ?? "").replace(/^::ffff:(?=\d+\.)/i, "").split("%")[0];
+  if (!a.includes(":")) return a;
+  const [tete, queue] = a.split("::");
+  const t = tete ? tete.split(":") : [];
+  const q = queue ? queue.split(":") : [];
+  const groupes = queue === undefined ? t : [...t, ...Array<string>(Math.max(0, 8 - t.length - q.length)).fill("0"), ...q];
+  return `${groupes
+    .slice(0, 4)
+    .map((g) => g.toLowerCase().replace(/^0+(?=.)/, ""))
+    .join(":")}::/64`;
+}
 
 const ROLES_INVITABLES: Role[] = ["formateur", "vie_scolaire", "admin"];
 
@@ -816,6 +855,7 @@ function lireIdentifiant(brut: string): Identifiant {
   if (t.includes("@")) {
     const r = z.string().email().max(160).safeParse(t.toLowerCase());
     if (!r.success) throw invalide("Cette adresse e-mail n'est pas valide. Vérifiez-la (exemple : prenom.nom@gmail.com).");
+    if (adresseDeDemonstration(r.data)) throw invalide("Cette adresse est réservée à la démonstration du campus. Tapez votre vraie adresse e-mail, ou votre numéro de téléphone.");
     return { type: "email", valeur: r.data };
   }
   const chiffres = t.replace(/\D/g, "");
@@ -850,7 +890,7 @@ export function enregistrerLancement(app: Express) {
     route(async (_req, res) => {
       const { purgerDemonstration } = await import("../scripts/purge");
       const b = await purgerDemonstration({ simulation: true, sortie: () => undefined });
-      const apercu: ApercuPurge = { inventaire: b.inventaire.filter(([, n]) => n > 0), comptes: b.comptes, avertissements: b.avertissements };
+      const apercu: ApercuPurge = { inventaire: b.inventaire.filter(([, n]) => n > 0), comptes: b.comptes, personnes: b.personnes, avertissements: b.avertissements };
       res.json(apercu);
     }),
   );
@@ -899,11 +939,18 @@ export function enregistrerLancement(app: Express) {
       const dejaInvite = (
         await pool.query(`SELECT 1 FROM campus.journal WHERE action IN ('invitation', 'invitation_email') AND details->>'compteId' = $1 LIMIT 1`, [String(c.id)])
       ).rowCount;
-      const anciens = await db
+      await db
         .update(reinitialisations)
         .set({ utiliseLe: new Date() })
-        .where(and(eq(reinitialisations.utilisateurId, c.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe), gt(reinitialisations.expireLe, new Date())))
-        .returning({ id: reinitialisations.id });
+        .where(and(eq(reinitialisations.utilisateurId, c.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
+      // Le lien précédent a pu être ouvert par quelqu'un d'autre (invitation partie au mauvais numéro) : il avait
+      // alors une session sur ce compte, qui n'est pas encore activé. Elle tombe avec le lien : seul le nouveau
+      // lien ouvre le compte.
+      const appareilsDeconnectes = Number(
+        (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM campus.session WHERE (sess->>'utilisateurId')::int = $1 AND expire > now()`, [c.id])).rows[0]?.n ?? 0,
+      );
+      await fermerAutresSessions(c.id);
+      oublierUtilisateur(c.id);
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
       const jeton = await creerJeton(c.id, "activation", DUREE_CODE_PROVISOIRE_MS);
       const lienTexte = lienActivation(jeton);
@@ -911,7 +958,7 @@ export function enregistrerLancement(app: Express) {
       const message = messageInvitation(c, lienTexte, expireLe, premier);
       let envoye = false;
       if (parEmail && c.email) envoye = await envoyerInvitationEmail(c, c.email, lienTexte, expireLe, premier);
-      await journaliser(u, "invitation", { compteId: c.id, canal: envoye ? "email" : "lien" });
+      await journaliser(u, "invitation", { compteId: c.id, canal: envoye ? "email" : "lien", ...(appareilsDeconnectes ? { appareilsDeconnectes } : {}) });
       const r: InvitationRemise = {
         compteId: c.id,
         lien: lienTexte,
@@ -921,7 +968,9 @@ export function enregistrerLancement(app: Express) {
         whatsapp: lienWhatsApp(c.telephone, message),
         premierCours: premier,
         email: { adresse: c.email, disponible: emailDisponible(), envoye },
-        remplaceUnLien: anciens.length > 0 && Boolean(dejaInvite),
+        // Tout lien d'une invitation précédente, qu'il ait servi ou non, ne marche plus.
+        remplaceUnLien: Boolean(dejaInvite),
+        appareilsDeconnectes,
       };
       res.json(r);
     }),
@@ -958,7 +1007,7 @@ export function enregistrerLancement(app: Express) {
     }),
   );
 
-  // Installer l'écran de la salle de conférence d'un campus : lien + code à 6 chiffres.
+  // Installer l'écran de la salle de conférence d'un campus : lien + code à 8 caractères.
   app.post(
     `${P}/sites/:id(\\d+)/ecran`,
     EQUIPE,
@@ -969,10 +1018,11 @@ export function enregistrerLancement(app: Express) {
       if (!s || (p && !p.includes(s.id))) throw introuvable("Campus");
 
       // Le compte de l'écran : celui qui existe déjà (le plus récemment vu), sinon un nouveau, sans identifiant.
+      // Jamais un compte « salle » de la démonstration : la purge le supprimerait, et l'écran de la salle avec.
       const existants = (
         await pool.query<{ id: number }>(
-          `SELECT id FROM campus.utilisateurs WHERE role = 'salle' AND site_id = $1 AND actif
-            ORDER BY (NOT doit_changer_mot_de_passe) DESC, derniere_connexion DESC NULLS LAST, id LIMIT 1`,
+          `SELECT e.id FROM campus.utilisateurs e WHERE e.role = 'salle' AND e.site_id = $1 AND e.actif AND ${ECRAN_REEL("e")}
+            ORDER BY (NOT e.doit_changer_mot_de_passe) DESC, e.derniere_connexion DESC NULLS LAST, e.id LIMIT 1`,
           [s.id],
         )
       ).rows;
@@ -1004,8 +1054,7 @@ export function enregistrerLancement(app: Express) {
       const jeton = await creerJeton(compteId, "activation", DUREE_INSTALLATION_MS);
       let code = "";
       for (let essai = 0; essai < 8 && !code; essai++) {
-        const candidat = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
-        if (!codeSecretAcceptable(candidat)) continue;
+        const candidat = codeEcran();
         try {
           await db.insert(reinitialisations).values({ utilisateurId: compteId, type: "activation", jetonHash: hacherCodeEcran(candidat), expireLe });
           code = candidat;
@@ -1017,7 +1066,7 @@ export function enregistrerLancement(app: Express) {
       const hote = config.urlCampus.replace(/^https?:\/\//, "");
       const lienTexte = `${config.urlCampus}/ecran/${jeton}`;
       const salle = sallePasEncoreNommee(s.salleConference) ? "la salle de conférence" : s.salleConference;
-      const codeLisible = `${code.slice(0, 3)} ${code.slice(3)}`;
+      const codeLisible = codeEcranLisible(code);
       const echeance = `${jourLong(expireLe)} à ${heure(expireLe)}`;
       const message = [
         `Installation de l'écran de ${salle} · campus ${s.nomCourt}`,
@@ -1052,22 +1101,30 @@ export function enregistrerLancement(app: Express) {
     "/api/ecran/installer",
     route(async (req, res) => {
       res.setHeader("Cache-Control", "no-store");
-      const d = valider(z.object({ jeton: z.string().max(100).optional(), code: z.string().max(20).optional() }), req.body);
-      const cleIp = `ecran|${req.ip}`;
-      verifierTentatives(cleIp, 10);
-      const maintenant = Date.now();
-      echecsEcran = echecsEcran.filter((t) => t > maintenant - 3_600_000);
-      if (echecsEcran.length > 200) throw new ErreurHttp(429, "Trop d'essais sur le campus en ce moment. Réessayez dans un quart d'heure.");
-      const code = d.code?.replace(/\D/g, "") ?? "";
-      const hash = d.jeton && /^[A-Za-z0-9_-]{20,80}$/.test(d.jeton) ? hacherJeton(d.jeton) : code.length === 6 ? hacherCodeEcran(code) : null;
+      const d = valider(z.object({ jeton: z.string().max(100).optional(), code: z.string().max(40).optional() }), req.body);
+      const cleIp = `ecran|${reseauClient(req.ip)}`;
+      const parLien = Boolean(d.jeton);
+      const code = d.code ? lireCodeEcran(d.code) : "";
+      // Le code se limite avant même d'être lu (10 essais faux par quart d'heure et par adresse). Le lien (24 octets
+      // tirés au sort) ne se devine pas : un lien valable passe toujours, seuls ses échecs sont comptés.
+      if (!parLien) verifierTentatives(cleIp, 10);
+      const hash = parLien
+        ? /^[A-Za-z0-9_-]{20,80}$/.test(d.jeton!)
+          ? hacherJeton(d.jeton!)
+          : null
+        : code.length === LONGUEUR_CODE_ECRAN
+          ? hacherCodeEcran(code)
+          : null;
       const echec = () => {
         noterEchec(cleIp);
-        echecsEcran.push(maintenant);
+        if (parLien) verifierTentatives(cleIp, 10);
         return new ErreurHttp(
           410,
-          d.jeton
+          parLien
             ? "Ce lien d'installation ne marche plus : il a déjà servi ou il a expiré. Demandez-en un nouveau à la vie scolaire ou à la direction."
-            : "Ce code ne marche pas. Vérifiez les 6 chiffres, ou demandez un nouveau code à la vie scolaire ou à la direction.",
+            : code.length === LONGUEUR_CODE_ECRAN
+              ? "Ce code ne marche pas. Vérifiez les 8 caractères, ou demandez un nouveau code à la vie scolaire ou à la direction."
+              : "Le code d'installation fait 8 caractères, lettres et chiffres. Vérifiez-le, ou demandez un nouveau code à la vie scolaire ou à la direction.",
         );
       };
       if (!hash) throw echec();
@@ -1094,7 +1151,7 @@ export function enregistrerLancement(app: Express) {
       req.session.cookie.maxAge = dureeSession("salle");
       oublierUtilisateur(installe.id);
       effacerTentatives(cleIp);
-      await journaliser(installe, "ecran_installe", { siteId: installe.siteId, par: d.jeton ? "lien" : "code" });
+      await journaliser(installe, "ecran_installe", { siteId: installe.siteId, par: parLien ? "lien" : "code" });
       res.json(await versMoi(installe));
     }),
   );
@@ -1108,6 +1165,19 @@ export function enregistrerLancement(app: Express) {
       const u = moi(req);
       if (!ROLES_INVITABLES.includes(u.role)) throw interdit("Cette étape est réservée aux formateurs et à l'équipe.");
       if (!u.doitChangerMotDePasse) throw new ErreurHttp(409, "Votre compte est déjà activé. Pour changer de mot de passe, passez par votre profil.");
+      // Session ouverte par un lien d'invitation qu'une invitation plus récente a remplacé (le renvoi ferme déjà
+      // ces sessions ; défense de plus) : seul le dernier lien peut activer le compte.
+      if (req.session.jetonActivationId) {
+        const [plusRecent] = await db
+          .select({ id: reinitialisations.id })
+          .from(reinitialisations)
+          .where(and(eq(reinitialisations.utilisateurId, u.id), eq(reinitialisations.type, "activation"), gt(reinitialisations.id, req.session.jetonActivationId)))
+          .limit(1);
+        if (plusRecent) {
+          await new Promise<void>((ok) => req.session.destroy(() => ok()));
+          throw new ErreurHttp(410, "Ce lien d'activation a été remplacé par une invitation plus récente. Ouvrez le dernier lien reçu.");
+        }
+      }
       const d = valider(
         z.object({
           prenom: z.string().trim().min(1, "indiquez votre prénom (ou « M. », « Mme »)").max(80, "trop long"),

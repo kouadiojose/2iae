@@ -28,6 +28,8 @@ export type PropsScene = {
   onConsommationRadio?: (octets: number) => void;
   /** Formateur : flux micro local (sert à la radio). */
   onFluxLocal?: (flux: MediaStream | null) => void;
+  /** Formateur (Daily) : micro coupé ou rouvert depuis l'interface de Daily elle-même. */
+  onMicroDaily?: (ouvert: boolean) => void;
   onEtatVisio?: (etat: EtatVisio) => void;
   /** Écran de salle : très grands bandeaux. */
   grand?: boolean;
@@ -37,15 +39,15 @@ export type PropsScene = {
 export function Scene(p: PropsScene) {
   const { seance, etat, role, mode } = p;
   const planB = etat.planB ?? seance.planB;
-  // Bascule locale quand Daily échoue deux fois : on écoute la radio sans quitter la page.
-  const [secoursRadio, setSecoursRadio] = useState(false);
-  useEffect(() => setSecoursRadio(false), [seance.fournisseur]);
+  // Bascule locale quand Daily échoue deux fois (ou que la visio est complète) : on écoute la radio sans quitter la page.
+  const [secoursRadio, setSecoursRadio] = useState<RaisonSecours | null>(null);
+  useEffect(() => setSecoursRadio(null), [seance.fournisseur]);
   let contenu: ReactNode;
   if (planB) contenu = <ScenePlanB lien={planB} grand={p.grand} />;
   else if (role === "etudiant" && mode === "radio") contenu = <SceneRadio {...p} />;
   else if (role === "etudiant" && mode === "compagnon") contenu = <SceneCompagnon {...p} />;
-  else if (seance.fournisseur === "daily" && secoursRadio) contenu = <SceneRadio {...p} retourVisio={() => setSecoursRadio(false)} />;
-  else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} onSecoursRadio={() => setSecoursRadio(true)} />;
+  else if (seance.fournisseur === "daily" && secoursRadio) contenu = <SceneRadio {...p} raisonSecours={secoursRadio} retourVisio={() => setSecoursRadio(null)} />;
+  else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} onSecoursRadio={(raison) => setSecoursRadio(raison)} />;
   else if (seance.fournisseur === "campus") contenu = <SceneCampus {...p} />;
   else if (seance.fournisseur === "jitsi") contenu = <SceneJitsi {...p} />;
   else if (seance.fournisseur === "externe") contenu = <SceneExterne {...p} />;
@@ -117,13 +119,23 @@ function PortraitFormateur({ seance, sousTitre }: { seance: SeanceDetailDto; sou
 
 // ── Radio : son du formateur + diapo + sous-titres (≈ 12 à 15 Mo/h) ────────
 
-function SceneRadio({ seance, etat, onConsommationRadio, retourVisio }: PropsScene & { retourVisio?: () => void }) {
+/** Pourquoi on écoute la radio au lieu de la visio Daily. */
+type RaisonSecours = "echec" | "pleine";
+
+function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, raisonSecours }: PropsScene & { retourVisio?: () => void; raisonSecours?: RaisonSecours }) {
   const dernier = etat.sousTitres[etat.sousTitres.length - 1];
+  const tu = role === "etudiant";
   return (
     <div className="flex flex-col">
       {retourVisio && (
         <div className="flex flex-wrap items-center justify-between gap-2 bg-orange px-4 py-2 text-sm font-bold text-encre">
-          <span>La visio ne passe pas : le son du cours arrive par la radio.</span>
+          <span>
+            {raisonSecours === "pleine"
+              ? tu
+                ? "La visio est complète : tu suis en son + diapos, tu entends tout."
+                : "La visio est complète : le son du cours arrive par la radio."
+              : "La visio ne passe pas : le son du cours arrive par la radio."}
+          </span>
           <button type="button" onClick={retourVisio} className="inline-flex items-center gap-1.5 rounded-lg bg-encre px-3 py-1.5 text-white">
             <RotateCcw className="h-3.5 w-3.5" /> Réessayer la visio
           </button>
@@ -300,7 +312,10 @@ const peutEnvoyerSon = (p: DailyEventObjectParticipant["participant"]) => {
   return cs === true || (cs instanceof Set && cs.has("audio"));
 };
 
-function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, onEtatVisio, onSecoursRadio }: PropsScene & { onSecoursRadio: () => void }) {
+/** Relances du replay après une erreur d'enregistrement Daily : trois au plus, espacées. */
+const RELANCES_ENREGISTREMENT = 3;
+
+function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, onEtatVisio, onSecoursRadio, onMicroDaily }: PropsScene & { onSecoursRadio: (raison: RaisonSecours) => void }) {
   const [call, setCall] = useState<DailyCall | null>(null);
   const [connecte, setConnecte] = useState(false);
   const infos = useRef<RejoindreVisioDto | null>(null);
@@ -310,32 +325,64 @@ function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, on
   const [bascule, setBascule] = useState(false);
 
   // Enregistrement en cours ? (lancé par le jeton si la séance était déjà en direct)
+  const [relanceEnregistrement, setRelanceEnregistrement] = useState(0);
+  const relancesEnregistrement = useRef(0);
   useEffect(() => {
     if (!call) return;
     enregistre.current = false;
     const debut = () => (enregistre.current = true);
     const fin = () => (enregistre.current = false);
+    // Enregistrement tombé en erreur en plein cours : on le relance (le replay garde tous les morceaux).
+    const erreur = () => {
+      enregistre.current = false;
+      if (relancesEnregistrement.current >= RELANCES_ENREGISTREMENT) return;
+      relancesEnregistrement.current += 1;
+      setTimeout(() => setRelanceEnregistrement((n) => n + 1), 10_000);
+    };
     call.on("recording-started", debut);
     call.on("recording-stopped", fin);
+    call.on("recording-error", erreur);
     return () => {
       call.off("recording-started", debut);
       call.off("recording-stopped", fin);
+      call.off("recording-error", erreur);
     };
   }, [call]);
 
-  // Replay : le formateur lance l'enregistrement dès que la séance passe en direct.
+  // Replay : le formateur lance l'enregistrement dès que la séance passe en direct, pour toute la durée du
+  // cours et son débordement (sans durée, Daily coupe l'enregistrement au bout de 3 h).
   useEffect(() => {
     if (!call || !connecte || role !== "formateur" || etat.statut !== "en_direct" || !infos.current?.enregistrement) return;
+    const maxDuration = infos.current.enregistrementMaxS ?? seance.dureeMinutes * 60 + 2 * 3600;
     const id = setTimeout(() => {
       if (enregistre.current) return;
       try {
-        call.startRecording();
+        call.startRecording({ maxDuration });
       } catch {
         /* enregistrement indisponible : le cours continue */
       }
     }, 4000);
     return () => clearTimeout(id);
-  }, [call, connecte, role, etat.statut]);
+  }, [call, connecte, role, etat.statut, relanceEnregistrement]);
+
+  // Formateur : micro coupé (ou rouvert) depuis l'interface de Daily elle-même. Le studio suit, et la radio avec lui.
+  useEffect(() => {
+    if (!call || !connecte || role !== "formateur" || !onMicroDaily) return;
+    let dernier: boolean | null = null;
+    const maj = (ev?: DailyEventObjectParticipant) => {
+      const x = ev?.participant;
+      if (!x?.local) return;
+      const audio = x.tracks?.audio;
+      const ouvert = audio?.state === "playable" || audio?.state === "sendable" || audio?.state === "loading" ? true : audio?.state === "off" && audio.off?.byUser ? false : null;
+      if (ouvert === null || ouvert === dernier) return;
+      dernier = ouvert;
+      onMicroDaily(ouvert);
+    };
+    call.on("participant-updated", maj);
+    return () => {
+      call.off("participant-updated", maj);
+    };
+  }, [call, connecte, role, onMicroDaily]);
 
   // Parole à un étudiant en ligne : le formateur lui ouvre le droit d'envoyer son micro, et le retire après.
   const cibleParole = etat.parole?.type === "etudiant" ? String(etat.parole.utilisateurId) : null;
@@ -397,7 +444,7 @@ function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, on
         <p className="text-[13px] text-nuit-gris">Les salles et les étudiants basculent avec vous. La radio, les diapos et les questions continuent.</p>
       </>
     ) : (
-      <Bouton variante="nuit-actif" icone={<Radio className="h-4 w-4" />} onClick={onSecoursRadio}>
+      <Bouton variante="nuit-actif" icone={<Radio className="h-4 w-4" />} onClick={() => onSecoursRadio("echec")}>
         {tu ? "Écouter en son + diapos" : "Écouter le cours à la radio"}
       </Bouton>
     );
@@ -420,6 +467,10 @@ function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, on
       onRejoint={() => setConnecte(true)}
       onEtat={onEtatVisio}
       onConsommation={onConsommationVisio}
+      // Étudiant : visio complète (places vidéo prises) : il passe tout de suite en son + diapos.
+      onEchecs={(_n, probleme) => {
+        if (role === "etudiant" && probleme?.genre === "pleine") onSecoursRadio("pleine");
+      }}
       secours={secours}
     />
   );

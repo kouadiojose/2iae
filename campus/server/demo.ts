@@ -31,7 +31,7 @@ import { config, estProduction } from "./config";
 import { hacher, verifier, motDePasseProvisoire, codeProvisoire, DUREE_CODE_PROVISOIRE_MS } from "./auth";
 import { recuPour, corrigerTentative } from "./evaluations-outils";
 import { prevenirSite } from "./site";
-import { DOMAINE_DEMO, ACTION_JOURNAL_DEMO, ACTION_JOURNAL_PURGE, CODES_COURS_DEMO, VERROU_SEMIS } from "./demo-constantes";
+import { DOMAINE_DEMO, ACTION_JOURNAL_DEMO, ACTION_JOURNAL_PURGE, CODES_COURS_DEMO, VERROU_SEMIS, empreintePresentation } from "./demo-constantes";
 import {
   sites,
   classes,
@@ -4456,14 +4456,31 @@ async function semer(tx: Tx, t0: Date, hash: string, hashCode: string, fichiersE
   await semerVieScolaire(c);
   await semerIa(c);
 
-  // Trace du semis : la purge sait quelles classes elle a créées.
+  // Trace du semis : la purge sait quelles classes, quels cours et quels contenus il a créés. Si l'emploi du
+  // temps réel reprend un de ces cours, elle n'en retire que ces contenus-là, jamais ce que de vraies personnes
+  // y ont ajouté ensuite (chapitres, leçons, devoirs, séances).
+  const coursSemes = [...c.cours.values()].map((x) => x.id);
+  const idsDe = async (requete: Promise<{ id: number }[]>) => (await requete).map((l) => l.id);
   await tx.insert(journal).values({
     utilisateurId: null,
     action: ACTION_JOURNAL_DEMO,
     details: {
       le: t0.toISOString(),
       classes: c.classesCreees,
-      cours: [...c.cours.values()].map((x) => x.id),
+      cours: coursSemes,
+      contenu: {
+        modules: await idsDe(tx.select({ id: modules.id }).from(modules).where(inArray(modules.coursId, coursSemes))),
+        lecons: await idsDe(tx.select({ id: lecons.id }).from(lecons).where(inArray(lecons.coursId, coursSemes))),
+        devoirs: await idsDe(tx.select({ id: devoirs.id }).from(devoirs).where(inArray(devoirs.coursId, coursSemes))),
+        seances: await idsDe(tx.select({ id: seances.id }).from(seances).where(inArray(seances.coursId, coursSemes))),
+        fiches: await idsDe(tx.select({ id: fichesRevision.id }).from(fichesRevision).where(inArray(fichesRevision.coursId, coursSemes))),
+      },
+      presentations: Object.fromEntries(
+        (await tx.select({ id: cours.id, description: cours.description, objectifs: cours.objectifs, accroche: cours.accrocheSite }).from(cours).where(inArray(cours.id, coursSemes))).map((x) => [
+          x.id,
+          empreintePresentation(x),
+        ]),
+      ),
       comptes: c.personnes.size,
     },
   });
@@ -4552,8 +4569,8 @@ export async function raisonRefusDemo(): Promise<string | null> {
     .select({ n: sql<number>`count(*)::int` })
     .from(utilisateurs)
     .where(
+      // Réel = sans le marqueur du semis (l'adresse ne compte pas : elle se choisit, le marqueur non).
       sql`coalesce(${utilisateurs.preferences}->>'demo', 'false') <> 'true'
-        AND coalesce(lower(${utilisateurs.email}), '') NOT LIKE ${`%@${DOMAINE_DEMO}`}
         AND NOT (${utilisateurs.role} = 'admin' AND lower(coalesce(${utilisateurs.email}, '')) = ${config.admin.identifiant.toLowerCase()})`,
     );
   if (n > 0) {

@@ -31,8 +31,11 @@ export default function PageSalle() {
   const siteParam = Number(new URLSearchParams(window.location.search).get("site")) || null;
   const siteId = moi.role === "salle" || (moi.role === "vie_scolaire" && moi.siteId) ? moi.siteId : siteParam ?? 1;
 
-  const { data: enCours } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], refetchInterval: 30_000 });
-  const { data: duJour } = useQuery<SeanceResume[]>({ queryKey: ["/api/seances?periode=jour"], refetchInterval: 60_000 });
+  // Seulement les cours que suit ce campus (le serveur l'impose à l'écran d'une salle ; l'équipe précise le site) :
+  // un autre campus qui démarre, ou l'essai de visio d'un collègue, ne fait pas quitter la classe en cours.
+  const site = siteId ? `site=${siteId}` : "";
+  const { data: enCours } = useQuery<EnCours>({ queryKey: [`/api/live/en-cours${site ? `?${site}` : ""}`], refetchInterval: 30_000 });
+  const { data: duJour } = useQuery<SeanceResume[]>({ queryKey: [`/api/seances?periode=jour${site ? `&${site}` : ""}`], refetchInterval: 60_000 });
   // Séance à afficher : celle en direct, sinon la prochaine, sinon la dernière du jour (annulée ou terminée).
   const seanceId = enCours?.enDirect?.id ?? enCours?.prochaine?.id ?? duJour?.[duJour.length - 1]?.id ?? null;
 

@@ -220,6 +220,12 @@ export function FenetreCreneau({
                 aide={type === "cours" && !coursId ? "Sans cours, aucune séance en direct n'est créée." : undefined}
               >
                 <option value="">{type === "cours" ? "Choisir un cours…" : "Aucun"}</option>
+                {/* Cours déjà choisi mais absent des options (partagé depuis avec un autre campus) : il reste affiché. */}
+                {creneau?.cours && options && !options.cours.some((c) => c.id === creneau.cours!.id) && (
+                  <option value={creneau.cours.id}>
+                    {creneau.cours.titre} · {creneau.cours.code}
+                  </option>
+                )}
                 {(options?.cours ?? []).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.titre} · {c.code}

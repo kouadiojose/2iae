@@ -197,6 +197,8 @@ export function enregistrerAccueil(app: Express) {
                   eq(seances.statut, "en_direct"),
                   and(eq(seances.statut, "planifiee"), gte(seances.debut, new Date(t0 - 30 * MINUTE)), lte(seances.debut, new Date(t0 + 14 * JOUR))),
                 ),
+                // Essai de visio d'un formateur (direct immédiat sans prévenir) : pas pour les étudiants.
+                sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)`,
               ),
             )
             .orderBy(asc(seances.debut))

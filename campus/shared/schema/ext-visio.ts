@@ -101,7 +101,7 @@ export const reglagesVisio = campusSchema.table("reglages_visio", {
   fournisseurParDefaut: text("fournisseur_par_defaut").$type<FournisseurVisio>(),
   /** Un étudiant en ligne entre-t-il en vidéo par défaut ? Non : « son + diapos », il choisit la vidéo s'il le veut. */
   videoEtudiantParDefaut: boolean("video_etudiant_par_defaut").notNull().default(false),
-  /** Étudiants en vidéo dans une salle Daily (au-delà : la salle est pleine, ils suivent en son + diapos). */
+  /** Étudiants en vidéo dans une salle Daily (au-delà : « complète », ils suivent en son + diapos ; formateur, salles et équipe ont leurs places à part). */
   placesDailyEtudiants: integer("places_daily_etudiants").notNull().default(30),
   /** Prix d'une minute-participant Daily, en dollars (0,004 $ au tarif public). */
   prixMinuteUsd: real("prix_minute_usd").notNull().default(0.004),
@@ -163,6 +163,8 @@ export type RejoindreVisioDto = {
   message?: string;
   profil?: ProfilDaily;
   enregistrement?: boolean;
+  /** Durée maximale de l'enregistrement du replay (secondes) : la durée du cours plus le débordement possible. */
+  enregistrementMaxS?: number;
   repetition?: boolean;
 };
 
@@ -229,6 +231,10 @@ export type ReglagesVisioDto = {
   fournisseurParDefaut: FournisseurVisio;
   videoEtudiantParDefaut: boolean;
   placesDailyEtudiants: number;
+  /** Étudiants en vidéo au plus que le forfait Daily permet (salle entière plafonnée, places réservées déduites). */
+  placesDailyMax: number;
+  /** Places gardées dans chaque salle pour le formateur, les cinq écrans de salle et l'équipe. */
+  placesHorsEtudiants: number;
   prixMinuteUsd: number;
   minutesOffertes: number;
   tauxFcfa: number;

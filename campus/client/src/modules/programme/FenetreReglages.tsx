@@ -42,7 +42,9 @@ export function FenetreReglages({ session, onFermer, surEnregistre }: { session?
   const erreurDates = debut && fin && fin < debut ? "Le dernier jour doit venir après le premier." : undefined;
   const erreurPause = avecPause && pauseDebut && pauseFin && pauseFin <= pauseDebut ? "La pause doit finir après avoir commencé." : undefined;
   const erreurAnnee = /^\d{4}-\d{4}$/.test(annee) && Number(annee.slice(5)) === Number(annee.slice(0, 4)) + 1 ? undefined : "Écrivez l'année comme « 2026-2027 ».";
-  const pret = titre.trim().length >= 2 && debut && fin && !erreurDates && !erreurPause && !erreurAnnee && signataire.trim().length >= 2;
+  // La vie scolaire d'un campus choisit au moins une de ses classes : une session sans classe est réservée à la direction.
+  const classeExigee = Boolean(options && !options.toutLeGroupe);
+  const pret = titre.trim().length >= 2 && debut && fin && !erreurDates && !erreurPause && !erreurAnnee && signataire.trim().length >= 2 && (!classeExigee || classes.size > 0);
 
   const basculer = (id: number, oui: boolean) =>
     setClasses((avant) => {
@@ -138,7 +140,10 @@ export function FenetreReglages({ session, onFermer, surEnregistre }: { session?
             <span className="text-sm font-bold">Classes destinataires</span>
             <span className="font-mono text-xs text-texte-gris">{pluriel(classes.size, "classe choisie", "classes choisies")}</span>
           </legend>
-          <p className="-mt-2 text-[13px] text-texte-gris">Leurs étudiants voient l'emploi du temps et sont prévenus à la publication. Les cours des créneaux leur sont rattachés.</p>
+          <p className="-mt-2 text-[13px] text-texte-gris">
+            Leurs étudiants voient l'emploi du temps et sont prévenus à la publication. Les cours des créneaux leur sont rattachés.
+            {classeExigee && " Choisissez au moins une classe de votre campus."}
+          </p>
           {isLoading ? (
             <Chargement lignes={2} />
           ) : !toutesClasses.length ? (

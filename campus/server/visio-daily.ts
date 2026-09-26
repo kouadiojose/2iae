@@ -89,7 +89,14 @@ const schemaReglages = z
   .object({
     fournisseurParDefaut: z.enum(FOURNISSEURS_VISIO),
     videoEtudiantParDefaut: z.boolean(),
-    placesDailyEtudiants: z.number().int().min(0, "0 au moins").max(200, "200 au plus"),
+    // Le forfait Daily plafonne la salle entière (200 personnes par défaut) : formateur, salles et équipe compris.
+    placesDailyEtudiants: z
+      .number()
+      .int()
+      .min(0, "0 au moins")
+      .refine((n) => n <= visio.placesDailyEtudiantsMax(), () => ({
+        message: `${visio.placesDailyEtudiantsMax()} au plus : le forfait Daily accepte ${visio.placesDailyEtudiantsMax() + visio.PLACES_HORS_ETUDIANTS} personnes par salle, dont ${visio.PLACES_HORS_ETUDIANTS} places gardées pour le formateur, les salles et l'équipe`,
+      })),
     prixMinuteUsd: z.number().min(0).max(1, "1 dollar au plus"),
     minutesOffertes: z.number().int().min(0).max(10_000_000),
     tauxFcfa: z.number().int().min(1).max(5000),
@@ -101,7 +108,9 @@ function versReglagesDto(): ReglagesVisioDto {
   return {
     fournisseurParDefaut: visio.fournisseurParDefaut(),
     videoEtudiantParDefaut: r.videoEtudiantParDefaut,
-    placesDailyEtudiants: r.placesDailyEtudiants,
+    placesDailyEtudiants: Math.min(r.placesDailyEtudiants, visio.placesDailyEtudiantsMax()),
+    placesDailyMax: visio.placesDailyEtudiantsMax(),
+    placesHorsEtudiants: visio.PLACES_HORS_ETUDIANTS,
     prixMinuteUsd: r.prixMinuteUsd,
     minutesOffertes: r.minutesOffertes,
     tauxFcfa: r.tauxFcfa,
@@ -146,13 +155,15 @@ export function enregistrerVisioDaily(app: Express) {
       const nomAffiche = await nomDansLaSalle(u);
       // Propriétaire : formateur et direction. Salle et vie scolaire : caméra et micro. Étudiant : micro seulement (pas de caméra étudiante).
       const profil = u.role === "formateur" || u.role === "admin" ? "formateur" : u.role === "salle" || u.role === "vie_scolaire" ? "salle" : "etudiant";
+      // Quinze étudiants au plus à la fois, un quart d'heure chacun : la salle reste ouverte aux formateurs et aux écrans de salle.
+      await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, essai: true });
       const jeton = await visio.jetonDaily({
         salle: salle.nom,
         nomAffiche,
         utilisateurId: u.id,
         profil,
         exp: Math.floor(Date.now() / 1000) + 2 * 3600,
-        ejecterApres: visio.DUREE_MAX_ESSAI_S,
+        ejecterApres: profil === "etudiant" ? visio.DUREE_MAX_ESSAI_ETUDIANT_S : visio.DUREE_MAX_ESSAI_S,
         enregistrementPermis: false,
         envoi: profil === "etudiant" ? ["audio"] : undefined,
       });

@@ -146,10 +146,17 @@ async function principal() {
       },
     ]);
   }
-  // Registre : la purge sait quelles classes et quel cours ce script a créés.
+  // Registre : la purge sait quelles classes, quel cours et quels contenus ce script a créés (elle ne retire que ceux-là).
   const [ia101] = await db.select({ id: cours.id }).from(cours).where(eq(cours.code, "IA-101"));
   if (classesCreees.length || !dejaCours) {
-    await db.insert(journal).values({ utilisateurId: null, action: ACTION_JOURNAL_DEMO, details: { classes: classesCreees, cours: ia101 && !dejaCours ? [ia101.id] : [], script: "comptes-test" } });
+    const coursCree = ia101 && !dejaCours ? [ia101.id] : [];
+    const contenu = coursCree.length
+      ? {
+          modules: (await db.select({ id: modules.id }).from(modules).where(eq(modules.coursId, coursCree[0]))).map((l) => l.id),
+          lecons: (await db.select({ id: lecons.id }).from(lecons).where(eq(lecons.coursId, coursCree[0]))).map((l) => l.id),
+        }
+      : {};
+    await db.insert(journal).values({ utilisateurId: null, action: ACTION_JOURNAL_DEMO, details: { le: new Date().toISOString(), classes: classesCreees, cours: coursCree, contenu, script: "comptes-test" } });
   }
   console.log("✓ Comptes et données de test prêts (marqués « démonstration »).");
 }

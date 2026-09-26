@@ -27,6 +27,8 @@ export default function PageReplay({ id }: { id: string }) {
   const { data: r, error, isLoading, refetch } = useQuery<ReplayDto>({ queryKey: [`/api/seances/${seanceId}/replay`] });
   const [onglet, setOnglet] = useState<Onglet>("fiche");
   const [video, setVideo] = useState<string | null>(null);
+  /** Morceau chargé quand l'enregistrement en compte plusieurs (1 sinon). */
+  const [numeroVideo, setNumeroVideo] = useState(1);
   const [chargementVideo, setChargementVideo] = useState(false);
   const [recherche, setRecherche] = useState("");
   const lecteur = useRef<HTMLVideoElement>(null);
@@ -53,19 +55,29 @@ export default function PageReplay({ id }: { id: string }) {
   if (isLoading) return <Page><Chargement lignes={3} /></Page>;
   if (error || !r) return <Page><Erreur message={(error as Error)?.message ?? "Replay introuvable."} reessayer={() => void refetch()} /></Page>;
 
-  const chargerVideo = async (t?: number) => {
-    if (video) {
-      if (t !== undefined && lecteur.current) {
-        lecteur.current.currentTime = t;
+  const morceaux = r.video.morceaux;
+  const chargerVideo = async (t?: number, numeroDemande?: number) => {
+    // Enregistrement en plusieurs morceaux : le passage t (secondes depuis le début du cours) est dans le dernier morceau commencé avant lui.
+    let numero = numeroDemande ?? 1;
+    let position = t;
+    if (morceaux?.length && t !== undefined && numeroDemande === undefined) {
+      const m = [...morceaux].reverse().find((x) => x.decalageSecondes <= t) ?? morceaux[0];
+      numero = m.numero;
+      position = Math.max(0, t - m.decalageSecondes);
+    }
+    if (video && numero === numeroVideo) {
+      if (position !== undefined && lecteur.current) {
+        lecteur.current.currentTime = position;
         void lecteur.current.play().catch(() => undefined);
       }
       return;
     }
     setChargementVideo(true);
     try {
-      const lien = await get<{ url: string }>(`/api/seances/${seanceId}/replay/video`);
+      const lien = await get<{ url: string }>(`/api/seances/${seanceId}/replay/video${numero > 1 ? `?morceau=${numero}` : ""}`);
       setVideo(lien.url);
-      if (t !== undefined) setTimeout(() => lecteur.current && (lecteur.current.currentTime = t), 800);
+      setNumeroVideo(numero);
+      if (position !== undefined) setTimeout(() => lecteur.current && (lecteur.current.currentTime = position), 800);
     } catch (e) {
       toastErreur(e);
     } finally {
@@ -86,7 +98,25 @@ export default function PageReplay({ id }: { id: string }) {
       {/* Lecteur : rien ne se charge sans l'accord de l'étudiant */}
       <div className="overflow-hidden rounded-[24px] bg-encre text-white">
         {video && !lienDirect ? (
-          <video ref={lecteur} src={video} controls autoPlay playsInline preload="metadata" className="aspect-video w-full bg-black" />
+          <>
+            <video ref={lecteur} src={video} controls autoPlay playsInline preload="metadata" className="aspect-video w-full bg-black" />
+            {morceaux && morceaux.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                <span className="text-[13px] text-nuit-doux">L'enregistrement est en {morceaux.length} parties :</span>
+                {morceaux.map((m) => (
+                  <button
+                    key={m.numero}
+                    type="button"
+                    onClick={() => void chargerVideo(undefined, m.numero)}
+                    aria-pressed={m.numero === numeroVideo}
+                    className={cn("rounded-full px-3 py-1.5 text-[13px] font-bold", m.numero === numeroVideo ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne")}
+                  >
+                    Partie {m.numero} · {Math.max(1, Math.round(m.dureeSecondes / 60))} min
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex flex-col items-center gap-4 px-6 py-10 text-center">
             <PlayCircle className="h-12 w-12 text-orange" />
@@ -95,7 +125,8 @@ export default function PageReplay({ id }: { id: string }) {
                 <p className="text-xl font-extrabold">Regarder la vidéo du cours</p>
                 <p className="max-w-md text-[15px] text-nuit-doux">
                   {r.video.poidsEstimeMo ? `Environ ${r.video.poidsEstimeMo} Mo` : "Poids selon la plateforme vidéo"}
-                  {r.video.dureeSecondes ? ` · ${Math.round(r.video.dureeSecondes / 60)} min` : ""}. En 4G, commence plutôt par la fiche et la transcription (quelques Ko).
+                  {r.video.dureeSecondes ? ` · ${Math.round(r.video.dureeSecondes / 60)} min` : ""}
+                  {morceaux && morceaux.length > 1 ? ` en ${morceaux.length} parties` : ""}. En 4G, commence plutôt par la fiche et la transcription (quelques Ko).
                 </p>
                 {lienDirect ? (
                   <LienBouton href={video!} externe icone={<ExternalLink className="h-4 w-4" />}>

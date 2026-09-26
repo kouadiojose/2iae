@@ -9,7 +9,10 @@
 //  - une connexion qui traîne est signalée à 15 s et comptée comme un échec
 //    à 40 s (réseau d'école filtré) ;
 //  - au deuxième échec, le parent propose sa bascule (visio du campus,
-//    radio) sans quitter la page.
+//    radio) sans quitter la page ;
+//  - le formateur et l'écran de salle (aucun clic sur l'écran d'une salle)
+//    réessaient tout seuls, de plus en plus espacé, tant que le problème peut
+//    passer : salle pleine, réseau, service occupé ou compte à régler.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, WifiOff, RotateCcw, AlertTriangle } from "lucide-react";
 import type { DailyCall, DailyParticipant } from "@daily-co/daily-js";
@@ -27,6 +30,7 @@ import {
   traduireErreurDaily,
   problemeDepuisApi,
   messageCameraDaily,
+  relanceAutomatique,
   type ProblemeVisio,
 } from "./daily";
 
@@ -38,6 +42,8 @@ export type ParticipantCadre = { id: string; nom: string; local: boolean; micro:
 const DELAI_LENT_MS = 15_000;
 const DELAI_ECHEC_MS = 40_000;
 const RELANCES_AUTO = 2;
+/** Nouvel essai automatique (formateur, écran de salle) : au bout de 20 s, puis 30, 45, et chaque minute. */
+const DELAIS_RELANCE_S = [20, 30, 45, 60];
 
 type Acces = Pick<AccesDaily, "url" | "jeton"> & { message?: string };
 
@@ -91,6 +97,8 @@ export function CadreDaily(p: PropsCadreDaily) {
   const [lent, setLent] = useState(false);
   const echecs = useRef(0);
   const relances = useRef(0);
+  const relancesLongues = useRef(0);
+  const [prochainEssai, setProchainEssai] = useState<number | null>(null);
   const recu = useRef(0);
   // Les rappels du parent changent à chaque rendu : on garde la dernière version.
   const rappels = useRef(p);
@@ -189,6 +197,7 @@ export function CadreDaily(p: PropsCadreDaily) {
           setLent(false);
           echecs.current = 0;
           relances.current = 0;
+          relancesLongues.current = 0;
           setEtat("connecte");
           rappels.current.onEtat?.("connecte");
           rappels.current.onEchecs?.(0, null);
@@ -228,6 +237,22 @@ export function CadreDaily(p: PropsCadreDaily) {
       rappels.current.onEtat?.("ferme");
     };
   }, [role, essai]);
+
+  // Formateur et écran de salle : nouvel essai tout seul, de plus en plus espacé (une place qui se libère, le réseau qui revient).
+  useEffect(() => {
+    if (etat !== "erreur" || !relanceAutomatique(role, probleme)) {
+      setProchainEssai(null);
+      return;
+    }
+    const delai = DELAIS_RELANCE_S[Math.min(relancesLongues.current, DELAIS_RELANCE_S.length - 1)] * 1000;
+    setProchainEssai(Date.now() + delai);
+    const id = setTimeout(() => {
+      relancesLongues.current += 1;
+      relances.current = 0;
+      setEssai((n) => n + 1);
+    }, delai);
+    return () => clearTimeout(id);
+  }, [etat, probleme, role]);
 
   // Micro et caméra pilotés par le parent (le formateur garde son micro ; la salle et l'étudiant ne l'ouvrent qu'avec la parole).
   useEffect(() => {
@@ -286,6 +311,7 @@ export function CadreDaily(p: PropsCadreDaily) {
                 : (probleme?.texte ?? t("La visio ne répond pas.", "La visio ne répond pas."))}
             </p>
             {etat === "erreur" && probleme?.conseil && <p className="max-w-md text-[14px] leading-snug text-nuit-doux">{probleme.conseil}</p>}
+            {etat === "erreur" && prochainEssai && <CompteRelance cible={prochainEssai} />}
             {(etat === "erreur" || lent) && probleme?.genre !== "absente" && (
               <Bouton variante="nuit-actif" icone={<RotateCcw className="h-4 w-4" />} onClick={reessayer}>
                 Réessayer
@@ -296,5 +322,20 @@ export function CadreDaily(p: PropsCadreDaily) {
         </div>
       )}
     </div>
+  );
+}
+
+/** « Nouvel essai automatique dans 18 s » : rien à toucher sur l'écran d'une salle. */
+function CompteRelance({ cible }: { cible: number }) {
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setMaintenant(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const s = Math.max(0, Math.ceil((cible - maintenant) / 1000));
+  return (
+    <p className="font-mono text-[13px] text-orange-peche" aria-live="off">
+      {s > 0 ? `Nouvel essai automatique dans ${s} s` : "Nouvel essai…"}
+    </p>
   );
 }

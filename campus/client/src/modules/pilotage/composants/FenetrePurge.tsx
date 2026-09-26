@@ -1,11 +1,13 @@
 // Suppression de la démonstration depuis la page Rentrée (direction) : on
 // montre d'abord ce qui partira (simulation, rien n'est touché), puis on
 // demande de taper SUPPRIMER. Même code que la purge du démarrage
-// (CAMPUS_PURGER_DEMO) : rien de réel n'est touché.
+// (CAMPUS_PURGER_DEMO) : rien de réel n'est touché. La liste des comptes qui
+// partent est dépliable : seuls ceux que le semis a marqués y figurent.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Trash2, TriangleAlert, ShieldCheck } from "lucide-react";
 import type { ApercuPurge, ResultatPurge } from "@shared/lancement";
+import { LIBELLES_ROLES, type Role } from "@shared/schema";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Bouton } from "@/components/ui/bouton";
 import { Champ } from "@/components/ui/champs";
@@ -71,6 +73,24 @@ export function FenetrePurge({ ouverte, onFermer }: { ouverte: boolean; onFermer
                   </li>
                 ))}
               </ul>
+              {apercu.data.personnes.length > 0 && (
+                <details className="rounded-2xl border border-ligne px-4 py-3 text-[15px]">
+                  <summary className="min-h-[28px] cursor-pointer font-semibold text-encre">
+                    Voir les {apercu.data.personnes.length} comptes de démonstration qui partent
+                  </summary>
+                  <ul className="mt-2 max-h-64 overflow-y-auto">
+                    {apercu.data.personnes.map((p) => (
+                      <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-3 border-t border-ligne-douce py-1.5 first:border-t-0">
+                        <span className="min-w-0 break-words">
+                          {p.nom}
+                          {p.identifiant && <span className="ml-2 break-all font-mono text-[13px] text-texte-pale">{p.identifiant}</span>}
+                        </span>
+                        <span className="text-sm text-texte-doux">{LIBELLES_ROLES[p.role as Role] ?? p.role}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {apercu.data.avertissements.map((a) => (
                 <p key={a} className="flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
                   <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />

@@ -16,6 +16,8 @@ import {
   creneauxProgramme,
   seancesCreneaux,
   exceptionsProgramme,
+  classesProgramme,
+  formateursProgramme,
   classes,
   sites,
   cours,
@@ -291,17 +293,35 @@ export async function creneauxEdition(s: SessionProgramme): Promise<{ session: S
 
 // ── Occurrences datées ─────────────────────────────────────────────────────
 
-type LienSeance = { seanceId: number; statut: Seance["statut"]; motif: string | null };
+type LienSeance = { seanceId: number; statut: Seance["statut"]; motif: string | null; debut: Date; dureeMinutes: number; horaireRetouche: boolean };
 
 async function liensDesCreneaux(creneauIds: number[]): Promise<Map<string, LienSeance>> {
   const carte = new Map<string, LienSeance>();
   if (!creneauIds.length) return carte;
   const lignes = await db
-    .select({ creneauId: seancesCreneaux.creneauId, date: seancesCreneaux.date, seanceId: seances.id, statut: seances.statut, motif: seances.motifAnnulation })
+    .select({
+      creneauId: seancesCreneaux.creneauId,
+      date: seancesCreneaux.date,
+      seanceId: seances.id,
+      statut: seances.statut,
+      motif: seances.motifAnnulation,
+      debut: seances.debut,
+      dureeMinutes: seances.dureeMinutes,
+      retouches: seancesCreneaux.retouches,
+    })
     .from(seancesCreneaux)
     .innerJoin(seances, eq(seances.id, seancesCreneaux.seanceId))
     .where(inArray(seancesCreneaux.creneauId, creneauIds));
-  for (const l of lignes) carte.set(`${l.creneauId}|${l.date}`, { seanceId: l.seanceId, statut: l.statut, motif: l.motif });
+  for (const l of lignes) {
+    carte.set(`${l.creneauId}|${l.date}`, {
+      seanceId: l.seanceId,
+      statut: l.statut,
+      motif: l.motif,
+      debut: l.debut,
+      dureeMinutes: l.dureeMinutes,
+      horaireRetouche: l.retouches.includes("horaire"),
+    });
+  }
   return carte;
 }
 
@@ -324,10 +344,13 @@ export async function occurrencesDe(sessions: SessionDto[], options: { depuis?: 
     if (debut > fin) continue;
     for (const c of s.creneaux) {
       for (const date of datesDuJour(debut, fin, c.jour)) {
-        const d = instant(date, c.heureDebut);
-        const f = instant(date, c.heureFin);
         const lien = liens.get(`${c.id}|${date}`);
         const exception = exceptionPour(s.exceptions, c.id, date);
+        // Séance déplacée à la main par son formateur (retouche gardée) : l'emploi du temps montre son horaire réel.
+        const reelle = lien && !exception && lien.statut !== "annulee" && lien.horaireRetouche;
+        const d = reelle ? lien.debut : instant(date, c.heureDebut);
+        const f = reelle ? new Date(lien.debut.getTime() + lien.dureeMinutes * 60_000) : instant(date, c.heureFin);
+        const jourReel = reelle ? isoDate(d) : date;
         let statut: OccurrenceDto["statut"];
         let motif: string | null = null;
         if (exception) {
@@ -340,7 +363,7 @@ export async function occurrencesDe(sessions: SessionDto[], options: { depuis?: 
           statut = f.getTime() < maintenant.getTime() ? "terminee" : "prevue";
         }
         resultat.push({
-          date,
+          date: jourReel,
           creneauId: c.id,
           debut: d.toISOString(),
           fin: f.toISOString(),
@@ -349,7 +372,7 @@ export async function occurrencesDe(sessions: SessionDto[], options: { depuis?: 
           seanceId: lien?.seanceId ?? null,
           statut,
           sessionId: s.id,
-          jour: c.jour,
+          jour: jourReel === date ? c.jour : jourIsoDe(jourReel),
           type: c.type,
           couleur: c.cours?.couleur ?? null,
           coursCode: c.cours?.code ?? null,
@@ -419,10 +442,55 @@ export async function intervenantsDesSeances(seanceIds: number[]): Promise<Map<n
   return carte;
 }
 
+/**
+ * Classes destinataires de la session d'où vient chaque séance engendrée par
+ * l'emploi du temps (absente : séance créée à la main). De quoi limiter les
+ * rappels, le « En direct » et les présences attendues aux classes de la
+ * session plutôt qu'à toutes celles qui suivent le cours.
+ */
+export async function classesDesSeances(seanceIds: number[]): Promise<Map<number, number[]>> {
+  const carte = new Map<number, number[]>();
+  if (!seanceIds.length) return carte;
+  const lignes = await db
+    .select({ seanceId: seancesCreneaux.seanceId, classeId: sessionsClasses.classeId })
+    .from(seancesCreneaux)
+    .innerJoin(creneauxProgramme, eq(creneauxProgramme.id, seancesCreneaux.creneauId))
+    .leftJoin(sessionsClasses, eq(sessionsClasses.sessionId, creneauxProgramme.sessionId))
+    .where(inArray(seancesCreneaux.seanceId, seanceIds));
+  for (const l of lignes) carte.set(l.seanceId, [...(carte.get(l.seanceId) ?? []), ...(l.classeId !== null ? [l.classeId] : [])]);
+  return carte;
+}
+
 // ── Génération des séances (publication idempotente) ───────────────────────
 
 /** Verrou applicatif des publications (pg_advisory_xact_lock(clé, sessionId)). */
 const VERROU_PUBLICATION = 20_260_928;
+
+/** Motif des séances annulées par l'archivage : « Publier » après « Désarchiver » les rétablit. */
+export const MOTIF_ARCHIVAGE = "Emploi du temps retiré par la direction des études";
+
+/** Ce qu'une retouche à la main protège de la mise à jour des séances (seances_creneaux.retouches). */
+export const CHAMPS_RETOUCHE = ["titre", "horaire", "visio", "description"] as const;
+export type ChampRetouche = (typeof CHAMPS_RETOUCHE)[number];
+
+/** Lien d'une séance avec l'emploi du temps (null : séance créée à la main). */
+export async function lienEmploiDuTemps(seanceId: number): Promise<{ creneauId: number; date: string } | null> {
+  const [l] = await db.select({ creneauId: seancesCreneaux.creneauId, date: seancesCreneaux.date }).from(seancesCreneaux).where(eq(seancesCreneaux.seanceId, seanceId));
+  return l ?? null;
+}
+
+/**
+ * Retouche à la main d'une séance engendrée par l'emploi du temps (PATCH
+ * /api/seances/:id) : la mise à jour des séances ne réalignera plus ces
+ * champs sur le créneau. Sans effet sur une séance créée à la main.
+ */
+export async function noterRetouches(seanceId: number, champs: ChampRetouche[]): Promise<void> {
+  if (!champs.length) return;
+  await db
+    .update(seancesCreneaux)
+    .set({ retouches: sql`array(select distinct unnest(${seancesCreneaux.retouches} || ${sql.param(champs)}::text[]) order by 1)` })
+    .where(eq(seancesCreneaux.seanceId, seanceId));
+}
 
 export const titreSeance = (titreCours: string, date: string) => `${titreCours} · ${libelleDate(date)}`;
 
@@ -436,7 +504,7 @@ export type ChangementSeance = { seanceId: number; coursId: number; creneauId: n
 
 export type ResultatSynchro = BilanPublication & {
   changements: ChangementSeance[];
-  /** Intervenants (comptes) dont au moins une séance a changé. */
+  /** Intervenants (comptes) dont au moins une séance a changé (l'ancien et le nouveau quand l'intervenant change). */
   intervenantsTouches: number[];
   coursTouches: number[];
 };
@@ -445,7 +513,7 @@ type OptionsSynchro = {
   maintenant?: Date;
   /** Ne traiter que ces paires (créneau, date) : exception posée ou levée. */
   filtre?: (creneauId: number, date: string) => boolean;
-  /** Levée d'une exception : rétablir la séance annulée avec ce motif. */
+  /** Rétablir les séances annulées avec ce motif (levée d'une exception, republication après archivage). */
   ranimerMotif?: string;
   /** Première publication ou mise à jour : rattache les cours et marque la session synchronisée. */
   complete: boolean;
@@ -454,15 +522,143 @@ type OptionsSynchro = {
   /** Aperçu : tout est calculé puis la transaction est annulée (rien n'est écrit). */
   essai?: boolean;
   auteurId: number | null;
+  /**
+   * Campus de l'auteur (vie scolaire d'un campus), null pour la direction.
+   * Défense en profondeur : un cours suivi par une classe d'un autre campus
+   * n'est alors ni programmé, ni rattaché, ni publié, ni doté de formateurs.
+   */
+  perimetre?: number[] | null;
 };
+
+type Executeur = Pick<typeof db, "execute">;
+
+/** Sites des classes qui suivent chacun de ces cours. */
+async function sitesDesCours(ex: Executeur, coursIds: number[]): Promise<Map<number, number[]>> {
+  const carte = new Map<number, number[]>();
+  if (!coursIds.length) return carte;
+  const { rows } = await ex.execute<{ cours_id: number; site_id: number }>(sql`
+    select distinct cc.cours_id, cl.site_id from campus.cours_classes cc join campus.classes cl on cl.id = cc.classe_id
+    where cc.cours_id in (${sql.join(coursIds.map((id) => sql`${id}`), sql`, `)})`);
+  for (const l of rows) carte.set(l.cours_id, [...(carte.get(l.cours_id) ?? []), l.site_id]);
+  return carte;
+}
+
+/** Cours qu'une vie scolaire limitée à ces campus ne peut pas programmer : suivis par une classe d'un autre campus (même règle qu'enseigneCours). */
+export async function coursHorsPerimetre(coursIds: number[], perimetre: number[] | null | undefined, ex: Executeur = db): Promise<number[]> {
+  if (!perimetre || !coursIds.length) return [];
+  const sitesDe = await sitesDesCours(ex, [...new Set(coursIds)]);
+  return [...new Set(coursIds)].filter((id) => (sitesDe.get(id) ?? []).some((s) => !perimetre.includes(s)));
+}
+
+/**
+ * Classes qui suivent les cours des créneaux d'une session sans en être
+ * destinataires, et qui le resteront après la mise à jour (cochées à la main,
+ * ou voulues par une autre session publiée) : les séances de la session leur
+ * sont aussi montrées et rappelées, et elles y sont attendues.
+ */
+export async function avertissementsClassesHorsSession(sessionId: number, ex: Executeur = db): Promise<string[]> {
+  const { rows } = await ex.execute<{ titre: string; nom: string }>(sql`
+    select co.titre, cl.nom
+    from campus.cours_classes cc
+    join campus.cours co on co.id = cc.cours_id
+    join campus.classes cl on cl.id = cc.classe_id
+    where co.statut <> 'archive'
+      and cc.cours_id in (select cr.cours_id from campus.creneaux_programme cr where cr.session_id = ${sessionId} and cr.cours_id is not null)
+      and cc.classe_id not in (select sc.classe_id from campus.sessions_classes sc where sc.session_id = ${sessionId})
+      and (
+        not exists (select 1 from campus.classes_programme cp where cp.cours_id = cc.cours_id and cp.classe_id = cc.classe_id)
+        or exists (
+          select 1 from campus.creneaux_programme cr2
+          join campus.sessions_programme s2 on s2.id = cr2.session_id
+          join campus.sessions_classes sc2 on sc2.session_id = s2.id
+          where cr2.cours_id = cc.cours_id and sc2.classe_id = cc.classe_id and s2.id <> ${sessionId} and s2.publiee_le is not null
+        )
+      )
+    order by co.titre, cl.nom`);
+  const parCours = new Map<string, string[]>();
+  for (const l of rows) parCours.set(l.titre, [...(parCours.get(l.titre) ?? []), l.nom]);
+  return [...parCours.entries()].map(([titre, noms]) => {
+    const n = noms.length;
+    return `« ${titre} » est aussi suivi par ${n} classe${n > 1 ? "s" : ""} hors de cette session (${noms.slice(0, 3).join(", ")}${n > 3 ? "…" : ""}) : les séances de cette session leur seront aussi montrées et rappelées. Pour un groupe à part, utilisez un cours distinct.`;
+  });
+}
+
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Défait ce que les publications ont rattaché et que plus aucune session ne
+ * veut : classes d'un cours (plus aucune session publiée, même archivée, ne
+ * réunit ce cours et cette classe : ses étudiants gardent sinon l'accès au
+ * cours) et formateurs (plus aucun créneau de ce cours dans une session
+ * publiée non archivée). Les rattachements faits à la main ne sont jamais
+ * touchés. Une vie scolaire de campus ne défait rien sur un cours partagé
+ * avec un autre campus.
+ */
+async function detacherObsoletes(tx: Transaction, sessionId: number, perimetre: number[] | null): Promise<void> {
+  const { rows: classesObsoletes } = await tx.execute<{ cours_id: number; classe_id: number }>(sql`
+    select cp.cours_id, cp.classe_id from campus.classes_programme cp
+    where not exists (
+      select 1 from campus.creneaux_programme cr
+      join campus.sessions_programme s on s.id = cr.session_id
+      join campus.sessions_classes sc on sc.session_id = s.id
+      where cr.cours_id = cp.cours_id and sc.classe_id = cp.classe_id and (s.publiee_le is not null or s.id = ${sessionId})
+    )`);
+  const { rows: formateursObsoletes } = await tx.execute<{ cours_id: number; formateur_id: number; principal: boolean }>(sql`
+    select fp.cours_id, fp.formateur_id, fp.principal from campus.formateurs_programme fp
+    where not exists (
+      select 1 from campus.creneaux_programme cr
+      join campus.sessions_programme s on s.id = cr.session_id
+      where cr.cours_id = fp.cours_id and cr.intervenant_id = fp.formateur_id and s.statut <> 'archivee' and (s.publiee_le is not null or s.id = ${sessionId})
+    )`);
+  const hors = new Set(await coursHorsPerimetre([...classesObsoletes, ...formateursObsoletes].map((l) => l.cours_id), perimetre, tx));
+  for (const l of classesObsoletes) {
+    if (hors.has(l.cours_id)) continue;
+    // La ligne de classes_programme part avec le rattachement (cascade).
+    await tx.delete(coursClasses).where(and(eq(coursClasses.coursId, l.cours_id), eq(coursClasses.classeId, l.classe_id)));
+  }
+  for (const l of formateursObsoletes) {
+    if (hors.has(l.cours_id)) continue;
+    const oublier = () =>
+      tx.delete(formateursProgramme).where(and(eq(formateursProgramme.coursId, l.cours_id), eq(formateursProgramme.formateurId, l.formateur_id)));
+    if (!l.principal) {
+      await tx.delete(coursFormateurs).where(and(eq(coursFormateurs.coursId, l.cours_id), eq(coursFormateurs.formateurId, l.formateur_id)));
+      await oublier();
+      continue;
+    }
+    const [co] = await tx.select({ formateurId: cours.formateurId }).from(cours).where(eq(cours.id, l.cours_id));
+    if (!co || co.formateurId !== l.formateur_id) {
+      // La direction a nommé un autre formateur principal depuis : ce n'est plus l'affaire de l'emploi du temps.
+      await oublier();
+      continue;
+    }
+    // Formateur principal nommé par l'emploi du temps et remplacé partout : l'intervenant actuel prend sa place.
+    const { rows: releve } = await tx.execute<{ id: number }>(sql`
+      select u.id from campus.creneaux_programme cr
+      join campus.sessions_programme s on s.id = cr.session_id
+      join campus.utilisateurs u on u.id = cr.intervenant_id
+      where cr.cours_id = ${l.cours_id} and u.role = 'formateur' and s.statut <> 'archivee' and (s.publiee_le is not null or s.id = ${sessionId})
+      order by (s.id = ${sessionId}) desc, s.debut, cr.jour, cr.heure_debut
+      limit 1`);
+    if (!releve[0]) continue;
+    const suivant = releve[0].id;
+    await tx.update(cours).set({ formateurId: suivant, majLe: new Date() }).where(eq(cours.id, l.cours_id));
+    await oublier();
+    await tx.delete(coursFormateurs).where(and(eq(coursFormateurs.coursId, l.cours_id), eq(coursFormateurs.formateurId, suivant)));
+    await tx
+      .insert(formateursProgramme)
+      .values({ coursId: l.cours_id, formateurId: suivant, principal: true })
+      .onConflictDoUpdate({ target: [formateursProgramme.coursId, formateursProgramme.formateurId], set: { principal: true } });
+  }
+}
 
 /**
  * Crée, met à jour ou annule les séances live d'une session publiée pour
  * qu'elles correspondent exactement à ses créneaux. Idempotent : relancée sans
  * changement, elle ne fait rien. Ne touche jamais une séance en direct,
- * terminée ou déjà passée. Sérialisée par session (verrou) et protégée par
- * l'index unique (créneau, date) : deux publications simultanées ne créent
- * jamais deux fois la même séance.
+ * terminée ou déjà passée, ni ce qu'un formateur a retouché à la main.
+ * Sérialisée par session (verrou) et protégée par l'index unique (créneau,
+ * date) : deux publications simultanées ne créent jamais deux fois la même
+ * séance.
  */
 export async function synchroniserSession(sessionId: number, o: OptionsSynchro): Promise<ResultatSynchro> {
   const maintenant = o.maintenant ?? new Date();
@@ -490,7 +686,7 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
     const creneauIds = creneaux.map((c) => c.id);
     const liens = creneauIds.length
       ? await tx
-          .select({ creneauId: seancesCreneaux.creneauId, date: seancesCreneaux.date, seance: seances })
+          .select({ creneauId: seancesCreneaux.creneauId, date: seancesCreneaux.date, retouches: seancesCreneaux.retouches, intervenantId: seancesCreneaux.intervenantId, seance: seances })
           .from(seancesCreneaux)
           .innerJoin(seances, eq(seances.id, seancesCreneaux.seanceId))
           .where(inArray(seancesCreneaux.creneauId, creneauIds))
@@ -498,6 +694,7 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
     const coursIds = [...new Set(creneaux.map((c) => c.coursId).filter((x): x is number => x !== null))];
     const listeCours = coursIds.length ? await tx.select().from(cours).where(inArray(cours.id, coursIds)) : [];
     const coursDe = new Map(listeCours.map((c) => [c.id, c]));
+    const horsPerimetre = new Set(await coursHorsPerimetre(coursIds, o.perimetre, tx));
     const personnesIds = [...new Set(creneaux.map((c) => c.intervenantId).filter((x): x is number => x !== null))];
     const personnes = new Map(
       (personnesIds.length ? await tx.select().from(utilisateurs).where(inArray(utilisateurs.id, personnesIds)) : []).map((p) => [p.id, p]),
@@ -520,11 +717,13 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
     };
     const touches = new Set<number>();
     const coursTouches = new Set<number>();
+    const retouchesGardees: string[] = [];
     let datesPassees = 0;
     const aVenir = (se: Pick<Seance, "debut">) => se.debut.getTime() > maintenant.getTime();
-    const noter = (ch: ChangementSeance, c: CreneauProgramme) => {
+    const noter = (ch: ChangementSeance, c: CreneauProgramme, ancienIntervenant?: number | null) => {
       bilan.changements.push(ch);
       if (c.intervenantId) touches.add(c.intervenantId);
+      if (ancienIntervenant) touches.add(ancienIntervenant);
       coursTouches.add(ch.coursId);
     };
     const annuler = async (se: Seance, c: CreneauProgramme, date: string, motif: string) => {
@@ -538,6 +737,10 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
 
     for (const c of creneaux) {
       const co = c.coursId ? coursDe.get(c.coursId) : undefined;
+      if (co && horsPerimetre.has(co.id)) {
+        bilan.avertissements.push(`${libelleCreneau(c)} : le cours ${co.code} concerne d'autres campus, seule la direction peut le programmer.`);
+        continue;
+      }
       const mesLiens = liens.filter((l) => l.creneauId === c.id && garde(c.id, l.date));
       const attendues = new Set<string>();
       if (!co) {
@@ -555,12 +758,17 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
       const mention = c.mention.trim() || p?.titre?.trim() || "";
       const duree = dureeCreneau(c);
       const fournisseurVoulu: FournisseurVisio | null = c.fournisseur === "daily" && !visio.dailyDisponible() ? visio.fournisseurParDefaut() : c.fournisseur;
+      const description = descriptionSeance(s, c, nomIntervenant, mention);
 
-      // 1. Le cours du créneau a changé : les séances prévues de l'ancien cours sont annulées et libèrent leur date.
+      // 1. Le cours du créneau a changé : les séances de l'ancien cours libèrent leur date (celles encore prévues sont annulées).
+      //    Une séance déjà annulée de l'ancien cours ne bloque plus la date et ne sera jamais rétablie à la place du nouveau.
       const restants: typeof mesLiens = [];
       for (const l of mesLiens) {
-        if (co && l.seance.coursId !== co.id && l.seance.statut === "planifiee" && aVenir(l.seance)) {
+        const autreCours = co && l.seance.coursId !== co.id && aVenir(l.seance);
+        if (autreCours && l.seance.statut === "planifiee") {
           await annuler(l.seance, c, l.date, `Remplacé par ${co.titre} dans l'emploi du temps`);
+          await tx.delete(seancesCreneaux).where(eq(seancesCreneaux.seanceId, l.seance.id));
+        } else if (autreCours && l.seance.statut === "annulee") {
           await tx.delete(seancesCreneaux).where(eq(seancesCreneaux.seanceId, l.seance.id));
         } else restants.push(l);
       }
@@ -571,6 +779,7 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
       const orphelines = restants.filter((l) => !attendues.has(l.date)).sort((a, b) => a.date.localeCompare(b.date));
 
       // 3. Même semaine : on déplace la séance prévue (elle garde son plan, ses diapos et ses sondages préparés).
+      //    Horaire retouché à la main : la séance reste où le formateur l'a mise, seul son lien suit le créneau.
       const deplacees = new Set<number>();
       if (co) {
         for (const l of orphelines) {
@@ -579,22 +788,30 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
           if (i < 0) continue;
           const date = manquantes.splice(i, 1)[0];
           await tx.update(seancesCreneaux).set({ date }).where(eq(seancesCreneaux.seanceId, l.seance.id));
+          deplacees.add(l.seance.id);
+          parDate.set(date, { ...l, date });
+          const r = new Set(l.retouches);
+          if (r.has("horaire")) {
+            retouchesGardees.push(`${l.seance.titre} (horaire)`);
+            bilan.seancesInchangees++;
+            continue;
+          }
           await tx
             .update(seances)
             .set({
-              titre: titreSeance(co.titre, date),
+              ...(!r.has("titre") && { titre: titreSeance(co.titre, date) }),
               debut: instant(date, c.heureDebut),
               dureeMinutes: duree,
-              ...(fournisseurVoulu && { fournisseur: fournisseurVoulu }),
+              ...(fournisseurVoulu && !r.has("visio") && { fournisseur: fournisseurVoulu }),
+              ...(!r.has("description") && { description }),
               publierSurSite: publique,
               proposeSurSite: publique || l.seance.proposeSurSite,
             })
             .where(eq(seances.id, l.seance.id));
+          if (l.intervenantId !== c.intervenantId) await tx.update(seancesCreneaux).set({ intervenantId: c.intervenantId }).where(eq(seancesCreneaux.seanceId, l.seance.id));
           await tx.delete(rappelsLive).where(eq(rappelsLive.seanceId, l.seance.id));
-          deplacees.add(l.seance.id);
-          parDate.set(date, { ...l, date });
           bilan.seancesMisesAJour++;
-          noter({ seanceId: l.seance.id, coursId: co.id, creneauId: c.id, date, nature: "modifiee" }, c);
+          noter({ seanceId: l.seance.id, coursId: co.id, creneauId: c.id, date, nature: "modifiee" }, c, l.intervenantId);
         }
       }
 
@@ -613,41 +830,53 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
         await annuler(l.seance, c, l.date, motif);
       }
 
-      // 5. Séances existantes à la bonne date : mises à jour si besoin (seulement prévues et à venir).
+      // 5. Séances existantes à la bonne date : rétablies si besoin, puis alignées sur le créneau (seulement prévues et à venir),
+      //    sauf ce que le formateur a retouché à la main.
       if (co) {
         for (const date of attendues) {
           const l = parDate.get(date);
           if (!l || deplacees.has(l.seance.id)) continue;
           const se = l.seance;
-          if (se.statut === "annulee" && o.ranimerMotif !== undefined && se.motifAnnulation === o.ranimerMotif && aVenir(se)) {
-            await tx.update(seances).set({ statut: "planifiee", motifAnnulation: null, publierSurSite: publique, proposeSurSite: publique || se.proposeSurSite }).where(eq(seances.id, se.id));
-            bilan.seancesMisesAJour++;
-            noter({ seanceId: se.id, coursId: se.coursId, creneauId: c.id, date, nature: "retablie" }, c);
-            continue;
-          }
-          if (se.statut !== "planifiee" || !aVenir(se)) {
+          const r = new Set(l.retouches);
+          let retablie = false;
+          if (se.statut === "annulee" && o.ranimerMotif !== undefined && se.motifAnnulation === o.ranimerMotif && se.coursId === co.id && aVenir(se)) {
+            await tx.update(seances).set({ statut: "planifiee", motifAnnulation: null }).where(eq(seances.id, se.id));
+            retablie = true;
+          } else if (se.statut !== "planifiee" || !aVenir(se)) {
             bilan.seancesInchangees++;
             continue;
           }
-          const voulu = {
-            titre: titreSeance(co.titre, date),
-            debut: instant(date, c.heureDebut),
-            dureeMinutes: duree,
-            fournisseur: fournisseurVoulu ?? se.fournisseur,
+          const cible = { titre: titreSeance(co.titre, date), debut: instant(date, c.heureDebut), dureeMinutes: duree, fournisseur: fournisseurVoulu ?? se.fournisseur };
+          const ecarts = {
+            titre: se.titre !== cible.titre,
+            horaire: se.debut.getTime() !== cible.debut.getTime() || se.dureeMinutes !== cible.dureeMinutes,
+            visio: se.fournisseur !== cible.fournisseur,
           };
-          const differe =
-            se.titre !== voulu.titre || se.debut.getTime() !== voulu.debut.getTime() || se.dureeMinutes !== voulu.dureeMinutes || se.fournisseur !== voulu.fournisseur;
-          const visibilite = se.publierSurSite !== publique || (publique && !se.proposeSurSite);
-          if (differe || visibilite) {
+          const voulu: Partial<typeof seances.$inferInsert> = {
+            ...(ecarts.titre && !r.has("titre") && { titre: cible.titre }),
+            ...(ecarts.horaire && !r.has("horaire") && { debut: cible.debut, dureeMinutes: cible.dureeMinutes }),
+            ...(ecarts.visio && !r.has("visio") && { fournisseur: cible.fournisseur }),
+            ...(!r.has("description") && se.description !== description && { description }),
+          };
+          const differe = (ecarts.titre && !r.has("titre")) || (ecarts.horaire && !r.has("horaire")) || (ecarts.visio && !r.has("visio"));
+          // Un intervenant remplacé (ou retiré) change la séance ; un lien encore sans intervenant noté (séance d'avant ce suivi,
+          // ou créneau qui n'en avait pas) le reçoit sans bruit.
+          const intervenantChange = l.intervenantId !== null && l.intervenantId !== c.intervenantId;
+          const intervenantANoter = l.intervenantId !== c.intervenantId;
+          const gardees = (["titre", "horaire", "visio"] as const).filter((k) => ecarts[k] && r.has(k));
+          if (gardees.length) retouchesGardees.push(`${se.titre} (${gardees.join(", ")})`);
+          const visibilite = retablie || se.publierSurSite !== publique || (publique && !se.proposeSurSite);
+          if (Object.keys(voulu).length || visibilite) {
             await tx
               .update(seances)
               .set({ ...voulu, publierSurSite: publique, proposeSurSite: publique || se.proposeSurSite })
               .where(eq(seances.id, se.id));
           }
-          if (differe) {
-            if (se.debut.getTime() !== voulu.debut.getTime()) await tx.delete(rappelsLive).where(eq(rappelsLive.seanceId, se.id));
+          if (intervenantANoter) await tx.update(seancesCreneaux).set({ intervenantId: c.intervenantId }).where(eq(seancesCreneaux.seanceId, se.id));
+          if (voulu.debut) await tx.delete(rappelsLive).where(eq(rappelsLive.seanceId, se.id));
+          if (retablie || differe || intervenantChange) {
             bilan.seancesMisesAJour++;
-            noter({ seanceId: se.id, coursId: co.id, creneauId: c.id, date, nature: "modifiee" }, c);
+            noter({ seanceId: se.id, coursId: co.id, creneauId: c.id, date, nature: retablie ? "retablie" : "modifiee" }, c, intervenantChange ? l.intervenantId : null);
           } else bilan.seancesInchangees++;
         }
 
@@ -662,7 +891,7 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
             .values({
               coursId: co.id,
               titre: titreSeance(co.titre, date),
-              description: descriptionSeance(s, c, nomIntervenant, mention),
+              description,
               debut: instant(date, c.heureDebut),
               dureeMinutes: duree,
               fournisseur: fournisseurVoulu ?? visio.fournisseurParDefaut(),
@@ -670,7 +899,7 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
               proposeSurSite: publique,
             })
             .returning();
-          await tx.insert(seancesCreneaux).values({ seanceId: se.id, creneauId: c.id, date });
+          await tx.insert(seancesCreneaux).values({ seanceId: se.id, creneauId: c.id, date, intervenantId: c.intervenantId });
           bilan.seancesCreees++;
           noter({ seanceId: se.id, coursId: co.id, creneauId: c.id, date, nature: "creee" }, c);
         }
@@ -687,17 +916,27 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
       }
     }
     if (datesPassees) bilan.avertissements.push(`${datesPassees} date${datesPassees > 1 ? "s" : ""} déjà passée${datesPassees > 1 ? "s" : ""} : aucune séance créée dans le passé.`);
+    if (retouchesGardees.length) {
+      bilan.avertissements.push(
+        retouchesGardees.length <= 3
+          ? `Retouché à la main par le formateur, gardé tel quel : ${retouchesGardees.join(" ; ")}.`
+          : `${retouchesGardees.length} séances retouchées à la main par le formateur sont gardées telles quelles (${retouchesGardees.slice(0, 3).join(" ; ")}…).`,
+      );
+    }
 
-    // Rattachements : classes destinataires, cours publiés, intervenants co-formateurs.
+    // Rattachements : classes destinataires, cours publiés, intervenants formateurs du cours. Chaque ligne créée ici est
+    // notée (classes_programme, formateurs_programme) pour être défaite quand plus aucune session ne la veut.
     if (o.complete) {
       if (!classeIds.length) bilan.avertissements.push("Aucune classe destinataire : aucun étudiant n'est prévenu, les cours ne sont rattachés à aucune classe.");
       for (const co of listeCours) {
-        if (co.statut === "archive") continue;
+        if (co.statut === "archive" || horsPerimetre.has(co.id)) continue;
         if (classeIds.length) {
-          await tx
+          const ajoutees = await tx
             .insert(coursClasses)
             .values(classeIds.map((classeId) => ({ coursId: co.id, classeId })))
-            .onConflictDoNothing();
+            .onConflictDoNothing()
+            .returning({ classeId: coursClasses.classeId });
+          if (ajoutees.length) await tx.insert(classesProgramme).values(ajoutees.map((a) => ({ coursId: co.id, classeId: a.classeId }))).onConflictDoNothing();
         }
         const intervenantsDuCours = creneaux.filter((c) => c.coursId === co.id && c.intervenantId).map((c) => personnes.get(c.intervenantId!)!).filter((p) => p && p.role === "formateur");
         const majCours: Partial<typeof cours.$inferInsert> = {};
@@ -707,16 +946,24 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
         if (!principal && intervenantsDuCours[0]) {
           principal = intervenantsDuCours[0].id;
           majCours.formateurId = principal;
+          await tx
+            .insert(formateursProgramme)
+            .values({ coursId: co.id, formateurId: principal, principal: true })
+            .onConflictDoUpdate({ target: [formateursProgramme.coursId, formateursProgramme.formateurId], set: { principal: true } });
         }
         if (Object.keys(majCours).length) await tx.update(cours).set({ ...majCours, majLe: maintenant }).where(eq(cours.id, co.id));
         const co_formateurs = [...new Set(intervenantsDuCours.map((p) => p.id))].filter((id) => id !== principal);
         if (co_formateurs.length) {
-          await tx
+          const ajoutes = await tx
             .insert(coursFormateurs)
             .values(co_formateurs.map((formateurId) => ({ coursId: co.id, formateurId })))
-            .onConflictDoNothing();
+            .onConflictDoNothing()
+            .returning({ formateurId: coursFormateurs.formateurId });
+          if (ajoutes.length) await tx.insert(formateursProgramme).values(ajoutes.map((a) => ({ coursId: co.id, formateurId: a.formateurId }))).onConflictDoNothing();
         }
       }
+      await detacherObsoletes(tx, s.id, o.perimetre ?? null);
+      bilan.avertissements.push(...(await avertissementsClassesHorsSession(s.id, tx)));
       await tx
         .update(sessionsProgramme)
         .set({ synchroniseeLe: maintenant, ...(s.statut === "publiee" && !s.publieeLe ? { publieeLe: maintenant } : {}) })

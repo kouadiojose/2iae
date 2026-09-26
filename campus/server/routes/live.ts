@@ -27,7 +27,7 @@ import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
-import { intervenantsDesSeances } from "../programme-outils";
+import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
@@ -39,6 +39,7 @@ import {
   seances,
   cours,
   coursClasses,
+  classes,
   inscriptions,
   sites,
   utilisateurs,
@@ -97,6 +98,7 @@ import {
   tauxPresence,
   villeDuFuseau,
   directsImmediats,
+  morceauxReplay,
   type DemandeDirectImmediat,
   type RejoindreVisioDto,
 } from "@shared/schema";
@@ -249,8 +251,9 @@ async function seanceSuivie(u: Utilisateur, id: number): Promise<Seance> {
 async function roleDans(u: Utilisateur, s: Seance): Promise<RoleSeance> {
   if (u.role === "salle") return "salle";
   if (u.role === "formateur" && (await enseigneCours(u, s.coursId))) return "formateur";
-  // La direction anime le direct qu'elle a lancé elle-même depuis le Studio (« Lancer un direct maintenant »).
-  if (u.role === "admin" && (await visio.aLanceDirect(u.id, s.id))) return "formateur";
+  // La direction anime le direct qu'elle a lancé elle-même depuis le Studio (« Lancer un direct maintenant »),
+  // et la séance dont elle est l'intervenante dans l'emploi du temps (M. Kouadio saisi avec son compte direction).
+  if (u.role === "admin" && ((await visio.aLanceDirect(u.id, s.id)) || (await intervenantsDesSeances([s.id])).get(s.id)?.id === u.id)) return "formateur";
   if (estEquipe(u)) return "equipe";
   return "etudiant";
 }
@@ -318,26 +321,90 @@ function replayDisponible(s: Seance): boolean {
 
 const colonnesResume = { s: seances, code: cours.code, titreCours: cours.titre, formateurId: cours.formateurId };
 
+/** Séances « essai de visio » : direct immédiat lancé sans prévenir les étudiants. */
+async function essaisParmi(ids: number[]): Promise<Set<number>> {
+  if (!ids.length) return new Set();
+  const lignes = await db
+    .select({ id: directsImmediats.seanceId })
+    .from(directsImmediats)
+    .where(and(inArray(directsImmediats.seanceId, ids), eq(directsImmediats.prevenir, false)));
+  return new Set(lignes.map((l) => l.id));
+}
+
+/** Cours publiés que suit un campus (une de ses classes y est rattachée) : ce que montre l'écran de sa salle. */
+async function coursDuSite(siteId: number): Promise<number[]> {
+  const lignes = await db
+    .selectDistinct({ id: coursClasses.coursId })
+    .from(coursClasses)
+    .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+    .innerJoin(cours, eq(cours.id, coursClasses.coursId))
+    .where(and(eq(classes.siteId, siteId), eq(cours.statut, "publie")));
+  return lignes.map((l) => l.id);
+}
+
+/**
+ * Qui regarde « en cours » :
+ *  - un étudiant ne voit jamais un essai de visio (on ne l'a pas prévenu) ;
+ *  - l'écran d'une salle ne voit que les cours de son campus, garde la classe
+ *    la plus ancienne en direct (celle qu'il affiche déjà), et ne quitte ni
+ *    une vraie classe en direct ni le compte à rebours d'une vraie classe
+ *    (dès l'ouverture du code d'émargement) pour l'essai d'un collègue.
+ */
+type Regard = { etudiant?: boolean; salle?: boolean };
+
 /** Séance en direct et prochaine séance parmi ces cours (GET /api/live/en-cours, bandeau « En direct »). */
-async function enCoursPour(ids: number[]): Promise<EnCours> {
+async function enCoursPour(ids: number[], regard: Regard = {}): Promise<EnCours> {
   if (!ids.length) return { enDirect: null, prochaine: null };
-  const [direct] = await db
+  const maintenant = Date.now();
+  const directs = await db
     .select(colonnesResume)
     .from(seances)
     .innerJoin(cours, eq(cours.id, seances.coursId))
     .where(and(inArray(seances.coursId, ids), eq(seances.statut, "en_direct")))
-    .orderBy(desc(seances.debut))
-    .limit(1);
+    .orderBy(regard.salle ? asc(seances.debut) : desc(seances.debut), asc(seances.id));
   const candidates = await db
     .select(colonnesResume)
     .from(seances)
     .innerJoin(cours, eq(cours.id, seances.coursId))
-    .where(and(inArray(seances.coursId, ids), eq(seances.statut, "planifiee"), gte(seances.debut, new Date(Date.now() - 8 * 3600_000))))
+    .where(and(inArray(seances.coursId, ids), eq(seances.statut, "planifiee"), gte(seances.debut, new Date(maintenant - 8 * 3600_000))))
     .orderBy(asc(seances.debut))
     .limit(10);
-  const prochaine = candidates.find((l) => finPrevue(l.s) > Date.now() && l.s.id !== direct?.s.id);
+  const essais = regard.etudiant || regard.salle ? await essaisParmi(directs.map((l) => l.s.id)) : new Set<number>();
+  const vrais = directs.filter((l) => !essais.has(l.s.id));
+  let direct: (typeof directs)[number] | undefined = regard.etudiant ? vrais[0] : (vrais[0] ?? directs[0]);
+  if (regard.salle && direct && essais.has(direct.s.id)) {
+    // Un essai ne s'affiche en salle que si aucune vraie classe du campus n'est sur le point de commencer.
+    const vraieImminente = candidates.some((l) => l.s.debut.getTime() - AVANT_CODE_MS <= maintenant && finPrevue(l.s) > maintenant);
+    if (vraieImminente) direct = undefined;
+  }
+  const prochaine = candidates.find((l) => finPrevue(l.s) > maintenant && l.s.id !== direct?.s.id);
   const [enDirect, suivante] = await resumesSeances([direct, prochaine].filter((x): x is NonNullable<typeof x> => Boolean(x)));
   return direct ? { enDirect: enDirect, prochaine: suivante ?? null } : { enDirect: null, prochaine: enDirect ?? null };
+}
+
+/**
+ * Site dont la personne regarde l'écran de salle : le sien pour un écran de
+ * salle, celui qu'elle demande (?site=) pour l'équipe qui ouvre /salle.
+ */
+function siteRegarde(u: Utilisateur, demande: unknown): number | null {
+  if (u.role === "salle") return u.siteId ?? null;
+  if (!estEquipe(u)) return null;
+  const n = Number(demande);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** Cours à regarder pour « en cours » et les séances du jour : ceux de la personne, limités au campus de la salle regardée. */
+async function coursRegardes(u: Utilisateur, siteId: number | null): Promise<number[]> {
+  const ids = await idsCoursAccessibles(u);
+  if (!siteId) return ids;
+  const duSite = new Set(await coursDuSite(siteId));
+  return ids.filter((id) => duSite.has(id));
+}
+
+/** « En cours » d'une personne (et, pour l'équipe sur /salle?site=, d'une salle). */
+async function enCoursDe(u: Utilisateur, siteDemande?: unknown): Promise<EnCours> {
+  const siteId = siteRegarde(u, siteDemande);
+  return enCoursPour(await coursRegardes(u, siteId), { etudiant: u.role === "etudiant", salle: u.role === "salle" || siteId !== null });
 }
 
 /**
@@ -349,17 +416,19 @@ async function enCoursPour(ids: number[]): Promise<EnCours> {
  * relit avec un délai aléatoire.
  */
 async function annoncerLive(s: Pick<Seance, "id" | "coursId" | "statut">): Promise<void> {
-  const groupes = new Map<string, { ids: number[]; personnes: number[] }>();
-  const ajouter = (ids: number[], personne: number) => {
+  const groupes = new Map<string, { ids: number[]; regard: Regard; personnes: number[] }>();
+  const ajouter = (ids: number[], personne: number, regard: Regard = {}) => {
     if (!ids.includes(s.coursId)) return;
     const tries = [...new Set(ids)].sort((a, b) => a - b);
-    const cle = tries.join(",");
-    const g = groupes.get(cle) ?? { ids: tries, personnes: [] };
+    const cle = `${regard.etudiant ? "e" : ""}${regard.salle ? "s" : ""}:${tries.join(",")}`;
+    const g = groupes.get(cle) ?? { ids: tries, regard, personnes: [] };
     g.personnes.push(personne);
     groupes.set(cle, g);
   };
+  // Un essai de visio (direct immédiat sans prévenir) n'est jamais annoncé aux étudiants.
+  const essai = await visio.estEssaiDirect(s.id);
   // Étudiants : cours publiés de leur classe et de leurs inscriptions individuelles (comme idsCoursAccessibles), lus en une fois.
-  const etudiants = (await etudiantsDuCours(s.coursId)).filter((e) => estEnLigne(e.id));
+  const etudiants = essai ? [] : (await etudiantsDuCours(s.coursId)).filter((e) => estEnLigne(e.id));
   if (etudiants.length) {
     const idsClasses = [...new Set(etudiants.map((e) => e.classeId).filter((x): x is number => x !== null))];
     const [parClasse, individuels, publies] = await Promise.all([
@@ -378,16 +447,18 @@ async function annoncerLive(s: Pick<Seance, "id" | "coursId" | "statut">): Promi
         ...parClasse.filter((l) => l.classeId === e.classeId).map((l) => l.coursId),
         ...individuels.filter((l) => l.utilisateurId === e.id).map((l) => l.coursId),
       ].filter((id) => publie.has(id));
-      ajouter(ids, e.id);
+      ajouter(ids, e.id, { etudiant: true });
     }
   }
-  // Formateurs du cours, équipe et écrans de salle connectés : peu nombreux.
+  // Formateurs du cours et équipe connectés : peu nombreux.
   const autres = new Map<number, Utilisateur>();
   for (const f of await formateursDuCours(s.coursId)) if (estEnLigne(f.id)) autres.set(f.id, f);
-  for (const role of ["admin", "vie_scolaire", "salle"] as const) for (const x of utilisateursSur(`role:${role}`)) autres.set(x.id, x);
+  for (const role of ["admin", "vie_scolaire"] as const) for (const x of utilisateursSur(`role:${role}`)) autres.set(x.id, x);
   for (const x of autres.values()) ajouter(await idsCoursAccessibles(x), x.id);
+  // Écrans de salle : ceux dont le campus suit le cours, chacun avec son propre regard.
+  for (const x of utilisateursSur("role:salle")) ajouter(await coursRegardes(x, siteRegarde(x, null)), x.id, { salle: true });
   for (const g of groupes.values()) {
-    const evt: EvenementLiveDto = { seanceId: s.id, statut: s.statut, enCours: await enCoursPour(g.ids) };
+    const evt: EvenementLiveDto = { seanceId: s.id, statut: s.statut, enCours: await enCoursPour(g.ids, g.regard) };
     for (const id of g.personnes) publierUtilisateur(id, "live", evt);
   }
 }
@@ -1083,7 +1154,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      res.json(await enCoursPour(await idsCoursAccessibles(u)));
+      res.json(await enCoursDe(u, req.query.site));
     }),
   );
 
@@ -1110,14 +1181,16 @@ export function enregistrerLive(app: Express) {
       const coursId = req.query.cours ? Number(req.query.cours) : null;
       const periode = String(req.query.periode || "tout");
       const limite = Math.min(100, Math.max(1, Number(req.query.limite) || 50));
+      // Écran de salle (et équipe sur /salle?site=) : seulement les cours que suit ce campus.
+      const siteSalle = siteRegarde(u, req.query.site);
       let ids: number[];
       if (coursId) {
         if (!Number.isInteger(coursId) || coursId <= 0) throw invalide("Paramètre cours invalide.");
         const accessibles = await idsCoursAccessibles(u);
         if (!accessibles.includes(coursId) && !estEquipe(u)) throw interdit("Tu n'es pas inscrit à ce cours.");
-        ids = [coursId];
+        ids = siteSalle && !(await coursDuSite(siteSalle)).includes(coursId) ? [] : [coursId];
       } else {
-        ids = await idsCoursAccessibles(u);
+        ids = await coursRegardes(u, siteSalle);
       }
       if (!ids.length) return res.json([]);
       const maintenant = new Date();
@@ -1141,6 +1214,11 @@ export function enregistrerLive(app: Express) {
         .orderBy(ordre)
         .limit(limite);
       if (periode === "avenir") lignes = lignes.filter((l) => l.s.statut === "en_direct" || finPrevue(l.s) > maintenant.getTime());
+      // Un essai de visio (direct immédiat sans prévenir) n'apparaît ni chez les étudiants ni sur les écrans de salle.
+      if (u.role === "etudiant" || siteSalle) {
+        const essais = await essaisParmi(lignes.map((l) => l.s.id));
+        if (essais.size) lignes = lignes.filter((l) => !essais.has(l.s.id));
+      }
       res.json(await resumesSeances(lignes));
     }),
   );
@@ -1221,6 +1299,13 @@ export function enregistrerLive(app: Express) {
         })
         .where(eq(seances.id, s.id))
         .returning();
+      // Séance de l'emploi du temps : « Mettre à jour les séances » gardera ces retouches au lieu de les réaligner sur le créneau.
+      await noterRetouches(s.id, [
+        ...(maj.titre !== s.titre ? (["titre"] as const) : []),
+        ...(maj.debut.getTime() !== s.debut.getTime() || maj.dureeMinutes !== s.dureeMinutes ? (["horaire"] as const) : []),
+        ...(maj.fournisseur !== s.fournisseur ? (["visio"] as const) : []),
+        ...(maj.description !== s.description ? (["description"] as const) : []),
+      ]);
       if (deplacee) {
         // Nouvel horaire : les rappels repartent de zéro et les inscrits sont prévenus.
         await db.delete(rappelsLive).where(eq(rappelsLive.seanceId, s.id));
@@ -1251,6 +1336,10 @@ export function enregistrerLive(app: Express) {
       }
       const [p] = await db.select({ id: presences.id }).from(presences).where(eq(presences.seanceId, s.id)).limit(1);
       if (p) throw new ErreurHttp(409, "Des présences sont déjà enregistrées : annulez la séance plutôt que de la supprimer.");
+      // Supprimée, une séance de l'emploi du temps serait recréée (et annoncée) à la prochaine mise à jour des séances.
+      if (await lienEmploiDuTemps(s.id)) {
+        throw new ErreurHttp(409, "Cette séance vient de l'emploi du temps : annulez-la plutôt (les étudiants sont prévenus), ou posez un jour sans cours dans l'emploi du temps.");
+      }
       await db.delete(seances).where(eq(seances.id, s.id));
       if (s.salleVisio) void visio.supprimerSalleDaily(s.salleVisio);
       await db.insert(journal).values({ utilisateurId: u.id, action: "live_supprime", details: { seanceId: s.id, titre: s.titre } });
@@ -1375,7 +1464,9 @@ export function enregistrerLive(app: Express) {
       publier(canal(s.id), "statut", { statut: "annulee", demarreeLe: iso(maj.demarreeLe), termineeLe: null, motif });
       annoncer(maj);
       const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
-      await notifier(await destinatairesSeance(s), {
+      // Essai de visio : les étudiants n'en ont jamais entendu parler, on ne leur annonce pas son annulation.
+      const essai = await visio.estEssaiDirect(s.id);
+      await notifier(essai ? (await formateursDuCours(s.coursId)).map((f) => f.id) : await destinatairesSeance(s), {
         type: "live",
         titre: `Live annulé : ${s.titre}`,
         corps: `${c?.code ?? ""} · ${motif}`,
@@ -1457,11 +1548,17 @@ export function enregistrerLive(app: Express) {
           // La direction qui répète (ou qui a lancé le direct) parle comme un formateur ; sinon elle observe.
           const profil: visio.ProfilJeton =
             role === "formateur" || (u.role === "admin" && enRepetition) ? "formateur" : role === "salle" ? "salle" : role === "equipe" ? "observateur" : "etudiant";
+          // Places comptées : les étudiants en vidéo et l'équipe qui observe ; le formateur et les salles ont les leurs.
+          // L'étudiant à qui le formateur donne la parole entre toujours (il prend une des places gardées).
+          const parole = profil === "etudiant" ? await paroleCourante(s.id) : null;
+          const aLaParole = parole?.type === "etudiant" && parole.utilisateurId === u.id;
+          await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole });
           // Replay : seulement une vraie séance (ni répétition, ni essai de direct sans étudiants).
           const enregistrement = profil === "formateur" && !enRepetition && visio.enregistrementAutomatique() && !(await visio.estEssaiDirect(s.id));
           reponse.url = salle.url;
           reponse.profil = profil;
           reponse.enregistrement = enregistrement;
+          if (enregistrement) reponse.enregistrementMaxS = visio.dureeMaxEnregistrement(s);
           reponse.jeton = await visio.jetonDaily({
             salle: salle.nom,
             nomAffiche,
@@ -1469,6 +1566,7 @@ export function enregistrerLive(app: Express) {
             profil,
             exp: visio.expirationJetonSeance(s),
             enregistrer: enregistrement && s.statut === "en_direct",
+            enregistrementMaxS: visio.dureeMaxEnregistrement(s),
             ejecterApres: enRepetition ? visio.DUREE_MAX_REPETITION_S : undefined,
             enregistrementPermis: !enRepetition,
           });
@@ -2203,6 +2301,8 @@ export function enregistrerLive(app: Express) {
       if (!agitSurSite(u, siteId)) throw interdit("Cette salle n'est pas dans votre périmètre.");
       const site = (await nomsSites()).get(siteId);
       if (!site) throw introuvable("Salle");
+      // Pas de code pour un campus dont aucune classe ne suit ce cours : ses étudiants émargeraient à la mauvaise séance.
+      if (!(await coursDuSite(siteId)).includes(s.coursId)) throw new ErreurHttp(409, `Ce cours n'est suivi par aucune classe de ${site.nomCourt} : pas d'émargement dans cette salle.`);
       if (!fenetreEmargementOuverte(s)) throw new ErreurHttp(409, "Le code d'émargement s'affiche une heure avant le début du cours, et jusqu'à sa fin.");
       const maintenant = Date.now();
       const code = codeEmargement(s.id, siteId, fenetreCourante(maintenant));
@@ -2569,6 +2669,7 @@ export function enregistrerLive(app: Express) {
       const questions = (await questionsPour(u, role, s.id)).filter((q) => !q.masquee);
       const source = s.replayUrl ? "lien" : s.enregistrementId && visio.dailyDisponible() ? "daily" : null;
       const duree = s.replayDureeSecondes;
+      const morceaux = source === "daily" ? await db.select().from(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id)).orderBy(asc(morceauxReplay.numero)) : [];
       const dto: ReplayDto = {
         seance: {
           id: s.id,
@@ -2587,6 +2688,13 @@ export function enregistrerLive(app: Express) {
           dureeSecondes: duree,
           // Enregistrement Daily ≈ 1 Mbit/s en moyenne, soit ≈ 450 Mo par heure.
           poidsEstimeMo: source === "daily" ? Math.round(((duree ?? s.dureeMinutes * 60) * 1_000_000) / 8 / 1_000_000) : null,
+          ...(morceaux.length > 1 && {
+            morceaux: morceaux.map((m) => ({
+              numero: m.numero,
+              dureeSecondes: m.dureeSecondes,
+              decalageSecondes: Math.max(0, Math.round((m.debut.getTime() - morceaux[0].debut.getTime()) / 1000)),
+            })),
+          }),
         },
         fiche: s.resumeValide && s.resumeIa ? { contenu: s.resumeIa, le: iso(s.resumeIaLe) } : null,
         brouillon: privilegie && s.resumeIa && !s.resumeValide ? { contenu: s.resumeIa, parIa: s.resumeParIa } : null,
@@ -2609,8 +2717,13 @@ export function enregistrerLive(app: Express) {
       if (role === "etudiant" && s.statut !== "terminee") throw new ErreurHttp(409, "Le replay sera disponible après la séance.");
       let lien: { url: string; expire: string | null };
       if (s.replayUrl) lien = { url: s.replayUrl, expire: null };
-      else if (s.enregistrementId && visio.dailyDisponible()) lien = await visio.lienEnregistrementDaily(s.enregistrementId);
-      else throw introuvable("Vidéo du replay");
+      else if (s.enregistrementId && visio.dailyDisponible()) {
+        // Replay en plusieurs morceaux : ?morceau=2 pour le deuxième.
+        const numero = Number(req.query.morceau) || 1;
+        const [m] = numero > 1 ? await db.select().from(morceauxReplay).where(and(eq(morceauxReplay.seanceId, s.id), eq(morceauxReplay.numero, numero))) : [];
+        if (numero > 1 && !m) throw introuvable("Morceau du replay");
+        lien = await visio.lienEnregistrementDaily(m?.enregistrementId ?? s.enregistrementId);
+      } else throw introuvable("Vidéo du replay");
       if (u.role === "etudiant") await marquerVu(s.id, u.id);
       res.setHeader("Cache-Control", "no-store");
       res.json(lien);
@@ -2995,7 +3108,14 @@ planifier("live-fin-auto", 5 * MINUTE, async () => {
   if (oubliees) console.log(`[live] mémoire du direct : ${oubliees} séance(s) close(s) oubliée(s)`);
 });
 
-/** Récupère l'enregistrement Daily des séances terminées (lien de lecture demandé à la volée). */
+/**
+ * Récupère l'enregistrement Daily des séances terminées (lien de lecture
+ * demandé à la volée). Tous les morceaux du cours sont gardés, dans l'ordre :
+ * un enregistrement relancé (erreur en plein cours, classe rouverte après une
+ * coupure) ne perd rien. Les bouts de moins d'une minute (reconnexion, essai
+ * de micro) sont écartés, sauf s'il n'y a qu'eux. On attend que Daily ait fini
+ * d'encoder (6 h au plus) pour ne pas figer un replay incomplet.
+ */
 planifier("live-enregistrements", 10 * MINUTE, async () => {
   if (!visio.dailyDisponible()) return;
   const terminees = await db
@@ -3012,11 +3132,22 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
     );
   for (const s of terminees) {
     const liste = await visio.enregistrementsDaily(s.salleVisio!);
+    const recente = s.termineeLe && Date.now() - s.termineeLe.getTime() < 6 * 3600_000;
+    if (recente && liste.some((e) => e.statut === "in-progress")) continue;
     const finis = liste.filter((e) => e.statut === "finished" && e.dureeSecondes);
     if (!finis.length) continue;
-    // Le plus long est le cours (les autres sont souvent des essais de micro).
-    const cours = finis.sort((a, b) => (b.dureeSecondes ?? 0) - (a.dureeSecondes ?? 0))[0];
-    await db.update(seances).set({ enregistrementId: cours.id, replayDureeSecondes: cours.dureeSecondes }).where(eq(seances.id, s.id));
+    const utiles = finis.filter((e) => (e.dureeSecondes ?? 0) >= 60);
+    const morceaux = (utiles.length ? utiles : finis).sort((a, b) => a.debut - b.debut);
+    const total = morceaux.reduce((t, e) => t + (e.dureeSecondes ?? 0), 0);
+    await db.transaction(async (tx) => {
+      await tx.update(seances).set({ enregistrementId: morceaux[0].id, replayDureeSecondes: total }).where(eq(seances.id, s.id));
+      await tx.delete(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id));
+      if (morceaux.length > 1) {
+        await tx
+          .insert(morceauxReplay)
+          .values(morceaux.map((e, i) => ({ seanceId: s.id, numero: i + 1, enregistrementId: e.id, debut: new Date(e.debut * 1000), dureeSecondes: e.dureeSecondes ?? 0 })));
+      }
+    });
   }
 });
 

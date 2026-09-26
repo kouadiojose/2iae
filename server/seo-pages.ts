@@ -74,7 +74,7 @@ const PAGES: Record<string, MetaPage> = {
   "/": {
     titre: "Groupe 2IAE International — 5e Grande École de Côte d'Ivoire | BTS, Licences, Entrepreneuriat",
     description:
-      "5e grande école de Côte d'Ivoire au classement officiel MESRS : 67,38 % d'admis au BTS 2026 (national : 42,48 %), 5 campus avec internat, ferme-école, entrepreneuriat pour tous. Préinscriptions ouvertes.",
+      "67,38 % d'admis au BTS 2026 contre 42,48 % au national (chiffres MESRS), et 66 % des anciens insérés dont 13 % chefs d'entreprise — insertion mesurée par le cabinet indépendant 60 Decibels. 5e grande école de Côte d'Ivoire au classement officiel. 5 campus, internat, préinscriptions ouvertes.",
   },
   "/filieres": {
     titre: "Filières BTS et Licences en Côte d'Ivoire — Bâtiment, Agriculture, Management, Informatique | 2IAE",

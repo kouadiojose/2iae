@@ -374,6 +374,122 @@ export default function AccueilPage() {
         </div>
       </section>
 
+      {/* Les deux rendements — la réponse chiffrée, et vérifiable par des
+          tiers, à qui met en doute la valeur de l'école. Placée juste sous le
+          héros : c'est la première chose qu'un visiteur doit lire. */}
+      <section className="py-16 bg-[#0d2c54]" data-testid="section-rendements">
+        <div className="container mx-auto px-4 max-w-6xl">
+          <div className="text-center mb-10">
+            <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-4">
+              Rendement interne et rendement externe
+            </p>
+            <h2 className="font-serif text-3xl md:text-5xl text-white mb-5 leading-tight">
+              Une école se juge sur deux chiffres.
+              <br className="hidden md:block" /> Les nôtres sont publics.
+            </h2>
+            <p className="text-white/85 text-lg leading-relaxed max-w-3xl mx-auto">
+              Combien d'étudiants elle fait réussir à l'examen, et ce qu'ils
+              deviennent ensuite. Aucun de ces chiffres ne sort de chez nous :
+              les premiers sont publiés par le Ministère, les seconds ont été
+              mesurés par un cabinet d'étude indépendant.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Rendement interne — la réussite à l'examen d'État */}
+            <div className="bg-white rounded-xl professional-shadow p-7 flex flex-col">
+              <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+                Rendement interne · Source : MESRS
+              </p>
+              <h3 className="font-serif text-2xl text-foreground mb-5">
+                Ils réussissent l'examen d'État.
+              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 mb-2">
+                <p className="font-serif text-5xl lg:text-6xl font-semibold text-primary leading-none whitespace-nowrap">
+                  67,38 %
+                </p>
+                <p className="text-sm text-muted-foreground mt-2 sm:mt-0 sm:pb-1">
+                  d'admis au BTS 2026 dans nos écoles
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground border-t border-border pt-3 mt-3">
+                Contre <strong className="text-foreground">42,48 %</strong> de
+                moyenne nationale la même année. Azaguié atteint 83,54 %, et
+                dépasse la moyenne nationale chaque année depuis 2017.
+              </p>
+              <p className="text-sm text-muted-foreground mt-3">
+                🏅 <strong className="text-foreground">5e grande école de
+                Côte d'Ivoire</strong> au dernier classement officiel publié
+                par le Ministère de l'Enseignement Supérieur.
+              </p>
+              <div className="mt-auto pt-5">
+                <Link href="/resultats-bts-2026">
+                  <Button variant="outline" className="border-primary text-primary hover:bg-primary/5 font-semibold w-full">
+                    Le détail campus par campus →
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Rendement externe — ce que deviennent les diplômés */}
+            <div className="bg-white rounded-xl professional-shadow p-7 flex flex-col">
+              <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+                Rendement externe · Cabinet indépendant 60 Decibels
+              </p>
+              <h3 className="font-serif text-2xl text-foreground mb-5">
+                Et après le diplôme, ils travaillent.
+              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 mb-2">
+                <p className="font-serif text-5xl lg:text-6xl font-semibold text-primary leading-none whitespace-nowrap">
+                  66 %
+                </p>
+                <p className="text-sm text-muted-foreground mt-2 sm:mt-0 sm:pb-1">
+                  de nos anciens sont insérés
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground border-t border-border pt-3 mt-3">
+                Dont <strong className="text-foreground">53 %</strong> en emploi
+                salarié et <strong className="text-foreground">13 %</strong> à
+                la tête de leur propre entreprise. Enquête menée auprès des
+                promotions 2017 à 2021.
+              </p>
+              <p className="text-sm text-muted-foreground mt-3">
+                60 Decibels est un cabinet d'étude international qui mesure
+                l'impact social. Il a interrogé nos anciens directement — nous
+                n'avons ni choisi les répondants, ni rédigé les questions.
+              </p>
+              <div className="mt-auto pt-5">
+                <Link href="/resultats-bts-2026">
+                  <Button variant="outline" className="border-primary text-primary hover:bg-primary/5 font-semibold w-full">
+                    L'insertion filière par filière →
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Le troisième témoin : les anciens eux-mêmes */}
+          <div className="mt-6 bg-[#E8720C] rounded-xl p-7 text-center">
+            <p className="text-xs tracking-[0.25em] uppercase text-white/80 mb-3">
+              La preuve par les personnes
+            </p>
+            <h3 className="font-serif text-2xl md:text-3xl text-white mb-3">
+              Le reste, ce sont nos anciens qui le disent.
+            </h3>
+            <p className="text-white/90 leading-relaxed max-w-2xl mx-auto mb-5">
+              Des chiffres, on peut toujours en discuter. Un ancien qui vous
+              raconte l'entreprise qu'il a créée, face caméra et avec son nom,
+              c'est autre chose.
+            </p>
+            <Link href="/temoignages">
+              <Button className="bg-white text-[#E8720C] hover:bg-white/90 font-bold px-8 py-3 h-auto">
+                Écouter nos anciens
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Annonce temporaire : passage du fondateur sur la RTI (auto-expirante) */}
       <AfficheRTI />
 

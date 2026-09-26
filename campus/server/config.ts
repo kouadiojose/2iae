@@ -12,6 +12,11 @@ function env(nom: string, ...alias: string[]): string | undefined {
   return undefined;
 }
 
+/** « true », « oui », « 1 » (sans tenir compte de la casse) : l'option est activée. */
+function active(v: string | undefined): boolean {
+  return ["true", "oui", "1", "yes", "vrai"].includes((v ?? "").toLowerCase());
+}
+
 function sansSlashFinal(url: string | undefined): string | undefined {
   return url?.replace(/\/+$/, "");
 }
@@ -85,8 +90,19 @@ export const config = {
     nom: env("CAMPUS_ADMIN_NOM") || "2IAE",
   },
 
-  /** Données de démonstration (cours IA-101, étudiants fictifs…) au démarrage. */
-  demo: env("CAMPUS_DEMO") === "true",
+  /**
+   * Données de démonstration au démarrage : DÉSACTIVÉ par défaut. Même
+   * activé, le semis refuse en production dès que des comptes réels existent
+   * (voir semerDemo dans server/demo.ts).
+   */
+  demo: active(env("CAMPUS_DEMO")),
+  /**
+   * CAMPUS_PURGER_DEMO=oui : au démarrage (server/scripts/migrate.ts), la
+   * démonstration est supprimée, et seulement elle, avec un bilan chiffré
+   * dans les journaux. Sans accès au serveur : il suffit de poser la variable
+   * sur Railway et de redéployer. Idempotent : sans démonstration, rien ne se passe.
+   */
+  purgerDemo: active(env("CAMPUS_PURGER_DEMO")),
 } as const;
 
 export type Config = typeof config;

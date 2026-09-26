@@ -4,24 +4,40 @@
 //   GET /api/public/cours/:slug        → fiche d'un cours annoncé
 //   GET /api/public/formateurs/:slug   → fiche d'un formateur annoncé
 //   GET /api/public/sites              → les cinq campus et leur salle
-//   GET /api/public/images/:fichierId  → image d'un cours annoncé ou photo d'un formateur
-//                                        annoncé (les fichiers déposés sont sinon réservés aux comptes)
+//   GET /api/public/site               → contenus du site public (accueil, à propos, questions,
+//                                        contacts, confidentialité, campus), fusionnés avec les
+//                                        valeurs par défaut tirées des faits réels
+//   GET /api/public/campus/:slug       → un campus, ses cours annoncés, ses prochains lives
+//   GET /api/public/en-direct          → le cours public en direct (indicateur de l'en-tête)
+//   GET /api/public/images/:fichierId  → image d'un cours annoncé, photo d'un formateur annoncé
+//                                        ou photo d'un campus (les fichiers déposés sont sinon
+//                                        réservés aux comptes)
+//   GET /sitemap.xml, GET /robots.txt  → pour les moteurs de recherche
+//
+// Back-office « Site public » (/pilotage/site) :
+//   GET    /api/pilotage/site/contenus          → ContenusPilotage (direction et vie scolaire)
+//   PUT    /api/pilotage/site/contenus/:cle     → enregistre un bloc (direction)
+//   DELETE /api/pilotage/site/contenus/:cle     → rétablit le texte d'origine (direction)
+//   PUT    /api/pilotage/site/campus/:slug      → adresse, photo, salle, WhatsApp… d'un campus (direction)
+//   DELETE /api/pilotage/site/campus/:slug      → rétablit les informations d'origine d'un campus (direction)
 //
 // Tout est piloté par les cases « Annoncer sur 2iae.com » (publierSurSite)
 // validées par la direction. Jamais une donnée nominative d'étudiant : la
 // vitrine ne publie que des agrégats. Un formateur n'est nommé qu'avec son
 // consentement (consentementSite), et sa fiche n'existe que s'il est annoncé.
 //
-// Les pages publiques du campus (/, /cours-ouverts/:slug, /formateurs/:slug)
-// reçoivent aussi leurs balises Open Graph côté serveur : un lien partagé sur
-// WhatsApp affiche une vraie carte d'aperçu.
-import type { Express, Request, Response, NextFunction } from "express";
+// Chaque page publique du campus reçoit ses balises (titre, description, Open
+// Graph) côté serveur : un lien partagé sur WhatsApp affiche une vraie carte
+// d'aperçu, et les moteurs de recherche lisent un titre propre à la page.
+import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
 import path from "path";
 import fs from "fs";
-import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { z, type ZodTypeAny } from "zod";
+import { and, asc, desc, eq, gte, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config, estProduction } from "../config";
-import { route, introuvable, idParam } from "../http";
+import { route, introuvable, idParam, invalide, valider } from "../http";
+import { exigerRole, moi, normaliserTelephone } from "../auth";
 import { surChangementPublication } from "../site";
 import { enregistrerMetaPage } from "../vite";
 import {
@@ -36,12 +52,33 @@ import {
   modules,
   lecons,
   fichiers,
+  journal,
+  contenusSite,
+  CONTENUS_PAR_DEFAUT,
+  CAMPUS_PAR_DEFAUT,
+  CAMPUS_VIERGE,
+  CLES_CONTENUS,
+  FILIERES_BTS,
+  SALLES_INVENTEES,
+  SALLE_PAR_DEFAUT,
+  THEMES_QUESTIONS,
   type Cours,
+  type Site,
   type Utilisateur,
   type SitePublic,
   type CampusCours,
+  type CampusPublic,
+  type CampusDetailPublic,
+  type CampusPilotage,
+  type CleContenu,
+  type ContenuCampus,
+  type ContenuContacts,
+  type ContenusPilotage,
+  type ContenusSite,
+  type EnDirectPublic,
   type FicheCoursPublique,
   type FicheFormateurPublique,
+  type SitePublicDto,
 } from "@shared/schema";
 import type { Vitrine, VitrineCours, VitrineFormateur, VitrineLive, VitrineAnnonce } from "@shared/api";
 
@@ -177,7 +214,7 @@ async function campusParCours(ids: number[]): Promise<Map<number, CampusCours[]>
     .orderBy(asc(sites.ordre));
   for (const l of lignes) {
     const liste = carte.get(l.coursId) ?? [];
-    liste.push({ slug: l.slug, nomCourt: l.nomCourt, salle: l.salle });
+    liste.push({ slug: l.slug, nomCourt: l.nomCourt, salle: salleAffichee(l.salle) });
     carte.set(l.coursId, liste);
   }
   return carte;
@@ -321,6 +358,225 @@ async function sitesCampus() {
   return db.select().from(sites).orderBy(asc(sites.ordre));
 }
 
+// ── Contenus du site public (éditables depuis le back-office) ──────────────
+
+/** Nom de salle affiché : un nom inventé pour la démonstration (ou vide) devient « Salle de conférence ». */
+export function salleAffichee(nom: string | null | undefined): string {
+  const n = nom?.trim();
+  return n && !SALLES_INVENTEES.includes(n) ? n : SALLE_PAR_DEFAUT;
+}
+const salleNommee = (nom: string | null | undefined) => salleAffichee(nom) !== SALLE_PAR_DEFAUT;
+
+/** Numéro pour wa.me : un numéro ivoirien (10 chiffres) reçoit l'indicatif 225. */
+function numeroWa(tel: string | null | undefined): string | null {
+  if (!tel) return null;
+  const n = normaliserTelephone(tel);
+  if (n.length === 10) return `225${n}`;
+  if (n.length >= 11 && n.length <= 15) return n;
+  return null;
+}
+
+/** Itinéraire Google Maps construit depuis l'adresse publiée (ou le lien choisi par la direction). */
+function itineraire(c: Pick<ContenuCampus, "adresse" | "localite" | "lienCarte">, nomCampus: string): string {
+  if (c.lienCarte) return c.lienCarte;
+  const destination = ["2IAE", c.adresse || nomCampus, c.localite, "Côte d'Ivoire"].filter(Boolean).join(", ");
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+}
+
+// Schémas de validation : un champ enregistré qui ne passe plus (ancien format)
+// est simplement ignoré au profit de la valeur par défaut.
+const texte = (max: number) => z.string().trim().max(max, `${max} caractères au maximum`);
+const texteRequis = (max: number) => texte(max).min(1, "à remplir");
+const telephone = z
+  .string()
+  .trim()
+  .max(30)
+  .regex(/^\+?[\d\s.()-]{8,30}$/, "numéro illisible (ex. +225 07 47 72 67 29)");
+const adresseWeb = z
+  .string()
+  .trim()
+  .max(500)
+  .regex(/^https:\/\/[^\s]+$/, "adresse web complète attendue (https://…)");
+const CODES_FILIERES = FILIERES_BTS.map((f) => f.code) as [string, ...string[]];
+
+const SCHEMAS: { [K in CleContenu]: z.ZodObject<Record<string, ZodTypeAny>> } = {
+  accueil: z.object({ etiquette: texte(120), titre: texteRequis(160), sousTitre: texte(400) }),
+  apropos: z.object({
+    chapeau: texte(400),
+    groupe: texte(4000),
+    campusNumerique: texte(4000),
+    chiffres: z.array(z.object({ valeur: texteRequis(20), libelle: texteRequis(120) })).max(6, "6 chiffres au maximum"),
+  }),
+  questions: z.object({
+    liste: z
+      .array(
+        z.object({
+          id: z.string().regex(/^[a-z0-9-]{1,60}$/),
+          theme: z.enum(THEMES_QUESTIONS),
+          question: texteRequis(200),
+          reponse: texteRequis(1500),
+          visible: z.boolean(),
+        }),
+      )
+      .max(40, "40 questions au maximum")
+      .refine((l) => new Set(l.map((q) => q.id)).size === l.length, "deux questions portent le même identifiant"),
+  }),
+  contacts: z.object({
+    telephones: z.array(telephone).max(4, "4 numéros au maximum"),
+    whatsapp: telephone.or(z.literal("")),
+    email: z.string().trim().max(120).email("adresse e-mail invalide").or(z.literal("")),
+    facebook: adresseWeb.or(z.literal("")),
+    siteWeb: adresseWeb,
+    preinscription: adresseWeb,
+    bureauCanada: texte(200),
+    rc: texte(80),
+    agrement: texte(80),
+  }),
+  confidentialite: z.object({
+    responsable: texteRequis(160),
+    contact: texteRequis(160),
+    conservation: texteRequis(3000),
+    miseAJour: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date attendue (AAAA-MM-JJ)"),
+  }),
+};
+
+const schemaCampus = z.object({
+  adresse: texte(300),
+  localite: texte(120),
+  telephone: telephone.or(z.literal("")),
+  photoUrl: z.string().trim().max(300).nullable(),
+  lienCarte: adresseWeb.or(z.literal("")),
+  filieres: z.array(z.enum(CODES_FILIERES)).max(12),
+  resultat: z.object({ libelle: texteRequis(40), taux: z.number().min(0).max(100) }).nullable(),
+  presentation: texte(1500),
+});
+
+/** Valeur par défaut, remplacée champ par champ par ce qui est enregistré (et encore valide). */
+function fusionner<T extends Record<string, unknown>>(schema: z.ZodObject<Record<string, ZodTypeAny>>, defaut: T, stocke: unknown): T {
+  if (!stocke || typeof stocke !== "object") return defaut;
+  const resultat: Record<string, unknown> = { ...defaut };
+  for (const [champ, sousSchema] of Object.entries(schema.shape)) {
+    if (!(champ in (stocke as Record<string, unknown>))) continue;
+    const r = sousSchema.safeParse((stocke as Record<string, unknown>)[champ]);
+    if (r.success) resultat[champ] = r.data;
+  }
+  return resultat as T;
+}
+
+const defautCampus = (slug: string): ContenuCampus => CAMPUS_PAR_DEFAUT[slug] ?? CAMPUS_VIERGE;
+
+type LigneContenu = typeof contenusSite.$inferSelect;
+type EtatContenus = { contenus: ContenusSite; campus: Map<string, ContenuCampus>; lignes: Map<string, LigneContenu> };
+
+let cacheContenus: EtatContenus | null = null;
+
+/** Tous les contenus, fusionnés avec les valeurs par défaut (en mémoire jusqu'à la prochaine modification). */
+async function lireContenus(): Promise<EtatContenus> {
+  if (cacheContenus) return cacheContenus;
+  const lignes = await db.select().from(contenusSite);
+  const parCle = new Map(lignes.map((l) => [l.cle, l]));
+  const contenus = {} as Record<CleContenu, unknown>;
+  for (const cle of CLES_CONTENUS) contenus[cle] = fusionner(SCHEMAS[cle], CONTENUS_PAR_DEFAUT[cle], parCle.get(cle)?.valeur);
+  const campus = new Map<string, ContenuCampus>();
+  for (const l of lignes) {
+    if (l.cle.startsWith("campus.")) {
+      const slug = l.cle.slice("campus.".length);
+      campus.set(slug, fusionner(schemaCampus, defautCampus(slug), l.valeur));
+    }
+  }
+  cacheContenus = { contenus: contenus as ContenusSite, campus, lignes: parCle };
+  return cacheContenus;
+}
+
+let cacheSite: { valeur: SitePublicDto; expire: number } | null = null;
+
+/** Oublie les contenus et le site public en cache : la modification se voit aussitôt. */
+function oublierContenus() {
+  cacheContenus = null;
+  cacheSite = null;
+}
+// Un cours ou un live publié change le nombre de campus, les salles…
+surChangementPublication(() => {
+  cacheSite = null;
+});
+
+function versCampusPublic(s: Site, contenu: ContenuCampus, etudiants: number, contacts: ContenuContacts): CampusPublic {
+  const waCampus = numeroWa(s.whatsappVieScolaire);
+  return {
+    slug: s.slug,
+    nom: s.nom,
+    nomCourt: s.nomCourt,
+    ville: s.ville,
+    salle: salleAffichee(s.salleConference),
+    salleNommee: salleNommee(s.salleConference),
+    whatsapp: waCampus ?? numeroWa(contacts.whatsapp) ?? "",
+    whatsappCampus: Boolean(waCampus),
+    adresse: contenu.adresse,
+    localite: contenu.localite,
+    telephone: contenu.telephone || null,
+    photoUrl: imagePublique(contenu.photoUrl),
+    itineraire: itineraire(contenu, s.nom),
+    filieres: contenu.filieres.map((code) => FILIERES_BTS.find((f) => f.code === code)).filter((f): f is (typeof FILIERES_BTS)[number] => Boolean(f)),
+    resultat: contenu.resultat,
+    presentation: contenu.presentation,
+    etudiants,
+  };
+}
+
+async function effectifsParSite(): Promise<Map<number | null, number>> {
+  const comptes = await db
+    .select({ siteId: utilisateurs.siteId, n: sql<number>`count(*)::int` })
+    .from(utilisateurs)
+    .where(and(eq(utilisateurs.role, "etudiant"), eq(utilisateurs.actif, true)))
+    .groupBy(utilisateurs.siteId);
+  return new Map(comptes.map((c) => [c.siteId, c.n]));
+}
+
+async function construireSite(): Promise<SitePublicDto> {
+  const [{ contenus, campus, lignes }, listeSites, effectifs] = await Promise.all([lireContenus(), sitesCampus(), effectifsParSite()]);
+  const dates = [...lignes.values()].map((l) => l.majLe.getTime());
+  return {
+    accueil: contenus.accueil,
+    apropos: contenus.apropos,
+    questions: contenus.questions.liste.filter((q) => q.visible),
+    contacts: contenus.contacts,
+    confidentialite: contenus.confidentialite,
+    campus: listeSites.map((s) => versCampusPublic(s, campus.get(s.slug) ?? defautCampus(s.slug), effectifs.get(s.id) ?? 0, contenus.contacts)),
+    majLe: dates.length ? new Date(Math.max(...dates)).toISOString() : null,
+  };
+}
+
+/** Site public en cache 60 s (vidé à chaque modification du back-office). */
+export async function lireSitePublic(): Promise<SitePublicDto> {
+  if (cacheSite && cacheSite.expire > Date.now()) return cacheSite.valeur;
+  const valeur = await construireSite();
+  cacheSite = { valeur, expire: Date.now() + 60_000 };
+  return valeur;
+}
+
+/** Un campus, ses cours annoncés (suivis par une de ses classes) et les prochains lives publics de ses cours. */
+async function detailCampus(slug: string): Promise<CampusDetailPublic | null> {
+  const site = (await lireSitePublic()).campus.find((c) => c.slug === slug);
+  if (!site) return null;
+  const [vitrine, lignes] = await Promise.all([
+    lireVitrine(),
+    db
+      .selectDistinct({ slug: cours.slug, code: cours.code })
+      .from(coursClasses)
+      .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+      .innerJoin(sites, eq(sites.id, classes.siteId))
+      .innerJoin(cours, eq(cours.id, coursClasses.coursId))
+      .where(and(eq(sites.slug, slug), ne(cours.statut, "archive"))),
+  ]);
+  const slugs = new Set(lignes.map((l) => l.slug));
+  const codes = new Set(lignes.map((l) => l.code));
+  return {
+    campus: site,
+    cours: vitrine.cours.filter((c) => slugs.has(c.slug)),
+    lives: vitrine.lives.filter((l) => codes.has(l.coursCode)).slice(0, 8),
+  };
+}
+
 // ── Vitrine (avec cache mémoire) ───────────────────────────────────────────
 
 let cache: { valeur: Vitrine; expire: number } | null = null;
@@ -339,7 +595,7 @@ async function construireVitrine(): Promise<Vitrine> {
     campus: {
       nom: NOM_CAMPUS,
       url: config.urlCampus,
-      sites: listeSites.map((s) => ({ nom: s.nom, salle: s.salleConference })),
+      sites: listeSites.map((s) => ({ nom: s.nom, salle: salleAffichee(s.salleConference) })),
     },
     cours: catalogue.cours,
     formateurs: catalogue.formateurs,
@@ -495,7 +751,7 @@ async function ficheFormateur(slug: string): Promise<FicheFormateurPublique | nu
  */
 async function imagePubliee(id: number): Promise<boolean> {
   const motif = `/api/fichiers/${id}%`;
-  const [coursLies, formateursLies] = await Promise.all([
+  const [coursLies, formateursLies, campusLies] = await Promise.all([
     db
       .select({ url: cours.imageUrl })
       .from(cours)
@@ -504,9 +760,14 @@ async function imagePubliee(id: number): Promise<boolean> {
       .select({ url: utilisateurs.photoUrl })
       .from(utilisateurs)
       .where(and(filtreFormateurPublic, sql`${utilisateurs.photoUrl} like ${motif}`)),
+    // Photo d'un campus choisie par la direction dans « Site public ».
+    db
+      .select({ url: sql<string | null>`${contenusSite.valeur}->>'photoUrl'` })
+      .from(contenusSite)
+      .where(and(like(contenusSite.cle, "campus.%"), sql`${contenusSite.valeur}->>'photoUrl' like ${motif}`)),
   ]);
   // « like » laisse passer /api/fichiers/120 pour 12 : on revérifie l'identifiant exact.
-  return [...coursLies, ...formateursLies].some((l) => idFichierInterne(l.url) === id);
+  return [...coursLies, ...formateursLies, ...campusLies].some((l) => idFichierInterne(l.url) === id);
 }
 
 async function envoyerImage(res: Response, id: number) {

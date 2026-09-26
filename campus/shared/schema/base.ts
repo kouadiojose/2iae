@@ -58,6 +58,22 @@ export type PreferencesUtilisateur = {
   visiteFaite?: boolean;
   /** Compte de démonstration (supprimé par « npm run db:purge-demo »). */
   demo?: boolean;
+  /**
+   * Dernier essai de la visio de la classe (page /visio/essai), horodaté par
+   * le serveur. « reussi » : le service vidéo répond depuis ce navigateur, ou
+   * la personne est bien entrée dans la salle d'essai.
+   */
+  essaiVisio?: {
+    le: string;
+    reussi: boolean;
+    /** Connexion au service vidéo (WebSocket Daily). */
+    connexion: "ok" | "avertissement" | "echec" | "non_teste";
+    qualite: "bonne" | "moyenne" | "faible" | null;
+    camera: boolean | null;
+    micro: boolean | null;
+    /** La personne est entrée dans la salle d'essai. */
+    salle: boolean;
+  };
 };
 
 export const utilisateurs = campusSchema.table(
@@ -85,6 +101,14 @@ export const utilisateurs = campusSchema.table(
     titre: text("titre"), // « Consultant en intelligence artificielle »
     bio: text("bio"),
     localisation: text("localisation"), // « Paris, France »
+    /**
+     * Fuseau horaire IANA de la personne (« America/Toronto », « Europe/Berlin »).
+     * Nul = heure d'Abidjan (Africa/Abidjan) et fuseau pas encore confirmé :
+     * le navigateur le devine, la personne le confirme. Sert à afficher aux
+     * formateurs « 08h30 Abidjan · 04h30 chez vous (Toronto) » et à leur
+     * écrire les rappels à leur heure. Les étudiants gardent l'heure d'Abidjan.
+     */
+    fuseau: text("fuseau"),
     /** Le formateur accepte que sa fiche soit publiée sur www.2iae.com (révocable). */
     consentementSite: boolean("consentement_site").notNull().default(false),
     /** Fiche proposée à la publication, en attente de validation par la direction. */

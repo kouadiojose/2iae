@@ -27,7 +27,7 @@ import path from "path";
 import crypto from "crypto";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { config } from "./config";
+import { config, estProduction } from "./config";
 import { hacher, verifier, motDePasseProvisoire, codeProvisoire, DUREE_CODE_PROVISOIRE_MS } from "./auth";
 import { recuPour, corrigerTentative } from "./evaluations-outils";
 import { prevenirSite } from "./site";
@@ -94,6 +94,8 @@ export const DOMAINE_DEMO = "demo.2iae.com";
 export const EMAIL_TEMOIN = `karim.diallo@${DOMAINE_DEMO}`;
 /** Action du journal qui garde la trace du semis (classes créées, date). */
 export const ACTION_JOURNAL_DEMO = "demo_semee";
+/** Action du journal écrite par la purge (bilan chiffré) : en production, la démonstration ne revient plus ensuite. */
+export const ACTION_JOURNAL_PURGE = "demo_purgee";
 /** Codes des cours de démonstration (la purge ne supprime que ceux-là, et seulement s'ils sont tenus par un formateur de démonstration). */
 export const CODES_COURS_DEMO = ["IA-101", "ENT-210", "INF-230", "GES-120", "AGR-110"] as const;
 /** Numéro WhatsApp du groupe de la vie scolaire (bouton « Besoin d'aide ? »). */
@@ -3368,7 +3370,7 @@ async function semerComptes(c: Contexte, hash: string, hashCode: string) {
       qui: `s:${slug}`,
       role: "salle",
       prenom: "Salle",
-      nom: s.salleConference.replace(/^Salle\s+/i, ""),
+      nom: s.nomCourt,
       email: `salle.${slug}@${DOMAINE_DEMO}`,
       motDePasseHash: hash,
       doitChangerMotDePasse: false,
@@ -4542,7 +4544,42 @@ async function dejaSemee(temoin: typeof utilisateurs.$inferSelect, motDePasseEnv
   console.log("✓ Données de démonstration déjà présentes : rien à faire (pour les rajeunir : npm run db:purge-demo puis npm run db:seed).");
 }
 
+/**
+ * Pourquoi la démonstration ne doit PAS être semée ici (ou null si elle peut
+ * l'être). La démonstration n'est jamais mélangée à de vraies données :
+ *   - CAMPUS_PURGER_DEMO demande au contraire de la supprimer ;
+ *   - en production, dès qu'un compte réel existe (autre que la direction
+ *     créée au premier démarrage), ou si elle a déjà été purgée de cette base.
+ */
+export async function raisonRefusDemo(): Promise<string | null> {
+  if (config.purgerDemo) {
+    return "CAMPUS_PURGER_DEMO demande de supprimer la démonstration : les deux variables se contredisent. Retirez CAMPUS_DEMO.";
+  }
+  if (!estProduction) return null;
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(utilisateurs)
+    .where(
+      sql`coalesce(${utilisateurs.preferences}->>'demo', 'false') <> 'true'
+        AND coalesce(lower(${utilisateurs.email}), '') NOT LIKE ${`%@${DOMAINE_DEMO}`}
+        AND NOT (${utilisateurs.role} = 'admin' AND lower(coalesce(${utilisateurs.email}, '')) = ${config.admin.identifiant.toLowerCase()})`,
+    );
+  if (n > 0) {
+    return `la production compte déjà ${n} compte${n > 1 ? "s" : ""} réel${n > 1 ? "s" : ""} : des personnes fictives ne seront jamais mélangées aux vraies données. Retirez CAMPUS_DEMO des variables du service.`;
+  }
+  const [purge] = await db.select({ le: journal.creeLe }).from(journal).where(eq(journal.action, ACTION_JOURNAL_PURGE)).limit(1);
+  if (purge) {
+    return `la démonstration a été supprimée de cette base le ${purge.le.toISOString().slice(0, 10)} : elle ne revient pas. Retirez CAMPUS_DEMO des variables du service.`;
+  }
+  return null;
+}
+
 export async function semerDemo(): Promise<void> {
+  const refus = await raisonRefusDemo();
+  if (refus) {
+    console.warn(`⚠️  Données de démonstration NON semées : ${refus}`);
+    return;
+  }
   const debut = Date.now();
   const motDePasseEnv = process.env.CAMPUS_DEMO_MOT_DE_PASSE?.trim() || null;
 

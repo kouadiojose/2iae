@@ -193,6 +193,15 @@ export function depuisCours(c: VitrineCours): ProchainCours {
   };
 }
 
+/** Initiales d'un nom imprimé, sans la civilité (« M. Kouadio José » → KJ). */
+function AvatarIntervenant({ nom, photo }: { nom: string; photo: string | null }) {
+  const mots = nom
+    .replace(/^(M\.|Mme|Mlle|Dr\.?|Pr\.?)\s+/i, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  return <Avatar prenom={mots[0] ?? ""} nom={mots.slice(1).join(" ")} photo={photo} taille={44} />;
+}
+
 export type SalleCarte = { cle: string; nom: string; salle: string | null };
 export const sallesDepuisCampus = (campus: CampusPublic[]): SalleCarte[] => campus.map((c) => ({ cle: c.slug, nom: c.nom, salle: c.salleNommee ? c.salle : null }));
 export const sallesDepuisCampusCours = (campus: CampusCours[]): SalleCarte[] =>
@@ -269,7 +278,7 @@ export function CarteProchainCours({
           )}
           <div className="relative flex items-center gap-3 rounded-2xl bg-[#242120] p-3.5">
             {p.intervenant ? (
-              <Avatar prenom={p.intervenant.prenom ?? p.intervenant.nom.replace(/^M(me)?\.\s*/, "")} nom={p.intervenant.nomFamille ?? ""} photo={p.intervenant.photoUrl ?? null} taille={44} />
+              <AvatarIntervenant nom={p.intervenant.nom} photo={p.intervenant.photoUrl ?? null} />
             ) : (
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange text-encre">
                 <Radio className="h-5 w-5" />

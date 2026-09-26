@@ -40,6 +40,7 @@ import { route, introuvable, idParam, invalide, valider } from "../http";
 import { exigerRole, moi, normaliserTelephone } from "../auth";
 import { surChangementPublication } from "../site";
 import { enregistrerMetaPage } from "../vite";
+import { intervenantsDesSeances } from "../programme-outils";
 import {
   cours,
   coursClasses,
@@ -284,8 +285,24 @@ function versVitrineFormateur(f: LigneFormateur, listeCours: VitrineFormateur["c
   };
 }
 
-/** Lives publics (tous, ou ceux de certains cours), le direct en premier. */
-async function livesPublics(maintenant: Date, coursIds?: number[]): Promise<VitrineLive[]> {
+/**
+ * Nom affiché d'un intervenant de l'emploi du temps (« M. Kouadio José » tel
+ * qu'imprimé) découpé pour le contrat de la vitrine ({ prenom, nom }), que
+ * 2iae.com affiche « prenom nom ».
+ */
+function versPrenomNom(nomImprime: string): { prenom: string; nom: string } {
+  const i = nomImprime.indexOf(" ");
+  return i > 0 ? { prenom: nomImprime.slice(0, i), nom: nomImprime.slice(i + 1) } : { prenom: "", nom: nomImprime };
+}
+
+/**
+ * Lives publics (tous, ou ceux de certains cours), le direct en premier.
+ * Une séance engendrée par l'emploi du temps nomme SON intervenant (le
+ * vendredi, ce n'est pas forcément le formateur principal du cours), tel que
+ * l'emploi du temps public l'imprime ; sinon, le formateur du cours, cité
+ * seulement avec son consentement. intervenantId : seulement ses séances.
+ */
+async function livesPublics(maintenant: Date, coursIds?: number[], intervenantId?: number): Promise<VitrineLive[]> {
   if (coursIds && !coursIds.length) return [];
   const lignes = await db
     .select({
@@ -298,6 +315,7 @@ async function livesPublics(maintenant: Date, coursIds?: number[]): Promise<Vitr
       coursTitre: cours.titre,
       coursSlug: cours.slug,
       coursAnnonce: cours.publierSurSite,
+      formateurId: cours.formateurId,
       fPrenom: utilisateurs.prenom,
       fNom: utilisateurs.nom,
       fLocalisation: utilisateurs.localisation,
@@ -309,19 +327,45 @@ async function livesPublics(maintenant: Date, coursIds?: number[]): Promise<Vitr
     .where(coursIds ? and(filtreLivesPublics(maintenant), inArray(seances.coursId, coursIds)) : filtreLivesPublics(maintenant))
     .orderBy(sql`case when ${seances.statut} = 'en_direct' then 0 else 1 end`, asc(seances.debut))
     .limit(30);
-  return lignes.map((l) => ({
-    id: l.id,
-    titre: l.titre,
-    coursCode: l.coursCode,
-    coursTitre: l.coursTitre,
-    debut: l.debut.toISOString(),
-    dureeMinutes: l.dureeMinutes,
-    enDirect: l.statut === "en_direct",
-    // Le nom du formateur n'est cité qu'avec son consentement.
-    formateur: l.fPrenom && l.fConsentement ? { prenom: l.fPrenom, nom: l.fNom!, localisation: l.fLocalisation } : null,
-    // Un cours annoncé a sa fiche publique ; sinon, le lien mène au live (connexion demandée).
-    url: urlCampus(l.coursAnnonce ? `/cours-ouverts/${l.coursSlug}` : `/live/${l.id}`),
-  }));
+  const intervenants = await intervenantsDesSeances(lignes.map((l) => l.id));
+  // La ville d'un intervenant n'est donnée que s'il a accepté d'être présenté sur le site.
+  const idsIntervenants = [...new Set([...intervenants.values()].map((i) => i.id).filter((id): id is number => id !== null))];
+  const villes = new Map(
+    idsIntervenants.length
+      ? (
+          await db
+            .select({ id: utilisateurs.id, localisation: utilisateurs.localisation })
+            .from(utilisateurs)
+            .where(and(inArray(utilisateurs.id, idsIntervenants), eq(utilisateurs.consentementSite, true)))
+        ).map((u) => [u.id, u.localisation] as const)
+      : [],
+  );
+  return lignes
+    .filter((l) => {
+      if (intervenantId === undefined) return true;
+      const i = intervenants.get(l.id);
+      return i ? i.id === intervenantId : l.formateurId === intervenantId;
+    })
+    .map((l) => {
+      const i = intervenants.get(l.id);
+      return {
+        id: l.id,
+        titre: l.titre,
+        coursCode: l.coursCode,
+        coursTitre: l.coursTitre,
+        debut: l.debut.toISOString(),
+        dureeMinutes: l.dureeMinutes,
+        enDirect: l.statut === "en_direct",
+        formateur: i
+          ? { ...versPrenomNom(i.nom), localisation: i.id !== null ? (villes.get(i.id) ?? null) : null }
+          : // Hors emploi du temps : le formateur du cours, cité seulement avec son consentement.
+            l.fPrenom && l.fConsentement
+            ? { prenom: l.fPrenom, nom: l.fNom!, localisation: l.fLocalisation }
+            : null,
+        // Un cours annoncé a sa fiche publique ; sinon, le lien mène au live (connexion demandée).
+        url: urlCampus(l.coursAnnonce ? `/cours-ouverts/${l.coursSlug}` : `/live/${l.id}`),
+      };
+    });
 }
 
 async function annoncesPubliques(maintenant: Date): Promise<VitrineAnnonce[]> {
@@ -739,9 +783,11 @@ async function ficheFormateur(slug: string): Promise<FicheFormateurPublique | nu
   return {
     ...fiche,
     coursDetail: vitrine.cours.filter((c) => slugs.has(c.slug)),
+    // Ses séances seulement : le vendredi, un autre intervenant peut tenir son cours.
     lives: await livesPublics(
       new Date(),
       siens.map((c) => c.id),
+      f.id,
     ),
   };
 }

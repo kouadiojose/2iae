@@ -84,6 +84,9 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
                     </h1>
                   </div>
                 </div>
+                {/* showreel : emplacement réservé à la présentation animée de 30 s du formateur
+                    (module showreel, composant <Showreel />), branché par l'orchestrateur. Vide, il ne prend aucune place. */}
+                <div data-emplacement="showreel" className="empty:hidden" />
                 {f.titre && <p className="max-w-[620px] text-[19px] font-semibold leading-snug text-texte-doux">{f.titre}</p>}
                 {f.localisation && (
                   <p className="inline-flex items-center gap-2 font-mono text-sm text-texte-pale">

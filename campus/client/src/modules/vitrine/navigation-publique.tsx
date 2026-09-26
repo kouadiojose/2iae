@@ -37,7 +37,7 @@ export function MarquePublique({ compacte = false, onClick }: { compacte?: boole
 
 // ── Indicateur du direct ───────────────────────────────────────────────────
 
-function PastilleDirect({ className, onClick }: { className?: string; onClick?: () => void }) {
+function PastilleDirect({ className, onClick, compacte = false }: { className?: string; onClick?: () => void; compacte?: boolean }) {
   const live = useEnDirect();
   if (!live) return null;
   return (
@@ -46,12 +46,21 @@ function PastilleDirect({ className, onClick }: { className?: string; onClick?: 
       onClick={onClick}
       title={`${live.coursTitre} : en direct maintenant. Les étudiants rejoignent le cours ici.`}
       className={cn(
-        "inline-flex min-h-[40px] items-center gap-2 whitespace-nowrap rounded-full bg-[#2A1510] px-3.5 font-mono text-xs font-semibold uppercase tracking-wider text-[#FF8A6B] no-underline hover:bg-encre hover:text-white",
+        "inline-flex min-h-[40px] shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-[#2A1510] font-mono text-xs font-semibold uppercase tracking-wider text-[#FF8A6B] no-underline hover:bg-encre hover:text-white",
+        compacte ? "px-2.5 sm:px-3.5" : "px-3.5",
         className,
       )}
     >
       <span className="point-direct" />
-      En direct<span className="sr-only"> : {live.coursTitre}, rejoindre le cours</span>
+      {compacte ? (
+        <>
+          <span className="sm:hidden">Direct</span>
+          <span className="hidden sm:inline">En direct</span>
+        </>
+      ) : (
+        "En direct"
+      )}
+      <span className="sr-only"> : {live.coursTitre}, rejoindre le cours</span>
     </Link>
   );
 }
@@ -148,7 +157,7 @@ export function EnTetePublic() {
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2 lg:ml-3">
-          <PastilleDirect />
+          <PastilleDirect compacte />
           {/* Sur un petit téléphone, pendant un direct, la pastille remplace le bouton (la connexion reste dans le menu). */}
           <BoutonCompte className={live ? "hidden sm:inline-flex" : "inline-flex"} />
           <MenuMobile />

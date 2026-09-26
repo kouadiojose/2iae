@@ -17,6 +17,7 @@ import {
   Globe,
   BarChart3,
   CalendarClock,
+  CalendarRange,
 } from "lucide-react";
 import type { Role } from "@shared/schema";
 
@@ -40,6 +41,7 @@ const ETUDIANT: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   // « On apprend avec l'IA » : l'assistant reste visible dans l'en-tête.
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
+  { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
@@ -52,6 +54,7 @@ const FORMATEUR: ElementNav[] = [
   { href: "/corrections", libelle: "Corrections", icone: CheckSquare, mobile: true, prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
+  { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
 ];
@@ -59,10 +62,11 @@ const FORMATEUR: ElementNav[] = [
 const EQUIPE: ElementNav[] = [
   { href: "/pilotage", libelle: "Pilotage", icone: LayoutDashboard, mobile: true },
   { href: "/pilotage/comptes", libelle: "Comptes", icone: Users, mobile: true, prefixes: ["/pilotage/comptes", "/pilotage/fiches", "/pilotage/etudiants", "/pilotage/classes"] },
-  { href: "/pilotage/planning", libelle: "Planning", icone: CalendarClock, mobile: true, prefixes: ["/pilotage/planning", "/pilotage/cours"] },
+  { href: "/pilotage/programme", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/pilotage/programme"] },
+  { href: "/pilotage/planning", libelle: "Planning", icone: CalendarClock, prefixes: ["/pilotage/planning", "/pilotage/cours"] },
   { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"] },
   { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: true },
-  { href: "/pilotage/site", libelle: "Site 2iae.com", icone: Globe },
+  { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"] },
 ];

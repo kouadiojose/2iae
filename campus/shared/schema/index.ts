@@ -15,3 +15,4 @@ export * from "./ext-pilotage";
 export * from "./ext-ia";
 export * from "./ext-vitrine";
 export * from "./ext-visio";
+export * from "./ext-programme";

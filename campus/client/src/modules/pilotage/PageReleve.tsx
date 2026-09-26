@@ -34,7 +34,7 @@ export default function PageReleve({ jeton }: { jeton: string }) {
       <style>{"@page { size: A4 portrait; margin: 14mm; } @media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }"}</style>
       <main className="mx-auto flex max-w-[720px] flex-col gap-6 rounded-[28px] bg-white p-6 shadow-carte print:max-w-none print:rounded-none print:p-0 print:shadow-none sm:p-10">
         <header className="flex items-center gap-4 border-b border-ligne pb-5">
-          <img src="/marque-2iae.svg" alt="Groupe 2IAE" className="h-12 w-auto" />
+          <img src="/marque-2iae.png" alt="Groupe 2IAE" className="h-12 w-auto" />
           <div className="border-l border-ligne-forte pl-4">
             <div className="text-[15px] font-extrabold leading-tight">Groupe 2IAE International</div>
             <div className="font-mono text-xs text-texte-gris">Campus numérique · relevé scolaire</div>

@@ -50,7 +50,7 @@ function BandeauHaut({ seance, siteId }: { seance?: SeanceDetailDto; siteId: num
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 px-4 pt-5 sm:px-6 lg:px-10">
       <div className="flex items-center gap-4">
-        <img src="/marque-2iae.svg" alt="2IAE" className="h-10 w-auto rounded bg-white p-1" />
+        <img src="/marque-2iae.png" alt="2IAE" className="h-10 w-auto rounded bg-white p-1" />
         <span className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-doux lg:text-base">
           {site ? `${site.salleConference} · ${site.nomCourt}` : "Salle de conférence"}
         </span>

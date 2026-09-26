@@ -57,7 +57,7 @@ function EcranPreparation({ moi }: { moi: Moi | null }) {
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-encre px-6 text-center text-white" aria-live="polite">
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/3 h-80 w-80 -translate-x-1/2 rounded-full bg-orange/25 blur-3xl" />
-      <img src="/marque-2iae.svg" alt="Groupe 2IAE" className="relative h-16 w-auto animate-monte" />
+      <img src="/marque-2iae.png" alt="Groupe 2IAE" className="relative h-16 w-auto animate-monte" />
 
       <div className="relative mt-10 flex min-h-[132px] flex-col items-center gap-3">
         {moi ? (

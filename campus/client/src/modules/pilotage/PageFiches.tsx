@@ -153,7 +153,7 @@ function Fiche({ f, hote }: { f: FicheConnexion; hote: string }) {
   return (
     <article className="fiche">
       <div className="flex items-center gap-[2mm]">
-        <img src="/marque-2iae.svg" alt="2IAE" className="h-[7mm] w-auto" />
+        <img src="/marque-2iae.png" alt="2IAE" className="h-[7mm] w-auto" />
         <div className="border-l border-ligne-forte pl-[2mm] leading-tight">
           <div className="text-[8.5pt] font-extrabold">Campus numérique</div>
           <div className="font-mono text-[6pt] text-texte-gris">Groupe 2IAE International</div>

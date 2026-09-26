@@ -300,3 +300,14 @@ Le mode compagnon (étudiant présent en salle) ne consomme presque rien
 (< 5 Mo/h) : ni son ni image, seulement questions, votes, sondages et
 ressenti. L'écran de la salle de conférence rejoint la visio comme un
 participant « Salle … » avec la caméra et le micro de la salle.
+
+## 11. Passage au réel (26 septembre 2026)
+
+La première session réelle commence le lundi 28 septembre 2026 (tronc commun 1BTS / 2BTS : Initiation à l'IA le lundi et le vendredi, Marketing digital le mercredi, séminaire le samedi). Décisions :
+
+- **Plus de démonstration** : CAMPUS_DEMO faux par défaut ; purge unique en production par CAMPUS_PURGER_DEMO=oui ; aucun écran ne cite de personne inventée.
+- **Le vrai logo** du Groupe écoles 2IAE partout (marque-2iae.png, marque-2iae-detouree.png pour les fonds sombres, logo-2iae.png pour les documents).
+- **Emploi du temps** (module programme) : une session, des créneaux hebdomadaires, la publication engendre les séances live ; il se voit sur le site public (/programme), dans l'espace étudiant et formateur (/emploi-du-temps), à l'impression (fac-similé du document du service des études) et sur 2iae.com.
+- **Un vrai site public** multi-pages (programme, cours, formateurs, campus, le direct, questions, à propos, contact, confidentialité), éditable depuis « Site public » du back-office, avec du contenu réel par défaut.
+- **Visio** : Daily par défaut, salle d'essai permanente, répétition dans la salle d'une séance, direct immédiat, pré-tests réseau, fuseau horaire du formateur (« 08:30 Abidjan · 04:30 chez vous »).
+- **Rentrée** : une liste de contrôle en direct pour la direction (campus, écrans de salle, formateurs activés, programme publié, étudiants importés, essais visio).

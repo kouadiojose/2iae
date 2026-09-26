@@ -29,7 +29,7 @@ export default function PageNouveauCours() {
     e.preventDefault();
     const codePropre = code.trim().toUpperCase();
     const locales: typeof erreurs = {};
-    if (!/^[A-Z0-9][A-Z0-9-]{1,19}$/.test(codePropre)) locales.code = "Un code court, en lettres, chiffres et tirets : « IA-101 », « ENT-210 ».";
+    if (!/^[A-Z0-9][A-Z0-9-]{1,19}$/.test(codePropre)) locales.code = "Un code court, en lettres, chiffres et tirets : « IA-101 », « MD-101 ».";
     if (titre.trim().length < 3) locales.titre = "Donnez un titre d'au moins 3 lettres.";
     setErreurs(locales);
     if (Object.keys(locales).length) return;
@@ -67,7 +67,7 @@ export default function PageNouveauCours() {
         <form onSubmit={(e) => void creer(e)} className="flex flex-col gap-5" noValidate>
           <Champ
             libelle="Code du cours"
-            placeholder="MKT-150"
+            placeholder="MD-101"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             erreur={erreurs.code}
@@ -79,7 +79,7 @@ export default function PageNouveauCours() {
           />
           <Champ
             libelle="Titre du cours"
-            placeholder="Marketing digital pour les PME"
+            placeholder="Marketing digital"
             value={titre}
             onChange={(e) => setTitre(e.target.value)}
             erreur={erreurs.titre}

@@ -31,6 +31,7 @@ import { config, estProduction } from "./config";
 import { hacher, verifier, motDePasseProvisoire, codeProvisoire, DUREE_CODE_PROVISOIRE_MS } from "./auth";
 import { recuPour, corrigerTentative } from "./evaluations-outils";
 import { prevenirSite } from "./site";
+import { DOMAINE_DEMO, ACTION_JOURNAL_DEMO, ACTION_JOURNAL_PURGE, CODES_COURS_DEMO, VERROU_SEMIS } from "./demo-constantes";
 import {
   sites,
   classes,
@@ -88,21 +89,12 @@ import {
 // Constantes et petits outils
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Domaine des adresses de démonstration (jamais une vraie boîte). */
-export const DOMAINE_DEMO = "demo.2iae.com";
+export { DOMAINE_DEMO, ACTION_JOURNAL_DEMO, ACTION_JOURNAL_PURGE, CODES_COURS_DEMO };
 /** Compte témoin : sa présence signifie « démonstration déjà semée ». */
 export const EMAIL_TEMOIN = `karim.diallo@${DOMAINE_DEMO}`;
-/** Action du journal qui garde la trace du semis (classes créées, date). */
-export const ACTION_JOURNAL_DEMO = "demo_semee";
-/** Action du journal écrite par la purge (bilan chiffré) : en production, la démonstration ne revient plus ensuite. */
-export const ACTION_JOURNAL_PURGE = "demo_purgee";
-/** Codes des cours de démonstration (la purge ne supprime que ceux-là, et seulement s'ils sont tenus par un formateur de démonstration). */
-export const CODES_COURS_DEMO = ["IA-101", "ENT-210", "INF-230", "GES-120", "AGR-110"] as const;
 /** Numéro WhatsApp du groupe de la vie scolaire (bouton « Besoin d'aide ? »). */
 const WHATSAPP_VIE_SCOLAIRE = "2250747726729";
 const ANNEE_SCOLAIRE = "2026-2027";
-/** Clé du verrou consultatif PostgreSQL du semis. */
-const VERROU_SEMIS = 2_026_101;
 
 const MINUTE = 60_000;
 const HEURE = 60 * MINUTE;

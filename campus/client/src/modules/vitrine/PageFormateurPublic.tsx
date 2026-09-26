@@ -3,20 +3,21 @@
 // cours annoncés et son prochain cours en direct.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowLeft, MapPin, SearchX } from "lucide-react";
+import { ChevronRight, MapPin, SearchX } from "lucide-react";
 import { LienBouton } from "@/components/ui/bouton";
 import { Avatar, EtatVide, Squelette } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { ErreurApi } from "@/lib/api";
-import type { FicheFormateurPublique, SitePublic } from "@shared/schema";
-import { BoutonPartager, BoutonsAcces, CarteCoursPublic, CarteProchainLive, EnTetePublic, ListeLives, PiedPublic, sallesDepuisSites } from "./composants";
-import { liveAMettreEnAvant, SITES_DE_SECOURS, useTitreDocument, ville } from "./outils";
+import type { FicheFormateurPublique } from "@shared/schema";
+import { BoutonPartager, BoutonsAcces, CarteCoursPublic, CarteProchainLive, ListeLives, sallesDepuisCampus } from "./composants";
+import { useSitePublicOuSecours } from "./donnees";
+import { MiseEnPagePublique } from "./MiseEnPagePublique";
+import { liveAMettreEnAvant, useTitreDocument, ville } from "./outils";
 
 export default function PageFormateurPublic({ slug }: { slug: string }) {
   const maintenant = useMaintenant(30_000);
   const ficheQ = useQuery<FicheFormateurPublique>({ queryKey: ["/api/public/formateurs", slug], staleTime: 60_000 });
-  const sitesQ = useQuery<SitePublic[]>({ queryKey: ["/api/public/sites"], staleTime: 5 * 60_000 });
-  const sites = sitesQ.data?.length ? sitesQ.data : SITES_DE_SECOURS;
+  const site = useSitePublicOuSecours();
   const f = ficheQ.data;
   useTitreDocument(f ? `${f.prenom} ${f.nom} · Campus numérique 2IAE` : null);
 
@@ -25,15 +26,29 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
   const coursRepli = !live && f ? (f.coursDetail.find((c) => c.dateDebut && new Date(c.dateDebut).getTime() > maintenant) ?? null) : null;
 
   return (
-    <div className="min-h-dvh bg-white">
-      <EnTetePublic liveEnDirect={live?.enDirect ? live : null} />
-      <main className="conteneur flex flex-col gap-12 pb-16 pt-6 sm:pt-8">
-        <Link
-          href="/"
-          className="inline-flex min-h-[44px] items-center gap-2 self-start font-mono text-xs uppercase tracking-[0.12em] text-texte-gris no-underline hover:text-encre"
-        >
-          <ArrowLeft className="h-4 w-4" /> Campus numérique · formateurs
-        </Link>
+    <MiseEnPagePublique>
+      <div className="conteneur flex flex-col gap-12 pb-16 pt-6 sm:pt-8">
+        <nav aria-label="Fil d'Ariane">
+          <ol className="flex flex-wrap items-center gap-1 font-mono text-xs text-texte-gris">
+            <li className="flex items-center gap-1">
+              <Link href="/" className="inline-flex min-h-[32px] items-center text-texte-gris no-underline hover:text-encre">
+                Accueil
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+            </li>
+            <li className="flex items-center gap-1">
+              <Link href="/formateurs" className="inline-flex min-h-[32px] items-center text-texte-gris no-underline hover:text-encre">
+                Formateurs
+              </Link>
+              {f && <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
+            </li>
+            {f && (
+              <li aria-current="page" className="text-texte-doux">
+                {f.prenom} {f.nom}
+              </li>
+            )}
+          </ol>
+        </nav>
 
         {ficheQ.isLoading ? (
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -53,7 +68,7 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
                 ? "Un formateur n'apparaît sur le campus public qu'avec son accord, qu'il peut retirer à tout moment."
                 : "Vérifiez votre connexion et réessayez dans un instant."
             }
-            action={<LienBouton href="/">Voir le campus numérique</LienBouton>}
+            action={<LienBouton href="/formateurs">Voir les formateurs</LienBouton>}
             className="my-10"
           />
         ) : (
@@ -82,7 +97,7 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
                   texte={`${f.prenom} ${f.nom}${f.titre ? `, ${f.titre}` : ""}${ville(f.localisation) ? `, enseigne en direct depuis ${ville(f.localisation)}` : ""} au campus numérique 2IAE. ${window.location.origin}/formateurs/${f.slug}`}
                 />
               </div>
-              <CarteProchainLive live={live} coursRepli={coursRepli} salles={sallesDepuisSites(sites)} className="lg:sticky lg:top-24" />
+              <CarteProchainLive live={live} coursRepli={coursRepli} salles={sallesDepuisCampus(site.campus)} className="lg:sticky lg:top-24" />
             </section>
 
             {f.coursDetail.length > 0 && (
@@ -101,14 +116,13 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
             {f.lives.length > 0 && (
               <section className="flex max-w-3xl flex-col gap-3">
                 <h2 className="text-[26px] font-black tracking-serre sm:text-[32px]">Ses prochains cours en direct</h2>
-                <p className="text-base text-texte-pale">Heure d'Abidjan, avec l'heure de Paris.</p>
+                <p className="text-base text-texte-pale">Heure d'Abidjan (GMT).</p>
                 <ListeLives lives={f.lives} avecCours />
               </section>
             )}
           </>
         )}
-      </main>
-      <PiedPublic sites={sites} />
-    </div>
+      </div>
+    </MiseEnPagePublique>
   );
 }

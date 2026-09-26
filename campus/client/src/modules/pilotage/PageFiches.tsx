@@ -139,6 +139,8 @@ export default function PageFiches() {
 
 function Fiche({ f, hote }: { f: FicheConnexion; hote: string }) {
   const tu = f.role === "etudiant";
+  // Formateur créé sans e-mail ni téléphone : il choisit son identifiant en scannant le QR.
+  const sansIdentifiant = !f.identifiant;
   const etapes = tu
     ? [
         { icone: ScanLine, texte: "Scanne le QR avec l'appareil photo de ton téléphone" },
@@ -147,16 +149,19 @@ function Fiche({ f, hote }: { f: FicheConnexion; hote: string }) {
       ]
     : [
         { icone: ScanLine, texte: "Scannez le QR avec l'appareil photo du téléphone" },
-        { icone: KeyRound, texte: "Choisissez votre code secret (10 caractères au moins)" },
+        {
+          icone: KeyRound,
+          texte: sansIdentifiant ? "Vérifiez votre nom, choisissez votre identifiant et votre mot de passe" : "Choisissez votre mot de passe (10 caractères au moins)",
+        },
         { icone: GraduationCap, texte: "Retrouvez le campus et vos outils" },
       ];
   return (
     <article className="fiche">
       <div className="flex items-center gap-[2mm]">
-        <img src="/marque-2iae.png" alt="2IAE" className="h-[7mm] w-auto" />
+        <img src="/marque-2iae-hd.png" alt="2IAE" className="h-[7mm] w-auto" />
         <div className="border-l border-ligne-forte pl-[2mm] leading-tight">
           <div className="text-[8.5pt] font-extrabold">Campus numérique</div>
-          <div className="font-mono text-[6pt] text-texte-gris">Groupe 2IAE International</div>
+          <div className="font-mono text-[6pt] text-texte-gris">Groupe Écoles 2IAE International</div>
         </div>
         <div className="ml-auto rounded-full bg-orange px-[2mm] py-[0.6mm] font-mono text-[6pt] font-semibold uppercase tracking-wider text-encre">Fiche de connexion</div>
       </div>
@@ -171,12 +176,26 @@ function Fiche({ f, hote }: { f: FicheConnexion; hote: string }) {
           </div>
           <div className="mt-[2mm] grid grid-cols-[auto_1fr] items-baseline gap-x-[2mm] gap-y-[0.8mm]">
             <span className="font-mono text-[6pt] uppercase tracking-wider text-texte-gris">Identifiant</span>
-            <span className="truncate font-mono text-[10pt] font-bold">{f.identifiant}</span>
-            <span className="font-mono text-[6pt] uppercase tracking-wider text-texte-gris">Code</span>
-            <span className="font-mono text-[15pt] font-bold leading-none tracking-[0.14em]">{f.code}</span>
+            {sansIdentifiant ? (
+              <span className="text-[8pt] font-bold leading-tight">À choisir en scannant le QR</span>
+            ) : (
+              <span className="truncate font-mono text-[10pt] font-bold">{f.identifiant}</span>
+            )}
+            {!sansIdentifiant && (
+              <>
+                <span className="font-mono text-[6pt] uppercase tracking-wider text-texte-gris">Code</span>
+                <span className="font-mono text-[15pt] font-bold leading-none tracking-[0.14em]">{f.code}</span>
+              </>
+            )}
           </div>
           <div className="mt-[1.2mm] text-[6pt] leading-snug text-texte-pale">
-            Valable jusqu'au {fmtDate.format(new Date(f.expireLe))}. Sans QR : {tu ? "ouvre" : "ouvrez"} <span className="font-mono">{hote}</span> et {tu ? "tape" : "tapez"} l'identifiant et le code.
+            {sansIdentifiant ? (
+              <>Valable jusqu'au {fmtDate.format(new Date(f.expireLe))}, une seule fois. Le QR est la clé : gardez cette fiche pour vous.</>
+            ) : (
+              <>
+                Valable jusqu'au {fmtDate.format(new Date(f.expireLe))}. Sans QR : {tu ? "ouvre" : "ouvrez"} <span className="font-mono">{hote}</span> et {tu ? "tape" : "tapez"} l'identifiant et le code.
+              </>
+            )}
           </div>
         </div>
         <div className="flex w-[28mm] shrink-0 flex-col items-center gap-[1mm]">

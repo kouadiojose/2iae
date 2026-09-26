@@ -1,4 +1,4 @@
-// Ligne d'un devoir côté formateur / équipe : échéance (Abidjan et Paris),
+// Ligne d'un devoir côté formateur / équipe : échéance (Abidjan et heure du formateur),
 // compteurs de copies et accès direct à la correction.
 import { PenLine, ListChecks, FileText } from "lucide-react";
 import { LienBouton } from "@/components/ui/bouton";

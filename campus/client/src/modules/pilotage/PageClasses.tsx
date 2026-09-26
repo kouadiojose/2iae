@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone } from "lucide-react";
 import type { ClasseLigne, PageComptes, SiteLigne } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { BarreProgression, Chargement, Erreur, EtatVide, Badge } from "@/components/ui/divers";
@@ -17,6 +17,7 @@ import { get, post, patch, suppr, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
+import { FenetreEcran } from "./composants/FenetreEcran";
 import { useReferences, telephoneLisible, lienFiches, pourcent } from "./outils";
 
 type Formulaire = { nom: string; siteId: string; filiere: string; niveau: string; anneeScolaire: string };
@@ -32,6 +33,7 @@ export default function PageClasses() {
   const { data, isLoading, error, refetch } = useQuery<ClasseLigne[]>({ queryKey: ["/api/pilotage/classes"] });
   const [edition, setEdition] = useState<ClasseLigne | "nouvelle" | null>(null);
   const [site, setSite] = useState<SiteLigne | null>(null);
+  const [ecran, setEcran] = useState<{ id: number; nom: string } | null>(null);
   const sites = refs.data?.sites ?? [];
 
   return (
@@ -56,7 +58,7 @@ export default function PageClasses() {
         <EtatVide
           icone={<School className="h-6 w-6" />}
           titre="Aucune classe pour l'instant."
-          texte="Créez les classes de la rentrée (ex. « BTS Gestion commerciale · 1re année »), puis importez les étudiants depuis Excel."
+          texte="Créez les classes de la rentrée (ex. « BTS 1re année · tronc commun »), puis importez les étudiants depuis Excel."
           action={<Bouton onClick={() => setEdition("nouvelle")}>Créer une classe</Bouton>}
         />
       ) : (
@@ -86,7 +88,8 @@ export default function PageClasses() {
                 <span className="text-sm text-texte-gris">{s.ville}</span>
               </div>
               <div className="text-[15px]">
-                Salle de conférence : <strong>{s.salleConference}</strong>
+                Salle de conférence :{" "}
+                {s.salleConference === "Salle de conférence" ? <span className="text-texte-pale">nom à saisir</span> : <strong>{s.salleConference}</strong>}
               </div>
               <div className="flex items-center gap-2 text-[15px]">
                 <MessageCircle className="h-4 w-4 text-orange-fonce" />
@@ -98,11 +101,16 @@ export default function PageClasses() {
                   <span className="text-danger">Pas de numéro WhatsApp : le bouton « Besoin d'aide ? » est masqué pour ce campus.</span>
                 )}
               </div>
-              {refs.data?.estDirection && (
-                <Bouton variante="contour" taille="sm" icone={<Pencil className="h-4 w-4" />} onClick={() => setSite(s)} className="mt-1 min-h-[48px] self-start">
-                  Modifier
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Bouton variante="encre" taille="sm" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => setEcran({ id: s.id, nom: s.nomCourt })} className="min-h-[48px]">
+                  Installer l'écran de la salle
                 </Bouton>
-              )}
+                {refs.data?.estDirection && (
+                  <Bouton variante="contour" taille="sm" icone={<Pencil className="h-4 w-4" />} onClick={() => setSite(s)} className="min-h-[48px]">
+                    Modifier
+                  </Bouton>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -110,6 +118,7 @@ export default function PageClasses() {
 
       {edition && <FenetreClasse key={edition === "nouvelle" ? "nouvelle" : edition.id} edition={edition} sites={sites} onFermer={() => setEdition(null)} />}
       {site && <FenetreSite key={site.id} site={site} onFermer={() => setSite(null)} />}
+      <FenetreEcran site={ecran} onFermer={() => setEcran(null)} />
     </Page>
   );
 }
@@ -235,14 +244,14 @@ function FenetreClasse({ edition, sites, onFermer }: { edition: ClasseLigne | "n
           ))}
         </Selection>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Champ libelle="Filière" value={f.filiere} onChange={maj("filiere")} placeholder="Gestion commerciale" />
-          <Champ libelle="Niveau" value={f.niveau} onChange={maj("niveau")} placeholder="BTS 1, Licence 3…" />
+          <Champ libelle="Filière" value={f.filiere} onChange={maj("filiere")} placeholder="Tronc commun" />
+          <Champ libelle="Niveau" value={f.niveau} onChange={maj("niveau")} placeholder="BTS 1, BTS 2…" />
         </div>
         <Champ
           libelle="Nom de la classe"
           value={f.nom}
           onChange={maj("nom")}
-          placeholder={`BTS Gestion commerciale · 1re année${site ? ` · ${site.nomCourt}` : ""}`}
+          placeholder={`BTS 1re année · tronc commun${site ? ` · ${site.nomCourt}` : ""}`}
           aide="Astuce : terminez par le campus, c'est plus clair dans les listes."
         />
         <Champ libelle="Année scolaire" value={f.anneeScolaire} onChange={maj("anneeScolaire")} placeholder="2026-2027" inputMode="numeric" />
@@ -288,7 +297,13 @@ function FenetreSite({ site, onFermer }: { site: SiteLigne; onFermer: () => void
       }
     >
       <div className="flex flex-col gap-4 pb-2">
-        <Champ libelle="Nom de la salle de conférence" value={salle} onChange={(e) => setSalle(e.target.value)} placeholder="Salle Kédjénou" />
+        <Champ
+          libelle="Nom de la salle de conférence"
+          value={salle}
+          onChange={(e) => setSalle(e.target.value)}
+          placeholder="Salle de conférence"
+          aide="Le nom affiché sur l'écran de la salle et aux étudiants. Laissez « Salle de conférence » s'il n'y en a pas."
+        />
         <Champ
           libelle="WhatsApp de la vie scolaire"
           value={whatsapp}

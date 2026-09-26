@@ -16,7 +16,8 @@ import { exigerConnexion, moi, estEquipe, perimetreSites } from "./auth";
 import { route, idParam, introuvable, interdit, invalide, ErreurHttp } from "./http";
 import { fichiers, utilisateurs, type Fichier, type Utilisateur } from "@shared/schema";
 
-export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo"] as const;
+// « site » : photo d'un campus pour le site public (publique seulement une fois choisie par la direction, voir routes/public.ts).
+export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site"] as const;
 export type UsageFichier = (typeof USAGES_FICHIER)[number];
 
 const MIMES_AUTORISES = [

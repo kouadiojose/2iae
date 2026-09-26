@@ -1,10 +1,13 @@
-// Page /visio/essai : vérifier micro, caméra, haut-parleur et radio avant le cours.
+// Page /visio/essai : vérifier micro, caméra, haut-parleur, radio et la
+// visio Daily de la classe (vérifications réseau et salle d'essai permanente)
+// avant le cours.
 //
 // L'essai de radio fait le vrai trajet : le micro est enregistré comme chez
 // le formateur, envoyé au serveur, et réécouté par le même chemin que les
 // étudiants (avec ~2 s de retard). Il révèle donc aussi un réseau ou un
 // proxy qui bloquerait le flux.
 import { useEffect, useRef, useState } from "react";
+import { SectionVisioClasse } from "./SectionVisioClasse";
 import { CheckCircle2, XCircle, Radio, Square } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -17,8 +20,19 @@ import { arreter, mediasDisponibles, messageErreurMedia, obtenirMicro, webrtcDis
 
 const DUREE_ESSAI_S = 30;
 
+/** Arrivée par un lien d'invitation (« …#salle-essai ») : on descend à la bonne section. */
+function useAncre() {
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    const t = window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+    return () => window.clearTimeout(t);
+  }, []);
+}
+
 export default function PageEssai() {
   const moi = useMoiConnecte();
+  useAncre();
   const tu = moi.role === "etudiant";
   // Pas de caméra étudiante en v1 : on ne demande que ce qui servira.
   const camera = !tu;
@@ -35,22 +49,34 @@ export default function PageEssai() {
     <Page className="max-w-3xl">
       <EnTetePage
         etiquette="Avant le cours"
-        titre={camera ? "Tester mon micro et ma caméra" : "Tester mon micro et le son"}
+        titre="Tester ma visio"
         sousTitre={t(
-          "Deux minutes pour vérifier que tout marche avant d'entrer dans la classe.",
-          "Deux minutes pour vérifier votre installation avant la classe.",
+          "Quelques minutes pour vérifier que tout marche avant d'entrer dans la classe.",
+          "Quelques minutes pour vérifier votre installation avant la classe, et une salle d'essai ouverte à tout moment.",
         )}
       />
+      <nav aria-label="Étapes de l'essai" className="-mt-2 flex flex-wrap gap-2">
+        {[
+          ["#essai-micro-section", camera ? "1. Micro et caméra" : "1. Micro et son"],
+          ["#essai-radio", "2. La radio"],
+          ["#salle-essai", "3. La visio de la classe"],
+          ["#essai-compat", t("4. Ton navigateur", "4. Votre navigateur")],
+        ].map(([href, libelle]) => (
+          <a key={href} href={href} className="rounded-full border border-ligne bg-white px-3.5 py-2 text-[14px] font-semibold text-encre no-underline hover:border-orange hover:text-encre">
+            {libelle}
+          </a>
+        ))}
+      </nav>
 
-      <section className="flex flex-col gap-3" aria-labelledby="essai-micro">
+      <section id="essai-micro-section" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="essai-micro">
         <h2 id="essai-micro" className="text-xl font-extrabold">
           1. {camera ? "Micro, caméra et son" : "Micro et son"}
         </h2>
         <TestMicroCamera camera={camera} />
       </section>
 
-      <section className="flex flex-col gap-3" aria-labelledby="essai-radio">
-        <h2 id="essai-radio" className="text-xl font-extrabold">
+      <section id="essai-radio" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="essai-radio-titre">
+        <h2 id="essai-radio-titre" className="text-xl font-extrabold">
           2. La radio du cours
         </h2>
         <p className="text-base text-texte-pale">
@@ -62,9 +88,11 @@ export default function PageEssai() {
         <EssaiRadio tu={tu} />
       </section>
 
-      <section className="flex flex-col gap-3" aria-labelledby="essai-compat">
-        <h2 id="essai-compat" className="text-xl font-extrabold">
-          3. {t("Ton navigateur", "Votre navigateur")}
+      <SectionVisioClasse />
+
+      <section id="essai-compat" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="essai-compat-titre">
+        <h2 id="essai-compat-titre" className="text-xl font-extrabold">
+          4. {t("Ton navigateur", "Votre navigateur")}
         </h2>
         <ul className="flex flex-col divide-y divide-ligne-douce rounded-2xl border border-ligne bg-white">
           {verifications.map((v) => (

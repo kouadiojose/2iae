@@ -95,8 +95,8 @@ export function FicheSite({ moi }: { moi: Moi }) {
     >
       <form onSubmit={enregistrer} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]" noValidate>
         <div className="flex flex-col gap-4">
-          <Champ libelle="Titre" placeholder="Consultant en intelligence artificielle" maxLength={120} value={titre} onChange={(e) => setTitre(e.target.value)} className="[&_input]:min-h-[52px] [&_input]:text-[16px]" />
-          <Champ libelle="Ville et pays" placeholder="Lyon, France" maxLength={80} value={localisation} onChange={(e) => setLocalisation(e.target.value)} className="[&_input]:min-h-[52px] [&_input]:text-[16px]" />
+          <Champ libelle="Titre" placeholder="Consultant canadien" maxLength={120} value={titre} onChange={(e) => setTitre(e.target.value)} className="[&_input]:min-h-[52px] [&_input]:text-[16px]" />
+          <Champ libelle="Ville et pays" placeholder="Montréal, Canada" maxLength={80} value={localisation} onChange={(e) => setLocalisation(e.target.value)} className="[&_input]:min-h-[52px] [&_input]:text-[16px]" />
           <ZoneTexte
             libelle="Présentation"
             placeholder="Votre parcours et ce que vous apportez aux étudiants, en trois ou quatre lignes."

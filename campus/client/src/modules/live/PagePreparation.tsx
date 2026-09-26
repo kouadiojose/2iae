@@ -1,12 +1,12 @@
 // /enseigner/seances/nouvelle?cours=<id> et /enseigner/seances/:id —
-// préparer une séance (horaire Abidjan et Paris, visio, lien de secours,
+// préparer une séance (horaire Abidjan et heure du formateur, visio, lien de secours,
 // plan minuté, diapos, sondages préparés, proposition sur 2iae.com), puis
 // après la séance : bilan (présences par campus, questions non traitées,
 // sondages, baromètre) et fiche de révision (générer, relire, publier).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Copy, Plus, Radio, Trash2, Upload, Sparkles, Send, Globe, ChevronLeft, ChevronRight, AlertTriangle, FileText, Check } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Plus, Radio, Trash2, Upload, Sparkles, Send, Globe, ChevronLeft, ChevronRight, AlertTriangle, FileText, Check, FlaskConical } from "lucide-react";
 import { api, post, patch, put, suppr, alleger } from "@/lib/api";
 import { rafraichir, queryClient } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
@@ -65,6 +65,7 @@ function NouvelleSeance({ coursId }: { coursId: number | null }) {
 // ── Séance existante ───────────────────────────────────────────────────────
 
 function SeanceExistante({ id }: { id: number }) {
+  const moi = useMoiConnecte();
   const { data: seance, error, isLoading, refetch } = useSeance(id);
   const [, naviguer] = useLocation();
   const [onglet, setOnglet] = useState<Onglet | null>(null);
@@ -113,6 +114,12 @@ function SeanceExistante({ id }: { id: number }) {
             {(seance.statut === "planifiee" || seance.statut === "en_direct") && (
               <LienBouton href={`/live/${seance.id}`} icone={<Radio className="h-4 w-4" />}>
                 {seance.monRole === "equipe" ? "Observer" : "Ouvrir le studio"}
+              </LienBouton>
+            )}
+            {/* Module visio : répétition dans la vraie salle Daily, à tout moment (formateur, direction). */}
+            {seance.statut === "planifiee" && seance.fournisseur === "daily" && (seance.monRole === "formateur" || moi.role === "admin") && (
+              <LienBouton href={`/visio/repetition/${seance.id}`} variante="contour" icone={<FlaskConical className="h-4 w-4" />}>
+                Répéter dans la salle de cette séance
               </LienBouton>
             )}
             {apres && (

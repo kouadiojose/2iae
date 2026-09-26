@@ -144,7 +144,7 @@ function FormulaireEvenement({
         <Champ type="datetime-local" libelle="Début" aide="Heure d'Abidjan" value={debut} onChange={(e) => setDebut(e.target.value)} />
         <Champ type="datetime-local" libelle="Fin (facultatif)" value={fin} min={debut} onChange={(e) => setFin(e.target.value)} />
       </div>
-      <Champ libelle="Lieu (facultatif)" placeholder="Salle Kédjénou, campus Yopougon" value={lieu} onChange={(e) => setLieu(e.target.value)} maxLength={160} />
+      <Champ libelle="Lieu (facultatif)" placeholder="Salle de conférence, campus Yopougon" value={lieu} onChange={(e) => setLieu(e.target.value)} maxLength={160} />
       <ZoneTexte libelle="Précisions (facultatif)" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} />
       {cibles && cible ? <SelecteurCible cibles={cibles} valeur={cible} onChange={setCible} libelle="Qui est concerné ?" verbe="Concerne" /> : <Squelette className="h-24" />}
       {!evenement && (

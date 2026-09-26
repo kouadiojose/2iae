@@ -12,6 +12,7 @@ import { gestionnaireErreurs, verifierOrigine } from "./http";
 import { brancherVite, servirStatique } from "./vite";
 import { pool } from "./db";
 import { demarrerTaches } from "./taches";
+import { politiquePermissions } from "./visio";
 
 // Dernier filet : une erreur imprévue est journalisée sans faire tomber le
 // campus (les lives en cours et l'état temps réel vivent dans ce processus).
@@ -44,8 +45,8 @@ if (estProduction) {
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  // Caméra et micro pour la classe live, écran partagé pour le formateur.
-  res.setHeader("Permissions-Policy", "camera=(self \"https://*.daily.co\"), microphone=(self \"https://*.daily.co\"), display-capture=(self \"https://*.daily.co\"), fullscreen=(self \"https://*.daily.co\")");
+  // Caméra, micro, écran partagé, plein écran et son pour la classe live et l'iframe Daily (nommée explicitement).
+  res.setHeader("Permissions-Policy", politiquePermissions());
   next();
 });
 

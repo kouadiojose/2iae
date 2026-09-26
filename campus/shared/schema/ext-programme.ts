@@ -265,6 +265,13 @@ export type ProgrammePublicDto = {
 /** GET /api/programme — sessions publiées qui concernent la personne connectée (ses classes, ses cours). */
 export type MonProgrammeDto = ProgrammePublicDto;
 
+/** Ajout v2 : GET /api/public/programme/:id et GET /api/programme/:id — une session et toutes ses occurrences datées. */
+export type SessionDetailDto = {
+  session: SessionDto;
+  occurrences: OccurrenceDto[];
+  aujourdhui: string;
+};
+
 /** POST /api/pilotage/programme/sessions/:id/publier — bilan de la génération des séances. */
 export type BilanPublication = {
   seancesCreees: number;
@@ -283,6 +290,14 @@ export type BilanPublication = {
 };
 
 // ── Back-office (/pilotage/programme) ──────────────────────────────────────
+
+/** GET /api/pilotage/programme/sessions/:id/apercu — ce que « Publier » ou « Mettre à jour les séances » ferait, sans rien écrire. */
+export type ApercuPublicationDto = Omit<BilanPublication, "etudiantsPrevenus" | "intervenantsPrevenus"> & {
+  /** Personnes qui recevront une notification (une chacune). */
+  etudiants: number;
+  intervenants: number;
+  changements: { date: string; libelle: string; nature: "creee" | "modifiee" | "annulee" | "retablie"; motif: string | null }[];
+};
 
 /** GET /api/pilotage/programme/sessions : une carte par session. */
 export type SessionResumeDto = {

@@ -139,7 +139,7 @@ function FormulaireAnnonce({
         <Champ libelle="Titre" placeholder="Changement de salle jeudi" value={titre} onChange={(e) => setTitre(e.target.value)} maxLength={120} required />
         <ZoneTexte
           libelle="Message"
-          placeholder="Le live de jeudi aura lieu en salle Kédjénou. Pensez à venir 10 minutes avant."
+          placeholder="Le cours de lundi aura lieu en salle de conférence. Pensez à venir 10 minutes avant."
           value={corps}
           onChange={(e) => setCorps(e.target.value)}
           maxLength={MAX_CORPS}

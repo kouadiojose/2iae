@@ -3,13 +3,15 @@
 // compagnon qui ne rejoignent aucune visio. Les bandeaux (parole, diapo,
 // Plan B) se superposent quel que soit le fournisseur.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic } from "lucide-react";
-import type { DailyCall } from "@daily-co/daily-js";
-import { post } from "@/lib/api";
+import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic, RotateCcw } from "lucide-react";
+import type { DailyCall, DailyEventObjectParticipant } from "@daily-co/daily-js";
+import { patch, post } from "@/lib/api";
+import { rafraichir } from "@/lib/queryClient";
 import { cn, initiales } from "@/lib/utils";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
-import { SceneVisioCampus, LecteurRadio, type EtatVisio } from "@/modules/visio";
-import type { EtatDirectDto, SeanceDetailDto, RejoindreDto, ModeSuivi, RoleSeance } from "@shared/schema";
+import { toast, toastErreur } from "@/components/ui/toast";
+import { SceneVisioCampus, LecteurRadio, CadreDaily, type EtatVisio, type RoleCadre } from "@/modules/visio";
+import type { EtatDirectDto, SeanceDetailDto, RejoindreDto, RejoindreVisioDto, ModeSuivi, RoleSeance } from "@shared/schema";
 
 export type PropsScene = {
   seance: SeanceDetailDto;
@@ -35,11 +37,15 @@ export type PropsScene = {
 export function Scene(p: PropsScene) {
   const { seance, etat, role, mode } = p;
   const planB = etat.planB ?? seance.planB;
+  // Bascule locale quand Daily échoue deux fois : on écoute la radio sans quitter la page.
+  const [secoursRadio, setSecoursRadio] = useState(false);
+  useEffect(() => setSecoursRadio(false), [seance.fournisseur]);
   let contenu: ReactNode;
   if (planB) contenu = <ScenePlanB lien={planB} grand={p.grand} />;
   else if (role === "etudiant" && mode === "radio") contenu = <SceneRadio {...p} />;
   else if (role === "etudiant" && mode === "compagnon") contenu = <SceneCompagnon {...p} />;
-  else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} />;
+  else if (seance.fournisseur === "daily" && secoursRadio) contenu = <SceneRadio {...p} retourVisio={() => setSecoursRadio(false)} />;
+  else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} onSecoursRadio={() => setSecoursRadio(true)} />;
   else if (seance.fournisseur === "campus") contenu = <SceneCampus {...p} />;
   else if (seance.fournisseur === "jitsi") contenu = <SceneJitsi {...p} />;
   else if (seance.fournisseur === "externe") contenu = <SceneExterne {...p} />;
@@ -49,7 +55,7 @@ export function Scene(p: PropsScene) {
   // Radio et compagnon : la diapo garde son format 16/9 et le reste s'empile dessous.
   // Visio du campus côté formateur : la grille des cinq salles prend la hauteur dont elle a
   // besoin (sur téléphone, 2 colonnes × 3 rangées ne tiennent pas dans un cadre 16/9).
-  const libre = !planB && ((role === "etudiant" && (mode === "radio" || mode === "compagnon")) || (role === "formateur" && seance.fournisseur === "campus"));
+  const libre = !planB && ((role === "etudiant" && (mode === "radio" || mode === "compagnon")) || (role === "formateur" && seance.fournisseur === "campus") || (seance.fournisseur === "daily" && secoursRadio));
   return (
     <div
       className={cn(
@@ -111,10 +117,18 @@ function PortraitFormateur({ seance, sousTitre }: { seance: SeanceDetailDto; sou
 
 // ── Radio : son du formateur + diapo + sous-titres (≈ 12 à 15 Mo/h) ────────
 
-function SceneRadio({ seance, etat, onConsommationRadio }: PropsScene) {
+function SceneRadio({ seance, etat, onConsommationRadio, retourVisio }: PropsScene & { retourVisio?: () => void }) {
   const dernier = etat.sousTitres[etat.sousTitres.length - 1];
   return (
     <div className="flex flex-col">
+      {retourVisio && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-orange px-4 py-2 text-sm font-bold text-encre">
+          <span>La visio ne passe pas : le son du cours arrive par la radio.</span>
+          <button type="button" onClick={retourVisio} className="inline-flex items-center gap-1.5 rounded-lg bg-encre px-3 py-1.5 text-white">
+            <RotateCcw className="h-3.5 w-3.5" /> Réessayer la visio
+          </button>
+        </div>
+      )}
       <div className="relative aspect-video">
         <DiapoCourante
           etat={etat}
@@ -137,7 +151,7 @@ function SceneRadio({ seance, etat, onConsommationRadio }: PropsScene) {
       )}
       <div className="border-t border-nuit-ligne bg-nuit-panneau px-3 py-2">
         {seance.fournisseur === "demo" ? (
-          <p className="text-center text-[13px] text-nuit-doux">Démonstration : pas de son pour cette séance. Diapos et sous-titres arrivent en direct.</p>
+          <p className="text-center text-[13px] text-nuit-doux">Pas de son pour cette séance : diapos et sous-titres arrivent en direct.</p>
         ) : (
           <LecteurRadio seanceId={seance.id} nuit onConsommation={onConsommationRadio} />
         )}
@@ -184,7 +198,7 @@ function SceneDemo({ seance, etat }: PropsScene) {
             seance={seance}
             sousTitre={
               <span className="flex items-center gap-2 rounded-full bg-nuit-ligne px-3 py-1.5 font-mono text-xs text-nuit-doux">
-                <Presentation className="h-3.5 w-3.5" /> Scène de démonstration · sans visio
+                <Presentation className="h-3.5 w-3.5" /> Pas de visio pour cette séance · diapos et questions en direct
               </span>
             }
           />
@@ -271,151 +285,142 @@ function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVis
 }
 
 // ── Daily.co (chargé à la demande : rien n'est téléchargé en mode radio) ───
+//
+// Le cadre (iframe, thème, erreurs traduites, jeton redemandé, bascule) est
+// celui du module visio (CadreDaily), partagé avec la salle d'essai. Ici :
+// ce qui tient à la classe. Le formateur (propriétaire) ouvre le micro de
+// l'étudiant qui reçoit la parole et le referme ensuite ; il lance
+// l'enregistrement du replay quand la séance passe en direct (jamais en
+// répétition ni pendant un essai).
 
-let destructionDaily: Promise<void> = Promise.resolve();
+const roleCadre = (r: RoleSeance): RoleCadre => (r === "equipe" ? "observateur" : r);
 
-function SceneDaily({ seance, role, micro, camera, onConsommationVisio, onEtatVisio }: PropsScene) {
-  const conteneur = useRef<HTMLDivElement>(null);
-  const appel = useRef<DailyCall | null>(null);
-  const [etat, setEtat] = useState<"connexion" | "connecte" | "erreur">("connexion");
-  const [message, setMessage] = useState("");
-  const [essai, setEssai] = useState(0);
-  const [lent, setLent] = useState(false);
-  const recu = useRef(0);
+const peutEnvoyerSon = (p: DailyEventObjectParticipant["participant"]) => {
+  const cs = p.permissions?.canSend;
+  return cs === true || (cs instanceof Set && cs.has("audio"));
+};
 
-  // Connexion anormalement longue (réseau filtré, 3G faible) : on le dit et on propose une issue.
+function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, onEtatVisio, onSecoursRadio }: PropsScene & { onSecoursRadio: () => void }) {
+  const [call, setCall] = useState<DailyCall | null>(null);
+  const [connecte, setConnecte] = useState(false);
+  const infos = useRef<RejoindreVisioDto | null>(null);
+  const enregistre = useRef(false);
+  const microVoulu = useRef(micro);
+  microVoulu.current = micro;
+  const [bascule, setBascule] = useState(false);
+
+  // Enregistrement en cours ? (lancé par le jeton si la séance était déjà en direct)
   useEffect(() => {
-    setLent(false);
-    if (etat !== "connexion") return;
-    const id = setTimeout(() => setLent(true), 20_000);
-    return () => clearTimeout(id);
-  }, [etat, essai]);
-
-  useEffect(() => {
-    let annule = false;
-    setEtat("connexion");
-    onEtatVisio?.("connexion");
-    (async () => {
-      try {
-        const infos = await post<RejoindreDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" });
-        if (!infos.url || !infos.jeton) throw new Error(infos.message ?? "La visio n'est pas disponible pour le moment.");
-        const { default: DailyIframe } = await import("@daily-co/daily-js");
-        await destructionDaily;
-        if (annule || !conteneur.current) return;
-        const call = DailyIframe.createFrame(conteneur.current, {
-          iframeStyle: { width: "100%", height: "100%", border: "0", borderRadius: "20px", background: "#1E1C1A" },
-          showLeaveButton: false,
-          showFullscreenButton: true,
-          lang: "fr",
-          theme: {
-            colors: {
-              accent: "#E4793A",
-              accentText: "#141414",
-              background: "#1E1C1A",
-              backgroundAccent: "#2A2624",
-              baseText: "#FFFFFF",
-              border: "#3A3431",
-              mainAreaBg: "#0F0E0D",
-              mainAreaBgAccent: "#1E1C1A",
-              mainAreaText: "#FFFFFF",
-              supportiveText: "#A89E95",
-            },
-          },
-        });
-        appel.current = call;
-        call.on("joined-meeting", () => {
-          setEtat("connecte");
-          onEtatVisio?.("connecte");
-        });
-        call.on("network-connection", (ev) => {
-          if (ev?.event === "interrupted") onEtatVisio?.("reconnexion");
-          if (ev?.event === "connected") onEtatVisio?.("connecte");
-        });
-        call.on("error", (ev) => {
-          setEtat("erreur");
-          setMessage(ev?.errorMsg ? `La visio a été interrompue (${ev.errorMsg}).` : "La visio a été interrompue.");
-          onEtatVisio?.("echec");
-        });
-        const emetteur = role === "formateur" || role === "salle";
-        await call.join({ url: infos.url, token: infos.jeton, startVideoOff: !emetteur, startAudioOff: !(role === "formateur") });
-      } catch (e) {
-        if (annule) return;
-        setEtat("erreur");
-        setMessage((e as Error).message);
-        onEtatVisio?.("echec");
-      }
-    })();
+    if (!call) return;
+    enregistre.current = false;
+    const debut = () => (enregistre.current = true);
+    const fin = () => (enregistre.current = false);
+    call.on("recording-started", debut);
+    call.on("recording-stopped", fin);
     return () => {
-      annule = true;
-      const c = appel.current;
-      appel.current = null;
-      if (c) destructionDaily = c.destroy().catch(() => undefined);
-      onEtatVisio?.("ferme");
+      call.off("recording-started", debut);
+      call.off("recording-stopped", fin);
     };
-  }, [seance.id, role, essai]);
+  }, [call]);
 
-  // Micro : le formateur le garde ; la salle et l'étudiant ne l'ouvrent qu'avec la parole.
+  // Replay : le formateur lance l'enregistrement dès que la séance passe en direct.
   useEffect(() => {
-    if (etat === "connecte" && micro !== undefined) appel.current?.setLocalAudio(micro);
-  }, [micro, etat]);
-  useEffect(() => {
-    if (etat === "connecte" && camera !== undefined && (role === "formateur" || role === "salle")) appel.current?.setLocalVideo(camera);
-  }, [camera, etat, role]);
-
-  // Consommation mesurée par Daily (débit reçu), cumulée toutes les 5 s.
-  useEffect(() => {
-    if (etat !== "connecte" || !onConsommationVisio) return;
-    const id = setInterval(async () => {
+    if (!call || !connecte || role !== "formateur" || etat.statut !== "en_direct" || !infos.current?.enregistrement) return;
+    const id = setTimeout(() => {
+      if (enregistre.current) return;
       try {
-        const stats = await appel.current?.getNetworkStats();
-        const latest = stats && "latest" in stats.stats ? stats.stats.latest : null;
-        if (latest?.recvBitsPerSecond) {
-          recu.current += (latest.recvBitsPerSecond / 8) * 5;
-          onConsommationVisio(recu.current);
-        }
+        call.startRecording();
       } catch {
-        /* statistiques indisponibles */
+        /* enregistrement indisponible : le cours continue */
       }
-    }, 5000);
-    return () => clearInterval(id);
-  }, [etat, onConsommationVisio]);
+    }, 4000);
+    return () => clearTimeout(id);
+  }, [call, connecte, role, etat.statut]);
+
+  // Parole à un étudiant en ligne : le formateur lui ouvre le droit d'envoyer son micro, et le retire après.
+  const cibleParole = etat.parole?.type === "etudiant" ? String(etat.parole.utilisateurId) : null;
+  const accorde = useRef<string | null>(null);
+  useEffect(() => {
+    if (!call || !connecte || role !== "formateur") return;
+    const appliquer = () => {
+      const participants = Object.values(call.participants());
+      if (accorde.current && accorde.current !== cibleParole) {
+        for (const x of participants) if (!x.local && x.user_id === accorde.current) call.updateParticipant(x.session_id, { setAudio: false, updatePermissions: { canSend: false } });
+      }
+      if (cibleParole) for (const x of participants) if (!x.local && x.user_id === cibleParole) call.updateParticipant(x.session_id, { updatePermissions: { canSend: ["audio"] } });
+      accorde.current = cibleParole;
+    };
+    appliquer();
+    const arrivee = (ev?: DailyEventObjectParticipant) => {
+      if (cibleParole && ev?.participant.user_id === cibleParole) appliquer();
+    };
+    call.on("participant-joined", arrivee);
+    return () => {
+      call.off("participant-joined", arrivee);
+    };
+  }, [call, connecte, role, cibleParole]);
+
+  // Étudiant : le droit de parler arrive un instant après la parole ; on ouvre alors le micro.
+  useEffect(() => {
+    if (!call || role !== "etudiant") return;
+    const maj = (ev?: DailyEventObjectParticipant) => {
+      const x = ev?.participant;
+      if (!x?.local) return;
+      if (microVoulu.current && peutEnvoyerSon(x) && x.tracks?.audio?.state === "off") call.setLocalAudio(true);
+    };
+    call.on("participant-updated", maj);
+    return () => {
+      call.off("participant-updated", maj);
+    };
+  }, [call, role]);
+
+  const basculerCampus = async () => {
+    setBascule(true);
+    try {
+      await patch(`/api/seances/${seance.id}`, { fournisseur: "campus" });
+      await rafraichir(`/api/seances/${seance.id}`);
+      toast("La classe passe sur la visio du campus : les salles et les étudiants suivent.");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setBascule(false);
+    }
+  };
+
+  const tu = role === "etudiant";
+  const secours =
+    role === "formateur" && seance.peutModifier ? (
+      <>
+        <Bouton variante="nuit-actif" chargement={bascule} onClick={() => void basculerCampus()}>
+          Passer la classe sur la visio du campus
+        </Bouton>
+        <p className="text-[13px] text-nuit-gris">Les salles et les étudiants basculent avec vous. La radio, les diapos et les questions continuent.</p>
+      </>
+    ) : (
+      <Bouton variante="nuit-actif" icone={<Radio className="h-4 w-4" />} onClick={onSecoursRadio}>
+        {tu ? "Écouter en son + diapos" : "Écouter le cours à la radio"}
+      </Bouton>
+    );
 
   return (
-    <div className="relative h-full w-full">
-      <div ref={conteneur} className="h-full w-full" />
-      {etat !== "connecte" && (
-        <div className="absolute inset-0">
-          {etat === "connexion" ? (
-            <MessageScene
-              icone={<Loader2 className="h-6 w-6 animate-spin" />}
-              texte={
-                lent
-                  ? role === "formateur"
-                    ? "La visio met du temps à répondre. Réessayez, ou passez au Plan B : questions, sondages et diapos continuent sur le campus."
-                    : "La visio met du temps à répondre. Réessaie, ou passe en « son + diapos » (bouton « Changer de mode »)."
-                  : "Connexion à la visio…"
-              }
-              action={
-                lent ? (
-                  <Bouton variante="nuit-actif" onClick={() => setEssai((n) => n + 1)}>
-                    Réessayer
-                  </Bouton>
-                ) : undefined
-              }
-            />
-          ) : (
-            <MessageScene
-              icone={<WifiOff className="h-6 w-6" />}
-              texte={message || "La visio ne répond pas."}
-              action={
-                <Bouton variante="nuit-actif" onClick={() => setEssai((n) => n + 1)}>
-                  Réessayer
-                </Bouton>
-              }
-            />
-          )}
-        </div>
-      )}
-    </div>
+    <CadreDaily
+      role={roleCadre(role)}
+      tu={tu}
+      micro={micro}
+      camera={camera}
+      obtenirAcces={async () => {
+        const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" });
+        infos.current = r;
+        return r;
+      }}
+      onAppel={(c) => {
+        setCall(c);
+        if (!c) setConnecte(false);
+      }}
+      onRejoint={() => setConnecte(true)}
+      onEtat={onEtatVisio}
+      onConsommation={onConsommationVisio}
+      secours={secours}
+    />
   );
 }

@@ -111,7 +111,7 @@ export default function PageAgenda() {
           tu
             ? "Tes lives, tes devoirs à rendre et les événements de ton campus, jour par jour."
             : formateur
-              ? "Vos séances et vos échéances, à l'heure d'Abidjan et de Paris."
+              ? "Vos séances et vos échéances, à l'heure d'Abidjan et à la vôtre."
               : "Les séances, échéances et événements de votre périmètre."
         }
         actions={

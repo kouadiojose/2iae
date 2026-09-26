@@ -236,3 +236,51 @@ export type ReglagesVisioDto = {
   daily: boolean;
   majLe: string | null;
 };
+
+// ── Fuseaux horaires des formateurs ────────────────────────────────────────
+
+/** Fuseaux proposés en premier (formateurs du Canada, d'Europe et d'Afrique de l'Ouest). */
+export const FUSEAUX_UTILES: { fuseau: string; ville: string; pays: string }[] = [
+  { fuseau: "Africa/Abidjan", ville: "Abidjan", pays: "Côte d'Ivoire" },
+  { fuseau: "America/Toronto", ville: "Toronto", pays: "Canada, Ontario" },
+  { fuseau: "America/Montreal", ville: "Montréal", pays: "Canada, Québec" },
+  { fuseau: "America/Vancouver", ville: "Vancouver", pays: "Canada, Colombie-Britannique" },
+  { fuseau: "America/New_York", ville: "New York", pays: "États-Unis" },
+  { fuseau: "Europe/Paris", ville: "Paris", pays: "France" },
+  { fuseau: "Europe/Brussels", ville: "Bruxelles", pays: "Belgique" },
+  { fuseau: "Europe/Zurich", ville: "Genève", pays: "Suisse" },
+  { fuseau: "Europe/Berlin", ville: "Berlin", pays: "Allemagne" },
+  { fuseau: "Europe/London", ville: "Londres", pays: "Royaume-Uni" },
+  { fuseau: "Africa/Dakar", ville: "Dakar", pays: "Sénégal" },
+  { fuseau: "Africa/Lagos", ville: "Lagos", pays: "Nigeria, Cameroun, Gabon" },
+  { fuseau: "Africa/Casablanca", ville: "Casablanca", pays: "Maroc" },
+  { fuseau: "Asia/Dubai", ville: "Dubaï", pays: "Émirats arabes unis" },
+];
+
+const VILLES_TRADUITES: Record<string, string> = {
+  Montreal: "Montréal",
+  Quebec: "Québec",
+  New_York: "New York",
+  Brussels: "Bruxelles",
+  London: "Londres",
+  Zurich: "Zurich",
+  Geneva: "Genève",
+  Vienna: "Vienne",
+  Rome: "Rome",
+  Lisbon: "Lisbonne",
+  Madrid: "Madrid",
+  Algiers: "Alger",
+  Tunis: "Tunis",
+  Dubai: "Dubaï",
+  Moscow: "Moscou",
+  Beijing: "Pékin",
+  Shanghai: "Shanghai",
+};
+
+/** « America/Toronto » → « Toronto », « America/Montreal » → « Montréal ». */
+export function villeDuFuseau(fuseau: string): string {
+  const connu = FUSEAUX_UTILES.find((f) => f.fuseau === fuseau);
+  if (connu) return connu.ville;
+  const fin = fuseau.split("/").pop() ?? fuseau;
+  return VILLES_TRADUITES[fin] ?? fin.replace(/_/g, " ");
+}

@@ -17,6 +17,7 @@ import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
 import { LigneAContacter } from "./composants/LigneAContacter";
 import { FenetreSuivi } from "./composants/FenetreSuivi";
+import { CarteRentree } from "./composants/CarteRentree";
 import { pourcent } from "./outils";
 
 export default function PageTableau() {
@@ -43,6 +44,8 @@ export default function PageTableau() {
           ) : undefined
         }
       />
+
+      <CarteRentree />
 
       {tableau.isLoading && <Chargement lignes={2} />}
       {tableau.error && <Erreur message={(tableau.error as Error).message} reessayer={() => tableau.refetch()} />}
@@ -113,7 +116,7 @@ export default function PageTableau() {
           <Raccourci href="/pilotage/comptes?etat=non_actives&role=etudiant" icone={<Printer className="h-5 w-5" />} titre="Fiches de connexion" texte="Pour les non-activés" />
           <Raccourci href="/pilotage/planning" icone={<CalendarClock className="h-5 w-5" />} titre="Planning" texte="Lives de la semaine" />
           <Raccourci href="/pilotage/presences" icone={<BarChart3 className="h-5 w-5" />} titre="Présences" texte="Par séance, export" />
-          <Raccourci href="/pilotage/site" icone={<Globe className="h-5 w-5" />} titre="Site 2iae.com" texte="Publié et proposé" />
+          <Raccourci href="/pilotage/site" icone={<Globe className="h-5 w-5" />} titre="Site public" texte="Pages et 2iae.com" />
           <Raccourci href="/pilotage/ia" icone={<Sparkles className="h-5 w-5" />} titre="Budget IA" texte="Consommation 30 jours" />
         </div>
       </section>

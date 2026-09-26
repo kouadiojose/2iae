@@ -94,6 +94,10 @@ import {
   type EffectifSalle,
   type MainLevee,
   tauxPresence,
+  villeDuFuseau,
+  directsImmediats,
+  type DemandeDirectImmediat,
+  type RejoindreVisioDto,
 } from "@shared/schema";
 import type { SeanceResume, EnCours } from "@shared/api";
 
@@ -135,11 +139,22 @@ const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : nul
 const finPrevue = (s: Pick<Seance, "debut" | "dureeMinutes">) => new Date(s.debut).getTime() + s.dureeMinutes * MINUTE;
 const nomCourt = (u: Pick<Utilisateur, "prenom" | "nom">) => `${u.prenom} ${u.nom.charAt(0)}.`;
 const heureA = (d: Date, fuseau = "Africa/Abidjan") => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: fuseau }).format(d).replace(":", "h");
-/** « 08h00 Abidjan · 10h00 Paris » : beaucoup de formateurs enseignent depuis la France (comme heureDouble côté client). */
-function heureDouble(d: Date): string {
+/**
+ * « 08h30 Abidjan · 04h30 chez vous (Toronto) » : l'heure d'Abidjan et celle
+ * du formateur, selon son fuseau (utilisateurs.fuseau ; nul = Abidjan seule).
+ * Même règle que heureDouble() côté client.
+ */
+function heureDouble(d: Date, fuseau: string | null | undefined): string {
   const a = heureA(d);
-  const p = heureA(d, "Europe/Paris");
-  return a === p ? `${a} Abidjan et Paris` : `${a} Abidjan · ${p} Paris`;
+  if (!fuseau || fuseau === "Africa/Abidjan") return `${a} Abidjan`;
+  let l: string;
+  try {
+    l = heureA(d, fuseau);
+  } catch {
+    return `${a} Abidjan`;
+  }
+  const ville = villeDuFuseau(fuseau);
+  return l === a ? `${a} Abidjan, même heure chez vous (${ville})` : `${a} Abidjan · ${l} chez vous (${ville})`;
 }
 const lienHttp = z
   .string()
@@ -233,6 +248,8 @@ async function seanceSuivie(u: Utilisateur, id: number): Promise<Seance> {
 async function roleDans(u: Utilisateur, s: Seance): Promise<RoleSeance> {
   if (u.role === "salle") return "salle";
   if (u.role === "formateur" && (await enseigneCours(u, s.coursId))) return "formateur";
+  // La direction anime le direct qu'elle a lancé elle-même depuis le Studio (« Lancer un direct maintenant »).
+  if (u.role === "admin" && (await visio.aLanceDirect(u.id, s.id))) return "formateur";
   if (estEquipe(u)) return "equipe";
   return "etudiant";
 }
@@ -1375,31 +1392,46 @@ export function enregistrerLive(app: Express) {
   );
 
   // ── Rejoindre la visio ───────────────────────────────────────────────────
+  // Ouverture de la salle virtuelle d'une séance planifiée :
+  //  - formateur du cours et direction : à tout moment (répétition dans la vraie salle) ;
+  //  - écran de salle et vie scolaire : 90 minutes avant le début ;
+  //  - étudiant : 30 minutes avant.
+  // Répéter ne fait pas passer la séance « en direct » et n'enregistre rien.
   app.post(
     "/api/seances/:id/rejoindre",
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceAccessible(u, idParam(req));
-      const { mode } = valider(z.object({ mode: z.enum(["video", "radio", "compagnon"]).optional() }), req.body);
+      const { mode, repetition } = valider(z.object({ mode: z.enum(["video", "radio", "compagnon"]).optional(), repetition: z.boolean().optional() }), req.body);
       const role = await roleDans(u, s);
       if (s.statut === "annulee") throw new ErreurHttp(409, `Cette séance est annulée${s.motifAnnulation ? ` : ${s.motifAnnulation}` : "."}`);
       if (s.statut === "terminee") throw new ErreurHttp(409, "Cette séance est terminée. Le replay sera bientôt disponible.");
-      const avance = role === "etudiant" ? 30 * MINUTE : 90 * MINUTE;
-      if (s.statut === "planifiee" && s.debut.getTime() - Date.now() > avance) {
-        throw new ErreurHttp(409, role === "etudiant" ? "La classe ouvre 30 minutes avant le début." : "La salle virtuelle ouvre 90 minutes avant le début.");
+      const animateur = role === "formateur" || u.role === "admin";
+      if (!animateur && s.statut === "planifiee") {
+        const avance = role === "etudiant" ? 30 * MINUTE : 90 * MINUTE;
+        if (s.debut.getTime() - Date.now() > avance) {
+          throw new ErreurHttp(
+            409,
+            role === "etudiant"
+              ? "La classe ouvre 30 minutes avant le début."
+              : "La salle virtuelle de cette séance ouvre 90 minutes avant le début. D'ici là, la salle d'essai est ouverte à tout moment.",
+          );
+        }
       }
+      // Répétition : séance pas encore commencée, ouverte par le formateur ou la direction.
+      const enRepetition = Boolean(repetition) && animateur && s.statut === "planifiee";
       const sitesParId = await nomsSites();
       const site = u.siteId ? sitesParId.get(u.siteId) : undefined;
       const nomAffiche =
         role === "formateur"
-          ? `${u.prenom} ${u.nom} · formateur`
+          ? `${u.prenom} ${u.nom} · ${u.role === "admin" ? "direction" : "formateur"}`
           : role === "salle"
             ? `${site?.salleConference ?? "Salle"} · ${site?.nomCourt ?? ""}`
             : role === "equipe"
-              ? `${u.prenom} ${u.nom} · équipe 2IAE`
+              ? `${u.prenom} ${u.nom} · ${u.role === "admin" ? "direction" : "équipe 2IAE"}`
               : `${site?.nomCourt ?? "En ligne"} · ${nomCourt(u)}`;
-      const reponse: RejoindreDto = { fournisseur: s.fournisseur, url: null, nomAffiche };
+      const reponse: RejoindreVisioDto = { fournisseur: s.fournisseur, url: null, nomAffiche, ...(enRepetition && { repetition: true }) };
       if (role === "etudiant" && mode && mode !== "video") {
         // Radio ou compagnon : aucune connexion à la visio (économie de données).
         return res.json(reponse);
@@ -1408,9 +1440,24 @@ export function enregistrerLive(app: Express) {
         case "daily": {
           const salle = await visio.obtenirSalleDaily(s);
           if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
-          const profil: visio.ProfilJeton = role === "formateur" ? "formateur" : role === "salle" ? "salle" : role === "equipe" ? "observateur" : "etudiant";
+          // La direction qui répète (ou qui a lancé le direct) parle comme un formateur ; sinon elle observe.
+          const profil: visio.ProfilJeton =
+            role === "formateur" || (u.role === "admin" && enRepetition) ? "formateur" : role === "salle" ? "salle" : role === "equipe" ? "observateur" : "etudiant";
+          // Replay : seulement une vraie séance (ni répétition, ni essai de direct sans étudiants).
+          const enregistrement = profil === "formateur" && !enRepetition && visio.enregistrementAutomatique() && !(await visio.estEssaiDirect(s.id));
           reponse.url = salle.url;
-          reponse.jeton = await visio.jetonDaily({ salle: salle.nom, nomAffiche, utilisateurId: u.id, profil, seance: s });
+          reponse.profil = profil;
+          reponse.enregistrement = enregistrement;
+          reponse.jeton = await visio.jetonDaily({
+            salle: salle.nom,
+            nomAffiche,
+            utilisateurId: u.id,
+            profil,
+            exp: visio.expirationJetonSeance(s),
+            enregistrer: enregistrement && s.statut === "en_direct",
+            ejecterApres: enRepetition ? visio.DUREE_MAX_REPETITION_S : undefined,
+            enregistrementPermis: !enRepetition,
+          });
           break;
         }
         case "jitsi":
@@ -1421,13 +1468,75 @@ export function enregistrerLive(app: Express) {
           reponse.url = s.lienExterne;
           break;
         case "demo":
-          reponse.message = "Scène de démonstration : aucune visio n'est branchée pour cette séance.";
+          reponse.message = "Aucune visio n'est branchée pour cette séance.";
           break;
         case "campus":
           // La signalisation WebRTC est gérée par le module visio.
           break;
       }
       res.json(reponse);
+    }),
+  );
+
+  // ── Direct immédiat (Studio) : une séance créée maintenant et ouverte aussitôt ──
+  // Pour un essai grandeur nature avec les salles de campus. Les étudiants ne
+  // sont prévenus que si la case est cochée ; sans eux c'est un essai : pas
+  // d'enregistrement, et la séance s'efface d'elle-même après coup si aucun
+  // étudiant ne l'a suivie (module visio).
+  app.post(
+    "/api/seances/direct-immediat",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur" && u.role !== "admin") throw interdit("Le direct immédiat est réservé aux formateurs et à la direction.");
+      const d: DemandeDirectImmediat = valider(
+        z.object({
+          coursId: z.number().int().positive(),
+          dureeMinutes: z.number().int().min(15, "15 minutes au moins").max(240, "4 heures au plus"),
+          prevenir: z.boolean(),
+          titre: z.string().trim().min(3, "au moins 3 caractères").max(160).optional(),
+        }),
+        req.body,
+      );
+      const c = await coursEnseigne(u, d.coursId);
+      limiter(`direct-immediat:${u.id}`, 5000, "Le direct est déjà en train de s'ouvrir.");
+      // Un direct déjà ouvert pour ce cours : on y retourne plutôt que d'en ouvrir un second.
+      const [ouvert] = await db
+        .select()
+        .from(seances)
+        .where(and(eq(seances.coursId, c.id), eq(seances.statut, "en_direct")))
+        .limit(1);
+      if (ouvert) return res.json({ ...(await detailSeance(u, ouvert)), existant: true });
+      const fournisseur = visio.fournisseurParDefaut();
+      verifierFournisseur(fournisseur, null);
+      const maintenant = new Date();
+      const [s] = await db
+        .insert(seances)
+        .values({
+          coursId: c.id,
+          titre: d.titre ?? (d.prevenir ? c.titre : `Essai de visio · ${c.titre}`),
+          description: d.prevenir ? "" : "Essai de visio lancé depuis le Studio : les étudiants n'ont pas été prévenus.",
+          debut: maintenant,
+          dureeMinutes: d.dureeMinutes,
+          fournisseur,
+          statut: "en_direct",
+          demarreeLe: maintenant,
+        })
+        .returning();
+      await db.insert(directsImmediats).values({ seanceId: s.id, creeParId: u.id, prevenir: d.prevenir });
+      await consigner(s.id, "demarrage", { par: u.id, immediat: true, ...(!d.prevenir && { essai: true }) });
+      await db.insert(journal).values({ utilisateurId: u.id, action: "direct_immediat", details: { seanceId: s.id, coursId: c.id, prevenir: d.prevenir } });
+      annoncer(s);
+      if (d.prevenir) {
+        await notifier((await etudiantsDuCours(c.id)).map((e) => e.id), {
+          type: "live",
+          titre: `En direct : ${s.titre}`,
+          corps: `${c.code} · le cours commence maintenant. Entre dans la classe.`,
+          lien: `/live/${s.id}`,
+          urgent: true,
+        });
+      }
+      res.status(201).json(await detailSeance(u, s));
     }),
   );
 
@@ -2788,7 +2897,8 @@ async function presenceRecente(seanceId: number, depuis: Date): Promise<boolean>
  * Rappels 24 h et 15 min avant, une seule fois par séance. Le rappel 15 min est
  * urgent (il passe les heures calmes et le plafond) ; celui de la veille suit
  * les règles normales. L'heure est toujours dite avec son fuseau : heure
- * d'Abidjan pour les étudiants, Abidjan et Paris pour les formateurs.
+ * d'Abidjan pour les étudiants ; Abidjan et l'heure de chez lui pour chaque
+ * formateur (utilisateurs.fuseau).
  */
 planifier("live-rappels", MINUTE, async () => {
   const maintenant = Date.now();
@@ -2807,7 +2917,6 @@ planifier("live-rappels", MINUTE, async () => {
     const quand = s.debut.toISOString().slice(0, 10) === new Date(maintenant).toISOString().slice(0, 10) ? "Aujourd'hui" : "Demain";
     const urgent = type === "15min";
     const titreEtudiant = urgent ? `Dans 15 min : ${s.titre}` : `${quand} à ${heureA(s.debut)} (heure d'Abidjan) : ${s.titre}`;
-    const titreFormateur = urgent ? `Dans 15 min : ${s.titre}` : `${quand} à ${heureDouble(s.debut)} : ${s.titre}`;
     // Tutoiement pour les étudiants, vouvoiement pour les formateurs (CONCEPTION §1.6).
     await notifier(await destinatairesSeance(s, false), {
       type: "live",
@@ -2816,13 +2925,24 @@ planifier("live-rappels", MINUTE, async () => {
       lien: `/live/${s.id}`,
       urgent,
     });
-    await notifier((await formateursDuCours(s.coursId)).map((f) => f.id), {
-      type: "live",
-      titre: titreFormateur,
-      corps: urgent ? `${code} · ouvrez le studio : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan et vos diapos.`,
-      lien: `/live/${s.id}`,
-      urgent,
-    });
+    // Chaque formateur reçoit l'heure dans son fuseau (« demain » compté chez lui).
+    for (const f of await formateursDuCours(s.coursId)) {
+      const jourLocal = (t: number) => {
+        try {
+          return new Intl.DateTimeFormat("fr-CA", { timeZone: f.fuseau ?? "Africa/Abidjan" }).format(t);
+        } catch {
+          return new Date(t).toISOString().slice(0, 10);
+        }
+      };
+      const quandLocal = jourLocal(s.debut.getTime()) === jourLocal(maintenant) ? "Aujourd'hui" : "Demain";
+      await notifier([f.id], {
+        type: "live",
+        titre: urgent ? `Dans 15 min : ${s.titre}` : `${quandLocal} à ${heureDouble(s.debut, f.fuseau)} : ${s.titre}`,
+        corps: urgent ? `${code} · ouvrez le studio : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan, vos diapos et la visio (salle d'essai).`,
+        lien: urgent ? `/live/${s.id}` : `/enseigner/seances/${s.id}`,
+        urgent,
+      });
+    }
   }
 });
 

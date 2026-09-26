@@ -7,6 +7,7 @@
 // dépendre du fuseau du serveur ni de celui du navigateur : « 2026-09-28 » et
 // « 08:30 » donnent 2026-09-28T08:30:00Z, où que tourne le code.
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { TransactionRollbackError } from "drizzle-orm/errors";
 import { db } from "./db";
 import * as visio from "./visio";
 import {
@@ -450,6 +451,8 @@ type OptionsSynchro = {
   complete: boolean;
   /** Passe la session à « publiée » dans la même transaction (bouton « Publier »). */
   publier?: boolean;
+  /** Aperçu : tout est calculé puis la transaction est annulée (rien n'est écrit). */
+  essai?: boolean;
   auteurId: number | null;
 };
 
@@ -464,6 +467,14 @@ type OptionsSynchro = {
 export async function synchroniserSession(sessionId: number, o: OptionsSynchro): Promise<ResultatSynchro> {
   const maintenant = o.maintenant ?? new Date();
   const garde = o.filtre ?? (() => true);
+  let apercu: ResultatSynchro | null = null;
+  try {
+    return await executer();
+  } catch (e) {
+    if (e instanceof TransactionRollbackError && apercu) return apercu;
+    throw e;
+  }
+  function executer() {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${VERROU_PUBLICATION}, ${sessionId})`);
     const [s] = await tx.select().from(sessionsProgramme).where(eq(sessionsProgramme.id, sessionId));
@@ -724,8 +735,13 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
     }
     bilan.intervenantsTouches = [...touches];
     bilan.coursTouches = [...coursTouches];
+    if (o.essai) {
+      apercu = bilan;
+      tx.rollback();
+    }
     return bilan;
   });
+  }
 }
 
 /** Rend publiques (ou non) toutes les séances engendrées par une session (publication, retrait, archivage). */

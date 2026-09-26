@@ -1,5 +1,6 @@
 // Comptes et données minimales pour le développement et les tests
-// (jamais en production). Idempotent.
+// (jamais en production). Idempotent. Tout ce qu'il crée (sauf la direction)
+// est marqué « démonstration » : la purge (npm run db:purge-demo) l'enlève.
 //
 //   DATABASE_URL=postgresql://postgres@localhost:5433/campus_x npx tsx server/scripts/comptes-test.ts
 //
@@ -16,7 +17,8 @@ import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { hacher } from "../auth";
 import { SITES_2IAE } from "../amorcage";
-import { sites, classes, utilisateurs, cours, coursClasses, modules, lecons, type Role } from "@shared/schema";
+import { sites, classes, utilisateurs, cours, coursClasses, modules, lecons, journal, type Role } from "@shared/schema";
+import { ACTION_JOURNAL_DEMO } from "../demo-constantes";
 
 if (process.env.NODE_ENV === "production") {
   console.error("Refusé : script de test, jamais en production.");
@@ -31,6 +33,7 @@ async function principal() {
   await db.update(sites).set({ whatsappVieScolaire: "2250747726729" }).where(eq(sites.slug, "yopougon"));
 
   let listeClasses = await db.select().from(classes);
+  const classesCreees: number[] = [];
   if (!listeClasses.length) {
     listeClasses = await db
       .insert(classes)
@@ -66,7 +69,7 @@ async function principal() {
     { role: "etudiant", prenom: "Koffi", nom: "Brou", matricule: "24GC0002", telephone: "0505987654", code: "482913", site: "azaguie" },
     { role: "etudiant", prenom: "Mariam", nom: "Traoré", matricule: "24GC0003", code: "482913", site: "mbatto" },
     { role: "etudiant", prenom: "Awa", nom: "Nouveau", matricule: "24GC0099", code: "739251", site: "yopougon", provisoire: true },
-    { role: "salle", prenom: "Salle", nom: "Kédjénou", email: "salle.yopougon@2iae.com", code: "Salle-Yopougon-2026", site: "yopougon" },
+    { role: "salle", prenom: "Salle", nom: "Yopougon", email: "salle.yopougon@2iae.com", code: "Salle-Yopougon-2026", site: "yopougon" },
   ];
 
   for (const c of comptes) {
@@ -87,7 +90,7 @@ async function principal() {
       siteId: c.site ? site(c.site).id : null,
       classeId: c.role === "etudiant" && c.site ? classeDe(c.site).id : null,
       charteAccepteeLe: c.provisoire ? null : new Date(),
-      preferences: c.provisoire ? {} : { visiteFaite: true },
+      preferences: c.role === "admin" ? {} : c.provisoire ? { demo: true } : { demo: true, visiteFaite: true },
       ...(c.formateur
         ? {
             slug: "karim-diallo",
@@ -143,7 +146,12 @@ async function principal() {
       },
     ]);
   }
-  console.log("✓ Comptes et données de test prêts.");
+  // Registre : la purge sait quelles classes et quel cours ce script a créés.
+  const [ia101] = await db.select({ id: cours.id }).from(cours).where(eq(cours.code, "IA-101"));
+  if (classesCreees.length || !dejaCours) {
+    await db.insert(journal).values({ utilisateurId: null, action: ACTION_JOURNAL_DEMO, details: { classes: classesCreees, cours: ia101 && !dejaCours ? [ia101.id] : [], script: "comptes-test" } });
+  }
+  console.log("✓ Comptes et données de test prêts (marqués « démonstration »).");
 }
 
 principal()

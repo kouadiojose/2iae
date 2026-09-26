@@ -31,7 +31,8 @@ export default function PageConnexion() {
   // Déjà connecté (lien ouvert depuis WhatsApp, bouton retour…) : on file à destination.
   if (moi && !envoi) return <Redirect to={destinationApresConnexion(moi, retour)} replace />;
 
-  const personnel = ressembleEmail(identifiant);
+  // Personnel : une adresse e-mail, ou un numéro étranger (formateur au Canada, en Allemagne… : +1, +49, jamais +225).
+  const personnel = ressembleEmail(identifiant) || /^\s*(\+|00)(?!\s*225)/.test(identifiant);
   // Clavier à chiffres pour les codes des étudiants ; clavier complet pour le personnel.
   const clavierChiffres = !personnel && !lettres;
 

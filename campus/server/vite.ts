@@ -13,11 +13,17 @@ import type { Server } from "http";
  */
 type FournisseurMeta = (url: string) => Promise<string | null>;
 const fournisseursMeta: FournisseurMeta[] = [];
-export function enregistrerMetaPage(f: FournisseurMeta) {
-  fournisseursMeta.push(f);
+const fournisseursRepli: FournisseurMeta[] = [];
+/**
+ * Enregistre un fournisseur de balises. { repli: true } : consulté seulement
+ * si aucun autre ne répond (balises génériques des pages du site public, qu'un
+ * module peut préciser pour ses propres pages, comme /programme).
+ */
+export function enregistrerMetaPage(f: FournisseurMeta, options: { repli?: boolean } = {}) {
+  (options.repli ? fournisseursRepli : fournisseursMeta).push(f);
 }
 async function injecterMeta(url: string, html: string): Promise<string> {
-  for (const f of fournisseursMeta) {
+  for (const f of [...fournisseursMeta, ...fournisseursRepli]) {
     const meta = await f(url).catch(() => null);
     if (meta) {
       // Remplace le titre et la description par défaut.

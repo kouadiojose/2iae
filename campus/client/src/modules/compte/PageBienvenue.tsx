@@ -29,6 +29,7 @@ import { CarteChoix, GroupeChoix, OPTIONS_SUIVI, type ModeSuivi } from "./compos
 import { useEcransVisite } from "./composants/Visite";
 import { EssaiDepot } from "./composants/EssaiDepot";
 import { ListeContactsSites } from "./composants/AideWhatsApp";
+import { ChoixIdentite } from "./composants/ChoixIdentite";
 import { majMoi, retourSur, tuOuVous } from "./outils";
 
 type Etape = "moi" | "code" | "charte" | "suivi" | "visite" | "essai" | "rappels";
@@ -46,6 +47,16 @@ const LIBELLES: Record<Etape, [tu: string, vous: string]> = {
 /** ?visite=1 : revoir la visite · ?essai=1 : refaire le devoir d'essai (lien possible depuis l'accueil). */
 type Mode = "complet" | "visite" | "essai";
 
+/**
+ * Formateur (arrivé par son invitation), ou membre de l'équipe créé sans
+ * identifiant : l'étape « code » lui fait aussi vérifier son nom et choisir
+ * son identifiant de connexion (module lancement).
+ */
+const identiteAChoisir = (moi: Moi) => moi.role === "formateur" || ((moi.role === "vie_scolaire" || moi.role === "admin") && !moi.email && !moi.telephone);
+
+/** Libellé d'une étape (« Votre compte » quand l'étape du code fait aussi choisir le nom et l'identifiant). */
+const libelleEtape = (e: Etape, moi: Moi): [string, string] => (e === "code" && identiteAChoisir(moi) ? ["Ton compte", "Votre compte"] : LIBELLES[e]);
+
 /** Étapes qu'il reste à faire pour cette personne (calculées une fois, à l'arrivée). */
 function etapesDuParcours(moi: Moi, p: ParcoursBienvenue, mode: Mode): Etape[] {
   if (mode === "visite") return moi.role === "salle" ? [] : ["visite"];
@@ -54,7 +65,8 @@ function etapesDuParcours(moi: Moi, p: ParcoursBienvenue, mode: Mode): Etape[] {
   if (moi.role === "salle") return p.codeChoisi ? [] : ["code"];
   const etudiant = moi.role === "etudiant";
   const liste: Etape[] = [];
-  if (!p.codeChoisi) liste.push("moi", "code");
+  // « C'est bien vous ? » est inutile quand la personne vérifie et corrige elle-même son nom.
+  if (!p.codeChoisi) liste.push(...(identiteAChoisir(moi) ? (["code"] as Etape[]) : (["moi", "code"] as Etape[])));
   if (!p.charteAcceptee) liste.push("charte");
   if (etudiant && !p.modeSuiviChoisi) liste.push("suivi");
   if (!p.visiteFaite) liste.push("visite");
@@ -137,7 +149,7 @@ export default function PageBienvenue() {
     ? `Visite guidée · ${ecranVisite + 1} sur 3`
     : mode === "essai"
       ? "Devoir d'essai · non noté"
-      : `Étape ${index + 1} sur ${etapes.length} · ${t(...LIBELLES[etape])}`;
+      : `Étape ${index + 1} sur ${etapes.length} · ${t(...libelleEtape(etape, moi))}`;
 
   return (
     <Cadre
@@ -227,7 +239,7 @@ function Cadre({ children, entete, etapes, index = 0 }: { children: ReactNode; e
                     >
                       {faite ? <Check className="h-4 w-4" strokeWidth={3} /> : i + 1}
                     </span>
-                    {t(...LIBELLES[e])}
+                    {t(...libelleEtape(e, moi))}
                   </li>
                 );
               })}
@@ -340,6 +352,8 @@ function EtapeCode({ moi, onFini }: { moi: Moi; onFini: () => void }) {
     majMoi({ ...moi, doitChangerMotDePasse: false });
     onFini();
   }
+
+  if (identiteAChoisir(moi)) return <ChoixIdentite moi={moi} minimum={minimum} onFini={onFini} />;
 
   if (moi.role === "etudiant") {
     return (

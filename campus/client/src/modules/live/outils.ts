@@ -68,15 +68,15 @@ export const LIBELLES_FOURNISSEUR: Record<FournisseurVisio, string> = {
   daily: "Daily",
   jitsi: "Jitsi",
   externe: "Lien externe",
-  demo: "Démonstration",
+  demo: "Sans visio",
 };
 
 export const DESCRIPTION_FOURNISSEUR: Record<FournisseurVisio, string> = {
-  campus: "Intégrée au campus, sans compte externe. Recommandée.",
-  daily: "Visio Daily.co intégrée, avec enregistrement du replay.",
+  campus: "Intégrée au campus, sans compte externe. Solution de secours si Daily ne passe pas.",
+  daily: "Visio Daily intégrée, avec enregistrement du replay. Recommandée.",
   jitsi: "Salle sur le serveur Jitsi de l'école.",
   externe: "Zoom, Meet ou Teams : les étudiants ouvrent votre lien.",
-  demo: "Sans visio : scène simulée pour essayer le studio.",
+  demo: "Sans visio : diapos, questions et sondages seulement.",
 };
 
 export const LIBELLES_STATUT_SEANCE: Record<StatutSeance, string> = {

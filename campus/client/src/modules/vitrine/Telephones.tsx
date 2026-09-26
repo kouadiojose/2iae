@@ -1,7 +1,9 @@
-// « Le campus dans la poche » : les deux téléphones de la maquette (le live en
-// mode nuit et l'accueil « Aujourd'hui »). Illustration statique et légère (pas
-// d'image), au contenu fictif de la maquette.
+// « Le campus dans la poche » : deux téléphones dessinés (le cours en direct
+// en mode nuit et l'accueil « Aujourd'hui »). Illustration statique et légère
+// (pas d'image) : aucun nom de personne, et la semaine affichée est celle de
+// la première session réelle (tronc commun 1BTS / 2BTS, 2026-2027).
 import type { ReactNode } from "react";
+import { Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Un téléphone dessiné à 300 × 620, réduit à 72 % sur les petits écrans. */
@@ -27,17 +29,17 @@ function BarreEtat({ h }: { h: string }) {
 }
 
 function TelephoneLive() {
-  const code = "IA-101";
-  const ini = "FR";
   return (
     <Telephone sombre>
-      <BarreEtat h="10:14" />
+      <BarreEtat h="09:14" />
       <div className="flex items-center justify-between px-4 py-1.5">
-        <span className="text-[13px] font-extrabold">{code} · Live</span>
+        <span className="text-[13px] font-extrabold">Initiation à l'IA</span>
         <span className="font-mono text-[10px] text-[#FF8A6B]">● EN DIRECT</span>
       </div>
       <div className="mx-3 my-2 grid aspect-[16/10] place-items-center rounded-2xl border-2 border-orange bg-nuit-carte">
-        <span className="grid h-14 w-14 place-items-center rounded-full bg-orange font-black text-encre">{ini}</span>
+        <span className="grid h-14 w-14 place-items-center rounded-full bg-orange text-encre">
+          <Radio className="h-7 w-7" />
+        </span>
       </div>
       <div className="mx-3 grid grid-cols-3 gap-1.5">
         {["Yopougon", "Yamoussoukro", "Azaguié"].map((n) => (
@@ -63,37 +65,31 @@ function TelephoneLive() {
 }
 
 function TelephoneAccueil() {
-  const jour = "mardi 29 septembre";
-  const titre = "Initiation à l'intelligence artificielle";
-  const quand = "10H00";
-  const cours = [
-    { t: "Création d'entreprise", p: 62 },
-    { t: "Réseaux et télécoms", p: 45 },
-    { t: "Comptabilité générale", p: 78 },
+  const semaine = [
+    { j: "Lun.", h: "08h30", t: "Initiation à l'IA" },
+    { j: "Mer.", h: "13h00", t: "Marketing digital" },
+    { j: "Ven.", h: "08h30", t: "Initiation à l'IA" },
+    { j: "Sam.", h: "Journée", t: "Séminaire" },
   ];
   return (
     <Telephone>
-      <BarreEtat h="09:02" />
+      <BarreEtat h="08:02" />
       <div className="flex flex-col gap-0.5 px-[18px] py-2">
-        <span className="text-[11px] text-texte-gris">{jour.charAt(0).toUpperCase() + jour.slice(1)}</span>
-        <span className="text-2xl font-black tracking-[-0.02em]">Bonjour Aya</span>
+        <span className="text-[11px] text-texte-gris">Lundi 28 septembre</span>
+        <span className="text-2xl font-black tracking-[-0.02em]">Bonjour !</span>
       </div>
       <div className="mx-3.5 my-2.5 flex flex-col gap-1.5 rounded-[18px] bg-orange p-3.5 text-encre">
-        <span className="font-mono text-[10px]">EN DIRECT À {quand}</span>
-        <span className="line-clamp-2 text-base font-extrabold leading-[1.15]">{titre}</span>
+        <span className="font-mono text-[10px]">EN DIRECT À 08H30</span>
+        <span className="line-clamp-2 text-base font-extrabold leading-[1.15]">Initiation à l'IA</span>
         <span className="mt-1.5 rounded-[10px] bg-encre p-2.5 text-center text-[13px] font-bold text-white">Rejoindre</span>
       </div>
-      <div className="px-[18px] py-1.5 text-[13px] font-extrabold">Mes cours</div>
+      <div className="px-[18px] py-1.5 text-[13px] font-extrabold">Ma semaine</div>
       <div className="flex flex-col gap-2 px-3.5">
-        {cours.map((c) => (
-          <div key={c.t} className="flex flex-col gap-[7px] rounded-[14px] border border-ligne px-3 py-2.5">
-            <div className="flex justify-between text-[12.5px] font-bold">
-              <span>{c.t}</span>
-              <span>{c.p}%</span>
-            </div>
-            <div className="h-1 rounded-full bg-[#F3EAE2]">
-              <div className="h-full rounded-full bg-orange" style={{ width: `${c.p}%` }} />
-            </div>
+        {semaine.map((c) => (
+          <div key={`${c.j}-${c.t}`} className="grid grid-cols-[34px_1fr_auto] items-center gap-2 rounded-[14px] border border-ligne px-3 py-2.5 text-[12.5px]">
+            <span className="font-mono text-[10.5px] text-texte-gris">{c.j}</span>
+            <span className="truncate font-bold">{c.t}</span>
+            <span className="font-mono text-[10.5px] text-texte-gris">{c.h}</span>
           </div>
         ))}
       </div>

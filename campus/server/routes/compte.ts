@@ -33,7 +33,7 @@ import {
 import { consommerJeton, creerJeton, hacherJeton } from "../activation";
 import { route, valider, ErreurHttp, interdit, invalide } from "../http";
 import { notifier } from "../notifications";
-import { envoyerEmail } from "../mail";
+import { envoyerEmail, emailReinitialisation } from "../mail";
 import { prevenirSite } from "../site";
 import { urlFichier } from "../fichiers";
 import {
@@ -185,37 +185,9 @@ async function traiterOubli(u: Utilisateur) {
   if (u.email) {
     const jeton = await creerJeton(u.id, "reinitialisation");
     const lien = `${config.urlCampus}/reinitialiser/${jeton}`;
-    const salut = `Bonjour ${u.prenom},`;
-    const texte = [
-      salut,
-      "",
-      selonRole(
-        u,
-        "Tu as demandé un nouveau code secret pour le campus numérique 2IAE. Touche ce lien pour le choisir (il marche une seule fois, pendant 1 heure) :",
-        "Vous avez demandé un nouveau mot de passe pour le campus numérique 2IAE. Ouvrez ce lien pour le choisir (valable une seule fois, pendant 1 heure) :",
-      ),
-      lien,
-      "",
-      selonRole(
-        u,
-        "Si ce n'est pas toi, ne fais rien : ton code actuel reste valable.",
-        "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : votre mot de passe actuel reste valable.",
-      ),
-      "",
-      "Campus numérique · Groupe 2IAE International",
-    ].join("\n");
-    const html = `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#141414">
-  <p style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#C85F22;font-family:monospace">Campus numérique 2IAE</p>
-  <p style="font-size:16px">${salut}</p>
-  <p style="font-size:16px;line-height:1.5">${selonRole(
-    u,
-    "Tu as demandé un nouveau code secret. Touche le bouton pour le choisir : le lien marche une seule fois, pendant 1 heure.",
-    "Vous avez demandé un nouveau mot de passe. Le lien ci-dessous est valable une seule fois, pendant 1 heure.",
-  )}</p>
-  <p><a href="${lien}" style="display:inline-block;background:#E4793A;color:#141414;font-weight:bold;text-decoration:none;padding:14px 22px;border-radius:12px">${selonRole(u, "Choisir mon nouveau code", "Choisir mon nouveau mot de passe")}</a></p>
-  <p style="font-size:14px;color:#6B625B">${selonRole(u, "Si ce n'est pas toi, ne fais rien : ton code actuel reste valable.", "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.")}</p>
-</div>`;
-    const envoye = await envoyerEmail({ a: u.email, sujet: selonRole(u, "Ton nouveau code secret · Campus 2IAE", "Votre nouveau mot de passe · Campus 2IAE"), texte, html });
+    // Gabarit commun des e-mails du campus (vrai logo, pied de page officiel) : server/mail.ts.
+    const modele = emailReinitialisation({ prenom: u.prenom, etudiant: u.role === "etudiant", lien });
+    const envoye = await envoyerEmail({ a: u.email, sujet: modele.sujet, texte: modele.texte, html: modele.html });
     await db.insert(journal).values({ utilisateurId: u.id, action: "code_oublie", details: { canal: envoye ? "email" : "vie_scolaire" } });
     if (envoye) return;
     // E-mail indisponible (pas de clé Resend, panne) : on ne laisse pas la personne sans réponse.

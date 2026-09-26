@@ -1,10 +1,17 @@
-// /pilotage/site : ce que le site www.2iae.com montre du campus, et ce qui
-// attend la validation de la direction. Chaque carte a l'allure de celle du
-// site ; l'interrupteur publie ou retire aussitôt, et le site est prévenu.
+// /pilotage/site : « Site public ». Trois onglets :
+// - Contenus : les textes du site public du campus (accueil, questions
+//   fréquentes, à propos, contacts, confidentialité) ;
+// - Campus : adresse, photo, salle de conférence, WhatsApp de la vie scolaire,
+//   filières et résultat de chaque campus ;
+// - 2iae.com : ce que le site www.2iae.com montre du campus et ce qui attend
+//   la validation de la direction. Chaque carte a l'allure de celle du site ;
+//   l'interrupteur publie ou retire aussitôt, et le site est prévenu.
+// Direction : modifie. Vie scolaire : lecture seule. Tout ce qui est
+// enregistré se voit aussitôt sur les pages publiques.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Globe, RefreshCw, Lock, CheckCircle2, CircleDashed, Radio, Megaphone, BookOpen, UserRound } from "lucide-react";
-import type { EtatSite, ElementSite, TypePublication } from "@shared/schema";
+import { Globe, RefreshCw, Lock, CheckCircle2, CircleDashed, Radio, Megaphone, BookOpen, UserRound, ExternalLink } from "lucide-react";
+import type { ContenusPilotage, EtatSite, ElementSite, TypePublication } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Badge, Chargement, Erreur, EtatVide, Avatar } from "@/components/ui/divers";
 import { Bouton } from "@/components/ui/bouton";
@@ -16,9 +23,11 @@ import { post } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { dateCourte, dateEtHeure, heure } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { EditionCampusListe, EditionContenus } from "@/modules/vitrine/EditionSite";
 import { SousNav } from "./composants/SousNav";
 
 type Filtre = "a_valider" | "en_ligne" | "tout";
+type OngletSite = "contenus" | "campus" | "publications";
 const TYPES: Record<TypePublication, { libelle: string; icone: typeof Globe }> = {
   cours: { libelle: "Cours", icone: BookOpen },
   formateur: { libelle: "Formateur", icone: UserRound },
@@ -26,8 +35,79 @@ const TYPES: Record<TypePublication, { libelle: string; icone: typeof Globe }> =
   annonce: { libelle: "Annonce", icone: Megaphone },
 };
 
+/** Onglet demandé dans l'adresse (?onglet=campus), pour les liens depuis d'autres pages. */
+function ongletDemande(): OngletSite | null {
+  const o = new URLSearchParams(window.location.search).get("onglet");
+  return o === "contenus" || o === "campus" || o === "publications" ? o : null;
+}
+
 export default function PageSite() {
-  const { data, isLoading, error, refetch } = useQuery<EtatSite>({ queryKey: ["/api/pilotage/site"] });
+  const contenusQ = useQuery<ContenusPilotage>({ queryKey: ["/api/pilotage/site/contenus"] });
+  const publicationsQ = useQuery<EtatSite>({ queryKey: ["/api/pilotage/site"] });
+  const aValider = (publicationsQ.data?.elements ?? []).filter((e) => e.propose && !e.publie && !e.bloque).length;
+  const [choix, setChoix] = useState<OngletSite | null>(ongletDemande);
+  // Une proposition attend la direction : on ouvre sur les publications (la notification y mène).
+  const onglet: OngletSite = choix ?? (aValider ? "publications" : "contenus");
+  const peutModifier = contenusQ.data?.peutModifier ?? publicationsQ.data?.peutPublier ?? false;
+  const changer = (o: OngletSite) => {
+    setChoix(o);
+    history.replaceState(null, "", `/pilotage/site?onglet=${o}`);
+  };
+
+  return (
+    <Page>
+      <SousNav />
+      <EnTetePage
+        etiquette="Pilotage · Site public"
+        titre="Le site public"
+        sousTitre="Les pages publiques du campus et ce que 2iae.com en montre. Ce que vous enregistrez se voit aussitôt."
+        actions={
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-[52px] items-center gap-2 rounded-[14px] border-[1.5px] border-encre bg-white px-5 text-base font-bold text-encre no-underline hover:bg-orange-pale hover:text-encre"
+          >
+            <ExternalLink className="h-5 w-5" /> Voir le site
+          </a>
+        }
+      />
+      {(contenusQ.data || publicationsQ.data) && !peutModifier && (
+        <p className="flex items-center gap-2 rounded-2xl bg-creme px-4 py-3 text-[15px] font-semibold text-texte-doux">
+          <Lock className="h-4 w-4 shrink-0" /> Lecture seule : les modifications du site sont réservées à la direction.
+        </p>
+      )}
+      <Onglets<OngletSite>
+        valeur={onglet}
+        onChange={changer}
+        options={[
+          { valeur: "contenus", libelle: "Textes du site" },
+          { valeur: "campus", libelle: "Campus" },
+          { valeur: "publications", libelle: "Cours et formateurs sur 2iae.com", compteur: aValider },
+        ]}
+        className="self-start"
+      />
+
+      {onglet === "publications" ? (
+        <Publications q={publicationsQ} />
+      ) : contenusQ.isLoading ? (
+        <Chargement lignes={3} />
+      ) : contenusQ.error ? (
+        <Erreur message={(contenusQ.error as Error).message} reessayer={() => contenusQ.refetch()} />
+      ) : contenusQ.data ? (
+        onglet === "contenus" ? (
+          <EditionContenus etat={contenusQ.data} />
+        ) : (
+          <EditionCampusListe etat={contenusQ.data} />
+        )
+      ) : null}
+    </Page>
+  );
+}
+
+/** Onglet « 2iae.com » : ce que le site du groupe affiche du campus, et les propositions à valider. */
+function Publications({ q }: { q: ReturnType<typeof useQuery<EtatSite>> }) {
+  const { data, isLoading, error, refetch } = q;
   const [choix, setChoix] = useState<Filtre | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const elements = data?.elements ?? [];
@@ -50,27 +130,24 @@ export default function PageSite() {
   };
 
   return (
-    <Page>
-      <SousNav />
-      <EnTetePage
-        etiquette="Pilotage · Site 2iae.com"
-        titre="Le campus sur 2iae.com"
-        sousTitre="Les formateurs proposent, la direction valide en un clic. Un formateur n'est présenté qu'avec son accord ; les lives passés disparaissent seuls."
-        actions={
-          data?.peutPublier ? (
-            <Bouton taille="lg" icone={<RefreshCw className="h-5 w-5" />} onClick={prevenir} chargement={envoi} className="min-h-[52px]">
-              Prévenir le site maintenant
-            </Bouton>
-          ) : undefined
-        }
-      />
+    <>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <p className="max-w-2xl text-[15px] leading-relaxed text-texte-pale">
+          Les formateurs proposent, la direction valide en un clic. Un formateur n'est présenté qu'avec son accord ; les lives passés disparaissent seuls.
+          Ce qui est publié ici paraît aussi sur les pages « Cours » et « Formateurs » du site public.
+        </p>
+        {data?.peutPublier && (
+          <Bouton taille="lg" icone={<RefreshCw className="h-5 w-5" />} onClick={prevenir} chargement={envoi} className="min-h-[52px]">
+            Prévenir 2iae.com maintenant
+          </Bouton>
+        )}
+      </div>
       {data && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <Badge ton={data.webhookConfigure ? "succes" : "alerte"}>{data.webhookConfigure ? "Liaison avec le site active" : "Liaison avec le site non configurée"}</Badge>
           <span className="text-texte-pale">
             {data.webhookConfigure ? "Chaque changement prévient le site aussitôt." : "Le site relit le campus toutes les 5 minutes (variable SITE_WEBHOOK_URL absente)."}
           </span>
-          {!data.peutPublier && <span className="w-full font-semibold text-texte-doux">Lecture seule : la publication est réservée à la direction.</span>}
         </div>
       )}
 
@@ -110,7 +187,7 @@ export default function PageSite() {
           <Apercu data={data} />
         </>
       ) : null}
-    </Page>
+    </>
   );
 }
 

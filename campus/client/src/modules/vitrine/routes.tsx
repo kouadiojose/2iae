@@ -1,14 +1,24 @@
-// Pages publiques du campus : accueil, fiches des cours et des formateurs
-// annoncés sur 2iae.com. Sans coquille (en-tête et pied de page propres).
+// Le site public du campus : un vrai site multi-pages, sans coquille (en-tête
+// et pied de page propres, voir MiseEnPagePublique). Seul l'accueil renvoie
+// une personne connectée vers son espace ; les autres pages restent
+// consultables connecté (l'en-tête affiche alors « Mon campus »).
+// /programme appartient au module « programme ».
 import { lazy } from "react";
 import type { DefRoute } from "@/routes-types";
 
-const PageAccueilPublique = lazy(() => import("./PageAccueilPublique"));
-const PageCoursPublic = lazy(() => import("./PageCoursPublic"));
-const PageFormateurPublic = lazy(() => import("./PageFormateurPublic"));
+const PUBLIC = { acces: "public", coquille: "aucune" } as const;
 
 export const routes: DefRoute[] = [
-  { chemin: "/cours-ouverts/:slug", page: PageCoursPublic, acces: "public", coquille: "aucune" },
-  { chemin: "/formateurs/:slug", page: PageFormateurPublic, acces: "public", coquille: "aucune" },
-  { chemin: "/", page: PageAccueilPublique, acces: "public", coquille: "aucune", redirigerSiConnecte: true },
+  { chemin: "/cours-ouverts/:slug", page: lazy(() => import("./PageCoursPublic")), ...PUBLIC },
+  { chemin: "/cours-ouverts", page: lazy(() => import("./PageCatalogueCours")), ...PUBLIC },
+  { chemin: "/formateurs/:slug", page: lazy(() => import("./PageFormateurPublic")), ...PUBLIC },
+  { chemin: "/formateurs", page: lazy(() => import("./PageFormateurs")), ...PUBLIC },
+  { chemin: "/campus/:slug", page: lazy(() => import("./PageUnCampus")), ...PUBLIC },
+  { chemin: "/campus", page: lazy(() => import("./PageCampus")), ...PUBLIC },
+  { chemin: "/le-direct", page: lazy(() => import("./PageLeDirect")), ...PUBLIC },
+  { chemin: "/questions", page: lazy(() => import("./PageQuestions")), ...PUBLIC },
+  { chemin: "/a-propos", page: lazy(() => import("./PageAPropos")), ...PUBLIC },
+  { chemin: "/contact", page: lazy(() => import("./PageContact")), ...PUBLIC },
+  { chemin: "/confidentialite", page: lazy(() => import("./PageConfidentialite")), ...PUBLIC },
+  { chemin: "/", page: lazy(() => import("./PageAccueilPublique")), ...PUBLIC, redirigerSiConnecte: true },
 ];

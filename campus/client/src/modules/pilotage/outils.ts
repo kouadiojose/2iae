@@ -4,7 +4,7 @@ import type { FicheConnexion, ReferencesPilotage, StatutPresencePilotage, Compte
 import { LIBELLES_ROLES } from "@shared/schema";
 import type { Ton } from "@/components/ui/divers";
 import { api, get, ErreurApi } from "@/lib/api";
-import { dateCourte, relatif } from "@/lib/dates";
+import { dateCourte, relatif, decompte } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 
 /** Campus et classes du périmètre, pour les sélecteurs (mis en cache 5 min). */
@@ -87,6 +87,14 @@ export async function copier(texte: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** « dans 1 jour et 14 h », « dans 3 h 20 », « dans 12 min » (page Rentrée, carte du tableau). */
+export function dans(cible: string, maintenant: number): string {
+  const d = decompte(cible, maintenant);
+  if (d.jours > 0) return `dans ${d.jours} jour${d.jours > 1 ? "s" : ""}${d.heures ? ` et ${d.heures} h` : ""}`;
+  if (d.heures > 0) return `dans ${d.heures} h ${String(d.minutes).padStart(2, "0")}`;
+  return `dans ${Math.max(1, d.minutes)} min`;
 }
 
 /** Lundi (AAAA-MM-JJ, heure d'Abidjan = UTC) de la semaine qui contient cette date. */

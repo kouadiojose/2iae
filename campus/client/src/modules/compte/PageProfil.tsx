@@ -1,4 +1,4 @@
-// /profil : photo, coordonnées, préférences (#preferences), rappels, agenda,
+// /profil : photo, coordonnées, préférences (#preferences), fuseau (#fuseau), rappels, agenda,
 // charte, code secret et appareils ; pour les formateurs, la fiche publiée
 // sur 2iae.com. Chaque bloc s'enregistre seul : pas de grand formulaire.
 import { useEffect } from "react";
@@ -15,6 +15,9 @@ import { Preferences } from "./composants/profil/Preferences";
 import { Agenda } from "./composants/profil/Agenda";
 import { Charte, Securite } from "./composants/profil/Securite";
 import { FicheSite } from "./composants/profil/FicheSite";
+import { Section } from "./composants/profil/Section";
+import { Globe } from "lucide-react";
+import { ChoixFuseau } from "@/modules/visio";
 
 /** Ouvre le bloc désigné par l'ancre (#preferences depuis le menu du compte). */
 function useAncre() {
@@ -57,6 +60,12 @@ export default function PageProfil() {
           <Coordonnees moi={moi} />
           {moi.role === "formateur" && <FicheSite moi={moi} />}
           <Preferences moi={moi} />
+          {/* Module visio : l'heure « chez vous » des formateurs et de l'équipe (les étudiants restent à l'heure d'Abidjan). */}
+          {(moi.role === "formateur" || moi.role === "admin" || moi.role === "vie_scolaire") && (
+            <Section id="fuseau" titre="Fuseau horaire" icone={<Globe className="h-5 w-5" />} description="Les heures des cours vous sont données à l'heure d'Abidjan et à la vôtre, et vos rappels arrivent à votre heure.">
+              <ChoixFuseau />
+            </Section>
+          )}
           {/* Rappels sur ce téléphone (module pwa) : carte masquée si le campus n'a pas de clé d'envoi. */}
           <div id="rappels" className="scroll-mt-24 empty:hidden">
             <ActiverNotifications />

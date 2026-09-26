@@ -13,7 +13,7 @@ export function nomComplet(p: { prenom: string; nom: string } | null | undefined
   return p ? `${p.prenom} ${p.nom}` : "";
 }
 
-/** « Aya K. » */
+/** « Prénom N. » */
 export function nomCourt(p: { prenom: string; nom: string } | null | undefined) {
   return p ? `${p.prenom} ${p.nom.charAt(0)}.` : "";
 }

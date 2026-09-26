@@ -73,6 +73,8 @@ export type PreferencesUtilisateur = {
     micro: boolean | null;
     /** La personne est entrée dans la salle d'essai. */
     salle: boolean;
+    /** Date du dernier essai réussi (même si le dernier essai a échoué). */
+    dernierSucces: string | null;
   };
 };
 

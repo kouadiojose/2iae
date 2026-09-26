@@ -4,7 +4,7 @@
 // salles ont un campus ; les formateurs travaillent pour tout le groupe.
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { KeyRound, FolderOpen, Power } from "lucide-react";
+import { KeyRound, FolderOpen, Power, Send, MonitorSmartphone } from "lucide-react";
 import type { CompteLigne, CompteCree, CodeRemis, Role } from "@shared/schema";
 import { LIBELLES_ROLES } from "@shared/schema";
 import { Fenetre } from "@/components/ui/fenetre";
@@ -57,20 +57,36 @@ const depuisCompte = (c: CompteLigne): Formulaire => ({
   localisation: c.localisation ?? "",
 });
 
+/** « M. Konaté » → prénom « M. », nom « Konaté » ; « Claude Trépanier » → « Claude » / « Trépanier ». */
+export function separerNom(complet: string): { prenom: string; nom: string } {
+  const mots = complet.replace(/\s+/g, " ").trim().split(" ");
+  if (mots.length < 2) return { prenom: "", nom: mots[0] ?? "" };
+  return { prenom: mots[0], nom: mots.slice(1).join(" ") };
+}
+
 export function FenetreCompte({
   ouverte,
   compte,
   roleParDefaut,
+  nomParDefaut,
   onFermer,
   onCode,
+  onInviter,
+  onEcran,
 }: {
   ouverte: boolean;
   /** null : création d'un compte. */
   compte: CompteLigne | null;
   roleParDefaut?: Role;
+  /** Création : nom complet à préremplir (« M. Konaté », depuis l'emploi du temps). */
+  nomParDefaut?: string;
   onFermer: () => void;
   /** Un code vient d'être remis (création ou nouveau code) : à montrer une seule fois. */
   onCode: (remis: CodeRemis, compte: CompteLigne, nouveauCompte: boolean) => void;
+  /** Formateur ou équipe pas encore activé : ouvrir la fenêtre « Inviter ». */
+  onInviter?: (compte: CompteLigne) => void;
+  /** Écran de salle : ouvrir la fenêtre « Installer l'écran ». */
+  onEcran?: (site: { id: number; nom: string }) => void;
 }) {
   const moi = useMoiConnecte();
   const refs = useReferences();
@@ -81,10 +97,10 @@ export function FenetreCompte({
 
   useEffect(() => {
     if (!ouverte) return;
-    setF(compte ? depuisCompte(compte) : vide(roleParDefaut));
+    setF(compte ? depuisCompte(compte) : { ...vide(roleParDefaut), ...(nomParDefaut ? separerNom(nomParDefaut) : {}) });
     setErreur(null);
     setConfirmerCode(false);
-  }, [ouverte, compte, roleParDefaut]);
+  }, [ouverte, compte, roleParDefaut, nomParDefaut]);
 
   const maj = (champ: keyof Formulaire) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [champ]: e.target.value }));
   const creation = !compte;
@@ -92,6 +108,9 @@ export function FenetreCompte({
   const rolesPossibles: Role[] = direction ? ["etudiant", "formateur", "vie_scolaire", "salle", "admin"] : ["etudiant", "formateur", "vie_scolaire", "salle"];
   const estEtudiant = f.role === "etudiant";
   const avecSite = f.role === "vie_scolaire" || f.role === "salle";
+  /** Formateur et écran de salle peuvent se passer d'e-mail (invitation par lien, installation par code). */
+  const emailFacultatif = estEtudiant || f.role === "formateur" || f.role === "salle";
+  const invitable = compte && compte.actif && !compte.active && compte.id !== moi.id && (compte.role === "formateur" || compte.role === "vie_scolaire" || compte.role === "admin");
 
   const corps = () => {
     const base: Record<string, unknown> = {
@@ -177,7 +196,11 @@ export function FenetreCompte({
       titre={creation ? "Nouveau compte" : `${compte.prenom} ${compte.nom}`}
       description={
         creation
-          ? "Un code provisoire à 6 chiffres (ou une phrase de passe pour le personnel) sera créé et montré une seule fois."
+          ? f.role === "formateur"
+            ? "Vous l'inviterez ensuite par un lien : il vérifiera son nom, choisira son identifiant et son mot de passe."
+            : f.role === "salle"
+              ? "Vous installerez ensuite l'écran avec un code à taper sur l'ordinateur de la salle."
+              : "Un code provisoire à 6 chiffres (ou une phrase de passe pour le personnel) sera créé et montré une seule fois."
           : `${LIBELLES_ROLES[compte.role]}${compte.site ? ` · Campus ${compte.site}` : ""} · créé le ${dateCourte(compte.creeLe)}`
       }
       pied={
@@ -209,7 +232,17 @@ export function FenetreCompte({
                   <FolderOpen className="h-4 w-4" /> Dossier
                 </Link>
               )}
-              {compte.actif && compte.id !== moi.id && !confirmerCode && (
+              {invitable && onInviter && (
+                <Bouton taille="sm" className="min-h-[48px]" icone={<Send className="h-4 w-4" />} onClick={() => (onFermer(), onInviter(compte))}>
+                  Inviter
+                </Bouton>
+              )}
+              {compte.role === "salle" && compte.actif && compte.siteId && onEcran && (
+                <Bouton taille="sm" className="min-h-[48px]" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => (onFermer(), onEcran({ id: compte.siteId!, nom: compte.site ?? "Campus" }))}>
+                  {compte.active ? "Réinstaller l'écran" : "Installer l'écran"}
+                </Bouton>
+              )}
+              {compte.actif && compte.id !== moi.id && !confirmerCode && compte.role !== "salle" && (
                 <Bouton variante="encre" taille="sm" className="min-h-[48px]" icone={<KeyRound className="h-4 w-4" />} onClick={() => setConfirmerCode(true)}>
                   Nouveau code
                 </Bouton>
@@ -281,20 +314,28 @@ export function FenetreCompte({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Champ libelle="Téléphone" value={f.telephone} onChange={maj("telephone")} inputMode="tel" placeholder="07 07 12 34 56" aide="Pour les messages WhatsApp de la vie scolaire." />
           <Champ
-            libelle={estEtudiant ? "E-mail (facultatif)" : "E-mail"}
+            libelle={emailFacultatif ? "E-mail (facultatif)" : "E-mail"}
             value={f.email}
             onChange={maj("email")}
             type="email"
             inputMode="email"
-            placeholder={estEtudiant ? "si l'étudiant en a un" : "prenom.nom@2iae.com"}
-            aide={estEtudiant ? "Sert à recevoir un lien en cas de code oublié." : "C'est son identifiant de connexion."}
+            placeholder={estEtudiant ? "si l'étudiant en a un" : f.role === "salle" ? "inutile pour un écran" : f.role === "formateur" ? "son adresse, si vous la connaissez" : "prenom.nom@2iae.com"}
+            aide={
+              estEtudiant
+                ? "Sert à recevoir un lien en cas de code oublié."
+                : f.role === "formateur"
+                  ? "Inconnu ? Laissez vide : il choisira son identifiant en ouvrant son invitation."
+                  : f.role === "salle"
+                    ? "L'écran s'installe avec un code, sans e-mail."
+                    : "C'est son identifiant de connexion."
+            }
           />
         </div>
 
         {f.role === "formateur" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Champ libelle="Titre (facultatif)" value={f.titre} onChange={maj("titre")} placeholder="Consultant en intelligence artificielle" />
-            <Champ libelle="Ville (facultatif)" value={f.localisation} onChange={maj("localisation")} placeholder="Lyon, France" />
+            <Champ libelle="Titre (facultatif)" value={f.titre} onChange={maj("titre")} placeholder="Consultant canadien" aide="Imprimé sous son nom dans l'emploi du temps." />
+            <Champ libelle="Ville (facultatif)" value={f.localisation} onChange={maj("localisation")} placeholder="Montréal, Canada" />
           </div>
         )}
 

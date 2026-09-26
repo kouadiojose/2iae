@@ -1,5 +1,5 @@
 // Bandeau orange de l'accueil (maquette) : « Dans 2 j 4 h · Initiation à
-// l'IA · Salle Kédjénou, campus Yopougon · ou en ligne » avec « Entrer dans
+// l'IA · Salle de conférence, campus Yopougon · ou en ligne » avec « Entrer dans
 // la classe » et « Ajouter à l'agenda ». En direct, il devient noir et pulse.
 import { useQuery } from "@tanstack/react-query";
 import { useMoi } from "@/lib/auth";

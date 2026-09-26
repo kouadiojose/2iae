@@ -1,5 +1,5 @@
-// /pilotage/planning : les lives de la semaine, à l'heure d'Abidjan (Paris en
-// petit pour les formateurs), avec les conflits de salle en rouge : deux
+// /pilotage/planning : les lives de la semaine, à l'heure d'Abidjan (et à la
+// vôtre en petit si vous êtes ailleurs), avec les conflits de salle en rouge : deux
 // séances qui se chevauchent et concernent un même campus occupent la même
 // salle de conférence. Création et déplacement passent par l'API du live.
 import { useMemo, useState } from "react";
@@ -15,7 +15,7 @@ import { Champ, Selection, ZoneTexte } from "@/components/ui/champs";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { post, patch, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
-import { heure, jourLong, dateEtHeure } from "@/lib/dates";
+import { heure, heureChezVous, jourLong, dateEtHeure } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
@@ -23,7 +23,7 @@ import { lundiIso, decalerSemaine, libelleSemaine } from "./outils";
 
 const JOUR_MS = 86_400_000;
 const DUREES = [45, 60, 90, 120, 150, 180];
-const LIBELLES_FOURNISSEURS: Record<string, string> = { campus: "Visio du campus", daily: "Daily", jitsi: "Jitsi", externe: "Lien externe", demo: "Démonstration" };
+const LIBELLES_FOURNISSEURS: Record<string, string> = { campus: "Visio du campus", daily: "Daily", jitsi: "Jitsi", externe: "Lien externe", demo: "Sans visio" };
 
 type ReponseSeance = { id: number; conflits?: { id: number; titre: string; coursCode: string }[] };
 
@@ -156,7 +156,7 @@ function CarteSeance({ s, parId, onOuvrir }: { s: SeancePlanning; parId: Map<num
         {s.coursCode} · {s.titre}
       </span>
       <span className="text-[13px] text-texte-pale">
-        {heure(s.debut, "Europe/Paris")} à Paris{s.formateur ? ` · ${s.formateur}` : ""}
+        {[heureChezVous(s.debut) ? `${heureChezVous(s.debut)} chez vous` : null, s.formateur].filter(Boolean).join(" · ")}
       </span>
       <span className="flex flex-wrap gap-1">
         {s.sites.map((x) => (
@@ -377,8 +377,12 @@ function FenetreSeance({ s, onFermer }: { s: SeancePlanning; onFermer: () => voi
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[15px]">
             <dt className="text-texte-pale">Formateur</dt>
             <dd className="font-semibold">{s.formateur ?? "À confirmer"}</dd>
-            <dt className="text-texte-pale">À Paris</dt>
-            <dd className="font-semibold">{heure(s.debut, "Europe/Paris")}</dd>
+            {heureChezVous(s.debut) && (
+              <>
+                <dt className="text-texte-pale">Chez vous</dt>
+                <dd className="font-semibold">{heureChezVous(s.debut)}</dd>
+              </>
+            )}
             <dt className="text-texte-pale">Salles</dt>
             <dd className="font-semibold">{s.sites.map((x) => x.nomCourt).join(", ") || "Aucune classe rattachée"}</dd>
             <dt className="text-texte-pale">Visio</dt>

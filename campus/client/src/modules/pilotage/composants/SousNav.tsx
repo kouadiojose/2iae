@@ -7,14 +7,17 @@ import { cn } from "@/lib/utils";
 
 const PAGES: { href: string; libelle: string; prefixes?: string[]; direction?: boolean }[] = [
   { href: "/pilotage", libelle: "Tableau" },
+  { href: "/pilotage/rentree", libelle: "Rentrée" },
   { href: "/pilotage/suivi", libelle: "À contacter" },
   { href: "/pilotage/comptes", libelle: "Comptes", prefixes: ["/pilotage/comptes", "/pilotage/etudiants", "/pilotage/fiches"] },
   { href: "/pilotage/classes", libelle: "Classes et campus" },
   { href: "/pilotage/cours", libelle: "Cours" },
+  { href: "/pilotage/programme", libelle: "Emploi du temps", prefixes: ["/pilotage/programme"] },
   { href: "/pilotage/planning", libelle: "Planning" },
   { href: "/pilotage/presences", libelle: "Présences" },
   { href: "/pilotage/annonces", libelle: "Annonces" },
-  { href: "/pilotage/site", libelle: "Site 2iae.com" },
+  { href: "/pilotage/site", libelle: "Site public" },
+  { href: "/pilotage/visio", libelle: "Visio" },
   { href: "/pilotage/ia", libelle: "Budget IA" },
 ];
 

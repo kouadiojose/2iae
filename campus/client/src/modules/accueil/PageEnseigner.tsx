@@ -1,6 +1,6 @@
-// /enseigner — « Aujourd'hui » du formateur (souvent à distance, en France).
+// /enseigner — « Aujourd'hui » du formateur (souvent à distance : Canada, Europe…).
 //
-// En haut, la prochaine séance : double horloge Abidjan / Paris, compte à
+// En haut, la prochaine séance : double horloge Abidjan / chez vous, compte à
 // rebours, préparation, et UN bouton principal qui change avec l'heure
 // (« Préparer la séance » longtemps avant, « Ouvrir le studio » à 30 min).
 // Puis ce qui attend : copies à corriger, questions restées sans réponse au
@@ -34,6 +34,7 @@ import { Badge, BadgeDirect, EtatVide, Erreur, Squelette } from "@/components/ui
 import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
 import type { AccueilFormateur, CoursFormateur, ElementAgenda, SeanceFormateur } from "@shared/schema";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
+import { CartePretClasse, ConfirmationFuseau } from "@/modules/visio";
 
 const MINUTE = 60_000;
 
@@ -76,12 +77,15 @@ export default function PageEnseigner() {
           <h1 className="titre-page">
             {data.salutation} {data.prenom}.
           </h1>
-          {ville && <p className="text-[15px] text-texte-pale">Vous enseignez depuis {ville}. Les horaires sont donnés à l'heure d'Abidjan et de Paris.</p>}
+          {ville && <p className="text-[15px] text-texte-pale">Vous enseignez depuis {ville}. Les horaires sont donnés à l'heure d'Abidjan et à la vôtre.</p>}
         </div>
         <LienBouton href="/annonces?nouvelle=1" variante="contour" icone={<Megaphone className="h-4 w-4" />}>
           Écrire à mes étudiants
         </LienBouton>
       </header>
+
+      {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois. */}
+      <ConfirmationFuseau />
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">
@@ -102,6 +106,8 @@ export default function PageEnseigner() {
             />
           )}
           {data.enDirect && data.prochaineSeance && <LigneSeanceSuivante seance={data.prochaineSeance} />}
+          {/* Module visio : essai de la visio, fuseau, diapos, plan minuté. */}
+          {!data.enDirect && data.prochaineSeance && <CartePretClasse />}
           <CopiesACorriger data={data} />
           <QuestionsEnSuspens questions={data.questions} maintenant={maintenant} />
         </div>

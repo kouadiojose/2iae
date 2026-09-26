@@ -20,7 +20,8 @@ import type { EnCours, CompteurNotifications } from "@shared/api";
 export function Marque({ sousTitre = true, sombre = false }: { sousTitre?: boolean; sombre?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-3 no-underline" aria-label="Campus numérique 2IAE, accueil">
-      <img src="/marque-2iae.png" alt="" className="h-9 w-auto sm:h-10" />
+      {/* Sur fond sombre : l'ovale détouré (sans rectangle blanc autour). */}
+      <img src={sombre ? "/marque-2iae-detouree.png" : "/marque-2iae.png"} alt="" className="h-9 w-auto sm:h-10" />
       <span className={cn("flex flex-col border-l pl-3", sombre ? "border-nuit-ligne" : "border-ligne-forte")}>
         <span className={cn("text-[15px] font-extrabold leading-tight tracking-[-0.01em]", sombre ? "text-white" : "text-encre")}>Campus numérique</span>
         {sousTitre && <span className={cn("font-mono text-[11px]", sombre ? "text-nuit-gris" : "text-texte-gris")}>Groupe 2IAE International</span>}

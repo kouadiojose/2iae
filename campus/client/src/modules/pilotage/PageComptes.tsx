@@ -16,6 +16,8 @@ import { useMoiConnecte } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreCompte } from "./composants/FenetreCompte";
 import { FenetreCode } from "./composants/FenetreCode";
+import { FenetreInvitation, type PersonneAInviter } from "./composants/FenetreInvitation";
+import { FenetreEcran } from "./composants/FenetreEcran";
 import { useReferences, etatCompte, vuLe, telephoneLisible, lienFiches } from "./outils";
 
 const PAR_PAGE = 25;
@@ -34,8 +36,14 @@ export default function PageComptes() {
   const [etat, setEtat] = useState<Etat>((depart.get("etat") as Etat) ?? "");
   const [page, setPage] = useState(1);
   const [selection, setSelection] = useState<Set<number>>(new Set());
-  const [ouvert, setOuvert] = useState<CompteLigne | "nouveau" | null>(null);
+  // ?nouveau=formateur&nom=M.%20Konaté : création préremplie (depuis la page Rentrée).
+  const nouveauDepuisUrl = (depart.get("nouveau") as Role | null) ?? null;
+  const [ouvert, setOuvert] = useState<CompteLigne | "nouveau" | null>(nouveauDepuisUrl && ROLES.includes(nouveauDepuisUrl) ? "nouveau" : null);
+  const [roleNouveau, setRoleNouveau] = useState<Role | null>(nouveauDepuisUrl && ROLES.includes(nouveauDepuisUrl) ? nouveauDepuisUrl : null);
+  const nomNouveau = depart.get("nom") ?? undefined;
   const [code, setCode] = useState<{ remis: CodeRemis; compte: CompteLigne; nouveau: boolean } | null>(null);
+  const [invite, setInvite] = useState<PersonneAInviter | null>(null);
+  const [ecran, setEcran] = useState<{ id: number; nom: string } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setQDiffere(q.trim()), 300);
@@ -216,10 +224,20 @@ export default function PageComptes() {
       <FenetreCompte
         ouverte={ouvert !== null}
         compte={ouvert === "nouveau" ? null : ouvert}
-        roleParDefaut={role || "etudiant"}
-        onFermer={() => setOuvert(null)}
-        onCode={(remis, compte, nouveau) => setCode({ remis, compte, nouveau })}
+        roleParDefaut={roleNouveau ?? (role || "etudiant")}
+        nomParDefaut={roleNouveau ? nomNouveau : undefined}
+        onFermer={() => (setOuvert(null), setRoleNouveau(null))}
+        onCode={(remis, compte, nouveau) => {
+          // Un formateur s'invite par un lien (il choisit son identifiant) ; un écran de salle s'installe par un code.
+          if (nouveau && compte.role === "formateur") return setInvite({ id: compte.id, prenom: compte.prenom, nom: compte.nom, email: compte.email, telephone: compte.telephone });
+          if (nouveau && compte.role === "salle" && compte.siteId) return setEcran({ id: compte.siteId, nom: compte.site ?? "Campus" });
+          setCode({ remis, compte, nouveau });
+        }}
+        onInviter={(c) => setInvite({ id: c.id, prenom: c.prenom, nom: c.nom, email: c.email, telephone: c.telephone })}
+        onEcran={setEcran}
       />
+      <FenetreInvitation personne={invite} onFermer={() => setInvite(null)} />
+      <FenetreEcran site={ecran} onFermer={() => setEcran(null)} />
       <FenetreCode
         nouveauCompte={code?.nouveau}
         remis={code?.remis ?? null}
@@ -230,7 +248,7 @@ export default function PageComptes() {
                 prenom: code.compte.prenom,
                 nom: code.compte.nom,
                 role: code.compte.role,
-                identifiant: code.compte.matricule ?? code.compte.email ?? "",
+                identifiant: code.compte.matricule ?? code.compte.email ?? code.compte.telephone ?? "",
                 classe: code.compte.classe,
                 site: code.compte.site,
               }
@@ -262,7 +280,11 @@ function LigneCompte({ c, coche, onCocher, onOuvrir }: { c: CompteLigne; coche: 
             {c.role !== "etudiant" && <Badge ton="encre">{LIBELLES_ROLES[c.role]}</Badge>}
           </span>
           <span className="mt-0.5 block truncate text-sm text-texte-pale">
-            {[c.matricule ?? c.email, c.role === "etudiant" ? c.classe : c.site ? `Campus ${c.site}` : c.localisation, telephoneLisible(c.telephone)]
+            {[
+              c.matricule ?? c.email ?? (c.role !== "etudiant" && c.role !== "salle" && !c.telephone && !c.active ? "identifiant choisi à l'activation" : null),
+              c.role === "etudiant" ? c.classe : c.site ? `Campus ${c.site}` : c.localisation,
+              telephoneLisible(c.telephone),
+            ]
               .filter(Boolean)
               .join(" · ")}
           </span>

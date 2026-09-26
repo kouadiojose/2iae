@@ -24,7 +24,7 @@ import { SousNav } from "./composants/SousNav";
 import { SuiviTravail } from "./composants/SuiviTravail";
 import { useReferences, telephoneLisible, memoriserFiches, lienFiches, nouvelIdentifiant, travailLong, type EtatTravail } from "./outils";
 
-const EXEMPLE = "Matricule\tNom\tPrénoms\tTéléphone\tClasse\n24GC0123\tKOUASSI\tAya Grâce\t07 07 12 34 56\tBTS Gestion commerciale · 1re année";
+const EXEMPLE = "Matricule\tNom\tPrénoms\tTéléphone\tClasse\n26TC0001\tNOM\tPrénoms\t07 07 12 34 56\tBTS 1re année · tronc commun";
 
 export default function PageImport() {
   const [, naviguer] = useLocation();

@@ -1,5 +1,6 @@
-// Pages du pilotage (vie scolaire et direction) et relevé public des parents.
-// /pilotage/annonces appartient au module annonces.
+// Pages du pilotage (vie scolaire et direction), relevé public des parents et
+// installation de l'écran d'une salle de conférence.
+// /pilotage/annonces appartient au module annonces, /pilotage/programme au module programme.
 import { lazy } from "react";
 import type { DefRoute } from "@/routes-types";
 
@@ -14,6 +15,7 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage/cours", page: lazy(() => import("./PageCours")), acces: EQUIPE },
   { chemin: "/pilotage/planning", page: lazy(() => import("./PagePlanning")), acces: EQUIPE },
   { chemin: "/pilotage/presences", page: lazy(() => import("./PagePresences")), acces: EQUIPE },
+  { chemin: "/pilotage/rentree", page: lazy(() => import("./PageRentree")), acces: EQUIPE },
   { chemin: "/pilotage/site", page: lazy(() => import("./PageSite")), acces: EQUIPE },
   { chemin: "/pilotage/suivi", page: lazy(() => import("./PageSuivi")), acces: EQUIPE },
   { chemin: "/pilotage/etudiants/:id", page: lazy(() => import("./PageEtudiant")), acces: EQUIPE },
@@ -21,4 +23,7 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage", page: lazy(() => import("./PageTableau")), acces: EQUIPE },
   // Public : le lien envoyé aux parents sur WhatsApp.
   { chemin: "/releve/:jeton", page: lazy(() => import("./PageReleve")), acces: "public", coquille: "aucune" },
+  // Public : l'ordinateur de la salle de conférence s'installe (lien, ou code à 6 chiffres).
+  { chemin: "/ecran/:jeton", page: lazy(() => import("./PageInstallerEcran")), acces: "public", coquille: "aucune" },
+  { chemin: "/ecran", page: lazy(() => import("./PageInstallerEcran")), acces: "public", coquille: "aucune" },
 ];

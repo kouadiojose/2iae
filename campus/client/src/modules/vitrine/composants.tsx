@@ -1,176 +1,317 @@
-// Briques des pages publiques : en-tête, pied de page, carte noire du
-// prochain live, cartes de cours et de formateurs, boutons d'accès.
+// Briques des pages publiques : en-tête de page avec fil d'Ariane, carte
+// noire du prochain cours, cartes de cours, de formateurs et de campus,
+// liste des lives, boutons d'accès, états vides.
 import type { ReactNode } from "react";
 import { Link } from "wouter";
-import { ArrowRight, ArrowUpRight, CalendarDays, MapPin, Radio, Share2 } from "lucide-react";
-import { Marque } from "@/components/layout/coquille";
+import { ArrowRight, ArrowUpRight, CalendarDays, ChevronRight, MapPin, MessageCircle, Radio, Share2 } from "lucide-react";
 import { LienBouton } from "@/components/ui/bouton";
 import { Avatar, Squelette } from "@/components/ui/divers";
 import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { dateComplete, heure, heureDouble, dateCourte, relatif } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { VitrineCours, VitrineFormateur, VitrineLive } from "@shared/api";
-import type { CampusCours, SitePublic } from "@shared/schema";
-import { allerA, lienPreinscription, lienWhatsapp, nomCampus, URL_SITE, ville } from "./outils";
+import type { CampusCours, CampusPublic, OccurrenceDto } from "@shared/schema";
+import { formatTaux, lienPreinscription, lienWhatsapp, lienWhatsappVers, paragraphes, typo, ville } from "./outils";
 
-// ── En-tête et pied de page ────────────────────────────────────────────────
+export { EnTetePublic, PiedPublic, MarquePublique } from "./navigation-publique";
 
-export type AncreNav = { id: string; libelle: string };
+// ── En-tête d'une page ─────────────────────────────────────────────────────
 
-/** En-tête public de la maquette : la marque, quelques ancres, « Se connecter ». */
-export function EnTetePublic({ ancres = [], liveEnDirect }: { ancres?: AncreNav[]; liveEnDirect?: VitrineLive | null }) {
-  return (
-    <header className="sticky top-0 z-30 border-b border-ligne-douce bg-white/95 backdrop-blur-md">
-      <div className="conteneur flex items-center gap-4 py-2.5 sm:py-3">
-        {/* Sur téléphone, la marque sans sous-titre laisse la place au bouton. */}
-        <span className="sm:hidden">
-          <Marque sousTitre={false} />
-        </span>
-        <span className="hidden sm:block">
-          <Marque />
-        </span>
-        {ancres.length > 0 && (
-          <nav className="hidden flex-1 justify-center gap-1 lg:flex" aria-label="Sections de la page">
-            {ancres.map((a) => (
-              <a
-                key={a.id}
-                href={`#${a.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  allerA(a.id);
-                }}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-texte-doux no-underline transition-colors hover:bg-creme hover:text-encre"
-              >
-                {a.libelle}
-              </a>
-            ))}
-          </nav>
-        )}
-        <div className={cn("ml-auto flex items-center gap-2", ancres.length > 0 && "lg:ml-0")}>
-          {liveEnDirect && (
-            <Link
-              href={`/live/${liveEnDirect.id}`}
-              className="hidden items-center gap-2 rounded-full bg-encre px-[18px] py-2.5 text-sm font-bold text-white no-underline transition-colors hover:bg-orange hover:text-encre sm:flex"
-            >
-              <span className="point-direct" />
-              Rejoindre le live
-            </Link>
-          )}
-          <LienBouton href="/connexion" variante="contour" taille="sm" className="min-h-[44px] whitespace-nowrap px-4 text-sm">
-            Se connecter
-          </LienBouton>
-        </div>
-      </div>
-    </header>
-  );
-}
+export type Miette = { href?: string; libelle: string };
 
-/** Pied de page : préinscription, site du groupe, les cinq campus. */
-export function PiedPublic({
-  sites,
-  sansAppel = false,
+/** Titre de page du site public : fil d'Ariane, étiquette, grand titre, texte d'accompagnement. */
+export function EnTetePagePublique({
+  fil = [],
+  etiquette,
+  titre,
+  texte,
+  actions,
+  className,
+  titreClasse,
+  children,
 }: {
-  sites: SitePublic[];
-  /** La page porte déjà son appel à la préinscription. */ sansAppel?: boolean;
+  fil?: Miette[];
+  etiquette?: string;
+  titre: ReactNode;
+  /** Taille du titre (les noms longs, comme celui d'Azaguié, dans une demi-colonne). */
+  titreClasse?: string;
+  texte?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+  children?: ReactNode;
 }) {
-  const annee = new Date(useMaintenant(3_600_000)).getUTCFullYear();
   return (
-    <footer className="bg-encre text-white">
-      <div className="conteneur flex flex-col gap-10 py-14 sm:py-16">
-        {!sansAppel && (
-          <div className="relative flex flex-col gap-6 overflow-hidden rounded-[28px] bg-orange p-7 text-encre sm:flex-row sm:items-end sm:justify-between sm:p-10">
-            <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border-[36px] border-encre/10" />
-            <div className="relative flex max-w-xl flex-col gap-2">
-              <span className="font-mono text-xs uppercase tracking-[0.12em]">Préinscription en ligne</span>
-              <h2 className="text-[30px] font-black leading-[1.02] tracking-serre sm:text-[40px]">Pas encore étudiant à 2IAE ?</h2>
-              <p className="text-base leading-relaxed text-[#2B211B] sm:text-[17px]">
-                La préinscription se fait en quelques minutes sur le site du groupe. Vous suivrez ensuite vos cours ici, dans votre campus ou sur votre
-                téléphone.
-              </p>
-            </div>
-            <div className="relative flex flex-col gap-2 sm:items-end">
-              <a
-                href={lienPreinscription()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-[14px] bg-encre px-6 text-base font-bold text-white no-underline hover:bg-white hover:text-encre"
-              >
-                Faire ma préinscription <ArrowUpRight className="h-5 w-5" />
-              </a>
-              <a
-                href={URL_SITE}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-2 text-[15px] font-semibold text-encre underline-offset-4 hover:text-encre hover:underline"
-              >
-                Découvrir le Groupe 2IAE
-              </a>
-            </div>
-          </div>
-        )}
-
-        <div className="grid gap-8 sm:grid-cols-[1.2fr_1fr_1fr]">
-          <div className="flex flex-col gap-4">
-            <Marque sombre />
-            <p className="max-w-sm text-[15px] leading-relaxed text-nuit-doux">
-              Le campus numérique du Groupe Écoles 2IAE International : un cours, cinq campus, en direct.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-peche">Les campus</span>
-            <ul className="flex flex-col gap-1.5 text-[15px] text-nuit-doux">
-              {sites.map((s) => (
-                <li key={s.slug}>{nomCampus(s)}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-peche">Accès</span>
-            <ul className="flex flex-col text-[15px]">
-              <li>
-                <Link href="/connexion" className="inline-block py-1.5 text-white no-underline hover:text-orange">
-                  Se connecter au campus
-                </Link>
-              </li>
-              <li>
-                <a
-                  href={lienPreinscription()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block py-1.5 text-white no-underline hover:text-orange"
-                >
-                  Préinscription
-                </a>
-              </li>
-              <li>
-                <a href={URL_SITE} target="_blank" rel="noopener noreferrer" className="inline-block py-1.5 text-white no-underline hover:text-orange">
-                  Site du Groupe 2IAE · www.2iae.com
-                </a>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 border-t border-nuit-ligne pt-6 font-mono text-xs text-nuit-gris sm:flex-row sm:justify-between">
-          <span>© {annee} Groupe Écoles 2IAE International</span>
-          <span>Heure d'Abidjan · Côte d'Ivoire</span>
-        </div>
+    <section className={cn("conteneur flex flex-col gap-5 pb-8 pt-6 sm:pb-12 sm:pt-10", className)}>
+      {fil.length > 0 && (
+        <nav aria-label="Fil d'Ariane">
+          <ol className="flex flex-wrap items-center gap-1 font-mono text-xs text-texte-gris">
+            {[{ href: "/", libelle: "Accueil" }, ...fil].map((m, i, liste) => {
+              const dernier = i === liste.length - 1;
+              return (
+                <li key={`${m.libelle}-${i}`} className="flex items-center gap-1">
+                  {m.href && !dernier ? (
+                    <Link href={m.href} className="inline-flex min-h-[32px] items-center text-texte-gris no-underline hover:text-encre">
+                      {m.libelle}
+                    </Link>
+                  ) : (
+                    <span aria-current={dernier ? "page" : undefined} className={cn(dernier && "text-texte-doux")}>
+                      {m.libelle}
+                    </span>
+                  )}
+                  {!dernier && <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      )}
+      <div className="flex flex-col gap-4">
+        {etiquette && <span className="etiquette">{etiquette}</span>}
+        <h1 className={cn("max-w-4xl break-words text-[38px] font-black leading-[.98] tracking-tres-serre", titreClasse ?? "sm:text-[clamp(44px,5.4vw,72px)]")}>{typeof titre === "string" ? typo(titre) : titre}</h1>
+        {texte && <div className="max-w-[680px] text-[17px] leading-[1.55] text-texte-doux sm:text-[19px]">{typeof texte === "string" ? typo(texte) : texte}</div>}
       </div>
-    </footer>
+      {actions && <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">{actions}</div>}
+      {children}
+    </section>
   );
 }
 
-// ── Carte noire du prochain live (maquette « Prochain cours en direct ») ───
+/** Titre de section de la maquette : très gras, serré, avec un texte et un lien à droite. */
+export function TitreSectionPublic({
+  etiquette,
+  titre,
+  texte,
+  lien,
+  id,
+  className,
+}: {
+  etiquette?: string;
+  titre: ReactNode;
+  texte?: ReactNode;
+  lien?: { href: string; libelle: string };
+  id?: string;
+  className?: string;
+}) {
+  return (
+    <div id={id} className={cn("mb-7 flex scroll-mt-24 flex-wrap items-end justify-between gap-x-6 gap-y-3", className)}>
+      <div className="flex max-w-3xl flex-col gap-2.5">
+        {etiquette && <span className="etiquette">{etiquette}</span>}
+        <h2 className="text-[30px] font-black leading-none tracking-serre sm:text-[clamp(30px,3.6vw,48px)]">{typeof titre === "string" ? typo(titre) : titre}</h2>
+        {texte && <p className="max-w-[560px] text-base leading-normal text-texte-pale">{typeof texte === "string" ? typo(texte) : texte}</p>}
+      </div>
+      {lien && <LienFleche href={lien.href}>{lien.libelle}</LienFleche>}
+    </div>
+  );
+}
 
-type SallesCarte = { cle: string; nom: string; salle: string }[];
+/** « Tout l'emploi du temps → » */
+export function LienFleche({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
+  return (
+    <Link
+      href={href}
+      className={cn("group inline-flex min-h-[44px] items-center gap-1.5 text-[15px] font-bold text-orange-fonce no-underline hover:text-encre", className)}
+    >
+      {children} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+    </Link>
+  );
+}
 
-export const sallesDepuisSites = (sites: SitePublic[]): SallesCarte => sites.map((s) => ({ cle: s.slug, nom: nomCampus(s), salle: s.salle }));
-export const sallesDepuisCampus = (campus: CampusCours[]): SallesCarte => campus.map((c) => ({ cle: c.slug, nom: c.nomCourt, salle: c.salle }));
+/** Paragraphes d'un texte saisi dans le back-office (séparés par une ligne vide). */
+export function Paragraphes({ texte, className }: { texte: string; className?: string }) {
+  return (
+    <div className={cn("flex flex-col gap-4 text-[17px] leading-[1.65] text-texte-doux", className)}>
+      {paragraphes(texte).map((p, i) => (
+        <p key={i}>{p}</p>
+      ))}
+    </div>
+  );
+}
+
+/** État vide du site public : dit ce qui apparaîtra ici, et propose où aller. */
+export function EtatVidePublic({ icone, titre, texte, action, className }: { icone?: ReactNode; titre: ReactNode; texte?: ReactNode; action?: ReactNode; className?: string }) {
+  return (
+    <div className={cn("flex flex-col items-start gap-4 rounded-[28px] border border-dashed border-ligne bg-white p-6 sm:flex-row sm:items-center sm:gap-6 sm:p-8", className)}>
+      {icone && <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-orange-clair text-orange-fonce">{icone}</div>}
+      <div className="flex flex-1 flex-col gap-1.5">
+        <p className="text-xl font-extrabold leading-snug tracking-[-0.01em]">{typeof titre === "string" ? typo(titre) : titre}</p>
+        {texte && <p className="max-w-2xl text-[15px] leading-relaxed text-texte-pale">{typeof texte === "string" ? typo(texte) : texte}</p>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+// ── Carte noire du prochain cours ──────────────────────────────────────────
+
+/** Ce que la carte sait afficher, quelle que soit la source (live annoncé, emploi du temps, cours). */
+export type ProchainCours = {
+  titre: string;
+  /** Titre de la séance, ou précision (« Séance du lundi »). */
+  detail?: string | null;
+  debut: string | null;
+  enDirect: boolean;
+  /** Séance live existante : lien /live/:id pour les étudiants. */
+  seanceId: number | null;
+  intervenant: { nom: string; localisation?: string | null; photoUrl?: string | null; prenom?: string; nomFamille?: string } | null;
+};
+
+/** Live annoncé → carte. */
+export function depuisLive(l: VitrineLive, titreSeance = false): ProchainCours {
+  return {
+    titre: titreSeance ? l.titre : l.coursTitre,
+    detail: !titreSeance && l.titre !== l.coursTitre ? `${l.coursCode} · ${l.titre}` : null,
+    debut: l.debut,
+    enDirect: l.enDirect,
+    seanceId: l.id,
+    intervenant: l.formateur ? { nom: `${l.formateur.prenom} ${l.formateur.nom}`, prenom: l.formateur.prenom, nomFamille: l.formateur.nom, localisation: l.formateur.localisation } : null,
+  };
+}
+
+/** Créneau de l'emploi du temps → carte. */
+export function depuisOccurrence(o: OccurrenceDto): ProchainCours {
+  return {
+    titre: o.libelle,
+    detail: `${heure(o.debut)} à ${heure(o.fin)}, heure d'Abidjan`,
+    debut: o.debut,
+    enDirect: o.statut === "en_direct",
+    seanceId: o.seanceId,
+    intervenant: o.intervenant ? { nom: o.intervenant } : null,
+  };
+}
+
+/** Cours annoncé qui n'a pas encore commencé → carte (compte à rebours jusqu'à son début). */
+export function depuisCours(c: VitrineCours): ProchainCours {
+  return {
+    titre: c.titre,
+    detail: null,
+    debut: c.dateDebut,
+    enDirect: false,
+    seanceId: null,
+    intervenant: c.formateur
+      ? { nom: `${c.formateur.prenom} ${c.formateur.nom}`, prenom: c.formateur.prenom, nomFamille: c.formateur.nom, localisation: c.formateur.localisation, photoUrl: c.formateur.photoUrl }
+      : null,
+  };
+}
+
+export type SalleCarte = { cle: string; nom: string; salle: string | null };
+export const sallesDepuisCampus = (campus: CampusPublic[]): SalleCarte[] => campus.map((c) => ({ cle: c.slug, nom: c.nom, salle: c.salleNommee ? c.salle : null }));
+export const sallesDepuisCampusCours = (campus: CampusCours[]): SalleCarte[] =>
+  campus.map((c) => ({ cle: c.slug, nom: c.nomCourt, salle: c.salle && c.salle !== "Salle de conférence" ? c.salle : null }));
 
 /**
  * Carte « Prochain cours en direct » : compte à rebours à l'heure du serveur,
- * formateur « depuis Lyon », salles connectées. Trois états : en direct, bientôt,
- * ou rien d'annoncé (la carte reste belle et explique ce qui viendra).
+ * intervenant, salles des campus. Trois états : en direct, bientôt, ou rien
+ * d'annoncé (la carte reste belle et dit ce qui viendra).
  */
+export function CarteProchainCours({
+  prochain,
+  salles,
+  chargement,
+  etiquetteLibre,
+  className,
+}: {
+  prochain: ProchainCours | null;
+  salles: SalleCarte[];
+  chargement?: boolean;
+  /** Remplace « Prochain cours en direct ». */
+  etiquetteLibre?: string;
+  className?: string;
+}) {
+  const maintenant = useMaintenant(1000);
+  const cible = prochain?.debut && new Date(prochain.debut).getTime() > maintenant ? prochain.debut : null;
+  const ecart = cible ? new Date(cible).getTime() - maintenant : null;
+  const enDirect = Boolean(prochain?.enDirect);
+  const imminent = !enDirect && ecart !== null && ecart <= 10 * 60_000;
+  const p = prochain;
+
+  return (
+    <div className={cn("relative flex flex-col gap-5 overflow-hidden rounded-[28px] bg-encre p-5 text-white sm:gap-[22px] sm:p-7", className)} aria-live="polite">
+      <div aria-hidden className="pointer-events-none absolute -right-[90px] -top-[90px] h-[260px] w-[260px] rounded-full border-[40px] border-orange opacity-90" />
+      <span className="relative flex items-center gap-2 font-mono text-xs uppercase tracking-[0.08em] text-orange-peche">
+        <span className={cn("point-direct", !enDirect && "animate-none bg-orange")} />
+        {enDirect ? "En direct maintenant" : imminent ? "La salle ouvre" : p ? (etiquetteLibre ?? "Prochain cours en direct") : "Bientôt au campus numérique"}
+      </span>
+
+      {chargement ? (
+        <div className="relative flex flex-col gap-3">
+          <Squelette className="h-9 w-3/4 bg-nuit-carte" />
+          <Squelette className="h-5 w-1/2 bg-nuit-carte" />
+          <Squelette className="mt-2 h-[84px] bg-nuit-carte" />
+        </div>
+      ) : p ? (
+        <>
+          <div className="relative flex flex-col gap-2 pr-16 sm:pr-36 lg:pr-24">
+            <h2 className="text-[28px] font-extrabold leading-[1.05] tracking-[-0.02em] sm:text-[34px]">{p.titre}</h2>
+            {!enDirect && p.debut && (
+              <p className="text-[15px] text-nuit-doux">
+                <span className="block">{dateComplete(p.debut)}</span>
+                <span className="block">{heureDouble(p.debut)}</span>
+              </p>
+            )}
+            {p.detail && <p className="font-mono text-xs text-nuit-gris">{p.detail}</p>}
+          </div>
+          {enDirect ? (
+            <div className="relative flex flex-col gap-3 rounded-[16px] bg-[#2A1510] p-4">
+              <span className="flex items-center gap-2 font-mono text-sm uppercase tracking-wider text-[#FF8A6B]">
+                <span className="point-direct" /> En direct{p.debut ? ` depuis ${heure(p.debut)}` : ""}
+              </span>
+              <p className="text-[15px] text-nuit-doux">Les salles de conférence et les étudiants connectés suivent le cours en ce moment.</p>
+              {p.seanceId && (
+                <LienBouton href={`/live/${p.seanceId}`} taille="lg" className="w-full sm:w-auto">
+                  Je suis étudiant : rejoindre le cours
+                </LienBouton>
+              )}
+            </div>
+          ) : cible ? (
+            <CompteARebours cible={cible} className="relative" />
+          ) : (
+            <p className="relative rounded-[14px] bg-[#242120] px-4 py-5 text-center text-lg font-bold">Ça commence dans un instant.</p>
+          )}
+          <div className="relative flex items-center gap-3 rounded-2xl bg-[#242120] p-3.5">
+            {p.intervenant ? (
+              <Avatar prenom={p.intervenant.prenom ?? p.intervenant.nom.replace(/^M(me)?\.\s*/, "")} nom={p.intervenant.nomFamille ?? ""} photo={p.intervenant.photoUrl ?? null} taille={44} />
+            ) : (
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange text-encre">
+                <Radio className="h-5 w-5" />
+              </span>
+            )}
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-[15px] font-bold">
+                {p.intervenant ? p.intervenant.nom : "Un formateur du réseau 2IAE"}
+                {p.intervenant && ville(p.intervenant.localisation) ? <span className="font-normal text-nuit-doux"> · depuis {ville(p.intervenant.localisation)}</span> : null}
+              </span>
+              <span className="text-[13px] text-nuit-gris">Diffusé en direct dans les salles de conférence</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="relative flex flex-col gap-3 pr-16 sm:pr-36 lg:pr-24">
+          <h2 className="text-[28px] font-extrabold leading-[1.05] tracking-[-0.02em] sm:text-[34px]">Les prochains cours en direct arrivent.</h2>
+          <p className="text-[15px] leading-relaxed text-nuit-doux">Dès que l'emploi du temps est publié, le compte à rebours du prochain cours démarre ici.</p>
+          <Link href="/programme" className="inline-flex min-h-[44px] items-center gap-1.5 self-start text-[15px] font-bold text-orange-peche no-underline hover:text-white">
+            Voir l'emploi du temps <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      )}
+
+      {salles.length > 0 && (
+        <ul className="relative flex flex-col" aria-label="Salles de conférence connectées">
+          {salles.map((s) => (
+            <li key={s.cle} className="flex items-center justify-between gap-3 border-t border-[#2E2A28] py-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange" />
+                <span className="truncate">{s.nom}</span>
+              </span>
+              {s.salle && <span className="shrink-0 font-mono text-xs text-nuit-gris">{s.salle}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Compatibilité des fiches cours et formateur : un live annoncé, sinon le cours qui va commencer. */
 export function CarteProchainLive({
   live,
   coursRepli,
@@ -180,126 +321,23 @@ export function CarteProchainLive({
   className,
 }: {
   live: VitrineLive | null;
-  /** Sans live annoncé : le prochain cours qui commence (compte à rebours jusqu'à son début). */
   coursRepli?: VitrineCours | null;
-  salles: SallesCarte;
+  salles: SalleCarte[];
   chargement?: boolean;
-  /** Sur la fiche d'un cours : le titre de la séance plutôt que celui du cours (déjà affiché). */
   titreSeance?: boolean;
   className?: string;
 }) {
-  const maintenant = useMaintenant(1000);
-  const cible = live?.debut ?? (coursRepli?.dateDebut && new Date(coursRepli.dateDebut).getTime() > maintenant ? coursRepli.dateDebut : null);
-  const titre = (live && titreSeance ? live.titre : live?.coursTitre) ?? coursRepli?.titre ?? null;
-  // Le live ne porte que le nom et la ville ; la carte d'un cours porte la fiche complète (avec photo).
-  const formateur: { prenom: string; nom: string; localisation: string | null; photoUrl?: string | null } | null = live
-    ? live.formateur
-    : (coursRepli?.formateur ?? null);
-  const ecart = cible ? new Date(cible).getTime() - maintenant : null;
-  const enDirect = Boolean(live?.enDirect);
-  const imminent = !enDirect && ecart !== null && ecart <= 10 * 60_000;
-
+  const maintenant = useMaintenant(60_000);
+  const repli = coursRepli?.dateDebut && new Date(coursRepli.dateDebut).getTime() > maintenant ? depuisCours(coursRepli) : null;
+  const prochain = live ? depuisLive(live, titreSeance) : repli;
   return (
-    <div
-      className={cn("relative flex flex-col gap-5 overflow-hidden rounded-[28px] bg-encre p-5 text-white sm:gap-[22px] sm:p-7", className)}
-      aria-live="polite"
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-[90px] -top-[90px] h-[260px] w-[260px] rounded-full border-[40px] border-orange opacity-90"
-      />
-      <span className="relative flex items-center gap-2 font-mono text-xs uppercase tracking-[0.08em] text-orange-peche">
-        <span className={cn("point-direct", !enDirect && !cible && "animate-none bg-orange")} />
-        {enDirect
-          ? "En direct maintenant"
-          : imminent
-            ? "La salle ouvre"
-            : titre && live
-              ? "Prochain cours en direct"
-              : titre
-                ? "Prochain cours"
-                : "Bientôt au campus numérique"}
-      </span>
-
-      {chargement ? (
-        <div className="relative flex flex-col gap-3">
-          <Squelette className="h-9 w-3/4 bg-nuit-carte" />
-          <Squelette className="h-5 w-1/2 bg-nuit-carte" />
-          <Squelette className="mt-2 h-[84px] bg-nuit-carte" />
-        </div>
-      ) : titre ? (
-        <>
-          <div className="relative flex flex-col gap-2 pr-16 sm:pr-24">
-            <h2 className="text-[28px] font-extrabold leading-[1.05] tracking-[-0.02em] sm:text-[34px]">{titre}</h2>
-            {live && !enDirect ? (
-              <p className="text-[15px] text-nuit-doux">
-                <span className="block">{dateComplete(live.debut)}</span>
-                <span className="block">{heureDouble(live.debut)}</span>
-              </p>
-            ) : !live && coursRepli?.dateDebut ? (
-              <p className="text-[15px] text-nuit-doux">Commence le {dateComplete(coursRepli.dateDebut).replace(/^./, (c) => c.toLowerCase())}</p>
-            ) : null}
-            {live && !titreSeance && live.titre !== live.coursTitre && (
-              <p className="font-mono text-xs text-nuit-gris">
-                {live.coursCode} · {live.titre}
-              </p>
-            )}
-          </div>
-          {enDirect ? (
-            <div className="relative flex flex-col gap-3 rounded-[16px] bg-[#2A1510] p-4">
-              <span className="flex items-center gap-2 font-mono text-sm uppercase tracking-wider text-[#FF8A6B]">
-                <span className="point-direct" /> En direct depuis {heure(live!.debut)}
-              </span>
-              <p className="text-[15px] text-nuit-doux">Les salles de conférence et les étudiants connectés suivent le cours en ce moment.</p>
-              <LienBouton href={`/live/${live!.id}`} taille="lg" className="w-full sm:w-auto">
-                Je suis étudiant : rejoindre le live
-              </LienBouton>
-            </div>
-          ) : cible && ecart !== null && ecart > 0 ? (
-            <CompteARebours cible={cible} className="relative" />
-          ) : live ? (
-            <p className="relative rounded-[14px] bg-[#242120] px-4 py-5 text-center text-lg font-bold">Ça commence dans un instant.</p>
-          ) : null}
-          <div className="relative flex items-center gap-3 rounded-2xl bg-[#242120] p-3.5">
-            {formateur ? (
-              <Avatar prenom={formateur.prenom} nom={formateur.nom} photo={formateur.photoUrl ?? null} taille={44} />
-            ) : (
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange text-encre">
-                <Radio className="h-5 w-5" />
-              </span>
-            )}
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-[15px] font-bold">
-                {formateur ? `${formateur.prenom} ${formateur.nom}` : "Formateur du réseau 2IAE"}
-                {formateur && ville(formateur.localisation) ? (
-                  <span className="font-normal text-nuit-doux"> · depuis {ville(formateur.localisation)}</span>
-                ) : null}
-              </span>
-              <span className="text-[13px] text-nuit-gris">Diffusé en direct dans les salles de conférence</span>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="relative flex flex-col gap-2 pr-16 sm:pr-24">
-          <h2 className="text-[28px] font-extrabold leading-[1.05] tracking-[-0.02em] sm:text-[34px]">Les prochains cours en direct arrivent.</h2>
-          <p className="text-[15px] leading-relaxed text-nuit-doux">Dès qu'un formateur annonce une séance, son compte à rebours démarre ici.</p>
-        </div>
-      )}
-
-      {salles.length > 0 && (
-        <ul className="relative flex flex-col">
-          {salles.map((s) => (
-            <li key={s.cle} className="flex items-center justify-between gap-3 border-t border-[#2E2A28] py-2 text-sm">
-              <span className="flex min-w-0 items-center gap-2.5">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange" />
-                <span className="truncate">{s.nom}</span>
-              </span>
-              <span className="shrink-0 font-mono text-xs text-nuit-gris">{s.salle}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <CarteProchainCours
+      prochain={prochain}
+      salles={salles}
+      chargement={chargement}
+      etiquetteLibre={live ? undefined : "Le cours commence bientôt"}
+      className={className}
+    />
   );
 }
 
@@ -395,7 +433,67 @@ export function CarteFormateurPublic({ formateur: f }: { formateur: VitrineForma
   );
 }
 
-// ── Lives à venir (fiches cours et formateur) ──────────────────────────────
+// ── Campus ─────────────────────────────────────────────────────────────────
+
+/** Photo d'un campus, ou un aplat soigné avec son nom quand il n'y en a pas encore. */
+export function PhotoCampus({ campus: c, className, eager = false }: { campus: CampusPublic; className?: string; eager?: boolean }) {
+  if (c.photoUrl) {
+    return <img src={c.photoUrl} alt={`Façade du campus 2IAE ${c.nomCourt}`} loading={eager ? "eager" : "lazy"} decoding="async" className={cn("bg-creme object-cover", className)} />;
+  }
+  return (
+    <div className={cn("relative grid place-items-center overflow-hidden bg-orange-clair", className)} aria-hidden>
+      <div className="absolute -bottom-10 -right-10 h-40 w-40 rounded-full border-[28px] border-orange/25" />
+      <span className="relative px-4 text-center text-2xl font-black tracking-serre text-orange-profond">{c.nomCourt}</span>
+    </div>
+  );
+}
+
+/** Carte d'un campus (accueil, page des campus) : photo, nom, résultat au BTS, lien vers sa page. */
+export function CarteCampus({ campus: c, className }: { campus: CampusPublic; className?: string }) {
+  return (
+    <Link
+      href={`/campus/${c.slug}`}
+      className={cn("group flex h-full flex-col overflow-hidden rounded-3xl border border-ligne bg-white text-encre no-underline transition-colors hover:border-orange hover:text-encre", className)}
+    >
+      <PhotoCampus campus={c} className="aspect-[4/3] w-full" />
+      <div className="flex flex-1 flex-col gap-2 p-4 sm:p-5">
+        <h3 className="text-lg font-extrabold leading-tight tracking-[-0.01em] sm:text-xl">{c.nom}</h3>
+        <p className="line-clamp-2 text-sm leading-snug text-texte-pale">{c.localite && c.localite !== c.nom && c.localite !== c.nomCourt ? c.localite : c.adresse || c.ville}</p>
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          {c.resultat ? (
+            <span className="rounded-full bg-orange-clair px-2.5 py-1 font-mono text-xs text-orange-profond">
+              {typo(`${formatTaux(c.resultat.taux)} au ${c.resultat.libelle}`)}
+            </span>
+          ) : (
+            <span className="font-mono text-xs text-texte-gris">Salle de conférence connectée</span>
+          )}
+          <ArrowRight className="h-4 w-4 shrink-0 text-orange-fonce transition-transform group-hover:translate-x-0.5" aria-hidden />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/** Bouton WhatsApp vers la vie scolaire d'un campus (ou le numéro du groupe). */
+export function BoutonWhatsappCampus({ campus: c, texte, className }: { campus: CampusPublic; texte?: string; className?: string }) {
+  if (!c.whatsapp) return null;
+  const message = texte ?? `Bonjour, je vous écris depuis le site du campus numérique 2IAE, au sujet du campus ${c.nomCourt}.`;
+  return (
+    <a
+      href={lienWhatsappVers(c.whatsapp, message)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#25D366] px-5 text-[15px] font-bold text-encre no-underline transition-colors hover:bg-encre hover:text-white",
+        className,
+      )}
+    >
+      <MessageCircle className="h-5 w-5" /> {c.whatsappCampus ? "Vie scolaire sur WhatsApp" : "Écrire sur WhatsApp"}
+    </a>
+  );
+}
+
+// ── Lives à venir (fiches cours et formateur, pages campus) ────────────────
 
 export function ListeLives({ lives, avecCours = false }: { lives: VitrineLive[]; avecCours?: boolean }) {
   const maintenant = useMaintenant(60_000);
@@ -483,30 +581,5 @@ export function BoutonPartager({ texte, className }: { texte: string; className?
     >
       <Share2 className="h-4 w-4 text-succes" /> Partager sur WhatsApp
     </a>
-  );
-}
-
-/** Titre de section de la maquette : très gras, serré, avec un texte d'accompagnement à droite. */
-export function TitreSectionPublic({
-  etiquette,
-  titre,
-  texte,
-  id,
-  className,
-}: {
-  etiquette?: string;
-  titre: ReactNode;
-  texte?: ReactNode;
-  id?: string;
-  className?: string;
-}) {
-  return (
-    <div id={id} className={cn("mb-7 flex scroll-mt-24 flex-wrap items-end justify-between gap-x-6 gap-y-3", className)}>
-      <div className="flex max-w-3xl flex-col gap-2.5">
-        {etiquette && <span className="etiquette">{etiquette}</span>}
-        <h2 className="text-[30px] font-black leading-none tracking-serre sm:text-[clamp(30px,3.6vw,48px)]">{titre}</h2>
-      </div>
-      {texte && <p className="max-w-[420px] text-base leading-normal text-texte-pale">{texte}</p>}
-    </div>
   );
 }

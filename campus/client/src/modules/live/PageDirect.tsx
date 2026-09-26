@@ -2,6 +2,7 @@
 // Sinon : le prochain live avec son compte à rebours, « Ajouter à mon
 // agenda », puis « Déjà passés » (replays). Le formateur y retrouve ses
 // prochaines séances et « Nouvelle séance » ; l'équipe, les lives du jour.
+// Formateur et équipe : « Tester ma visio » et « Lancer un direct maintenant ».
 import { useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Selection } from "@/components/ui/champs";
 import { CompteARebours, DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
+import { OutilsStudio } from "@/modules/visio";
 import { LigneSeance } from "./ui";
 import type { EnCours, SeanceResume } from "@shared/api";
 
@@ -71,6 +73,9 @@ export default function PageDirect() {
           action={moi.role === "formateur" ? <Bouton onClick={() => setChoixCours(true)}>Préparer une séance</Bouton> : <LienBouton href="/cours" variante="contour">Voir mes cours</LienBouton>}
         />
       )}
+
+      {/* Salle d'essai et « Lancer un direct maintenant » (module visio). */}
+      {enseignant && <OutilsStudio />}
 
       {/* grid-cols-1 (minmax(0, 1fr)) et min-w-0 : un titre de séance très long se tronque au lieu d'élargir la page. */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -156,7 +161,7 @@ function CarteProchaine({ s, enseignant }: { s: SeanceResume; enseignant: boolea
           {s.coursCode} · {s.coursTitre}
         </span>
         <span className="text-[15px] text-nuit-doux">
-          {enseignant ? `${dateEtHeure(s.debut).split(" · ")[0]} · ${heureDouble(s.debut)}` : dateEtHeure(s.debut).replace(/ · [^·]*Paris$/, "")} · {s.dureeMinutes} min
+          {enseignant ? `${dateEtHeure(s.debut).split(" · ")[0]} · ${heureDouble(s.debut)}` : dateEtHeure(s.debut)} · {s.dureeMinutes} min
           {s.formateur ? ` · ${s.formateur.prenom} ${s.formateur.nom}${ville ? ` depuis ${ville}` : ""}` : ""}
         </span>
         <div className="mt-3 flex flex-wrap gap-2.5">

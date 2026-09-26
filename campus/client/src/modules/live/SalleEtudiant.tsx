@@ -12,7 +12,7 @@ import { dateEtHeure } from "@/lib/dates";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { CompteARebours } from "@/components/ui/compte-a-rebours";
 import { toast, toastErreur } from "@/components/ui/toast";
-import { TestMicroCamera } from "@/modules/visio";
+import { TestMicroCamera, useOptionsVisio } from "@/modules/visio";
 import { Scene } from "./scene";
 import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, VignettesSalles, BoutonsRessentis, CarteRattrapage, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
@@ -45,10 +45,25 @@ export default function SalleEtudiant({ seance }: { seance: SeanceDetailDto }) {
 function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: ModeSuivi) => void }) {
   const moi = useMoiConnecte();
   const dejaEnSalle = seance.maPresence?.mode === "salle";
+  // Coût de la visio (module visio) : « son + diapos » par défaut ; la vidéo seulement si
+  // la direction l'a réglée par défaut et que l'étudiant suit sur ordinateur sans données réduites.
+  const reglagesVisio = useOptionsVisio();
+  const parDefaut = (videoAutorisee: boolean): ModeSuivi =>
+    dejaEnSalle || moi.preferences?.modeSuivi === "salle"
+      ? "compagnon"
+      : videoAutorisee && moi.preferences?.donneesReduites === false && moi.preferences?.modeSuivi === "ordinateur"
+        ? "video"
+        : "radio";
   // Déjà émargé dans sa salle (QR ou code de la salle) : le mode compagnon est proposé d'office.
-  const [choix, setChoix] = useState<ModeSuivi>(
-    dejaEnSalle || moi.preferences?.modeSuivi === "salle" ? "compagnon" : moi.preferences?.donneesReduites === false && moi.preferences?.modeSuivi === "ordinateur" ? "video" : "radio",
-  );
+  const [choix, setChoixEtat] = useState<ModeSuivi>(() => parDefaut(Boolean(reglagesVisio?.videoEtudiantParDefaut)));
+  const touche = useRef(false);
+  const setChoix = (m: ModeSuivi) => {
+    touche.current = true;
+    setChoixEtat(m);
+  };
+  useEffect(() => {
+    if (reglagesVisio && !touche.current) setChoixEtat(parDefaut(reglagesVisio.videoEtudiantParDefaut));
+  }, [reglagesVisio?.videoEtudiantParDefaut]);
   const [code, setCode] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [erreurCode, setErreurCode] = useState<string | null>(null);

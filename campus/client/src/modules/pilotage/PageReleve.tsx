@@ -34,10 +34,10 @@ export default function PageReleve({ jeton }: { jeton: string }) {
       <style>{"@page { size: A4 portrait; margin: 14mm; } @media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }"}</style>
       <main className="mx-auto flex max-w-[720px] flex-col gap-6 rounded-[28px] bg-white p-6 shadow-carte print:max-w-none print:rounded-none print:p-0 print:shadow-none sm:p-10">
         <header className="flex items-center gap-4 border-b border-ligne pb-5">
-          <img src="/marque-2iae.png" alt="Groupe 2IAE" className="h-12 w-auto" />
+          <img src="/logo-2iae-hd.png" alt="Groupe Écoles 2IAE International" className="h-16 w-auto sm:h-20" />
           <div className="border-l border-ligne-forte pl-4">
-            <div className="text-[15px] font-extrabold leading-tight">Groupe 2IAE International</div>
-            <div className="font-mono text-xs text-texte-gris">Campus numérique · relevé scolaire</div>
+            <div className="text-[15px] font-extrabold leading-tight">Campus numérique</div>
+            <div className="font-mono text-xs text-texte-gris">Relevé scolaire</div>
           </div>
         </header>
 
@@ -127,7 +127,7 @@ export default function PageReleve({ jeton }: { jeton: string }) {
 
             <footer className="flex flex-col gap-3 border-t border-ligne pt-5 text-sm text-texte-pale">
               <p>
-                Relevé établi le {dateComplete(data.date).toLowerCase()} par le campus numérique du Groupe 2IAE International. Les moyennes tiennent compte des coefficients des devoirs ; la présence en ligne est comptée à partir de 70 % de la durée du cours.
+                Relevé établi le {dateComplete(data.date).toLowerCase()} par le campus numérique du Groupe Écoles 2IAE International. Les moyennes tiennent compte des coefficients des devoirs ; la présence en ligne est comptée à partir de 70 % de la durée du cours.
               </p>
               <p>Ce lien est personnel : la vie scolaire peut le désactiver à tout moment. Pour toute question, contactez la vie scolaire du campus.</p>
               <button

@@ -146,7 +146,7 @@ function FenetreCreationCours({ ouverte, onFermer, onCree }: { ouverte: boolean;
       <div className="flex flex-col gap-4 pb-2">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
           <Champ libelle="Code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="IA-101" className="font-mono" maxLength={20} />
-          <Champ libelle="Titre" value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="Initiation à l'intelligence artificielle" maxLength={140} />
+          <Champ libelle="Titre" value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="Initiation à l'IA" maxLength={140} />
         </div>
         <Selection libelle="Formateur" value={formateurId} onChange={(e) => setFormateurId(e.target.value)} aide="Il sera prévenu qu'un cours lui est confié.">
           <option value="">À choisir plus tard</option>

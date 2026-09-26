@@ -31,7 +31,7 @@ export function useEcransVisite(role: Role): EcranVisite[] {
         texte: "Quand un cours commence, l'onglet Live devient rouge. Un toucher et tu es dans la classe, avec les cinq campus en même temps.",
         illustration: (
           <IllustrationProchainCours
-            titre={seance?.coursTitre ?? "Initiation à l'intelligence artificielle"}
+            titre={seance?.coursTitre ?? "Initiation à l'IA"}
             quand={seance ? `${jourLong(seance.debut)} · ${heure(seance.debut)}` : "mardi · 10h00"}
             debut={seance?.debut ?? null}
             exemple={!seance}
@@ -65,8 +65,8 @@ export function useEcransVisite(role: Role): EcranVisite[] {
         texte: "Depuis le studio, vous voyez les campus connectés, les mains levées et les questions votées. Vous donnez la parole à une salle en un clic.",
         illustration: (
           <IllustrationStudio
-            titre={seance?.coursTitre ?? "Initiation à l'intelligence artificielle"}
-            quand={seance ? heureDouble(seance.debut) : "10h00 Abidjan · 12h00 Paris"}
+            titre={seance?.coursTitre ?? "Initiation à l'IA"}
+            quand={seance ? heureDouble(seance.debut) : heureDouble("2026-09-28T08:30:00Z")}
           />
         ),
       },
@@ -365,7 +365,7 @@ function IllustrationFiche() {
           ))}
         </div>
         <div className="flex flex-col justify-center gap-1">
-          <span className="text-[13px] font-extrabold leading-tight">Yao Kouassi</span>
+          <span className="text-[13px] font-extrabold leading-tight">Prénom NOM</span>
           <span className="font-mono text-[10px] text-texte-pale">Matricule 26GC0142</span>
           <span className="mt-1 font-mono text-[9px] uppercase text-texte-gris">Code provisoire</span>
           <span className="font-mono text-[18px] font-bold tracking-[0.2em]">71 58 20</span>
@@ -398,7 +398,7 @@ function IllustrationAnnonces() {
         <span className="flex items-center gap-1 font-mono text-[8px] uppercase text-orange-fonce">
           <Megaphone className="h-3 w-3" /> Annonce · Campus Yopougon
         </span>
-        <p className="mt-1 text-[10px] leading-snug">Examen blanc samedi 9h en salle Kédjénou.</p>
+        <p className="mt-1 text-[10px] leading-snug">Séminaire samedi toute la journée, en salle de conférence.</p>
         <span className="mt-1.5 block font-mono text-[8px] text-texte-gris">Lu par 212 étudiants sur 240</span>
       </div>
     </div>

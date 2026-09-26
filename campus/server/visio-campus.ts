@@ -33,6 +33,7 @@ import { route, valider, idParam, interdit, invalide, ErreurHttp } from "./http"
 import { seanceVisible, enseigneCours } from "./acces";
 import { enregistrerGardien, publier, publierUtilisateur } from "./temps-reel";
 import { planifier } from "./taches";
+import { enregistrerVisioDaily } from "./visio-daily";
 import {
   sites,
   TYPES_SIGNAL_VISIO,
@@ -602,6 +603,10 @@ const schemaSignal = z.object({
 });
 
 export function enregistrerVisioCampus(app: Express) {
+  // Daily : salle d'essai, présence, fuseau, coût et réglages. Déclaré en premier :
+  // « /api/visio/essai/… » ne doit pas être pris pour « /api/visio/:seanceId/… ».
+  enregistrerVisioDaily(app);
+
   // Canal « visio:<seanceId> » : événements de la radio pour les inscrits de la séance.
   enregistrerGardien("visio", async (u, cle) => {
     const id = Number(cle);

@@ -786,8 +786,16 @@ function comptesVisibles(u: Utilisateur): SQL | undefined {
 }
 
 /** Message qui accompagne un code provisoire (tutoiement pour les étudiants, vouvoiement sinon). */
-function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "email">, code: string, lien: string, expireLe: Date): string {
-  const identifiant = c.matricule ?? c.email ?? "";
+function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "email"> & { telephone?: string | null }, code: string, lien: string, expireLe: Date): string {
+  const identifiant = c.matricule ?? c.email ?? c.telephone ?? "";
+  // Compte sans identifiant (formateur créé sans e-mail ni téléphone) : il le choisira en ouvrant le lien.
+  if (!identifiant) {
+    return [
+      `Bonjour ${c.prenom}, voici votre accès au campus numérique 2IAE.`,
+      `Ouvrez ce lien pour activer votre compte (une seule fois, jusqu'au ${jour(expireLe)}) : ${lien}`,
+      "Vous y choisirez votre identifiant (votre e-mail ou votre téléphone) et votre mot de passe.",
+    ].join("\n");
+  }
   if (c.role === "etudiant") {
     return [
       `Bonjour ${c.prenom}, voici ton accès au campus numérique 2IAE.`,
@@ -1252,7 +1260,7 @@ async function travailUnique(u: Utilisateur, id: string, total: number, faire: (
   return t.resultat;
 }
 
-type CompteAFicher = { id: number; prenom: string; nom: string; role: Role; matricule: string | null; email: string | null; classe: string | null; site: string | null };
+type CompteAFicher = { id: number; prenom: string; nom: string; role: Role; matricule: string | null; email: string | null; telephone?: string | null; classe: string | null; site: string | null };
 
 /**
  * Nouveau code provisoire et nouveau QR pour chaque compte : mêmes étapes que
@@ -1286,7 +1294,7 @@ async function remettreCodes(u: Utilisateur, comptes: CompteAFicher[], t?: Trava
       prenom: c.prenom,
       nom: c.nom,
       role: c.role,
-      identifiant: c.matricule ?? c.email ?? "",
+      identifiant: c.matricule ?? c.email ?? c.telephone ?? "",
       classe: c.classe,
       site: c.site,
       code: codes![i],
@@ -1680,7 +1688,9 @@ export function enregistrerAdmin(app: Express) {
         classeId = classe.id;
         siteId = classe.siteId;
       } else {
-        if (!d.email) throw invalide("L'adresse e-mail est obligatoire pour le personnel (elle sert d'identifiant).");
+        // Formateur ou écran de salle sans e-mail : le formateur choisira son identifiant en ouvrant son
+        // lien d'invitation, l'écran s'installe par un lien ou un code (module lancement).
+        if (!d.email && d.role !== "formateur" && d.role !== "salle") throw invalide("L'adresse e-mail est obligatoire pour le personnel (elle sert d'identifiant).");
         if (d.role === "vie_scolaire" || d.role === "salle") {
           const voulu = d.siteId ?? (p?.length === 1 ? p[0] : null);
           if (!voulu) throw invalide(d.role === "salle" ? "Choisissez le campus de cette salle." : "Choisissez le campus de ce compte vie scolaire.");
@@ -1690,6 +1700,11 @@ export function enregistrerAdmin(app: Express) {
       }
       const telephone = telephoneSaisi(d.telephone);
       await verifierUnicite({ matricule: d.matricule, email: d.email });
+      // Formateur sans e-mail : son téléphone devient son identifiant, il ne doit mener qu'à lui.
+      if (d.role === "formateur" && !d.email && telephone) {
+        const [pris] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.telephone, telephone)).limit(1);
+        if (pris) throw new ErreurHttp(409, "Ce numéro est déjà utilisé par un autre compte : il ne peut pas servir d'identifiant. Laissez-le vide, le formateur choisira son identifiant en activant son compte.");
+      }
 
       const code = d.role === "etudiant" ? codeProvisoire() : motDePasseProvisoire();
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);

@@ -18,6 +18,7 @@ import {
   BarChart3,
   CalendarClock,
   CalendarRange,
+  Video,
 } from "lucide-react";
 import type { Role } from "@shared/schema";
 
@@ -67,6 +68,7 @@ const EQUIPE: ElementNav[] = [
   { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"] },
   { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: true },
   { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"] },
+  { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"] },
 ];

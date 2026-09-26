@@ -54,9 +54,6 @@ import {
   fichiers,
   journal,
   contenusSite,
-  CONTENUS_PAR_DEFAUT,
-  CAMPUS_PAR_DEFAUT,
-  CAMPUS_VIERGE,
   CLES_CONTENUS,
   FILIERES_BTS,
   SALLES_INVENTEES,
@@ -81,6 +78,7 @@ import {
   type SitePublicDto,
 } from "@shared/schema";
 import type { Vitrine, VitrineCours, VitrineFormateur, VitrineLive, VitrineAnnonce } from "@shared/api";
+import { CAMPUS_PAR_DEFAUT, CAMPUS_VIERGE, CONTENUS_PAR_DEFAUT } from "@shared/vitrine-contenus";
 
 const JOUR = 86_400_000;
 /** Un cours reste annoncé jusqu'à 30 jours après son début. */
@@ -503,6 +501,7 @@ surChangementPublication(() => {
 function versCampusPublic(s: Site, contenu: ContenuCampus, etudiants: number, contacts: ContenuContacts): CampusPublic {
   const waCampus = numeroWa(s.whatsappVieScolaire);
   return {
+    id: s.id,
     slug: s.slug,
     nom: s.nom,
     nomCourt: s.nomCourt,
@@ -514,7 +513,8 @@ function versCampusPublic(s: Site, contenu: ContenuCampus, etudiants: number, co
     adresse: contenu.adresse,
     localite: contenu.localite,
     telephone: contenu.telephone || null,
-    photoUrl: imagePublique(contenu.photoUrl),
+    // Les photos livrées avec le campus restent relatives ; une photo téléversée passe par la route publique des images.
+    photoUrl: contenu.photoUrl?.startsWith("/images/") ? contenu.photoUrl : imagePublique(contenu.photoUrl),
     itineraire: itineraire(contenu, s.nom),
     filieres: contenu.filieres.map((code) => FILIERES_BTS.find((f) => f.code === code)).filter((f): f is (typeof FILIERES_BTS)[number] => Boolean(f)),
     resultat: contenu.resultat,
@@ -865,16 +865,40 @@ function balises(p: { titre: string; description: string; chemin: string; type?:
 
 const fmtDate = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", timeZone: "Africa/Abidjan" });
 
-async function metaPage(url: string): Promise<string | null> {
-  const chemin = decodeURIComponent(url.split(/[?#]/)[0]).replace(/\/+$/, "") || "/";
-  if (chemin === "/") {
-    return balises({
-      titre: `${NOM_CAMPUS} · Un cours. Cinq campus. En direct.`,
-      description:
-        "Les étudiants de Riviera Palmeraie, Yopougon, Yamoussoukro, Azaguié et M'Batto suivent les mêmes formateurs en direct, depuis leur téléphone, leur ordinateur ou la salle de conférence de leur campus.",
-      chemin: "/",
-    });
+/** Chemin propre d'une URL (« /campus/yopougon/?x » → « /campus/yopougon »). */
+const cheminDe = (url: string) => {
+  try {
+    return decodeURIComponent(url.split(/[?#]/)[0]).replace(/\/+$/, "") || "/";
+  } catch {
+    return url.split(/[?#]/)[0] || "/";
   }
+};
+
+const fmtTaux = (t: number) => `${new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(t)} %`;
+
+/** Données structurées de l'établissement (moteurs de recherche), sur l'accueil. */
+async function donneesStructurees(): Promise<string> {
+  const { contenus } = await lireContenus();
+  const c = contenus.contacts;
+  const json = {
+    "@context": "https://schema.org",
+    "@type": "EducationalOrganization",
+    name: "Groupe Écoles 2IAE International",
+    alternateName: "Institut International des Affaires en Entrepreneuriat",
+    slogan: "2IAE, entreprendre pour devenir l'élite de demain.",
+    foundingDate: "2006",
+    url: c.siteWeb,
+    logo: urlCampus("/logo-2iae-hd.png"),
+    email: c.email || undefined,
+    telephone: c.telephones[0] || undefined,
+    sameAs: [c.facebook, c.siteWeb].filter(Boolean),
+  };
+  return `<script type="application/ld+json">${JSON.stringify(json).replace(/</g, "\\u003c")}</script>`;
+}
+
+/** Pages dont le contenu dépend d'un enregistrement (cours, formateur, campus). */
+async function metaPage(url: string): Promise<string | null> {
+  const chemin = cheminDe(url);
   const mCours = chemin.match(/^\/cours-ouverts\/([^/]+)$/);
   if (mCours) {
     const c = await coursAnnonceParSlug(mCours[1]);
@@ -904,7 +928,212 @@ async function metaPage(url: string): Promise<string | null> {
       image: await imagePartage(f.photoUrl, `${f.prenom} ${f.nom}`),
     });
   }
+  const mCampus = chemin.match(/^\/campus\/([^/]+)$/);
+  if (mCampus) {
+    const c = (await lireSitePublic()).campus.find((x) => x.slug === mCampus[1]);
+    if (!c) return null;
+    const morceaux = [
+      [c.adresse, c.localite].filter(Boolean).join(", "),
+      c.resultat ? `${fmtTaux(c.resultat.taux)} d'admis au ${c.resultat.libelle}` : null,
+      c.filieres.length ? `Filières : ${c.filieres.map((f) => f.code).join(", ")}` : null,
+      "Les cours en direct du campus numérique, dans sa salle de conférence.",
+    ].filter(Boolean);
+    const photo = c.photoUrl && /\.(jpe?g|png)$/i.test(c.photoUrl) ? { url: c.photoUrl.startsWith("/") ? urlCampus(c.photoUrl) : c.photoUrl, alt: `Campus 2IAE ${c.nomCourt}` } : undefined;
+    return balises({ titre: `Campus 2IAE ${c.nom}`, description: `${morceaux.join(". ")}`.replace(/\.\./g, "."), chemin: `/campus/${c.slug}`, image: photo });
+  }
   return null;
+}
+
+/** Pages fixes du site public (consultées en repli : un module peut préciser les siennes). */
+async function metaPagesFixes(url: string): Promise<string | null> {
+  const chemin = cheminDe(url);
+  if (chemin === "/") {
+    const { contenus } = await lireContenus();
+    const titre = contenus.accueil.titre.split("\n").map((l) => l.trim()).filter(Boolean).join(" ");
+    return `${balises({ titre: `${NOM_CAMPUS} · ${titre}`, description: contenus.accueil.sousTitre, chemin: "/" })}\n    ${await donneesStructurees()}`;
+  }
+  const fixes: Record<string, { titre: string; description: string | (() => Promise<string>) }> = {
+    "/programme": {
+      titre: `Emploi du temps · ${NOM_CAMPUS}`,
+      description: "L'emploi du temps officiel des cours en direct du Groupe 2IAE : jours, heures, cours et intervenants, à l'heure d'Abidjan.",
+    },
+    "/cours-ouverts": {
+      titre: `Les cours en direct · ${NOM_CAMPUS}`,
+      description: "Les cours du campus numérique 2IAE, suivis en direct dans les cinq campus et sur téléphone : programme, formateur et prochaines séances.",
+    },
+    "/formateurs": {
+      titre: `Les formateurs · ${NOM_CAMPUS}`,
+      description: "Ils enseignent en direct aux cinq campus du Groupe 2IAE, où qu'ils soient dans le monde.",
+    },
+    "/campus": {
+      titre: "Les cinq campus du Groupe 2IAE",
+      description:
+        "Abidjan Riviera Palmeraie, Abidjan Yopougon, Yamoussoukro, Azaguié et M'Batto : adresses, filières, résultats au BTS 2026, contacts et salle de conférence.",
+    },
+    "/le-direct": {
+      titre: `Suivre un cours en direct · ${NOM_CAMPUS}`,
+      description:
+        "Dans la salle de conférence de son campus, au téléphone (son et diapos, environ 12 à 15 Mo par heure) ou à l'ordinateur : comment suivre les cours du campus numérique.",
+    },
+    "/questions": {
+      titre: `Questions fréquentes · ${NOM_CAMPUS}`,
+      description: "Première connexion, code oublié, forfait internet, téléphone partagé, relevé des parents : les réponses, et la vie scolaire sur WhatsApp.",
+    },
+    "/a-propos": {
+      titre: "À propos · Groupe Écoles 2IAE International",
+      description: async () => (await lireContenus()).contenus.apropos.chapeau,
+    },
+    "/contact": {
+      titre: "Contact · Groupe Écoles 2IAE International",
+      description: "Téléphones, WhatsApp, e-mail et adresses des cinq campus du Groupe 2IAE. Préinscription en ligne.",
+    },
+    "/confidentialite": {
+      titre: `Confidentialité · ${NOM_CAMPUS}`,
+      description: "Ce que le campus numérique collecte, pourquoi, qui y a accès, combien de temps, et vos droits (loi ivoirienne n° 2013-450).",
+    },
+  };
+  const page = fixes[chemin];
+  if (!page) return null;
+  return balises({ titre: page.titre, description: typeof page.description === "string" ? page.description : await page.description(), chemin });
+}
+
+// ── Moteurs de recherche : sitemap.xml et robots.txt ───────────────────────
+
+const PAGES_FIXES = ["/", "/programme", "/cours-ouverts", "/formateurs", "/campus", "/le-direct", "/questions", "/a-propos", "/contact", "/confidentialite"];
+
+/** Pages de l'application réservées aux comptes (ou porteuses d'un jeton) : jamais indexées. */
+const CHEMINS_PRIVES = [
+  "/api/",
+  "/accueil",
+  "/enseigner",
+  "/cours/",
+  "/live/",
+  "/direct",
+  "/replays/",
+  "/devoirs",
+  "/quiz/",
+  "/notes",
+  "/corrections",
+  "/messages",
+  "/assistant",
+  "/agenda",
+  "/annonces",
+  "/emploi-du-temps",
+  "/profil",
+  "/bienvenue",
+  "/pilotage",
+  "/salle",
+  "/emargement/",
+  "/releve/",
+  "/activer/",
+  "/reinitialiser/",
+  "/mot-de-passe-oublie",
+  "/hors-ligne",
+  "/visio/",
+];
+
+async function sitemap(): Promise<string> {
+  const [vitrine, site, coursAnnonces] = await Promise.all([
+    lireVitrine(),
+    lireSitePublic(),
+    db
+      .select({ slug: cours.slug, majLe: cours.majLe })
+      .from(cours)
+      .where(and(eq(cours.publierSurSite, true), ne(cours.statut, "archive"))),
+  ]);
+  const jour = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const entrees: { chemin: string; majLe?: string | null; priorite: string }[] = [
+    ...PAGES_FIXES.map((chemin) => ({ chemin, priorite: chemin === "/" ? "1.0" : "0.8", majLe: chemin === "/" ? jour(site.majLe) : null })),
+    ...coursAnnonces.map((c) => ({ chemin: `/cours-ouverts/${c.slug}`, majLe: jour(c.majLe), priorite: "0.7" })),
+    ...vitrine.formateurs.map((f) => ({ chemin: `/formateurs/${f.slug}`, majLe: jour(f.annonceLe), priorite: "0.6" })),
+    ...site.campus.map((c) => ({ chemin: `/campus/${c.slug}`, priorite: "0.7" })),
+  ];
+  const xml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...entrees.map(
+      (e) => `  <url><loc>${xml(urlCampus(e.chemin === "/" ? "/" : e.chemin))}</loc>${e.majLe ? `<lastmod>${e.majLe}</lastmod>` : ""}<priority>${e.priorite}</priority></url>`,
+    ),
+    "</urlset>",
+    "",
+  ].join("\n");
+}
+
+const robots = () =>
+  ["User-agent: *", "Allow: /", ...CHEMINS_PRIVES.map((c) => `Disallow: ${c}`), "", `Sitemap: ${urlCampus("/sitemap.xml")}`, ""].join("\n");
+
+// ── Back-office « Site public » ────────────────────────────────────────────
+
+const EQUIPE = exigerRole("admin", "vie_scolaire");
+/** Réservé à la direction. */
+const DIRECTION: RequestHandler = (req, res, next) => {
+  if (!req.utilisateur) return res.status(401).json({ message: "Connectez-vous pour continuer." });
+  if (req.utilisateur.role !== "admin") return res.status(403).json({ message: "Réservé à la direction." });
+  next();
+};
+
+async function journaliser(u: Pick<Utilisateur, "id">, action: string, details: Record<string, unknown>) {
+  await db.insert(journal).values({ utilisateurId: u.id, action, details });
+}
+
+async function nomsAuteurs(ids: (number | null)[]): Promise<Map<number, string>> {
+  const uniques = [...new Set(ids.filter((i): i is number => typeof i === "number"))];
+  if (!uniques.length) return new Map();
+  const lignes = await db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(inArray(utilisateurs.id, uniques));
+  return new Map(lignes.map((l) => [l.id, `${l.prenom} ${l.nom}`]));
+}
+
+async function etatPilotage(u: Utilisateur): Promise<ContenusPilotage> {
+  const [{ contenus, campus, lignes }, listeSites] = await Promise.all([lireContenus(), sitesCampus()]);
+  const auteurs = await nomsAuteurs([...lignes.values()].map((l) => l.majParId));
+  const modifications: ContenusPilotage["modifications"] = {};
+  for (const cle of CLES_CONTENUS) {
+    const l = lignes.get(cle);
+    if (l) modifications[cle] = { le: l.majLe.toISOString(), par: l.majParId ? (auteurs.get(l.majParId) ?? null) : null };
+  }
+  const listeCampus: CampusPilotage[] = listeSites.map((s) => {
+    const l = lignes.get(`campus.${s.slug}`);
+    return {
+      id: s.id,
+      slug: s.slug,
+      nom: s.nom,
+      nomCourt: s.nomCourt,
+      salleConference: s.salleConference,
+      whatsappVieScolaire: s.whatsappVieScolaire,
+      contenu: campus.get(s.slug) ?? defautCampus(s.slug),
+      defaut: defautCampus(s.slug),
+      majLe: l?.majLe.toISOString() ?? null,
+      majPar: l?.majParId ? (auteurs.get(l.majParId) ?? null) : null,
+    };
+  });
+  return { contenus, defauts: CONTENUS_PAR_DEFAUT, campus: listeCampus, modifications, peutModifier: u.role === "admin" };
+}
+
+const cleValide = (brut: string): CleContenu => {
+  if (!(CLES_CONTENUS as readonly string[]).includes(brut)) throw introuvable("Bloc de contenu");
+  return brut as CleContenu;
+};
+
+/**
+ * Photo d'un campus : une image livrée avec le campus (/images/…), ou une photo
+ * téléversée pour le site (usage « site », PNG, JPEG ou WebP). Jamais un autre
+ * fichier déposé : une copie d'étudiant ne peut pas devenir publique par erreur.
+ */
+async function verifierPhoto(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  if (/^\/images\/[a-z0-9-]+\.(jpe?g|png|webp)$/i.test(url)) return url;
+  const id = idFichierInterne(url);
+  if (!id) throw invalide("photoUrl : photo inconnue.");
+  const [f] = await db.select({ usage: fichiers.usage, mime: fichiers.mime }).from(fichiers).where(eq(fichiers.id, id));
+  if (!f || f.usage !== "site" || !/^image\/(jpeg|png|webp)$/.test(f.mime)) throw invalide("photoUrl : cette photo n'a pas été téléversée pour le site.");
+  return `/api/fichiers/${id}`;
+}
+
+/** Retire l'aperçu des cartes de 2iae.com et du site public : tout se voit aussitôt. */
+function apresModification() {
+  oublierContenus();
+  oublierVitrine();
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────
@@ -912,6 +1141,20 @@ async function metaPage(url: string): Promise<string | null> {
 export function enregistrerPublic(app: Express) {
   app.use("/api/public", cors);
   enregistrerMetaPage(metaPage);
+  enregistrerMetaPage(metaPagesFixes, { repli: true });
+
+  app.get(
+    "/sitemap.xml",
+    route(async (_req, res) => {
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.type("application/xml").send(await sitemap());
+    }),
+  );
+
+  app.get("/robots.txt", (_req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.type("text/plain").send(robots());
+  });
 
   app.get(
     "/api/public/vitrine",
@@ -921,25 +1164,46 @@ export function enregistrerPublic(app: Express) {
     }),
   );
 
+  // Contenus du site public : « no-cache » + ETag, pour qu'une modification du back-office se voie aussitôt.
+  app.get(
+    "/api/public/site",
+    route(async (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
+      res.json(await lireSitePublic());
+    }),
+  );
+
+  app.get(
+    "/api/public/campus/:slug",
+    route(async (req, res) => {
+      const detail = await detailCampus(String(req.params.slug));
+      if (!detail) throw introuvable("Campus");
+      res.setHeader("Cache-Control", "no-cache");
+      res.json(detail);
+    }),
+  );
+
+  app.get(
+    "/api/public/en-direct",
+    route(async (_req, res) => {
+      const l = (await lireVitrine()).lives.find((x) => x.enDirect);
+      const reponse: EnDirectPublic = { live: l ? { id: l.id, titre: l.titre, coursTitre: l.coursTitre, coursCode: l.coursCode } : null };
+      res.setHeader("Cache-Control", "public, max-age=30");
+      res.json(reponse);
+    }),
+  );
+
   app.get(
     "/api/public/sites",
     route(async (_req, res) => {
-      const [liste, comptes] = await Promise.all([
-        sitesCampus(),
-        db
-          .select({ siteId: utilisateurs.siteId, n: sql<number>`count(*)::int` })
-          .from(utilisateurs)
-          .where(and(eq(utilisateurs.role, "etudiant"), eq(utilisateurs.actif, true)))
-          .groupBy(utilisateurs.siteId),
-      ]);
-      const parSite = new Map(comptes.map((c) => [c.siteId, c.n]));
+      const [liste, effectifs] = await Promise.all([sitesCampus(), effectifsParSite()]);
       const reponse: SitePublic[] = liste.map((s) => ({
         slug: s.slug,
         nom: s.nom,
         nomCourt: s.nomCourt,
         ville: s.ville,
-        salle: s.salleConference,
-        etudiants: parSite.get(s.id) ?? 0,
+        salle: salleAffichee(s.salleConference),
+        etudiants: effectifs.get(s.id) ?? 0,
       }));
       res.setHeader("Cache-Control", "public, max-age=300");
       res.json(reponse);
@@ -966,11 +1230,99 @@ export function enregistrerPublic(app: Express) {
     }),
   );
 
-  // Image d'un cours annoncé ou photo d'un formateur annoncé (le site et WhatsApp l'affichent sans compte).
+  // Image d'un cours annoncé, photo d'un formateur annoncé ou d'un campus (le site et WhatsApp l'affichent sans compte).
   app.get(
     "/api/public/images/:fichierId",
     route(async (req, res) => {
       await envoyerImage(res, idParam(req, "fichierId"));
+    }),
+  );
+
+  // ── Back-office « Site public » ──────────────────────────────────────────
+
+  app.get(
+    "/api/pilotage/site/contenus",
+    EQUIPE,
+    route(async (req, res) => {
+      res.json(await etatPilotage(moi(req)));
+    }),
+  );
+
+  app.put(
+    "/api/pilotage/site/contenus/:cle",
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const cle = cleValide(String(req.params.cle));
+      const valeur = valider(SCHEMAS[cle], req.body) as Record<string, unknown>;
+      await db
+        .insert(contenusSite)
+        .values({ cle, valeur, majParId: u.id })
+        .onConflictDoUpdate({ target: contenusSite.cle, set: { valeur, majParId: u.id, majLe: new Date() } });
+      apresModification();
+      await journaliser(u, "site_public_modifie", { cle });
+      res.json(await etatPilotage(u));
+    }),
+  );
+
+  app.delete(
+    "/api/pilotage/site/contenus/:cle",
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const cle = cleValide(String(req.params.cle));
+      await db.delete(contenusSite).where(eq(contenusSite.cle, cle));
+      apresModification();
+      await journaliser(u, "site_public_retabli", { cle });
+      res.json(await etatPilotage(u));
+    }),
+  );
+
+  app.put(
+    "/api/pilotage/site/campus/:slug",
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const [s] = await db.select().from(sites).where(eq(sites.slug, String(req.params.slug)));
+      if (!s) throw introuvable("Campus");
+      const d = valider(
+        schemaCampus.extend({
+          salleConference: texteRequis(80),
+          whatsappVieScolaire: telephone.or(z.literal("")).nullable(),
+        }),
+        req.body,
+      );
+      const { salleConference, whatsappVieScolaire, ...contenu } = d;
+      const wa = whatsappVieScolaire ? numeroWa(whatsappVieScolaire) : null;
+      if (whatsappVieScolaire && !wa) throw invalide("whatsappVieScolaire : numéro illisible (10 chiffres, ex. 07 47 72 67 29).");
+      const valeur = { ...contenu, photoUrl: await verifierPhoto(contenu.photoUrl) };
+      await db.transaction(async (tx) => {
+        await tx
+          .update(sites)
+          .set({ salleConference: salleConference.replace(/\s+/g, " "), whatsappVieScolaire: wa })
+          .where(eq(sites.id, s.id));
+        await tx
+          .insert(contenusSite)
+          .values({ cle: `campus.${s.slug}`, valeur, majParId: u.id })
+          .onConflictDoUpdate({ target: contenusSite.cle, set: { valeur, majParId: u.id, majLe: new Date() } });
+      });
+      apresModification();
+      await journaliser(u, "site_public_campus_modifie", { siteId: s.id, slug: s.slug });
+      res.json(await etatPilotage(u));
+    }),
+  );
+
+  app.delete(
+    "/api/pilotage/site/campus/:slug",
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const [s] = await db.select().from(sites).where(eq(sites.slug, String(req.params.slug)));
+      if (!s) throw introuvable("Campus");
+      await db.delete(contenusSite).where(eq(contenusSite.cle, `campus.${s.slug}`));
+      apresModification();
+      await journaliser(u, "site_public_campus_retabli", { siteId: s.id, slug: s.slug });
+      res.json(await etatPilotage(u));
     }),
   );
 }

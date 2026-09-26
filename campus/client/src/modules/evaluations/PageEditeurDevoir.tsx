@@ -1,6 +1,6 @@
 // /enseigner/devoirs/nouveau?cours=<id> et /enseigner/devoirs/:id : éditeur
 // d'un devoir ou d'une interrogation. Type, consigne en Markdown, pièces
-// jointes, ouverture et échéance (heure d'Abidjan, avec Paris), barème,
+// jointes, ouverture et échéance (heure d'Abidjan, avec celle du formateur), barème,
 // coefficient, retard accepté, grille ; pour une interrogation : durée,
 // tentatives, correction visible et questions (avec l'aide de l'IA).
 import { useEffect, useRef, useState } from "react";
@@ -69,7 +69,7 @@ const depuisDevoir = (d: DevoirDetailEnseignant["devoir"]): Formulaire => ({
   publie: d.publie,
 });
 
-/** « jeudi 1 octobre · 23h59 Abidjan · 01h59 Paris » sous un champ de date. */
+/** « jeudi 1 octobre · 23h59 Abidjan · 19h59 chez vous (Toronto) » sous un champ de date. */
 function AideDate({ valeur }: { valeur: string }) {
   const iso = depuisChampDate(valeur);
   if (!iso) return null;

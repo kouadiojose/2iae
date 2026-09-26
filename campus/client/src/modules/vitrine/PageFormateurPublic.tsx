@@ -12,6 +12,7 @@ import type { FicheFormateurPublique } from "@shared/schema";
 import { BoutonPartager, BoutonsAcces, CarteCoursPublic, CarteProchainLive, ListeLives, sallesDepuisCampus } from "./composants";
 import { useSitePublicOuSecours } from "./donnees";
 import { MiseEnPagePublique } from "./MiseEnPagePublique";
+import { ShowreelFormateur } from "@/modules/showreel";
 import { liveAMettreEnAvant, useTitreDocument, ville } from "./outils";
 
 export default function PageFormateurPublic({ slug }: { slug: string }) {
@@ -84,9 +85,6 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
                     </h1>
                   </div>
                 </div>
-                {/* showreel : emplacement réservé à la présentation animée de 30 s du formateur
-                    (module showreel, composant <Showreel />), branché par l'orchestrateur. Vide, il ne prend aucune place. */}
-                <div data-emplacement="showreel" className="empty:hidden" />
                 {f.titre && <p className="max-w-[620px] text-[19px] font-semibold leading-snug text-texte-doux">{f.titre}</p>}
                 {f.localisation && (
                   <p className="inline-flex items-center gap-2 font-mono text-sm text-texte-pale">
@@ -102,6 +100,9 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
               </div>
               <CarteProchainLive live={live} coursRepli={coursRepli} salles={sallesDepuisCampus(site.campus)} className="lg:sticky lg:top-24" />
             </section>
+
+            {/* Sa présentation animée de 30 s (module showreel) : rien ne s'affiche tant qu'elle n'est pas publiée. */}
+            <ShowreelFormateur slug={slug} className="w-full max-w-5xl" />
 
             {f.coursDetail.length > 0 && (
               <section className="flex flex-col gap-5">

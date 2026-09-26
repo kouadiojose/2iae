@@ -16,7 +16,7 @@ import { Agenda } from "./composants/profil/Agenda";
 import { Charte, Securite } from "./composants/profil/Securite";
 import { FicheSite } from "./composants/profil/FicheSite";
 import { Section } from "./composants/profil/Section";
-import { Globe } from "lucide-react";
+import { Film, Globe } from "lucide-react";
 import { ChoixFuseau } from "@/modules/visio";
 
 /** Ouvre le bloc désigné par l'ancre (#preferences depuis le menu du compte). */
@@ -59,6 +59,16 @@ export default function PageProfil() {
         <div className="flex min-w-0 flex-col gap-5">
           <Coordonnees moi={moi} />
           {moi.role === "formateur" && <FicheSite moi={moi} />}
+          {/* Module showreel : la présentation animée de 30 secondes du formateur. */}
+          {moi.role === "formateur" && (
+            <Section
+              id="presentation"
+              titre="Ma présentation en 30 secondes"
+              icone={<Film className="h-5 w-5" />}
+              description="Une présentation animée pour les étudiants des cinq campus, sur votre page du site. Collez vos liens, l'assistant la compose, vous validez."
+              action={<LienBouton href="/profil/presentation">Ouvrir</LienBouton>}
+            />
+          )}
           <Preferences moi={moi} />
           {/* Module visio : l'heure « chez vous » des formateurs et de l'équipe (les étudiants restent à l'heure d'Abidjan). */}
           {(moi.role === "formateur" || moi.role === "admin" || moi.role === "vie_scolaire") && (

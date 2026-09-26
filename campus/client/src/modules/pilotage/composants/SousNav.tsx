@@ -17,6 +17,7 @@ const PAGES: { href: string; libelle: string; prefixes?: string[]; direction?: b
   { href: "/pilotage/presences", libelle: "Présences" },
   { href: "/pilotage/annonces", libelle: "Annonces" },
   { href: "/pilotage/site", libelle: "Site public" },
+  { href: "/pilotage/formateurs", libelle: "Présentations", prefixes: ["/pilotage/formateurs"] },
   { href: "/pilotage/visio", libelle: "Visio" },
   { href: "/pilotage/ia", libelle: "Budget IA" },
 ];

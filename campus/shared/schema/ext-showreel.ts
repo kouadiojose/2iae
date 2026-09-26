@@ -306,6 +306,11 @@ export const showreels = campusSchema.table(
     extraits: jsonb("extraits").$type<Record<string, string>>().notNull().default({}),
     photoFichierId: integer("photo_fichier_id").references(() => fichiers.id, { onDelete: "set null" }),
     photoForme: text("photo_forme").$type<FormePhoto>().notNull().default("rond"),
+    /**
+     * Image d'aperçu des liens partagés (JPEG 1200 × 630, la première image de la
+     * présentation) : WhatsApp n'affiche ni le WebP ni une page animée. Facultative.
+     */
+    imagePartageFichierId: integer("image_partage_fichier_id").references(() => fichiers.id, { onDelete: "set null" }),
     /** Fuseau de la ville affichée (« 04h30 à Toronto ») quand le profil n'en a pas encore. */
     fuseau: text("fuseau"),
     composition: text("composition").$type<ModeComposition>(),
@@ -411,6 +416,8 @@ export type ShowreelEditionDto = {
   photoForme: FormePhoto;
   /** Fuseau choisi pour la présentation (null : celui du profil). */
   fuseau: string | null;
+  /** Image d'aperçu des liens partagés (WhatsApp), si la direction en a déposé une. */
+  imagePartage: { fichierId: number; url: string } | null;
   composition: ModeComposition | null;
   composeLe: string | null;
   composePar: string | null;
@@ -444,6 +451,8 @@ export type SaisieShowreel = {
   photoFichierId?: number | null;
   photoForme?: FormePhoto;
   fuseau?: string | null;
+  /** Direction : image d'aperçu des liens partagés (JPEG ou PNG téléversé avec l'usage « source-profil »), null pour la retirer. */
+  imagePartageFichierId?: number | null;
   /** « import » : plans rédigés par la direction à partir de faits vérifiés (script de publication). */
   origine?: "import";
 };

@@ -70,11 +70,31 @@ const REPORTAGE_RTI = {
   },
 };
 
+const RENCONTRE_YOPOUGON = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "Rencontre avec les parents de Yopougon : 54 % l'an dernier, 64 % cette année, 80 % l'an prochain",
+  description:
+    "À l'issue de la rencontre avec les parents d'élèves et le personnel du campus 2IAE de Yopougon, le fondateur Séraphin Koua commente les résultats du BTS 2026 (64,13 % d'admis contre 54 % l'année précédente), fixe l'objectif de 80 % et annonce un premier module de rentrée consacré à l'intelligence artificielle.",
+  thumbnailUrl: [SITE + "/videos/rencontre-parents-yopougon-2026-poster.jpg"],
+  contentUrl: SITE + "/videos/rencontre-parents-yopougon-2026.mp4",
+  uploadDate: "2026-09-26",
+  duration: "PT1M41S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: {
+    "@type": "Organization",
+    name: "Groupe Écoles 2IAE International",
+    url: SITE,
+  },
+};
+
 const PAGES: Record<string, MetaPage> = {
   "/": {
     titre: "Groupe 2IAE International — 5e Grande École de Côte d'Ivoire | BTS, Licences, Entrepreneuriat",
     description:
       "67,38 % d'admis au BTS 2026 contre 42,48 % au national (chiffres MESRS), et 66 % des anciens insérés dont 13 % chefs d'entreprise — insertion mesurée par le cabinet indépendant 60 Decibels. 5e grande école de Côte d'Ivoire au classement officiel. 5 campus, internat, préinscriptions ouvertes.",
+    jsonLd: [RENCONTRE_YOPOUGON],
   },
   "/filieres": {
     titre: "Filières BTS et Licences en Côte d'Ivoire — Bâtiment, Agriculture, Management, Informatique | 2IAE",

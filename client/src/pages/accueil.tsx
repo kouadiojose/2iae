@@ -12,6 +12,7 @@ import { type Slider, type FounderMessage, type Institute } from "@shared/schema
 import { VideoYoutube } from "@/components/video-youtube";
 import { AfficheRTI } from "@/components/annonce-rti";
 import { ReportageRtiBts } from "@/components/reportage-rti";
+import { RencontreParentsYopougon } from "@/components/rencontre-parents-yopougon";
 
 interface News {
   id: string;
@@ -489,6 +490,10 @@ export default function AccueilPage() {
           </div>
         </div>
       </section>
+
+      {/* Le fondateur face aux parents de Yopougon — les chiffres commentés
+          devant les familles, et l'engagement pour l'an prochain */}
+      <RencontreParentsYopougon />
 
       {/* Annonce temporaire : passage du fondateur sur la RTI (auto-expirante) */}
       <AfficheRTI />

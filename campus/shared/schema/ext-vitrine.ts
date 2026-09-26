@@ -175,7 +175,7 @@ export type CampusPublic = {
   salleNommee: boolean;
   /** Numéro wa.me (chiffres) de la vie scolaire du campus, sinon celui du groupe. */
   whatsapp: string;
-  /** Vrai quand le numéro est celui de la vie scolaire du campus. */
+  /** Vrai quand le numéro est propre à la vie scolaire du campus (différent de celui du groupe). */
   whatsappCampus: boolean;
   adresse: string;
   localite: string;

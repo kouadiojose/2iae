@@ -57,14 +57,22 @@ export function FenetreCode({
       <div className="flex flex-col items-center gap-5 pb-2 sm:flex-row sm:items-start">
         <div className="w-full rounded-2xl bg-creme p-5 text-center sm:flex-1">
           <div className="etiquette">Identifiant</div>
-          <div className="mt-1 break-words font-mono text-lg font-semibold">{personne.identifiant}</div>
-          <div className="etiquette mt-4">Code provisoire</div>
-          <div
-            className={cn("mt-1 font-mono font-bold leading-none tabular-nums", remis.code.length > 8 ? "whitespace-nowrap text-[26px] tracking-normal" : "text-[44px] tracking-[0.12em]")}
-            aria-live="polite"
-          >
-            {remis.code}
-          </div>
+          {personne.identifiant ? (
+            <div className="mt-1 break-words font-mono text-lg font-semibold">{personne.identifiant}</div>
+          ) : (
+            <div className="mt-1 text-[15px] font-semibold">À choisir en ouvrant le lien ou en scannant le QR</div>
+          )}
+          {personne.identifiant && (
+            <>
+              <div className="etiquette mt-4">Code provisoire</div>
+              <div
+                className={cn("mt-1 font-mono font-bold leading-none tabular-nums", remis.code.length > 8 ? "whitespace-nowrap text-[26px] tracking-normal" : "text-[44px] tracking-[0.12em]")}
+                aria-live="polite"
+              >
+                {remis.code}
+              </div>
+            </>
+          )}
           <div className="mt-3 text-sm text-texte-pale">Valable jusqu'au {dateCourte(remis.expireLe)} · à usage unique</div>
         </div>
         <div className="flex flex-col items-center gap-2">

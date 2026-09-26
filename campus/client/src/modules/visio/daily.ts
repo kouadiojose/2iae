@@ -121,7 +121,7 @@ export type ProblemeVisio = {
 type RoleVisio = "formateur" | "salle" | "etudiant" | "observateur";
 
 function conseilReseau(role: RoleVisio, tu: boolean): string {
-  if (role === "formateur") return "Votre réseau bloque peut-être la visio. Essayez un partage de connexion depuis votre téléphone, ou passez à la visio du campus : la radio, les diapos et les questions continuent.";
+  if (role === "formateur") return "Votre réseau bloque peut-être la visio. Essayez un partage de connexion depuis votre téléphone, passez à la visio du campus, ou déclenchez le Plan B : la radio, les diapos et les questions continuent.";
   if (role === "salle") return "Le réseau du campus bloque peut-être la visio. Essayez un partage de connexion 4G. En attendant, le son du cours passe par la radio.";
   return tu
     ? "Ton réseau bloque peut-être la visio. Passe en « son + diapos » (radio), ou essaie en 4G avec un partage de connexion."

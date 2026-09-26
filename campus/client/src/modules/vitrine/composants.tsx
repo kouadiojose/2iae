@@ -152,7 +152,7 @@ export type ProchainCours = {
   enDirect: boolean;
   /** Séance live existante : lien /live/:id pour les étudiants. */
   seanceId: number | null;
-  intervenant: { nom: string; localisation?: string | null; photoUrl?: string | null; prenom?: string; nomFamille?: string } | null;
+  intervenant: { nom: string; localisation?: string | null; photoUrl?: string | null; prenom?: string; nomFamille?: string; mention?: string } | null;
 };
 
 /** Live annoncé → carte. */
@@ -171,11 +171,11 @@ export function depuisLive(l: VitrineLive, titreSeance = false): ProchainCours {
 export function depuisOccurrence(o: OccurrenceDto): ProchainCours {
   return {
     titre: o.libelle,
-    detail: `${heure(o.debut)} à ${heure(o.fin)}, heure d'Abidjan`,
+    detail: `${o.coursCode ? `${o.coursCode} · ` : ""}de ${heure(o.debut)} à ${heure(o.fin)}, heure d'Abidjan`,
     debut: o.debut,
     enDirect: o.statut === "en_direct",
     seanceId: o.seanceId,
-    intervenant: o.intervenant ? { nom: o.intervenant } : null,
+    intervenant: o.intervenant ? { nom: o.intervenant, mention: o.mention || undefined } : null,
   };
 }
 
@@ -278,7 +278,11 @@ export function CarteProchainCours({
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="text-[15px] font-bold">
                 {p.intervenant ? p.intervenant.nom : "Un formateur du réseau 2IAE"}
-                {p.intervenant && ville(p.intervenant.localisation) ? <span className="font-normal text-nuit-doux"> · depuis {ville(p.intervenant.localisation)}</span> : null}
+                {p.intervenant?.mention ? (
+                  <span className="font-normal text-nuit-doux"> · {p.intervenant.mention}</span>
+                ) : p.intervenant && ville(p.intervenant.localisation) ? (
+                  <span className="font-normal text-nuit-doux"> · depuis {ville(p.intervenant.localisation)}</span>
+                ) : null}
               </span>
               <span className="text-[13px] text-nuit-gris">Diffusé en direct dans les salles de conférence</span>
             </div>

@@ -499,7 +499,10 @@ surChangementPublication(() => {
 });
 
 function versCampusPublic(s: Site, contenu: ContenuCampus, etudiants: number, contacts: ContenuContacts): CampusPublic {
+  const waGroupe = numeroWa(contacts.whatsapp);
+  // Le numéro du groupe recopié sur un campus n'est pas « la vie scolaire du campus ».
   const waCampus = numeroWa(s.whatsappVieScolaire);
+  const propre = Boolean(waCampus && waCampus !== waGroupe);
   return {
     id: s.id,
     slug: s.slug,
@@ -508,8 +511,8 @@ function versCampusPublic(s: Site, contenu: ContenuCampus, etudiants: number, co
     ville: s.ville,
     salle: salleAffichee(s.salleConference),
     salleNommee: salleNommee(s.salleConference),
-    whatsapp: waCampus ?? numeroWa(contacts.whatsapp) ?? "",
-    whatsappCampus: Boolean(waCampus),
+    whatsapp: waCampus ?? waGroupe ?? "",
+    whatsappCampus: propre,
     adresse: contenu.adresse,
     localite: contenu.localite,
     telephone: contenu.telephone || null,

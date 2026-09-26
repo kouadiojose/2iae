@@ -8,6 +8,7 @@
 // proxy qui bloquerait le flux.
 import { useEffect, useRef, useState } from "react";
 import { SectionVisioClasse } from "./SectionVisioClasse";
+import { ConfirmationFuseau } from "./Fuseau";
 import { CheckCircle2, XCircle, Radio, Square } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,7 @@ export default function PageEssai() {
           "Quelques minutes pour vérifier votre installation avant la classe, et une salle d'essai ouverte à tout moment.",
         )}
       />
+      <ConfirmationFuseau />
       <nav aria-label="Étapes de l'essai" className="-mt-2 flex flex-wrap gap-2">
         {[
           ["#essai-micro-section", camera ? "1. Micro et caméra" : "1. Micro et son"],

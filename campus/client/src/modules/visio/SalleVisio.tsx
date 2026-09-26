@@ -150,27 +150,27 @@ export function SalleVisio(p: PropsSalleVisio) {
       )}
 
       {p.invitation !== false && (
-      <div className="flex flex-col gap-3 rounded-2xl border border-ligne bg-creme p-4 sm:p-5">
-        <div className="flex flex-col gap-1">
-          <span className="text-[17px] font-extrabold">{t("Tester avec quelqu'un", "Tester avec quelqu'un")}</span>
-          <span className="text-[15px] leading-snug text-texte-pale">
-            {p.aideInvitation ??
-              t(
-                "Envoie ce lien à un camarade ou à la vie scolaire : il se connecte avec son compte du campus et vous vous retrouvez dans la même salle.",
-                "Envoyez ce lien à l'écran d'une salle de campus, à un collègue ou à la direction : chacun se connecte avec son compte du campus et vous vous retrouvez dans la même salle.",
-              )}
-          </span>
+        <div className="flex flex-col gap-3 rounded-2xl border border-ligne bg-creme p-4 sm:p-5">
+          <div className="flex flex-col gap-1">
+            <span className="text-[17px] font-extrabold">{t("Tester avec quelqu'un", "Tester avec quelqu'un")}</span>
+            <span className="text-[15px] leading-snug text-texte-pale">
+              {p.aideInvitation ??
+                t(
+                  "Envoie ce lien à un camarade ou à la vie scolaire : il se connecte avec son compte du campus et vous vous retrouvez dans la même salle.",
+                  "Envoyez ce lien à l'écran d'une salle de campus, à un collègue ou à la direction : chacun se connecte avec son compte du campus et vous vous retrouvez dans la même salle.",
+                )}
+            </span>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Bouton variante="encre" icone={<MessageCircle className="h-4 w-4" />} onClick={partagerWhatsapp} className="min-h-[48px]">
+              Envoyer par WhatsApp
+            </Bouton>
+            <Bouton variante="contour" icone={<Copy className="h-4 w-4" />} onClick={() => void copier()} className="min-h-[48px]">
+              Copier le lien
+            </Bouton>
+          </div>
+          <p className="break-all font-mono text-[12px] text-texte-gris">{p.lienPartage}</p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Bouton variante="encre" icone={<MessageCircle className="h-4 w-4" />} onClick={partagerWhatsapp} className="min-h-[48px]">
-            Envoyer par WhatsApp
-          </Bouton>
-          <Bouton variante="contour" icone={<Copy className="h-4 w-4" />} onClick={() => void copier()} className="min-h-[48px]">
-            Copier le lien
-          </Bouton>
-        </div>
-        <p className="break-all font-mono text-[12px] text-texte-gris">{p.lienPartage}</p>
-      </div>
       )}
     </div>
   );

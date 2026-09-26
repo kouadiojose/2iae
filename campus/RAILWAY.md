@@ -39,7 +39,9 @@ railway domain --service campus                # domaine *.up.railway.app
 | `RESEND_API_KEY` | `${{2iae.RESEND_API_KEY}}` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` |
 | `DAILY_API_KEY` | clé Daily.co (visio intégrée) — sans elle : scène de démonstration ou lien externe |
-| `CAMPUS_DEMO` | `true` pour charger les données de démonstration |
+| `CAMPUS_DEMO` | faux par défaut ; `true` sème des données de démonstration (refusé en production dès qu'un compte réel existe) |
+| `CAMPUS_PURGER_DEMO` | `oui` pour supprimer la démonstration au prochain démarrage (bilan dans les journaux), puis retirer la variable |
+| `DAILY_DOMAIN` | facultatif : le domaine Daily est découvert au démarrage |
 
 ## 3. Variables du service `2iae` (site)
 

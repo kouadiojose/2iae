@@ -58,7 +58,11 @@ const MODES = [
 /** Le prochain cours réel : un live annoncé, sinon le prochain créneau de l'emploi du temps, sinon un cours qui va commencer. */
 function prochainCours(v: Vitrine | undefined, prog: ProgrammePublicDto | undefined, maintenant: number): ProchainCours | null {
   const live = v ? liveAMettreEnAvant(v.lives, maintenant) : null;
-  if (live) return depuisLive(live);
+  if (live) {
+    // Le live annoncé vient de l'emploi du temps : son créneau dit l'intervenant et les heures.
+    const creneau = prog?.prochaines.find((o) => o.seanceId === live.id);
+    return creneau ? { ...depuisOccurrence(creneau), enDirect: live.enDirect || creneau.statut === "en_direct" } : depuisLive(live);
+  }
   const occ = prog?.prochaines
     .filter((o) => o.statut === "en_direct" || (o.statut === "prevue" && new Date(o.fin).getTime() > maintenant))
     .sort((a, b) => (a.statut === "en_direct" ? -1 : b.statut === "en_direct" ? 1 : a.debut.localeCompare(b.debut)))[0];

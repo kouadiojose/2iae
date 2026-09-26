@@ -27,6 +27,7 @@ import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
+import { intervenantsDesSeances } from "../programme-outils";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
@@ -275,7 +276,19 @@ function exigerStatut(s: Seance, statuts: Seance["statut"][], message: string) {
 
 // ── Résumés de séance (listes, bandeaux, accueil) ──────────────────────────
 
-async function resumesSeances(lignes: { s: Seance; code: string; titreCours: string; formateurId: number | null }[]): Promise<SeanceResume[]> {
+/**
+ * Formateur qui anime chaque séance : l'intervenant du créneau de l'emploi du
+ * temps quand la séance en vient (Initiation à l'IA : M. Kouadio le lundi,
+ * M. Konaté le vendredi), sinon le formateur principal du cours.
+ */
+async function animateursDes(lignes: { seanceId: number; formateurId: number | null }[]): Promise<Map<number, number | null>> {
+  const intervenants = await intervenantsDesSeances(lignes.map((l) => l.seanceId));
+  return new Map(lignes.map((l) => [l.seanceId, intervenants.get(l.seanceId)?.id ?? l.formateurId]));
+}
+
+async function resumesSeances(entrees: { s: Seance; code: string; titreCours: string; formateurId: number | null }[]): Promise<SeanceResume[]> {
+  const animateurs = await animateursDes(entrees.map((l) => ({ seanceId: l.s.id, formateurId: l.formateurId })));
+  const lignes = entrees.map((l) => ({ ...l, formateurId: animateurs.get(l.s.id) ?? null }));
   const idsFormateurs = [...new Set(lignes.map((l) => l.formateurId).filter((x): x is number => Boolean(x)))];
   const formateurs = idsFormateurs.length
     ? await db
@@ -915,11 +928,12 @@ function fenetreEmargementOuverte(s: Seance, t = Date.now()): boolean {
 
 async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto> {
   const [c] = await db.select().from(cours).where(eq(cours.id, s.coursId));
-  const [formateur] = c?.formateurId
+  const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id);
+  const [formateur] = animateurId
     ? await db
         .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, localisation: utilisateurs.localisation, photoUrl: utilisateurs.photoUrl })
         .from(utilisateurs)
-        .where(eq(utilisateurs.id, c.formateurId))
+        .where(eq(utilisateurs.id, animateurId))
     : [];
   const role = await roleDans(u, s);
   const sitesListe = await listeSites();
@@ -2545,7 +2559,8 @@ export function enregistrerLive(app: Express) {
       const privilegie = role === "formateur" || role === "equipe";
       if (!privilegie && s.statut !== "terminee") throw new ErreurHttp(409, "Le replay sera disponible après la séance.");
       const [c] = await db.select().from(cours).where(eq(cours.id, s.coursId));
-      const [f] = c?.formateurId ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, c.formateurId)) : [];
+      const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id);
+      const [f] = animateurId ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, animateurId)) : [];
       const transcription = await db
         .select({ id: sousTitres.id, t: sousTitres.t, texte: sousTitres.texte })
         .from(sousTitres)

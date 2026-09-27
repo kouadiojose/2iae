@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient, rafraichir } from "@/lib/queryClient";
-import { useCanal, useFluxConnecte, useTousEvenements, type EvenementFlux } from "@/lib/flux";
+import { useCanal, useFluxConnecte, useFluxSain, useTousEvenements, type EvenementFlux } from "@/lib/flux";
 import type {
   EtatDirectDto,
   QuestionDirectDto,
@@ -192,7 +192,10 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
  */
 export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenement?: (e: EvenementFlux) => void) {
   const cle = cleDirect(seanceId);
-  const requete = useQuery<EtatDirectDto>({ queryKey: cle, refetchInterval: 60_000, staleTime: 5_000 });
+  // Temps réel en direct : une relecture par minute suffit (filet de sécurité). Flux coupé ou retenu en
+  // route (antivirus, réseau) : relecture toutes les 4 s, pour que la diapo suive quand même.
+  const sain = useFluxSain();
+  const requete = useQuery<EtatDirectDto>({ queryKey: cle, refetchInterval: sain ? 60_000 : 4_000, staleTime: 3_000 });
   const relire = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relireBientot = () => {
     if (relire.current) return;

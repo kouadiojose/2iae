@@ -28,8 +28,10 @@ type Connexion = {
   canaux: Set<string>;
 };
 
-/** Onglets ouverts en même temps par personne (au-delà, le plus ancien est fermé). */
-const MAX_CONNEXIONS_PAR_PERSONNE = 6;
+// Onglets et appareils ouverts avec un même compte : un écran de salle peut tourner sur plusieurs
+// ordinateurs (lien permanent), un formateur a son Studio et sa fenêtre présentateur. Au-delà, la plus
+// ancienne est prévenue (« remplace ») pour qu'elle ne se reconnecte pas en boucle en chassant les autres.
+const MAX_CONNEXIONS_PAR_PERSONNE = 20;
 
 type Gardien = (u: Utilisateur, cle: string) => Promise<boolean>;
 
@@ -142,7 +144,11 @@ export function enregistrerTempsReel(app: Express) {
 
     const c: Connexion = { id: crypto.randomUUID(), utilisateur: u, sessionId: req.sessionID, ouverteLe: Date.now(), res, canaux: new Set() };
     const miennes = [...connexions.values()].filter((x) => x.utilisateur.id === u.id).sort((a, b) => a.ouverteLe - b.ouverteLe);
-    while (miennes.length >= MAX_CONNEXIONS_PAR_PERSONNE) fermer(miennes.shift()!);
+    while (miennes.length >= MAX_CONNEXIONS_PAR_PERSONNE) {
+      const ancienne = miennes.shift()!;
+      ecrire(ancienne, `data: ${JSON.stringify({ canal: `u:${u.id}`, type: "remplace", data: null })}\n\n`);
+      fermer(ancienne);
+    }
     connexions.set(c.id, c);
     for (const canal of [`u:${u.id}`, "tous", `role:${u.role}`]) abonner(c, canal);
     if (u.siteId) abonner(c, `site:${u.siteId}`);
@@ -151,7 +157,9 @@ export function enregistrerTempsReel(app: Express) {
     // Délai de reconnexion conseillé au navigateur, puis identifiant de connexion.
     ecrire(c, `retry: 4000\n\ndata: ${JSON.stringify({ canal: `u:${u.id}`, type: "connexion", data: { id: c.id } })}\n\n`);
 
-    const battement = setInterval(() => ecrire(c, `: battement ${Date.now()}\n\n`), 20_000);
+    // Un vrai message (pas un commentaire) : le navigateur voit ainsi que le flux arrive en direct, et
+    // bascule sur une relecture rapide s'il reste muet (antivirus ou réseau qui retient le flux).
+    const battement = setInterval(() => ecrire(c, `data: ${JSON.stringify({ canal: `u:${u.id}`, type: "battement", data: null })}\n\n`), 15_000);
     req.on("close", () => {
       clearInterval(battement);
       for (const canal of [...c.canaux]) desabonner(c, canal);

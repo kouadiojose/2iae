@@ -49,12 +49,14 @@ export function Scene(p: PropsScene) {
   // Bascule locale quand Daily échoue deux fois (ou que la visio est complète) : on écoute la radio sans quitter la page.
   const [secoursRadio, setSecoursRadio] = useState<RaisonSecours | null>(null);
   useEffect(() => setSecoursRadio(null), [seance.fournisseur]);
+  // Partage d'écran du formateur (ou d'une salle) dans la visio : il passe en grand, devant la diapo.
+  const [ecranPartage, setEcranPartage] = useState(false);
   let contenu: ReactNode;
   if (planB) contenu = <ScenePlanB lien={planB} grand={p.grand} />;
   else if (role === "etudiant" && mode === "radio") contenu = <SceneRadio {...p} />;
   else if (role === "etudiant" && mode === "compagnon") contenu = <SceneCompagnon {...p} />;
   else if (seance.fournisseur === "daily" && secoursRadio) contenu = <SceneRadio {...p} raisonSecours={secoursRadio} retourVisio={() => setSecoursRadio(null)} />;
-  else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} onSecoursRadio={(raison) => setSecoursRadio(raison)} />;
+  else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} onSecoursRadio={(raison) => setSecoursRadio(raison)} onPartageEcran={setEcranPartage} />;
   else if (seance.fournisseur === "campus") contenu = <SceneCampus {...p} />;
   else if (seance.fournisseur === "jitsi") contenu = <SceneJitsi {...p} />;
   else if (seance.fournisseur === "externe") contenu = <SceneExterne {...p} />;
@@ -70,7 +72,7 @@ export function Scene(p: PropsScene) {
   // en grand (diapo en vignette). Le Studio du formateur montre la même mise en page à sa façon. La visio
   // reste le MÊME élément dans toutes les mises en page : elle ne se recharge jamais.
   const visio = seance.fournisseur === "daily" || seance.fournisseur === "campus";
-  const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url);
+  const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url) && !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio);
   const disposition = etat.diapo.disposition ?? "diapo";
   const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
   // Diapo seule (écran de salle) : la vidéo sort de l'écran sans être démontée, le son continue.
@@ -380,9 +382,46 @@ const peutEnvoyerSon = (p: DailyEventObjectParticipant["participant"]) => {
 /** Relances du replay après une erreur d'enregistrement Daily : trois au plus, espacées. */
 const RELANCES_ENREGISTREMENT = 3;
 
-function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, onEtatVisio, onSecoursRadio, onMicroDaily }: PropsScene & { onSecoursRadio: (raison: RaisonSecours) => void }) {
+function SceneDaily({
+  seance,
+  etat,
+  role,
+  micro,
+  camera,
+  onConsommationVisio,
+  onEtatVisio,
+  onSecoursRadio,
+  onMicroDaily,
+  onPartageEcran,
+}: PropsScene & { onSecoursRadio: (raison: RaisonSecours) => void; onPartageEcran?: (actif: boolean) => void }) {
   const [call, setCall] = useState<DailyCall | null>(null);
   const [connecte, setConnecte] = useState(false);
+
+  // Quelqu'un partage son écran dans la visio : la scène le montre en grand (la diapo s'efface le temps du partage).
+  useEffect(() => {
+    if (!call || !onPartageEcran || role === "formateur") return;
+    const verifier = () => {
+      const actif = Object.values(call.participants()).some((x) => {
+        const etatEcran = x.tracks?.screenVideo?.state;
+        return !x.local && Boolean(etatEcran) && etatEcran !== "off" && etatEcran !== "blocked";
+      });
+      onPartageEcran(actif);
+    };
+    verifier();
+    call.on("participant-joined", verifier);
+    call.on("participant-updated", verifier);
+    call.on("participant-left", verifier);
+    call.on("track-started", verifier);
+    call.on("track-stopped", verifier);
+    return () => {
+      call.off("participant-joined", verifier);
+      call.off("participant-updated", verifier);
+      call.off("participant-left", verifier);
+      call.off("track-started", verifier);
+      call.off("track-stopped", verifier);
+      onPartageEcran(false);
+    };
+  }, [call, role, onPartageEcran]);
   const infos = useRef<RejoindreVisioDto | null>(null);
   const enregistre = useRef(false);
   const microVoulu = useRef(micro);

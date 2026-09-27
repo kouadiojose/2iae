@@ -42,11 +42,20 @@ railway domain --service campus                # domaine *.up.railway.app
 | `CAMPUS_DEMO` | faux par défaut ; `true` sème des données de démonstration (refusé en production dès qu'un compte réel existe) |
 | `CAMPUS_PURGER_DEMO` | `oui` pour supprimer la démonstration au prochain démarrage (bilan dans les journaux), puis retirer la variable |
 | `DAILY_DOMAIN` | facultatif : le domaine Daily est découvert au démarrage |
+| `FICHIERS_BUCKET` | `${{campus-fichiers.BUCKET}}` : bucket Railway des fichiers déposés (cours, devoirs, copies, examens, diapos, photos) |
+| `FICHIERS_ENDPOINT` / `FICHIERS_REGION` | `${{campus-fichiers.ENDPOINT}}` / `${{campus-fichiers.REGION}}` |
+| `FICHIERS_ACCESS_KEY_ID` / `FICHIERS_SECRET_ACCESS_KEY` | `${{campus-fichiers.ACCESS_KEY_ID}}` / `${{campus-fichiers.SECRET_ACCESS_KEY}}` |
 | `REPLAYS_BUCKET` | `${{campus-replays.BUCKET}}` : bucket Railway des replays (créé avec `railway bucket create campus-replays --region ams`) |
 | `REPLAYS_ENDPOINT` | `${{campus-replays.ENDPOINT}}` |
 | `REPLAYS_REGION` | `${{campus-replays.REGION}}` |
 | `REPLAYS_ACCESS_KEY_ID` / `REPLAYS_SECRET_ACCESS_KEY` | `${{campus-replays.ACCESS_KEY_ID}}` / `${{campus-replays.SECRET_ACCESS_KEY}}` |
 | `REPLAYS_GARDER_DAILY_JOURS` | facultatif, 7 par défaut : jours pendant lesquels la copie Daily reste en secours après la copie dans le bucket (0 : effacée aussitôt vérifiée) |
+
+Les fichiers déposés partent dans le bucket des fichiers dès leur dépôt (le
+volume `UPLOADS_DIR` ne sert plus que de passage, et de repli si le bucket ne
+répond pas) ; ceux qui étaient déjà sur le volume y sont recopiés par lots
+(tâche « fichiers-vers-bucket », toutes les 5 minutes). Chaque lecture passe par
+le contrôle d'accès du campus, qui renvoie vers un lien signé d'une heure.
 
 Les replays Daily sont recopiés dans le bucket après chaque cours (tâche
 « live-archivage-replays », toutes les 10 minutes, un fichier à la fois, en

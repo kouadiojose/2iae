@@ -65,6 +65,18 @@ export const config = {
   },
 
   /**
+   * Bucket Railway (compatible S3) des fichiers déposés : cours, devoirs, copies, examens,
+   * diapos, photos. Sans lui, les fichiers restent sur le volume (UPLOADS_DIR).
+   */
+  fichiersBucket: {
+    bucket: env("FICHIERS_BUCKET"),
+    endpoint: env("FICHIERS_ENDPOINT"),
+    region: env("FICHIERS_REGION") || "auto",
+    cleId: env("FICHIERS_ACCESS_KEY_ID"),
+    cleSecrete: env("FICHIERS_SECRET_ACCESS_KEY"),
+  },
+
+  /**
    * Bucket Railway (compatible S3) où chaque replay est copié après le cours : les étudiants
    * lisent la vidéo directement dans le bucket (lien signé), jamais à travers l'application.
    */

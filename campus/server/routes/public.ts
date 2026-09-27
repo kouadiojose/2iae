@@ -30,8 +30,6 @@
 // Graph) côté serveur : un lien partagé sur WhatsApp affiche une vraie carte
 // d'aperçu, et les moteurs de recherche lisent un titre propre à la page.
 import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
-import path from "path";
-import fs from "fs";
 import { z, type ZodTypeAny } from "zod";
 import { and, asc, desc, eq, gte, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -41,6 +39,7 @@ import { exigerRole, moi, normaliserTelephone } from "../auth";
 import { surChangementPublication } from "../site";
 import { enregistrerMetaPage } from "../vite";
 import { intervenantsDesSeances } from "../programme-outils";
+import { remettreFichier } from "../fichiers";
 import {
   cours,
   coursClasses,
@@ -823,14 +822,7 @@ async function envoyerImage(res: Response, id: number) {
   if (!(await imagePubliee(id))) throw introuvable("Image");
   const [f] = await db.select().from(fichiers).where(eq(fichiers.id, id));
   if (!f || !f.mime.startsWith("image/") || f.mime === "image/svg+xml") throw introuvable("Image");
-  const chemin = path.resolve(config.dossierFichiers, f.cle);
-  if (!chemin.startsWith(config.dossierFichiers) || !fs.existsSync(chemin)) throw introuvable("Image");
-  res.setHeader("Content-Type", f.mime);
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  fs.createReadStream(chemin)
-    .on("error", () => res.destroy())
-    .pipe(res);
+  await remettreFichier(res, f, { public: true });
 }
 
 // ── CORS : le site www.2iae.com lit la vitrine depuis le navigateur ────────

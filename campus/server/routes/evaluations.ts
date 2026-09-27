@@ -10,16 +10,13 @@
 //     qu'elle produit n'est enregistré comme note sans un clic humain.
 import type { Express, Request } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
-import fs from "fs";
-import path from "path";
 import { z } from "zod";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
-import { config } from "../config";
 import { estEquipe, exigerConnexion, exigerRole, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, coursVisible, devoirVisible, enseigneCours, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, peutVoirCours } from "../acces";
-import { enregistrerGardienFichier, urlFichier } from "../fichiers";
+import { enregistrerGardienFichier, lireContenuFichier, remettreFichier, urlFichier } from "../fichiers";
 import { notifier } from "../notifications";
 import { publierUtilisateur } from "../temps-reel";
 import { planifier } from "../taches";
@@ -935,20 +932,21 @@ type CorrectionIa = { detail: { critere: string; obtenu: number; justification: 
 const IMAGES_IA = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type MimeImageIa = (typeof IMAGES_IA)[number];
 
-/** Blocs de contenu (images et PDF en base64) lus depuis UPLOADS_DIR pour la correction par l'IA. */
-function blocsFichiers(liste: Fichier[]): { blocs: Anthropic.Beta.BetaContentBlockParam[]; ignores: string[] } {
+/** Blocs de contenu (images et PDF en base64) lus dans le bucket des fichiers pour la correction par l'IA. */
+async function blocsFichiers(liste: Fichier[]): Promise<{ blocs: Anthropic.Beta.BetaContentBlockParam[]; ignores: string[] }> {
   const blocs: Anthropic.Beta.BetaContentBlockParam[] = [];
   const ignores: string[] = [];
   let images = 0;
   let pdfs = 0;
   for (const f of liste) {
-    const chemin = path.resolve(config.dossierFichiers, f.cle);
-    const lisible = chemin.startsWith(config.dossierFichiers) && fs.existsSync(chemin);
-    if (lisible && (IMAGES_IA as readonly string[]).includes(f.mime) && images < 10 && f.taille <= 5 * 1024 * 1024) {
-      blocs.push({ type: "image", source: { type: "base64", media_type: f.mime as MimeImageIa, data: fs.readFileSync(chemin).toString("base64") } });
+    const image = (IMAGES_IA as readonly string[]).includes(f.mime) && images < 10 && f.taille <= 5 * 1024 * 1024;
+    const pdf = f.mime === "application/pdf" && pdfs < 2 && f.taille <= 10 * 1024 * 1024;
+    const contenu = image || pdf ? await lireContenuFichier(f) : null;
+    if (contenu && image) {
+      blocs.push({ type: "image", source: { type: "base64", media_type: f.mime as MimeImageIa, data: contenu.toString("base64") } });
       images++;
-    } else if (lisible && f.mime === "application/pdf" && pdfs < 2 && f.taille <= 10 * 1024 * 1024) {
-      blocs.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: fs.readFileSync(chemin).toString("base64") } });
+    } else if (contenu && pdf) {
+      blocs.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: contenu.toString("base64") } });
       pdfs++;
     } else ignores.push(f.nomOriginal);
   }
@@ -1468,7 +1466,7 @@ export function enregistrerEvaluations(app: Express) {
       const listeFichiers = r.fichierIds.length ? await db.select().from(fichiers).where(inArray(fichiers.id, r.fichierIds)) : [];
       const ordre = new Map(r.fichierIds.map((id, i) => [id, i]));
       listeFichiers.sort((a, b) => (ordre.get(a.id) ?? 0) - (ordre.get(b.id) ?? 0));
-      const { blocs, ignores } = blocsFichiers(listeFichiers);
+      const { blocs, ignores } = await blocsFichiers(listeFichiers);
       if (!blocs.length && !r.texte.trim()) throw invalide("Cette copie ne contient rien que l'IA puisse lire (ni texte, ni photo, ni PDF).");
       const [c] = await db.select().from(cours).where(eq(cours.id, d.coursId));
       const consignes = [

@@ -1,0 +1,1 @@
+ALTER TABLE "campus"."fichiers" ADD COLUMN "emplacement" text DEFAULT 'disque' NOT NULL;

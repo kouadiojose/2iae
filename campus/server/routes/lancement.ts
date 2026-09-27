@@ -18,6 +18,7 @@ import { z } from "zod";
 import { and, eq, gt, isNull, ne } from "drizzle-orm";
 import { db, pool } from "../db";
 import { config, estProduction } from "../config";
+import { bucketFichiersDisponible } from "../fichiers";
 import {
   exigerRole,
   exigerConnexion,
@@ -666,8 +667,12 @@ async function calculerRentree(u: Utilisateur): Promise<EtatRentree> {
         action: null,
       },
     ];
-    if (estProduction && !process.env.UPLOADS_DIR) {
-      sous.push({ libelle: "Stockage des fichiers", detail: "Les devoirs rendus seraient perdus à chaque mise à jour (réglage UPLOADS_DIR)", etat: "a_faire", action: null });
+    if (bucketFichiersDisponible()) {
+      sous.push({ libelle: "Stockage des fichiers", detail: "Cours, devoirs, copies et examens rangés dans le bucket Railway des fichiers", etat: "fait", action: null });
+    } else if (estProduction && !process.env.UPLOADS_DIR) {
+      sous.push({ libelle: "Stockage des fichiers", detail: "Les devoirs rendus seraient perdus à chaque mise à jour (réglages FICHIERS_BUCKET ou UPLOADS_DIR)", etat: "a_faire", action: null });
+    } else {
+      sous.push({ libelle: "Stockage des fichiers", detail: "Fichiers sur le volume du serveur : reliez le bucket des fichiers (réglage FICHIERS_BUCKET)", etat: "attention", action: null });
     }
     const ok = sous.filter((x) => x.etat === "fait").length;
     lignes.push({

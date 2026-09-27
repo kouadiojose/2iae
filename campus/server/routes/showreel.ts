@@ -23,15 +23,13 @@
 // en ligne est une copie figée ; un formateur n'est présenté qu'avec son
 // consentement et la validation de la direction (CONCEPTION.md §9.10).
 import type { Express, Request, Response } from "express";
-import path from "path";
-import fs from "fs";
 import { z } from "zod";
 import { and, asc, desc, eq, gte, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
 import { exigerRole, moi, oublierUtilisateur } from "../auth";
 import { route, invalide, interdit, introuvable, ErreurHttp, valider } from "../http";
-import { enregistrerGardienFichier, urlFichier } from "../fichiers";
+import { enregistrerGardienFichier, lireContenuFichier, remettreFichier, urlFichier } from "../fichiers";
 import { iaDisponible, raisonIndisponible, verifierQuota, ErreurIa } from "../ia";
 import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
@@ -704,14 +702,7 @@ async function metaPresentation(url: string): Promise<string | null> {
 async function envoyerFichier(res: Response, id: number) {
   const [f] = await db.select().from(fichiers).where(eq(fichiers.id, id));
   if (!f || !/^image\/(jpeg|png|webp)$/.test(f.mime)) throw introuvable("Photo");
-  const chemin = path.resolve(config.dossierFichiers, f.cle);
-  if (!chemin.startsWith(config.dossierFichiers) || !fs.existsSync(chemin)) throw introuvable("Photo");
-  res.setHeader("Content-Type", f.mime);
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  fs.createReadStream(chemin)
-    .on("error", () => res.destroy())
-    .pipe(res);
+  await remettreFichier(res, f, { public: true });
 }
 
 export function enregistrerShowreel(app: Express) {
@@ -847,9 +838,9 @@ export function enregistrerShowreel(app: Express) {
       let pdf: { id: string; nom: string; base64: string } | null = null;
       if (sourcePdf?.fichierId) {
         const [f] = await db.select().from(fichiers).where(eq(fichiers.id, sourcePdf.fichierId));
-        const chemin = f ? path.resolve(config.dossierFichiers, f.cle) : "";
-        if (f && chemin.startsWith(config.dossierFichiers) && fs.existsSync(chemin)) {
-          pdf = { id: sourcePdf.id, nom: f.nomOriginal, base64: (await fs.promises.readFile(chemin)).toString("base64") };
+        const contenu = f ? await lireContenuFichier(f) : null;
+        if (f && contenu) {
+          pdf = { id: sourcePdf.id, nom: f.nomOriginal, base64: contenu.toString("base64") };
         } else {
           sources = sources.map((x) => (x.id === sourcePdf.id ? { ...x, etat: "echec", message: "Ce PDF n'est plus disponible : déposez-le à nouveau." } : x));
         }

@@ -161,8 +161,10 @@ export const fichiers = campusSchema.table("fichiers", {
   nomOriginal: text("nom_original").notNull(),
   mime: text("mime").notNull(),
   taille: integer("taille").notNull(),
-  /** Clé de stockage (chemin relatif dans UPLOADS_DIR). */
+  /** Clé de stockage (« 2026-09/3f9a….pdf ») : chemin relatif dans UPLOADS_DIR, ou objet « fichiers/<clé> » du bucket. */
   cle: text("cle").notNull().unique(),
+  /** Où vit le fichier : sur le volume (« disque ») ou dans le bucket Railway des fichiers (« bucket »). */
+  emplacement: text("emplacement").$type<"disque" | "bucket">().notNull().default("disque"),
   /** Contexte d'usage, pour les contrôles d'accès : « lecon », « rendu », « message », « avatar »… */
   usage: text("usage").notNull(),
   creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),

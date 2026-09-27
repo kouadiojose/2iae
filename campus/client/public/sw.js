@@ -7,7 +7,8 @@
  *   - fichiers /assets (JS, CSS à empreinte) : cache d'abord ;
  *   - GET /api/* : réseau d'abord, repli sur la dernière réponse connue
  *     (sauf le temps réel, la connexion et les rappels) ;
- *   - /api/fichiers/* : cache d'abord, taille limitée ;
+ *   - /api/fichiers/* : cache d'abord, taille limitée (le campus renvoie vers
+ *     le bucket des fichiers ; la réponse du bucket est gardée) ;
  *   - rappels (push) et ouverture du bon écran au toucher ;
  *   - synchronisation « file-envoi » : prévient l'application qu'elle peut
  *     vider sa file d'envoi hors ligne.
@@ -205,9 +206,11 @@ async function fichier(requete) {
   const trouve = await cache.match(requete, { ignoreVary: true });
   if (trouve) return trouve;
   try {
-    const reponse = await fetch(requete);
+    // Le campus renvoie vers le bucket des fichiers (lien signé) : en mode « cors », la réponse
+    // du bucket reste lisible, donc gardable hors ligne (une image demandée par <img> serait opaque).
+    const reponse = await fetch(new Request(requete.url, { mode: "cors", credentials: "same-origin" }));
     const taille = Number(reponse.headers.get("Content-Length") || 0);
-    if (reponse.status === 200 && reponse.type === "basic" && taille > 0 && taille <= TAILLE_MAX_FICHIER) {
+    if (reponse.status === 200 && (reponse.type === "basic" || reponse.type === "cors") && taille > 0 && taille <= TAILLE_MAX_FICHIER) {
       await cache.put(requete, reponse.clone());
       void limiter(CACHE_FICHIERS, MAX_FICHIERS);
     }

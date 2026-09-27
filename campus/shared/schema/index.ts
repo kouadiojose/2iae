@@ -17,3 +17,4 @@ export * from "./ext-vitrine";
 export * from "./ext-visio";
 export * from "./ext-programme";
 export * from "./ext-showreel";
+export * from "./ext-equipe";

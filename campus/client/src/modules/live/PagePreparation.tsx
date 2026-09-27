@@ -401,19 +401,21 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
 
 // ── Diapos ─────────────────────────────────────────────────────────────────
 
+/** Formats proposés au sélecteur de fichiers (extensions et types : macOS, Windows et Android n'en lisent pas les mêmes). */
+const FORMATS_DIAPOS = [
+  "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp",
+  "application/pdf,.pdf",
+  ".pptx,.ppt,.ppsx,.pps,.odp",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.presentationml.slideshow,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.presentation",
+].join(",");
+
 function SectionDiapos({ seance }: { seance: SeanceDetailDto }) {
   const entree = useRef<HTMLInputElement>(null);
-  const [envoi, setEnvoi] = useState(false);
-  const accepte = [
-    "image/jpeg,image/png,image/webp",
-    seance.pdfAccepte ? "application/pdf" : "",
-    seance.presentationAcceptee ? ".pptx,.ppt,.odp,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" : "",
-  ]
-    .filter(Boolean)
-    .join(",");
+  const [envoi, setEnvoi] = useState<false | "fichiers" | "conversion">(false);
+  const [survol, setSurvol] = useState(false);
   const deposer = async (liste: FileList | null) => {
     if (!liste?.length) return;
-    setEnvoi(true);
+    setEnvoi(Array.from(liste).some((f) => /\.(pptx?|ppsx?|odp|pdf)$/i.test(f.name)) ? "conversion" : "fichiers");
     try {
       const donnees = new FormData();
       for (const f of Array.from(liste).slice(0, 10)) donnees.append("fichiers", await alleger(f), f.name);
@@ -437,31 +439,53 @@ function SectionDiapos({ seance }: { seance: SeanceDetailDto }) {
   };
   const ids = seance.diapos.map((d) => d.fichierId);
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      className={cn("-m-2 flex flex-col gap-3 rounded-2xl p-2 transition-colors", survol && "bg-orange/10 ring-2 ring-orange")}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setSurvol(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSurvol(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setSurvol(false);
+        if (!envoi) void deposer(e.dataTransfer.files);
+      }}
+    >
       <TitreSection
         titre={`Diapos${seance.diapos.length ? ` · ${seance.diapos.length}` : ""}`}
         action={
           <>
-            <input ref={entree} type="file" accept={accepte} multiple className="hidden" onChange={(e) => void deposer(e.target.files)} />
-            <Bouton variante="doux" taille="sm" icone={<Upload className="h-4 w-4" />} chargement={envoi} onClick={() => entree.current?.click()}>
+            {/* Toujours proposés au sélecteur : le serveur dit clairement ce qu'il ne sait pas convertir. */}
+            <input ref={entree} type="file" accept={FORMATS_DIAPOS} multiple className="hidden" onChange={(e) => void deposer(e.target.files)} />
+            <Bouton variante="doux" taille="sm" icone={<Upload className="h-4 w-4" />} chargement={Boolean(envoi)} onClick={() => entree.current?.click()}>
               Déposer
             </Bouton>
           </>
         }
       />
+      {envoi === "conversion" && (
+        <p className="text-sm text-texte-doux" role="status">
+          Conversion en diapos… Un gros PowerPoint peut prendre une minute, gardez cette page ouverte.
+        </p>
+      )}
       {!seance.diapos.length ? (
         <EtatVide
           icone={<FileText className="h-6 w-6" />}
           titre="Pas encore de diapos"
           texte={
             seance.presentationAcceptee
-              ? "Déposez votre PowerPoint, votre PDF ou vos images : chaque diapo devient une image légère, affichée dans les salles et chez tous les étudiants au rythme de vos ← →. Un gros PowerPoint met une minute à se convertir."
+              ? "Déposez votre PowerPoint, votre PDF ou vos images, ou glissez-les ici : chaque diapo devient une image légère, affichée dans les salles et chez tous les étudiants au rythme de vos ← →. Un gros PowerPoint met une minute à se convertir."
               : seance.pdfAccepte
               ? "Déposez votre PDF ou vos images (un PowerPoint s'enregistre en PDF : Fichier → Enregistrer sous → PDF). Chaque page devient une image légère, affichée chez tous les étudiants au rythme de vos ← →."
               : "Déposez vos diapos en images (exportez-les depuis PowerPoint ou Google Slides en JPEG ou PNG). Elles s'affichent chez tous les étudiants au rythme de vos ← →, pour quelques Mo seulement."
           }
           action={
-            <Bouton variante="contour" onClick={() => entree.current?.click()} chargement={envoi}>
+            <Bouton variante="contour" onClick={() => entree.current?.click()} chargement={Boolean(envoi)}>
               Choisir mes diapos
             </Bouton>
           }

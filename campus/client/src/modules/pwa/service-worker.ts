@@ -21,6 +21,18 @@ function versionDuBuild(): string {
   return m ? m[1] : "dev";
 }
 
+/** Empreinte du build en ligne (le JS principal que référence la page), null si le réseau ne répond pas. */
+async function versionEnLigne(): Promise<string | null> {
+  try {
+    const r = await fetch("/", { cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const m = (await r.text()).match(/\/assets\/index-([A-Za-z0-9_-]{6,})\.js/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 let enregistrement: Promise<ServiceWorkerRegistration | null> | null = null;
 let miseAJourAcceptee = false;
 
@@ -70,8 +82,30 @@ function surveillerMisesAJour(reg: ServiceWorkerRegistration) {
     recharge = true;
     window.location.reload();
   });
-  // Application laissée ouverte toute la journée : on cherche une nouvelle version chaque heure.
-  window.setInterval(() => void reg.update().catch(() => undefined), 60 * 60_000);
+  // Application laissée ouverte toute la journée : on cherche une nouvelle version chaque heure,
+  // et chaque fois qu'on y revient (au plus toutes les 5 minutes). reg.update() seul ne suffit pas :
+  // il relit sw.js?v=<ancienne empreinte>, identique octet pour octet. On compare donc l'empreinte du
+  // build en ligne à la nôtre ; si elle a changé, enregistrer sw.js?v=<nouvelle> installe la nouvelle
+  // version, et le bandeau la propose.
+  let derniereRecherche = Date.now();
+  const chercher = () => {
+    if (Date.now() - derniereRecherche < 5 * 60_000) return;
+    derniereRecherche = Date.now();
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      proposer(reg.waiting);
+      return;
+    }
+    void versionEnLigne().then((v) => {
+      if (v && v !== versionDuBuild()) {
+        void navigator.serviceWorker.register(`/sw.js?v=${v}`, { scope: "/", updateViaCache: "none" }).catch(() => undefined);
+      } else void reg.update().catch(() => undefined);
+    });
+  };
+  window.setInterval(chercher, 60 * 60_000);
+  window.addEventListener("focus", chercher);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") chercher();
+  });
 }
 
 async function desinscrire() {

@@ -946,15 +946,23 @@ function diapoCourante(s: Pick<Seance, "diapos" | "diapoCourante">) {
 
 /** pdftoppm (poppler) est-il installé ? Sinon, les diapos se déposent en images. */
 let pdfDisponible = false;
-execFile("pdftoppm", ["-v"], (err) => {
-  pdfDisponible = !err || (err as NodeJS.ErrnoException).code !== "ENOENT";
-});
+const detectionPdf = new Promise<void>((fini) =>
+  execFile("pdftoppm", ["-v"], (err) => {
+    pdfDisponible = !err || (err as NodeJS.ErrnoException).code !== "ENOENT";
+    fini();
+  }),
+);
 
 /** LibreOffice (soffice) est-il installé ? Il transforme un PowerPoint en PDF, puis pdftoppm en images. */
 let officeDisponible = false;
-execFile("soffice", ["--version"], { timeout: 60_000 }, (err) => {
-  officeDisponible = !err;
-});
+const detectionOffice = new Promise<void>((fini) =>
+  execFile("soffice", ["--version"], { timeout: 60_000 }, (err) => {
+    officeDisponible = !err;
+    fini();
+  }),
+);
+/** Juste après une mise en ligne, LibreOffice met quelques secondes à répondre : un dépôt l'attend plutôt que d'être refusé. */
+const convertisseursPrets = () => Promise.race([Promise.all([detectionPdf, detectionOffice]), new Promise((fini) => setTimeout(fini, 60_000))]);
 const MIMES_PRESENTATION = /^application\/(vnd\.openxmlformats-officedocument\.presentationml\..+|vnd\.ms-powerpoint|vnd\.oasis\.opendocument\.presentation)$/;
 const estPresentation = (f: Express.Multer.File) => MIMES_PRESENTATION.test(f.mimetype) || /\.(pptx?|ppsx?|odp)$/i.test(f.originalname);
 
@@ -2198,6 +2206,7 @@ export function enregistrerLive(app: Express) {
         throw e;
       }
       if (!recus.length) throw invalide("Aucun fichier reçu.");
+      await convertisseursPrets();
       const presentationOk = officeDisponible && pdfDisponible;
       const refuses = recus.filter(
         (f) => !/^image\/(jpeg|png|webp|gif)$/.test(f.mimetype) && !(f.mimetype === "application/pdf" && pdfDisponible) && !(estPresentation(f) && presentationOk),

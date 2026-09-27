@@ -3,6 +3,7 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { z, ZodError, type ZodTypeAny } from "zod";
 import { ErreurIa } from "./ia";
+import { config } from "./config";
 
 export class ErreurHttp extends Error {
   constructor(public statut: number, message: string, public details?: unknown) {
@@ -52,7 +53,7 @@ export function gestionnaireErreurs(err: unknown, req: Request, res: Response, _
   }
   const e = err as { status?: number; statusCode?: number; message?: string; code?: string };
   if (e?.code === "LIMIT_FILE_SIZE") {
-    return res.status(413).json({ message: "Fichier trop lourd." });
+    return res.status(413).json({ message: `Fichier trop lourd : ${config.tailleMaxFichierMo} Mo au plus.` });
   }
   if (e?.code === "23505") {
     return res.status(409).json({ message: "Cet élément existe déjà." });

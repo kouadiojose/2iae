@@ -8,9 +8,11 @@ const PageSalle = lazy(() => import("./PageSalle"));
 const PageEmargement = lazy(() => import("./PageEmargement"));
 const PagePreparation = lazy(() => import("./PagePreparation"));
 const PageReplay = lazy(() => import("./PageReplay"));
+const PagePresentateur = lazy(() => import("./presentateur"));
 
 export const routes: DefRoute[] = [
   { chemin: "/direct", page: PageDirect, acces: "connecte" },
+  { chemin: "/live/:id/presentateur", page: PagePresentateur, acces: ["formateur", "admin", "vie_scolaire"], coquille: "aucune" },
   { chemin: "/live/:id", page: PageLive, acces: "connecte", coquille: "plein-ecran" },
   { chemin: "/salle", page: PageSalle, acces: ["salle", "admin", "vie_scolaire"], coquille: "aucune" },
   { chemin: "/emargement/:code", page: PageEmargement, acces: ["etudiant"], coquille: "aucune" },

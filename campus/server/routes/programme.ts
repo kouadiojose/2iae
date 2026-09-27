@@ -269,7 +269,7 @@ async function editionSession(u: Utilisateur, s: SessionProgramme): Promise<Sess
     : [];
   dto.avertissements = [
     ...avertissementsSession(s, dto),
-    ...inactifs.map((p) => `${p.prenom} ${p.nom} n'a pas encore activé son compte : transmettez-lui son code provisoire.`),
+    ...inactifs.map((p) => `${p.prenom} ${p.nom} n'a pas encore activé son compte : envoyez-lui son lien d'invitation (Pilotage → Rentrée).`),
     ...(await avertissementsClassesHorsSession(s.id)),
   ];
   if (d.modifiable && s.statut !== "archivee") {

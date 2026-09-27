@@ -70,7 +70,7 @@ export type PagePublique = { href: string; libelle: string; description: string 
 
 /** Navigation principale (en-tête). */
 export const PAGES_PRINCIPALES: PagePublique[] = [
-  { href: "/programme", libelle: "Programme", description: "L'emploi du temps des cours en direct" },
+  { href: "/programme", libelle: "Emploi du temps", description: "Les cours en direct, jour par jour" },
   { href: "/cours-ouverts", libelle: "Cours", description: "Les cours présentés au public" },
   { href: "/formateurs", libelle: "Formateurs", description: "Ceux qui enseignent en direct" },
   { href: "/campus", libelle: "Campus", description: "Les cinq campus du Groupe 2IAE" },

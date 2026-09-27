@@ -1,11 +1,21 @@
 import type { Config } from "tailwindcss";
 
 // Identité issue de la maquette « Campus numérique 2IAE » (Claude Design) :
-// blanc, encre, orange 2IAE ; Archivo très gras pour les titres, IBM Plex
-// Mono pour les étiquettes. La salle live passe en mode nuit (« nuit-* »).
+// blanc, encre, orange 2IAE ; Manrope pour le texte, Cormorant Garamond pour
+// les grands titres (comme 2iae.com), IBM Plex Mono pour les étiquettes. La
+// salle live passe en mode nuit (« nuit-* »).
 export default {
   content: ["./client/index.html", "./client/src/**/*.{ts,tsx}"],
   theme: {
+    fontWeight: {
+      light: "300",
+      normal: "400",
+      medium: "500",
+      semibold: "560",
+      bold: "620",
+      extrabold: "680",
+      black: "720",
+    },
     extend: {
       colors: {
         encre: "#141414",
@@ -48,7 +58,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["'Archivo Variable'", "Archivo", "system-ui", "sans-serif"],
+        sans: ["'Manrope Variable'", "Manrope", "system-ui", "sans-serif"],
+        titre: ["'Cormorant Garamond'", "Georgia", "serif"],
         mono: ["'IBM Plex Mono'", "ui-monospace", "monospace"],
       },
       borderRadius: {
@@ -58,8 +69,8 @@ export default {
         "4xl": "28px",
       },
       letterSpacing: {
-        serre: "-0.03em",
-        "tres-serre": "-0.035em",
+        serre: "-0.012em",
+        "tres-serre": "-0.018em",
       },
       keyframes: {
         pulse2: { "0%,100%": { opacity: "1" }, "50%": { opacity: ".35" } },

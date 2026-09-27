@@ -26,7 +26,7 @@ import type { Express, Request, Response } from "express";
 import path from "path";
 import fs from "fs";
 import { z } from "zod";
-import { and, asc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
 import { exigerRole, moi, oublierUtilisateur } from "../auth";
@@ -1089,6 +1089,33 @@ export function enregistrerShowreel(app: Express) {
   );
 
   // ── Public ───────────────────────────────────────────────────────────────
+
+  // Les présentations en ligne, des plus récentes aux plus anciennes (accueil du site public).
+  app.get(
+    "/api/public/presentations",
+    route(async (_req, res) => {
+      const lignes = await db
+        .select({ f: utilisateurs, s: showreels })
+        .from(utilisateurs)
+        .innerJoin(showreels, eq(showreels.formateurId, utilisateurs.id))
+        .where(
+          and(
+            eq(utilisateurs.role, "formateur"),
+            eq(utilisateurs.actif, true),
+            eq(utilisateurs.consentementSite, true),
+            eq(utilisateurs.publierSurSite, true),
+            isNotNull(showreels.publieLe),
+          ),
+        )
+        .orderBy(desc(showreels.publieLe))
+        .limit(6);
+      const liste = await Promise.all(
+        lignes.filter((l) => l.s.versionPubliee).map((l) => versPublic({ f: l.f, s: l.s, version: l.s.versionPubliee!, slug: slugFormateur(l.f) })),
+      );
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(liste);
+    }),
+  );
 
   app.get(
     "/api/public/presentations/:slug",

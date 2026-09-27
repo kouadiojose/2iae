@@ -74,6 +74,9 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
           />
         ) : (
           <>
+            {/* Sa présentation animée de 30 s, première chose visible (module showreel) : rien ne s'affiche tant qu'elle n'est pas publiée. */}
+            <ShowreelFormateur slug={slug} className="w-full" />
+
             <section className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-12">
               <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -100,9 +103,6 @@ export default function PageFormateurPublic({ slug }: { slug: string }) {
               </div>
               <CarteProchainLive live={live} coursRepli={coursRepli} salles={sallesDepuisCampus(site.campus)} className="lg:sticky lg:top-24" />
             </section>
-
-            {/* Sa présentation animée de 30 s (module showreel) : rien ne s'affiche tant qu'elle n'est pas publiée. */}
-            <ShowreelFormateur slug={slug} className="w-full max-w-5xl" />
 
             {f.coursDetail.length > 0 && (
               <section className="flex flex-col gap-5">

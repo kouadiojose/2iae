@@ -1,7 +1,7 @@
 // En-tête et pied de page du site public du campus.
 //
 // En-tête : le vrai logo 2IAE et « Campus numérique », la navigation
-// (Programme · Cours · Formateurs · Campus · Le direct · Plus), l'indicateur
+// (Emploi du temps · Cours · Formateurs · Campus · Le direct · Plus), l'indicateur
 // « EN DIRECT » quand un cours public est en cours, et « Se connecter » (ou
 // « Mon campus » pour une personne déjà connectée). Sur téléphone, un menu
 // plein écran (fenêtre modale : le focus y reste enfermé, Échap la ferme).

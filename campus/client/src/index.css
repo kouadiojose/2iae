@@ -10,11 +10,19 @@
   }
   body {
     @apply bg-white text-encre font-sans antialiased;
-    font-feature-settings: "ss01";
   }
   h1, h2, h3, h4 {
     @apply font-extrabold tracking-serre;
     text-wrap: balance;
+  }
+  /* Grands titres en Cormorant Garamond, comme sur 2iae.com. font-size-adjust
+     aligne sa hauteur d'x sur celle de Manrope : les tailles existantes restent justes. */
+  h1, h2 {
+    font-family: theme("fontFamily.titre");
+    font-weight: 600 !important;
+    letter-spacing: -0.005em !important;
+    font-size-adjust: 0.5;
+    line-height: 1.02;
   }
   p {
     text-wrap: pretty;

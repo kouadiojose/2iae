@@ -58,7 +58,7 @@ export function CarteCoteIvoire({ campus, villeFormateur, className, enDirect }:
               </circle>
             )}
             <circle cx={p.x} cy={p.y} r={r} fill={c.salleConnectee ? "#E4793A" : "#3A3431"} stroke={c.salleConnectee ? "#FFD2B3" : "#5E554F"} strokeWidth="2" />
-            <text x={p.x + p.dx} y={p.y + p.dy} textAnchor={p.ancre} fill={c.salleConnectee ? "#FFFFFF" : "#8A7F76"} stroke="#0F0E0D" strokeWidth="5" paintOrder="stroke" fontFamily="Archivo, sans-serif" fontWeight="800" fontSize="22">
+            <text x={p.x + p.dx} y={p.y + p.dy} textAnchor={p.ancre} fill={c.salleConnectee ? "#FFFFFF" : "#8A7F76"} stroke="#0F0E0D" strokeWidth="5" paintOrder="stroke" fontFamily="Manrope, sans-serif" fontWeight="700" fontSize="22">
               {c.nomCourt}
             </text>
             {c.salleConnectee && (

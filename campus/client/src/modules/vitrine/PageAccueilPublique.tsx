@@ -26,6 +26,7 @@ import {
   sallesDepuisCampus,
   type ProchainCours,
 } from "./composants";
+import { ShowreelsAccueil } from "@/modules/showreel";
 import { useProgrammePublic, useSitePublic, useSitePublicOuSecours, useVitrine } from "./donnees";
 import { MiseEnPagePublique } from "./MiseEnPagePublique";
 import { SemaineAuCampus } from "./SemaineAuCampus";
@@ -156,6 +157,8 @@ export default function PageAccueilPublique() {
           texte="Ils enseignent en direct aux cinq campus, où qu'ils se trouvent dans le monde."
           lien={formateurs.length ? { href: "/formateurs", libelle: "Tous les formateurs" } : undefined}
         />
+        {/* Leurs présentations de 30 secondes, quand elles sont en ligne. */}
+        <ShowreelsAccueil className="mb-8" />
         {formateurs.length ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {formateurs.slice(0, 3).map((f) => (

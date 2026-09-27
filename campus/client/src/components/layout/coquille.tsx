@@ -210,7 +210,7 @@ function EcouteGlobale() {
 }
 
 /** Entrées visibles dans l'en-tête sur ordinateur ; les suivantes vont dans « Plus ». */
-const NAV_VISIBLES = 6;
+const NAV_VISIBLES = 7;
 
 export function Coquille({ children, pleinEcran = false }: { children: ReactNode; pleinEcran?: boolean }) {
   const moi = useMoiConnecte();

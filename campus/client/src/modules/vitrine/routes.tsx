@@ -19,6 +19,7 @@ export const routes: DefRoute[] = [
   { chemin: "/questions", page: lazy(() => import("./PageQuestions")), ...PUBLIC },
   { chemin: "/a-propos", page: lazy(() => import("./PageAPropos")), ...PUBLIC },
   { chemin: "/contact", page: lazy(() => import("./PageContact")), ...PUBLIC },
+  { chemin: "/android", page: lazy(() => import("./PageAndroid")), ...PUBLIC },
   { chemin: "/confidentialite", page: lazy(() => import("./PageConfidentialite")), ...PUBLIC },
   { chemin: "/", page: lazy(() => import("./PageAccueilPublique")), ...PUBLIC, redirigerSiConnecte: true },
 ];

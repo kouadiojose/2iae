@@ -1028,6 +1028,10 @@ async function metaPagesFixes(url: string): Promise<string | null> {
       titre: "Contact · Groupe Écoles 2IAE International",
       description: "Téléphones, WhatsApp, e-mail et adresses des cinq campus du Groupe 2IAE. Préinscription en ligne.",
     },
+    "/android": {
+      titre: `L'application Android · ${NOM_CAMPUS}`,
+      description: "Installez l'application du campus numérique 2IAE sur votre téléphone Android : les cours en direct, les devoirs, les replays et les rappels, d'un toucher.",
+    },
     "/confidentialite": {
       titre: `Confidentialité · ${NOM_CAMPUS}`,
       description: "Ce que le campus numérique collecte, pourquoi, qui y a accès, combien de temps, et vos droits (loi ivoirienne n° 2013-450).",
@@ -1040,7 +1044,7 @@ async function metaPagesFixes(url: string): Promise<string | null> {
 
 // ── Moteurs de recherche : sitemap.xml et robots.txt ───────────────────────
 
-const PAGES_FIXES = ["/", "/programme", "/cours-ouverts", "/formateurs", "/campus", "/le-direct", "/questions", "/a-propos", "/contact", "/confidentialite"];
+const PAGES_FIXES = ["/", "/programme", "/cours-ouverts", "/formateurs", "/campus", "/le-direct", "/questions", "/a-propos", "/contact", "/android", "/confidentialite"];
 
 /** Pages de l'application réservées aux comptes (ou porteuses d'un jeton) : jamais indexées. */
 const CHEMINS_PRIVES = [

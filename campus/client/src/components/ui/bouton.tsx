@@ -65,6 +65,7 @@ export function LienBouton({
   className,
   children,
   externe,
+  telecharger,
 }: {
   href: string;
   variante?: VarianteBouton;
@@ -73,6 +74,8 @@ export function LienBouton({
   className?: string;
   children?: ReactNode;
   externe?: boolean;
+  /** Un fichier à télécharger (APK, PDF) : un vrai lien, hors du routeur. */
+  telecharger?: boolean;
 }) {
   const classes = cn(
     "inline-flex items-center justify-center font-bold transition-colors no-underline select-none",
@@ -84,6 +87,14 @@ export function LienBouton({
     variante === "contour" && "text-encre hover:text-encre",
     className,
   );
+  if (telecharger) {
+    return (
+      <a href={href} download className={classes}>
+        {icone}
+        {children}
+      </a>
+    );
+  }
   if (externe) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={classes}>

@@ -79,6 +79,7 @@ export const PAGES_PRINCIPALES: PagePublique[] = [
 
 /** Menu « Plus ». */
 export const PAGES_SECONDAIRES: PagePublique[] = [
+  { href: "/android", libelle: "Application Android", description: "Le campus dans votre téléphone" },
   { href: "/questions", libelle: "Questions fréquentes", description: "Connexion, forfait, parents" },
   { href: "/a-propos", libelle: "À propos", description: "Le Groupe 2IAE et son campus numérique" },
   { href: "/contact", libelle: "Contact", description: "Téléphones, WhatsApp, adresses" },

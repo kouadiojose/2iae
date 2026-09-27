@@ -16,7 +16,27 @@ export function plateforme(): Plateforme {
 export function estInstallee(): boolean {
   if (typeof window === "undefined") return false;
   const nav = navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia?.("(display-mode: standalone)").matches || nav.standalone === true;
+  return window.matchMedia?.("(display-mode: standalone)").matches || nav.standalone === true || estApplicationAndroid();
+}
+
+const CLE_APP_ANDROID = "campus:app-android";
+
+/**
+ * Le campus est-il ouvert dans l'application Android (android/, Trusted Web
+ * Activity) ? Elle lance /accueil?source=android et Chrome donne
+ * « android-app://… » comme provenance ; on le retient pour l'onglet (session),
+ * pas dans le stockage local, que l'application partage avec Chrome.
+ */
+export function estApplicationAndroid(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.sessionStorage.getItem(CLE_APP_ANDROID)) return true;
+    const oui = document.referrer.startsWith("android-app://com.groupe2iae.campus") || new URLSearchParams(window.location.search).get("source") === "android";
+    if (oui) window.sessionStorage.setItem(CLE_APP_ANDROID, "1");
+    return oui;
+  } catch {
+    return false;
+  }
 }
 
 /** Tutoiement pour les étudiants, vouvoiement pour les formateurs, l'équipe et les visiteurs. */

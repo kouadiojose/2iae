@@ -11,11 +11,12 @@
 //
 // « Plus tard » est retenu 7 jours ; jamais pendant un live (coquille plein écran).
 import { useEffect, useState } from "react";
-import { Download, Share, X, Copy, MoreVertical, MoreHorizontal, PlusSquare, Bell, Wifi, Zap } from "lucide-react";
+import { Download, Share, X, Copy, MoreVertical, MoreHorizontal, PlusSquare, Bell, Wifi, Zap, Smartphone } from "lucide-react";
 import { useMoi } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Bouton } from "@/components/ui/bouton";
 import { toast } from "@/components/ui/toast";
+import { APPLICATION_ANDROID } from "./android";
 import { useInstallation } from "./installation";
 import { formuler, plateforme, lireLocal, ecrireLocal } from "./outils";
 
@@ -213,6 +214,16 @@ export function InstallationMobile() {
             <EtapesInstallation contexte={contexte} tu={tu} />
           )}
         </div>
+        {contexte === "android" && (
+          <a
+            href={APPLICATION_ANDROID.page}
+            onClick={() => fermer(false)}
+            className="mt-3 flex min-h-[48px] items-center justify-center gap-2 rounded-2xl bg-creme px-4 text-[15px] font-bold text-encre no-underline hover:bg-orange-clair"
+          >
+            <Smartphone className="h-4 w-4 text-orange-fonce" aria-hidden />
+            {f("Ou télécharge l'application Android", "Ou téléchargez l'application Android")} ({APPLICATION_ANDROID.taille})
+          </a>
+        )}
         <div className="mt-3 flex justify-center">
           <Bouton variante="fantome" onClick={() => fermer(true)} className="min-h-[48px]">
             Plus tard

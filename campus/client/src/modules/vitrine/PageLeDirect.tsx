@@ -277,6 +277,7 @@ export default function PageLeDirect() {
                   )}
                 </p>
               ))}
+            {!estInstallee() && plateforme() !== "ios" && <LienFleche href="/android">Télécharger l'application Android (2 Mo)</LienFleche>}
           </div>
           <Telephones />
         </div>

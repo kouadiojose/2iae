@@ -17,10 +17,12 @@ import { enregistrerProgramme } from "./programme";
 import { enregistrerLancement } from "./lancement";
 import { enregistrerShowreel } from "./showreel";
 import { enregistrerEquipe } from "./equipe";
+import { enregistrerAndroid } from "./android";
 import { enregistrerVisioCampus } from "../visio-campus";
 
 export function enregistrerRoutes(app: Express) {
   enregistrerPublic(app);
+  enregistrerAndroid(app);
   enregistrerAuth(app);
   enregistrerCompte(app);
   enregistrerAccueil(app);

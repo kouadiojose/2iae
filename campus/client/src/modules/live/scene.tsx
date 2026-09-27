@@ -455,6 +455,7 @@ function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, on
       tu={tu}
       micro={micro}
       camera={camera}
+      relanceAuto
       obtenirAcces={async () => {
         const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" });
         infos.current = r;

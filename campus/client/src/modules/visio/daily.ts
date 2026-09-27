@@ -131,7 +131,7 @@ function conseilReseau(role: RoleVisio, tu: boolean): string {
 /** Salle pleine : l'étudiant passe en « son + diapos » ; le formateur et les écrans de salle, dont les places sont gardées, réessaient tout seuls. */
 function conseilSallePleine(role: RoleVisio): string {
   if (role === "etudiant") return "Suis le cours en « son + diapos » (radio) : tu entends tout, avec les diapos, pour beaucoup moins de données.";
-  if (role === "formateur" || role === "salle") return "Une place se libère dès qu'une personne sort : nouvel essai automatique dans quelques secondes. En attendant, le son du cours passe par la radio.";
+  if (role === "formateur" || role === "salle") return "Une place se libère dès qu'une personne sort. Pendant la classe, un nouvel essai part tout seul ; en attendant, le son du cours passe par la radio.";
   return "Les places de la visio sont gardées au formateur et aux salles. Réessayez dans un moment, ou suivez le cours à la radio.";
 }
 

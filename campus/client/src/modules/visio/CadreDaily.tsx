@@ -10,9 +10,10 @@
 //    à 40 s (réseau d'école filtré) ;
 //  - au deuxième échec, le parent propose sa bascule (visio du campus,
 //    radio) sans quitter la page ;
-//  - le formateur et l'écran de salle (aucun clic sur l'écran d'une salle)
-//    réessaient tout seuls, de plus en plus espacé, tant que le problème peut
-//    passer : salle pleine, réseau, service occupé ou compte à régler.
+//  - dans la classe (relanceAuto), le formateur et l'écran de salle (aucun
+//    clic sur l'écran d'une salle) réessaient tout seuls, de plus en plus
+//    espacé, tant que le problème peut passer : salle pleine, réseau, service
+//    occupé ou compte à régler.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, WifiOff, RotateCcw, AlertTriangle } from "lucide-react";
 import type { DailyCall, DailyParticipant } from "@daily-co/daily-js";
@@ -69,6 +70,8 @@ export type PropsCadreDaily = {
   onEchecs?: (n: number, probleme: ProblemeVisio | null) => void;
   /** Actions de secours montrées sous le message d'erreur dès le 2e échec. */
   secours?: ReactNode;
+  /** Classe en direct : le formateur et l'écran de salle réessaient tout seuls (la salle d'essai, elle, montre l'échec tel quel). */
+  relanceAuto?: boolean;
   className?: string;
 };
 
@@ -240,7 +243,7 @@ export function CadreDaily(p: PropsCadreDaily) {
 
   // Formateur et écran de salle : nouvel essai tout seul, de plus en plus espacé (une place qui se libère, le réseau qui revient).
   useEffect(() => {
-    if (etat !== "erreur" || !relanceAutomatique(role, probleme)) {
+    if (etat !== "erreur" || !rappels.current.relanceAuto || !relanceAutomatique(role, probleme)) {
       setProchainEssai(null);
       return;
     }

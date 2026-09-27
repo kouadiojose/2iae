@@ -351,26 +351,25 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     // Cours gardés dont le formateur principal est un compte de démonstration : leur premier intervenant réel à
     // l'emploi du temps le remplace (à défaut, leur premier co-formateur réel), sinon personne.
     const remplacants = (
-      await client.query<{ id: number; code: string; repris: boolean; nouveau: number | null; nom: string | null }>(
-        `SELECT x.id, x.code, x.id = ANY($3::int[]) AS repris, x.nouveau, f.prenom || ' ' || f.nom AS nom
+      await client.query<{ id: number; code: string; repris: boolean; nouveau: number | null; par_programme: boolean; nom: string | null }>(
+        `SELECT x.id, x.code, x.id = ANY($3::int[]) AS repris, coalesce(x.intervenant, x.co) AS nouveau, x.intervenant IS NOT NULL AS par_programme,
+                f.prenom || ' ' || f.nom AS nom
            FROM (SELECT c.id, c.code,
-                        coalesce(
-                          ${
-                            avecProgramme
-                              ? `(SELECT cp.intervenant_id FROM campus.creneaux_programme cp
-                                   JOIN campus.sessions_programme sp ON sp.id = cp.session_id
-                                   JOIN campus.utilisateurs i ON i.id = cp.intervenant_id
-                                  WHERE cp.cours_id = c.id AND i.role = 'formateur' AND NOT (i.id = ANY($1::int[]))
-                                  ORDER BY (sp.statut = 'archivee'), (sp.statut = 'publiee') DESC, sp.debut, cp.jour, cp.heure_debut, cp.ordre, cp.id LIMIT 1),`
-                              : ""
-                          }
-                          (SELECT cf.formateur_id FROM campus.cours_formateurs cf JOIN campus.utilisateurs i ON i.id = cf.formateur_id
-                            WHERE cf.cours_id = c.id AND i.role = 'formateur' AND NOT (i.id = ANY($1::int[]))
-                            ORDER BY i.actif DESC, cf.formateur_id LIMIT 1)
-                        ) AS nouveau
+                        ${
+                          avecProgramme
+                            ? `(SELECT cp.intervenant_id FROM campus.creneaux_programme cp
+                                 JOIN campus.sessions_programme sp ON sp.id = cp.session_id
+                                 JOIN campus.utilisateurs i ON i.id = cp.intervenant_id
+                                WHERE cp.cours_id = c.id AND i.role = 'formateur' AND NOT (i.id = ANY($1::int[]))
+                                ORDER BY (sp.statut = 'archivee'), (sp.statut = 'publiee') DESC, sp.debut, cp.jour, cp.heure_debut, cp.ordre, cp.id LIMIT 1)`
+                            : "NULL::int"
+                        } AS intervenant,
+                        (SELECT cf.formateur_id FROM campus.cours_formateurs cf JOIN campus.utilisateurs i ON i.id = cf.formateur_id
+                          WHERE cf.cours_id = c.id AND i.role = 'formateur' AND NOT (i.id = ANY($1::int[]))
+                          ORDER BY i.actif DESC, cf.formateur_id LIMIT 1) AS co
                    FROM campus.cours c
                   WHERE c.formateur_id = ANY($1::int[]) AND NOT (c.id = ANY($2::int[]))) x
-           LEFT JOIN campus.utilisateurs f ON f.id = x.nouveau
+           LEFT JOIN campus.utilisateurs f ON f.id = coalesce(x.intervenant, x.co)
           ORDER BY x.code`,
         [idsComptes, coursIds, reprisIds],
       )
@@ -609,9 +608,20 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
       );
     }
     // Formateur principal de démonstration : remplacé par le premier intervenant réel (qui cesse d'être co-formateur), sinon retiré.
+    // Choisi par l'emploi du temps, il y est noté comme tel (formateurs_programme) : si l'emploi du temps change
+    // d'intervenant, la publication suivante passe le cours au nouveau, comme pour un principal qu'elle a nommé.
+    const avecFormateursProgramme = await tableExiste(client, "formateurs_programme");
     for (const r of remplacants.filter((x) => x.nouveau)) {
       await q(`UPDATE campus.cours SET formateur_id = $2, maj_le = now() WHERE id = $1`, [r.id, r.nouveau]);
       await q(`DELETE FROM campus.cours_formateurs WHERE cours_id = $1 AND formateur_id = $2`, [r.id, r.nouveau]);
+      if (avecFormateursProgramme) {
+        await q(
+          `INSERT INTO campus.formateurs_programme (cours_id, formateur_id, principal)
+           SELECT $1, $2, true WHERE $3::boolean OR EXISTS (SELECT 1 FROM campus.formateurs_programme WHERE cours_id = $1 AND formateur_id = $2)
+           ON CONFLICT (cours_id, formateur_id) DO UPDATE SET principal = true`,
+          [r.id, r.nouveau, r.par_programme],
+        );
+      }
     }
     await q(`UPDATE campus.cours SET formateur_id = NULL WHERE formateur_id = ANY($1::int[])`, [idsComptes]);
     // Conversations directes avec un compte de démonstration, puis messages écrits ailleurs.

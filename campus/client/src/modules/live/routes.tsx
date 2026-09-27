@@ -9,9 +9,12 @@ const PageEmargement = lazy(() => import("./PageEmargement"));
 const PagePreparation = lazy(() => import("./PagePreparation"));
 const PageReplay = lazy(() => import("./PageReplay"));
 const PagePresentateur = lazy(() => import("./presentateur"));
+const PageInvite = lazy(() => import("./PageInvite"));
 
 export const routes: DefRoute[] = [
   { chemin: "/direct", page: PageDirect, acces: "connecte" },
+  // Lien invité d'une séance : sans compte ni identifiant (routes/live-invite.ts).
+  { chemin: "/invite/:jeton", page: PageInvite, acces: "public", coquille: "aucune" },
   { chemin: "/live/:id/presentateur", page: PagePresentateur, acces: ["formateur", "admin", "vie_scolaire"], coquille: "aucune" },
   { chemin: "/live/:id", page: PageLive, acces: "connecte", coquille: "plein-ecran" },
   { chemin: "/salle", page: PageSalle, acces: ["salle", "admin", "vie_scolaire"], coquille: "aucune" },

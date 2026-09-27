@@ -602,6 +602,12 @@ const schemaSignal = z.object({
   donnees: z.unknown().optional(),
 });
 
+/** Radio d'une séance, lue par un invité (lien de la séance, sans compte : routes/live-invite.ts). */
+export const etatRadioSeance = (seanceId: number): EtatRadio => etatRadio(emissions.get(String(seanceId)));
+export function ecouteRadioInvite(seanceId: number, req: Request, res: Response) {
+  ouvrirEcoute(emissions.get(String(seanceId)), { id: -1 } as Utilisateur, req, res);
+}
+
 export function enregistrerVisioCampus(app: Express) {
   // Daily : salle d'essai, présence, fuseau, coût et réglages. Déclaré en premier :
   // « /api/visio/essai/… » ne doit pas être pris pour « /api/visio/:seanceId/… ».

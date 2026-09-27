@@ -1079,6 +1079,7 @@ const CHEMINS_PRIVES = [
   "/mot-de-passe-oublie",
   "/hors-ligne",
   "/visio/",
+  "/invite/",
 ];
 
 async function sitemap(): Promise<string> {

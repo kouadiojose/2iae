@@ -15,6 +15,7 @@ import { dateEtHeure, depuisChampDate, heureDouble, versChampDate } from "@/lib/
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
+import { BoutonLienInvite } from "./LienInvite";
 import { Champ, ZoneTexte, Selection, CaseACocher } from "@/components/ui/champs";
 import { Badge, BadgeDirect, Chargement, EtatVide, Erreur, Chiffre } from "@/components/ui/divers";
 import { Onglets } from "@/components/ui/onglets";
@@ -116,6 +117,7 @@ function SeanceExistante({ id }: { id: number }) {
                 {seance.monRole === "equipe" ? "Observer" : "Ouvrir le studio"}
               </LienBouton>
             )}
+            {(seance.statut === "planifiee" || seance.statut === "en_direct") && <BoutonLienInvite seance={seance} variante="contour" />}
             {/* Module visio : répétition dans la vraie salle Daily, à tout moment (formateur, direction). */}
             {seance.statut === "planifiee" && seance.fournisseur === "daily" && (seance.monRole === "formateur" || moi.role === "admin") && (
               <LienBouton href={`/visio/repetition/${seance.id}`} variante="contour" icone={<FlaskConical className="h-4 w-4" />}>

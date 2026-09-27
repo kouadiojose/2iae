@@ -29,7 +29,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -513,3 +513,25 @@ export type BattementPresenceDto =
        */
       absenceDepuis: string | null;
     };
+
+// ── Lien invité d'une séance (sans compte) ─────────────────────────────────
+
+/** GET /api/seances/:id/lien-invite : le lien à partager, pour cette séance seulement. */
+export type LienInviteDto = { url: string; valableJusquau: string };
+
+/** GET /api/invite/:jeton : ce qu'un invité voit de la séance (sans compte). */
+export type InfoInviteDto = {
+  seanceId: number;
+  titre: string;
+  cours: string;
+  formateur: string | null;
+  debut: string;
+  fin: string;
+  statut: StatutSeance;
+  /** Le lien marche encore (jusqu'à 30 minutes après la fin prévue, séance non annulée). */
+  valide: boolean;
+  /** Vidéo possible (visio Daily) ; sinon, son + diapos seulement. */
+  video: boolean;
+  diapo: { index: number; total: number; masquee: boolean; url: string | null };
+  sousTitre: string | null;
+};

@@ -22,6 +22,7 @@ import { EnTeteLive, FinDeSeance } from "./ui";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { cleDirect, useEcranAllume, useEtatDirect } from "./outils";
 import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroupes } from "./groupes";
+import { BoutonLienInvite } from "./LienInvite";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "campus";
@@ -120,6 +121,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                   </Bouton>
                 )}
                 {enDirect && !groupes?.session && <BoutonGroupes onClick={() => setComposition(true)} />}
+                <BoutonLienInvite seance={seance} variante="nuit" />
                 <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>
                   Plan B
                 </Bouton>

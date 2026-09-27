@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Radio } from "lucide-react";
 import { LienBouton } from "@/components/ui/bouton";
+import { BoutonLienInvite } from "./LienInvite";
 import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { TitreSection } from "@/components/ui/carte";
 import { DecompteCourt } from "@/components/ui/compte-a-rebours";
@@ -36,7 +37,10 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
             </span>
             <span className="break-words text-xl font-extrabold">{direct.titre}</span>
           </div>
-          <LienBouton href={`/live/${direct.id}`}>{enseignant ? "Ouvrir le studio" : "Rejoindre le live"}</LienBouton>
+          <div className="flex flex-wrap gap-2">
+            {enseignant && <BoutonLienInvite seance={direct} variante="nuit" />}
+            <LienBouton href={`/live/${direct.id}`}>{enseignant ? "Ouvrir le studio" : "Rejoindre le live"}</LienBouton>
+          </div>
         </div>
       )}
       {!direct && prochaine && !enseignant && (
@@ -51,7 +55,18 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
       <section className="min-w-0">
         <TitreSection titre="À venir" />
         {avenir.length ? (
-          avenir.map((s) => <LigneSeance key={s.id} s={s} enseignant={enseignant} />)
+          avenir.map((s) =>
+            enseignant && s.statut === "planifiee" ? (
+              <div key={s.id} className="relative">
+                <LigneSeance s={s} enseignant />
+                <div className="-mt-1 flex justify-end border-b border-ligne pb-2">
+                  <BoutonLienInvite seance={s} variante="fantome" taille="sm" />
+                </div>
+              </div>
+            ) : (
+              <LigneSeance key={s.id} s={s} enseignant={enseignant} />
+            ),
+          )
         ) : (
           <EtatVide
             icone={<Radio className="h-6 w-6" />}

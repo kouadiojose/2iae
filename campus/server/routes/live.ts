@@ -3414,6 +3414,8 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       return `Séance annulée${d.automatique ? " automatiquement" : ""} : ${String(d.motif ?? "")}`;
     case "plan_b":
       return "Plan B : bascule sur le lien de secours";
+    case "invite":
+      return `${String(d.nom ?? "Un invité")} a suivi par le lien invité (${d.mode === "video" ? "vidéo" : "son + diapos"})`;
     case "parole":
       return d.type === "salle" ? `Parole à ${site ?? "une salle"}` : `Parole à un étudiant en ligne${site ? ` (${site})` : ""}`;
     case "parole_fin":

@@ -24,7 +24,19 @@ const PAUSES_REPRISE = [1000, 2000, 4000, 8000, 15000];
 /** Retard maximal toléré avant de sauter à la fin de ce qui est déjà reçu. */
 const RETARD_MAX_S = 3.5;
 
-export function LecteurRadio({ seanceId, nuit, onConsommation }: { seanceId: number; nuit?: boolean; onConsommation?: (octets: number) => void }) {
+export function LecteurRadio({
+  seanceId,
+  nuit,
+  onConsommation,
+  base,
+}: {
+  seanceId: number;
+  nuit?: boolean;
+  onConsommation?: (octets: number) => void;
+  /** Adresse de la radio pour un invité sans compte (« /api/invite/<jeton>/radio ») ; sinon celle de la séance. */
+  base?: string;
+}) {
+  const racine = base ?? `/api/radio/${seanceId}`;
   const { moi } = useMoi();
   const tu = !moi || moi.role === "etudiant";
   const audio = useRef<HTMLAudioElement>(null);
@@ -44,7 +56,7 @@ export function LecteurRadio({ seanceId, nuit, onConsommation }: { seanceId: num
   const possible = lectureRadioPossible();
 
   const { data: etat, refetch } = useQuery<EtatRadio>({
-    queryKey: ["/api/radio", seanceId, "etat"],
+    queryKey: [racine, "etat"],
     refetchInterval: phase === "attente" ? 6000 : 20_000,
   });
   const debit = useRef(DEBIT_DEFAUT);
@@ -62,7 +74,7 @@ export function LecteurRadio({ seanceId, nuit, onConsommation }: { seanceId: num
     if (!a) return;
     annulerMinuteurs();
     // Paramètre unique : le navigateur ne doit jamais resservir une ancienne écoute.
-    a.src = `/api/radio/${seanceId}/ecoute?t=${Date.now()}`;
+    a.src = `${racine}/ecoute?t=${Date.now()}`;
     a.play().catch((e: Error) => {
       // Lecture refusée faute de geste (onglet rechargé) : on revient au bouton.
       if (e.name === "NotAllowedError") {

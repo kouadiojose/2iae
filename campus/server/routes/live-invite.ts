@@ -35,12 +35,13 @@ const MARGE_APRES_FIN_MS = 30 * MINUTE;
 /** La vidéo ouvre 30 minutes avant le début, comme pour les étudiants. */
 const OUVERTURE_VIDEO_MS = 30 * MINUTE;
 
-const signature = (seanceId: number) => crypto.createHmac("sha256", config.sessionSecret).update(`invite-seance:${seanceId}`).digest("base64url").slice(0, 22);
+// En hexadécimal : ni « _ » ni « - » que WhatsApp mettrait en forme ou couperait.
+const signature = (seanceId: number) => crypto.createHmac("sha256", config.sessionSecret).update(`invite-seance:${seanceId}`).digest("hex").slice(0, 24);
 export const jetonInvite = (seanceId: number) => `${seanceId}-${signature(seanceId)}`;
 
 /** L'identifiant de séance d'un jeton bien signé, sinon null. */
 function lireJeton(jeton: string): number | null {
-  const m = /^(\d{1,9})-([A-Za-z0-9_-]{22})$/.exec(jeton);
+  const m = /^(\d{1,9})-([0-9a-f]{24})$/.exec(jeton);
   if (!m) return null;
   const id = Number(m[1]);
   const attendu = Buffer.from(signature(id));

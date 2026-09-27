@@ -404,7 +404,13 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
 function SectionDiapos({ seance }: { seance: SeanceDetailDto }) {
   const entree = useRef<HTMLInputElement>(null);
   const [envoi, setEnvoi] = useState(false);
-  const accepte = seance.pdfAccepte ? "image/jpeg,image/png,image/webp,application/pdf" : "image/jpeg,image/png,image/webp";
+  const accepte = [
+    "image/jpeg,image/png,image/webp",
+    seance.pdfAccepte ? "application/pdf" : "",
+    seance.presentationAcceptee ? ".pptx,.ppt,.odp,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" : "",
+  ]
+    .filter(Boolean)
+    .join(",");
   const deposer = async (liste: FileList | null) => {
     if (!liste?.length) return;
     setEnvoi(true);
@@ -448,8 +454,10 @@ function SectionDiapos({ seance }: { seance: SeanceDetailDto }) {
           icone={<FileText className="h-6 w-6" />}
           titre="Pas encore de diapos"
           texte={
-            seance.pdfAccepte
-              ? "Déposez votre PDF ou vos images : chaque page devient une image légère, affichée chez tous les étudiants au rythme de vos ← →."
+            seance.presentationAcceptee
+              ? "Déposez votre PowerPoint, votre PDF ou vos images : chaque diapo devient une image légère, affichée dans les salles et chez tous les étudiants au rythme de vos ← →. Un gros PowerPoint met une minute à se convertir."
+              : seance.pdfAccepte
+              ? "Déposez votre PDF ou vos images (un PowerPoint s'enregistre en PDF : Fichier → Enregistrer sous → PDF). Chaque page devient une image légère, affichée chez tous les étudiants au rythme de vos ← →."
               : "Déposez vos diapos en images (exportez-les depuis PowerPoint ou Google Slides en JPEG ou PNG). Elles s'affichent chez tous les étudiants au rythme de vos ← →, pour quelques Mo seulement."
           }
           action={

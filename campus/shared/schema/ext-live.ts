@@ -136,6 +136,8 @@ export type SeanceDetailDto = {
   iaDisponible: boolean;
   /** Le serveur sait transformer un PDF en images (pdftoppm présent). */
   pdfAccepte: boolean;
+  /** Le serveur sait transformer un PowerPoint (.pptx, .ppt, .odp) en images (LibreOffice présent). */
+  presentationAcceptee: boolean;
   /** Fournisseurs utilisables sur ce serveur (choix à la création). */
   fournisseursDisponibles: FournisseurVisio[];
 };

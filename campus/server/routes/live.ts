@@ -950,6 +950,41 @@ execFile("pdftoppm", ["-v"], (err) => {
   pdfDisponible = !err || (err as NodeJS.ErrnoException).code !== "ENOENT";
 });
 
+/** LibreOffice (soffice) est-il installé ? Il transforme un PowerPoint en PDF, puis pdftoppm en images. */
+let officeDisponible = false;
+execFile("soffice", ["--version"], { timeout: 60_000 }, (err) => {
+  officeDisponible = !err;
+});
+const MIMES_PRESENTATION = /^application\/(vnd\.openxmlformats-officedocument\.presentationml\..+|vnd\.ms-powerpoint|vnd\.oasis\.opendocument\.presentation)$/;
+const estPresentation = (f: Express.Multer.File) => MIMES_PRESENTATION.test(f.mimetype) || /\.(pptx?|ppsx?|odp)$/i.test(f.originalname);
+
+/** Une conversion PowerPoint à la fois : LibreOffice est gourmand en mémoire. */
+let fileConversions: Promise<unknown> = Promise.resolve();
+
+async function convertirPresentation(u: Utilisateur, f: Express.Multer.File): Promise<number[]> {
+  const tache = fileConversions.then(async () => {
+    const dossier = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pptx-"));
+    try {
+      // Profil LibreOffice jetable : deux conversions ne se marchent pas dessus, rien ne traîne sur le disque.
+      await executer(
+        "soffice",
+        [`-env:UserInstallation=file://${path.join(dossier, "profil")}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", dossier, f.path],
+        { timeout: 180_000 },
+      );
+      const pdf = (await fs.promises.readdir(dossier)).find((n) => n.endsWith(".pdf"));
+      if (!pdf) throw invalide("La présentation n'a pas pu être convertie. Enregistrez-la en PDF depuis PowerPoint, puis déposez le PDF.");
+      const cible = path.join(path.dirname(f.path), `${crypto.randomBytes(16).toString("hex")}.pdf`);
+      await fs.promises.copyFile(path.join(dossier, pdf), cible);
+      return convertirPdf(u, { ...f, path: cible, mimetype: "application/pdf" } as Express.Multer.File);
+    } finally {
+      await fs.promises.rm(dossier, { recursive: true, force: true });
+      await fs.promises.rm(f.path, { force: true });
+    }
+  });
+  fileConversions = tache.catch(() => undefined);
+  return tache;
+}
+
 async function convertirPdf(u: Utilisateur, f: Express.Multer.File): Promise<number[]> {
   const dossier = await fs.promises.mkdtemp(path.join(os.tmpdir(), "diapos-"));
   try {
@@ -1054,6 +1089,7 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     sites: sitesListe.map(versSiteLive),
     iaDisponible: iaDisponible(),
     pdfAccepte: pdfDisponible,
+    presentationAcceptee: officeDisponible && pdfDisponible,
     fournisseursDisponibles: visio.fournisseursDisponibles(),
   };
 }
@@ -1171,6 +1207,7 @@ export function enregistrerLive(app: Express) {
         fournisseurParDefaut: visio.fournisseurParDefaut(),
         iaDisponible: iaDisponible(),
         pdfAccepte: pdfDisponible,
+        presentationAcceptee: officeDisponible && pdfDisponible,
       });
     }),
   );
@@ -2161,19 +2198,26 @@ export function enregistrerLive(app: Express) {
         throw e;
       }
       if (!recus.length) throw invalide("Aucun fichier reçu.");
-      const refuses = recus.filter((f) => !/^image\/(jpeg|png|webp|gif)$/.test(f.mimetype) && !(f.mimetype === "application/pdf" && pdfDisponible));
+      const presentationOk = officeDisponible && pdfDisponible;
+      const refuses = recus.filter(
+        (f) => !/^image\/(jpeg|png|webp|gif)$/.test(f.mimetype) && !(f.mimetype === "application/pdf" && pdfDisponible) && !(estPresentation(f) && presentationOk),
+      );
       if (refuses.length) {
         await nettoyer();
         const pdf = refuses.some((f) => f.mimetype === "application/pdf");
+        const ppt = refuses.some(estPresentation);
         throw invalide(
-          pdf
-            ? "Ce serveur ne sait pas encore convertir les PDF : exportez vos diapos en images (JPEG ou PNG) depuis PowerPoint ou Google Slides, puis déposez-les."
-            : "Déposez des images (JPEG, PNG, WebP) ou un PDF.",
+          ppt
+            ? "Ce serveur ne sait pas encore lire les PowerPoint : enregistrez votre présentation en PDF (Fichier → Enregistrer sous → PDF), puis déposez le PDF."
+            : pdf
+              ? "Ce serveur ne sait pas encore convertir les PDF : exportez vos diapos en images (JPEG ou PNG) depuis PowerPoint ou Google Slides, puis déposez-les."
+              : "Déposez un PowerPoint, un PDF ou des images (JPEG, PNG, WebP).",
         );
       }
       const nouveaux: number[] = [];
       for (const f of recus) {
-        if (f.mimetype === "application/pdf") nouveaux.push(...(await convertirPdf(u, f)));
+        if (estPresentation(f)) nouveaux.push(...(await convertirPresentation(u, f)));
+        else if (f.mimetype === "application/pdf") nouveaux.push(...(await convertirPdf(u, f)));
         else nouveaux.push((await enregistrerFichier(u, f, "diapo")).id);
       }
       const [maj] = await db

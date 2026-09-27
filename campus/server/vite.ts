@@ -80,6 +80,9 @@ export function servirStatique(app: Express) {
   app.use(
     express.static(dossier, {
       index: false,
+      // Un dossier du même nom qu'une page (public/android et la page /android)
+      // ne doit pas rediriger vers « /android/ » : la page passe au routeur.
+      redirect: false,
       setHeaders: (res, fichier) => {
         if (fichier.endsWith("sw.js")) res.setHeader("Cache-Control", "no-cache");
         else res.setHeader("Cache-Control", "public, max-age=3600");

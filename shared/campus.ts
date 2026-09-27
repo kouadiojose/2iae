@@ -98,8 +98,8 @@ export type EvenementCampus = {
   horodatage: string;
 };
 
-/** Adresse actuelle du campus, utilisée tant que le nouveau campus n'a pas répondu. */
-export const CAMPUS_URL_REPLI = "https://campus.groupe2iae.com";
+/** Adresse du campus quand sa vitrine n'a pas encore répondu : l'adresse définitive. */
+export const CAMPUS_URL_REPLI = "https://campus.2iae.com";
 
 /** Les cinq sites du groupe, dans l'ordre de la maquette (repli sans vitrine). */
 export const SITES_CAMPUS_REPLI: { nom: string; salle: string }[] = [

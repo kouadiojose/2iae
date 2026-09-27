@@ -85,7 +85,7 @@ vitrine publique du campus (`GET <campus>/api/public/vitrine`), la garde en
 cache 5 minutes et conserve la **dernière version connue** si le campus ne
 répond plus. Sans aucune version connue (campus pas encore déployé), les
 pages du campus affichent une présentation fixe et le bouton « Campus
-Numérique » de l'en-tête garde l'adresse actuelle, `https://campus.groupe2iae.com`.
+Numérique » de l'en-tête mène à l'adresse définitive, `https://campus.2iae.com`.
 
 Ce que le site affiche : le bandeau « ● EN DIRECT » ou « Dans 6 jours… »
 au-dessus de l'en-tête, la section « Au campus numérique » de l'accueil, les pages

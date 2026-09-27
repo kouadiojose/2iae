@@ -1,0 +1,141 @@
+/* Guides du Campus numérique 2IAE : A4, couleurs et typographies du campus.
+   Rendu en PDF par guides/fabriquer.mjs (Chromium). */
+@font-face { font-family: "Manrope"; src: url("../node_modules/@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2") format("woff2"); font-weight: 200 800; }
+@font-face { font-family: "Cormorant"; src: url("../node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-normal.woff2") format("woff2"); font-weight: 600; }
+@font-face { font-family: "Cormorant"; src: url("../node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-italic.woff2") format("woff2"); font-weight: 600; font-style: italic; }
+@font-face { font-family: "Plex Mono"; src: url("../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; }
+@font-face { font-family: "Plex Mono"; src: url("../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); font-weight: 500; }
+
+:root {
+  --orange: #E4793A; --orange-fonce: #C85F22; --orange-profond: #A34C17; --orange-pale: #FFF3EA; --peche: #FFD2B3;
+  --encre: #141414; --texte: #2B2521; --doux: #5C534C; --gris: #8A8078; --ligne: #EADFD5; --creme: #FBF6F2; --nuit: #1B1714; --vert: #1F7A4D;
+}
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: "Manrope", system-ui, sans-serif; color: var(--texte); font-size: 10.6pt; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-feature-settings: "ss01"; }
+
+.page { width: 210mm; height: 297mm; position: relative; overflow: hidden; page-break-after: always; break-after: page; padding: 17mm 16mm 20mm; background: #fff; }
+.page:last-child { page-break-after: auto; break-after: auto; }
+.pied { position: absolute; left: 16mm; right: 16mm; bottom: 9mm; display: flex; justify-content: space-between; align-items: center; font-family: "Plex Mono", monospace; font-size: 7.4pt; letter-spacing: .06em; color: var(--gris); text-transform: uppercase; }
+.pied b { color: var(--orange-fonce); font-weight: 500; }
+
+/* ── Titres ── */
+.surtitre { font-family: "Plex Mono", monospace; font-size: 8pt; letter-spacing: .16em; text-transform: uppercase; color: var(--orange-fonce); margin: 0 0 2.2mm; }
+h1, h2, h3 { margin: 0; color: var(--encre); }
+h2 { font-family: "Cormorant", Georgia, serif; font-weight: 600; font-size: 27pt; line-height: 1.02; letter-spacing: -.01em; margin-bottom: 4mm; }
+h2 em { font-style: italic; color: var(--orange); }
+h3 { font-size: 12.5pt; font-weight: 750; letter-spacing: -.01em; margin-bottom: 1.5mm; }
+.chapeau { font-size: 12pt; line-height: 1.5; color: var(--doux); max-width: 150mm; margin: 0 0 7mm; }
+p { margin: 0 0 3mm; }
+strong { color: var(--encre); font-weight: 750; }
+.barre { width: 16mm; height: 1.4mm; background: var(--orange); border-radius: 1mm; margin: 0 0 6mm; }
+
+/* ── Couverture ── */
+.couverture { background: var(--nuit); color: #fff; padding: 0; }
+.couverture .arc { position: absolute; border-radius: 50%; border: 11mm solid var(--orange); }
+.couverture .arc.a1 { width: 170mm; height: 170mm; right: -62mm; top: -48mm; }
+.couverture .arc.a2 { width: 64mm; height: 64mm; right: 14mm; top: 96mm; border-width: 1.2mm; border-color: rgba(228,121,58,.55); }
+.couverture .fond-points { position: absolute; inset: 0; background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px); background-size: 6mm 6mm; }
+.couverture .contenu { position: absolute; left: 18mm; right: 18mm; bottom: 26mm; }
+.couverture .logo { position: absolute; left: 18mm; top: 18mm; background: #fff; border-radius: 5mm; padding: 4mm 5mm; }
+.couverture .logo img { height: 20mm; display: block; }
+.couverture .public { display: inline-block; font-family: "Plex Mono", monospace; font-size: 8.5pt; letter-spacing: .18em; text-transform: uppercase; color: var(--encre); background: var(--orange); padding: 2mm 4mm; border-radius: 2mm; margin-bottom: 7mm; }
+.couverture h1 { font-family: "Cormorant", Georgia, serif; font-weight: 600; font-size: 50pt; line-height: .95; color: #fff; letter-spacing: -.015em; margin-bottom: 6mm; }
+.couverture h1 em { color: var(--orange); font-style: italic; }
+.couverture .sous { font-size: 13.5pt; line-height: 1.45; color: #E9E1D9; max-width: 140mm; margin-bottom: 11mm; }
+.couverture .meta { display: flex; gap: 8mm; font-family: "Plex Mono", monospace; font-size: 8pt; letter-spacing: .08em; color: #B8ADA3; text-transform: uppercase; border-top: .3mm solid rgba(255,255,255,.18); padding-top: 5mm; }
+.couverture .meta b { display: block; color: #fff; font-weight: 500; margin-top: 1mm; letter-spacing: .04em; }
+
+/* ── Sommaire ── */
+.sommaire { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.sommaire li { display: grid; grid-template-columns: 14mm 1fr auto; align-items: baseline; gap: 3mm; padding: 3.4mm 0; border-bottom: .3mm solid var(--ligne); }
+.sommaire .n { font-family: "Cormorant", serif; font-size: 22pt; color: var(--orange); line-height: 1; }
+.sommaire .t { font-size: 12pt; font-weight: 700; color: var(--encre); }
+.sommaire .t small { display: block; font-weight: 500; font-size: 9.5pt; color: var(--gris); margin-top: .6mm; }
+.sommaire .p { font-family: "Plex Mono", monospace; font-size: 8.5pt; color: var(--gris); }
+.sommaire.serre li { padding: 2.3mm 0; }
+
+/* ── Étapes ── */
+.etapes { display: flex; flex-direction: column; gap: 4.5mm; margin: 0; padding: 0; list-style: none; }
+.etape { display: grid; grid-template-columns: 10mm 1fr; gap: 4mm; align-items: start; }
+.etape .num { width: 10mm; height: 10mm; border-radius: 50%; background: var(--orange); color: var(--encre); display: grid; place-items: center; font-weight: 800; font-size: 12pt; }
+.etape h3 { margin-top: 1.6mm; }
+.etape p { color: var(--doux); margin: 0; }
+
+/* ── Mise en page à deux colonnes ── */
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 9mm; align-items: start; }
+.duo-large { display: grid; grid-template-columns: 1.15fr .85fr; gap: 9mm; align-items: start; }
+.duo-etroit { display: grid; grid-template-columns: .95fr 1.05fr; gap: 9mm; align-items: center; }
+.pile { display: flex; flex-direction: column; gap: 5mm; }
+
+/* ── Cadres de capture ── */
+.navigateur { border-radius: 3mm; overflow: hidden; border: .35mm solid #D9CEC4; box-shadow: 0 3mm 9mm rgba(20,20,20,.12); background: #fff; }
+.navigateur .barre-nav { height: 7mm; background: #F3ECE6; display: flex; align-items: center; gap: 1.4mm; padding: 0 3mm; border-bottom: .3mm solid #E4D9CF; }
+.navigateur .barre-nav i { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: #D5C8BD; display: block; }
+.navigateur .barre-nav span { margin-left: 3mm; flex: 1; height: 4.2mm; border-radius: 2mm; background: #fff; font-family: "Plex Mono", monospace; font-size: 6.4pt; color: var(--gris); display: flex; align-items: center; padding: 0 2.5mm; }
+.navigateur img { display: block; width: 100%; }
+/* Téléphone : une barre d'état blanche (heure, îlot) au-dessus de la capture, comme sur un vrai écran. */
+.telephone { width: 66mm; border-radius: 9.5mm; padding: 2.4mm; background: var(--encre); box-shadow: 0 4mm 11mm rgba(20,20,20,.22); margin: 0 auto; position: relative; }
+.telephone::before { content: ""; position: absolute; top: 4mm; left: 50%; transform: translateX(-50%); width: 16mm; height: 3.8mm; border-radius: 2mm; background: var(--encre); z-index: 2; }
+.telephone::after { content: "9:41"; position: absolute; top: 4mm; left: 9mm; font: 750 6.6pt/3.8mm "Manrope", sans-serif; color: var(--encre); z-index: 2; }
+.telephone img { display: block; width: 100%; border-radius: 7mm; border-top: 7.2mm solid #fff; background: #fff; }
+.telephone.petit { width: 53mm; border-radius: 8mm; padding: 2mm; }
+.telephone.petit::before { top: 3.3mm; width: 12.5mm; height: 3mm; }
+.telephone.petit::after { top: 3.3mm; left: 7mm; font-size: 5.4pt; line-height: 3mm; }
+.telephone.petit img { border-radius: 6mm; border-top-width: 5.8mm; }
+.telephone.grand { width: 72mm; }
+.legende { font-family: "Plex Mono", monospace; font-size: 7.4pt; letter-spacing: .05em; color: var(--gris); margin-top: 2.5mm; text-align: center; }
+.capture-nue { border-radius: 3mm; overflow: hidden; border: .35mm solid var(--ligne); }
+.capture-nue img { display: block; width: 100%; }
+
+/* ── Encadrés ── */
+.encadre { border-radius: 3.5mm; padding: 4.5mm 5mm; background: var(--creme); border-left: 1.6mm solid var(--orange); }
+.encadre .titre { font-family: "Plex Mono", monospace; font-size: 7.6pt; letter-spacing: .14em; text-transform: uppercase; color: var(--orange-fonce); margin-bottom: 1.5mm; }
+.encadre p:last-child { margin-bottom: 0; }
+.encadre.attention { background: #FFF5EE; border-left-color: var(--orange-profond); }
+.encadre.vert { background: #EEF7F1; border-left-color: var(--vert); }
+.encadre.vert .titre { color: var(--vert); }
+.encadre.sombre { background: var(--nuit); color: #E9E1D9; border-left-color: var(--orange); }
+.encadre.sombre strong { color: #fff; }
+
+/* ── Cartes ── */
+.cartes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+.cartes.deux { grid-template-columns: repeat(2, 1fr); }
+.carte { border: .35mm solid var(--ligne); border-radius: 4mm; padding: 4.5mm; background: #fff; }
+.carte .ico { width: 10mm; height: 10mm; border-radius: 3mm; background: var(--orange-pale); color: var(--orange-fonce); display: grid; place-items: center; font-size: 14pt; margin-bottom: 3mm; }
+.carte h3 { font-size: 11pt; }
+.carte p { font-size: 9.4pt; color: var(--doux); margin: 0; }
+
+/* ── Aide-mémoire ── */
+.coches { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2.6mm; }
+.coches li { display: grid; grid-template-columns: 7mm 1fr; gap: 3mm; align-items: start; font-size: 11pt; }
+.coches li::before { content: ""; width: 5.6mm; height: 5.6mm; border: .5mm solid var(--orange); border-radius: 1.4mm; margin-top: .4mm; }
+.heure { font-family: "Plex Mono", monospace; font-size: 8pt; font-weight: 500; color: var(--orange-fonce); letter-spacing: .06em; }
+.touche { display: inline-block; min-width: 5.6mm; padding: .3mm 1.6mm; border: .35mm solid #CFC3B8; border-bottom-width: .8mm; border-radius: 1.4mm; font-family: "Plex Mono", monospace; font-size: 8.4pt; text-align: center; background: #fff; color: var(--encre); }
+.lien { font-family: "Plex Mono", monospace; font-size: 9pt; color: var(--orange-fonce); white-space: nowrap; }
+.tableau { width: 100%; border-collapse: collapse; font-size: 9.6pt; }
+.tableau th { text-align: left; font-family: "Plex Mono", monospace; font-size: 7.4pt; letter-spacing: .1em; text-transform: uppercase; color: var(--gris); font-weight: 500; padding: 2mm 3mm; border-bottom: .4mm solid var(--encre); }
+.tableau td { padding: 2.6mm 3mm; border-bottom: .3mm solid var(--ligne); vertical-align: top; }
+.tableau td:first-child { font-weight: 700; color: var(--encre); }
+.intercalaire { background: var(--orange); }
+.intercalaire .grand { position: absolute; right: -8mm; bottom: -30mm; font-family: "Cormorant", serif; font-size: 300pt; line-height: 1; color: rgba(20,20,20,.12); }
+.intercalaire .contenu { position: absolute; left: 18mm; right: 18mm; top: 50%; transform: translateY(-50%); }
+.intercalaire h2 { font-size: 44pt; color: var(--encre); }
+.intercalaire .surtitre { color: var(--encre); }
+.intercalaire p { font-size: 13pt; color: #2B1A10; max-width: 130mm; }
+.mt { margin-top: 6mm; } .mt2 { margin-top: 10mm; } .mb { margin-bottom: 6mm; }
+
+/* QR code du campus (aide-mémoire). */
+.carte-qr { display: grid; grid-template-columns: 26mm 1fr; gap: 5mm; align-items: center; border: .35mm solid var(--ligne); border-radius: 4mm; padding: 4.5mm; background: #fff; }
+.carte-qr img { width: 26mm; height: 26mm; display: block; }
+.carte-qr h3 { font-size: 11pt; } .carte-qr p { font-size: 9.4pt; color: var(--doux); margin: 0; }
+
+/* Branchements de la salle : quatre éléments reliés par des flèches. */
+.branchements { display: grid; grid-template-columns: 1fr 9mm 1fr 9mm 1fr; align-items: center; gap: 2mm; }
+.branchements .bloc { border: .35mm solid var(--ligne); border-radius: 4mm; padding: 4mm; background: var(--creme); text-align: center; }
+.branchements .bloc .ico { width: 10mm; height: 10mm; margin: 0 auto 2mm; border-radius: 3mm; background: #fff; color: var(--orange-fonce); display: grid; place-items: center; }
+.branchements .bloc b { display: block; font-size: 10.4pt; color: var(--encre); }
+.branchements .bloc span { display: block; font-size: 8.6pt; color: var(--doux); margin-top: .8mm; line-height: 1.35; }
+.branchements .fleche { text-align: center; font-family: "Plex Mono", monospace; font-size: 7pt; color: var(--orange-fonce); line-height: 1.2; }
+.branchements .fleche::before { content: "→"; display: block; font-size: 16pt; line-height: 1; }

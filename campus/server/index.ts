@@ -57,6 +57,24 @@ app.use(
   }),
 );
 
+// Adresse définitive (campus.2iae.com) : une page ouverte sur l'adresse technique de Railway y est
+// renvoyée, chemin compris (liens d'invitation déjà envoyés, favoris). L'API, le service worker et
+// les fichiers restent servis sur l'ancienne adresse pendant la transition (applications installées).
+const hoteCanonique = new URL(config.urlCampus).host;
+app.use((req, res, next) => {
+  const hote = String(req.headers["x-forwarded-host"] || req.headers.host || "");
+  if (
+    req.method === "GET" &&
+    hote.endsWith(".up.railway.app") &&
+    !hoteCanonique.endsWith(".up.railway.app") &&
+    hote !== hoteCanonique &&
+    !/^\/(api|assets|sw\.js|manifest\.webmanifest|icons)(\/|$)/.test(req.path)
+  ) {
+    return res.redirect(301, `${config.urlCampus}${req.originalUrl}`);
+  }
+  next();
+});
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 

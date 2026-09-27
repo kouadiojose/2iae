@@ -18,6 +18,7 @@ import { FicheSite } from "./composants/profil/FicheSite";
 import { Section } from "./composants/profil/Section";
 import { Film, Globe } from "lucide-react";
 import { ChoixFuseau } from "@/modules/visio";
+import { CreditMarkel } from "@/components/ui/credit";
 
 /** Ouvre le bloc désigné par l'ancre (#preferences depuis le menu du compte). */
 function useAncre() {
@@ -92,6 +93,9 @@ export default function PageProfil() {
               Se déconnecter
             </Bouton>
           </div>
+          <p className="flex justify-center pt-2 text-[12.5px] text-texte-gris">
+            <CreditMarkel />
+          </p>
         </div>
       </div>
     </Page>

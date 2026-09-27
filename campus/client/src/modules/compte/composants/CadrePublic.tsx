@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { MessageCircleQuestion } from "lucide-react";
 import { Marque } from "@/components/layout/coquille";
 import { AideWhatsApp, useContactsSites } from "./AideWhatsApp";
+import { CreditMarkel } from "@/components/ui/credit";
 
 export function CadrePublic({ children, identifiant }: { children: ReactNode; identifiant?: string }) {
   const [aide, setAide] = useState(false);
@@ -30,7 +31,10 @@ export function CadrePublic({ children, identifiant }: { children: ReactNode; id
         <main className="flex flex-1 items-start justify-center px-4 pb-10 pt-4 sm:items-center sm:px-7 sm:pt-0">
           <div className="w-full max-w-[420px]">{children}</div>
         </main>
-        <footer className="px-4 pb-6 text-center font-mono text-[11px] text-texte-gris">Groupe Écoles 2IAE International · Campus numérique</footer>
+        <footer className="flex flex-col items-center gap-2 px-4 pb-6 text-center font-mono text-[11px] text-texte-gris">
+          <span>Groupe Écoles 2IAE International · Campus numérique</span>
+          <CreditMarkel className="font-sans text-[12px]" />
+        </footer>
       </div>
       <AideWhatsApp ouverte={aide} onFermer={() => setAide(false)} identifiant={identifiant} />
     </div>

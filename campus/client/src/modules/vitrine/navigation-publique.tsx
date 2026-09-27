@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { SitePublicDto } from "@shared/schema";
 import { useEnDirect, useSitePublicOuSecours } from "./donnees";
 import { lienPreinscription, lienTelephone, lienWhatsappVers, pageActive, PAGES_PRINCIPALES, PAGES_SECONDAIRES, URL_SITE } from "./outils";
+import { CreditMarkel } from "@/components/ui/credit";
 
 // ── Marque ─────────────────────────────────────────────────────────────────
 
@@ -397,6 +398,9 @@ export function PiedPublic({ sansAppel = false }: { sansAppel?: boolean }) {
               Confidentialité
             </Link>
           </span>
+        </div>
+        <div className="-mt-4 flex justify-center text-[12px] text-nuit-doux lg:justify-start">
+          <CreditMarkel sombre />
         </div>
       </div>
     </footer>

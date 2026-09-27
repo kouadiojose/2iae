@@ -111,6 +111,12 @@ export const utilisateurs = campusSchema.table(
      * écrire les rappels à leur heure. Les étudiants gardent l'heure d'Abidjan.
      */
     fuseau: text("fuseau"),
+    /**
+     * Lieux d'où le formateur enseigne (« Nice, France » · Europe/Paris, « Toronto, Canada » ·
+     * America/Toronto), le plus récent d'abord. Choisir un lieu règle d'un coup la localisation
+     * (« depuis Nice » dans les salles) et le fuseau (l'heure « chez vous »).
+     */
+    lieux: jsonb("lieux").$type<LieuEnseignement[]>().notNull().default([]),
     /** Le formateur accepte que sa fiche soit publiée sur www.2iae.com (révocable). */
     consentementSite: boolean("consentement_site").notNull().default(false),
     /** Fiche proposée à la publication, en attente de validation par la direction. */
@@ -192,6 +198,10 @@ export type Site = typeof sites.$inferSelect;
 export type Classe = typeof classes.$inferSelect;
 export type Utilisateur = typeof utilisateurs.$inferSelect;
 export type Fichier = typeof fichiers.$inferSelect;
+
+/** Un lieu d'enseignement : la ville telle qu'affichée (« Nice, France ») et son fuseau IANA. */
+export type LieuEnseignement = { ville: string; fuseau: string };
+export const LIEUX_MAX = 4;
 
 /** Ce que le client reçoit de l'utilisateur connecté (jamais le hash). */
 export type Moi = Omit<Utilisateur, "motDePasseHash" | "jetonAgenda" | "jetonReleve" | "motDePasseExpireLe"> & {

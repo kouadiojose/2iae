@@ -1,6 +1,7 @@
 // Le showreel d'un formateur, prêt à poser sur sa fiche publique
 // (/formateurs/:slug) : <ShowreelFormateur slug={slug} />, et la vitrine des
-// présentations de l'accueil : <ShowreelsAccueil />. Rien ne s'affiche tant
+// présentations de l'accueil : <ShowreelsAccueil />, qui enchaîne les
+// formateurs l'un après l'autre sans s'arrêter. Rien ne s'affiche tant
 // qu'aucune présentation n'est publiée. 16:9 sur un écran large ; sur
 // téléphone, 9:16 comme une « story », avec un lien vers le plein écran.
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -12,7 +13,7 @@ import type { ShowreelPublicDto } from "@shared/schema";
 import { Showreel } from "./Showreel";
 
 /** Le lecteur dans son cadre : paysage, ou portrait quand la place manque. */
-function CadreShowreel({ d, className, pied }: { d: ShowreelPublicDto; className?: string; pied?: ReactNode }) {
+function CadreShowreel({ d, className, pied, onFin, boucle }: { d: ShowreelPublicDto; className?: string; pied?: ReactNode; onFin?: () => void; boucle?: boolean }) {
   const boite = useRef<HTMLDivElement>(null);
   const [etroit, setEtroit] = useState(false);
   useEffect(() => {
@@ -27,7 +28,7 @@ function CadreShowreel({ d, className, pied }: { d: ShowreelPublicDto; className
     <div ref={boite} className={cn("flex flex-col gap-2", className)}>
       <div className={cn("relative overflow-hidden rounded-[24px] bg-encre", etroit && "h-[min(78dvh,calc(100vw*16/9))] max-h-[720px]")}>
         {/* key : changer de formateur relance la présentation depuis le début. */}
-        <Showreel key={d.slug} scenes={d.scenes} formateur={d.formateur} format={etroit ? "portrait" : "paysage"} plein={etroit} autoplay />
+        <Showreel key={d.slug} scenes={d.scenes} formateur={d.formateur} format={etroit ? "portrait" : "paysage"} plein={etroit} autoplay onFin={onFin} boucle={boucle} />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href={pleinEcran} className="inline-flex min-h-[40px] items-center gap-2 font-mono text-xs uppercase tracking-[0.12em] text-texte-gris no-underline hover:text-encre">
@@ -81,6 +82,9 @@ export function ShowreelsAccueil({ className, entete }: { className?: string; en
       <CadreShowreel
         d={d}
         className="w-full"
+        // Enchaînement : à la fin d'une présentation, la suivante démarre (puis retour à la première).
+        onFin={liste.length > 1 ? () => setChoisi((i) => (Math.min(i, liste.length - 1) + 1) % liste.length) : undefined}
+        boucle={liste.length === 1}
         pied={
           d.urlFiche ? (
             <Link href={new URL(d.urlFiche).pathname} className="inline-flex min-h-[40px] items-center gap-2 text-sm font-semibold no-underline">

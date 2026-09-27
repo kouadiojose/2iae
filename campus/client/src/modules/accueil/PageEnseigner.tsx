@@ -34,7 +34,7 @@ import { Badge, BadgeDirect, EtatVide, Erreur, Squelette } from "@/components/ui
 import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
 import type { AccueilFormateur, CoursFormateur, ElementAgenda, SeanceFormateur } from "@shared/schema";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
-import { CartePretClasse, ConfirmationFuseau } from "@/modules/visio";
+import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
 
 const MINUTE = 60_000;
 
@@ -65,7 +65,6 @@ export default function PageEnseigner() {
     );
   }
 
-  const ville = data.localisation?.split(",")[0]?.trim();
 
   return (
     <Page className="gap-7">
@@ -77,15 +76,15 @@ export default function PageEnseigner() {
           <h1 className="titre-page">
             {data.salutation} {data.prenom}.
           </h1>
-          {ville && <p className="text-[15px] text-texte-pale">Vous enseignez depuis {ville}. Les horaires sont donnés à l'heure d'Abidjan et à la vôtre.</p>}
         </div>
         <LienBouton href="/annonces?nouvelle=1" variante="contour" icone={<Megaphone className="h-4 w-4" />}>
           Écrire à mes étudiants
         </LienBouton>
       </header>
 
-      {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois. */}
+      {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois ; puis le lieu d'où il enseigne, en un clic. */}
       <ConfirmationFuseau />
+      <LieuDuCours />
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">

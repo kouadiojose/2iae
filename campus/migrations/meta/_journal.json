@@ -43,6 +43,13 @@
       "when": 1790493165665,
       "tag": "0005_disposition_scene",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790495213708,
+      "tag": "0006_lieux_enseignement",
+      "breakpoints": true
     }
   ]
 }

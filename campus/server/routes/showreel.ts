@@ -189,7 +189,12 @@ function villeDuFuseau(fuseau: string): string {
   return traduites[fin] ?? fin.replace(/_/g, " ");
 }
 
-function lienCampusDe(ctx: ContexteCampus, f: Pick<Utilisateur, "id" | "nom">, fuseau: string | null, coursRepli: { titre: string; code: string; couleur: string } | null): LienCampusShowreel {
+function lienCampusDe(
+  ctx: ContexteCampus,
+  f: Pick<Utilisateur, "id" | "nom"> & Partial<Pick<Utilisateur, "localisation" | "fuseau">>,
+  fuseau: string | null,
+  coursRepli: { titre: string; code: string; couleur: string } | null,
+): LienCampusShowreel {
   let miens = ctx.creneaux.filter((l) => l.c.intervenantId === f.id);
   if (!miens.length) miens = ctx.creneaux.filter((l) => !l.c.intervenantId && nomCorrespond(l.c.intervenantNom, f));
   const vide: LienCampusShowreel = {
@@ -224,7 +229,8 @@ function lienCampusDe(ctx: ContexteCampus, f: Pick<Utilisateur, "id" | "nom">, f
     if (d && d !== c.heureDebut) {
       heureDebutLocale = d;
       heureFinLocale = heureDans(date, c.heureFin, fuseau);
-      ville = villeDuFuseau(fuseau);
+      // La ville du lieu où il enseigne (« Nice ») plutôt que celle qui nomme le fuseau (« Paris »).
+      ville = f.fuseau === fuseau && f.localisation?.trim() ? f.localisation.split(",")[0].trim() : villeDuFuseau(fuseau);
     }
   }
   return {

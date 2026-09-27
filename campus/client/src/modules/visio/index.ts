@@ -9,4 +9,5 @@ export { CadreDaily, type ParticipantCadre, type RoleCadre } from "./CadreDaily"
 export { OutilsStudio } from "./OutilsStudio";
 export { CartePretClasse } from "./CartePretClasse";
 export { ChoixFuseau, ConfirmationFuseau } from "./Fuseau";
+export { LieuDuCours } from "./Lieu";
 export { useOptionsVisio } from "./options";

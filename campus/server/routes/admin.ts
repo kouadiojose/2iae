@@ -36,6 +36,7 @@ import {
 import { creerJeton, lienActivation, reinitialiserCode } from "../activation";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { prevenirSite } from "../site";
+import { fuseauValide } from "../visio-daily";
 import { iaDisponible } from "../ia";
 import { adresseDeDemonstration, ADRESSE_DEMO_REFUSEE, DOMAINE_DEMO } from "../demo-constantes";
 import { lireVitrine, oublierVitrine } from "./public";
@@ -111,6 +112,7 @@ import {
   type ReleveParent,
   type ConsommationIa,
   type BudgetIa,
+  LIEUX_MAX,
 } from "@shared/schema";
 
 // ── Outils communs ─────────────────────────────────────────────────────────
@@ -863,6 +865,8 @@ const schemaModificationCompte = z.object({
   classeId: z.number().int().positive().nullable().optional(),
   titre: optionnel(z.string().trim().max(120)),
   localisation: optionnel(z.string().trim().max(120)),
+  /** Formateurs : lieux d'enseignement (le premier devient la localisation et le fuseau). */
+  lieux: z.array(z.object({ ville: z.string().trim().min(2).max(80), fuseau: z.string().trim().min(3).max(64) })).max(LIEUX_MAX).optional(),
   actif: z.boolean().optional(),
 });
 
@@ -1778,6 +1782,16 @@ export function enregistrerAdmin(app: Express) {
       if (d.telephone !== undefined) maj.telephone = telephoneSaisi(d.telephone);
       if (d.titre !== undefined) maj.titre = d.titre;
       if (d.localisation !== undefined) maj.localisation = d.localisation;
+      if (d.lieux !== undefined) {
+        if ((d.role ?? avant.role) !== "formateur") throw invalide("Les lieux d'enseignement sont réservés aux formateurs.");
+        const inconnu = d.lieux.find((l) => !fuseauValide(l.fuseau));
+        if (inconnu) throw invalide(`Fuseau horaire inconnu : ${inconnu.fuseau}.`);
+        maj.lieux = d.lieux;
+        if (d.lieux[0]) {
+          maj.localisation = d.lieux[0].ville;
+          maj.fuseau = d.lieux[0].fuseau;
+        }
+      }
 
       // Classe et campus selon le rôle (celui d'après la modification).
       if (role === "etudiant") {

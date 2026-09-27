@@ -14,6 +14,7 @@ import { seanceVisible, enseigneCours, idsCoursAccessibles } from "./acces";
 import { planifier } from "./taches";
 import * as visio from "./visio";
 import { stockageReplaysDisponible } from "./stockage-replays";
+import { prevenirSite } from "./site";
 import {
   seances,
   replaysStockes,
@@ -29,6 +30,7 @@ import {
   type PretClasseDto,
   type ReglagesVisioDto,
   type PreferencesUtilisateur,
+  LIEUX_MAX,
 } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -288,6 +290,49 @@ export function enregistrerVisioDaily(app: Express) {
       const [apres] = await db.update(utilisateurs).set({ fuseau }).where(eq(utilisateurs.id, u.id)).returning();
       oublierUtilisateur(u.id);
       if (u.fuseau !== fuseau) await db.insert(journal).values({ utilisateurId: u.id, action: "fuseau_choisi", details: { fuseau } });
+      res.json(await versMoi(apres));
+    }),
+  );
+
+  // ── Lieu d'enseignement : « depuis Nice » et l'heure de Nice, en un geste ──
+  // Le formateur qui enseigne tantôt de Nice, tantôt de Toronto choisit son lieu : la
+  // localisation affichée aux salles et son fuseau changent ensemble, et le lieu est
+  // gardé dans sa liste pour la prochaine fois.
+  app.put(
+    "/api/compte/lieu",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur") throw interdit("Le lieu d'enseignement concerne les formateurs.");
+      const { ville, fuseau } = valider(z.object({ ville: z.string().trim().min(2).max(80), fuseau: z.string().trim().min(3).max(64) }), req.body);
+      if (!fuseauValide(fuseau)) throw new ErreurHttp(400, "Ce fuseau horaire est inconnu. Choisissez une ville dans la liste.");
+      const cle = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ");
+      // Le lieu quitté reste dans la liste (il n'y figurait pas s'il venait de l'ancienne fiche seule).
+      const ancien = u.localisation && u.fuseau ? [{ ville: u.localisation, fuseau: u.fuseau }] : [];
+      const lieux = [{ ville, fuseau }, ...ancien, ...(u.lieux ?? [])]
+        .filter((l, i, liste) => liste.findIndex((x) => cle(x.ville) === cle(l.ville)) === i)
+        .slice(0, LIEUX_MAX);
+      const [apres] = await db.update(utilisateurs).set({ localisation: ville, fuseau, lieux }).where(eq(utilisateurs.id, u.id)).returning();
+      oublierUtilisateur(u.id);
+      if (u.localisation !== ville || u.fuseau !== fuseau) {
+        await db.insert(journal).values({ utilisateurId: u.id, action: "lieu_choisi", details: { ville, fuseau } });
+        // La ville figure sur la fiche publique du formateur (site 2iae.com).
+        if (apres.publierSurSite && u.localisation !== ville) prevenirSite("formateur modifié");
+      }
+      res.json(await versMoi(apres));
+    }),
+  );
+
+  app.delete(
+    "/api/compte/lieu",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur") throw interdit("Le lieu d'enseignement concerne les formateurs.");
+      const { ville } = valider(z.object({ ville: z.string().trim().min(1).max(80) }), req.body);
+      const lieux = (u.lieux ?? []).filter((l) => l.ville !== ville);
+      const [apres] = await db.update(utilisateurs).set({ lieux }).where(eq(utilisateurs.id, u.id)).returning();
+      oublierUtilisateur(u.id);
       res.json(await versMoi(apres));
     }),
   );

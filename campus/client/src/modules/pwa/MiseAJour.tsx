@@ -42,7 +42,7 @@ function BandeauMiseAJour({ onAccepter, onFermer }: { onAccepter: () => void; on
 }
 
 /** Affiche le bandeau (une seule fois à la fois). */
-export function proposerMiseAJour(accepter: () => void) {
+export function proposerMiseAJour(accepter: () => void, surRefus?: () => void) {
   if (document.getElementById("campus-mise-a-jour")) return;
   const hote = document.createElement("div");
   hote.id = "campus-mise-a-jour";
@@ -51,6 +51,7 @@ export function proposerMiseAJour(accepter: () => void) {
   const fermer = () => {
     racine.unmount();
     hote.remove();
+    surRefus?.();
   };
   racine.render(<BandeauMiseAJour onAccepter={accepter} onFermer={fermer} />);
 }

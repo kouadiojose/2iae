@@ -13,7 +13,7 @@ import { Fenetre } from "@/components/ui/fenetre";
 import { Champ, ZoneTexte, Interrupteur } from "@/components/ui/champs";
 import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toast, toastErreur } from "@/components/ui/toast";
-import { EmetteurRadio, TestMicroCamera } from "@/modules/visio";
+import { EmetteurRadio, LieuDuCours, TestMicroCamera } from "@/modules/visio";
 import { Scene } from "./scene";
 import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, type ModeScene } from "./presentateur";
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
@@ -154,13 +154,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 onMicroDaily={observation ? undefined : setMicro}
               />
             </div>
-            <VignettesSalles
-              campus={etat.campus}
-              paroleSiteId={paroleSiteId}
-              onChoisir={observation || !enDirect ? undefined : (c) => donnerParole(seance.id, { siteId: c.siteId })}
-              // La visio du campus montre déjà la grille des cinq salles : pas de second jeu d'images.
-              compactes={!observation && seance.fournisseur === "campus" && !(etat.planB ?? seance.planB)}
-            />
+            {/* La bande des diapos juste sous la scène (on s'en sert sans cesse), les salles plus bas. */}
+            {!observation && <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onAller={(i) => void allerDiapo(i)} />}
             {!observation && (seance.fournisseur === "daily" || seance.fournisseur === "campus" || etat.parole) && !etat.planB && (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {(seance.fournisseur === "daily" || seance.fournisseur === "campus") && (
@@ -180,9 +175,13 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 )}
               </div>
             )}
-            {!observation && (
-              <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onAller={(i) => void allerDiapo(i)} />
-            )}
+            <VignettesSalles
+              campus={etat.campus}
+              paroleSiteId={paroleSiteId}
+              onChoisir={observation || !enDirect ? undefined : (c) => donnerParole(seance.id, { siteId: c.siteId })}
+              // La visio du campus montre déjà la grille des cinq salles : pas de second jeu d'images.
+              compactes={!observation && seance.fournisseur === "campus" && !(etat.planB ?? seance.planB)}
+            />
           </div>
 
           <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !avecDiapos && "xl:order-3")}>
@@ -640,6 +639,8 @@ function Coulisses({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirect
           </span>
         ))}
       </div>
+      {/* « José Kouadio · depuis Nice » : le lieu que les salles verront, changeable avant le direct. */}
+      <LieuDuCours nuit compact />
       <details className="rounded-xl bg-nuit-bulle p-3">
         <summary className="cursor-pointer text-[14px] font-bold">Tester mon micro et ma caméra</summary>
         <div className="pt-3">

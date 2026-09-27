@@ -10,6 +10,9 @@
 import { navigate } from "wouter/use-browser-location";
 // Attrape « beforeinstallprompt » dès le démarrage (Chrome l'envoie tôt).
 import "./installation";
+// Le bandeau fait partie du code principal : chargé à la demande, son fichier aurait déjà disparu
+// du serveur au moment précis où il sert (une nouvelle version vient de remplacer l'ancienne).
+import { proposerMiseAJour } from "./MiseAJour";
 
 /**
  * Empreinte du build : le nom du fichier JS principal (/assets/index-XXXX.js)
@@ -24,7 +27,11 @@ function versionDuBuild(): string {
 /** Empreinte du build en ligne (le JS principal que référence la page), null si le réseau ne répond pas. */
 async function versionEnLigne(): Promise<string | null> {
   try {
-    const r = await fetch("/", { cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(8000) });
+    const r = await fetch("/", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(8000),
+    });
     if (!r.ok) return null;
     const m = (await r.text()).match(/\/assets\/index-([A-Za-z0-9_-]{6,})\.js/);
     return m ? m[1] : null;
@@ -34,20 +41,31 @@ async function versionEnLigne(): Promise<string | null> {
 }
 
 let enregistrement: Promise<ServiceWorkerRegistration | null> | null = null;
+let enregistrementCourant: ServiceWorkerRegistration | null = null;
 let miseAJourAcceptee = false;
+/** « Plus tard » : le bandeau ne revient pas avant une heure. */
+let refuseeLe = 0;
 
 /** Enregistrement du service worker (créé au besoin). null si le navigateur ne les gère pas. */
 export function obtenirEnregistrement(): Promise<ServiceWorkerRegistration | null> {
-  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return Promise.resolve(null);
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator))
+    return Promise.resolve(null);
   if (!enregistrement) {
     enregistrement = navigator.serviceWorker
-      .register(`/sw.js?v=${versionDuBuild()}`, { scope: "/", updateViaCache: "none" })
+      .register(`/sw.js?v=${versionDuBuild()}`, {
+        scope: "/",
+        updateViaCache: "none",
+      })
       .then((reg) => {
+        enregistrementCourant = reg;
         surveillerMisesAJour(reg);
         return reg;
       })
       .catch((e: unknown) => {
-        console.warn("[pwa] service worker non enregistré :", (e as Error).message);
+        console.warn(
+          "[pwa] service worker non enregistré :",
+          (e as Error).message,
+        );
         enregistrement = null;
         return null;
       });
@@ -55,24 +73,51 @@ export function obtenirEnregistrement(): Promise<ServiceWorkerRegistration | nul
   return enregistrement;
 }
 
-function proposer(travailleur: ServiceWorker) {
-  void import("./MiseAJour").then((m) =>
-    m.proposerMiseAJour(() => {
+const versionDu = (travailleur: ServiceWorker) =>
+  new URL(travailleur.scriptURL).searchParams.get("v");
+
+/**
+ * Un nouveau service worker attend. Si la page tourne déjà sur sa version (elle
+ * a été rechargée depuis le réseau après la mise en ligne), il n'y a rien à
+ * proposer : on l'active en silence. Le bandeau n'apparaît que si la page est
+ * vraiment plus ancienne que ce que le serveur a en ligne.
+ */
+function versionEnAttente(travailleur: ServiceWorker) {
+  if (versionDu(travailleur) === versionDuBuild()) {
+    travailleur.postMessage({ type: "SKIP_WAITING" });
+    return;
+  }
+  proposer();
+}
+
+function proposer() {
+  if (Date.now() - refuseeLe < 60 * 60_000) return;
+  proposerMiseAJour(
+    () => {
       miseAJourAcceptee = true;
-      travailleur.postMessage({ type: "SKIP_WAITING" });
-    }),
+      // Le service worker en attente au moment du clic (un plus récent a pu remplacer celui du bandeau).
+      const enAttente = enregistrementCourant?.waiting;
+      enAttente?.postMessage({ type: "SKIP_WAITING" });
+      // Rien en attente, ou l'activation tarde : on recharge quand même (la page vient du réseau).
+      window.setTimeout(() => window.location.reload(), enAttente ? 4000 : 0);
+    },
+    () => {
+      refuseeLe = Date.now();
+    },
   );
 }
 
 function surveillerMisesAJour(reg: ServiceWorkerRegistration) {
-  // Une version attendait déjà (onglet rouvert) : on la propose.
-  if (reg.waiting && navigator.serviceWorker.controller) proposer(reg.waiting);
+  // Une version attendait déjà (onglet rouvert) : activée en silence si c'est la nôtre, proposée sinon.
+  if (reg.waiting && navigator.serviceWorker.controller)
+    versionEnAttente(reg.waiting);
   reg.addEventListener("updatefound", () => {
     const nouveau = reg.installing;
     if (!nouveau) return;
     nouveau.addEventListener("statechange", () => {
       // « installed » avec un contrôleur existant = mise à jour (et non première installation).
-      if (nouveau.state === "installed" && navigator.serviceWorker.controller) proposer(nouveau);
+      if (nouveau.state === "installed" && navigator.serviceWorker.controller)
+        versionEnAttente(nouveau);
     });
   });
   // Rechargement seulement après l'accord de la personne (la première installation prend aussi le contrôle).
@@ -92,12 +137,14 @@ function surveillerMisesAJour(reg: ServiceWorkerRegistration) {
     if (Date.now() - derniereRecherche < 5 * 60_000) return;
     derniereRecherche = Date.now();
     if (reg.waiting && navigator.serviceWorker.controller) {
-      proposer(reg.waiting);
+      versionEnAttente(reg.waiting);
       return;
     }
     void versionEnLigne().then((v) => {
       if (v && v !== versionDuBuild()) {
-        void navigator.serviceWorker.register(`/sw.js?v=${v}`, { scope: "/", updateViaCache: "none" }).catch(() => undefined);
+        void navigator.serviceWorker
+          .register(`/sw.js?v=${v}`, { scope: "/", updateViaCache: "none" })
+          .catch(() => undefined);
       } else void reg.update().catch(() => undefined);
     });
   };
@@ -112,14 +159,19 @@ async function desinscrire() {
   const regs = await navigator.serviceWorker.getRegistrations();
   await Promise.all(regs.map((r) => r.unregister()));
   const noms = await caches.keys();
-  await Promise.all(noms.filter((n) => n.startsWith("campus-")).map((n) => caches.delete(n)));
+  await Promise.all(
+    noms.filter((n) => n.startsWith("campus-")).map((n) => caches.delete(n)),
+  );
   console.info("[pwa] service worker retiré.");
 }
 
 /** Le réseau répond-il vraiment ? (navigator.onLine ment souvent en 4G faible.) */
 export async function reseauJoignable(): Promise<boolean> {
   try {
-    const r = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+    const r = await fetch("/api/health", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    });
     return r.ok;
   } catch {
     return false;
@@ -137,7 +189,10 @@ function gererChargementsRates() {
     void reseauJoignable().then((ok) => {
       if (!ok) {
         const page = window.location.pathname + window.location.search;
-        if (!window.location.pathname.startsWith("/hors-ligne")) window.location.assign(`/hors-ligne?page=${encodeURIComponent(page)}`);
+        if (!window.location.pathname.startsWith("/hors-ligne"))
+          window.location.assign(
+            `/hors-ligne?page=${encodeURIComponent(page)}`,
+          );
         return;
       }
       const cle = "campus:rechargement-version";
@@ -157,7 +212,13 @@ function gererChargementsRates() {
 function ecouterMessages() {
   navigator.serviceWorker.addEventListener("message", (m: MessageEvent) => {
     const d = m.data as { type?: string; lien?: string } | string;
-    if (typeof d === "object" && d?.type === "naviguer" && typeof d.lien === "string" && d.lien.startsWith("/")) navigate(d.lien);
+    if (
+      typeof d === "object" &&
+      d?.type === "naviguer" &&
+      typeof d.lien === "string" &&
+      d.lien.startsWith("/")
+    )
+      navigate(d.lien);
   });
 }
 
@@ -175,10 +236,15 @@ export function enregistrerServiceWorker() {
   const local = ["localhost", "127.0.0.1"].includes(window.location.hostname);
   if (!import.meta.env.PROD && !(local && params.get("sw") === "1")) {
     // En développement, un service worker déjà enregistré (?sw=1 ou rappels) reste surveillé.
-    void navigator.serviceWorker.getRegistration().then((reg) => reg && void obtenirEnregistrement());
+    void navigator.serviceWorker
+      .getRegistration()
+      .then((reg) => reg && void obtenirEnregistrement());
     return;
   }
   // Après le chargement de la page : le service worker ne ralentit pas le premier affichage.
   if (document.readyState === "complete") void obtenirEnregistrement();
-  else window.addEventListener("load", () => void obtenirEnregistrement(), { once: true });
+  else
+    window.addEventListener("load", () => void obtenirEnregistrement(), {
+      once: true,
+    });
 }

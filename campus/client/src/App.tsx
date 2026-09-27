@@ -75,6 +75,8 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
   }
 
   if (!moi) {
+    // L'ordinateur d'une salle pas encore installé : la page d'installation de l'écran, pas la connexion.
+    if (chemin === "/salle") return <Redirect to="/ecran" replace />;
     const retour = encodeURIComponent(window.location.pathname + window.location.search);
     return <Redirect to={`/connexion?retour=${retour}`} replace />;
   }

@@ -72,8 +72,12 @@ const RENTREE_PAR_DEFAUT = new Date("2026-09-28T08:30:00Z");
 const RECENT_MS = 7 * JOUR_MS;
 /** Un essai visio compte s'il a réussi dans les 14 derniers jours. */
 const ESSAI_RECENT_MS = 14 * JOUR_MS;
-/** Lien et code d'installation d'un écran : 3 jours (de quoi passer un week-end). */
-const DUREE_INSTALLATION_MS = 3 * JOUR_MS;
+/**
+ * Lien et code d'installation d'un écran : 14 jours, une seule fois. Le temps
+ * que le gestionnaire de la salle reçoive le lien et son guide, et trouve le
+ * bon moment ; un nouveau lien annule le précédent.
+ */
+const DUREE_INSTALLATION_MS = 14 * JOUR_MS;
 
 const fmtJour = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 const fmtJourCourt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -819,7 +823,8 @@ const hacherCodeEcran = (code: string) => hacherJeton(`ecran:${code}`);
 /**
  * Code d'installation d'un écran : 8 caractères pris parmi 31 lettres et chiffres sans ambiguïté (ni 0/O,
  * ni 1/I/L), soit 31^8, environ 850 milliards de codes. Deviner l'un des cinq codes en circulation reste hors
- * de portée même avec des milliers d'adresses pendant les 3 jours de validité : il n'y a donc plus de plafond
+ * de portée pendant les 14 jours de validité (10 000 adresses au rythme permis, 10 essais par quart d'heure :
+ * moins d'une chance sur mille ; le lien, lui, porte 24 octets aléatoires) : il n'y a donc plus de plafond
  * d'échecs commun à tout le campus, que quelques adresses suffisaient à remplir pour bloquer l'installation
  * des vraies salles. Restent les essais limités par adresse (ou par réseau IPv6).
  */

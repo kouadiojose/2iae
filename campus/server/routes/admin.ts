@@ -1854,6 +1854,8 @@ export function enregistrerAdmin(app: Express) {
       const c = await compteGere(u, idParam(req));
       if (c.id === u.id) throw invalide("Pour changer votre propre code, passez par votre profil.");
       if (!c.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
+      // Un nouveau code couperait l'écran de la salle : il se réinstalle avec son propre lien.
+      if (c.role === "salle") throw invalide("Un écran de salle ne reçoit pas de code : utilisez « Installer l'écran de la salle ».");
       const { code, lien } = await reinitialiserCode(c.id, u.id);
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
       const reponse: CodeRemis = { code, lien, whatsapp: lienWhatsApp(c.telephone, messageCode(c, code, lien, expireLe)), expireLe: expireLe.toISOString() };
@@ -2099,7 +2101,8 @@ export function enregistrerAdmin(app: Express) {
       const demandes = [...new Set(utilisateurIds)];
       const preparer = async (t?: Travail): Promise<LotFiches> => {
         const trouves = await selectionComptes().where(and(inArray(utilisateurs.id, demandes), eq(utilisateurs.actif, true), comptesVisibles(u)));
-        const gerables = trouves.filter((c) => c.id !== u.id && peutGerer(u, { role: c.role, siteId: c.siteId }));
+        // Jamais d'écran de salle : une fiche lui donnerait un nouveau code et couperait l'écran.
+        const gerables = trouves.filter((c) => c.id !== u.id && c.role !== "salle" && peutGerer(u, { role: c.role, siteId: c.siteId }));
         const fiches = await remettreCodes(u, gerables, t);
         fiches.sort((a, b) => (a.classe ?? "").localeCompare(b.classe ?? "") || a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
         await journaliser(u, "fiches_imprimees", { nombre: fiches.length });

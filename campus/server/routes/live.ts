@@ -935,10 +935,13 @@ async function diffuserCampus(seanceId: number, seulementSiChange = false) {
 
 const versDiapos = (s: Pick<Seance, "diapos">): DiapoDto[] => s.diapos.map((fichierId, index) => ({ index, fichierId, url: urlFichier(fichierId) }));
 
+/** diapoCourante négative : diapo masquée (« Caméra seule ») ; -(n + 1) garde la diapo n où reprendre. */
 function diapoCourante(s: Pick<Seance, "diapos" | "diapoCourante">) {
   const total = s.diapos.length;
-  const index = total ? Math.min(Math.max(0, s.diapoCourante), total - 1) : 0;
-  return { index, total, url: total ? urlFichier(s.diapos[index]) : null };
+  const masquee = s.diapoCourante < 0;
+  const brut = masquee ? -s.diapoCourante - 1 : s.diapoCourante;
+  const index = total ? Math.min(Math.max(0, brut), total - 1) : 0;
+  return { index, total, url: total && !masquee ? urlFichier(s.diapos[index]) : null, masquee };
 }
 
 /** pdftoppm (poppler) est-il installé ? Sinon, les diapos se déposent en images. */
@@ -2193,9 +2196,13 @@ export function enregistrerLive(app: Express) {
       const { ordre } = valider(z.object({ ordre: z.array(z.number().int().positive()).max(200) }), req.body);
       const connus = new Set(s.diapos);
       if (ordre.some((id) => !connus.has(id)) || new Set(ordre).size !== ordre.length) throw invalide("Liste de diapos invalide.");
-      const courante = s.diapos[s.diapoCourante];
-      const nouvelIndex = Math.max(0, ordre.indexOf(courante));
-      const [maj] = await db.update(seances).set({ diapos: ordre, diapoCourante: nouvelIndex }).where(eq(seances.id, s.id)).returning();
+      const avant = diapoCourante(s);
+      const nouvelIndex = Math.max(0, ordre.indexOf(s.diapos[avant.index]));
+      const [maj] = await db
+        .update(seances)
+        .set({ diapos: ordre, diapoCourante: avant.masquee ? -nouvelIndex - 1 : nouvelIndex })
+        .where(eq(seances.id, s.id))
+        .returning();
       publier(canal(s.id), "diapo", diapoCourante(maj));
       res.json(versDiapos(maj));
     }),
@@ -2208,11 +2215,15 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceAnimee(u, idParam(req));
-      const { index } = valider(z.object({ index: z.number().int().min(0) }), req.body);
+      const { index, masquer } = valider(z.object({ index: z.number().int().min(0), masquer: z.boolean().optional() }), req.body);
       if (!s.diapos.length) throw invalide("Aucune diapo déposée pour cette séance.");
       const borne = Math.min(index, s.diapos.length - 1);
-      const [maj] = await db.update(seances).set({ diapoCourante: borne }).where(eq(seances.id, s.id)).returning();
-      if (s.statut === "en_direct") await consigner(s.id, "diapo", { index: borne });
+      const [maj] = await db
+        .update(seances)
+        .set({ diapoCourante: masquer ? -borne - 1 : borne })
+        .where(eq(seances.id, s.id))
+        .returning();
+      if (s.statut === "en_direct") await consigner(s.id, "diapo", { index: borne, masquee: Boolean(masquer) });
       const etat = diapoCourante(maj);
       publier(canal(s.id), "diapo", etat);
       res.json(etat);

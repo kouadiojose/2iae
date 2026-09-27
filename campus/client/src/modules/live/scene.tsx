@@ -58,6 +58,11 @@ export function Scene(p: PropsScene) {
   // Visio du campus côté formateur : la grille des cinq salles prend la hauteur dont elle a
   // besoin (sur téléphone, 2 colonnes × 3 rangées ne tiennent pas dans un cadre 16/9).
   const libre = !planB && ((role === "etudiant" && (mode === "radio" || mode === "compagnon")) || (role === "formateur" && seance.fournisseur === "campus") || (seance.fournisseur === "daily" && secoursRadio));
+  // Diapo en grand pour tous ceux qui suivent en vidéo (écrans de salle, étudiants, équipe), l'intervenant
+  // en vignette : c'est la diapo que la salle doit lire. Le formateur garde sa visio plein cadre (sa bande
+  // de diapos est sous la scène). La vignette reste le MÊME élément : la visio ne se recharge jamais.
+  const visio = seance.fournisseur === "daily" || seance.fournisseur === "campus";
+  const diapoEnGrand = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url);
   return (
     <div
       className={cn(
@@ -67,7 +72,19 @@ export function Scene(p: PropsScene) {
         p.className,
       )}
     >
-      {contenu}
+      {diapoEnGrand && <DiapoCourante etat={etat} className="absolute inset-0" />}
+      <div
+        className={
+          diapoEnGrand
+            ? cn(
+                "absolute z-10 aspect-video overflow-hidden rounded-xl border-2 border-nuit-ligne bg-nuit-carte shadow-2xl",
+                p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]",
+              )
+            : "contents"
+        }
+      >
+        {contenu}
+      </div>
       {parole && (
         <div
           className={cn(

@@ -59,8 +59,11 @@ export default function Studio({ seance, observation = false }: { seance: Seance
       const actuel = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.diapo;
       if (!actuel?.total) return;
       const index = Math.min(actuel.total - 1, Math.max(0, actuel.index + delta));
-      if (index === actuel.index) return;
-      queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) => (x ? { ...x, diapo: { ...x.diapo, index, url: seance.diapos[index]?.url ?? x.diapo.url } } : x));
+      // Changer de diapo la remontre aux salles si elle était masquée (« Caméra seule »).
+      if (index === actuel.index && !actuel.masquee) return;
+      queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) =>
+        x ? { ...x, diapo: { ...x.diapo, index, masquee: false, url: seance.diapos[index]?.url ?? x.diapo.url } } : x,
+      );
       try {
         await post(`/api/seances/${seance.id}/diapo`, { index });
       } catch (e) {
@@ -69,6 +72,21 @@ export default function Studio({ seance, observation = false }: { seance: Seance
     },
     [seance.id, seance.diapos],
   );
+
+  // « Caméra seule » : la diapo disparaît des écrans de salle et des téléphones, le formateur plein cadre.
+  const basculerDiapo = useCallback(async () => {
+    const actuel = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.diapo;
+    if (!actuel?.total) return;
+    const masquer = !actuel.masquee;
+    queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) =>
+      x ? { ...x, diapo: { ...x.diapo, masquee: masquer, url: masquer ? null : (seance.diapos[x.diapo.index]?.url ?? x.diapo.url) } } : x,
+    );
+    try {
+      await post(`/api/seances/${seance.id}/diapo`, { index: actuel.index, masquer });
+    } catch (e) {
+      toastErreur(e);
+    }
+  }, [seance.id, seance.diapos]);
   useEffect(() => {
     if (observation) return;
     const surTouche = (e: KeyboardEvent) => {
@@ -164,7 +182,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 )}
               </div>
             )}
-            {!observation && <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} />}
+            {!observation && <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onBasculer={basculerDiapo} />}
           </div>
 
           <aside className="order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau lg:order-2 xl:order-3">
@@ -566,7 +584,7 @@ function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirec
 
 // ── Diapos ─────────────────────────────────────────────────────────────────
 
-function BandeDiapos({ seance, etat, onChanger }: { seance: SeanceDetailDto; etat: EtatDirectDto; onChanger: (delta: number) => void }) {
+function BandeDiapos({ seance, etat, onChanger, onBasculer }: { seance: SeanceDetailDto; etat: EtatDirectDto; onChanger: (delta: number) => void; onBasculer: () => void }) {
   if (!seance.diapos.length) {
     return (
       <p className="rounded-[18px] bg-nuit-panneau p-4 text-center text-[14px] text-nuit-doux">
@@ -582,8 +600,21 @@ function BandeDiapos({ seance, etat, onChanger }: { seance: SeanceDetailDto; eta
     <div className="flex flex-col gap-2 rounded-[18px] bg-nuit-panneau p-3">
       <div className="flex items-center justify-between gap-2">
         <Bouton variante="nuit" taille="sm" onClick={() => onChanger(-1)} disabled={etat.diapo.index === 0} icone={<ChevronLeft className="h-5 w-5" />} aria-label="Diapo précédente" className="min-h-11 min-w-11" />
-        <span className="font-mono text-[12px] text-orange-peche">
-          Diapo {etat.diapo.index + 1} / {etat.diapo.total} · touches ← →
+        <span className="flex min-w-0 flex-col items-center gap-1 text-center sm:flex-row sm:gap-3">
+          <span className="font-mono text-[12px] text-orange-peche">
+            Diapo {etat.diapo.index + 1} / {etat.diapo.total} · touches ← →
+          </span>
+          <button
+            type="button"
+            onClick={onBasculer}
+            aria-pressed={Boolean(etat.diapo.masquee)}
+            className={cn(
+              "min-h-9 rounded-full px-3 text-[12px] font-semibold transition-colors",
+              etat.diapo.masquee ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne",
+            )}
+          >
+            {etat.diapo.masquee ? "Montrer la diapo aux salles" : "Caméra seule"}
+          </button>
         </span>
         <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={etat.diapo.index >= etat.diapo.total - 1} icone={<ChevronRight className="h-5 w-5" />} aria-label="Diapo suivante" className="min-h-11 min-w-11" />
       </div>
@@ -592,7 +623,7 @@ function BandeDiapos({ seance, etat, onChanger }: { seance: SeanceDetailDto; eta
           <button
             key={d.fichierId}
             onClick={() => onChanger(d.index - etat.diapo.index)}
-            className={cn("relative h-14 w-24 shrink-0 overflow-hidden rounded-lg border-2", d.index === etat.diapo.index ? "border-orange" : d.index === etat.diapo.index + 1 ? "border-orange-peche/50" : "border-transparent")}
+            className={cn("relative h-14 w-24 shrink-0 overflow-hidden rounded-lg border-2", d.index === etat.diapo.index ? (etat.diapo.masquee ? "border-orange/40 opacity-60" : "border-orange") : d.index === etat.diapo.index + 1 ? "border-orange-peche/50" : "border-transparent")}
             aria-label={`Aller à la diapo ${d.index + 1}`}
           >
             <img src={d.url} alt="" loading="lazy" className="h-full w-full object-cover" />

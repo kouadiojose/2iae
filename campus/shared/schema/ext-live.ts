@@ -236,7 +236,8 @@ export type EtatDirectDto = {
   demarreeLe: string | null;
   planB: string | null;
   motifAnnulation: string | null;
-  diapo: { index: number; total: number; url: string | null };
+  /** masquee : le formateur a choisi « Caméra seule » (url vaut alors null, index garde la diapo où reprendre). */
+  diapo: { index: number; total: number; url: string | null; masquee?: boolean };
   questions: QuestionDirectDto[];
   sondage: SondageDto | null;
   resultats: ResultatsSondageDto | null;

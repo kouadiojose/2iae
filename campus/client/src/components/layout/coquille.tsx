@@ -23,7 +23,7 @@ export function Marque({ sousTitre = true, sombre = false }: { sousTitre?: boole
       {/* Sur fond sombre : l'ovale détouré (sans rectangle blanc autour). */}
       <img src={sombre ? "/marque-2iae-detouree.png" : "/marque-2iae.png"} alt="" className="h-9 w-auto sm:h-10" />
       <span className={cn("flex flex-col border-l pl-3", sombre ? "border-nuit-ligne" : "border-ligne-forte")}>
-        <span className={cn("text-[15px] font-extrabold leading-tight tracking-[-0.01em]", sombre ? "text-white" : "text-encre")}>Campus numérique</span>
+        <span className={cn("whitespace-nowrap text-[15px] font-extrabold leading-tight tracking-[-0.01em]", sombre ? "text-white" : "text-encre")}>Campus numérique</span>
         {sousTitre && <span className={cn("font-mono text-[11px]", sombre ? "text-nuit-gris" : "text-texte-gris")}>Groupe 2IAE International</span>}
       </span>
     </Link>
@@ -210,13 +210,15 @@ function EcouteGlobale() {
 }
 
 /** Entrées visibles dans l'en-tête sur ordinateur ; les suivantes vont dans « Plus ». */
-const NAV_VISIBLES = 7;
+/** Entrées visibles dans l'en-tête (le reste va dans « Plus ») : l'équipe a des libellés plus longs. */
+const navVisibles = (role: string, enDirect: boolean) => (role === "admin" || role === "vie_scolaire" ? 6 : 7) - (enDirect ? 1 : 0);
 
 export function Coquille({ children, pleinEcran = false }: { children: ReactNode; pleinEcran?: boolean }) {
   const moi = useMoiConnecte();
   const [chemin, naviguer] = useLocation();
   const nav = navigationDuRole(moi.role);
   const { data: enCours } = useEnCours();
+  const NAV_VISIBLES = navVisibles(moi.role, Boolean(enCours?.enDirect));
   const { data: compteur } = useCompteur();
 
   useEffect(() => {

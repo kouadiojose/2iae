@@ -13,8 +13,10 @@ import { route, valider, idParam, interdit, ErreurHttp } from "./http";
 import { seanceVisible, enseigneCours, idsCoursAccessibles } from "./acces";
 import { planifier } from "./taches";
 import * as visio from "./visio";
+import { stockageReplaysDisponible } from "./stockage-replays";
 import {
   seances,
+  replaysStockes,
   cours,
   sites,
   utilisateurs,
@@ -103,8 +105,9 @@ const schemaReglages = z
   })
   .partial();
 
-function versReglagesDto(): ReglagesVisioDto {
+async function versReglagesDto(): Promise<ReglagesVisioDto> {
   const r = visio.reglagesCourants();
+  const [stock] = await db.select({ nombre: sql<number>`count(*)::int`, octets: sql<number>`coalesce(sum(${replaysStockes.tailleOctets}), 0)::float8` }).from(replaysStockes);
   return {
     fournisseurParDefaut: visio.fournisseurParDefaut(),
     videoEtudiantParDefaut: r.videoEtudiantParDefaut,
@@ -117,6 +120,7 @@ function versReglagesDto(): ReglagesVisioDto {
     fournisseurs: visio.fournisseursDisponibles(),
     daily: visio.dailyDisponible(),
     majLe: r.majLe ? new Date(r.majLe).toISOString() : null,
+    replays: { bucket: stockageReplaysDisponible(), nombre: stock?.nombre ?? 0, octets: stock?.octets ?? 0 },
   };
 }
 
@@ -304,7 +308,7 @@ export function enregistrerVisioDaily(app: Express) {
     "/api/visio/reglages",
     exigerRole("admin", "vie_scolaire"),
     route(async (_req, res) => {
-      res.json(versReglagesDto());
+      res.json(await versReglagesDto());
     }),
   );
 
@@ -320,7 +324,7 @@ export function enregistrerVisioDaily(app: Express) {
       await visio.enregistrerReglagesVisio(d, u.id);
       visio.oublierUsage();
       await db.insert(journal).values({ utilisateurId: u.id, action: "reglages_visio", details: d });
-      res.json(versReglagesDto());
+      res.json(await versReglagesDto());
     }),
   );
 

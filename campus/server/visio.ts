@@ -584,6 +584,12 @@ export async function lienEnregistrementDaily(id: string, validiteSecondes = 3 *
   return { url: r.donnees.download_link, expire: new Date(r.donnees.expires * 1000).toISOString() };
 }
 
+/** Efface un enregistrement chez Daily (il est gardé dans le bucket des replays). Déjà effacé : rien à faire. */
+export async function supprimerEnregistrementDaily(id: string): Promise<void> {
+  const r = await appelDaily(`/recordings/${encodeURIComponent(id)}`, { methode: "DELETE" });
+  if (r.statut !== 200 && r.statut !== 404) throw erreurDaily(r.statut, r.donnees);
+}
+
 /** Supprime une salle Daily (nettoyage ; une séance supprimée n'a plus besoin de sa salle). */
 export async function supprimerSalleDaily(salle: string): Promise<void> {
   sallesVerifiees.delete(salle);

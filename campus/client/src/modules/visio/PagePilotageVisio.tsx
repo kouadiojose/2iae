@@ -4,7 +4,7 @@
 // réglages (fournisseur par défaut, vidéo étudiante par défaut, places).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FlaskConical, Save, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, FlaskConical, HardDrive, Save, Video } from "lucide-react";
 import { put } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
@@ -285,6 +285,19 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
         <Champ libelle="1 dollar en FCFA" type="number" min={1} disabled={!modifiable} value={String(f.tauxFcfa)} onChange={(e) => setF({ ...f, tauxFcfa: Number(e.target.value) })} />
       </div>
       <p className="text-[13px] text-texte-gris">Tarif public de Daily : 0,004 dollar la minute-participant, 10 000 minutes offertes par mois. Ajustez selon votre contrat.</p>
+      <div className="flex items-start gap-3 rounded-2xl bg-creme p-4">
+        <HardDrive className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+        <div>
+          <p className="text-[16px] font-extrabold">Stockage des replays</p>
+          <p className="mt-0.5 text-[14px] leading-snug text-texte-pale">
+            {r.replays.bucket
+              ? `Chaque enregistrement est copié après le cours dans le bucket Railway « campus-replays », puis effacé chez Daily une semaine plus tard. Les étudiants lisent la vidéo directement dans le bucket : l'application ne sert aucune vidéo. ${
+                  r.replays.nombre ? `${r.replays.nombre} enregistrement${r.replays.nombre > 1 ? "s" : ""} copié${r.replays.nombre > 1 ? "s" : ""} · ${formaterPoids(r.replays.octets)}.` : "Aucun replay copié pour l'instant."
+                }`
+              : "Les replays restent chez Daily : le bucket Railway des replays n'est pas relié au campus."}
+          </p>
+        </div>
+      </div>
       {modifiable ? (
         <Bouton icone={<Save className="h-4 w-4" />} disabled={!change} chargement={envoi} onClick={() => void enregistrer()} className="self-start">
           Enregistrer les réglages
@@ -294,4 +307,9 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
       )}
     </Carte>
   );
+}
+
+function formaterPoids(octets: number): string {
+  if (octets >= 1e9) return `${(octets / 1e9).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Go`;
+  return `${Math.max(1, Math.round(octets / 1e6))} Mo`;
 }

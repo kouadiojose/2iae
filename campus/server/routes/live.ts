@@ -35,6 +35,7 @@ import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia
 import { prevenirSite } from "../site";
 import { planifier } from "../taches";
 import * as visio from "../visio";
+import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible } from "../stockage-replays";
 import {
   seances,
   cours,
@@ -99,6 +100,7 @@ import {
   villeDuFuseau,
   directsImmediats,
   morceauxReplay,
+  replaysStockes,
   type DemandeDirectImmediat,
   type RejoindreVisioDto,
 } from "@shared/schema";
@@ -2731,9 +2733,13 @@ export function enregistrerLive(app: Express) {
         .where(eq(sousTitres.seanceId, s.id))
         .orderBy(asc(sousTitres.t), asc(sousTitres.id));
       const questions = (await questionsPour(u, role, s.id)).filter((q) => !q.masquee);
-      const source = s.replayUrl ? "lien" : s.enregistrementId && visio.dailyDisponible() ? "daily" : null;
+      // Enregistrement Daily : lu dans le bucket des replays une fois copié, chez Daily sinon.
+      const stockes = s.enregistrementId && !s.replayUrl ? await db.select().from(replaysStockes).where(eq(replaysStockes.seanceId, s.id)) : [];
+      const lisible = Boolean(s.enregistrementId) && (visio.dailyDisponible() || (stockes.length > 0 && stockageReplaysDisponible()));
+      const source = s.replayUrl ? "lien" : lisible ? "daily" : null;
       const duree = s.replayDureeSecondes;
       const morceaux = source === "daily" ? await db.select().from(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id)).orderBy(asc(morceauxReplay.numero)) : [];
+      const toutStocke = stockes.length > 0 && stockes.length >= Math.max(1, morceaux.length);
       const dto: ReplayDto = {
         seance: {
           id: s.id,
@@ -2750,8 +2756,13 @@ export function enregistrerLive(app: Express) {
           disponible: Boolean(source),
           source,
           dureeSecondes: duree,
-          // Enregistrement Daily ≈ 1 Mbit/s en moyenne, soit ≈ 450 Mo par heure.
-          poidsEstimeMo: source === "daily" ? Math.round(((duree ?? s.dureeMinutes * 60) * 1_000_000) / 8 / 1_000_000) : null,
+          // Poids exact une fois dans le bucket ; sinon ≈ 1 Mbit/s en moyenne (≈ 450 Mo par heure).
+          poidsEstimeMo:
+            source !== "daily"
+              ? null
+              : toutStocke
+                ? Math.max(1, Math.round(stockes.reduce((t, x) => t + x.tailleOctets, 0) / 1_000_000))
+                : Math.round(((duree ?? s.dureeMinutes * 60) * 1_000_000) / 8 / 1_000_000),
           ...(morceaux.length > 1 && {
             morceaux: morceaux.map((m) => ({
               numero: m.numero,
@@ -2781,12 +2792,12 @@ export function enregistrerLive(app: Express) {
       if (role === "etudiant" && s.statut !== "terminee") throw new ErreurHttp(409, "Le replay sera disponible après la séance.");
       let lien: { url: string; expire: string | null };
       if (s.replayUrl) lien = { url: s.replayUrl, expire: null };
-      else if (s.enregistrementId && visio.dailyDisponible()) {
+      else if (s.enregistrementId) {
         // Replay en plusieurs morceaux : ?morceau=2 pour le deuxième.
         const numero = Number(req.query.morceau) || 1;
         const [m] = numero > 1 ? await db.select().from(morceauxReplay).where(and(eq(morceauxReplay.seanceId, s.id), eq(morceauxReplay.numero, numero))) : [];
         if (numero > 1 && !m) throw introuvable("Morceau du replay");
-        lien = await visio.lienEnregistrementDaily(m?.enregistrementId ?? s.enregistrementId);
+        lien = await lienEnregistrement(m?.enregistrementId ?? s.enregistrementId);
       } else throw introuvable("Vidéo du replay");
       if (u.role === "etudiant") await marquerVu(s.id, u.id);
       res.setHeader("Cache-Control", "no-store");
@@ -3212,6 +3223,81 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
           .values(morceaux.map((e, i) => ({ seanceId: s.id, numero: i + 1, enregistrementId: e.id, debut: new Date(e.debut * 1000), dureeSecondes: e.dureeSecondes ?? 0 })));
       }
     });
+  }
+});
+
+/** Lien de lecture d'un enregistrement : dans le bucket des replays s'il y est copié, chez Daily sinon. */
+async function lienEnregistrement(enregistrementId: string): Promise<{ url: string; expire: string }> {
+  const [stocke] = await db.select().from(replaysStockes).where(eq(replaysStockes.enregistrementId, enregistrementId));
+  if (stocke && stockageReplaysDisponible()) return lienReplayBucket(stocke.cle);
+  if (!visio.dailyDisponible()) throw introuvable("Vidéo du replay");
+  return visio.lienEnregistrementDaily(enregistrementId);
+}
+
+/** Échecs de copie récents : on réessaie plus tard, de plus en plus espacé (1 h, 2 h, 4 h… 24 h au plus). */
+const echecsArchivage = new Map<string, { n: number; prochain: number }>();
+let archivageEnCours = false;
+
+/**
+ * Copie les enregistrements Daily dans le bucket des replays (un à la fois :
+ * un cours de 2 h pèse ≈ 900 Mo), puis efface la copie Daily une fois le délai
+ * de sécurité passé. Le replay se lit dans le bucket dès que la copie est
+ * vérifiée (taille identique).
+ */
+planifier("live-archivage-replays", 10 * MINUTE, async () => {
+  if (archivageEnCours || !stockageReplaysDisponible() || !visio.dailyDisponible()) return;
+  archivageEnCours = true;
+  try {
+    const terminees = await db
+      .select({ id: seances.id, enregistrementId: seances.enregistrementId, debut: seances.debut })
+      .from(seances)
+      .where(and(eq(seances.statut, "terminee"), isNotNull(seances.enregistrementId), isNull(seances.replayUrl)))
+      .orderBy(desc(seances.debut))
+      .limit(200);
+    if (terminees.length) {
+      const ids = terminees.map((s) => s.id);
+      const morceaux = await db.select().from(morceauxReplay).where(inArray(morceauxReplay.seanceId, ids));
+      const deja = new Set((await db.select({ id: replaysStockes.enregistrementId }).from(replaysStockes).where(inArray(replaysStockes.seanceId, ids))).map((r) => r.id));
+      const aCopier = terminees.flatMap((s) => {
+        const siens = morceaux.filter((m) => m.seanceId === s.id).sort((a, b) => a.numero - b.numero);
+        const liste = siens.length ? siens.map((m) => ({ id: m.enregistrementId, numero: m.numero })) : [{ id: s.enregistrementId!, numero: 1 }];
+        return liste.filter((e) => !deja.has(e.id)).map((e) => ({ ...e, seanceId: s.id, annee: s.debut.getUTCFullYear() }));
+      });
+      const maintenant = Date.now();
+      for (const e of aCopier.filter((x) => (echecsArchivage.get(x.id)?.prochain ?? 0) <= maintenant).slice(0, 3)) {
+        const cle = `replays/${e.annee}/seance-${e.seanceId}/${String(e.numero).padStart(2, "0")}-${e.id}.mp4`;
+        const t0 = Date.now();
+        try {
+          const lien = await visio.lienEnregistrementDaily(e.id, 6 * 3600);
+          const { tailleOctets } = await copierVersBucket(lien.url, cle);
+          await db.insert(replaysStockes).values({ enregistrementId: e.id, seanceId: e.seanceId, cle, tailleOctets }).onConflictDoNothing();
+          echecsArchivage.delete(e.id);
+          console.log(`[replays] séance ${e.seanceId} (morceau ${e.numero}) copiée dans le bucket : ${Math.round(tailleOctets / 1_000_000)} Mo en ${Math.round((Date.now() - t0) / 1000)} s`);
+        } catch (err) {
+          const n = (echecsArchivage.get(e.id)?.n ?? 0) + 1;
+          echecsArchivage.set(e.id, { n, prochain: Date.now() + Math.min(24, 2 ** (n - 1)) * 3600_000 });
+          console.warn(`[replays] copie de la séance ${e.seanceId} (morceau ${e.numero}) impossible (essai ${n}) :`, (err as Error).message);
+        }
+      }
+    }
+
+    // Filet de sécurité passé : la copie Daily est effacée (le bucket fait foi).
+    const limite = new Date(Date.now() - config.replays.garderDailyJours * 24 * 3600_000);
+    const aEffacer = await db
+      .select({ id: replaysStockes.enregistrementId })
+      .from(replaysStockes)
+      .where(and(isNull(replaysStockes.dailySupprimeLe), lte(replaysStockes.archiveLe, limite)))
+      .limit(20);
+    for (const r of aEffacer) {
+      try {
+        await visio.supprimerEnregistrementDaily(r.id);
+        await db.update(replaysStockes).set({ dailySupprimeLe: new Date() }).where(eq(replaysStockes.enregistrementId, r.id));
+      } catch (err) {
+        console.warn(`[replays] effacement Daily de ${r.id} impossible :`, (err as Error).message);
+      }
+    }
+  } finally {
+    archivageEnCours = false;
   }
 });
 

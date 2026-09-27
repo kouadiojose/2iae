@@ -64,6 +64,20 @@ export const config = {
     placesTotal: Number(env("VISIO_PLACES_TOTAL")) || 40,
   },
 
+  /**
+   * Bucket Railway (compatible S3) où chaque replay est copié après le cours : les étudiants
+   * lisent la vidéo directement dans le bucket (lien signé), jamais à travers l'application.
+   */
+  replays: {
+    bucket: env("REPLAYS_BUCKET"),
+    endpoint: env("REPLAYS_ENDPOINT"),
+    region: env("REPLAYS_REGION") || "auto",
+    cleId: env("REPLAYS_ACCESS_KEY_ID"),
+    cleSecrete: env("REPLAYS_SECRET_ACCESS_KEY"),
+    /** Jours pendant lesquels la copie Daily reste en filet de sécurité après l'archivage (0 : effacée aussitôt vérifiée). */
+    garderDailyJours: Math.max(0, Number(env("REPLAYS_GARDER_DAILY_JOURS") ?? 7) || 0),
+  },
+
   ia: {
     cle: env("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", "ANTHROPIC_KEY", "CLAUDE_KEY"),
     /** Modèle de l'assistant ; l'effort (low → high) règle la dépense selon la tâche. */

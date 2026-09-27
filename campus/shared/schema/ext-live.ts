@@ -2,7 +2,7 @@
 // pendant sa construction. Les types *Dto décrivent ce que l'API envoie au
 // client (dates en chaînes ISO) : serveur et client partagent ainsi le même
 // contrat.
-import { serial, text, integer, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
+import { serial, text, integer, bigint, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
 import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence } from "./live";
 import type { EnCours } from "../api";
@@ -77,6 +77,26 @@ export const morceauxReplay = campusSchema.table(
     dureeSecondes: integer("duree_secondes").notNull(),
   },
   (t) => [primaryKey({ columns: [t.seanceId, t.numero] })],
+);
+
+/**
+ * Copie d'un enregistrement Daily dans le bucket des replays (Railway). Une
+ * ligne par enregistrement (un cours coupé en morceaux en a plusieurs). Tant
+ * qu'elle manque, le replay se lit chez Daily.
+ */
+export const replaysStockes = campusSchema.table(
+  "replays_stockes",
+  {
+    enregistrementId: text("enregistrement_id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    /** Clé de l'objet dans le bucket. */
+    cle: text("cle").notNull(),
+    tailleOctets: bigint("taille_octets", { mode: "number" }).notNull(),
+    archiveLe: timestamp("archive_le", { withTimezone: true }).notNull().defaultNow(),
+    /** La copie Daily a été effacée (après le délai de sécurité). */
+    dailySupprimeLe: timestamp("daily_supprime_le", { withTimezone: true }),
+  },
+  (t) => [index("replays_stockes_seance_idx").on(t.seanceId)],
 );
 
 // ── Contrats d'API du module live ──────────────────────────────────────────

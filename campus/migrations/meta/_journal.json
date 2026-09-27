@@ -29,6 +29,13 @@
       "when": 1790468313108,
       "tag": "0003_correctifs_revue",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790490477237,
+      "tag": "0004_stockage_replays",
+      "breakpoints": true
     }
   ]
 }

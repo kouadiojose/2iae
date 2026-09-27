@@ -42,6 +42,18 @@ railway domain --service campus                # domaine *.up.railway.app
 | `CAMPUS_DEMO` | faux par défaut ; `true` sème des données de démonstration (refusé en production dès qu'un compte réel existe) |
 | `CAMPUS_PURGER_DEMO` | `oui` pour supprimer la démonstration au prochain démarrage (bilan dans les journaux), puis retirer la variable |
 | `DAILY_DOMAIN` | facultatif : le domaine Daily est découvert au démarrage |
+| `REPLAYS_BUCKET` | `${{campus-replays.BUCKET}}` : bucket Railway des replays (créé avec `railway bucket create campus-replays --region ams`) |
+| `REPLAYS_ENDPOINT` | `${{campus-replays.ENDPOINT}}` |
+| `REPLAYS_REGION` | `${{campus-replays.REGION}}` |
+| `REPLAYS_ACCESS_KEY_ID` / `REPLAYS_SECRET_ACCESS_KEY` | `${{campus-replays.ACCESS_KEY_ID}}` / `${{campus-replays.SECRET_ACCESS_KEY}}` |
+| `REPLAYS_GARDER_DAILY_JOURS` | facultatif, 7 par défaut : jours pendant lesquels la copie Daily reste en secours après la copie dans le bucket (0 : effacée aussitôt vérifiée) |
+
+Les replays Daily sont recopiés dans le bucket après chaque cours (tâche
+« live-archivage-replays », toutes les 10 minutes, un fichier à la fois, en
+flux). Les étudiants les lisent par un lien signé directement dans le bucket :
+l'application ne sert aucune vidéo, et la sortie depuis un bucket Railway est
+gratuite (stockage : 0,015 $ par Go et par mois, soit ≈ 0,35 $ pour 50 heures
+de cours). Pilotage → Visio indique le nombre de replays copiés et leur poids.
 
 ## 3. Variables du service `2iae` (site)
 

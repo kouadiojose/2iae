@@ -35,7 +35,7 @@ import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia
 import { prevenirSite } from "../site";
 import { planifier } from "../taches";
 import * as visio from "../visio";
-import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible } from "../stockage-replays";
+import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
 import {
   seances,
   cours,
@@ -59,6 +59,9 @@ import {
   signalementsQuestions,
   evenementsSeances,
   vuesReplay,
+  fichesRevision,
+  messagesLive,
+  fichiers,
   FOURNISSEURS_VISIO,
   RESSENTIS,
   type Seance,
@@ -73,6 +76,8 @@ import {
   type DiapoDto,
   type SeanceDetailDto,
   type QuestionDirectDto,
+  type MessageLive,
+  type MessageLiveDto,
   type MainDirectDto,
   type ParoleDto,
   type SondageDto,
@@ -655,6 +660,52 @@ async function questionsPour(u: Utilisateur, role: RoleSeance, seanceId: number,
 }
 
 /** Version diffusée à tout le canal : sans vote personnel, sans auteur réel. */
+/**
+ * Messages de la discussion, prêts à afficher. Un étudiant signe « Aya K. », le formateur de son nom,
+ * une salle « Salle Kédjénou · Yopougon ». L'écran d'une salle (poste partagé, grand écran) ne montre
+ * jamais le nom d'un étudiant : « Un étudiant ».
+ */
+async function versMessagesLive(lignes: MessageLive[], lecteur: RoleSeance): Promise<MessageLiveDto[]> {
+  if (!lignes.length) return [];
+  const idsAuteurs = [...new Set(lignes.map((m) => m.auteurId))];
+  const idsFichiers = [...new Set(lignes.map((m) => m.fichierId).filter((x): x is number => x !== null))];
+  const [auteurs, joints, sitesParId] = await Promise.all([
+    db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId }).from(utilisateurs).where(inArray(utilisateurs.id, idsAuteurs)),
+    idsFichiers.length ? db.select().from(fichiers).where(inArray(fichiers.id, idsFichiers)) : Promise.resolve([]),
+    nomsSites(),
+  ]);
+  const parAuteur = new Map(auteurs.map((a) => [a.id, a]));
+  const parFichier = new Map(joints.map((f) => [f.id, f]));
+  return lignes.map((m) => {
+    const a = parAuteur.get(m.auteurId);
+    const site = m.siteId ? sitesParId.get(m.siteId) : undefined;
+    const role: MessageLiveDto["role"] = a?.role === "salle" ? "salle" : a?.role === "formateur" ? "formateur" : a?.role === "etudiant" ? "etudiant" : "equipe";
+    const auteur =
+      role === "salle"
+        ? `${site?.salleConference ?? "Salle de conférence"}${site ? ` · ${site.nomCourt}` : ""}`
+        : role === "etudiant"
+          ? lecteur === "salle" || !a
+            ? "Un étudiant"
+            : nomCourt(a)
+          : a
+            ? `${a.prenom} ${a.nom}`
+            : "Équipe du campus";
+    const f = m.fichierId ? parFichier.get(m.fichierId) : undefined;
+    return {
+      id: m.id,
+      auteur,
+      role,
+      siteId: m.siteId,
+      site: site?.nomCourt ?? null,
+      texte: m.texte,
+      fichier: f ? { id: f.id, nom: f.nomOriginal, mime: f.mime, taille: f.taille, url: urlFichier(f.id) } : null,
+      creeLe: m.creeLe.toISOString(),
+      auteurId: m.auteurId,
+      masque: m.masque,
+    };
+  });
+}
+
 async function diffuserQuestion(q: QuestionLive) {
   const [auteur] = await db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role }).from(utilisateurs).where(eq(utilisateurs.id, q.auteurId));
   // Le canal est aussi écouté par les écrans de salle (postes partagés) : on
@@ -1181,6 +1232,18 @@ export function enregistrerLive(app: Express) {
     }
   });
 
+  // Fichiers joints à la discussion du live : lisibles par ceux qui voient la séance.
+  enregistrerGardienFichier("chat", async (u, f) => {
+    const [m] = await db.select({ seanceId: messagesLive.seanceId }).from(messagesLive).where(eq(messagesLive.fichierId, f.id)).limit(1);
+    if (!m) return false;
+    try {
+      await seanceVisible(u, m.seanceId);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   // Diapos : lisibles par ceux qui voient une séance qui les utilise.
   enregistrerGardienFichier("diapo", async (u, f) => {
     const lignes = await db
@@ -1529,6 +1592,86 @@ export function enregistrerLive(app: Express) {
     }),
   );
 
+  // « C'était un essai » : un direct lancé avant l'heure prévue (pour tester) redevient un cours à venir.
+  // Tout ce que l'essai a laissé s'efface (présences, questions, discussion, mains, sondages, sous-titres,
+  // effectifs, enregistrement), pour que le vrai cours reparte de zéro à son heure. Le journal garde la trace.
+  app.post(
+    "/api/seances/:id/remettre-a-venir",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAnimee(u, idParam(req));
+      exigerStatut(s, ["terminee", "en_direct"], "Cette séance n'a pas été lancée : elle est déjà à venir.");
+      if (s.debut.getTime() <= Date.now()) {
+        throw new ErreurHttp(409, "L'heure prévue du cours est passée : ce n'était pas un essai. Dupliquez la séance pour la reprogrammer.");
+      }
+      const essai = { demarreeLe: iso(s.demarreeLe), termineeLe: iso(s.termineeLe) };
+      const depuis = s.demarreeLe ?? new Date(0);
+      const stockes = await db.select().from(replaysStockes).where(eq(replaysStockes.seanceId, s.id));
+      const [maj] = await db.transaction(async (tx) => {
+        const lignes = await tx
+          .update(seances)
+          .set({
+            statut: "planifiee",
+            demarreeLe: null,
+            termineeLe: null,
+            transcription: "",
+            enregistrementId: null,
+            replayUrl: null,
+            replayDureeSecondes: null,
+            resumeIa: null,
+            resumeIaLe: null,
+            resumeValide: false,
+            resumeParIa: false,
+            diapoCourante: 0,
+            disposition: "diapo",
+            lienSecours: null,
+            planBLe: null,
+            motifAnnulation: null,
+          })
+          .where(and(eq(seances.id, s.id), inArray(seances.statut, ["terminee", "en_direct"])))
+          .returning();
+        if (!lignes.length) return lignes;
+        const idsSondages = (await tx.select({ id: sondages.id }).from(sondages).where(eq(sondages.seanceId, s.id))).map((x) => x.id);
+        if (idsSondages.length) await tx.delete(reponsesSondages).where(inArray(reponsesSondages.sondageId, idsSondages));
+        await tx.update(sondages).set({ ouvert: false, ouvertLe: null, fermeLe: null }).where(eq(sondages.seanceId, s.id));
+        await tx.delete(questionsLive).where(eq(questionsLive.seanceId, s.id));
+        await tx.delete(messagesLive).where(eq(messagesLive.seanceId, s.id));
+        await tx.delete(mainsLevees).where(eq(mainsLevees.seanceId, s.id));
+        await tx.delete(presences).where(eq(presences.seanceId, s.id));
+        await tx.delete(effectifsSalles).where(eq(effectifsSalles.seanceId, s.id));
+        await tx.delete(sousTitres).where(eq(sousTitres.seanceId, s.id));
+        await tx.delete(ressentis).where(eq(ressentis.seanceId, s.id));
+        await tx.delete(vuesReplay).where(eq(vuesReplay.seanceId, s.id));
+        await tx.delete(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id));
+        await tx.delete(replaysStockes).where(eq(replaysStockes.seanceId, s.id));
+        await tx.delete(fichesRevision).where(and(eq(fichesRevision.seanceId, s.id), eq(fichesRevision.validee, false)));
+        // Le fil de l'essai (démarrage, diapos, fin) ne doit pas se mêler au vrai cours (replay synchronisé, bilan).
+        await tx.delete(evenementsSeances).where(and(eq(evenementsSeances.seanceId, s.id), gte(evenementsSeances.creeLe, depuis)));
+        return lignes;
+      });
+      if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
+      paroles.delete(s.id);
+      derniersCampus.delete(s.id);
+      await consigner(s.id, "remise_a_venir", { par: u.id, essai });
+      await db.insert(journal).values({ utilisateurId: u.id, action: "live_remis_a_venir", details: { seanceId: s.id, ...essai } });
+      publier(canal(s.id), "statut", { statut: "planifiee", demarreeLe: null, termineeLe: null, motif: null });
+      annoncer(maj);
+      if (s.publierSurSite) prevenirSite("live remis à venir");
+      // Enregistrement de l'essai : effacé du bucket et chez Daily (hors de la réponse ; un échec n'empêche rien).
+      void (async () => {
+        for (const r of stockes) await supprimerDuBucket(r.cle).catch((e) => console.error(`[replays] essai séance ${s.id} : copie non effacée`, e));
+        if (s.fournisseur === "daily" && s.salleVisio && visio.dailyDisponible()) {
+          const debutEssai = Math.floor(depuis.getTime() / 1000) - 120;
+          const liste = await visio.enregistrementsDaily(s.salleVisio).catch(() => []);
+          for (const e of liste.filter((x) => x.debut >= debutEssai))
+            await visio.supprimerEnregistrementDaily(e.id).catch((err) => console.error(`[replays] essai séance ${s.id} : enregistrement Daily non effacé`, err));
+        }
+      })();
+      res.json(await detailSeance(u, maj));
+    }),
+  );
+
   // Plan B : tout le monde bascule sur le lien de secours ; questions, sondages et émargement continuent.
   app.post(
     "/api/seances/:id/plan-b",
@@ -1700,6 +1843,76 @@ export function enregistrerLive(app: Express) {
         });
       }
       res.status(201).json(await detailSeance(u, s));
+    }),
+  );
+
+  // ── Discussion du live : chat écrit à toute la classe, fichier joint au besoin ──
+  app.get(
+    "/api/seances/:id/chat",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      const role = await roleDans(u, s);
+      const privilegie = role === "formateur" || role === "equipe";
+      const lignes = await db
+        .select()
+        .from(messagesLive)
+        .where(privilegie ? eq(messagesLive.seanceId, s.id) : and(eq(messagesLive.seanceId, s.id), eq(messagesLive.masque, false)))
+        .orderBy(desc(messagesLive.id))
+        .limit(300);
+      res.json(await versMessagesLive(lignes.reverse(), role));
+    }),
+  );
+
+  app.post(
+    "/api/seances/:id/chat",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      exigerStatut(s, ["planifiee", "en_direct"], "Ce live est terminé : écris plutôt dans la messagerie du cours.");
+      const role = await roleDans(u, s);
+      const d = valider(
+        z.object({ texte: z.string().trim().max(1000, "1000 caractères au plus").default(""), fichierId: z.number().int().positive().optional() }),
+        req.body,
+      );
+      if (!d.texte && !d.fichierId) throw invalide("Écris un message ou joins un fichier.");
+      limiter(`chat:${u.id}`, 1000, "Doucement : une seconde entre deux messages.");
+      if (d.fichierId) {
+        const [f] = await db.select({ proprietaireId: fichiers.proprietaireId, usage: fichiers.usage }).from(fichiers).where(eq(fichiers.id, d.fichierId));
+        if (!f || f.proprietaireId !== u.id || f.usage !== "chat") throw invalide("Fichier introuvable : déposez-le à nouveau.");
+        const [deja] = await db.select({ id: messagesLive.id }).from(messagesLive).where(eq(messagesLive.fichierId, d.fichierId)).limit(1);
+        if (deja) throw invalide("Ce fichier est déjà envoyé.");
+      }
+      const [m] = await db.insert(messagesLive).values({ seanceId: s.id, auteurId: u.id, siteId: u.siteId, texte: d.texte, fichierId: d.fichierId ?? null }).returning();
+      const [dto] = await versMessagesLive([m], role);
+      // Le canal est aussi écouté par les écrans de salle : le nom d'un étudiant y est remplacé à l'affichage.
+      publier(canal(s.id), "chat", dto);
+      res.status(201).json(dto);
+    }),
+  );
+
+  // Retirer son message, ou (formateur, équipe) masquer celui d'un autre.
+  app.delete(
+    "/api/seances/:id/chat/:mid",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      const role = await roleDans(u, s);
+      const [m] = await db.select().from(messagesLive).where(and(eq(messagesLive.id, idParam(req, "mid")), eq(messagesLive.seanceId, s.id)));
+      if (!m) throw introuvable("Message");
+      if (m.auteurId === u.id) {
+        await db.delete(messagesLive).where(eq(messagesLive.id, m.id));
+        publier(canal(s.id), "chat:retire", { id: m.id });
+        return res.json({ id: m.id, retire: true });
+      }
+      if (role !== "formateur" && role !== "equipe") throw interdit("Seuls le formateur et l'équipe masquent les messages des autres.");
+      await db.update(messagesLive).set({ masque: true }).where(eq(messagesLive.id, m.id));
+      await db.insert(journal).values({ utilisateurId: u.id, action: "chat_masque", details: { seanceId: s.id, messageId: m.id } });
+      publier(canal(s.id), "chat:masque", { id: m.id });
+      res.json({ id: m.id, masque: true });
     }),
   );
 
@@ -3024,6 +3237,8 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       return `Incident à ${site ?? "une salle"} : ${String(d.incident ?? "")}`;
     case "incident_resolu":
       return `Incident résolu à ${site ?? "une salle"} (${String(d.incident ?? "")})`;
+    case "remise_a_venir":
+      return "Essai effacé : le cours est de nouveau à venir";
     default:
       return type;
   }
@@ -3213,7 +3428,9 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
     const liste = await visio.enregistrementsDaily(s.salleVisio!);
     const recente = s.termineeLe && Date.now() - s.termineeLe.getTime() < 6 * 3600_000;
     if (recente && liste.some((e) => e.statut === "in-progress")) continue;
-    const finis = liste.filter((e) => e.statut === "finished" && e.dureeSecondes);
+    // Seulement ce qui a été enregistré pendant ce direct (un essai plus ancien, dans la même salle Daily, n'en fait pas partie).
+    const debutDirect = s.demarreeLe ? Math.floor(s.demarreeLe.getTime() / 1000) - 120 : 0;
+    const finis = liste.filter((e) => e.statut === "finished" && e.dureeSecondes && e.debut >= debutDirect);
     if (!finis.length) continue;
     const utiles = finis.filter((e) => (e.dureeSecondes ?? 0) >= 60);
     const morceaux = (utiles.length ? utiles : finis).sort((a, b) => a.debut - b.debut);

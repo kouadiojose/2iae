@@ -48,7 +48,7 @@ export type FichierTeleverse = { id: number; nom: string; mime: string; taille: 
 /** Téléverse des fichiers (les photos sont allégées avant l'envoi pour la 4G). */
 export async function televerser(
   fichiers: File[],
-  usage: "lecon" | "rendu" | "message" | "avatar" | "devoir" | "annonce" | "import",
+  usage: "lecon" | "rendu" | "message" | "avatar" | "devoir" | "annonce" | "import" | "chat",
 ): Promise<FichierTeleverse[]> {
   const donnees = new FormData();
   donnees.append("usage", usage);

@@ -1,13 +1,17 @@
 // Petits composants partagés par les écrans du module live.
-import type { ReactNode } from "react";
-import { CalendarPlus, PlayCircle, Ban } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { CalendarPlus, PlayCircle, Ban, RotateCcw } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { heure, heureDouble, pastilleDate, jourLong } from "@/lib/dates";
-import { LienBouton } from "@/components/ui/bouton";
+import { Bouton, LienBouton } from "@/components/ui/bouton";
+import { Fenetre } from "@/components/ui/fenetre";
+import { toast, toastErreur } from "@/components/ui/toast";
+import { post } from "@/lib/api";
+import { queryClient, rafraichir } from "@/lib/queryClient";
 import { Badge, BadgeDirect, PastilleDate } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
-import { chrono, CONSOMMATION, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE } from "./outils";
+import { chrono, cleDirect, CONSOMMATION, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE } from "./outils";
 import type { EtatDirectDto, ModeSuivi, SeanceDetailDto } from "@shared/schema";
 import type { SeanceResume } from "@shared/api";
 
@@ -51,8 +55,15 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
 }
 
 /** Séance annulée ou terminée : message clair, présence, replay. */
-export function FinDeSeance({ seance }: { seance: Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> }) {
+type SeanceFinie = Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> &
+  Partial<Pick<SeanceDetailDto, "debut" | "peutModifier">>;
+
+export function FinDeSeance({ seance }: { seance: SeanceFinie }) {
   const annulee = seance.statut === "annulee";
+  const maintenant = useMaintenant(60_000);
+  // Lancé avant l'heure prévue : c'était un essai, que le formateur ou la direction peut effacer.
+  const essai = seance.statut === "terminee" && Boolean(seance.peutModifier) && Boolean(seance.debut) && new Date(seance.debut!).getTime() > maintenant;
+  if (essai) return <FinEssai seance={seance} />;
   return (
     <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
       <div className="flex max-w-lg flex-col items-center gap-4 text-center">
@@ -88,6 +99,65 @@ export function FinDeSeance({ seance }: { seance: Pick<SeanceDetailDto, "id" | "
           </LienBouton>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Fin d'un direct lancé avant l'heure : proposer d'effacer l'essai pour que le vrai cours reparte de zéro. */
+function FinEssai({ seance }: { seance: SeanceFinie }) {
+  const [ouverte, setOuverte] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const debut = new Date(seance.debut!);
+  const remettre = async () => {
+    setEnvoi(true);
+    try {
+      await post(`/api/seances/${seance.id}/remettre-a-venir`);
+      await Promise.all([rafraichir(`/api/seances/${seance.id}`), queryClient.invalidateQueries({ queryKey: cleDirect(seance.id) }), rafraichir("/api/seances")]);
+      toast("L'essai est effacé : le cours est de nouveau à venir.");
+      setOuverte(false);
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  return (
+    <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
+      <div className="flex max-w-lg flex-col items-center gap-4 text-center">
+        <div className="grid h-14 w-14 place-items-center rounded-full bg-nuit-carte text-orange">
+          <RotateCcw className="h-7 w-7" />
+        </div>
+        <span className="etiquette text-orange-peche">{seance.coursCode}</span>
+        <h1 className="text-3xl font-black tracking-serre">C'était un essai ?</h1>
+        <p className="text-[15px] leading-relaxed text-nuit-doux">
+          Ce direct a été lancé avant l'heure prévue du cours ({jourLong(debut)} à {heure(debut)}). Remettez le cours à venir : les salles et les étudiants le
+          retrouveront à son heure, sans rien de l'essai.
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Bouton variante="nuit-actif" icone={<RotateCcw className="h-4 w-4" />} onClick={() => setOuverte(true)}>
+            Remettre le cours à venir
+          </Bouton>
+          <LienBouton href={`/enseigner/seances/${seance.id}`} variante="nuit">
+            Voir le bilan de l'essai
+          </LienBouton>
+        </div>
+      </div>
+      <Fenetre
+        ouverte={ouverte}
+        onFermer={() => setOuverte(false)}
+        titre="Remettre le cours à venir ?"
+        description="Les présences, questions, messages de la discussion, mains levées, réponses aux sondages, sous-titres et l'enregistrement de l'essai sont effacés. Les diapos et les sondages préparés restent."
+        pied={
+          <>
+            <Bouton variante="fantome" onClick={() => setOuverte(false)}>
+              Annuler
+            </Bouton>
+            <Bouton chargement={envoi} onClick={() => void remettre()}>
+              Remettre à venir
+            </Bouton>
+          </>
+        }
+      />
     </div>
   );
 }

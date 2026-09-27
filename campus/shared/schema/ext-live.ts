@@ -29,7 +29,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -182,6 +182,24 @@ export type QuestionDirectDto = {
   /** Formateur et équipe : auteur réel (modération) et signalements. */
   auteurReel?: string;
   signalements?: number;
+};
+
+/** Un message de la discussion du live. */
+export type MessageLiveDto = {
+  id: number;
+  /** « Aya K. », « José Kouadio », « Salle de conférence · Yopougon » ; écran de salle : « Un étudiant ». */
+  auteur: string;
+  role: "etudiant" | "formateur" | "salle" | "equipe";
+  siteId: number | null;
+  /** « Yopougon ». */
+  site: string | null;
+  texte: string;
+  fichier: { id: number; nom: string; mime: string; taille: number; url: string } | null;
+  creeLe: string;
+  /** Pour reconnaître ses propres messages (on peut retirer les siens). */
+  auteurId: number;
+  /** Masqué par le formateur (visible seulement du formateur et de l'équipe, grisé). */
+  masque: boolean;
 };
 
 export type MainDirectDto = {

@@ -635,6 +635,8 @@ export async function purgerDemonstration(options: { simulation?: boolean; sorti
     await q(`DELETE FROM campus.evenements WHERE auteur_id = ANY($1::int[])`, [idsComptes]);
     // Traces laissées dans des séances ou des devoirs réels.
     await q(`DELETE FROM campus.questions_live WHERE auteur_id = ANY($1::int[])`, [idsComptes]);
+    await q(`UPDATE campus.messages_live SET fichier_id = NULL WHERE fichier_id = ANY($1::int[])`, [fichierIds]);
+    await q(`DELETE FROM campus.messages_live WHERE auteur_id = ANY($1::int[])`, [idsComptes]);
     await q(`DELETE FROM campus.mains_levees WHERE utilisateur_id = ANY($1::int[])`, [idsComptes]);
     await q(`UPDATE campus.presences SET pointe_par_id = NULL WHERE pointe_par_id = ANY($1::int[])`, [idsComptes]);
     await q(`UPDATE campus.rendus SET depose_par_id = NULL WHERE depose_par_id = ANY($1::int[])`, [idsComptes]);

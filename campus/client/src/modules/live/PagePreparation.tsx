@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Copy, Plus, Radio, Trash2, Upload, Sparkles, Send, Globe, ChevronLeft, ChevronRight, AlertTriangle, FileText, Check, FlaskConical } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Plus, Radio, Trash2, Upload, Sparkles, Send, Globe, ChevronLeft, ChevronRight, AlertTriangle, FileText, Check, FlaskConical, RotateCcw } from "lucide-react";
 import { api, post, patch, put, suppr, alleger } from "@/lib/api";
 import { rafraichir, queryClient } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
@@ -120,6 +120,12 @@ function SeanceExistante({ id }: { id: number }) {
             {seance.statut === "planifiee" && seance.fournisseur === "daily" && (seance.monRole === "formateur" || moi.role === "admin") && (
               <LienBouton href={`/visio/repetition/${seance.id}`} variante="contour" icone={<FlaskConical className="h-4 w-4" />}>
                 Répéter dans la salle de cette séance
+              </LienBouton>
+            )}
+            {/* Lancé avant l'heure prévue : un essai, que le Studio propose d'effacer. */}
+            {seance.statut === "terminee" && seance.peutModifier && new Date(seance.debut).getTime() > Date.now() && (
+              <LienBouton href={`/live/${seance.id}`} icone={<RotateCcw className="h-4 w-4" />}>
+                C'était un essai ?
               </LienBouton>
             )}
             {apres && (

@@ -16,10 +16,11 @@ import { TestMicroCamera, useOptionsVisio } from "@/modules/visio";
 import { Scene } from "./scene";
 import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, VignettesSalles, BoutonsRessentis, CarteRattrapage, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
+import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { CONSOMMATION, cleDirect, estimationMo, formatMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
 
-type Panneau = "questions" | "campus" | "assistant";
+type Panneau = "questions" | "discussion" | "campus" | "assistant";
 
 const cleMode = (id: number) => `campus:live:mode:${id}`;
 
@@ -173,6 +174,7 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
 function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDto; mode: ModeSuivi; onChangerMode: (m: ModeSuivi | null) => void }) {
   const moi = useMoiConnecte();
   const [panneau, setPanneau] = useState<Panneau>("questions");
+  const nonLus = useNonLusDiscussion(seance.id, false, moi.id, panneau === "discussion");
   const [rattrapage, setRattrapage] = useState<RattrapageDto | null>(null);
   const [sortie, setSortie] = useState<{ mo: number; mesure: boolean; minutes: number } | null>(null);
   const [octetsVisio, setOctetsVisio] = useState(0);
@@ -266,11 +268,13 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
         onChange={setPanneau}
         options={[
             { valeur: "questions", libelle: "Questions", compteur: etat.questions.length || undefined },
+            { valeur: "discussion", libelle: "Discussion", compteur: nonLus || undefined },
             { valeur: "campus", libelle: "Campus" },
             { valeur: "assistant", libelle: "Assistant" },
           ]}
       />
       {panneau === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role="etudiant" enDirect={enDirect} />}
+      {panneau === "discussion" && <PanneauDiscussion seanceId={seance.id} role="etudiant" moiId={moi.id} ouverte={etat.statut === "planifiee" || etat.statut === "en_direct"} />}
       {panneau === "campus" && <PanneauCampus etat={etat} />}
       {panneau === "assistant" && <PanneauAssistant etat={etat} iaDisponible={seance.iaDisponible} />}
     </aside>

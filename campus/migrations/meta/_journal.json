@@ -57,6 +57,13 @@
       "when": 1790497304659,
       "tag": "0007_fichiers_bucket",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790514312549,
+      "tag": "0008_chat_live",
+      "breakpoints": true
     }
   ]
 }

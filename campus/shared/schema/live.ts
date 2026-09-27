@@ -2,7 +2,7 @@
 // salles de conférence et aux étudiants connectés, en même temps.
 import { sql } from "drizzle-orm";
 import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
-import { campusSchema, utilisateurs, sites } from "./base";
+import { campusSchema, utilisateurs, sites, fichiers } from "./base";
 import { cours } from "./cours";
 
 export const STATUTS_SEANCE = ["planifiee", "en_direct", "terminee", "annulee"] as const;
@@ -104,6 +104,29 @@ export const votesQuestions = campusSchema.table(
   },
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
+
+/**
+ * Discussion écrite du live (comme le chat de Zoom ou de Meet) : étudiants,
+ * salles, formateur et équipe écrivent à toute la classe, avec un fichier
+ * joint au besoin. Le formateur (ou l'équipe) peut masquer un message ;
+ * l'auteur peut retirer le sien.
+ */
+export const messagesLive = campusSchema.table(
+  "messages_live",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    auteurId: integer("auteur_id").notNull().references(() => utilisateurs.id),
+    siteId: integer("site_id").references(() => sites.id),
+    texte: text("texte").notNull().default(""),
+    fichierId: integer("fichier_id").references(() => fichiers.id, { onDelete: "set null" }),
+    masque: boolean("masque").notNull().default(false),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("messages_live_seance_idx").on(t.seanceId, t.id), index("messages_live_fichier_idx").on(t.fichierId)],
+);
+
+export type MessageLive = typeof messagesLive.$inferSelect;
 
 /** Mains levées (d'un étudiant ou d'une salle de campus entière). */
 export const mainsLevees = campusSchema.table(

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Hand, Mic, MicOff, Play, Square, LifeBuoy, Ban, Sparkles, Captions, Radio, Plus, Trash2, Clock, Video, VideoOff, Check, ExternalLink } from "lucide-react";
 import { post, suppr } from "@/lib/api";
+import { useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { heureDouble } from "@/lib/dates";
@@ -18,14 +19,17 @@ import { Scene } from "./scene";
 import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, type ModeScene } from "./presentateur";
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance } from "./ui";
+import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { cleDirect, useEcranAllume, useEtatDirect } from "./outils";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
-type OngletStudio = "mains" | "questions" | "sondages" | "campus";
+type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "campus";
 
 export default function Studio({ seance, observation = false }: { seance: SeanceDetailDto; observation?: boolean }) {
+  const moi = useMoiConnecte();
   const { data: etat } = useEtatDirect(seance.id, true);
   const [onglet, setOnglet] = useState<OngletStudio>("mains");
+  const nonLus = useNonLusDiscussion(seance.id, true, moi.id, onglet === "discussion");
   const [micro, setMicro] = useState(true);
   const [camera, setCamera] = useState(true);
   const [radio, setRadio] = useState(true);
@@ -191,12 +195,16 @@ export default function Studio({ seance, observation = false }: { seance: Seance
               options={[
                   { valeur: "mains", libelle: "Mains", compteur: nbMains || undefined },
                   { valeur: "questions", libelle: "Questions", compteur: etat.questions.filter((q) => !q.repondue && !q.masquee).length || undefined },
+                  { valeur: "discussion", libelle: "Discussion", compteur: nonLus || undefined },
                   { valeur: "sondages", libelle: "Sondages" },
                   { valeur: "campus", libelle: "Campus" },
                 ]}
             />
             {onglet === "mains" && <FileMains seanceId={seance.id} etat={etat} lectureSeule={observation} />}
             {onglet === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role={observation ? "equipe" : "formateur"} enDirect={enDirect} />}
+            {onglet === "discussion" && (
+              <PanneauDiscussion seanceId={seance.id} role={observation ? "equipe" : "formateur"} moiId={moi.id} ouverte={statut === "planifiee" || statut === "en_direct"} />
+            )}
             {onglet === "sondages" && <PanneauSondages seance={seance} etat={etat} lectureSeule={observation} />}
             {onglet === "campus" && (
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

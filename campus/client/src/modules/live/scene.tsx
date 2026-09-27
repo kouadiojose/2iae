@@ -3,7 +3,7 @@
 // compagnon qui ne rejoignent aucune visio. Les bandeaux (parole, diapo,
 // Plan B) se superposent quel que soit le fournisseur.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic, RotateCcw } from "lucide-react";
+import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic, RotateCcw, EyeOff } from "lucide-react";
 import type { DailyCall, DailyEventObjectParticipant } from "@daily-co/daily-js";
 import { patch, post } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
@@ -33,6 +33,13 @@ export type PropsScene = {
   onEtatVisio?: (etat: EtatVisio) => void;
   /** Écran de salle : très grands bandeaux. */
   grand?: boolean;
+  /**
+   * Écran de salle : vignette vidéo masquée, la diapo seule à l'écran. La visio reste branchée (le son
+   * du formateur continue) ; sans effet quand le formateur montre les caméras en grand ou seules.
+   */
+  videoMasquee?: boolean;
+  /** Écran de salle : bouton « masquer la caméra » au-dessus de la vignette. */
+  onVideoMasquee?: (masquee: boolean) => void;
   className?: string;
 };
 
@@ -66,6 +73,8 @@ export function Scene(p: PropsScene) {
   const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url);
   const disposition = etat.diapo.disposition ?? "diapo";
   const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
+  // Diapo seule (écran de salle) : la vidéo sort de l'écran sans être démontée, le son continue.
+  const diapoSeule = avecDiapo && Boolean(p.videoMasquee) && disposition !== "cameras";
   return (
     <div
       className={cn(
@@ -80,23 +89,46 @@ export function Scene(p: PropsScene) {
           etat={etat}
           discrete={disposition === "cameras"}
           className={cn(
-            disposition === "diapo" && "absolute inset-0",
-            disposition === "cote" && "absolute inset-y-0 left-0 w-[58%]",
+            (disposition === "diapo" || diapoSeule) && "absolute inset-0",
+            disposition === "cote" && !diapoSeule && "absolute inset-y-0 left-0 w-[58%]",
             // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
             disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
           )}
         />
       )}
+      {/* Même structure dans toutes les mises en page (cadre > contenu) : la visio ne se recharge jamais. */}
       <div
         className={
           !avecDiapo || disposition === "cameras"
             ? "contents"
-            : disposition === "cote"
-              ? "absolute inset-y-0 right-0 w-[42%] overflow-hidden border-l-2 border-nuit-ligne bg-nuit-carte"
-              : cn("absolute z-10 aspect-video overflow-hidden rounded-xl border-2 border-nuit-ligne bg-nuit-carte shadow-2xl", vignette)
+            : diapoSeule
+              ? "pointer-events-none fixed -left-[4000px] top-0 h-[180px] w-[320px] opacity-0"
+              : disposition === "cote"
+                ? "absolute inset-y-0 right-0 w-[42%] border-l-2 border-nuit-ligne bg-nuit-carte"
+                : cn("absolute z-10 aspect-video", vignette)
         }
+        aria-hidden={diapoSeule || undefined}
       >
-        {contenu}
+        <div
+          className={
+            !avecDiapo || disposition === "cameras"
+              ? "contents"
+              : disposition === "diapo" && !diapoSeule
+                ? "h-full w-full overflow-hidden rounded-xl border-2 border-nuit-ligne bg-nuit-carte shadow-2xl"
+                : "h-full w-full overflow-hidden"
+          }
+        >
+          {contenu}
+        </div>
+        {p.onVideoMasquee && avecDiapo && disposition === "diapo" && !diapoSeule && (
+          <button
+            onClick={() => p.onVideoMasquee?.(true)}
+            className="absolute -top-12 right-0 flex items-center gap-1.5 rounded-full bg-black/80 px-3.5 py-2 text-sm font-bold text-white opacity-70 shadow-lg transition-opacity hover:opacity-100"
+            aria-label="Masquer la caméra de la vignette : la diapo seule, le son continue"
+          >
+            <EyeOff className="h-4 w-4" /> Masquer la caméra
+          </button>
+        )}
       </div>
       {parole && (
         <div
@@ -444,6 +476,19 @@ function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, on
       call.off("participant-joined", arrivee);
     };
   }, [call, connecte, role, cibleParole]);
+
+  // Écran de salle, diapo en grand : la vignette ne montre que le formateur, sans l'image de la salle
+  // elle-même ni la barre des participants. Caméras en grand ou côte à côte : tout revient.
+  const vignetteSalle = role === "salle" && Boolean(etat.diapo.url) && !etat.diapo.masquee && (etat.diapo.disposition ?? "diapo") === "diapo";
+  useEffect(() => {
+    if (!call || !connecte || role !== "salle") return;
+    try {
+      call.setShowLocalVideo(!vignetteSalle);
+      call.setShowParticipantsBar(!vignetteSalle);
+    } catch {
+      /* ancienne version de Daily : la vignette garde son affichage complet */
+    }
+  }, [call, connecte, role, vignetteSalle]);
 
   // Étudiant : le droit de parler arrive un instant après la parole ; on ouvre alors le micro.
   useEffect(() => {

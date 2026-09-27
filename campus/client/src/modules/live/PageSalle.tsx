@@ -5,9 +5,10 @@
 // PAROLE », la question en cours, les résultats des sondages par campus.
 // Une petite console en bas sert au responsable de salle. Aucun nom
 // d'étudiant n'est jamais affiché ici.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize } from "lucide-react";
+import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare } from "lucide-react";
 import { get, post, put, suppr } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
@@ -17,6 +18,7 @@ import { maintenantServeur } from "@/lib/horloge";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toastErreur, Toasts } from "@/components/ui/toast";
 import { Scene } from "./scene";
+import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { ResultatsParCampus } from "./panneaux";
 import { CarteCoteIvoire } from "./CarteCoteIvoire";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
@@ -47,7 +49,30 @@ export default function PageSalle() {
   );
 }
 
-function BandeauHaut({ seance, siteId }: { seance?: SeanceDetailDto; siteId: number | null }) {
+/** Préférence de l'écran de salle, gardée sur cet ordinateur (elle survit au rechargement de la page). */
+function usePreferenceSalle(cle: string): [boolean, (v: boolean) => void] {
+  const [valeur, setValeur] = useState(() => {
+    try {
+      return localStorage.getItem(cle) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const changer = useCallback(
+    (v: boolean) => {
+      setValeur(v);
+      try {
+        localStorage.setItem(cle, v ? "1" : "0");
+      } catch {
+        /* navigateur sans stockage : la préférence vaut pour la page ouverte */
+      }
+    },
+    [cle],
+  );
+  return [valeur, changer];
+}
+
+function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetailDto; siteId: number | null; onPresentation?: () => void }) {
   const maintenant = useMaintenant(1000);
   const site = seance?.sites.find((s) => s.id === siteId);
   return (
@@ -64,6 +89,15 @@ function BandeauHaut({ seance, siteId }: { seance?: SeanceDetailDto; siteId: num
             <span className="point-direct" />
             {seance.fournisseur === "daily" ? "Ce cours est enregistré" : "Questions et sous-titres gardés pour le replay"}
           </span>
+        )}
+        {onPresentation && (
+          <button
+            onClick={onPresentation}
+            className="flex min-h-11 items-center gap-2 rounded-full bg-orange px-4 text-[15px] font-bold text-encre hover:bg-orange-peche"
+            title="La diapo seule, en plein écran (touche P)"
+          >
+            <MonitorPlay className="h-5 w-5" /> Présentation seule
+          </button>
         )}
         <span className="font-mono text-2xl tabular-nums text-white lg:text-3xl">{heure(maintenant)}</span>
         <button
@@ -100,12 +134,42 @@ function EcranSansCours({ siteId, enCours }: { siteId: number | null; enCours?: 
 function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | null }) {
   const { data: seance } = useSeance(seanceId);
   const { data: etat } = useEtatDirect(seanceId, false);
+  // « Présentation seule » : la diapo en plein écran, sans bandeau, panneau ni console (pendant le direct).
+  const [presentation, setPresentation] = usePreferenceSalle("campus:salle-presentation");
+  const [videoMasquee, setVideoMasquee] = usePreferenceSalle("campus:salle-video-masquee");
+  const pleinEcranDemande = useRef(false);
+  const enDirect = etat?.statut === "en_direct";
+  const entrer = useCallback(() => {
+    setPresentation(true);
+    if (!document.fullscreenElement) {
+      pleinEcranDemande.current = true;
+      void document.documentElement.requestFullscreen?.().catch(() => undefined);
+    }
+  }, [setPresentation]);
+  const sortir = useCallback(() => {
+    setPresentation(false);
+    if (pleinEcranDemande.current && document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+    pleinEcranDemande.current = false;
+  }, [setPresentation]);
+  // Touche P : entrer ou sortir ; Échap : sortir (quand le navigateur n'est pas en plein écran).
+  useEffect(() => {
+    if (!enDirect) return;
+    const touche = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+      if (e.key === "p" || e.key === "P") (presentation ? sortir : entrer)();
+      else if (e.key === "Escape" && presentation) sortir();
+    };
+    window.addEventListener("keydown", touche);
+    return () => window.removeEventListener("keydown", touche);
+  }, [enDirect, presentation, entrer, sortir]);
   if (!seance || !etat) return <div className="min-h-dvh" aria-busy="true" />;
   const statut = etat.statut;
-  // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement.
+  const seule = statut === "en_direct" && presentation;
+  // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
+  // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
   return (
-    <div className="flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden">
-      <BandeauHaut seance={seance} siteId={siteId} />
+    <div className={seule ? "relative h-dvh w-screen overflow-hidden bg-black" : "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden"}>
+      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" ? entrer : undefined} />}
       {statut === "annulee" ? (
         <Message titre="Cours annulé" texte={etat.motifAnnulation ?? seance.motifAnnulation ?? "Le formateur a un empêchement."} seance={seance} />
       ) : statut === "terminee" ? (
@@ -113,9 +177,9 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
       ) : statut === "planifiee" ? (
         <AvantLeCours seance={seance} etat={etat} siteId={siteId} />
       ) : (
-        <PendantLeCours seance={seance} etat={etat} siteId={siteId} />
+        <PendantLeCours seance={seance} etat={etat} siteId={siteId} videoMasquee={videoMasquee} onVideoMasquee={setVideoMasquee} presentation={seule} onSortir={sortir} />
       )}
-      {siteId && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} />}
+      {siteId && !seule && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} />}
     </div>
   );
 }
@@ -328,48 +392,155 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
 
 // ── Pendant le cours ───────────────────────────────────────────────────────
 
-function PendantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null }) {
+type PropsVideo = { videoMasquee: boolean; onVideoMasquee: (v: boolean) => void };
+
+/**
+ * Pendant le cours. En « présentation seule », la scène occupe tout l'écran ; ce que le formateur envoie
+ * reste visible par-dessus (« C'est à vous », question affichée, sondage, sous-titres) et les commandes
+ * apparaissent quand la souris bouge. Les deux mises en page gardent la même structure : la visio (et le
+ * son) ne se coupent jamais au passage de l'une à l'autre.
+ */
+function PendantLeCours({
+  seance,
+  etat,
+  siteId,
+  videoMasquee,
+  onVideoMasquee,
+  presentation,
+  onSortir,
+}: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; presentation: boolean; onSortir: () => void } & PropsVideo) {
   const aLaParole = etat.parole?.type === "salle" && etat.parole.siteId === siteId;
   const questionEnCours = etat.questions.find((q) => q.epinglee && !q.masquee);
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
   const sondage = etat.sondage;
+  const commandes = useCommandesVisibles(presentation);
+  const cacheeParFormateur = etat.diapo.masquee || etat.diapo.disposition === "cameras";
   return (
-    <main className="grid flex-1 gap-6 px-4 py-4 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10">
-      <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
+    <main
+      className={
+        presentation
+          ? cn("absolute inset-0", !commandes && "cursor-none")
+          : "grid flex-1 gap-6 px-4 py-4 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10"
+      }
+    >
+      <div className={presentation ? "absolute inset-0" : "flex min-w-0 flex-col gap-4 lg:min-h-0"}>
         {aLaParole && (
-          <div className="animate-monte shrink-0 rounded-[22px] bg-orange px-6 py-3 text-center text-[clamp(26px,2.8vw,50px)] font-black uppercase tracking-serre text-encre" role="alert">
+          <div
+            className={cn(
+              "animate-monte bg-orange px-6 text-center text-[clamp(26px,2.8vw,50px)] font-black uppercase tracking-serre text-encre",
+              presentation ? "absolute inset-x-0 top-0 z-40 py-4" : "shrink-0 rounded-[22px] py-3",
+            )}
+            role="alert"
+          >
             C'est à vous : passez le micro
           </div>
         )}
-        <div className="min-h-[40vh] lg:min-h-0 lg:flex-1">
-          <Scene seance={seance} etat={etat} role="salle" micro={aLaParole} camera grand className="h-full" />
+        <div className={presentation ? "absolute inset-0" : "min-h-[40vh] lg:min-h-0 lg:flex-1"}>
+          <Scene
+            seance={seance}
+            etat={etat}
+            role="salle"
+            micro={aLaParole}
+            camera
+            grand
+            videoMasquee={videoMasquee}
+            onVideoMasquee={onVideoMasquee}
+            className={presentation ? "h-full rounded-none border-0" : "h-full"}
+          />
         </div>
-        {/* Sous-titres sous la scène : lisibles du fond de la salle, sans cacher la diapo. */}
-        {derniereLigne && (
-          <p className="shrink-0 rounded-2xl bg-black px-6 py-3 text-center text-[clamp(22px,2vw,38px)] font-semibold leading-snug text-white" aria-live="polite">
-            {derniereLigne.texte}
-          </p>
-        )}
-        {questionEnCours && (
-          <div className="animate-monte shrink-0 rounded-[24px] bg-creme px-6 py-4 text-encre">
-            <p className="font-mono text-base uppercase tracking-wider text-orange-fonce">Question de {questionEnCours.site ?? "la classe en ligne"}</p>
-            <p className="mt-1 line-clamp-2 text-[clamp(26px,2.6vw,48px)] font-black leading-tight tracking-serre">{questionEnCours.texte}</p>
-          </div>
-        )}
+        <div className={presentation ? "absolute inset-x-6 bottom-6 z-40 flex flex-col gap-3" : "contents"}>
+          {/* Question affichée par le formateur, puis sous-titres : lisibles du fond de la salle. */}
+          {questionEnCours && (
+            <div className={cn("animate-monte shrink-0 rounded-[24px] px-6 py-4 text-encre", presentation ? "bg-creme/95 shadow-2xl" : "bg-creme")}>
+              <p className="font-mono text-base uppercase tracking-wider text-orange-fonce">Question de {questionEnCours.site ?? "la classe en ligne"}</p>
+              <p className="mt-1 line-clamp-2 text-[clamp(26px,2.6vw,48px)] font-black leading-tight tracking-serre">{questionEnCours.texte}</p>
+            </div>
+          )}
+          {derniereLigne && (
+            <p
+              className={cn(
+                "shrink-0 rounded-2xl px-6 py-3 text-center text-[clamp(22px,2vw,38px)] font-semibold leading-snug text-white",
+                presentation ? "self-center bg-black/85" : "bg-black",
+              )}
+              aria-live="polite"
+            >
+              {derniereLigne.texte}
+            </p>
+          )}
+        </div>
       </div>
-      <aside className="flex flex-col gap-4 lg:min-h-0 lg:overflow-hidden">
-        {sondage && (
-          <div className="rounded-[24px] bg-nuit-panneau p-5">
-            <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{sondage.ouvert ? "Sondage en cours · réponds sur ton téléphone" : "Résultats du sondage"}</p>
-            <p className="mb-4 mt-2 text-[clamp(22px,1.8vw,36px)] font-black leading-tight">{sondage.question}</p>
-            {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
-          </div>
-        )}
-        <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage)} />
-        {!sondage && <CompteursEmarges etat={etat} liste />}
-      </aside>
+      {!presentation && (
+        <aside className="flex flex-col gap-4 lg:min-h-0 lg:overflow-hidden">
+          {sondage && (
+            <div className="rounded-[24px] bg-nuit-panneau p-5">
+              <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{sondage.ouvert ? "Sondage en cours · réponds sur ton téléphone" : "Résultats du sondage"}</p>
+              <p className="mb-4 mt-2 text-[clamp(22px,1.8vw,36px)] font-black leading-tight">{sondage.question}</p>
+              {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
+            </div>
+          )}
+          <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage)} />
+          {!sondage && <CompteursEmarges etat={etat} liste />}
+        </aside>
+      )}
+      {presentation && sondage?.ouvert && (
+        <div className="absolute right-6 top-6 z-40 w-[min(34vw,520px)] rounded-[24px] bg-nuit-panneau/95 p-5 text-white shadow-2xl">
+          <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">Sondage en cours · réponds sur ton téléphone</p>
+          <p className="mb-4 mt-2 text-[clamp(20px,1.6vw,32px)] font-black leading-tight">{sondage.question}</p>
+          {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
+        </div>
+      )}
+      {presentation && (
+        <div
+          className={cn(
+            "absolute right-4 z-50 flex items-center gap-2 transition-opacity duration-300",
+            sondage?.ouvert ? "bottom-4" : "top-4",
+            commandes ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+        >
+          {!cacheeParFormateur && (
+            <button onClick={() => onVideoMasquee(!videoMasquee)} className="flex min-h-11 items-center gap-2 rounded-full bg-black/80 px-4 text-[15px] font-bold text-white hover:bg-black">
+              {videoMasquee ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+              {videoMasquee ? "Afficher la caméra" : "Masquer la caméra"}
+            </button>
+          )}
+          <button onClick={onSortir} className="flex min-h-11 items-center gap-2 rounded-full bg-orange px-4 text-[15px] font-bold text-encre hover:bg-orange-peche">
+            <X className="h-5 w-5" /> Quitter la présentation
+          </button>
+        </div>
+      )}
+      {!presentation && videoMasquee && !cacheeParFormateur && (
+        <button
+          onClick={() => onVideoMasquee(false)}
+          className="fixed bottom-24 left-4 z-40 flex min-h-11 items-center gap-2 rounded-full bg-nuit-carte px-4 text-[15px] font-bold text-white shadow-xl hover:bg-nuit-ligne lg:bottom-20"
+        >
+          <Eye className="h-5 w-5" /> Afficher la caméra
+        </button>
+      )}
     </main>
   );
+}
+
+/** Commandes de la présentation seule : visibles quand la souris bouge, effacées après quelques secondes. */
+function useCommandesVisibles(actif: boolean): boolean {
+  const [visibles, setVisibles] = useState(true);
+  useEffect(() => {
+    if (!actif) return;
+    setVisibles(true);
+    let id = setTimeout(() => setVisibles(false), 4000);
+    const bouge = () => {
+      setVisibles(true);
+      clearTimeout(id);
+      id = setTimeout(() => setVisibles(false), 3000);
+    };
+    window.addEventListener("pointermove", bouge);
+    window.addEventListener("pointerdown", bouge);
+    return () => {
+      clearTimeout(id);
+      window.removeEventListener("pointermove", bouge);
+      window.removeEventListener("pointerdown", bouge);
+    };
+  }, [actif]);
+  return visibles;
 }
 
 // ── Console du responsable de salle ────────────────────────────────────────
@@ -383,6 +554,8 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
   const mainSalle: MainDirectDto | undefined = useMemo(() => etat.mains.find((m) => m.pourSalle && m.siteId === siteId), [etat.mains, siteId]);
   const peutLever = moi.role === "salle" || moi.role === "vie_scolaire";
   const enDirect = etat.statut === "en_direct";
+  const [discussion, setDiscussion] = useState(false);
+  const nonLus = useNonLusDiscussion(seance.id, false, moi.id, discussion);
 
   const declarer = async (corps: { nombre?: number; prete?: boolean; incident?: string | null }) => {
     try {
@@ -437,6 +610,14 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
         <button onClick={() => declarer({ prete: !campus?.prete })} className={cn(bouton, campus?.prete ? "bg-[#1F3A2B] text-[#6FCF97]" : "bg-nuit-carte text-white hover:bg-nuit-ligne")}>
           <CheckCircle2 className="h-5 w-5" /> {campus?.prete ? "Salle prête" : "Déclarer la salle prête"}
         </button>
+        <button
+          onClick={() => setDiscussion((v) => !v)}
+          className={cn(bouton, discussion ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne")}
+          aria-expanded={discussion}
+        >
+          <MessageSquare className="h-5 w-5" /> Discussion
+          {nonLus > 0 && <span className="rounded-full bg-orange px-2 font-mono text-[12px] text-encre">{nonLus}</span>}
+        </button>
         {campus?.incident ? (
           <button onClick={() => declarer({ incident: null })} className={cn(bouton, "bg-direct text-white")}>
             <CircleAlert className="h-5 w-5" /> {campus.incident} · résolu ?
@@ -465,6 +646,23 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
           </div>
         )}
       </div>
+      {/* Hors de la console : son flou d'arrière-plan enfermerait le tiroir dans la barre. */}
+      {discussion &&
+        createPortal(
+          <div className="fixed inset-y-0 right-0 z-50 flex w-[min(440px,100vw)] flex-col border-l border-nuit-bord bg-nuit-panneau text-white shadow-2xl" role="dialog" aria-label="Discussion de la classe">
+            <div className="flex items-center justify-between border-b border-nuit-ligne px-4 py-3">
+              <div>
+                <p className="text-base font-extrabold text-white">Discussion de la classe</p>
+                <p className="text-[12px] text-nuit-gris">Vous écrivez au nom de la salle. Les noms des étudiants ne s'affichent pas ici.</p>
+              </div>
+              <button onClick={() => setDiscussion(false)} className="rounded-full p-2 text-nuit-gris hover:text-white" aria-label="Fermer la discussion">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <PanneauDiscussion seanceId={seance.id} role="salle" moiId={moi.id} ouverte={etat.statut === "planifiee" || etat.statut === "en_direct"} />
+          </div>,
+          document.body,
+        )}
     </footer>
   );
 }

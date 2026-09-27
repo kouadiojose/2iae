@@ -59,6 +59,11 @@ export type PreferencesUtilisateur = {
   /** Compte de démonstration (supprimé par « npm run db:purge-demo »). */
   demo?: boolean;
   /**
+   * Compte d'écran de salle : le lien et le code d'installation permanents,
+   * chiffrés avec la clé du serveur (le pilotage les réaffiche). Voir routes/lancement.ts.
+   */
+  installationEcran?: { chiffre: string; le: string };
+  /**
    * Dernier essai de la visio de la classe (page /visio/essai), horodaté par
    * le serveur. « reussi » : le service vidéo répond depuis ce navigateur, ou
    * la personne est bien entrée dans la salle d'essai.

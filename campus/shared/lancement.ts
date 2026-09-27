@@ -87,7 +87,12 @@ export type EnvoiInvitation = { envoye: boolean; adresse: string; message: strin
 
 // ── Écran de la salle de conférence ────────────────────────────────────────
 
-/** POST /api/pilotage/sites/:id/ecran : de quoi installer l'écran de la salle d'un campus. */
+/**
+ * Le lien et le code d'installation de l'écran de la salle d'un campus :
+ * permanents et réutilisables (un ordinateur de salle peut changer), jusqu'à
+ * ce que la direction ou la vie scolaire les change.
+ * GET /api/pilotage/sites/:id/ecran : ceux en place · POST : de nouveaux (les anciens ne marchent plus).
+ */
 export type InstallationEcran = {
   siteId: number;
   compteId: number;
@@ -98,11 +103,20 @@ export type InstallationEcran = {
   /** Ou : ouvrir l'adresse courte et taper ce code de 8 caractères (lettres et chiffres sans ambiguïté). */
   code: string;
   adresseCourte: string;
-  expireLe: string;
+  /** Depuis quand ce lien et ce code sont en place. */
+  depuis: string;
   message: string;
   whatsapp: string;
   /** Le compte de l'écran vient d'être créé. */
   nouveau: boolean;
+};
+
+/** GET /api/pilotage/sites/:id/ecran */
+export type EtatEcranSalle = {
+  /** null : aucun lien en place (jamais préparé, ou illisible après un changement de clé du serveur). */
+  installation: InstallationEcran | null;
+  /** Dernière connexion d'un ordinateur installé avec ce compte d'écran. */
+  derniereConnexion: string | null;
 };
 
 /** POST /api/ecran/installer : { jeton } (lien) ou { code } (adresse courte). */

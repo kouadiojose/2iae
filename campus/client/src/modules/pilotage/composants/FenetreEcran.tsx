@@ -1,51 +1,61 @@
 // « Installer l'écran de la salle » d'un campus : sur l'ordinateur branché à
 // l'écran de la salle de conférence, ouvrir l'adresse courte et taper le code
 // de 8 caractères (ou ouvrir le lien reçu). L'ordinateur reste ensuite connecté.
-// Chaque ouverture de la fenêtre prépare un nouveau code : le précédent ne
-// marche plus.
-import { useEffect, useRef, useState } from "react";
-import { Copy, MessageCircle, Link2, MonitorSmartphone, TriangleAlert } from "lucide-react";
-import type { InstallationEcran } from "@shared/lancement";
+// Le lien et le code sont permanents et réutilisables (un ordinateur de salle
+// peut changer) : la fenêtre réaffiche ceux en place. « Changer le lien et le
+// code » en prépare de nouveaux ; les anciens ne marchent plus.
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Copy, MessageCircle, Link2, MonitorSmartphone, RefreshCw, TriangleAlert } from "lucide-react";
+import type { EtatEcranSalle, InstallationEcran } from "@shared/lancement";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Bouton } from "@/components/ui/bouton";
 import { Erreur, Squelette } from "@/components/ui/divers";
 import { toast } from "@/components/ui/toast";
 import { post, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
-import { heure, jourLong } from "@/lib/dates";
+import { jourLong } from "@/lib/dates";
 import { Qr } from "./Qr";
 import { copier } from "../outils";
 
 export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: string } | null; onFermer: () => void }) {
-  const [inst, setInst] = useState<InstallationEcran | null>(null);
-  const [erreur, setErreur] = useState<string | null>(null);
-  const demande = useRef<number | null>(null);
+  const etat = useQuery<EtatEcranSalle>({ queryKey: [`/api/pilotage/sites/${site?.id}/ecran`], enabled: Boolean(site), staleTime: 0 });
+  const [neuf, setNeuf] = useState<InstallationEcran | null>(null);
+  const [confirmer, setConfirmer] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreurEnvoi, setErreurEnvoi] = useState<string | null>(null);
+  const inst = neuf && neuf.siteId === site?.id ? neuf : (etat.data?.installation ?? null);
 
-  useEffect(() => {
-    if (!site) {
-      demande.current = null;
-      return;
+  const preparer = async () => {
+    if (!site) return;
+    setEnvoi(true);
+    setErreurEnvoi(null);
+    try {
+      const r = await post<InstallationEcran>(`/api/pilotage/sites/${site.id}/ecran`);
+      setNeuf(r);
+      setConfirmer(false);
+      void rafraichir("/api/pilotage/rentree", "/api/pilotage/comptes", `/api/pilotage/sites/${site.id}/ecran`);
+    } catch (e) {
+      setErreurEnvoi(e instanceof ErreurApi ? e.message : "Une erreur est survenue. Réessayez dans un instant.");
+    } finally {
+      setEnvoi(false);
     }
-    if (demande.current === site.id) return;
-    demande.current = site.id;
-    setInst(null);
-    setErreur(null);
-    post<InstallationEcran>(`/api/pilotage/sites/${site.id}/ecran`)
-      .then((r) => {
-        setInst(r);
-        void rafraichir("/api/pilotage/rentree", "/api/pilotage/comptes");
-      })
-      .catch((e) => setErreur(e instanceof ErreurApi ? e.message : "Une erreur est survenue. Réessayez dans un instant."));
-  }, [site]);
+  };
+  const fermer = () => {
+    setNeuf(null);
+    setConfirmer(false);
+    setErreurEnvoi(null);
+    onFermer();
+  };
 
   if (!site) return null;
   return (
     <Fenetre
       ouverte
-      onFermer={onFermer}
+      onFermer={fermer}
       large
       titre={`Installer l'écran · ${site.nom}`}
-      description="À faire une fois, sur l'ordinateur branché à l'écran de la salle de conférence. Il reste ensuite connecté."
+      description="Sur l'ordinateur branché à l'écran de la salle de conférence. Le lien et le code restent valables : ils réinstallent l'écran sur un nouvel ordinateur si besoin."
       pied={
         inst ? (
           <>
@@ -65,12 +75,21 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
         ) : undefined
       }
     >
-      {erreur ? (
-        <Erreur message={erreur} />
-      ) : !inst ? (
+      {etat.isError || erreurEnvoi ? (
+        <Erreur message={erreurEnvoi ?? (etat.error as Error).message} />
+      ) : etat.isLoading ? (
         <div className="flex flex-col gap-3 pb-2" aria-busy="true">
           <Squelette className="h-32" />
           <Squelette className="h-16" />
+        </div>
+      ) : !inst ? (
+        <div className="flex flex-col items-start gap-4 pb-2">
+          <p className="text-[15px] leading-relaxed text-texte-doux">
+            Aucun lien d'installation n'est en place pour cette salle. Préparez-en un : il restera valable, sur autant d'ordinateurs que nécessaire.
+          </p>
+          <Bouton taille="lg" chargement={envoi} onClick={() => void preparer()} icone={<MonitorSmartphone className="h-5 w-5" />}>
+            Préparer le lien et le code
+          </Bouton>
         </div>
       ) : (
         <div className="flex flex-col gap-5 pb-2">
@@ -92,9 +111,7 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
                   {inst.code.slice(4)}
                 </p>
                 <p className="mt-1.5 text-sm text-texte-pale">Lettres et chiffres, sans 0, O, 1, I ni L : aucune confusion possible.</p>
-                <p className="mt-2 text-sm text-texte-pale">
-                  Valable jusqu'au {jourLong(inst.expireLe)} à {heure(inst.expireLe)} (heure d'Abidjan), une seule fois.
-                </p>
+                <p className="mt-2 text-sm text-texte-pale">Sans date limite, sur autant d'ordinateurs que nécessaire. En place depuis le {jourLong(inst.depuis)}.</p>
               </div>
             </li>
             <li className="flex gap-3">
@@ -122,11 +139,35 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
             <Qr texte={inst.lien} className="w-28 shrink-0 self-center rounded-xl bg-white p-2" titre="QR du lien d'installation" />
           </div>
 
-          {!inst.nouveau && (
+          {neuf && !neuf.nouveau ? (
             <p className="flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              Les codes préparés avant celui-ci ne marchent plus. Un écran déjà installé reste connecté.
+              Nouveau lien et nouveau code : les précédents ne marchent plus. Les écrans déjà installés restent connectés.
             </p>
+          ) : confirmer ? (
+            <div className="flex flex-col gap-3 rounded-2xl border border-alerte/40 bg-alerte-clair p-4">
+              <p className="flex items-start gap-2 text-sm text-alerte">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                Le lien et le code actuels ne marcheront plus, pour personne. À faire seulement s'ils ont circulé au-delà des responsables de la salle. Les
+                écrans déjà installés restent connectés.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Bouton variante="danger" chargement={envoi} onClick={() => void preparer()}>
+                  Oui, changer le lien et le code
+                </Bouton>
+                <Bouton variante="fantome" onClick={() => setConfirmer(false)}>
+                  Garder ceux-ci
+                </Bouton>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmer(true)}
+              className="flex min-h-[44px] items-center gap-2 self-start text-sm font-bold text-texte-pale hover:text-encre"
+            >
+              <RefreshCw className="h-4 w-4" /> Changer le lien et le code
+            </button>
           )}
         </div>
       )}

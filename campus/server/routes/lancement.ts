@@ -60,6 +60,7 @@ import type {
   InvitationRemise,
   EnvoiInvitation,
   InstallationEcran,
+  EtatEcranSalle,
 } from "@shared/lancement";
 
 const P = "/api/pilotage";
@@ -73,11 +74,13 @@ const RECENT_MS = 7 * JOUR_MS;
 /** Un essai visio compte s'il a réussi dans les 14 derniers jours. */
 const ESSAI_RECENT_MS = 14 * JOUR_MS;
 /**
- * Lien et code d'installation d'un écran : 14 jours, une seule fois. Le temps
- * que le gestionnaire de la salle reçoive le lien et son guide, et trouve le
- * bon moment ; un nouveau lien annule le précédent.
+ * Lien et code d'installation d'un écran : permanents et réutilisables. Les
+ * ordinateurs des salles changent (panne, prêt, nouvel ordinateur) : le même
+ * lien réinstalle l'écran sans rien demander à personne. Ils ne cessent de
+ * marcher que si la direction ou la vie scolaire en prépare de nouveaux
+ * (lien qui circule trop). La base exige une date : 30 ans.
  */
-const DUREE_INSTALLATION_MS = 14 * JOUR_MS;
+const DUREE_INSTALLATION_MS = 30 * 365 * JOUR_MS;
 
 const fmtJour = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 const fmtJourCourt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -823,8 +826,9 @@ const hacherCodeEcran = (code: string) => hacherJeton(`ecran:${code}`);
 /**
  * Code d'installation d'un écran : 8 caractères pris parmi 31 lettres et chiffres sans ambiguïté (ni 0/O,
  * ni 1/I/L), soit 31^8, environ 850 milliards de codes. Deviner l'un des cinq codes en circulation reste hors
- * de portée pendant les 14 jours de validité (10 000 adresses au rythme permis, 10 essais par quart d'heure :
- * moins d'une chance sur mille ; le lien, lui, porte 24 octets aléatoires) : il n'y a donc plus de plafond
+ * de portée (10 000 adresses au rythme permis, 10 essais par quart d'heure : environ une chance sur 20 000
+ * par jour, alors que la direction peut changer le code à tout moment ; le lien, lui, porte 24 octets
+ * aléatoires) : il n'y a donc plus de plafond
  * d'échecs commun à tout le campus, que quelques adresses suffisaient à remplir pour bloquer l'installation
  * des vraies salles. Restent les essais limités par adresse (ou par réseau IPv6).
  */
@@ -835,6 +839,86 @@ const codeEcran = () => Array.from({ length: LONGUEUR_CODE_ECRAN }, () => ALPHAB
 const lireCodeEcran = (brut: string) => brut.toUpperCase().replace(/[^A-Z0-9]/g, "");
 /** « K7MQ 4XP9 » : lisible de loin, facile à recopier. */
 const codeEcranLisible = (code: string) => `${code.slice(0, 4)} ${code.slice(4)}`;
+
+/** Le lien et le code d'installation, chiffrés (AES-256-GCM) avec une clé tirée du secret du serveur. */
+const CLE_ECRANS = crypto.createHash("sha256").update(`ecrans-salle:${config.sessionSecret}`).digest();
+function chiffrer(texte: string): string {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", CLE_ECRANS, iv);
+  const corps = Buffer.concat([c.update(texte, "utf8"), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), corps]).toString("base64url");
+}
+function dechiffrer(chiffre: string): string | null {
+  try {
+    const b = Buffer.from(chiffre, "base64url");
+    const d = crypto.createDecipheriv("aes-256-gcm", CLE_ECRANS, b.subarray(0, 12));
+    d.setAuthTag(b.subarray(12, 28));
+    return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function siteDuPerimetre(req: Request) {
+  const [s] = await db.select().from(sites).where(eq(sites.id, idParam(req)));
+  const p = perimetreSites(moi(req));
+  if (!s || (p && !p.includes(s.id))) throw introuvable("Campus");
+  return s;
+}
+
+/** Le compte de l'écran d'un campus : le plus récemment vu. Jamais un compte « salle » de la démonstration. */
+async function compteEcran(siteId: number): Promise<Utilisateur | null> {
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT e.id FROM campus.utilisateurs e WHERE e.role = 'salle' AND e.site_id = $1 AND e.actif AND ${ECRAN_REEL("e")}
+      ORDER BY (NOT e.doit_changer_mot_de_passe) DESC, e.derniere_connexion DESC NULLS LAST, e.id LIMIT 1`,
+    [siteId],
+  );
+  if (!rows[0]) return null;
+  const [u] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, rows[0].id));
+  return u ?? null;
+}
+
+/** Le lien et le code en place, s'ils marchent encore (pas remplacés entre-temps). */
+async function installationEnPlace(s: typeof sites.$inferSelect, compte: Utilisateur): Promise<InstallationEcran | null> {
+  const garde = compte.preferences?.installationEcran;
+  const clair = garde ? dechiffrer(garde.chiffre) : null;
+  if (!garde || !clair) return null;
+  const { jeton, code } = JSON.parse(clair) as { jeton: string; code: string };
+  const [actif] = await db
+    .select({ id: reinitialisations.id })
+    .from(reinitialisations)
+    .where(and(eq(reinitialisations.jetonHash, hacherJeton(jeton)), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe), gt(reinitialisations.expireLe, new Date())));
+  return actif ? decrireInstallation(s, compte.id, jeton, code, new Date(garde.le), false) : null;
+}
+
+function decrireInstallation(s: typeof sites.$inferSelect, compteId: number, jeton: string, code: string, le: Date, nouveau: boolean): InstallationEcran {
+  const hote = config.urlCampus.replace(/^https?:\/\//, "");
+  const lienTexte = `${config.urlCampus}/ecran/${jeton}`;
+  const salle = sallePasEncoreNommee(s.salleConference) ? "la salle de conférence" : s.salleConference;
+  const message = [
+    `Installation de l'écran de ${salle} · campus ${s.nomCourt}`,
+    "",
+    "Sur l'ordinateur branché à l'écran de la salle, ouvrez ce lien :",
+    lienTexte,
+    "",
+    `Ou allez sur ${hote}/ecran et tapez le code ${codeEcranLisible(code)}.`,
+    "Ce lien et ce code restent valables : ils réinstallent l'écran sur un autre ordinateur si besoin. Gardez-les pour les responsables de la salle.",
+    "Ensuite, l'écran reste connecté : laissez simplement la page ouverte.",
+  ].join("\n");
+  return {
+    siteId: s.id,
+    compteId,
+    site: s.nomCourt,
+    salle,
+    lien: lienTexte,
+    code,
+    adresseCourte: `${hote}/ecran`,
+    depuis: le.toISOString(),
+    message,
+    whatsapp: lienWhatsApp(null, message),
+    nouveau,
+  };
+}
 
 /**
  * Qui essaie, pour la limite d'essais : l'adresse IPv4, ou le réseau /64 d'une adresse IPv6 (un abonné en
@@ -1017,29 +1101,34 @@ export function enregistrerLancement(app: Express) {
     }),
   );
 
-  // Installer l'écran de la salle de conférence d'un campus : lien + code à 8 caractères.
+  // L'écran de la salle d'un campus : le lien et le code permanents en place (GET), ou de nouveaux (POST).
+  app.get(
+    `${P}/sites/:id(\\d+)/ecran`,
+    EQUIPE,
+    route(async (req, res) => {
+      const s = await siteDuPerimetre(req);
+      const compte = await compteEcran(s.id);
+      const etat: EtatEcranSalle = {
+        installation: compte ? await installationEnPlace(s, compte) : null,
+        derniereConnexion: compte?.derniereConnexion?.toISOString() ?? null,
+      };
+      res.setHeader("Cache-Control", "no-store");
+      res.json(etat);
+    }),
+  );
+
   app.post(
     `${P}/sites/:id(\\d+)/ecran`,
     EQUIPE,
     route(async (req, res) => {
       const u = moi(req);
-      const [s] = await db.select().from(sites).where(eq(sites.id, idParam(req)));
-      const p = perimetreSites(u);
-      if (!s || (p && !p.includes(s.id))) throw introuvable("Campus");
+      const s = await siteDuPerimetre(req);
 
       // Le compte de l'écran : celui qui existe déjà (le plus récemment vu), sinon un nouveau, sans identifiant.
-      // Jamais un compte « salle » de la démonstration : la purge le supprimerait, et l'écran de la salle avec.
-      const existants = (
-        await pool.query<{ id: number }>(
-          `SELECT e.id FROM campus.utilisateurs e WHERE e.role = 'salle' AND e.site_id = $1 AND e.actif AND ${ECRAN_REEL("e")}
-            ORDER BY (NOT e.doit_changer_mot_de_passe) DESC, e.derniere_connexion DESC NULLS LAST, e.id LIMIT 1`,
-          [s.id],
-        )
-      ).rows;
-      let compteId = existants[0]?.id;
-      const nouveau = !compteId;
-      if (!compteId) {
-        const [cree] = await db
+      let compte = await compteEcran(s.id);
+      const nouveau = !compte;
+      if (!compte) {
+        [compte] = await db
           .insert(utilisateurs)
           .values({
             role: "salle",
@@ -1050,59 +1139,36 @@ export function enregistrerLancement(app: Express) {
             motDePasseHash: await hacher(`${motDePasseProvisoire()}-${jetonAleatoire(12)}`),
             doitChangerMotDePasse: true,
           })
-          .returning({ id: utilisateurs.id });
-        compteId = cree.id;
-        await journaliser(u, "compte_cree", { compteId, role: "salle", siteId: s.id });
+          .returning();
+        await journaliser(u, "compte_cree", { compteId: compte.id, role: "salle", siteId: s.id });
       }
 
-      // Anciens liens et codes d'installation : plus valables.
+      // Anciens liens et codes d'installation : plus valables. Les ordinateurs déjà installés restent connectés.
       await db
         .update(reinitialisations)
         .set({ utiliseLe: new Date() })
-        .where(and(eq(reinitialisations.utilisateurId, compteId), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
+        .where(and(eq(reinitialisations.utilisateurId, compte.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
       const expireLe = new Date(Date.now() + DUREE_INSTALLATION_MS);
-      const jeton = await creerJeton(compteId, "activation", DUREE_INSTALLATION_MS);
+      const jeton = await creerJeton(compte.id, "activation", DUREE_INSTALLATION_MS);
       let code = "";
       for (let essai = 0; essai < 8 && !code; essai++) {
         const candidat = codeEcran();
         try {
-          await db.insert(reinitialisations).values({ utilisateurId: compteId, type: "activation", jetonHash: hacherCodeEcran(candidat), expireLe });
+          await db.insert(reinitialisations).values({ utilisateurId: compte.id, type: "activation", jetonHash: hacherCodeEcran(candidat), expireLe });
           code = candidat;
         } catch {
           /* même code déjà en circulation pour un autre écran : on en tire un autre */
         }
       }
       if (!code) throw new ErreurHttp(503, "Impossible de préparer un code pour l'instant. Réessayez.");
-      const hote = config.urlCampus.replace(/^https?:\/\//, "");
-      const lienTexte = `${config.urlCampus}/ecran/${jeton}`;
-      const salle = sallePasEncoreNommee(s.salleConference) ? "la salle de conférence" : s.salleConference;
-      const codeLisible = codeEcranLisible(code);
-      const echeance = `${jourLong(expireLe)} à ${heure(expireLe)}`;
-      const message = [
-        `Installation de l'écran de ${salle} · campus ${s.nomCourt}`,
-        "",
-        "Sur l'ordinateur branché à l'écran de la salle, ouvrez ce lien :",
-        lienTexte,
-        "",
-        `Ou allez sur ${hote}/ecran et tapez le code ${codeLisible}.`,
-        `Valable jusqu'au ${echeance} (heure d'Abidjan), une seule fois.`,
-        "Ensuite, l'écran reste connecté : laissez simplement la page ouverte.",
-      ].join("\n");
-      await journaliser(u, "ecran_installation", { compteId, siteId: s.id });
-      const r: InstallationEcran = {
-        siteId: s.id,
-        compteId,
-        site: s.nomCourt,
-        salle,
-        lien: lienTexte,
-        code,
-        adresseCourte: `${hote}/ecran`,
-        expireLe: expireLe.toISOString(),
-        message,
-        whatsapp: lienWhatsApp(null, message),
-        nouveau,
-      };
-      res.json(r);
+      const le = new Date();
+      // Gardés chiffrés dans le compte de l'écran : le pilotage les réaffiche sans en refaire.
+      await db
+        .update(utilisateurs)
+        .set({ preferences: { ...compte.preferences, installationEcran: { chiffre: chiffrer(JSON.stringify({ jeton, code })), le: le.toISOString() } } })
+        .where(eq(utilisateurs.id, compte.id));
+      await journaliser(u, "ecran_installation", { compteId: compte.id, siteId: s.id });
+      res.json(decrireInstallation(s, compte.id, jeton, code, le, nouveau));
     }),
   );
 
@@ -1131,9 +1197,9 @@ export function enregistrerLancement(app: Express) {
         return new ErreurHttp(
           410,
           parLien
-            ? "Ce lien d'installation ne marche plus : il a déjà servi ou il a expiré. Demandez-en un nouveau à la vie scolaire ou à la direction."
+            ? "Ce lien d'installation ne marche plus : un nouveau lien l'a remplacé. Demandez le lien actuel à la vie scolaire ou à la direction (Pilotage, « Installer l'écran »)."
             : code.length === LONGUEUR_CODE_ECRAN
-              ? "Ce code ne marche pas. Vérifiez les 8 caractères, ou demandez un nouveau code à la vie scolaire ou à la direction."
+              ? "Ce code ne marche pas. Vérifiez les 8 caractères, ou demandez le code actuel à la vie scolaire ou à la direction."
               : "Le code d'installation fait 8 caractères, lettres et chiffres. Vérifiez-le, ou demandez un nouveau code à la vie scolaire ou à la direction.",
         );
       };
@@ -1146,11 +1212,7 @@ export function enregistrerLancement(app: Express) {
       const [ecran] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, ligne.utilisateurId));
       if (!ecran || !ecran.actif || ecran.role !== "salle") throw echec();
 
-      // Le lien ET le code de cette installation ne servent plus.
-      await db
-        .update(reinitialisations)
-        .set({ utiliseLe: new Date() })
-        .where(and(eq(reinitialisations.utilisateurId, ecran.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
+      // Le lien et le code restent valables : ils réinstalleront l'écran sur un autre ordinateur si besoin.
       const [installe] = await db
         .update(utilisateurs)
         .set({ doitChangerMotDePasse: false, motDePasseExpireLe: null, derniereConnexion: new Date() })

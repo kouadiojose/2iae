@@ -142,8 +142,8 @@ async function leconModifiable(u: Utilisateur, leconId: number) {
   return { lecon: l, cours: c };
 }
 
-/** Prochaine séance (ou séance en cours) de chaque cours. */
-async function prochainesSeances(coursIds: number[]): Promise<Map<number, SeanceDuCours>> {
+/** Prochaine séance (ou séance en cours) de chaque cours ; pour un étudiant, jamais un essai de visio (direct immédiat sans prévenir). */
+async function prochainesSeances(coursIds: number[], etudiant = false): Promise<Map<number, SeanceDuCours>> {
   const resultat = new Map<number, SeanceDuCours>();
   if (!coursIds.length) return resultat;
   const lignes = await db
@@ -161,6 +161,7 @@ async function prochainesSeances(coursIds: number[]): Promise<Map<number, Seance
         inArray(seances.coursId, coursIds),
         inArray(seances.statut, ["planifiee", "en_direct"]),
         sql`${seances.debut} + (${seances.dureeMinutes} * interval '1 minute') > now()`,
+        etudiant ? sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)` : undefined,
       ),
     )
     .orderBy(asc(seances.debut));
@@ -329,7 +330,7 @@ async function detailCours(u: Utilisateur, c: Cours): Promise<CoursDetail> {
         .orderBy(asc(sites.ordre))
     : [];
 
-  const seance = (await prochainesSeances([c.id])).get(c.id) ?? null;
+  const seance = (await prochainesSeances([c.id], u.role === "etudiant")).get(c.id) ?? null;
   const nbEtudiants = voitBrouillons ? ((await effectifsDesCours([c.id])).get(c.id) ?? 0) : null;
 
   return {
@@ -568,7 +569,7 @@ export function enregistrerCours(app: Express) {
         .groupBy(coursClasses.coursId);
       const classesDe = new Map(nbClasses.map((l) => [l.coursId, l.n]));
 
-      const seancesDe = await prochainesSeances(ids);
+      const seancesDe = await prochainesSeances(ids, u.role === "etudiant");
       const equipe = estEquipe(u);
       // Le formateur n'enseigne que ce que idsCoursAccessibles lui renvoie.
       const enseigne = equipe || u.role === "formateur";

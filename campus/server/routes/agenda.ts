@@ -89,7 +89,15 @@ export async function elementsAgenda(u: Utilisateur, debut: Date, fin: Date): Pr
       .select({ s: seances, code: cours.code, couleur: cours.couleur })
       .from(seances)
       .innerJoin(cours, eq(cours.id, seances.coursId))
-      .where(and(inArray(seances.coursId, coursIds), gte(seances.debut, debut), lt(seances.debut, fin)))
+      .where(
+        and(
+          inArray(seances.coursId, coursIds),
+          gte(seances.debut, debut),
+          lt(seances.debut, fin),
+          // Essai de visio d'un formateur (direct immédiat sans prévenir) : pas dans l'agenda des étudiants.
+          estEtudiant ? sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)` : undefined,
+        ),
+      )
       .orderBy(asc(seances.debut));
     for (const { s, code, couleur } of lives) {
       elements.push({

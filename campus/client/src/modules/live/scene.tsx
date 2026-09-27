@@ -366,14 +366,19 @@ function SceneDaily({ seance, etat, role, micro, camera, onConsommationVisio, on
   }, [call, connecte, role, etat.statut, relanceEnregistrement]);
 
   // Formateur : micro coupé (ou rouvert) depuis l'interface de Daily elle-même. Le studio suit, et la radio avec lui.
+  // Seuls les changements comptent (on part de l'état actuel du micro dans Daily) : un ancien événement ne défait pas un choix du studio.
   useEffect(() => {
     if (!call || !connecte || role !== "formateur" || !onMicroDaily) return;
-    let dernier: boolean | null = null;
+    const microOuvert = (x: DailyEventObjectParticipant["participant"] | undefined): boolean | null => {
+      const audio = x?.tracks?.audio;
+      if (audio?.state === "playable" || audio?.state === "sendable" || audio?.state === "loading") return true;
+      return audio?.state === "off" && audio.off?.byUser ? false : null;
+    };
+    let dernier = microOuvert(call.participants().local);
     const maj = (ev?: DailyEventObjectParticipant) => {
       const x = ev?.participant;
       if (!x?.local) return;
-      const audio = x.tracks?.audio;
-      const ouvert = audio?.state === "playable" || audio?.state === "sendable" || audio?.state === "loading" ? true : audio?.state === "off" && audio.off?.byUser ? false : null;
+      const ouvert = microOuvert(x);
       if (ouvert === null || ouvert === dernier) return;
       dernier = ouvert;
       onMicroDaily(ouvert);

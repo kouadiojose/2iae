@@ -301,15 +301,24 @@ const PROPRIETES_COMMUNES = {
  * prolongée, on retente la seule prolongation : sinon tout le monde serait
  * éjecté à l'ancienne heure de fin (eject_at_room_exp).
  */
-async function mettreAJourSalle(nom: string, proprietes: { exp: number; max_participants?: number }, prolonger: boolean): Promise<void> {
+async function mettreAJourSalle(nom: string, proprietes: { exp: number; max_participants?: number }, prolonger: boolean): Promise<boolean> {
   const chemin = `/rooms/${encodeURIComponent(nom)}`;
   const r = await appelDaily<{ info?: string; error?: string }>(chemin, { methode: "POST", corps: { properties: proprietes } });
-  if (r.statut === 200) return;
+  if (r.statut === 200) return true;
   console.warn(`[visio] mise à jour de la salle ${nom} refusée (${r.statut}) : ${r.donnees?.error ?? ""} ${r.donnees?.info ?? ""}`.trim());
-  if (!prolonger || proprietes.max_participants === undefined) return;
+  if (!prolonger || proprietes.max_participants === undefined) return false;
   const seule = await appelDaily<{ info?: string; error?: string }>(chemin, { methode: "POST", corps: { properties: { exp: proprietes.exp } } });
   if (seule.statut !== 200) console.warn(`[visio] prolongation de la salle ${nom} refusée (${seule.statut}) : ${seule.donnees?.error ?? ""} ${seule.donnees?.info ?? ""}`.trim());
+  return false;
 }
+
+/**
+ * Salles de séance vérifiées il y a moins d'une minute (taille et fin à jour) :
+ * quand quarante étudiants et cinq salles entrent au « Démarrer », on ne relit
+ * pas la salle chez Daily à chaque entrée (Daily limite le nombre d'appels).
+ */
+const sallesVerifiees = new Map<string, { url: string; exp: number; taille: number; jusqua: number }>();
+const retenirSalle = (nom: string, url: string, exp: number, taille: number) => sallesVerifiees.set(nom, { url, exp, taille, jusqua: Date.now() + 60_000 });
 
 /**
  * Crée (ou retrouve) la salle Daily de la séance : privée, caméra et micro
@@ -320,15 +329,17 @@ export async function obtenirSalleDaily(s: Pick<Seance, "id" | "debut" | "dureeM
   const nom = nomSalleVisio(s.id);
   const exp = expirationSalle(s);
   const taille = tailleSalleSeance();
+  // Vérifiée il y a moins d'une minute, et sa fin couvre encore largement la séance : rien à redemander.
+  const connue = sallesVerifiees.get(nom);
+  if (connue && connue.jusqua > Date.now() && connue.taille === taille && connue.exp >= exp - 30 * 60) return { nom, url: connue.url };
   const existante = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
   if (existante.statut === 200 && existante.donnees) {
     // Prolonge la salle si la séance a été déplacée ou déborde ; suit le réglage des places.
     const cfg = existante.donnees.config ?? {};
     const tailleActuelle = cfg.max_participants ?? MAX_PARTICIPANTS_DEFAUT_DAILY;
     const prolonger = (cfg.exp ?? 0) < exp;
-    if (prolonger || tailleActuelle !== taille) {
-      await mettreAJourSalle(nom, { exp: Math.max(exp, cfg.exp ?? 0), max_participants: taille }, prolonger);
-    }
+    const aJour = prolonger || tailleActuelle !== taille ? await mettreAJourSalle(nom, { exp: Math.max(exp, cfg.exp ?? 0), max_participants: taille }, prolonger) : true;
+    if (aJour) retenirSalle(nom, existante.donnees.url, Math.max(exp, cfg.exp ?? 0), taille);
     return { nom, url: existante.donnees.url };
   }
   const creer = (max_participants?: number) =>
@@ -354,7 +365,10 @@ export async function obtenirSalleDaily(s: Pick<Seance, "id" | "debut" | "dureeM
     console.warn(`[visio] taille ${taille} refusée par Daily pour ${nom} : salle créée à sa taille par défaut (${MAX_PARTICIPANTS_DEFAUT_DAILY}). Vérifiez DAILY_MAX_PARTICIPANTS.`);
     creee = await creer();
   }
-  if (creee.statut === 200 && creee.donnees) return { nom, url: creee.donnees.url };
+  if (creee.statut === 200 && creee.donnees) {
+    retenirSalle(nom, creee.donnees.url, exp, taille);
+    return { nom, url: creee.donnees.url };
+  }
   // Deux personnes entrées au même instant : la salle vient d'être créée par l'autre.
   const rattrapage = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
   if (rattrapage.statut === 200 && rattrapage.donnees) return { nom, url: rattrapage.donnees.url };
@@ -572,6 +586,7 @@ export async function lienEnregistrementDaily(id: string, validiteSecondes = 3 *
 
 /** Supprime une salle Daily (nettoyage ; une séance supprimée n'a plus besoin de sa salle). */
 export async function supprimerSalleDaily(salle: string): Promise<void> {
+  sallesVerifiees.delete(salle);
   if (!dailyDisponible()) return;
   await appelDaily(`/rooms/${encodeURIComponent(salle)}`, { methode: "DELETE" }).catch(() => undefined);
 }

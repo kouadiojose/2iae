@@ -3,28 +3,22 @@
 // Chrome Android : bouton « Installer » (fenêtre système gardée par
 // installation.ts). Sinon, le geste à faire : menu ⋮ « Ajouter à l'écran
 // d'accueil » (Android) ou Partager « Sur l'écran d'accueil » (iPhone).
-// « Plus tard » est retenu 30 jours sur le téléphone.
+// « Plus tard » est retenu 7 jours sur le téléphone (même mémoire que la
+// feuille d'installation qui monte d'elle-même, InstallationMobile).
 import { useState } from "react";
-import { Download, Share, X } from "lucide-react";
+import { Download, X } from "lucide-react";
 import { useMoi } from "@/lib/auth";
 import { Bouton } from "@/components/ui/bouton";
 import { toast } from "@/components/ui/toast";
 import { useInstallation } from "./installation";
-import { formuler, plateforme, lireLocal, ecrireLocal } from "./outils";
-
-const CLE_REFUS = "campus:installation-refusee";
-const RELANCE_MS = 30 * 86_400_000;
-
-function refusRecent(): boolean {
-  const t = Number(lireLocal(CLE_REFUS) || 0);
-  return t > 0 && Date.now() - t < RELANCE_MS;
-}
+import { formuler, plateforme, ecrireLocal } from "./outils";
+import { CLE_REFUS_INSTALLATION, EtapesInstallation, contexteInstallation, installationRefuseeRecemment } from "./InstallationMobile";
 
 export function InviteInstallation() {
   const { moi } = useMoi();
   const f = (tu: string, vous: string) => formuler(moi?.role, tu, vous);
   const { peutInstaller, installee, installer } = useInstallation();
-  const [refuse, setRefuse] = useState(refusRecent);
+  const [refuse, setRefuse] = useState(installationRefuseeRecemment);
   const [enCours, setEnCours] = useState(false);
   const p = plateforme();
 
@@ -33,7 +27,7 @@ export function InviteInstallation() {
   if (!peutInstaller && p === "ordinateur") return null;
 
   const plusTard = () => {
-    ecrireLocal(CLE_REFUS, String(Date.now()));
+    ecrireLocal(CLE_REFUS_INSTALLATION, String(Date.now()));
     setRefuse(true);
   };
 
@@ -47,28 +41,6 @@ export function InviteInstallation() {
       setEnCours(false);
     }
   }
-
-  const etapes =
-    p === "ios"
-      ? [
-          { icone: <Share className="h-4 w-4" />, texte: f("Touche Partager, en bas de Safari.", "Touchez Partager, en bas de Safari.") },
-          { icone: null, texte: f("Choisis « Sur l'écran d'accueil ».", "Choisissez « Sur l'écran d'accueil ».") },
-          { icone: null, texte: f("Touche « Ajouter » : l'icône 2IAE apparaît.", "Touchez « Ajouter » : l'icône 2IAE apparaît.") },
-        ]
-      : [
-          { icone: null, texte: f("Touche le menu ⋮ en haut à droite de Chrome.", "Touchez le menu ⋮ en haut à droite de Chrome.") },
-          {
-            icone: null,
-            texte: f(
-              "Choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »).",
-              "Choisissez « Ajouter à l'écran d'accueil » (ou « Installer l'application »).",
-            ),
-          },
-          {
-            icone: null,
-            texte: f("Confirme : l'icône 2IAE apparaît avec tes autres applications.", "Confirmez : l'icône 2IAE apparaît avec vos autres applications."),
-          },
-        ];
 
   return (
     <section className="relative flex flex-col gap-4 rounded-2xl border border-ligne bg-creme p-5" aria-label="Installer le campus">
@@ -99,17 +71,7 @@ export function InviteInstallation() {
         </div>
       ) : (
         <>
-          <ol className="flex flex-col gap-2.5">
-            {etapes.map((e, i) => (
-              <li key={i} className="flex items-start gap-3 text-base">
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange text-sm font-extrabold text-encre">{i + 1}</span>
-                <span className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  {e.texte}
-                  {e.icone && <span className="inline-grid h-6 w-6 place-items-center rounded-md border border-ligne bg-white text-encre">{e.icone}</span>}
-                </span>
-              </li>
-            ))}
-          </ol>
+          <EtapesInstallation contexte={contexteInstallation() ?? "android"} tu={moi?.role === "etudiant"} />
           <Bouton variante="contour" className="min-h-[48px] self-start" onClick={plusTard}>
             C'est fait, merci
           </Bouton>

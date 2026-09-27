@@ -14,6 +14,7 @@ import { Menu, ElementMenu, SeparateurMenu } from "@/components/ui/menu";
 import { PanneauNotifications } from "./notifications";
 import { useFileEnvoi, relancerEnvoi, abandonnerEnvoi } from "@/lib/file-envoi";
 import { toast } from "@/components/ui/toast";
+import { InstallationMobile } from "@/modules/pwa/InstallationMobile";
 import { LIBELLES_ROLES } from "@shared/schema";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
@@ -229,6 +230,8 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
     <div className="min-h-dvh bg-white">
       <EcouteGlobale />
       <BandeauHorsLigne />
+      {/* Sur téléphone : proposition d'installer l'application (jamais pendant un live). */}
+      {!pleinEcran && <InstallationMobile />}
       <BandeauEnvois />
       <header className="sticky top-0 z-30 border-b border-ligne-douce bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-4 py-2.5 sm:px-7 sm:py-3">

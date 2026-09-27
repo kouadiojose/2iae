@@ -73,5 +73,36 @@
         }
       ]
     }
+  ],
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "/captures/telephone-accueil.jpg",
+      "sizes": "824x1830",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Un cours, cinq campus, en direct"
+    },
+    {
+      "src": "/captures/telephone-programme.jpg",
+      "sizes": "824x1830",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "L'emploi du temps de la semaine"
+    },
+    {
+      "src": "/captures/telephone-formateur.jpg",
+      "sizes": "824x1830",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Les formateurs et leur présentation"
+    },
+    {
+      "src": "/captures/ordinateur-accueil.jpg",
+      "sizes": "1920x1080",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Le campus numérique 2IAE sur ordinateur"
+    }
   ]
 }

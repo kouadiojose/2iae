@@ -199,7 +199,7 @@ export default function Header() {
               </Button>
             </Link>
             <Link
-              href="https://campus.groupe2iae.com"
+              href="https://campus.2iae.com"
               target="_blank"
               className="hidden xl:block"
             >
@@ -284,7 +284,7 @@ export default function Header() {
                       Nos Tarifs
                     </Button>
                   </Link>
-                  <Link href="https://campus.groupe2iae.com" target="_blank">
+                  <Link href="https://campus.2iae.com" target="_blank">
                     <Button
                       className="bg-secondary hover:bg-secondary/90 text-secondary-foreground w-full"
                       data-testid="button-mobile-campus"

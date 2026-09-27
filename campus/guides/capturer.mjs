@@ -2,7 +2,7 @@
 // Captures d'écran des guides, prises sur un campus de répétition (jamais la
 // production : comptes et contenus de démonstration).
 //   CAMPUS=http://localhost:5193 node guides/capturer.mjs [groupe…]
-// Groupes : public, etudiant, formateur, salle (sans argument : tous).
+// Groupes : public, etudiant, formateur, salle, direct, nouveautes, administration (sans argument : tous).
 // Sortie : guides/captures/<nom>.jpg
 import fs from "node:fs";
 import path from "node:path";
@@ -328,6 +328,198 @@ GROUPES.direct = async () => {
   await f.close();
   await bj.close();
   for (const x of salles) await x.b.close();
+};
+
+// Nouveautés du direct : discussion (privé, emojis, épingle), groupes de travail, vue d'observation.
+// À lancer quand la séance SEANCE est à venir (elle est démarrée puis remise à venir à la fin).
+GROUPES.nouveautes = async () => {
+  const photo = (page, nom, o = {}) => page.screenshot({ path: path.join(SORTIE, `${nom}.jpg`), type: "jpeg", quality: 84, ...o }).then(() => console.log(`  ${nom}`));
+  const zone = async (page, loc, nom) => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const b = await loc.boundingBox();
+    const vue = page.viewportSize();
+    await photo(page, nom, { clip: { x: b.x, y: Math.max(0, b.y), width: b.width, height: Math.min(b.height, vue.height - Math.max(0, b.y)) } });
+  };
+  const H = { headers: { Origin: ORIGINE } };
+  const d = await contexte(ORDINATEUR, "direction");
+  const inst = await (await d.request.post(`${ORIGINE}/api/pilotage/sites/2/ecran`, H)).json();
+  const bs = await lancer("salle1");
+  const sc = await contexte(ECRAN_SALLE, null, { navigateur: bs });
+  if (!(await sc.request.post(`${ORIGINE}/api/ecran/installer`, { data: { code: inst.code }, ...H })).ok()) throw new Error("installation de l'écran");
+  const bj = await lancer("jose");
+  const f = await contexte(ORDINATEUR_NICE, "formateur", { navigateur: bj });
+  const studio = await f.newPage();
+  await studio.goto(`${ORIGINE}/live/${SEANCE}`, { waitUntil: "load" });
+  await pause(4000);
+  await studio.getByRole("button", { name: "Démarrer le direct" }).click();
+  await pause(3000);
+  const salle = await sc.newPage();
+  await salle.goto(`${ORIGINE}/salle`, { waitUntil: "load" });
+  const entrer = async (ctx) => {
+    const p = await ctx.newPage();
+    await p.goto(`${ORIGINE}/live/${SEANCE}`, { waitUntil: "load" });
+    await pause(3000);
+    await p.getByRole("radio", { name: /^Son \+ diapos/ }).click();
+    await p.getByRole("button", { name: /Entrer dans la classe/ }).click();
+    await pause(2500);
+    return p;
+  };
+  const a = await contexte(TELEPHONE, "etudiant");
+  const k = await contexte({ ...ORDINATEUR, viewport: { width: 1100, height: 760 } }, "etudiant2");
+  const m = await contexte(TELEPHONE, "etudiant3");
+  const aya = await entrer(a), koffi = await entrer(k), mariam = await entrer(m);
+
+  // L'écran de la salle en « Présentation seule » (commandes visibles au mouvement de la souris).
+  await salle.getByRole("button", { name: /Présentation seule/ }).click();
+  await pause(2500);
+  await salle.mouse.move(800, 420);
+  await pause(600);
+  await photo(salle, "salle-presentation");
+  await salle.mouse.move(700, 380);
+  await salle.getByRole("button", { name: /Quitter la présentation/ }).click();
+  await pause(1500);
+
+  // Discussion : Aya écrit en privé, José répond ; message épinglé, réactions, emoji.
+  await aya.getByRole("tab", { name: /Discussion/ }).click();
+  await pause(800);
+  await aya.getByRole("radio", { name: /Au formateur/ }).click();
+  await aya.getByLabel("Message privé").fill("Monsieur, le son coupe un peu chez moi à Yopougon. Vous pouvez répéter la définition ?");
+  await aya.keyboard.press("Enter");
+  await pause(1200);
+  const panneau = studio.locator("aside").filter({ hasText: "Sondages" }).first();
+  await panneau.getByRole("tab", { name: /^Discussion/ }).click();
+  await pause(1000);
+  await studio.getByLabel("Message à la classe").fill("Bienvenue à tous ! Le support du jour est dans le cours. Réagissez si vous m'entendez bien 👋");
+  await studio.keyboard.press("Enter");
+  await pause(1500);
+  const liste = await (await f.request.get(`${ORIGINE}/api/seances/${SEANCE}/chat`)).json();
+  const accueil = liste.find((x) => x.role === "formateur" && !x.destinataireId);
+  for (const [ctx, emoji] of [[k, "👍"], [a, "👍"], [m, "❤️"]]) {
+    await ctx.request.post(`${ORIGINE}/api/seances/${SEANCE}/chat/${accueil.id}/reactions`, { data: { emoji }, ...H });
+    await pause(400);
+  }
+  await f.request.post(`${ORIGINE}/api/seances/${SEANCE}/chat/${accueil.id}/epingle`, { data: { epingle: true }, ...H });
+  await k.request.post(`${ORIGINE}/api/seances/${SEANCE}/chat`, { data: { texte: "Très bien reçu depuis Riviera 🔥" }, ...H });
+  await pause(800);
+  await studio.locator("[data-message]").filter({ hasText: "le son coupe" }).first().hover();
+  await studio.getByRole("button", { name: "Répondre en privé" }).first().click();
+  await studio.getByLabel("Message privé").fill("Bien sûr Aya : je la reprends dans une minute. Si le son coupe encore, rechargez la page.");
+  await studio.keyboard.press("Enter");
+  await pause(1800);
+  await zone(studio, panneau, "formateur-discussion");
+  await aya.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await pause(600);
+  await photo(aya, "etudiant-discussion-tel");
+  await salle.getByRole("button", { name: /Discussion/ }).click();
+  await pause(1500);
+  await photo(salle, "salle-discussion");
+  await salle.getByRole("button", { name: "Fermer la discussion" }).click();
+
+  // Groupes de travail : composer, suivre, visiter.
+  await studio.getByRole("button", { name: "Groupes", exact: true }).click();
+  await pause(2500);
+  await studio.getByLabel("Nombre de groupes").fill("2");
+  await studio.getByLabel("Consigne").fill("En 10 minutes : trouvez trois usages de l'IA dans votre futur métier, et choisissez un porte-parole.");
+  await studio.getByLabel("Durée").selectOption("10");
+  await pause(600);
+  await studio.locator("[role=dialog]").screenshot({ path: path.join(SORTIE, "formateur-groupes-composer.jpg"), type: "jpeg", quality: 84 });
+  console.log("  formateur-groupes-composer");
+  await studio.getByRole("button", { name: "Ouvrir les groupes" }).click();
+  await pause(3500);
+  await aya.getByLabel("Message au groupe").fill("Moi je propose : l'IA pour préparer les bilans comptables 📊");
+  await aya.keyboard.press("Enter");
+  await pause(1000);
+  await aya.evaluate(() => window.scrollTo(0, 0));
+  await pause(500);
+  await photo(aya, "etudiant-groupe-tel");
+  await photo(salle, "salle-groupe");
+  await photo(salle, "salle-groupe-cote", { clip: { x: 1092, y: 79, width: 483, height: 733 } });
+  await aya.getByRole("button", { name: "Appeler le formateur" }).click();
+  await pause(2000);
+  await zone(studio, studio.locator("section[aria-label='Groupes de travail en cours']"), "formateur-groupes-suivi");
+  await studio.getByRole("button", { name: "J'y vais" }).click();
+  await pause(2500);
+  await studio.getByLabel("Message au groupe").fill("Je suis là ! Pensez aussi aux limites de l'IA.");
+  await studio.keyboard.press("Enter");
+  await pause(1500);
+  await photo(studio, "formateur-groupes-visite");
+  await studio.getByRole("button", { name: "Revenir au studio" }).click();
+  await studio.getByLabel("Message à tous les groupes").fill("Plus que 2 minutes : préparez votre porte-parole !");
+  await studio.getByRole("button", { name: "Envoyer à tous les groupes" }).click();
+  await pause(1200);
+  await studio.getByRole("button", { name: "Rappeler la classe" }).click();
+  await pause(2500);
+  await aya.evaluate(() => window.scrollTo(0, 0));
+  await photo(aya, "etudiant-groupe-retour-tel");
+
+  // La direction suit le cours en vue d'observation, groupes compris.
+  const obs = await d.newPage();
+  await obs.goto(`${ORIGINE}/live/${SEANCE}`, { waitUntil: "load" });
+  await pause(5000);
+  await photo(obs, "admin-observation");
+  await f.request.post(`${ORIGINE}/api/seances/${SEANCE}/groupes/fermer`, { data: { delaiSecondes: 0 }, ...H });
+  await pause(2000);
+
+  // Au choix des étudiants.
+  await f.request.post(`${ORIGINE}/api/seances/${SEANCE}/groupes`, {
+    data: { groupes: [{ nom: "Comptabilité", membres: [] }, { nom: "Marketing", membres: [] }, { nom: "Agriculture", membres: [] }], consigne: "Choisissez le groupe du métier qui vous intéresse.", dureeMinutes: 15, choixLibre: true },
+    ...H,
+  });
+  await pause(2500);
+  await mariam.evaluate(() => window.scrollTo(0, 0));
+  await photo(mariam, "etudiant-choix-groupe-tel");
+  await f.request.post(`${ORIGINE}/api/seances/${SEANCE}/groupes/fermer`, { data: { delaiSecondes: 0 }, ...H });
+
+  await f.request.post(`${ORIGINE}/api/seances/${SEANCE}/terminer`, { data: {}, ...H });
+  await pause(1500);
+  const d2 = await contexte(ORDINATEUR, "direction");
+  await capturer(d2, "/pilotage/presences", "admin-presences", { attente: 4000 });
+  await d2.close();
+  const r = await f.request.post(`${ORIGINE}/api/seances/${SEANCE}/remettre-a-venir`, { data: {}, ...H });
+  console.log(`  (séance remise à venir : ${r.status()})`);
+  for (const c of [a, k, m, f, sc, d]) {
+    await c.unrouteAll({ behavior: "ignoreErrors" }).catch(() => undefined);
+    await c.close();
+  }
+  await bj.close();
+  await bs.close();
+};
+
+// L'équipe administrative : le lien d'inscription, la demande, la validation, le pilotage.
+GROUPES.administration = async () => {
+  const H = { headers: { Origin: ORIGINE } };
+  const d = await contexte(ORDINATEUR, "direction");
+  let e = await (await d.request.get(`${ORIGINE}/api/pilotage/equipe`)).json();
+  if (!e.liens.length) e = await (await d.request.post(`${ORIGINE}/api/pilotage/equipe/liens`, { data: { joursValidite: 30 }, ...H })).json();
+  const chemin = new URL(e.liens[0].url).pathname;
+  const t = await contexte(TELEPHONE);
+  const p = await t.newPage();
+  await p.goto(ORIGINE + chemin, { waitUntil: "load" });
+  await p.waitForTimeout(2500);
+  await p.getByLabel("Prénom", { exact: true }).fill("Aminata");
+  await p.getByLabel("Nom", { exact: true }).fill("Koné");
+  await p.getByLabel("Adresse e-mail", { exact: true }).fill("aminata.kone@groupe2iae.ci");
+  await p.getByLabel("Fonction", { exact: true }).fill("Directrice des études");
+  await p.screenshot({ path: path.join(SORTIE, "admin-rejoindre-tel.jpg"), type: "jpeg", quality: 82 });
+  await p.getByLabel("Campus", { exact: true }).selectOption({ label: "Yopougon" });
+  await p.getByLabel("Mot de passe", { exact: true }).fill("Etudes-Yopougon-2026");
+  await p.getByLabel("Mot de passe, encore une fois").fill("Etudes-Yopougon-2026");
+  await p.getByRole("button", { name: "Envoyer ma demande" }).click();
+  await p.waitForTimeout(2000);
+  await p.screenshot({ path: path.join(SORTIE, "admin-demande-envoyee-tel.jpg"), type: "jpeg", quality: 82 });
+  console.log("  admin-rejoindre-tel, admin-demande-envoyee-tel");
+  await t.close();
+  await capturer(d, "/pilotage/comptes", "admin-valider", {
+    attente: 3500,
+    element: "#equipe",
+    // Le lien du campus de répétition ne marche pas en ligne : on n'en montre que le début.
+    avant: (pg) => pg.evaluate(() => document.querySelectorAll("#equipe code").forEach((c) => (c.textContent = "https://campus.2iae.com/rejoindre/…"))),
+  });
+  await capturer(d, "/pilotage", "admin-tableau", { attente: 4000 });
+  await capturer(d, "/pilotage/planning", "admin-planning", { attente: 4000 });
+  await capturer(d, "/pilotage/suivi", "admin-suivi", { attente: 4000 });
+  await capturer(d, "/pilotage/classes", "admin-classes", { attente: 4000 });
+  await d.close();
 };
 
 const demandes = process.argv.slice(2);

@@ -323,10 +323,42 @@ function Message({ m, seanceId, role, moiId, ouverte, onRepondrePrive }: { m: Me
   const peutMasquer = privilegie && !mien && !m.masque && !prive;
   const peutEpingler = privilegie && !m.masque && !prive && ouverte;
   const peutReagir = ouverte && !m.masque;
+  const aActions = Boolean(mien || peutMasquer || peutEpingler || onRepondrePrive);
+  const boutonReaction = (
+    <button
+      onClick={() => setPalette((p) => !p)}
+      className="grid h-7 w-8 place-items-center rounded-full text-nuit-gris hover:bg-nuit-ligne hover:text-white"
+      aria-label="Réagir avec un emoji"
+      aria-expanded={palette}
+      title="Réagir"
+    >
+      <SmilePlus className="h-4 w-4" />
+    </button>
+  );
+  const actions = (
+    <>
+      {onRepondrePrive && (
+        <BoutonMessage onClick={onRepondrePrive} disabled={action} icone={<MessageCircle className="h-3.5 w-3.5" />}>
+          Répondre en privé
+        </BoutonMessage>
+      )}
+      {peutEpingler && (
+        <BoutonMessage onClick={() => void epingler()} disabled={action} icone={m.epingle ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}>
+          {m.epingle ? "Détacher" : "Épingler"}
+        </BoutonMessage>
+      )}
+      {(mien || peutMasquer) && (
+        <BoutonMessage onClick={() => void retirer()} disabled={action} icone={mien ? <Trash2 className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}>
+          {mien ? "Retirer" : "Masquer"}
+        </BoutonMessage>
+      )}
+    </>
+  );
 
   return (
     <div
       data-message={m.id}
+      onMouseLeave={() => setPalette(false)}
       className={cn(
         "group relative rounded-2xl px-3 py-2",
         mien ? "bg-nuit-ligne" : "bg-nuit-carte",
@@ -353,8 +385,25 @@ function Message({ m, seanceId, role, moiId, ouverte, onRepondrePrive }: { m: Me
       {m.texte && <p className="mt-0.5 whitespace-pre-wrap break-words text-[14.5px] leading-snug text-white">{avecLiens(m.texte)}</p>}
       {m.fichier && <FichierJoint f={m.fichier} />}
 
-      {(m.reactions.length > 0 || peutReagir || mien || peutMasquer || peutEpingler || onRepondrePrive) && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      {/* Sur ordinateur : les actions dans une petite barre au survol (le message ne garde pas d'espace vide). */}
+      {(aActions || peutReagir) && (
+        <div className="absolute -top-3 right-2 z-10 hidden items-center gap-0.5 rounded-xl border border-nuit-bord bg-nuit-panneau px-1 py-0.5 shadow-lg sm:group-focus-within:flex sm:group-hover:flex">
+          {peutReagir && boutonReaction}
+          {actions}
+        </div>
+      )}
+      {palette && (
+        <div className="absolute right-2 top-6 z-20 flex gap-0.5 rounded-2xl border border-nuit-bord bg-nuit-panneau p-1 shadow-xl" role="menu">
+          {REACTIONS_CHAT.map((e) => (
+            <button key={e} role="menuitem" onClick={() => void reagir(e)} className="grid h-9 w-9 place-items-center rounded-xl text-[20px] hover:bg-nuit-ligne" aria-label={`Réagir ${e}`}>
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Réactions ; sur téléphone, aussi le bouton emoji et les actions. */}
+      {(m.reactions.length > 0 || peutReagir || aActions) && (
+        <div className={cn("mt-1.5 flex flex-wrap items-center gap-1", m.reactions.length === 0 && "sm:hidden")}>
           {m.reactions.map((r) => {
             const miennes = m.mesReactions.includes(r.emoji);
             return (
@@ -374,50 +423,8 @@ function Message({ m, seanceId, role, moiId, ouverte, onRepondrePrive }: { m: Me
               </button>
             );
           })}
-          {peutReagir && (
-            <div className="relative">
-              <button
-                onClick={() => setPalette((p) => !p)}
-                className={cn(
-                  "grid h-7 w-8 place-items-center rounded-full text-nuit-gris hover:bg-nuit-panneau hover:text-white",
-                  !palette && m.reactions.length === 0 && "sm:opacity-0 sm:focus:opacity-100 sm:group-hover:opacity-100",
-                )}
-                aria-label="Réagir avec un emoji"
-                aria-expanded={palette}
-                title="Réagir"
-              >
-                <SmilePlus className="h-4 w-4" />
-              </button>
-              {palette && (
-                <div className="absolute bottom-full left-0 z-20 mb-1 flex gap-0.5 rounded-2xl border border-nuit-bord bg-nuit-panneau p-1 shadow-xl" role="menu">
-                  {REACTIONS_CHAT.map((e) => (
-                    <button key={e} role="menuitem" onClick={() => void reagir(e)} className="grid h-9 w-9 place-items-center rounded-xl text-[20px] hover:bg-nuit-ligne" aria-label={`Réagir ${e}`}>
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {(mien || peutMasquer || peutEpingler || onRepondrePrive) && (
-            <div className="ml-auto flex flex-wrap justify-end gap-0.5 opacity-100 sm:opacity-0 sm:transition-opacity sm:focus-within:opacity-100 sm:group-hover:opacity-100">
-              {onRepondrePrive && (
-                <BoutonMessage onClick={onRepondrePrive} disabled={action} icone={<MessageCircle className="h-3.5 w-3.5" />}>
-                  Répondre en privé
-                </BoutonMessage>
-              )}
-              {peutEpingler && (
-                <BoutonMessage onClick={() => void epingler()} disabled={action} icone={m.epingle ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}>
-                  {m.epingle ? "Détacher" : "Épingler"}
-                </BoutonMessage>
-              )}
-              {(mien || peutMasquer) && (
-                <BoutonMessage onClick={() => void retirer()} disabled={action} icone={mien ? <Trash2 className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}>
-                  {mien ? "Retirer" : "Masquer"}
-                </BoutonMessage>
-              )}
-            </div>
-          )}
+          {peutReagir && <span className="sm:hidden">{boutonReaction}</span>}
+          {aActions && <div className="ml-auto flex flex-wrap justify-end gap-0.5 sm:hidden">{actions}</div>}
         </div>
       )}
     </div>

@@ -22,6 +22,7 @@ import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { ResultatsParCampus } from "./panneaux";
 import { CarteCoteIvoire } from "./CarteCoteIvoire";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
+import { VueGroupeSalle, monGroupe, useGroupes } from "./groupes";
 import type { CodeSalleDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
 
@@ -132,8 +133,11 @@ function EcranSansCours({ siteId, enCours }: { siteId: number | null; enCours?: 
 }
 
 function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | null }) {
+  const moi = useMoiConnecte();
   const { data: seance } = useSeance(seanceId);
   const { data: etat } = useEtatDirect(seanceId, false);
+  // Groupe de travail : la salle quitte la classe pour la visio de son groupe, puis revient.
+  const { data: groupes } = useGroupes(seanceId);
   // « Présentation seule » : la diapo en plein écran, sans bandeau, panneau ni console (pendant le direct).
   const [presentation, setPresentation] = usePreferenceSalle("campus:salle-presentation");
   const [videoMasquee, setVideoMasquee] = usePreferenceSalle("campus:salle-video-masquee");
@@ -164,18 +168,21 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   }, [enDirect, presentation, entrer, sortir]);
   if (!seance || !etat) return <div className="min-h-dvh" aria-busy="true" />;
   const statut = etat.statut;
-  const seule = statut === "en_direct" && presentation;
+  const groupe = statut === "en_direct" ? monGroupe(groupes) : null;
+  const seule = statut === "en_direct" && presentation && !groupe;
   // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
   // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
   return (
     <div className={seule ? "relative h-dvh w-screen overflow-hidden bg-black" : "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden"}>
-      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" ? entrer : undefined} />}
+      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe ? entrer : undefined} />}
       {statut === "annulee" ? (
         <Message titre="Cours annulé" texte={etat.motifAnnulation ?? seance.motifAnnulation ?? "Le formateur a un empêchement."} seance={seance} />
       ) : statut === "terminee" ? (
         <Message titre="Merci et à bientôt !" texte="Le replay, la transcription et la fiche de révision arrivent dans le cours sur le campus numérique." seance={seance} />
       ) : statut === "planifiee" ? (
         <AvantLeCours seance={seance} etat={etat} siteId={siteId} />
+      ) : groupe && groupes ? (
+        <VueGroupeSalle seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} />
       ) : (
         <PendantLeCours seance={seance} etat={etat} siteId={siteId} videoMasquee={videoMasquee} onVideoMasquee={setVideoMasquee} presentation={seule} onSortir={sortir} />
       )}
@@ -659,7 +666,14 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <PanneauDiscussion seanceId={seance.id} role="salle" moiId={moi.id} ouverte={etat.statut === "planifiee" || etat.statut === "en_direct"} />
+            <PanneauDiscussion
+              seanceId={seance.id}
+              role="salle"
+              moiId={moi.id}
+              ouverte={etat.statut === "planifiee" || etat.statut === "en_direct"}
+              mode={etat.chatMode}
+              formateur={seance.formateur}
+            />
           </div>,
           document.body,
         )}

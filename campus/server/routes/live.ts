@@ -35,6 +35,7 @@ import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia
 import { prevenirSite } from "../site";
 import { planifier } from "../taches";
 import * as visio from "../visio";
+import { creerModuleGroupes, noterModeSuivi } from "./live-groupes";
 import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
 import {
   seances,
@@ -61,7 +62,13 @@ import {
   vuesReplay,
   fichesRevision,
   messagesLive,
+  reactionsMessagesLive,
+  sessionsGroupes,
+  groupesTravail,
+  membresGroupes,
   fichiers,
+  MODES_CHAT,
+  REACTIONS_CHAT,
   FOURNISSEURS_VISIO,
   RESSENTIS,
   type Seance,
@@ -284,6 +291,9 @@ function exigerEtudiant(u: Utilisateur) {
 function exigerStatut(s: Seance, statuts: Seance["statut"][], message: string) {
   if (!statuts.includes(s.statut)) throw new ErreurHttp(409, message);
 }
+
+/** Groupes de travail (salles séparées du campus), dans live-groupes.ts. */
+const groupesTravailLive = creerModuleGroupes({ seanceAccessible, seanceAnimee, roleDans, nomsSites, consigner, limiter });
 
 // ── Résumés de séance (listes, bandeaux, accueil) ──────────────────────────
 
@@ -663,38 +673,42 @@ async function questionsPour(u: Utilisateur, role: RoleSeance, seanceId: number,
 /**
  * Messages de la discussion, prêts à afficher. Un étudiant signe « Aya K. », le formateur de son nom,
  * une salle « Salle Kédjénou · Yopougon ». L'écran d'une salle (poste partagé, grand écran) ne montre
- * jamais le nom d'un étudiant : « Un étudiant ».
+ * jamais le nom d'un étudiant : « Un étudiant ». Réactions comptées, avec celles de la personne qui lit.
  */
-async function versMessagesLive(lignes: MessageLive[], lecteur: RoleSeance): Promise<MessageLiveDto[]> {
+async function versMessagesLive(lignes: MessageLive[], lecteur: RoleSeance, moiId: number): Promise<MessageLiveDto[]> {
   if (!lignes.length) return [];
-  const idsAuteurs = [...new Set(lignes.map((m) => m.auteurId))];
+  const idsPersonnes = [...new Set(lignes.flatMap((m) => [m.auteurId, ...(m.destinataireId ? [m.destinataireId] : [])]))];
   const idsFichiers = [...new Set(lignes.map((m) => m.fichierId).filter((x): x is number => x !== null))];
-  const [auteurs, joints, sitesParId] = await Promise.all([
-    db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId }).from(utilisateurs).where(inArray(utilisateurs.id, idsAuteurs)),
+  const idsMessages = lignes.map((m) => m.id);
+  const [personnes, joints, sitesParId, reactions] = await Promise.all([
+    db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId }).from(utilisateurs).where(inArray(utilisateurs.id, idsPersonnes)),
     idsFichiers.length ? db.select().from(fichiers).where(inArray(fichiers.id, idsFichiers)) : Promise.resolve([]),
     nomsSites(),
+    db.select().from(reactionsMessagesLive).where(inArray(reactionsMessagesLive.messageId, idsMessages)),
   ]);
-  const parAuteur = new Map(auteurs.map((a) => [a.id, a]));
+  const parPersonne = new Map(personnes.map((a) => [a.id, a]));
   const parFichier = new Map(joints.map((f) => [f.id, f]));
-  return lignes.map((m) => {
-    const a = parAuteur.get(m.auteurId);
-    const site = m.siteId ? sitesParId.get(m.siteId) : undefined;
+  const signature = (id: number | null, siteId: number | null): { nom: string; role: MessageLiveDto["role"] } => {
+    const a = id ? parPersonne.get(id) : undefined;
+    const site = siteId ? sitesParId.get(siteId) : a?.siteId ? sitesParId.get(a.siteId) : undefined;
     const role: MessageLiveDto["role"] = a?.role === "salle" ? "salle" : a?.role === "formateur" ? "formateur" : a?.role === "etudiant" ? "etudiant" : "equipe";
-    const auteur =
-      role === "salle"
-        ? `${site?.salleConference ?? "Salle de conférence"}${site ? ` · ${site.nomCourt}` : ""}`
-        : role === "etudiant"
-          ? lecteur === "salle" || !a
-            ? "Un étudiant"
-            : nomCourt(a)
-          : a
-            ? `${a.prenom} ${a.nom}`
-            : "Équipe du campus";
+    if (role === "salle") return { role, nom: `${site?.salleConference ?? "Salle de conférence"}${site ? ` · ${site.nomCourt}` : ""}` };
+    if (role === "etudiant") return { role, nom: lecteur === "salle" || !a ? "Un étudiant" : nomCourt(a) };
+    return { role, nom: a ? `${a.prenom} ${a.nom}` : "Équipe du campus" };
+  };
+  return lignes.map((m) => {
+    const auteur = signature(m.auteurId, m.siteId);
+    const site = m.siteId ? sitesParId.get(m.siteId) : undefined;
     const f = m.fichierId ? parFichier.get(m.fichierId) : undefined;
+    const siennes = reactions.filter((r) => r.messageId === m.id);
+    const comptes = new Map<string, number>();
+    for (const r of siennes) comptes.set(r.emoji, (comptes.get(r.emoji) ?? 0) + 1);
     return {
       id: m.id,
-      auteur,
-      role,
+      seanceId: m.seanceId,
+      groupeId: m.groupeId,
+      auteur: auteur.nom,
+      role: auteur.role,
       siteId: m.siteId,
       site: site?.nomCourt ?? null,
       texte: m.texte,
@@ -702,8 +716,52 @@ async function versMessagesLive(lignes: MessageLive[], lecteur: RoleSeance): Pro
       creeLe: m.creeLe.toISOString(),
       auteurId: m.auteurId,
       masque: m.masque,
+      destinataireId: m.destinataireId,
+      destinataire: m.destinataireId ? signature(m.destinataireId, null).nom : null,
+      epingle: m.epingle,
+      reactions: REACTIONS_CHAT.filter((e) => comptes.has(e)).map((emoji) => ({ emoji, n: comptes.get(emoji)! })),
+      mesReactions: siennes.filter((r) => r.utilisateurId === moiId).map((r) => r.emoji),
     };
   });
+}
+
+/**
+ * Où diffuser ce qui touche un message : la discussion d'un groupe sur son canal, un message privé
+ * aux deux personnes seulement, le reste sur le canal de la séance.
+ */
+function diffuserMessage(m: Pick<MessageLive, "seanceId" | "groupeId" | "destinataireId" | "auteurId">, type: "chat" | "chat:retire" | "chat:masque" | "chat:reactions", data: object) {
+  if (m.groupeId) publier(`groupe:${m.groupeId}`, type, { ...data, groupeId: m.groupeId });
+  else if (m.destinataireId) {
+    const prive = { ...data, seanceId: m.seanceId };
+    publierUtilisateur(m.auteurId, `live:${type}`, prive);
+    publierUtilisateur(m.destinataireId, `live:${type}`, prive);
+  } else publier(canal(m.seanceId), type, data);
+}
+
+/** Groupe de travail et sa répartition. */
+async function chargerGroupe(groupeId: number) {
+  const [g] = await db
+    .select({ groupe: groupesTravail, session: sessionsGroupes })
+    .from(groupesTravail)
+    .innerJoin(sessionsGroupes, eq(sessionsGroupes.id, groupesTravail.sessionId))
+    .where(eq(groupesTravail.id, groupeId));
+  return g ?? null;
+}
+
+async function estMembreGroupe(utilisateurId: number, groupeId: number): Promise<boolean> {
+  const [m] = await db
+    .select({ id: membresGroupes.utilisateurId })
+    .from(membresGroupes)
+    .where(and(eq(membresGroupes.groupeId, groupeId), eq(membresGroupes.utilisateurId, utilisateurId)));
+  return Boolean(m);
+}
+
+/** Le message est-il visible de cette personne (privé, groupe, ou discussion de la classe) ? */
+async function messageVisible(u: Utilisateur, role: RoleSeance, m: MessageLive): Promise<boolean> {
+  const privilegie = role === "formateur" || role === "equipe";
+  if (m.destinataireId) return m.auteurId === u.id || m.destinataireId === u.id;
+  if (m.groupeId) return privilegie || (await estMembreGroupe(u.id, m.groupeId));
+  return privilegie || !m.masque;
 }
 
 async function diffuserQuestion(q: QuestionLive) {
@@ -1232,13 +1290,30 @@ export function enregistrerLive(app: Express) {
     }
   });
 
-  // Fichiers joints à la discussion du live : lisibles par ceux qui voient la séance.
+  // Fichiers joints à la discussion du live : lisibles par ceux qui voient le message (privé : les deux
+  // personnes ; groupe : ses membres, le formateur et l'équipe ; classe : ceux qui voient la séance).
   enregistrerGardienFichier("chat", async (u, f) => {
-    const [m] = await db.select({ seanceId: messagesLive.seanceId }).from(messagesLive).where(eq(messagesLive.fichierId, f.id)).limit(1);
+    const [m] = await db.select().from(messagesLive).where(eq(messagesLive.fichierId, f.id)).limit(1);
     if (!m) return false;
     try {
-      await seanceVisible(u, m.seanceId);
-      return true;
+      const s = await seanceVisible(u, m.seanceId);
+      return await messageVisible(u, await roleDans(u, s), m);
+    } catch {
+      return false;
+    }
+  });
+
+  // Canal d'un groupe de travail (sa discussion, ses appels) : ses membres, le formateur et l'équipe.
+  enregistrerGardien("groupe", async (u, cle) => {
+    const id = Number(cle);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    const g = await chargerGroupe(id);
+    if (!g) return false;
+    if (await estMembreGroupe(u.id, id)) return true;
+    try {
+      const s = await seanceVisible(u, g.session.seanceId);
+      const role = await roleDans(u, s);
+      return role === "formateur" || role === "equipe";
     } catch {
       return false;
     }
@@ -1653,6 +1728,7 @@ export function enregistrerLive(app: Express) {
       if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
       paroles.delete(s.id);
       derniersCampus.delete(s.id);
+      await groupesTravailLive.effacerGroupes(s.id).catch((e) => console.error(`[live] essai séance ${s.id} : groupes non effacés`, e));
       await consigner(s.id, "remise_a_venir", { par: u.id, essai });
       await db.insert(journal).values({ utilisateurId: u.id, action: "live_remis_a_venir", details: { seanceId: s.id, ...essai } });
       publier(canal(s.id), "statut", { statut: "planifiee", demarreeLe: null, termineeLe: null, motif: null });
@@ -1846,7 +1922,10 @@ export function enregistrerLive(app: Express) {
     }),
   );
 
-  // ── Discussion du live : chat écrit à toute la classe, fichier joint au besoin ──
+  groupesTravailLive.enregistrer(app);
+
+  // ── Discussion du live : à la classe, en privé, ou dans un groupe de travail ──
+  // GET ?groupe=<id> : la discussion d'un groupe ; sinon celle de la classe et mes messages privés.
   app.get(
     "/api/seances/:id/chat",
     exigerConnexion,
@@ -1855,13 +1934,26 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAccessible(u, idParam(req));
       const role = await roleDans(u, s);
       const privilegie = role === "formateur" || role === "equipe";
+      const groupeId = req.query.groupe ? Number(req.query.groupe) : null;
+      let filtre;
+      if (groupeId) {
+        if (!Number.isInteger(groupeId) || groupeId <= 0) throw invalide("Groupe invalide.");
+        const g = await chargerGroupe(groupeId);
+        if (!g || g.session.seanceId !== s.id) throw introuvable("Groupe");
+        if (!privilegie && !(await estMembreGroupe(u.id, groupeId))) throw interdit("Cette discussion est celle d'un autre groupe.");
+        filtre = eq(messagesLive.groupeId, groupeId);
+      } else {
+        const classe = privilegie ? isNull(messagesLive.destinataireId) : and(isNull(messagesLive.destinataireId), eq(messagesLive.masque, false));
+        const prives = and(isNotNull(messagesLive.destinataireId), or(eq(messagesLive.auteurId, u.id), eq(messagesLive.destinataireId, u.id)));
+        filtre = and(isNull(messagesLive.groupeId), or(classe, prives));
+      }
       const lignes = await db
         .select()
         .from(messagesLive)
-        .where(privilegie ? eq(messagesLive.seanceId, s.id) : and(eq(messagesLive.seanceId, s.id), eq(messagesLive.masque, false)))
+        .where(and(eq(messagesLive.seanceId, s.id), filtre))
         .orderBy(desc(messagesLive.id))
         .limit(300);
-      res.json(await versMessagesLive(lignes.reverse(), role));
+      res.json(await versMessagesLive(lignes.reverse(), role, u.id));
     }),
   );
 
@@ -1873,27 +1965,59 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAccessible(u, idParam(req));
       exigerStatut(s, ["planifiee", "en_direct"], "Ce live est terminé : écris plutôt dans la messagerie du cours.");
       const role = await roleDans(u, s);
+      const privilegie = role === "formateur" || role === "equipe";
       const d = valider(
-        z.object({ texte: z.string().trim().max(1000, "1000 caractères au plus").default(""), fichierId: z.number().int().positive().optional() }),
+        z.object({
+          texte: z.string().trim().max(1000, "1000 caractères au plus").default(""),
+          fichierId: z.number().int().positive().optional(),
+          destinataireId: z.number().int().positive().optional(),
+          groupeId: z.number().int().positive().optional(),
+        }),
         req.body,
       );
       if (!d.texte && !d.fichierId) throw invalide("Écris un message ou joins un fichier.");
+      if (d.destinataireId && d.groupeId) throw invalide("Un message privé s'écrit dans la discussion de la classe.");
       limiter(`chat:${u.id}`, 1000, "Doucement : une seconde entre deux messages.");
+      if (d.groupeId) {
+        const g = await chargerGroupe(d.groupeId);
+        if (!g || g.session.seanceId !== s.id || g.session.fermeeLe) throw invalide("Ce groupe est fermé : tout le monde est revenu en classe.");
+        if (!privilegie && !(await estMembreGroupe(u.id, d.groupeId))) throw interdit("Tu n'es pas dans ce groupe.");
+      } else if (!privilegie) {
+        // Réglage du formateur : discussion fermée, ou seulement en privé avec lui.
+        if (s.chatMode === "ferme") throw interdit("Le formateur a fermé la discussion pour le moment.");
+        if (s.chatMode === "prives" && !d.destinataireId) throw interdit("Le formateur a limité la discussion : écrivez-lui en privé.");
+      }
+      if (d.destinataireId) {
+        if (d.destinataireId === u.id) throw invalide("Choisis une autre personne.");
+        const [dest] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, d.destinataireId));
+        if (!dest || !dest.actif) throw introuvable("Destinataire");
+        let roleDest: RoleSeance;
+        try {
+          roleDest = await roleDans(dest, await seanceVisible(dest, s.id));
+        } catch {
+          throw invalide("Cette personne ne suit pas ce live.");
+        }
+        // Étudiants et salles écrivent en privé au formateur ou à l'équipe ; le formateur, à qui il veut.
+        if (!privilegie && roleDest !== "formateur" && roleDest !== "equipe") throw interdit("En privé, on écrit au formateur (ou à l'équipe du campus).");
+      }
       if (d.fichierId) {
         const [f] = await db.select({ proprietaireId: fichiers.proprietaireId, usage: fichiers.usage }).from(fichiers).where(eq(fichiers.id, d.fichierId));
         if (!f || f.proprietaireId !== u.id || f.usage !== "chat") throw invalide("Fichier introuvable : déposez-le à nouveau.");
         const [deja] = await db.select({ id: messagesLive.id }).from(messagesLive).where(eq(messagesLive.fichierId, d.fichierId)).limit(1);
         if (deja) throw invalide("Ce fichier est déjà envoyé.");
       }
-      const [m] = await db.insert(messagesLive).values({ seanceId: s.id, auteurId: u.id, siteId: u.siteId, texte: d.texte, fichierId: d.fichierId ?? null }).returning();
-      const [dto] = await versMessagesLive([m], role);
-      // Le canal est aussi écouté par les écrans de salle : le nom d'un étudiant y est remplacé à l'affichage.
-      publier(canal(s.id), "chat", dto);
+      const [m] = await db
+        .insert(messagesLive)
+        .values({ seanceId: s.id, auteurId: u.id, siteId: u.siteId, texte: d.texte, fichierId: d.fichierId ?? null, destinataireId: d.destinataireId ?? null, groupeId: d.groupeId ?? null })
+        .returning();
+      const [dto] = await versMessagesLive([m], role, u.id);
+      // Le canal de la séance est aussi écouté par les écrans de salle : le nom d'un étudiant y est remplacé à l'affichage.
+      diffuserMessage(m, "chat", { ...dto, mesReactions: [] });
       res.status(201).json(dto);
     }),
   );
 
-  // Retirer son message, ou (formateur, équipe) masquer celui d'un autre.
+  // Retirer son message, ou (formateur, équipe) masquer celui d'un autre dans la discussion de la classe.
   app.delete(
     "/api/seances/:id/chat/:mid",
     exigerConnexion,
@@ -1902,17 +2026,76 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAccessible(u, idParam(req));
       const role = await roleDans(u, s);
       const [m] = await db.select().from(messagesLive).where(and(eq(messagesLive.id, idParam(req, "mid")), eq(messagesLive.seanceId, s.id)));
-      if (!m) throw introuvable("Message");
+      if (!m || !(await messageVisible(u, role, m))) throw introuvable("Message");
       if (m.auteurId === u.id) {
         await db.delete(messagesLive).where(eq(messagesLive.id, m.id));
-        publier(canal(s.id), "chat:retire", { id: m.id });
+        diffuserMessage(m, "chat:retire", { id: m.id });
         return res.json({ id: m.id, retire: true });
       }
-      if (role !== "formateur" && role !== "equipe") throw interdit("Seuls le formateur et l'équipe masquent les messages des autres.");
-      await db.update(messagesLive).set({ masque: true }).where(eq(messagesLive.id, m.id));
+      if ((role !== "formateur" && role !== "equipe") || m.destinataireId) throw interdit("Seuls le formateur et l'équipe masquent les messages des autres.");
+      await db.update(messagesLive).set({ masque: true, epingle: false }).where(eq(messagesLive.id, m.id));
       await db.insert(journal).values({ utilisateurId: u.id, action: "chat_masque", details: { seanceId: s.id, messageId: m.id } });
-      publier(canal(s.id), "chat:masque", { id: m.id });
+      diffuserMessage(m, "chat:masque", { id: m.id });
       res.json({ id: m.id, masque: true });
+    }),
+  );
+
+  // Réaction emoji : un toucher l'ajoute, un second la retire.
+  app.post(
+    "/api/seances/:id/chat/:mid/reactions",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      const role = await roleDans(u, s);
+      const { emoji } = valider(z.object({ emoji: z.enum(REACTIONS_CHAT) }), req.body);
+      const [m] = await db.select().from(messagesLive).where(and(eq(messagesLive.id, idParam(req, "mid")), eq(messagesLive.seanceId, s.id)));
+      if (!m || !(await messageVisible(u, role, m)) || (m.masque && role !== "formateur" && role !== "equipe")) throw introuvable("Message");
+      limiter(`reaction:${u.id}`, 300, "Doucement.");
+      const cle = and(eq(reactionsMessagesLive.messageId, m.id), eq(reactionsMessagesLive.utilisateurId, u.id), eq(reactionsMessagesLive.emoji, emoji));
+      const [deja] = await db.select().from(reactionsMessagesLive).where(cle);
+      if (deja) await db.delete(reactionsMessagesLive).where(cle);
+      else await db.insert(reactionsMessagesLive).values({ messageId: m.id, utilisateurId: u.id, emoji }).onConflictDoNothing();
+      const [dto] = await versMessagesLive([m], role, u.id);
+      diffuserMessage(m, "chat:reactions", { id: m.id, reactions: dto.reactions });
+      res.json({ id: m.id, reactions: dto.reactions, mesReactions: dto.mesReactions });
+    }),
+  );
+
+  // Épingler un message de la classe en haut de la discussion (un seul à la fois), ou le détacher.
+  app.post(
+    "/api/seances/:id/chat/:mid/epingle",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      const role = await roleDans(u, s);
+      if (role !== "formateur" && role !== "equipe") throw interdit("Seuls le formateur et l'équipe épinglent un message.");
+      const { epingle } = valider(z.object({ epingle: z.boolean() }), req.body);
+      const [m] = await db.select().from(messagesLive).where(and(eq(messagesLive.id, idParam(req, "mid")), eq(messagesLive.seanceId, s.id)));
+      if (!m || m.destinataireId || m.masque) throw introuvable("Message");
+      await db.transaction(async (tx) => {
+        const memeFil = m.groupeId ? eq(messagesLive.groupeId, m.groupeId) : isNull(messagesLive.groupeId);
+        await tx.update(messagesLive).set({ epingle: false }).where(and(eq(messagesLive.seanceId, s.id), memeFil, eq(messagesLive.epingle, true)));
+        if (epingle) await tx.update(messagesLive).set({ epingle: true }).where(eq(messagesLive.id, m.id));
+      });
+      const cible = m.groupeId ? `groupe:${m.groupeId}` : canal(s.id);
+      publier(cible, "chat:epingle", { id: epingle ? m.id : null, groupeId: m.groupeId });
+      res.json({ id: epingle ? m.id : null });
+    }),
+  );
+
+  // Qui écrit dans la discussion de la classe : tout le monde, seulement en privé au formateur, ou personne.
+  app.put(
+    "/api/seances/:id/chat/mode",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAnimee(u, idParam(req));
+      const { mode } = valider(z.object({ mode: z.enum(MODES_CHAT) }), req.body);
+      await db.update(seances).set({ chatMode: mode }).where(eq(seances.id, s.id));
+      publier(canal(s.id), "chat:mode", { mode });
+      res.json({ mode });
     }),
   );
 
@@ -1942,6 +2125,7 @@ export function enregistrerLive(app: Express) {
         demarreeLe: iso(s.demarreeLe),
         planB: s.planBLe ? s.lienSecours : null,
         motifAnnulation: s.motifAnnulation,
+        chatMode: s.chatMode,
         diapo: diapoCourante(s),
         questions,
         sondage: sondage ? versSondage(sondage, privilegie, choix) : null,
@@ -2516,6 +2700,7 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAccessible(u, idParam(req));
       const { mode } = valider(z.object({ mode: z.enum(["video", "radio", "compagnon"]) }), req.body);
       if (u.role !== "etudiant" || s.statut !== "en_direct") return res.json({ compte: false, raison: "hors_direct" } satisfies BattementPresenceDto);
+      noterModeSuivi(s.id, u.id, mode);
       // Seul un onglet réellement ouvert sur le campus (flux temps réel) compte : un script seul ne suffit pas.
       if (!estEnLigne(u.id)) return res.json({ compte: false, raison: "flux_ferme" } satisfies BattementPresenceDto);
       const maintenant = new Date();
@@ -3239,6 +3424,10 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       return `Incident résolu à ${site ?? "une salle"} (${String(d.incident ?? "")})`;
     case "remise_a_venir":
       return "Essai effacé : le cours est de nouveau à venir";
+    case "groupes_ouverts":
+      return `Groupes de travail : ${Number(d.groupes ?? 0)} groupes, ${Number(d.personnes ?? 0)} participants`;
+    case "groupes_fermes":
+      return `Retour en classe après ${Math.round(Number(d.minutes ?? 0))} min de travail en groupes`;
     default:
       return type;
   }

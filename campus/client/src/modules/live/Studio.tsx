@@ -21,6 +21,7 @@ import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsP
 import { EnTeteLive, FinDeSeance } from "./ui";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { cleDirect, useEcranAllume, useEtatDirect } from "./outils";
+import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroupes } from "./groupes";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "campus";
@@ -62,6 +63,31 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const { aller: allerDiapo, changer: changerDiapo, disposer } = usePilotageDiapos(seance);
   useClavierDiapos(changerDiapo, !observation, disposer);
 
+  // Groupes de travail : composer, suivre, visiter. Pendant une visite, le micro de la classe est coupé.
+  const { data: groupes } = useGroupes(seance.id, (type, d) => {
+    if (type === "groupes" && d?.action === "aide" && !observation) toast(`${d.nom} vous appelle.`, "info");
+  });
+  const [composition, setComposition] = useState(false);
+  const [visite, setVisite] = useState<number | null>(null);
+  const microAvantVisite = useRef<boolean | null>(null);
+  const visiter = useCallback(
+    (id: number | null) => {
+      if (id !== null && microAvantVisite.current === null) {
+        microAvantVisite.current = micro;
+        setMicro(false);
+      } else if (id === null && microAvantVisite.current !== null) {
+        setMicro(microAvantVisite.current);
+        microAvantVisite.current = null;
+      }
+      setVisite(id);
+    },
+    [micro],
+  );
+  const groupeVisite = visite !== null ? groupes?.groupes.find((g) => g.id === visite) : undefined;
+  useEffect(() => {
+    if (visite !== null && groupes && !groupeVisite) visiter(null);
+  }, [visite, groupes, groupeVisite, visiter]);
+
   if (statut === "annulee" || statut === "terminee") return <FinDeSeance seance={{ ...seance, statut }} />;
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
 
@@ -93,6 +119,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                     Terminer
                   </Bouton>
                 )}
+                {enDirect && !groupes?.session && <BoutonGroupes onClick={() => setComposition(true)} />}
                 <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>
                   Plan B
                 </Bouton>
@@ -115,6 +142,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           </div>
 
           <div className={cn("order-1 flex min-w-0 flex-col gap-3", !avecDiapos && "xl:order-2")}>
+            {groupes?.session && enDirect && <SuiviGroupes seance={seance} groupes={groupes} lectureSeule={observation} onVisiter={(g) => visiter(g.id)} />}
             {statut === "planifiee" && !observation && <Coulisses seance={seance} etat={etat} />}
             {avecDiapos && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-nuit-panneau p-2">
@@ -203,7 +231,14 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             {onglet === "mains" && <FileMains seanceId={seance.id} etat={etat} lectureSeule={observation} />}
             {onglet === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role={observation ? "equipe" : "formateur"} enDirect={enDirect} />}
             {onglet === "discussion" && (
-              <PanneauDiscussion seanceId={seance.id} role={observation ? "equipe" : "formateur"} moiId={moi.id} ouverte={statut === "planifiee" || statut === "en_direct"} />
+              <PanneauDiscussion
+                seanceId={seance.id}
+                role={observation ? "equipe" : "formateur"}
+                moiId={moi.id}
+                ouverte={statut === "planifiee" || statut === "en_direct"}
+                mode={etat.chatMode}
+                formateur={seance.formateur}
+              />
             )}
             {onglet === "sondages" && <PanneauSondages seance={seance} etat={etat} lectureSeule={observation} />}
             {onglet === "campus" && (
@@ -219,6 +254,10 @@ export default function Studio({ seance, observation = false }: { seance: Seance
         </div>
       </div>
 
+      {!observation && <CompositeurGroupes seance={seance} ouverte={composition} onFermer={() => setComposition(false)} />}
+      {groupes && groupeVisite && (
+        <VisiteGroupe seance={seance} groupes={groupes} groupe={groupeVisite} role={observation ? "equipe" : "formateur"} moiId={moi.id} onFermer={() => visiter(null)} />
+      )}
       <ConfirmationTerminer ouverte={confirmation === "terminer"} onFermer={() => setConfirmation(null)} onConfirmer={() => agir("terminer", {}, "Séance terminée. Le bilan est prêt.")} />
       <FenetrePlanB seance={seance} ouverte={confirmation === "planb"} onFermer={() => setConfirmation(null)} onConfirmer={(lien) => agir("plan-b", { lien }, "Tout le monde bascule sur le lien de secours.")} />
       <FenetreEmpechement ouverte={confirmation === "empechement"} onFermer={() => setConfirmation(null)} onConfirmer={(motif) => agir("annuler", { motif }, "Les inscrits et les salles sont prévenus.")} />

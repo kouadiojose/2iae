@@ -18,6 +18,7 @@ import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, Vi
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { CONSOMMATION, cleDirect, estimationMo, formatMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
+import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
 
 type Panneau = "questions" | "discussion" | "campus" | "assistant";
@@ -183,6 +184,18 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   const { data: etat } = useEtatDirect(seance.id, false);
 
   const enDirect = (etat?.statut ?? seance.statut) === "en_direct";
+  // Groupes de travail : l'étudiant passe dans son groupe (visio, consigne, discussion), puis revient en classe.
+  const groupeId = useRef<number | null>(null);
+  const { data: groupes } = useGroupes(seance.id, (type, d) => {
+    if (type === "groupes:annonce" && groupeId.current) toast(`Message du formateur : ${d.texte}`, "info");
+  });
+  const groupe = enDirect ? monGroupe(groupes) : null;
+  useEffect(() => {
+    const id = groupe?.id ?? null;
+    if (id && id !== groupeId.current) toast(`Travail en groupe : tu rejoins ${groupe!.nom}.`, "info");
+    else if (!id && groupeId.current) toast("Retour en classe.", "info");
+    groupeId.current = id;
+  }, [groupe?.id]);
   const maMain: MainDirectDto | undefined = etat?.mains[0];
   const jaiLaParole = etat?.parole?.type === "etudiant" && etat.parole.utilisateurId === moi.id;
 
@@ -274,7 +287,9 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
           ]}
       />
       {panneau === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role="etudiant" enDirect={enDirect} />}
-      {panneau === "discussion" && <PanneauDiscussion seanceId={seance.id} role="etudiant" moiId={moi.id} ouverte={etat.statut === "planifiee" || etat.statut === "en_direct"} />}
+      {panneau === "discussion" && (
+        <PanneauDiscussion seanceId={seance.id} role="etudiant" moiId={moi.id} ouverte={etat.statut === "planifiee" || etat.statut === "en_direct"} mode={etat.chatMode} formateur={seance.formateur} />
+      )}
       {panneau === "campus" && <PanneauCampus etat={etat} />}
       {panneau === "assistant" && <PanneauAssistant etat={etat} iaDisponible={seance.iaDisponible} />}
     </aside>
@@ -305,6 +320,11 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
           </div>
         )}
 
+        {groupe && groupes ? (
+          <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode={mode} />
+        ) : (
+        <>
+        {enDirect && groupes?.session?.choixLibre && <ChoixGroupe seanceId={seance.id} groupes={groupes} />}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
           <div className="flex min-w-0 flex-col gap-3">
             <Scene seance={seance} etat={etat} role="etudiant" mode={mode} micro={micro} onConsommationVisio={surVisio} onConsommationRadio={surRadio} />
@@ -336,6 +356,8 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
           </div>
           {panneaux}
         </div>
+        </>
+        )}
       </div>
       {etat.sondage && <SondageSuperpose seanceId={seance.id} etat={etat} />}
       <span className="sr-only" aria-live="polite">

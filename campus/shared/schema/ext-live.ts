@@ -4,7 +4,7 @@
 // contrat.
 import { serial, text, integer, bigint, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene } from "./live";
+import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat } from "./live";
 import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
@@ -29,7 +29,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -184,9 +184,12 @@ export type QuestionDirectDto = {
   signalements?: number;
 };
 
-/** Un message de la discussion du live. */
+/** Un message de la discussion du live (de la classe, privé, ou d'un groupe de travail). */
 export type MessageLiveDto = {
   id: number;
+  seanceId: number;
+  /** Discussion d'un groupe de travail (null : discussion de la classe). */
+  groupeId: number | null;
   /** « Aya K. », « José Kouadio », « Salle de conférence · Yopougon » ; écran de salle : « Un étudiant ». */
   auteur: string;
   role: "etudiant" | "formateur" | "salle" | "equipe";
@@ -200,6 +203,54 @@ export type MessageLiveDto = {
   auteurId: number;
   /** Masqué par le formateur (visible seulement du formateur et de l'équipe, grisé). */
   masque: boolean;
+  /** Message privé : son destinataire (« José Kouadio »), sinon null. */
+  destinataireId: number | null;
+  destinataire: string | null;
+  /** Épinglé en haut de la discussion par le formateur. */
+  epingle: boolean;
+  reactions: { emoji: string; n: number }[];
+  /** Mes réactions à ce message. */
+  mesReactions: string[];
+};
+
+// ── Travail en groupes (salles séparées) ─────────────────────────────────
+
+/** Une personne dans un groupe : un étudiant (« Aya K. ») ou une salle de campus entière. */
+export type MembreGroupeDto = { id: number; nom: string; role: "etudiant" | "salle"; siteId: number | null; site: string | null };
+
+export type GroupeTravailDto = {
+  id: number;
+  numero: number;
+  nom: string;
+  /** Formateur et équipe : tous les membres ; participant : ceux de son groupe seulement. */
+  membres: MembreGroupeDto[];
+  nbMembres: number;
+  aideDemandeeLe: string | null;
+};
+
+export type GroupesDto = {
+  session: {
+    id: number;
+    consigne: string;
+    ouverteLe: string;
+    finPrevueLe: string | null;
+    /** Retour de tous en classe à cette heure (compte à rebours). */
+    fermetureLe: string | null;
+    retourLibre: boolean;
+    choixLibre: boolean;
+    annonce: string | null;
+    annonceLe: string | null;
+  } | null;
+  groupes: GroupeTravailDto[];
+  monGroupeId: number | null;
+  /** Visio des groupes possible (Daily configuré) ; sinon, discussion écrite seulement. */
+  visioDisponible: boolean;
+};
+
+/** Participant présent, à répartir (formateur et équipe). */
+export type ParticipantGroupeDto = MembreGroupeDto & {
+  /** Façon de suivre : visio ou son (en ligne), ou dans la salle (il suit alors sa salle). */
+  mode: "video" | "radio" | "salle" | null;
 };
 
 export type MainDirectDto = {
@@ -292,6 +343,8 @@ export type EtatDirectDto = {
   sousTitres: SousTitreDto[];
   /** Formateur et équipe : toute la file ; salle : sa salle ; étudiant : sa main. */
   mains: MainDirectDto[];
+  /** Qui écrit dans la discussion (réglage du formateur). */
+  chatMode: ModeChat;
 };
 
 export type RejoindreDto = {

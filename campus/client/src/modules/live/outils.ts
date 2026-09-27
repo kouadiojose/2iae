@@ -178,6 +178,8 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
       return { ...etat, diapo: d };
     case "planb":
       return { ...etat, planB: d.lien };
+    case "chat:mode":
+      return { ...etat, chatMode: d.mode };
     default:
       return etat;
   }

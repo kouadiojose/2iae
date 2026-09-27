@@ -149,6 +149,8 @@ export function fournisseurParDefaut(): FournisseurVisio {
 }
 
 export const nomSalleVisio = (seanceId: number) => `${PREFIXE_SALLE}${seanceId}`;
+/** Salle d'un groupe de travail : « campus-2iae-17-g42 » (rattachée à la séance 17 dans le suivi de consommation). */
+export const nomSalleGroupe = (seanceId: number, groupeId: number) => `${PREFIXE_SALLE}${seanceId}-g${groupeId}`;
 
 /** Fin de validité de la salle : fin prévue + 2 h (en secondes Unix). */
 function expirationSalle(s: Pick<Seance, "debut" | "dureeMinutes">): number {
@@ -397,6 +399,34 @@ export async function obtenirSalleEssai(): Promise<{ nom: string; url: string }>
       name: nom,
       privacy: "private",
       properties: { ...PROPRIETES_COMMUNES, start_video_off: false, start_audio_off: true, max_participants: TAILLE_SALLE_ESSAI },
+    },
+  });
+  if (creee.statut === 200 && creee.donnees) return { nom, url: creee.donnees.url };
+  const rattrapage = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
+  if (rattrapage.statut === 200 && rattrapage.donnees) return { nom, url: rattrapage.donnees.url };
+  throw erreurDaily(creee.statut, creee.donnees);
+}
+
+/** Un groupe de travail tient dans une petite salle (quelques étudiants, une salle de campus, le formateur en visite). */
+const TAILLE_SALLE_GROUPE = 25;
+
+/**
+ * Crée (ou retrouve) la salle Daily d'un groupe de travail : privée, jamais
+ * enregistrée, caméras et micros coupés à l'entrée, fermée au plus tard à `exp`.
+ * Elle est effacée à la fermeture des groupes.
+ */
+export async function obtenirSalleGroupeDaily(nom: string, exp: number): Promise<{ nom: string; url: string }> {
+  const existante = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
+  if (existante.statut === 200 && existante.donnees) {
+    if ((existante.donnees.config?.exp ?? 0) < exp) await mettreAJourSalle(nom, { exp }, false);
+    return { nom, url: existante.donnees.url };
+  }
+  const creee = await appelDaily<SalleDaily>("/rooms", {
+    methode: "POST",
+    corps: {
+      name: nom,
+      privacy: "private",
+      properties: { ...PROPRIETES_COMMUNES, start_video_off: true, start_audio_off: true, max_participants: TAILLE_SALLE_GROUPE, exp, eject_at_room_exp: true },
     },
   });
   if (creee.statut === 200 && creee.donnees) return { nom, url: creee.donnees.url };
@@ -710,7 +740,8 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
   }
 
   // Libellé lisible de chaque salle : « Salle d'essai », ou le titre de la séance.
-  const idsSeances = [...new Set(duCampus.map((m) => Number(m.room.slice(PREFIXE_SALLE.length))).filter((n) => Number.isInteger(n) && n > 0))];
+  // « campus-2iae-17 » : la séance 17 ; « campus-2iae-17-g42 » : un de ses groupes de travail.
+  const idsSeances = [...new Set(duCampus.map((m) => parseInt(m.room.slice(PREFIXE_SALLE.length), 10)).filter((n) => Number.isInteger(n) && n > 0))];
   const titres = new Map<number, string>();
   if (idsSeances.length) {
     const lignes = await db.select({ id: seances.id, titre: seances.titre, debut: seances.debut }).from(seances).where(inArray(seances.id, idsSeances));
@@ -725,8 +756,11 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
   }
   const libelleSalle = (nom: string) => {
     if (nom === NOM_SALLE_ESSAI) return "Salle d'essai";
-    const id = Number(nom.slice(PREFIXE_SALLE.length));
-    return titres.get(id) ?? `Séance supprimée (${nom})`;
+    const suite = nom.slice(PREFIXE_SALLE.length);
+    const id = parseInt(suite, 10);
+    const titre = titres.get(id);
+    if (titre && /^\d+-g\d+$/.test(suite)) return `${titre} · groupe de travail`;
+    return titre ?? `Séance supprimée (${nom})`;
   };
 
   const minutes = duCampus.reduce((t, m) => t + minutesDe(m), 0);

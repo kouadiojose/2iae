@@ -18,6 +18,18 @@ export const DISPOSITIONS_SCENE = ["diapo", "cote", "cameras"] as const;
 export type DispositionScene = (typeof DISPOSITIONS_SCENE)[number];
 
 /**
+ * Qui écrit dans la discussion du live, au choix du formateur :
+ * tous : tout le monde, à toute la classe ou en privé au formateur ;
+ * prives : les étudiants et les salles n'écrivent qu'en privé au formateur ;
+ * ferme : seuls le formateur et l'équipe écrivent.
+ */
+export const MODES_CHAT = ["tous", "prives", "ferme"] as const;
+export type ModeChat = (typeof MODES_CHAT)[number];
+
+/** Réactions proposées sous un message de la discussion. */
+export const REACTIONS_CHAT = ["👍", "❤️", "😂", "👏", "😮", "🙏", "🎉", "🤔"] as const;
+
+/**
  * campus : visio intégrée au campus (WebRTC pair-à-pair formateur ↔ salles, sans compte externe)
  * daily : Daily.co · jitsi : serveur Jitsi · externe : lien Zoom/Meet/Teams · demo : scène simulée.
  * La « radio » (son du formateur en flux HTTP + diapos) fonctionne avec tous les fournisseurs.
@@ -60,6 +72,7 @@ export const seances = campusSchema.table(
     diapos: jsonb("diapos").$type<number[]>().notNull().default([]),
     diapoCourante: integer("diapo_courante").notNull().default(0),
     disposition: text("disposition").$type<DispositionScene>().notNull().default("diapo"),
+    chatMode: text("chat_mode").$type<ModeChat>().notNull().default("tous"),
     proposeSurSite: boolean("propose_sur_site").notNull().default(false),
     publierSurSite: boolean("publier_sur_site").notNull().default(false),
     /** Motif d'annulation ou de report (« Le formateur a un empêchement »), affiché partout. */
@@ -120,13 +133,91 @@ export const messagesLive = campusSchema.table(
     siteId: integer("site_id").references(() => sites.id),
     texte: text("texte").notNull().default(""),
     fichierId: integer("fichier_id").references(() => fichiers.id, { onDelete: "set null" }),
+    /** Message privé : visible seulement de l'auteur et de ce destinataire. */
+    destinataireId: integer("destinataire_id").references(() => utilisateurs.id, { onDelete: "cascade" }),
+    /** Discussion d'un groupe de travail : visible de ses membres, du formateur et de l'équipe. */
+    groupeId: integer("groupe_id").references(() => groupesTravail.id, { onDelete: "cascade" }),
     masque: boolean("masque").notNull().default(false),
+    /** Épinglé par le formateur en haut de la discussion (un seul à la fois). */
+    epingle: boolean("epingle").notNull().default(false),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_live_seance_idx").on(t.seanceId, t.id), index("messages_live_fichier_idx").on(t.fichierId)],
 );
 
 export type MessageLive = typeof messagesLive.$inferSelect;
+
+/**
+ * Travail en groupes (les « salles séparées ») : le formateur répartit les
+ * étudiants en ligne et les salles en petits groupes, chacun dans sa visio,
+ * avec une consigne et un minuteur, puis rappelle tout le monde en classe.
+ * Une seule répartition ouverte à la fois par séance.
+ */
+export const sessionsGroupes = campusSchema.table(
+  "sessions_groupes",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    consigne: text("consigne").notNull().default(""),
+    /** Fin prévue (minuteur) ; null : sans limite, le formateur rappelle la classe. */
+    finPrevueLe: timestamp("fin_prevue_le", { withTimezone: true }),
+    /** Retour de tous en classe à cette heure (compte à rebours de fermeture). */
+    fermetureLe: timestamp("fermeture_le", { withTimezone: true }),
+    fermeeLe: timestamp("fermee_le", { withTimezone: true }),
+    /** Chacun peut revenir en classe quand il veut. */
+    retourLibre: boolean("retour_libre").notNull().default(true),
+    /** Les participants choisissent eux-mêmes leur groupe. */
+    choixLibre: boolean("choix_libre").notNull().default(false),
+    /** Dernier message du formateur à tous les groupes. */
+    annonce: text("annonce"),
+    annonceLe: timestamp("annonce_le", { withTimezone: true }),
+    creeParId: integer("cree_par_id").references(() => utilisateurs.id, { onDelete: "set null" }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sessions_groupes_seance_idx").on(t.seanceId)],
+);
+
+export const groupesTravail = campusSchema.table(
+  "groupes_travail",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id").notNull().references(() => sessionsGroupes.id, { onDelete: "cascade" }),
+    numero: integer("numero").notNull(),
+    nom: text("nom").notNull(),
+    /** Salle Daily du groupe, créée à la première entrée. */
+    salleVisio: text("salle_visio"),
+    /** Le groupe a appelé le formateur. */
+    aideDemandeeLe: timestamp("aide_demandee_le", { withTimezone: true }),
+  },
+  (t) => [index("groupes_travail_session_idx").on(t.sessionId)],
+);
+
+/** Qui est dans quel groupe (un groupe au plus par personne et par répartition). */
+export const membresGroupes = campusSchema.table(
+  "membres_groupes",
+  {
+    sessionId: integer("session_id").notNull().references(() => sessionsGroupes.id, { onDelete: "cascade" }),
+    groupeId: integer("groupe_id").notNull().references(() => groupesTravail.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    ajouteLe: timestamp("ajoute_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.utilisateurId] }), index("membres_groupes_groupe_idx").on(t.groupeId)],
+);
+
+export type SessionGroupes = typeof sessionsGroupes.$inferSelect;
+export type GroupeTravail = typeof groupesTravail.$inferSelect;
+
+/** Réactions (emoji) aux messages de la discussion : une par personne et par emoji. */
+export const reactionsMessagesLive = campusSchema.table(
+  "reactions_messages_live",
+  {
+    messageId: integer("message_id").notNull().references(() => messagesLive.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.utilisateurId, t.emoji] })],
+);
 
 /** Mains levées (d'un étudiant ou d'une salle de campus entière). */
 export const mainsLevees = campusSchema.table(

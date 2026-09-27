@@ -9,6 +9,15 @@ export const STATUTS_SEANCE = ["planifiee", "en_direct", "terminee", "annulee"] 
 export type StatutSeance = (typeof STATUTS_SEANCE)[number];
 
 /**
+ * Mise en page de la scène, choisie par le formateur et vue à l'identique dans
+ * les salles et chez les étudiants : diapo en grand (caméras en vignette),
+ * côte à côte, ou caméras en grand (diapo en vignette). « Caméras seules »
+ * est la diapo masquée (diapoCourante négative).
+ */
+export const DISPOSITIONS_SCENE = ["diapo", "cote", "cameras"] as const;
+export type DispositionScene = (typeof DISPOSITIONS_SCENE)[number];
+
+/**
  * campus : visio intégrée au campus (WebRTC pair-à-pair formateur ↔ salles, sans compte externe)
  * daily : Daily.co · jitsi : serveur Jitsi · externe : lien Zoom/Meet/Teams · demo : scène simulée.
  * La « radio » (son du formateur en flux HTTP + diapos) fonctionne avec tous les fournisseurs.
@@ -50,6 +59,7 @@ export const seances = campusSchema.table(
     /** Diapositives (images légères) diffusées en synchronisation : identifiants de fichiers. */
     diapos: jsonb("diapos").$type<number[]>().notNull().default([]),
     diapoCourante: integer("diapo_courante").notNull().default(0),
+    disposition: text("disposition").$type<DispositionScene>().notNull().default("diapo"),
     proposeSurSite: boolean("propose_sur_site").notNull().default(false),
     publierSurSite: boolean("publier_sur_site").notNull().default(false),
     /** Motif d'annulation ou de report (« Le formateur a un empêchement »), affiché partout. */

@@ -1,9 +1,11 @@
 // Vue présentateur : le formateur voit la diapo qu'il montre, pendant qu'il
-// présente. Dans le Studio, à côté de la visio (« Diapo à côté ») ; ou dans
-// une fenêtre à part (/live/:id/presentateur), à poser sur le côté de l'écran
-// ou sur un second écran. Les deux pilotent la même diapo : ← →, PageUp /
-// PageDown (télécommandes de présentation), clic sur une vignette.
-import { useCallback, useEffect, useState } from "react";
+// présente. Dans le Studio, à côté de la visio ; ou dans une fenêtre à part
+// (/live/:id/presentateur), à poser sur le côté de l'écran ou sur un second
+// écran. Les deux pilotent la même diapo (← →, PageUp / PageDown des
+// télécommandes, clic sur une vignette) et la même mise en page (1 à 4) :
+// diapo en grand, côte à côte, caméras en grand, caméras seules. Ce que le
+// formateur voit, les salles et les étudiants le voient.
+import { useCallback, useEffect } from "react";
 import { ChevronLeft, ChevronRight, Clock, EyeOff } from "lucide-react";
 import { post } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -14,7 +16,23 @@ import { EtatVide } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toastErreur } from "@/components/ui/toast";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
-import type { EtatDirectDto, SeanceDetailDto } from "@shared/schema";
+import type { DispositionScene, EtatDirectDto, SeanceDetailDto } from "@shared/schema";
+
+// ── Mises en page de la scène ──────────────────────────────────────────────
+
+/** Les trois dispositions de la diapo montrée, plus « seules » : la diapo masquée, les caméras plein cadre. */
+export type ModeScene = DispositionScene | "seules";
+
+export const MODES_SCENE: { mode: ModeScene; libelle: string; touche: string; aide: string }[] = [
+  { mode: "diapo", libelle: "Diapo en grand", touche: "1", aide: "La diapo en grand, les caméras en vignette" },
+  { mode: "cote", libelle: "Côte à côte", touche: "2", aide: "La diapo et les caméras côte à côte, à parts égales" },
+  { mode: "cameras", libelle: "Caméras en grand", touche: "3", aide: "Les caméras et les salles en grand, la diapo en vignette" },
+  { mode: "seules", libelle: "Caméras seules", touche: "4", aide: "Les caméras et les salles seules, la diapo masquée" },
+];
+
+export function modeScene(etat: EtatDirectDto): ModeScene {
+  return etat.diapo.masquee ? "seules" : (etat.diapo.disposition ?? "diapo");
+}
 
 // ── Pilotage des diapos (Studio et fenêtre présentateur) ──────────────────
 
@@ -46,26 +64,41 @@ export function usePilotageDiapos(seance: SeanceDetailDto) {
     [seance.id, aller],
   );
 
-  // « Caméra seule » : la diapo disparaît des écrans de salle et des téléphones, le formateur plein cadre.
-  const basculer = useCallback(async () => {
-    const actuel = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.diapo;
-    if (!actuel?.total) return;
-    const masquer = !actuel.masquee;
-    queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) =>
-      x ? { ...x, diapo: { ...x.diapo, masquee: masquer, url: masquer ? null : (seance.diapos[x.diapo.index]?.url ?? x.diapo.url) } } : x,
-    );
-    try {
-      await post(`/api/seances/${seance.id}/diapo`, { index: actuel.index, masquer });
-    } catch (e) {
-      toastErreur(e);
-    }
-  }, [seance.id, seance.diapos]);
+  // Mise en page, identique pour tous : « seules » masque la diapo (caméras plein cadre) ;
+  // les autres la montrent, en grand, à côté des caméras ou en vignette.
+  const disposer = useCallback(
+    async (mode: ModeScene) => {
+      const actuel = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.diapo;
+      if (!actuel?.total) return;
+      const masquer = mode === "seules";
+      const disposition = masquer ? undefined : mode;
+      queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) =>
+        x
+          ? {
+              ...x,
+              diapo: {
+                ...x.diapo,
+                masquee: masquer,
+                disposition: disposition ?? x.diapo.disposition,
+                url: masquer ? null : (seance.diapos[x.diapo.index]?.url ?? x.diapo.url),
+              },
+            }
+          : x,
+      );
+      try {
+        await post(`/api/seances/${seance.id}/diapo`, { index: actuel.index, masquer, ...(disposition && { disposition }) });
+      } catch (e) {
+        toastErreur(e);
+      }
+    },
+    [seance.id, seance.diapos],
+  );
 
-  return { aller, changer, basculer };
+  return { aller, changer, disposer };
 }
 
-/** ← → et PageUp / PageDown (les télécommandes de présentation envoient ces touches). */
-export function useClavierDiapos(changer: (delta: number) => void, actif: boolean) {
+/** ← → et PageUp / PageDown (les télécommandes de présentation envoient ces touches) ; 1 à 4 : mise en page. */
+export function useClavierDiapos(changer: (delta: number) => void, actif: boolean, disposer?: (mode: ModeScene) => void) {
   useEffect(() => {
     if (!actif) return;
     const surTouche = (e: KeyboardEvent) => {
@@ -79,34 +112,97 @@ export function useClavierDiapos(changer: (delta: number) => void, actif: boolea
         e.preventDefault();
         changer(-1);
       }
+      const choix = disposer && !e.ctrlKey && !e.metaKey && !e.altKey ? MODES_SCENE.find((m) => m.touche === e.key) : undefined;
+      if (choix) {
+        e.preventDefault();
+        disposer!(choix.mode);
+      }
     };
     window.addEventListener("keydown", surTouche);
     return () => window.removeEventListener("keydown", surTouche);
-  }, [changer, actif]);
+  }, [changer, actif, disposer]);
 }
 
-// ── Préférence du Studio : diapo à côté de la visio, ou visio seule ────────
+/** Petit schéma de chaque mise en page : la diapo en orange, les caméras en gris. */
+function Pictogramme({ mode }: { mode: ModeScene }) {
+  const diapo = (x: number, y: number, l: number, h: number) => (
+    <g>
+      <rect x={x} y={y} width={l} height={h} rx={1.5} fill="#E4793A" />
+      <rect x={x + l * 0.14} y={y + h * 0.3} width={l * 0.55} height={Math.max(1, h * 0.1)} rx={0.5} fill="#fff" opacity={0.9} />
+      <rect x={x + l * 0.14} y={y + h * 0.52} width={l * 0.38} height={Math.max(1, h * 0.08)} rx={0.5} fill="#fff" opacity={0.7} />
+    </g>
+  );
+  const camera = (x: number, y: number, l: number, h: number, contour = false) => (
+    <g>
+      <rect x={x} y={y} width={l} height={h} rx={1.5} fill="#6B625A" stroke={contour ? "#1B1714" : "none"} strokeWidth={contour ? 1 : 0} />
+      <circle cx={x + l / 2} cy={y + h * 0.42} r={Math.min(l, h) * 0.17} fill="#E9E1D9" />
+      <path d={`M${x + l * 0.24} ${y + h} q${l * 0.26} ${-h * 0.5} ${l * 0.52} 0`} fill="#E9E1D9" />
+    </g>
+  );
+  return (
+    <svg viewBox="0 0 30 19" className="h-[19px] w-[30px] shrink-0" aria-hidden>
+      {mode === "diapo" && (
+        <>
+          {diapo(1, 1, 28, 17)}
+          {camera(18, 10.5, 10, 6.5, true)}
+        </>
+      )}
+      {mode === "cote" && (
+        <>
+          {diapo(1, 3, 15, 13)}
+          {camera(17.5, 3, 11.5, 13)}
+        </>
+      )}
+      {mode === "cameras" && (
+        <>
+          {camera(1, 1, 28, 17)}
+          {diapo(18, 10.5, 10, 6.5)}
+        </>
+      )}
+      {mode === "seules" && (
+        <>
+          {camera(1, 1, 13.5, 17)}
+          {camera(15.5, 1, 13.5, 17)}
+        </>
+      )}
+    </svg>
+  );
+}
 
-export type VuePresentateur = "cote" | "video";
-const CLE_VUE = "campus:vue-presentateur";
-
-export function useVuePresentateur(): [VuePresentateur, (v: VuePresentateur) => void] {
-  const [vue, setVue] = useState<VuePresentateur>(() => {
-    try {
-      return window.localStorage.getItem(CLE_VUE) === "video" ? "video" : "cote";
-    } catch {
-      return "cote";
-    }
-  });
-  const choisir = useCallback((v: VuePresentateur) => {
-    setVue(v);
-    try {
-      window.localStorage.setItem(CLE_VUE, v);
-    } catch {
-      /* stockage indisponible : le choix vaut pour cette page */
-    }
-  }, []);
-  return [vue, choisir];
+/**
+ * Le sélecteur de mise en page : quatre boutons, un schéma chacun, la touche
+ * du clavier en rappel. « bande » dans le Studio, « grille » (2 × 2) dans la
+ * fenêtre présentateur.
+ */
+export function ChoixMiseEnPage({ mode, onChoisir, forme = "bande", className }: { mode: ModeScene; onChoisir: (m: ModeScene) => void; forme?: "bande" | "grille"; className?: string }) {
+  return (
+    <div role="radiogroup" aria-label="Mise en page pour les salles et les étudiants" className={cn(forme === "grille" ? "grid grid-cols-2 gap-2" : "flex flex-wrap gap-1.5", className)}>
+      {MODES_SCENE.map((m) => {
+        const actif = m.mode === mode;
+        return (
+          <button
+            key={m.mode}
+            type="button"
+            role="radio"
+            aria-checked={actif}
+            title={`${m.aide} (touche ${m.touche})`}
+            onClick={() => onChoisir(m.mode)}
+            className={cn(
+              "flex min-h-11 items-center gap-2 rounded-xl px-3 text-left text-[13px] font-semibold transition-colors",
+              forme === "grille" && "min-h-12",
+              actif ? "bg-white text-encre ring-2 ring-orange" : "bg-nuit-carte text-white hover:bg-nuit-ligne",
+            )}
+          >
+            <Pictogramme mode={m.mode} />
+            <span className="leading-tight">{m.libelle}</span>
+            {forme === "bande" && (
+              <kbd className={cn("ml-auto rounded border px-1 font-mono text-[10px] leading-4", actif ? "border-encre/30 text-encre/60" : "border-nuit-ligne text-nuit-gris")}>{m.touche}</kbd>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Ouvre (ou ramène devant) la fenêtre présentateur, sur le côté de l'écran. */
@@ -125,29 +221,25 @@ export function ouvrirFenetrePresentateur(seanceId: number) {
 
 // ── Diapo en cours, vue du formateur ───────────────────────────────────────
 
-/** La diapo en cours telle que les salles la voient, même en « Caméra seule » (grisée). */
+/** La diapo en cours telle que les salles la voient, même en « Caméras seules » (grisée). Rien par-dessus : le titre reste lisible. */
 function DiapoEnCours({ seance, etat, grand }: { seance: SeanceDetailDto; etat: EtatDirectDto; grand?: boolean }) {
   const d = seance.diapos[etat.diapo.index];
   return (
-    <div className={cn("relative overflow-hidden rounded-[18px] border-2 bg-black", etat.diapo.masquee ? "border-nuit-ligne" : "border-orange", grand ? "h-full min-h-0" : "aspect-video")}>
+    <div className={cn("overflow-hidden rounded-[18px] border-2 bg-black", etat.diapo.masquee ? "border-nuit-ligne" : "border-orange", grand ? "h-full min-h-0" : "aspect-video")}>
       {d ? (
         <img src={d.url} alt={`Diapo ${etat.diapo.index + 1} sur ${etat.diapo.total}`} className={cn("h-full w-full object-contain transition-opacity", etat.diapo.masquee && "opacity-30")} />
       ) : null}
-      <span className={cn("absolute left-3 top-3 flex items-center gap-2 rounded-lg px-2.5 py-1 font-mono text-xs font-bold", etat.diapo.masquee ? "bg-nuit-carte text-nuit-texte" : "bg-orange text-encre")}>
-        {etat.diapo.masquee ? (
-          <>
-            <EyeOff className="h-3.5 w-3.5" /> Masquée aux salles
-          </>
-        ) : (
-          <>
-            <span className="h-2 w-2 rounded-full bg-encre" /> Vue par les salles
-          </>
-        )}
-      </span>
-      <span className="absolute right-3 top-3 rounded-lg bg-black/70 px-2.5 py-1 font-mono text-xs text-orange-peche">
-        {etat.diapo.index + 1} / {etat.diapo.total}
-      </span>
     </div>
+  );
+}
+
+/** « Vue par les salles · 3 / 12 », ou « Masquée aux salles » en « Caméras seules ». */
+function EtatDiapo({ etat, className }: { etat: EtatDirectDto; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-2 font-mono text-xs font-bold", etat.diapo.masquee ? "text-nuit-gris" : "text-orange-peche", className)}>
+      {etat.diapo.masquee ? <EyeOff className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-orange" />}
+      {etat.diapo.masquee ? "Masquée aux salles" : "Vue par les salles"} · {etat.diapo.index + 1} / {etat.diapo.total}
+    </span>
   );
 }
 
@@ -169,17 +261,30 @@ function DiapoSuivante({ seance, etat, onAller, className }: { seance: SeanceDet
   );
 }
 
-/** Dans le Studio, à côté de la visio : la diapo en cours en grand, la suivante en dessous. */
-export function PanneauPresentateur({ seance, etat, onAller }: { seance: SeanceDetailDto; etat: EtatDirectDto; onAller: (index: number) => void }) {
+/**
+ * Dans le Studio, à côté de la visio : la diapo en cours, la suivante en dessous.
+ * compact : colonne étroite (« Caméras en grand »), la suivante en pleine largeur, sans texte.
+ */
+export function PanneauPresentateur({ seance, etat, onAller, compact }: { seance: SeanceDetailDto; etat: EtatDirectDto; onAller: (index: number) => void; compact?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <DiapoEnCours seance={seance} etat={etat} />
-      <div className="flex items-center gap-3">
-        <DiapoSuivante seance={seance} etat={etat} onAller={onAller} className="w-36 shrink-0" />
-        <p className="text-[13px] leading-snug text-nuit-doux">
-          Ce que les salles et les étudiants voient en ce moment. <span className="text-nuit-texte">← →</span> pour avancer.
-        </p>
-      </div>
+      {compact ? (
+        <>
+          <EtatDiapo etat={etat} className="px-1" />
+          <DiapoSuivante seance={seance} etat={etat} onAller={onAller} className="w-full" />
+        </>
+      ) : (
+        <div className="flex items-center gap-3">
+          <DiapoSuivante seance={seance} etat={etat} onAller={onAller} className="w-36 shrink-0" />
+          <div className="flex min-w-0 flex-col gap-1">
+            <EtatDiapo etat={etat} />
+            <p className="text-[13px] leading-snug text-nuit-doux">
+              <span className="text-nuit-texte">← →</span> pour avancer, <span className="text-nuit-texte">1 à 4</span> pour changer la mise en page.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -208,8 +313,8 @@ export default function PagePresentateur({ id }: { id: string }) {
 
 function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
   const { data: etat } = useEtatDirect(seance.id, true);
-  const { aller, changer, basculer } = usePilotageDiapos(seance);
-  useClavierDiapos(changer, true);
+  const { aller, changer, disposer } = usePilotageDiapos(seance);
+  useClavierDiapos(changer, true, disposer);
   useEcranAllume(true);
   useEffect(() => {
     const avant = document.title;
@@ -227,7 +332,7 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
       </div>
     );
   }
-  const { index, total, masquee } = etat.diapo;
+  const { index, total } = etat.diapo;
   return (
     <div className="flex h-dvh flex-col gap-3 bg-nuit p-3 text-white sm:p-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
@@ -235,10 +340,13 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
           <p className="font-mono text-[11px] uppercase tracking-wider text-orange-peche">Vue présentateur</p>
           <h1 className="truncate font-sans text-base font-bold tracking-normal text-white">{seance.titre}</h1>
         </div>
-        <Chrono seance={seance} etat={etat} />
+        <div className="flex flex-wrap items-center gap-3">
+          <EtatDiapo etat={etat} />
+          <Chrono seance={seance} etat={etat} />
+        </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
+      <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_300px]">
         <DiapoEnCours seance={seance} etat={etat} grand />
         <aside className="flex min-h-0 flex-col gap-3">
           <DiapoSuivante seance={seance} etat={etat} onAller={(i) => void aller(i)} />
@@ -250,14 +358,7 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
               Suivante
             </Bouton>
           </div>
-          <button
-            type="button"
-            onClick={() => void basculer()}
-            aria-pressed={Boolean(masquee)}
-            className={cn("min-h-11 rounded-xl px-3 text-[14px] font-semibold transition-colors", masquee ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne")}
-          >
-            {masquee ? "Montrer la diapo aux salles" : "Caméra seule"}
-          </button>
+          <ChoixMiseEnPage mode={modeScene(etat)} onChoisir={(m) => void disposer(m)} forme="grille" />
           <ol className="defile-fin hidden min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid">
             {seance.diapos.map((d) => (
               <li key={d.fichierId}>
@@ -276,7 +377,7 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
           </ol>
         </aside>
       </div>
-      <p className="hidden text-center font-mono text-[11px] text-nuit-gris sm:block">← → ou télécommande pour changer de diapo · cette fenêtre peut rester sur le côté ou sur un second écran</p>
+      <p className="hidden text-center font-mono text-[11px] text-nuit-gris sm:block">← → ou télécommande : diapo suivante · 1 à 4 : mise en page · cette fenêtre peut rester sur le côté ou sur un second écran</p>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 // sondages éclair et question éclair IA, baromètre, présences par salle,
 // chrono et plan, diapos (← →), sous-titres du navigateur, radio, Plan B.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Hand, Mic, MicOff, Play, Square, LifeBuoy, Ban, Sparkles, Captions, Radio, Plus, Trash2, Clock, Video, VideoOff, Check, Columns2, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Hand, Mic, MicOff, Play, Square, LifeBuoy, Ban, Sparkles, Captions, Radio, Plus, Trash2, Clock, Video, VideoOff, Check, ExternalLink } from "lucide-react";
 import { post, suppr } from "@/lib/api";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours"
 import { toast, toastErreur } from "@/components/ui/toast";
 import { EmetteurRadio, TestMicroCamera } from "@/modules/visio";
 import { Scene } from "./scene";
-import { PanneauPresentateur, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, useVuePresentateur, type VuePresentateur } from "./presentateur";
+import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, type ModeScene } from "./presentateur";
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance } from "./ui";
 import { cleDirect, useEcranAllume, useEtatDirect } from "./outils";
@@ -54,18 +54,20 @@ export default function Studio({ seance, observation = false }: { seance: Seance
     }
   };
 
-  // Diapos : ← →, télécommande (PageUp / PageDown), vignettes, « Caméra seule ».
-  const { aller: allerDiapo, changer: changerDiapo, basculer: basculerDiapo } = usePilotageDiapos(seance);
-  useClavierDiapos(changerDiapo, !observation);
-  // Vue présentateur : la diapo en cours à côté de la visio, pour voir ce qu'on montre.
-  const [vue, setVue] = useVuePresentateur();
+  // Diapos : ← →, télécommande (PageUp / PageDown), vignettes ; mise en page : 1 à 4.
+  const { aller: allerDiapo, changer: changerDiapo, disposer } = usePilotageDiapos(seance);
+  useClavierDiapos(changerDiapo, !observation, disposer);
 
   if (statut === "annulee" || statut === "terminee") return <FinDeSeance seance={{ ...seance, statut }} />;
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
 
   const nbMains = etat.mains.length;
   const paroleSiteId = etat.parole?.type === "salle" ? etat.parole.siteId : null;
-  const presentateur = !observation && vue === "cote" && seance.diapos.length > 0 && !(etat.planB ?? seance.planB);
+  // Vue présentateur : la même mise en page que les salles (diapo en grand, côte à côte, caméras en grand,
+  // caméras seules). Avec des diapos, la scène prend toute la largeur : le plan passe dessous.
+  const avecDiapos = !observation && seance.diapos.length > 0 && !(etat.planB ?? seance.planB);
+  const mode: ModeScene = modeScene(etat);
+  const panneauDiapo = avecDiapos && mode !== "seules";
 
   return (
     <div className="min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
@@ -98,21 +100,50 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           }
         />
 
-        {/* En vue présentateur, la scène et la diapo prennent la largeur : le plan passe dessous. */}
-        <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !presentateur && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>
+        {/* Avec des diapos, la scène et la diapo prennent la largeur : le plan passe dessous. */}
+        <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !avecDiapos && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>
           {/* Colonne du plan (sous la scène sur les écrans moyens) */}
-          <div className={cn("order-3 flex flex-col gap-4", !presentateur && "xl:order-1")}>
+          <div className={cn("order-3 flex flex-col gap-4", !avecDiapos && "xl:order-1")}>
             <ChronoPlan seance={seance} etat={etat} />
             {!observation && (
               <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={flux} />
             )}
           </div>
 
-          <div className={cn("order-1 flex min-w-0 flex-col gap-3", !presentateur && "xl:order-2")}>
+          <div className={cn("order-1 flex min-w-0 flex-col gap-3", !avecDiapos && "xl:order-2")}>
             {statut === "planifiee" && !observation && <Coulisses seance={seance} etat={etat} />}
-            {/* Même arbre dans les deux vues (seules les classes changent) : la visio ne se recharge pas. */}
-            <div className={presentateur ? "grid items-start gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : "contents"}>
-              {presentateur ? <PanneauPresentateur seance={seance} etat={etat} onAller={(i) => void allerDiapo(i)} /> : null}
+            {avecDiapos && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-nuit-panneau p-2">
+                <ChoixMiseEnPage mode={mode} onChoisir={(m) => void disposer(m)} />
+                <div className="flex items-center gap-3 pr-1">
+                  <span className="hidden text-[12px] leading-tight text-nuit-doux 2xl:inline">Les salles et les étudiants voient la même mise en page</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!ouvrirFenetrePresentateur(seance.id)) toast("Votre navigateur a bloqué la fenêtre : autorisez les fenêtres pop-up pour le campus.", "erreur");
+                    }}
+                    className="hidden min-h-11 items-center gap-1.5 rounded-xl bg-nuit-carte px-3 text-[13px] font-semibold text-white transition-colors hover:bg-nuit-ligne sm:inline-flex"
+                    title="Ouvrir la vue présentateur dans une fenêtre à part (sur le côté ou un second écran)"
+                  >
+                    <ExternalLink className="h-4 w-4" /> Fenêtre à part
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Même arbre dans toutes les mises en page (seules les classes changent) : la visio ne se recharge pas. */}
+            <div
+              className={
+                panneauDiapo
+                  ? cn(
+                      "grid items-start gap-3",
+                      mode === "diapo" && "md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
+                      mode === "cote" && "md:grid-cols-2",
+                      mode === "cameras" && "md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]",
+                    )
+                  : "contents"
+              }
+            >
+              {panneauDiapo ? <PanneauPresentateur seance={seance} etat={etat} onAller={(i) => void allerDiapo(i)} compact={mode === "cameras"} /> : null}
               <Scene
                 seance={seance}
                 etat={etat}
@@ -150,11 +181,11 @@ export default function Studio({ seance, observation = false }: { seance: Seance
               </div>
             )}
             {!observation && (
-              <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onAller={(i) => void allerDiapo(i)} onBasculer={basculerDiapo} vue={vue} onVue={setVue} />
+              <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onAller={(i) => void allerDiapo(i)} />
             )}
           </div>
 
-          <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !presentateur && "xl:order-3")}>
+          <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !avecDiapos && "xl:order-3")}>
             <OngletsPanneau
               valeur={onglet}
               onChange={setOnglet}
@@ -553,23 +584,7 @@ function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirec
 
 // ── Diapos ─────────────────────────────────────────────────────────────────
 
-function BandeDiapos({
-  seance,
-  etat,
-  onChanger,
-  onAller,
-  onBasculer,
-  vue,
-  onVue,
-}: {
-  seance: SeanceDetailDto;
-  etat: EtatDirectDto;
-  onChanger: (delta: number) => void;
-  onAller: (index: number) => void;
-  onBasculer: () => void;
-  vue: VuePresentateur;
-  onVue: (v: VuePresentateur) => void;
-}) {
+function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetailDto; etat: EtatDirectDto; onChanger: (delta: number) => void; onAller: (index: number) => void }) {
   if (!seance.diapos.length) {
     return (
       <p className="rounded-[18px] bg-nuit-panneau p-4 text-center text-[14px] text-nuit-doux">
@@ -588,41 +603,6 @@ function BandeDiapos({
         <span className="flex min-w-0 flex-col items-center gap-1 text-center sm:flex-row sm:flex-wrap sm:justify-center sm:gap-x-3 sm:gap-y-2">
           <span className="font-mono text-[12px] text-orange-peche">
             Diapo {etat.diapo.index + 1} / {etat.diapo.total} · touches ← →
-          </span>
-          <button
-            type="button"
-            onClick={onBasculer}
-            aria-pressed={Boolean(etat.diapo.masquee)}
-            className={cn(
-              "min-h-9 rounded-full px-3 text-[12px] font-semibold transition-colors",
-              etat.diapo.masquee ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne",
-            )}
-          >
-            {etat.diapo.masquee ? "Montrer la diapo aux salles" : "Caméra seule"}
-          </button>
-          <span className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => onVue(vue === "cote" ? "video" : "cote")}
-              aria-pressed={vue === "cote"}
-              className={cn(
-                "inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-[12px] font-semibold transition-colors",
-                vue === "cote" ? "bg-orange-peche text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne",
-              )}
-              title="Voir la diapo en cours à côté de la visio"
-            >
-              <Columns2 className="h-3.5 w-3.5" /> Diapo à côté
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!ouvrirFenetrePresentateur(seance.id)) toast("Votre navigateur a bloqué la fenêtre : autorisez les fenêtres pop-up pour le campus.", "erreur");
-              }}
-              className="hidden min-h-9 items-center gap-1.5 rounded-full bg-nuit-carte px-3 text-[12px] font-semibold text-white transition-colors hover:bg-nuit-ligne sm:inline-flex"
-              title="Ouvrir la vue présentateur dans une fenêtre à part (sur le côté ou un second écran)"
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Fenêtre à part
-            </button>
           </span>
         </span>
         <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={etat.diapo.index >= etat.diapo.total - 1} icone={<ChevronRight className="h-5 w-5" />} aria-label="Diapo suivante" className="min-h-11 min-w-11" />

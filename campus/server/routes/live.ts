@@ -101,6 +101,7 @@ import {
   directsImmediats,
   morceauxReplay,
   replaysStockes,
+  DISPOSITIONS_SCENE,
   type DemandeDirectImmediat,
   type RejoindreVisioDto,
 } from "@shared/schema";
@@ -938,12 +939,12 @@ async function diffuserCampus(seanceId: number, seulementSiChange = false) {
 const versDiapos = (s: Pick<Seance, "diapos">): DiapoDto[] => s.diapos.map((fichierId, index) => ({ index, fichierId, url: urlFichier(fichierId) }));
 
 /** diapoCourante négative : diapo masquée (« Caméra seule ») ; -(n + 1) garde la diapo n où reprendre. */
-function diapoCourante(s: Pick<Seance, "diapos" | "diapoCourante">) {
+function diapoCourante(s: Pick<Seance, "diapos" | "diapoCourante"> & Partial<Pick<Seance, "disposition">>) {
   const total = s.diapos.length;
   const masquee = s.diapoCourante < 0;
   const brut = masquee ? -s.diapoCourante - 1 : s.diapoCourante;
   const index = total ? Math.min(Math.max(0, brut), total - 1) : 0;
-  return { index, total, url: total && !masquee ? urlFichier(s.diapos[index]) : null, masquee };
+  return { index, total, url: total && !masquee ? urlFichier(s.diapos[index]) : null, masquee, disposition: s.disposition ?? "diapo" };
 }
 
 /** pdftoppm (poppler) est-il installé ? Sinon, les diapos se déposent en images. */
@@ -2270,15 +2271,18 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceAnimee(u, idParam(req));
-      const { index, masquer } = valider(z.object({ index: z.number().int().min(0), masquer: z.boolean().optional() }), req.body);
+      const { index, masquer, disposition } = valider(
+        z.object({ index: z.number().int().min(0), masquer: z.boolean().optional(), disposition: z.enum(DISPOSITIONS_SCENE).optional() }),
+        req.body,
+      );
       if (!s.diapos.length) throw invalide("Aucune diapo déposée pour cette séance.");
       const borne = Math.min(index, s.diapos.length - 1);
       const [maj] = await db
         .update(seances)
-        .set({ diapoCourante: masquer ? -borne - 1 : borne })
+        .set({ diapoCourante: masquer ? -borne - 1 : borne, ...(disposition && { disposition }) })
         .where(eq(seances.id, s.id))
         .returning();
-      if (s.statut === "en_direct") await consigner(s.id, "diapo", { index: borne, masquee: Boolean(masquer) });
+      if (s.statut === "en_direct") await consigner(s.id, "diapo", { index: borne, masquee: Boolean(masquer), disposition: maj.disposition });
       const etat = diapoCourante(maj);
       publier(canal(s.id), "diapo", etat);
       res.json(etat);

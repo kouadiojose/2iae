@@ -4,7 +4,7 @@
 // contrat.
 import { serial, text, integer, bigint, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence } from "./live";
+import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene } from "./live";
 import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
@@ -258,8 +258,11 @@ export type EtatDirectDto = {
   demarreeLe: string | null;
   planB: string | null;
   motifAnnulation: string | null;
-  /** masquee : le formateur a choisi « Caméra seule » (url vaut alors null, index garde la diapo où reprendre). */
-  diapo: { index: number; total: number; url: string | null; masquee?: boolean };
+  /**
+   * masquee : le formateur a choisi « Caméras seules » (url vaut alors null, index garde la diapo où reprendre).
+   * disposition : diapo en grand, côte à côte ou caméras en grand, quand la diapo est montrée.
+   */
+  diapo: { index: number; total: number; url: string | null; masquee?: boolean; disposition?: DispositionScene };
   questions: QuestionDirectDto[];
   sondage: SondageDto | null;
   resultats: ResultatsSondageDto | null;

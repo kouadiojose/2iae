@@ -58,11 +58,14 @@ export function Scene(p: PropsScene) {
   // Visio du campus côté formateur : la grille des cinq salles prend la hauteur dont elle a
   // besoin (sur téléphone, 2 colonnes × 3 rangées ne tiennent pas dans un cadre 16/9).
   const libre = !planB && ((role === "etudiant" && (mode === "radio" || mode === "compagnon")) || (role === "formateur" && seance.fournisseur === "campus") || (seance.fournisseur === "daily" && secoursRadio));
-  // Diapo en grand pour tous ceux qui suivent en vidéo (écrans de salle, étudiants, équipe), l'intervenant
-  // en vignette : c'est la diapo que la salle doit lire. Le formateur garde sa visio plein cadre (sa bande
-  // de diapos est sous la scène). La vignette reste le MÊME élément : la visio ne se recharge jamais.
+  // Diapo et caméras pour tous ceux qui suivent en vidéo (écrans de salle, étudiants, équipe), dans la
+  // mise en page choisie par le formateur : diapo en grand (caméras en vignette), côte à côte, ou caméras
+  // en grand (diapo en vignette). Le Studio du formateur montre la même mise en page à sa façon. La visio
+  // reste le MÊME élément dans toutes les mises en page : elle ne se recharge jamais.
   const visio = seance.fournisseur === "daily" || seance.fournisseur === "campus";
-  const diapoEnGrand = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url);
+  const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url);
+  const disposition = etat.diapo.disposition ?? "diapo";
+  const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
   return (
     <div
       className={cn(
@@ -72,15 +75,25 @@ export function Scene(p: PropsScene) {
         p.className,
       )}
     >
-      {diapoEnGrand && <DiapoCourante etat={etat} className="absolute inset-0" />}
+      {avecDiapo && (
+        <DiapoCourante
+          etat={etat}
+          discrete={disposition === "cameras"}
+          className={cn(
+            disposition === "diapo" && "absolute inset-0",
+            disposition === "cote" && "absolute inset-y-0 left-0 w-[58%]",
+            // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
+            disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
+          )}
+        />
+      )}
       <div
         className={
-          diapoEnGrand
-            ? cn(
-                "absolute z-10 aspect-video overflow-hidden rounded-xl border-2 border-nuit-ligne bg-nuit-carte shadow-2xl",
-                p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]",
-              )
-            : "contents"
+          !avecDiapo || disposition === "cameras"
+            ? "contents"
+            : disposition === "cote"
+              ? "absolute inset-y-0 right-0 w-[42%] overflow-hidden border-l-2 border-nuit-ligne bg-nuit-carte"
+              : cn("absolute z-10 aspect-video overflow-hidden rounded-xl border-2 border-nuit-ligne bg-nuit-carte shadow-2xl", vignette)
         }
       >
         {contenu}
@@ -104,15 +117,18 @@ export function Scene(p: PropsScene) {
 
 // ── Diapo courante (image légère, mise en cache par le navigateur) ─────────
 
-export function DiapoCourante({ etat, className, vide }: { etat: EtatDirectDto; className?: string; vide?: ReactNode }) {
+/** discrete : diapo en vignette (« Caméras en grand »), sans le compteur. */
+export function DiapoCourante({ etat, className, vide, discrete }: { etat: EtatDirectDto; className?: string; vide?: ReactNode; discrete?: boolean }) {
   const { diapo } = etat;
   if (!diapo.url) return <>{vide ?? null}</>;
   return (
     <div className={cn("relative h-full w-full bg-black", className)}>
       <img src={diapo.url} alt={`Diapo ${diapo.index + 1} sur ${diapo.total}`} className="h-full w-full object-contain" />
-      <span className="absolute right-3 top-3 rounded-lg bg-black/70 px-2.5 py-1 font-mono text-xs text-orange-peche">
-        Diapo {diapo.index + 1} / {diapo.total}
-      </span>
+      {!discrete && (
+        <span className="absolute right-3 top-3 rounded-lg bg-black/70 px-2.5 py-1 font-mono text-xs text-orange-peche">
+          Diapo {diapo.index + 1} / {diapo.total}
+        </span>
+      )}
     </div>
   );
 }

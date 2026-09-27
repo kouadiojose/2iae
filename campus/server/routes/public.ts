@@ -1028,6 +1028,10 @@ async function metaPagesFixes(url: string): Promise<string | null> {
       titre: "Contact · Groupe Écoles 2IAE International",
       description: "Téléphones, WhatsApp, e-mail et adresses des cinq campus du Groupe 2IAE. Préinscription en ligne.",
     },
+    "/suppression-compte": {
+      titre: `Supprimer mon compte · ${NOM_CAMPUS}`,
+      description: "Comment demander la suppression de votre compte du campus numérique 2IAE (site et application Android), ce qui est effacé et ce que l'établissement garde.",
+    },
     "/android": {
       titre: `L'application Android · ${NOM_CAMPUS}`,
       description: "Installez l'application du campus numérique 2IAE sur votre téléphone Android : les cours en direct, les devoirs, les replays et les rappels, d'un toucher.",

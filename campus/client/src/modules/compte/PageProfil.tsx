@@ -93,6 +93,9 @@ export default function PageProfil() {
               Se déconnecter
             </Bouton>
           </div>
+          <a href="/suppression-compte" className="self-center text-[13px] text-texte-gris underline-offset-2 hover:text-encre hover:underline">
+            Supprimer mon compte
+          </a>
           <p className="flex justify-center pt-2 text-[12.5px] text-texte-gris">
             <CreditMarkel />
           </p>

@@ -151,6 +151,9 @@ export default function PageConfidentialite() {
               vie scolaire de votre campus. En cas de désaccord, vous pouvez saisir l'Autorité de Régulation des Télécommunications/TIC de Côte d'Ivoire
               (ARTCI).
             </p>
+            <p>
+              Pour supprimer votre compte : <Link href="/suppression-compte">la démarche, et ce qui est effacé</Link>.
+            </p>
             {contactEstEmail && (
               <a
                 href={`mailto:${conf.contact}?subject=${encodeURIComponent("Mes données au campus numérique")}`}

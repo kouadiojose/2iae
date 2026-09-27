@@ -10,24 +10,38 @@ import { Fenetre } from "@/components/ui/fenetre";
 import { Erreur, Squelette } from "@/components/ui/divers";
 import { toast } from "@/components/ui/toast";
 import { heure, jourLong } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { Qr } from "@/modules/pilotage/composants/Qr";
 import { copier } from "@/modules/pilotage/outils";
 
 type SeanceLien = { id: number; titre: string; debut: string };
 
-export function BoutonLienInvite({ seance, variante = "doux", taille = "md", className }: { seance: SeanceLien; variante?: VarianteBouton; taille?: "sm" | "md" | "lg"; className?: string }) {
+export function BoutonLienInvite({
+  seance,
+  variante = "doux",
+  taille = "md",
+  className,
+  qrGrand,
+}: {
+  seance: SeanceLien;
+  variante?: VarianteBouton;
+  taille?: "sm" | "md" | "lg";
+  className?: string;
+  /** Écran de salle : un grand QR code, à scanner depuis la salle. */
+  qrGrand?: boolean;
+}) {
   const [ouverte, setOuverte] = useState(false);
   return (
     <>
       <Bouton variante={variante} taille={taille} icone={<Link2 className="h-4 w-4" />} onClick={() => setOuverte(true)} className={className}>
         Lien invité
       </Bouton>
-      {ouverte && <FenetreLienInvite seance={seance} onFermer={() => setOuverte(false)} />}
+      {ouverte && <FenetreLienInvite seance={seance} qrGrand={qrGrand} onFermer={() => setOuverte(false)} />}
     </>
   );
 }
 
-function FenetreLienInvite({ seance, onFermer }: { seance: SeanceLien; onFermer: () => void }) {
+function FenetreLienInvite({ seance, onFermer, qrGrand }: { seance: SeanceLien; onFermer: () => void; qrGrand?: boolean }) {
   const { data, error, isLoading } = useQuery<LienInviteDto>({ queryKey: [`/api/seances/${seance.id}/lien-invite`] });
   const message = data
     ? `Cours « ${seance.titre} » (${jourLong(seance.debut)} à ${heure(seance.debut)}, heure d'Abidjan) : suivez-le sans compte ni mot de passe avec ce lien :\n${data.url}\nIl ne vaut que pour ce cours.`
@@ -36,6 +50,7 @@ function FenetreLienInvite({ seance, onFermer }: { seance: SeanceLien; onFermer:
     <Fenetre
       ouverte
       onFermer={onFermer}
+      large={qrGrand}
       titre="Lien invité de la séance"
       description="Sans compte ni mot de passe : pour les étudiants qui n'arrivent pas à se connecter. Ils donnent leur nom, puis suivent en son + diapos ou en vidéo."
       pied={
@@ -69,7 +84,7 @@ function FenetreLienInvite({ seance, onFermer }: { seance: SeanceLien; onFermer:
               question et ne sont pas comptés présents : leur nom apparaît au bilan de la séance.
             </p>
           </div>
-          <Qr texte={data.url} titre="QR code du lien invité" className="w-32 shrink-0 self-center rounded-xl bg-white p-2" />
+          <Qr texte={data.url} titre="QR code du lien invité" className={cn("shrink-0 self-center rounded-xl bg-white p-2", qrGrand ? "w-56 sm:w-72" : "w-32")} />
         </div>
       )}
     </Fenetre>

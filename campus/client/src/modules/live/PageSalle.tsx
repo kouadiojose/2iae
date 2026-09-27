@@ -19,6 +19,7 @@ import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toastErreur, Toasts } from "@/components/ui/toast";
 import { Scene } from "./scene";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
+import { BoutonLienInvite } from "./LienInvite";
 import { ResultatsParCampus } from "./panneaux";
 import { CarteCoteIvoire } from "./CarteCoteIvoire";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
@@ -625,6 +626,7 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
           <MessageSquare className="h-5 w-5" /> Discussion
           {nonLus > 0 && <span className="rounded-full bg-orange px-2 font-mono text-[12px] text-encre">{nonLus}</span>}
         </button>
+        <BoutonLienInvite seance={seance} variante="nuit" qrGrand className="min-h-12 rounded-2xl px-4 text-[15px]" />
         {campus?.incident ? (
           <button onClick={() => declarer({ incident: null })} className={cn(bouton, "bg-direct text-white")}>
             <CircleAlert className="h-5 w-5" /> {campus.incident} · résolu ?

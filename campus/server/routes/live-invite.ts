@@ -23,7 +23,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, verifierTentatives, noterEchec } from "../auth";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit } from "../http";
-import { enseigneCours } from "../acces";
+import { enseigneCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
@@ -107,8 +107,13 @@ export function enregistrerInvite(app: Express) {
       const u = moi(req);
       const [s] = await db.select().from(seances).where(eq(seances.id, idParam(req)));
       if (!s) throw introuvable("Séance");
-      const permis = u.role === "admin" || u.role === "vie_scolaire" || (u.role === "formateur" && (await enseigneCours(u, s.coursId)));
-      if (!permis) throw interdit("Le lien invité est réservé au formateur du cours et à l'équipe.");
+      // L'écran d'une salle qui voit la séance peut aussi l'afficher (QR code à scanner dans la salle).
+      const permis =
+        u.role === "admin" ||
+        u.role === "vie_scolaire" ||
+        (u.role === "formateur" && (await enseigneCours(u, s.coursId))) ||
+        (u.role === "salle" && (await seanceVisible(u, s.id).then(() => true, () => false)));
+      if (!permis) throw interdit("Le lien invité est réservé au formateur du cours, aux salles et à l'équipe.");
       const lien: LienInviteDto = {
         url: `${config.urlCampus}/invite/${jetonInvite(s.id)}`,
         valableJusquau: new Date(finPrevue(s).getTime() + MARGE_APRES_FIN_MS).toISOString(),

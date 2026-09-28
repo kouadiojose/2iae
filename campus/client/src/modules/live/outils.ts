@@ -3,9 +3,11 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient, rafraichir } from "@/lib/queryClient";
+import { get } from "@/lib/api";
 import { useCanal, useFluxConnecte, useFluxSain, useTousEvenements, type EvenementFlux } from "@/lib/flux";
 import type {
   EtatDirectDto,
+  DiapoDirectDto,
   QuestionDirectDto,
   SeanceDetailDto,
   ModeSuivi,
@@ -193,9 +195,42 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
 export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenement?: (e: EvenementFlux) => void) {
   const cle = cleDirect(seanceId);
   // Temps réel en direct : une relecture par minute suffit (filet de sécurité). Flux coupé ou retenu en
-  // route (antivirus, réseau) : relecture toutes les 4 s, pour que la diapo suive quand même.
+  // route (antivirus, réseau) : la diapo est relue toutes les 2 s par une requête légère (ci-dessous),
+  // et l'état complet (questions, sondage, salles) toutes les 8 s.
   const sain = useFluxSain();
-  const requete = useQuery<EtatDirectDto>({ queryKey: cle, refetchInterval: sain ? 60_000 : 4_000, staleTime: 3_000 });
+  const requete = useQuery<EtatDirectDto>({ queryKey: cle, refetchInterval: sain ? 60_000 : 8_000, staleTime: 1_500 });
+  useEffect(() => {
+    if (sain) return;
+    let arret = false;
+    let enCours = false;
+    const id = setInterval(async () => {
+      if (enCours || document.visibilityState === "hidden") return;
+      enCours = true;
+      try {
+        const d = await get<DiapoDirectDto>(`/api/seances/${seanceId}/diapo`);
+        if (arret) return;
+        let statutChange = false;
+        queryClient.setQueryData<EtatDirectDto>(cle, (etat) => {
+          if (!etat) return etat;
+          const a = etat.diapo;
+          const b = d.diapo;
+          const pareil = a.index === b.index && a.url === b.url && a.total === b.total && Boolean(a.masquee) === Boolean(b.masquee) && a.disposition === b.disposition;
+          statutChange = etat.statut !== d.statut;
+          if (pareil && !statutChange && etat.planB === d.planB) return etat;
+          return { ...etat, diapo: d.diapo, statut: d.statut, planB: d.planB };
+        });
+        if (statutChange) void rafraichir(`/api/seances/${seanceId}`);
+      } catch {
+        /* réseau coupé : on réessaie au tour suivant */
+      } finally {
+        enCours = false;
+      }
+    }, 2_000);
+    return () => {
+      arret = true;
+      clearInterval(id);
+    };
+  }, [sain, seanceId]);
   const relire = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relireBientot = () => {
     if (relire.current) return;

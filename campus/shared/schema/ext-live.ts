@@ -347,6 +347,12 @@ export type EtatDirectDto = {
   chatMode: ModeChat;
 };
 
+/**
+ * GET /api/seances/:id/diapo — relecture légère (toutes les 2 s) quand le temps réel est coupé
+ * ou retenu en route : la diapo et le statut suivent sans relire tout l'état du direct.
+ */
+export type DiapoDirectDto = { statut: StatutSeance; planB: string | null; diapo: EtatDirectDto["diapo"] };
+
 export type RejoindreDto = {
   fournisseur: FournisseurVisio;
   url: string | null;

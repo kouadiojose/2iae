@@ -19,7 +19,7 @@ import { ETATS_PIECE } from "../outils-crm";
 import { majCrm, perimerListes } from "./DossierOutils";
 
 // L'usage « piece » existe côté serveur (server/fichiers.ts) ; le type de televerser() ne le liste pas encore.
-const USAGE_PIECE = "piece" as Parameters<typeof televerser>[1];
+const USAGE_PIECE = "piece" as const;
 const TYPES_FICHIER = "image/*,application/pdf";
 const MOTIFS_REFUS = ["Photo floue ou illisible", "Pièce expirée", "Document incomplet", "Ce n'est pas le bon document"];
 const SUGGESTIONS_AUTRE = ["Attestation de bourse", "Certificat de résidence", "Relevé de notes du BAC"];

@@ -7,7 +7,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Camera, CheckCircle2, ChevronRight, CircleDashed, Clock, Loader2, ReceiptText, TriangleAlert } from "lucide-react";
 import type { EcheanceEtat, MonDossier, PieceDossier, ScolariteEtudiant, SituationFinanciere, VersementCrm } from "@shared/schema";
-import { api, alleger, post, type FichierTeleverse } from "@/lib/api";
+import { post, televerser, type FichierTeleverse } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { Page } from "@/components/layout/coquille";
 import { TitreSection } from "@/components/ui/carte";
@@ -226,11 +226,7 @@ function MesPaiements({ versements }: { versements: VersementCrm[] }) {
 
 /** Envoie le fichier d'une pièce (une photo est allégée avant l'envoi, pour la 4G). */
 async function televerserPiece(f: File): Promise<FichierTeleverse> {
-  const leger = f.type.startsWith("image/") ? await alleger(f) : f;
-  const donnees = new FormData();
-  donnees.append("usage", "piece");
-  donnees.append("fichiers", leger, leger.name);
-  const [fichier] = await api<FichierTeleverse[]>("/api/fichiers", { methode: "POST", corps: donnees });
+  const [fichier] = await televerser([f], "piece");
   return fichier;
 }
 

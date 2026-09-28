@@ -1,0 +1,1 @@
+ALTER TABLE "campus"."seances" ADD COLUMN "disposition" text DEFAULT 'diapo' NOT NULL;

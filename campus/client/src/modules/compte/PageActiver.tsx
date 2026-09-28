@@ -1,0 +1,134 @@
+// /activer/:jeton : le QR de la fiche de connexion. L'étudiant n'a rien à
+// taper : on l'accueille (« On prépare ton campus… ») puis on l'emmène
+// choisir son code secret.
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
+import { Link2Off } from "lucide-react";
+import { get, ErreurApi } from "@/lib/api";
+import { LienBouton } from "@/components/ui/bouton";
+import { cn } from "@/lib/utils";
+import type { Moi } from "@shared/schema";
+import { CadrePublic } from "./composants/CadrePublic";
+import { ListeContactsSites, useContactsSites } from "./composants/AideWhatsApp";
+import { attendre, installerMoi } from "./outils";
+
+const CAMPUS_PAR_DEFAUT = ["Riviera", "Yopougon", "Yamoussoukro", "Azaguié", "M'Batto"];
+/** Durée minimale de l'écran d'accueil : le premier contact doit rassurer, pas clignoter. */
+const DUREE_ACCUEIL_MS = 3200;
+
+export default function PageActiver({ jeton }: { jeton: string }) {
+  const [, naviguer] = useLocation();
+  const [moi, setMoi] = useState<Moi | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const lance = useRef(false);
+
+  useEffect(() => {
+    if (lance.current) return; // le jeton ne sert qu'une fois : jamais deux appels
+    lance.current = true;
+    const debut = Date.now();
+    get<Moi>(`/api/activer/${encodeURIComponent(jeton)}`)
+      .then(async (m) => {
+        setMoi(m);
+        await attendre(Math.max(0, DUREE_ACCUEIL_MS - (Date.now() - debut)));
+        installerMoi(m, true);
+        naviguer("/bienvenue", { replace: true });
+      })
+      .catch((e) => {
+        setErreur(e instanceof ErreurApi ? e.message : "Une erreur est survenue. Réessaie dans un instant.");
+      });
+  }, [jeton, naviguer]);
+
+  if (erreur) return <LienPerime message={erreur} />;
+  return <EcranPreparation moi={moi} />;
+}
+
+/** « Akwaba, <prénom> ! », mais « Akwaba, M. Konaté ! » quand le prénom n'est pas connu. */
+const appel = (moi: Moi) => (/^(m|mme|mlle|dr|pr)\.?$/i.test(moi.prenom.trim()) ? `${moi.prenom} ${moi.nom}` : moi.prenom);
+
+/** « BTS 1re année · tronc commun · Yopougon » (le campus n'est ajouté que s'il n'est pas déjà dans le nom de la classe). */
+function sousTitre(moi: Moi): string {
+  if (moi.role === "formateur") return "Formateur · Groupe Écoles 2IAE International";
+  const classe = moi.classe?.nom ?? "";
+  const campus = moi.site?.nomCourt;
+  if (!campus || classe.includes(campus)) return classe;
+  return [classe, `campus ${campus}`].filter(Boolean).join(" · ");
+}
+
+function EcranPreparation({ moi }: { moi: Moi | null }) {
+  const { data } = useContactsSites();
+  const campus = data?.length ? data.map((s) => s.nomCourt) : CAMPUS_PAR_DEFAUT;
+  const monCampus = moi?.site?.nomCourt;
+  return (
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-encre px-6 text-center text-white" aria-live="polite">
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/3 h-80 w-80 -translate-x-1/2 rounded-full bg-orange/25 blur-3xl" />
+      <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE International" className="relative h-20 w-auto animate-monte" />
+
+      <div className="relative mt-10 flex min-h-[132px] flex-col items-center gap-3">
+        {moi ? (
+          <>
+            <span className="animate-monte font-mono text-xs uppercase tracking-[0.14em] text-orange-peche">{moi.role === "etudiant" ? "Ton campus est prêt" : "Votre campus est prêt"}</span>
+            <h1 className="animate-monte text-[44px] font-black leading-none tracking-tres-serre sm:text-[56px]">
+              Akwaba, <span className="text-orange">{appel(moi)}</span> !
+            </h1>
+            {sousTitre(moi) && (
+              <p className="animate-monte text-base text-nuit-doux" style={{ animationDelay: "0.15s" }}>
+                {sousTitre(moi)}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="animate-monte font-mono text-xs uppercase tracking-[0.14em] text-orange-peche">Campus numérique</span>
+            <h1 className="animate-monte text-[36px] font-black leading-tight tracking-tres-serre sm:text-[48px]">Préparation du campus…</h1>
+          </>
+        )}
+      </div>
+
+      {/* Les cinq campus s'allument l'un après l'autre, comme sur l'écran des salles. */}
+      <ul className="relative mt-10 grid w-full max-w-[520px] grid-cols-5 gap-2" aria-label="Les cinq campus">
+        {campus.map((nom, i) => {
+          const le = monCampus === nom;
+          return (
+            <li
+              key={nom}
+              className={cn("flex animate-monte flex-col items-center gap-2 rounded-2xl px-0.5 py-3 transition-colors duration-500", le ? "bg-orange text-encre" : "bg-nuit-carte")}
+              style={{ animationDelay: `${0.35 + i * 0.3}s` }}
+            >
+              <span className={cn("h-2.5 w-2.5 rounded-full", le ? "bg-encre" : "bg-orange")} />
+              <span className="w-full truncate text-[10px] font-bold sm:text-[13px]">{nom}</span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="relative mt-10 h-1 w-48 overflow-hidden rounded-full bg-nuit-ligne" role="progressbar" aria-label="Préparation du campus">
+        <div className="h-full rounded-full bg-orange" style={{ animation: `barre-activation ${DUREE_ACCUEIL_MS}ms ease-out forwards` }} />
+      </div>
+      <style>{"@keyframes barre-activation{from{width:4%}to{width:100%}}"}</style>
+    </div>
+  );
+}
+
+function LienPerime({ message }: { message: string }) {
+  return (
+    <CadrePublic>
+      <div className="flex flex-col gap-4">
+        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-orange-clair text-orange-fonce">
+          <Link2Off className="h-7 w-7" />
+        </span>
+        <h1 className="text-[34px] font-black leading-[1.02] tracking-tres-serre">Ce lien ne marche plus.</h1>
+        <p className="text-base leading-relaxed text-texte-pale">{message}</p>
+        <LienBouton href="/connexion" taille="lg" className="mt-2 min-h-[56px] w-full text-[17px]">
+          Me connecter avec ma fiche
+        </LienBouton>
+        <div className="mt-4">
+          <p className="mb-3 text-sm font-bold">Tu n'as plus ta fiche ? Écris à la vie scolaire de ton campus :</p>
+          <ListeContactsSites />
+        </div>
+        <p className="rounded-xl bg-creme px-4 py-3 text-[15px] text-texte-doux">
+          Vous êtes formateur ? Votre lien d'invitation ne sert qu'une fois : si vous avez déjà choisi votre identifiant, connectez-vous avec lui. Sinon, demandez un nouveau lien à la direction.
+        </p>
+      </div>
+    </CadrePublic>
+  );
+}

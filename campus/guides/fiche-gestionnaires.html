@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Le campus numérique en bref · Fiche des gestionnaires · 2IAE</title>
+<link rel="stylesheet" href="guides.css">
+<style>
+  .fiche .entete { position: relative; margin: -17mm -16mm 7mm; height: 72mm; overflow: hidden; background: var(--nuit); color: #fff; }
+  .fiche .entete .photo { position: absolute; inset: 0; background: url('../client/public/images/etudiants-2iae.jpg') center 38% / cover; }
+  .fiche .entete .voile { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(20,17,15,.95) 0%, rgba(20,17,15,.82) 48%, rgba(20,17,15,.25) 100%); }
+  .fiche .entete .ruban { position: absolute; left: 0; top: 0; bottom: 0; width: 6mm; background: var(--orange); }
+  .fiche .entete .dedans { position: absolute; left: 18mm; right: 16mm; top: 11mm; bottom: 10mm; display: flex; flex-direction: column; justify-content: space-between; }
+  .fiche .entete .ligne { display: flex; align-items: center; justify-content: space-between; }
+  .fiche .entete .logo { background: #fff; border-radius: 3.5mm; padding: 2.4mm 3.2mm; }
+  .fiche .entete .logo img { height: 12mm; display: block; }
+  .fiche .entete .public { font-family: "Plex Mono", monospace; font-size: 7.6pt; letter-spacing: .16em; text-transform: uppercase; color: var(--encre); background: var(--orange); padding: 1.6mm 3.2mm; border-radius: 1.6mm; }
+  .fiche .entete h1 { font-family: "Cormorant", Georgia, serif; font-weight: 600; font-size: 34pt; line-height: .98; margin: 0 0 2mm; color: #fff; }
+  .fiche .entete h1 em { color: var(--orange); font-style: italic; }
+  .fiche .entete p { margin: 0; font-size: 11pt; color: #E9E1D9; max-width: 120mm; line-height: 1.4; }
+  .chiffres { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-bottom: 6mm; }
+  .chiffres div { background: var(--creme); border-radius: 3mm; padding: 3mm 3.5mm; }
+  .chiffres b { display: block; font-family: "Cormorant", Georgia, serif; font-size: 22pt; line-height: 1; color: var(--orange-fonce); }
+  .chiffres span { display: block; font-size: 8.6pt; color: var(--doux); margin-top: 1.2mm; line-height: 1.3; }
+  .blocs { display: grid; grid-template-columns: 1fr 1fr; gap: 3.2mm; }
+  .bloc { display: grid; grid-template-columns: 9mm 1fr; gap: 3mm; border: .3mm solid var(--ligne); border-radius: 3mm; padding: 3mm 3.4mm; }
+  .bloc .ico { width: 9mm; height: 9mm; border-radius: 2.4mm; background: var(--orange-pale); color: var(--orange-fonce); display: grid; place-items: center; font-size: 13pt; }
+  .bloc h3 { font-size: 10.6pt; margin: .6mm 0 1mm; }
+  .bloc p { font-size: 8.9pt; line-height: 1.42; color: var(--doux); margin: 0; }
+  .frise { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 2mm 0 6mm; }
+  .frise div { border-top: 1.2mm solid var(--orange); background: var(--creme); border-radius: 0 0 3mm 3mm; padding: 3mm 3.2mm; }
+  .frise .quand { font-family: "Plex Mono", monospace; font-size: 7.4pt; letter-spacing: .12em; text-transform: uppercase; color: var(--orange-fonce); }
+  .frise h3 { font-size: 10.4pt; margin: 1mm 0 1mm; }
+  .frise p { font-size: 8.7pt; line-height: 1.4; color: var(--doux); margin: 0; }
+  .qui td, .qui th { font-size: 8.8pt; padding: 2mm 2.4mm; vertical-align: top; }
+  .qui td:first-child { font-weight: 700; color: var(--encre); }
+  .mini h2 { font-size: 20pt; margin-bottom: 3mm; }
+</style>
+</head>
+<body>
+
+<!-- Recto : ce que fait le campus -->
+<section class="page fiche">
+  <div class="entete">
+    <div class="photo"></div><div class="voile"></div><div class="ruban"></div>
+    <div class="dedans">
+      <div class="ligne">
+        <div class="logo"><img src="../client/public/marque-2iae-hd.png" alt="Groupe Écoles 2IAE International"></div>
+        <span class="public">Fiche des gestionnaires</span>
+      </div>
+      <div>
+        <h1>Le campus numérique, <em>en bref.</em></h1>
+        <p>Un cours donné une seule fois, suivi en même temps dans les cinq salles de conférence et sur le téléphone des étudiants. Rien à installer : tout s'ouvre dans Chrome.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="chiffres">
+    <div><b>5</b><span>campus reliés : Riviera, Yopougon, Yamoussoukro, Azaguié, M'Batto</span></div>
+    <div><b>1</b><span>formateur, où qu'il soit : Abidjan, Nice, Toronto…</span></div>
+    <div><b>12-15 Mo</b><span>par heure pour un étudiant en « son + diapos », même en 3G</span></div>
+    <div><b>0</b><span>feuille de présence à ramasser : tout est compté seul</span></div>
+  </div>
+
+  <p class="surtitre">Ce que fait le campus</p>
+  <div class="blocs">
+    <div class="bloc"><div class="ico" data-i="direct"></div><div><h3>Des cours en direct</h3><p>Le formateur enseigne depuis son ordinateur. Chaque salle voit le cours sur son grand écran ; les étudiants à distance le suivent sur leur téléphone, en vidéo ou en « son + diapos ».</p></div></div>
+    <div class="bloc"><div class="ico" data-i="presence"></div><div><h3>Les présences, automatiques</h3><p>En salle, chaque étudiant scanne le QR code de l'écran (ou tape un code à 4 chiffres). En ligne, il est présent à partir de 70 % du cours. Une feuille par séance, absences justifiables.</p></div></div>
+    <div class="bloc"><div class="ico" data-i="main"></div><div><h3>Des salles qui participent</h3><p>Main levée d'une salle, questions votées, sondages avec résultats par campus, baromètre de compréhension, discussion écrite, groupes de travail.</p></div></div>
+    <div class="bloc"><div class="ico" data-i="replay"></div><div><h3>Après le cours, tout est prêt</h3><p>Le replay, la transcription et une fiche de révision rédigée avec l'IA arrivent dans le cours. Le bilan de la séance est prêt pour la direction.</p></div></div>
+    <div class="bloc"><div class="ico" data-i="devoir"></div><div><h3>Cours, devoirs et notes</h3><p>Leçons et documents consultables sur téléphone, devoirs rendus en photo, interrogations en ligne, corrections proposées par l'IA et validées par le formateur.</p></div></div>
+    <div class="bloc"><div class="ico" data-i="cloche"></div><div><h3>Rappels et messages</h3><p>Emploi du temps, annonces, messagerie avec les formateurs, et rappels sur le téléphone 24 h et 15 min avant chaque cours.</p></div></div>
+    <div class="bloc"><div class="ico" data-i="sondage"></div><div><h3>Le pilotage</h3><p>Tableau de bord des 30 derniers jours, campus par campus : comptes activés, présence aux lives, devoirs rendus, étudiants à contacter, planning de la semaine.</p></div></div>
+    <div class="bloc"><div class="ico" data-i="cadenas"></div><div><h3>Des accès simples et sûrs</h3><p>Étudiants : une fiche avec QR code. Formateurs : un lien d'invitation. Équipe : un lien validé par la direction. Écran de salle : un lien permanent, réutilisable sur tout nouvel ordinateur.</p></div></div>
+  </div>
+  <div class="pied"><span>Campus numérique 2IAE · <b>campus.2iae.com</b></span><span>Fiche des gestionnaires · 1</span></div>
+</section>
+
+<!-- Verso : votre rôle -->
+<section class="page fiche mini">
+  <p class="surtitre">Votre rôle</p>
+  <h2>Ce que vous faites, <em>et ce que le campus fait pour vous.</em></h2>
+  <div class="barre"></div>
+
+  <div class="duo" style="gap:7mm">
+    <div>
+      <p class="surtitre">Une fois, avant la rentrée</p>
+      <ul class="coches" style="margin-bottom:4mm">
+        <li>Un ordinateur avec Chrome, branché au grand écran (HDMI)</li>
+        <li>Des enceintes, un micro et une webcam face à la salle</li>
+        <li>Internet : fibre ou box 4G, 5 Mbit/s</li>
+        <li>L'écran installé avec la carte confidentielle de la salle</li>
+        <li>L'essai de la visio : <span class="lien">campus.2iae.com/visio/essai</span></li>
+      </ul>
+    </div>
+    <div>
+      <p class="surtitre">Pendant le cours, la console</p>
+      <table class="tableau qui">
+        <tr><td>Lever la main</td><td>La salle demande la parole ; au bandeau orange, passez le micro.</td></tr>
+        <tr><td>Effectif</td><td>Le nombre de personnes dans la salle (− et +).</td></tr>
+        <tr><td>Salle prête</td><td>À déclarer 15 min avant le début.</td></tr>
+        <tr><td>Incident</td><td>Son, image, électricité, internet, bruit : le formateur est prévenu.</td></tr>
+        <tr><td>Discussion</td><td>Écrire à la classe, ou au formateur en privé.</td></tr>
+        <tr><td>Présentation seule</td><td>La diapo en plein écran (touche P).</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <p class="surtitre mt">Le jour du cours</p>
+  <div class="frise">
+    <div><span class="quand">1 h avant</span><h3>Tout allumer</h3><p>Ordinateur, écran, enceintes, micro. Le QR code de présence apparaît à l'écran.</p></div>
+    <div><span class="quand">30 min avant</span><h3>Accueillir</h3><p>Chaque étudiant scanne le QR code en entrant : il est compté présent.</p></div>
+    <div><span class="quand">15 min avant</span><h3>Salle prête</h3><p>Réglez l'effectif, puis « Déclarer la salle prête ».</p></div>
+    <div><span class="quand">À l'heure</span><h3>Rien à toucher</h3><p>Le cours démarre seul. Après, l'écran revient à l'attente du prochain cours.</p></div>
+  </div>
+
+  <p class="surtitre">Qui fait quoi</p>
+  <table class="tableau qui" style="margin-bottom:5mm">
+    <tr><td style="width:44mm">Gestionnaire de salle</td><td>L'écran, le matériel, l'accueil des étudiants, la console pendant le cours.</td></tr>
+    <tr><td>Vie scolaire</td><td>Comptes et fiches des étudiants, présences, étudiants à contacter, lien d'installation des écrans.</td></tr>
+    <tr><td>Formateur</td><td>Le cours, les diapos, les devoirs et leur correction.</td></tr>
+    <tr><td>Direction</td><td>Planning des lives, formateurs, accès de l'équipe administrative.</td></tr>
+  </table>
+  <div style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:6mm;align-items:stretch">
+    <div class="encadre attention">
+      <p class="titre">Un souci ?</p>
+      <p>L'écran demande un code : rouvrez le lien de la salle (il reste valable). L'image se fige : « Incident », puis F5. Pas d'internet : les étudiants suivent au téléphone en « son + diapos ».</p>
+    </div>
+    <div class="carte-qr" style="min-width:0">
+      <img src="qr-campus.svg" alt="QR code de campus.2iae.com">
+      <div style="min-width:0"><h3>Le guide de la salle</h3><p style="font-size:8.6pt"><span class="lien" style="font-size:8.4pt">campus.2iae.com/guides/</span><br><span class="lien" style="font-size:8.4pt">guide-salles.pdf</span><br>Le QR code ouvre le campus.</p></div>
+    </div>
+  </div>
+  <div class="pied"><span>Campus numérique 2IAE · <b>campus.2iae.com</b></span><span>Fiche des gestionnaires · 2</span></div>
+</section>
+
+<script src="icones.js"></script>
+<script src="marque.js"></script>
+</body>
+</html>

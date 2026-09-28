@@ -1,0 +1,115 @@
+// Campus numérique 2IAE : serveur HTTP.
+import express from "express";
+import session from "express-session";
+import compression from "compression";
+import { createServer } from "http";
+import { config, estProduction } from "./config";
+import { configurationSession, chargerUtilisateur } from "./auth";
+import { enregistrerTempsReel } from "./temps-reel";
+import { enregistrerFichiers } from "./fichiers";
+import { enregistrerRoutes } from "./routes";
+import { gestionnaireErreurs, verifierOrigine } from "./http";
+import { brancherVite, servirStatique } from "./vite";
+import { pool } from "./db";
+import { demarrerTaches } from "./taches";
+import { politiquePermissions } from "./visio";
+
+// Dernier filet : une erreur imprévue est journalisée sans faire tomber le
+// campus (les lives en cours et l'état temps réel vivent dans ce processus).
+process.on("unhandledRejection", (raison) => console.error("[processus] promesse rejetée non traitée :", raison));
+process.on("uncaughtException", (e) => console.error("[processus] exception non rattrapée :", e));
+
+if (estProduction && !process.env.UPLOADS_DIR) {
+  console.error(
+    "⚠️  UPLOADS_DIR n'est pas défini : les fichiers déposés (devoirs, ressources) seront PERDUS au prochain déploiement. Montez un volume et définissez UPLOADS_DIR=/data/uploads.",
+  );
+}
+
+const app = express();
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+// HTTPS obligatoire en production (l'en-tête vient du proxy Railway ; la
+// sonde /api/health, qui frappe le conteneur en direct, n'est pas redirigée).
+if (estProduction) {
+  app.use((req, res, next) => {
+    const proto = req.headers["x-forwarded-proto"];
+    if (typeof proto === "string" && proto.split(",")[0].trim() === "http" && req.path !== "/api/health") {
+      return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+    }
+    res.setHeader("Strict-Transport-Security", "max-age=15552000");
+    next();
+  });
+}
+
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // Caméra, micro, écran partagé, plein écran et son pour la classe live et l'iframe Daily (nommée explicitement).
+  res.setHeader("Permissions-Policy", politiquePermissions());
+  next();
+});
+
+// Compression (précieuse en 4G), sauf pour le flux temps réel.
+app.use(
+  compression({
+    filter: (req, res) => (req.path === "/api/flux" ? false : compression.filter(req, res)),
+  }),
+);
+
+// Adresse définitive (campus.2iae.com) : une page ouverte sur l'adresse technique de Railway y est
+// renvoyée, chemin compris (liens d'invitation déjà envoyés, favoris). L'API, le service worker et
+// les fichiers restent servis sur l'ancienne adresse pendant la transition (applications installées).
+const hoteCanonique = new URL(config.urlCampus).host;
+app.use((req, res, next) => {
+  const hote = String(req.headers["x-forwarded-host"] || req.headers.host || "");
+  if (
+    req.method === "GET" &&
+    hote.endsWith(".up.railway.app") &&
+    !hoteCanonique.endsWith(".up.railway.app") &&
+    hote !== hoteCanonique &&
+    !/^\/(api|assets|sw\.js|manifest\.webmanifest|icons)(\/|$)/.test(req.path)
+  ) {
+    return res.redirect(301, `${config.urlCampus}${req.originalUrl}`);
+  }
+  next();
+});
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+
+// Santé (sonde Railway) : répond même si la base est lente.
+app.get("/api/health", async (_req, res) => {
+  const debut = Date.now();
+  try {
+    await pool.query("select 1");
+    res.json({ status: "ok", base: "ok", ms: Date.now() - debut });
+  } catch {
+    res.status(503).json({ status: "degrade", base: "injoignable" });
+  }
+});
+
+app.use("/api", verifierOrigine);
+app.use(session(configurationSession()));
+app.use(chargerUtilisateur);
+
+enregistrerTempsReel(app);
+enregistrerFichiers(app);
+enregistrerRoutes(app);
+
+app.use("/api", (_req, res) => res.status(404).json({ message: "Route inconnue." }));
+app.use(gestionnaireErreurs);
+
+const serveur = createServer(app);
+
+(async () => {
+  if (estProduction) servirStatique(app);
+  else await brancherVite(app, serveur);
+  // Le gestionnaire d'erreurs doit rester le dernier.
+  app.use(gestionnaireErreurs);
+
+  serveur.listen(config.port, "0.0.0.0", () => {
+    console.log(`🎓 Campus numérique 2IAE à l'écoute sur le port ${config.port} (${estProduction ? "production" : "développement"})`);
+    demarrerTaches();
+  });
+})();

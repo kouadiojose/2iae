@@ -1,0 +1,8 @@
+# Build Gradle, SDK local et clé de signature : jamais dans le dépôt.
+.gradle/
+build/
+app/build/
+local.properties
+*.jks
+*.keystore
+signature.properties

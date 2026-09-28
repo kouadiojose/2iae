@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+uploads
+
+# Guides : aperçus de relecture et captures (refaits par guides/capturer.mjs et guides/fabriquer.mjs)
+guides/apercus/
+guides/captures/
+guides/comptes.json

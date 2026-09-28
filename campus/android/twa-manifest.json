@@ -1,0 +1,69 @@
+{
+  "packageId": "com.groupe2iae.campus",
+  "host": "campus.2iae.com",
+  "name": "Campus numérique 2IAE",
+  "launcherName": "Campus 2IAE",
+  "display": "standalone",
+  "themeColor": "#141414",
+  "themeColorDark": "#141414",
+  "navigationColor": "#FFFFFF",
+  "navigationColorDark": "#141414",
+  "navigationDividerColor": "#EDE6DF",
+  "navigationDividerColorDark": "#141414",
+  "backgroundColor": "#FFFFFF",
+  "enableNotifications": true,
+  "startUrl": "/accueil?source=android",
+  "iconUrl": "https://campus.2iae.com/icons/icone-512.png",
+  "maskableIconUrl": "https://campus.2iae.com/icons/icone-maskable-512.png",
+  "monochromeIconUrl": "https://campus.2iae.com/icons/badge-96.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "(hors du dépôt, voir LISEZMOI.md)",
+    "alias": "campus-2iae"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Le live",
+      "shortName": "Live",
+      "url": "/direct?source=android",
+      "chosenIconUrl": "https://campus.2iae.com/icons/icone-192.png"
+    },
+    {
+      "name": "Mes devoirs",
+      "shortName": "Devoirs",
+      "url": "/devoirs?source=android",
+      "chosenIconUrl": "https://campus.2iae.com/icons/icone-192.png"
+    },
+    {
+      "name": "Mes messages",
+      "shortName": "Messages",
+      "url": "/messages?source=android",
+      "chosenIconUrl": "https://campus.2iae.com/icons/icone-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-core",
+  "webManifestUrl": "https://campus.2iae.com/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://campus.2iae.com/",
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "name": "Clé de signature 2IAE (APK direct)",
+      "value": "19:D5:19:3E:08:3C:64:57:83:21:B7:B2:46:79:98:CE:36:74:19:C7:F6:D3:4F:64:4C:08:D7:CA:D2:84:B2:E4"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "displayOverride": [],
+  "appVersion": "1.0.0"
+}

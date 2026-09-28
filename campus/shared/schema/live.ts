@@ -1,0 +1,376 @@
+// Classes en direct : un formateur (en France ou ailleurs) enseigne aux cinq
+// salles de conférence et aux étudiants connectés, en même temps.
+import { sql } from "drizzle-orm";
+import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { campusSchema, utilisateurs, sites, fichiers } from "./base";
+import { cours } from "./cours";
+
+export const STATUTS_SEANCE = ["planifiee", "en_direct", "terminee", "annulee"] as const;
+export type StatutSeance = (typeof STATUTS_SEANCE)[number];
+
+/**
+ * Mise en page de la scène, choisie par le formateur et vue à l'identique dans
+ * les salles et chez les étudiants : diapo en grand (caméras en vignette),
+ * côte à côte, ou caméras en grand (diapo en vignette). « Caméras seules »
+ * est la diapo masquée (diapoCourante négative).
+ */
+export const DISPOSITIONS_SCENE = ["diapo", "cote", "cameras"] as const;
+export type DispositionScene = (typeof DISPOSITIONS_SCENE)[number];
+
+/**
+ * Qui écrit dans la discussion du live, au choix du formateur :
+ * tous : tout le monde, à toute la classe ou en privé au formateur ;
+ * prives : les étudiants et les salles n'écrivent qu'en privé au formateur ;
+ * ferme : seuls le formateur et l'équipe écrivent.
+ */
+export const MODES_CHAT = ["tous", "prives", "ferme"] as const;
+export type ModeChat = (typeof MODES_CHAT)[number];
+
+/** Réactions proposées sous un message de la discussion. */
+export const REACTIONS_CHAT = ["👍", "❤️", "😂", "👏", "😮", "🙏", "🎉", "🤔"] as const;
+
+/**
+ * campus : visio intégrée au campus (WebRTC pair-à-pair formateur ↔ salles, sans compte externe)
+ * daily : Daily.co · jitsi : serveur Jitsi · externe : lien Zoom/Meet/Teams · demo : scène simulée.
+ * La « radio » (son du formateur en flux HTTP + diapos) fonctionne avec tous les fournisseurs.
+ */
+export const FOURNISSEURS_VISIO = ["campus", "daily", "jitsi", "externe", "demo"] as const;
+export type FournisseurVisio = (typeof FOURNISSEURS_VISIO)[number];
+
+export type EtapePlan = { titre: string; minutes?: number };
+
+export const seances = campusSchema.table(
+  "seances",
+  {
+    id: serial("id").primaryKey(),
+    coursId: integer("cours_id").notNull().references(() => cours.id, { onDelete: "cascade" }),
+    titre: text("titre").notNull(),
+    description: text("description").notNull().default(""),
+    debut: timestamp("debut", { withTimezone: true }).notNull(),
+    dureeMinutes: integer("duree_minutes").notNull().default(90),
+    statut: text("statut").$type<StatutSeance>().notNull().default("planifiee"),
+    fournisseur: text("fournisseur").$type<FournisseurVisio>().notNull().default("campus"),
+    /** Nom de la salle chez le fournisseur (créée à la demande). */
+    salleVisio: text("salle_visio"),
+    lienExterne: text("lien_externe"),
+    /** Déroulé prévu, affiché dans le studio du formateur. */
+    plan: jsonb("plan").$type<EtapePlan[]>().notNull().default([]),
+    demarreeLe: timestamp("demarree_le", { withTimezone: true }),
+    termineeLe: timestamp("terminee_le", { withTimezone: true }),
+    replayUrl: text("replay_url"),
+    replayDureeSecondes: integer("replay_duree_secondes"),
+    /** Identifiant d'enregistrement chez le fournisseur (lien de lecture renouvelé à la demande). */
+    enregistrementId: text("enregistrement_id"),
+    /** Transcription assemblée à partir des sous-titres en direct. */
+    transcription: text("transcription").notNull().default(""),
+    /** Résumé rédigé par l'assistant IA (Markdown), mis à jour pendant et après la séance. */
+    resumeIa: text("resume_ia"),
+    resumeIaLe: timestamp("resume_ia_le", { withTimezone: true }),
+    /** Le formateur a relu et publié le résumé (fiche de révision) aux étudiants. */
+    resumeValide: boolean("resume_valide").notNull().default(false),
+    /** Diapositives (images légères) diffusées en synchronisation : identifiants de fichiers. */
+    diapos: jsonb("diapos").$type<number[]>().notNull().default([]),
+    diapoCourante: integer("diapo_courante").notNull().default(0),
+    disposition: text("disposition").$type<DispositionScene>().notNull().default("diapo"),
+    chatMode: text("chat_mode").$type<ModeChat>().notNull().default("tous"),
+    proposeSurSite: boolean("propose_sur_site").notNull().default(false),
+    publierSurSite: boolean("publier_sur_site").notNull().default(false),
+    /** Motif d'annulation ou de report (« Le formateur a un empêchement »), affiché partout. */
+    motifAnnulation: text("motif_annulation"),
+    /** Lien de secours (Zoom, Meet, Teams, Jitsi) préparé pour le « Plan B ». */
+    lienSecours: text("lien_secours"),
+    /** Plan B déclenché : tout le monde bascule sur le lien de secours. */
+    planBLe: timestamp("plan_b_le", { withTimezone: true }),
+    /** Le brouillon de fiche de révision a été rédigé par l'IA (« Proposé par l'IA »). */
+    resumeParIa: boolean("resume_par_ia").notNull().default(false),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("seances_cours_idx").on(t.coursId), index("seances_debut_idx").on(t.debut)],
+);
+
+/** Questions posées pendant le live, votées par les étudiants de tous les campus. */
+export const questionsLive = campusSchema.table(
+  "questions_live",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    auteurId: integer("auteur_id").notNull().references(() => utilisateurs.id),
+    siteId: integer("site_id").references(() => sites.id),
+    texte: text("texte").notNull(),
+    votes: integer("votes").notNull().default(1),
+    anonyme: boolean("anonyme").notNull().default(false),
+    repondue: boolean("repondue").notNull().default(false),
+    epinglee: boolean("epinglee").notNull().default(false),
+    masquee: boolean("masquee").notNull().default(false),
+    /** Moment où le formateur l'a marquée répondue (lien vers le replay). */
+    reponduLe: timestamp("repondu_le", { withTimezone: true }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("questions_live_seance_idx").on(t.seanceId)],
+);
+
+export const votesQuestions = campusSchema.table(
+  "votes_questions",
+  {
+    questionId: integer("question_id").notNull().references(() => questionsLive.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
+);
+
+/**
+ * Discussion écrite du live (comme le chat de Zoom ou de Meet) : étudiants,
+ * salles, formateur et équipe écrivent à toute la classe, avec un fichier
+ * joint au besoin. Le formateur (ou l'équipe) peut masquer un message ;
+ * l'auteur peut retirer le sien.
+ */
+export const messagesLive = campusSchema.table(
+  "messages_live",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    auteurId: integer("auteur_id").notNull().references(() => utilisateurs.id),
+    siteId: integer("site_id").references(() => sites.id),
+    texte: text("texte").notNull().default(""),
+    fichierId: integer("fichier_id").references(() => fichiers.id, { onDelete: "set null" }),
+    /** Message privé : visible seulement de l'auteur et de ce destinataire. */
+    destinataireId: integer("destinataire_id").references(() => utilisateurs.id, { onDelete: "cascade" }),
+    /** Discussion d'un groupe de travail : visible de ses membres, du formateur et de l'équipe. */
+    groupeId: integer("groupe_id").references(() => groupesTravail.id, { onDelete: "cascade" }),
+    masque: boolean("masque").notNull().default(false),
+    /** Épinglé par le formateur en haut de la discussion (un seul à la fois). */
+    epingle: boolean("epingle").notNull().default(false),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("messages_live_seance_idx").on(t.seanceId, t.id), index("messages_live_fichier_idx").on(t.fichierId)],
+);
+
+export type MessageLive = typeof messagesLive.$inferSelect;
+
+/**
+ * Travail en groupes (les « salles séparées ») : le formateur répartit les
+ * étudiants en ligne et les salles en petits groupes, chacun dans sa visio,
+ * avec une consigne et un minuteur, puis rappelle tout le monde en classe.
+ * Une seule répartition ouverte à la fois par séance.
+ */
+export const sessionsGroupes = campusSchema.table(
+  "sessions_groupes",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    consigne: text("consigne").notNull().default(""),
+    /** Fin prévue (minuteur) ; null : sans limite, le formateur rappelle la classe. */
+    finPrevueLe: timestamp("fin_prevue_le", { withTimezone: true }),
+    /** Retour de tous en classe à cette heure (compte à rebours de fermeture). */
+    fermetureLe: timestamp("fermeture_le", { withTimezone: true }),
+    fermeeLe: timestamp("fermee_le", { withTimezone: true }),
+    /** Chacun peut revenir en classe quand il veut. */
+    retourLibre: boolean("retour_libre").notNull().default(true),
+    /** Les participants choisissent eux-mêmes leur groupe. */
+    choixLibre: boolean("choix_libre").notNull().default(false),
+    /** Dernier message du formateur à tous les groupes. */
+    annonce: text("annonce"),
+    annonceLe: timestamp("annonce_le", { withTimezone: true }),
+    creeParId: integer("cree_par_id").references(() => utilisateurs.id, { onDelete: "set null" }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sessions_groupes_seance_idx").on(t.seanceId)],
+);
+
+export const groupesTravail = campusSchema.table(
+  "groupes_travail",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id").notNull().references(() => sessionsGroupes.id, { onDelete: "cascade" }),
+    numero: integer("numero").notNull(),
+    nom: text("nom").notNull(),
+    /** Salle Daily du groupe, créée à la première entrée. */
+    salleVisio: text("salle_visio"),
+    /** Le groupe a appelé le formateur. */
+    aideDemandeeLe: timestamp("aide_demandee_le", { withTimezone: true }),
+  },
+  (t) => [index("groupes_travail_session_idx").on(t.sessionId)],
+);
+
+/** Qui est dans quel groupe (un groupe au plus par personne et par répartition). */
+export const membresGroupes = campusSchema.table(
+  "membres_groupes",
+  {
+    sessionId: integer("session_id").notNull().references(() => sessionsGroupes.id, { onDelete: "cascade" }),
+    groupeId: integer("groupe_id").notNull().references(() => groupesTravail.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    ajouteLe: timestamp("ajoute_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.utilisateurId] }), index("membres_groupes_groupe_idx").on(t.groupeId)],
+);
+
+export type SessionGroupes = typeof sessionsGroupes.$inferSelect;
+export type GroupeTravail = typeof groupesTravail.$inferSelect;
+
+/** Réactions (emoji) aux messages de la discussion : une par personne et par emoji. */
+export const reactionsMessagesLive = campusSchema.table(
+  "reactions_messages_live",
+  {
+    messageId: integer("message_id").notNull().references(() => messagesLive.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.utilisateurId, t.emoji] })],
+);
+
+/** Mains levées (d'un étudiant ou d'une salle de campus entière). */
+export const mainsLevees = campusSchema.table(
+  "mains_levees",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id),
+    siteId: integer("site_id").references(() => sites.id),
+    /** Main levée pour toute la salle (écran de salle ou vie scolaire du site). */
+    pourSalle: boolean("pour_salle").notNull().default(false),
+    leveeLe: timestamp("levee_le", { withTimezone: true }).notNull().defaultNow(),
+    /** Le formateur a donné la parole. */
+    paroleDonneeLe: timestamp("parole_donnee_le", { withTimezone: true }),
+    baisseeLe: timestamp("baissee_le", { withTimezone: true }),
+  },
+  (t) => [
+    index("mains_seance_idx").on(t.seanceId),
+    // Une seule main levée à la fois par personne, et une seule par salle :
+    // deux clics simultanés ne mettent jamais deux fois la même main dans la file.
+    uniqueIndex("mains_levee_personne_unique").on(t.seanceId, t.utilisateurId).where(sql`${t.baisseeLe} is null`),
+    uniqueIndex("mains_levee_salle_unique").on(t.seanceId, t.siteId).where(sql`${t.baisseeLe} is null and ${t.pourSalle}`),
+  ],
+);
+
+export const MODES_PRESENCE = ["salle", "en_ligne"] as const;
+export type ModePresence = (typeof MODES_PRESENCE)[number];
+
+/** Présence à une séance : alimentée par le live (battements) et l'émargement QR en salle. */
+export const presences = campusSchema.table(
+  "presences",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    siteId: integer("site_id").references(() => sites.id),
+    mode: text("mode").$type<ModePresence>().notNull().default("en_ligne"),
+    emargeQr: boolean("emarge_qr").notNull().default(false),
+    arriveeLe: timestamp("arrivee_le", { withTimezone: true }).notNull().defaultNow(),
+    /** Arrivée dans la salle de conférence (émargement), qui fait foi pour le retard. */
+    arriveeSalleLe: timestamp("arrivee_salle_le", { withTimezone: true }),
+    /** Émargé dans la salle d'un autre campus que le sien : accepté, signalé à la vie scolaire. */
+    horsCampus: boolean("hors_campus").notNull().default(false),
+    derniereActivite: timestamp("derniere_activite", { withTimezone: true }).notNull().defaultNow(),
+    /** Minutes distinctes suivies en ligne (voir minutesVues), jamais plus que la durée réelle. */
+    minutes: integer("minutes").notNull().default(0),
+    /**
+     * Minutes de la séance où un battement est arrivé (0 = la première minute
+     * après le démarrage) : chaque minute ne compte qu'une fois, quel que soit
+     * le nombre d'onglets ou de battements.
+     */
+    minutesVues: integer("minutes_vues").array().notNull().default(sql`'{}'::integer[]`),
+    /** Absence justifiée par la vie scolaire (ligne créée pour l'absent). */
+    justification: text("justification"),
+    /** Pointé à la main par le responsable de salle (fait foi en cas d'écart). */
+    pointeParId: integer("pointe_par_id"),
+  },
+  (t) => [uniqueIndex("presences_unique").on(t.seanceId, t.utilisateurId)],
+);
+
+/** Effectif déclaré par le responsable de chaque salle de conférence. */
+export const effectifsSalles = campusSchema.table(
+  "effectifs_salles",
+  {
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    siteId: integer("site_id").notNull().references(() => sites.id),
+    nombre: integer("nombre").notNull().default(0),
+    /** La salle a vérifié écran, son et caméra avant le live. */
+    prete: boolean("prete").notNull().default(false),
+    /** Incident en cours (coupure de courant, réseau…) : personne n'est compté absent. */
+    incident: text("incident"),
+    /**
+     * Mémoire de l'incident, gardée après sa résolution : premier signalement,
+     * dernier motif, résolution. Les absents de la salle restent « incident de
+     * salle » si l'incident a touché la séance.
+     */
+    incidentLe: timestamp("incident_le", { withTimezone: true }),
+    incidentMotif: text("incident_motif"),
+    incidentResoluLe: timestamp("incident_resolu_le", { withTimezone: true }),
+    majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.seanceId, t.siteId] })],
+);
+
+/** Sondages éclair lancés par le formateur pendant le live. */
+export const sondages = campusSchema.table(
+  "sondages",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    question: text("question").notNull(),
+    options: jsonb("options").$type<string[]>().notNull(),
+    /** Index de la bonne réponse quand le sondage sert de question de cours. */
+    bonneReponse: integer("bonne_reponse"),
+    /** Explication de la bonne réponse, montrée à la fermeture. */
+    explication: text("explication"),
+    ouvert: boolean("ouvert").notNull().default(true),
+    /** Préparé à l'avance : ouvertLe reste vide tant qu'il n'a pas été lancé. */
+    ouvertLe: timestamp("ouvert_le", { withTimezone: true }),
+    fermeLe: timestamp("ferme_le", { withTimezone: true }),
+    /** Question proposée par l'IA (question éclair) et validée par le formateur. */
+    parIa: boolean("par_ia").notNull().default(false),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sondages_seance_idx").on(t.seanceId)],
+);
+
+export const reponsesSondages = campusSchema.table(
+  "reponses_sondages",
+  {
+    sondageId: integer("sondage_id").notNull().references(() => sondages.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    choix: integer("choix").notNull(),
+    siteId: integer("site_id").references(() => sites.id),
+  },
+  (t) => [primaryKey({ columns: [t.sondageId, t.utilisateurId] })],
+);
+
+/** Sous-titres en direct (reconnaissance vocale du navigateur du formateur). */
+export const sousTitres = campusSchema.table(
+  "sous_titres",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    /** Secondes écoulées depuis le début de la séance. */
+    t: integer("t").notNull(),
+    texte: text("texte").notNull(),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sous_titres_seance_idx").on(t.seanceId)],
+);
+
+/** Thermomètre de compréhension : « je suis », « je suis perdu », « plus lentement ». */
+export const RESSENTIS = ["compris", "perdu", "lent", "bravo"] as const;
+export type Ressenti = (typeof RESSENTIS)[number];
+
+/** Baromètre : chaque clic « perdu / compris / plus lentement / bravo » est horodaté, par campus. */
+export const ressentis = campusSchema.table(
+  "ressentis",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    siteId: integer("site_id").references(() => sites.id),
+    ressenti: text("ressenti").$type<Ressenti>().notNull(),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ressentis_seance_idx").on(t.seanceId, t.creeLe)],
+);
+
+export type Seance = typeof seances.$inferSelect;
+export type QuestionLive = typeof questionsLive.$inferSelect;
+export type Presence = typeof presences.$inferSelect;
+export type Sondage = typeof sondages.$inferSelect;
+export type EffectifSalle = typeof effectifsSalles.$inferSelect;
+export type MainLevee = typeof mainsLevees.$inferSelect;

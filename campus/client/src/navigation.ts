@@ -20,6 +20,8 @@ import {
   CalendarRange,
   Clapperboard,
   Video,
+  Wallet,
+  FolderOpen,
 } from "lucide-react";
 import type { Role } from "@shared/schema";
 
@@ -47,6 +49,7 @@ const ETUDIANT: ElementNav[] = [
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
+  { href: "/mon-dossier", libelle: "Mon dossier", icone: FolderOpen, prefixes: ["/mon-dossier"] },
 ];
 
 const FORMATEUR: ElementNav[] = [
@@ -63,7 +66,9 @@ const FORMATEUR: ElementNav[] = [
 
 const EQUIPE: ElementNav[] = [
   { href: "/pilotage", libelle: "Pilotage", icone: LayoutDashboard, mobile: true },
-  { href: "/pilotage/comptes", libelle: "Comptes", icone: Users, mobile: true, prefixes: ["/pilotage/comptes", "/pilotage/fiches", "/pilotage/etudiants", "/pilotage/classes"] },
+  { href: "/pilotage/etudiants", libelle: "Étudiants", icone: GraduationCap, mobile: true, prefixes: ["/pilotage/etudiants", "/pilotage/preinscrits", "/pilotage/relances"] },
+  { href: "/pilotage/scolarite", libelle: "Scolarité", icone: Wallet, prefixes: ["/pilotage/scolarite", "/pilotage/recus"] },
+  { href: "/pilotage/comptes", libelle: "Comptes", icone: Users, prefixes: ["/pilotage/comptes", "/pilotage/fiches", "/pilotage/classes"] },
   { href: "/pilotage/programme", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/pilotage/programme"] },
   { href: "/pilotage/planning", libelle: "Planning", icone: CalendarClock, prefixes: ["/pilotage/planning", "/pilotage/cours"] },
   { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"] },

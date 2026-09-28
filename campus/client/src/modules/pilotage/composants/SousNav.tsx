@@ -7,9 +7,12 @@ import { cn } from "@/lib/utils";
 
 const PAGES: { href: string; libelle: string; prefixes?: string[]; direction?: boolean }[] = [
   { href: "/pilotage", libelle: "Tableau" },
+  { href: "/pilotage/etudiants", libelle: "Étudiants", prefixes: ["/pilotage/etudiants", "/pilotage/preinscrits"] },
+  { href: "/pilotage/relances", libelle: "Relances" },
+  { href: "/pilotage/scolarite", libelle: "Scolarité", prefixes: ["/pilotage/scolarite", "/pilotage/recus"] },
   { href: "/pilotage/rentree", libelle: "Rentrée" },
   { href: "/pilotage/suivi", libelle: "À contacter" },
-  { href: "/pilotage/comptes", libelle: "Comptes", prefixes: ["/pilotage/comptes", "/pilotage/etudiants", "/pilotage/fiches"] },
+  { href: "/pilotage/comptes", libelle: "Comptes", prefixes: ["/pilotage/comptes", "/pilotage/fiches"] },
   { href: "/pilotage/classes", libelle: "Classes et campus" },
   { href: "/pilotage/cours", libelle: "Cours" },
   { href: "/pilotage/programme", libelle: "Emploi du temps", prefixes: ["/pilotage/programme"] },

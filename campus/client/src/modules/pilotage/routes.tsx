@@ -18,7 +18,13 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage/rentree", page: lazy(() => import("./PageRentree")), acces: EQUIPE },
   { chemin: "/pilotage/site", page: lazy(() => import("./PageSite")), acces: EQUIPE },
   { chemin: "/pilotage/suivi", page: lazy(() => import("./PageSuivi")), acces: EQUIPE },
+  { chemin: "/pilotage/etudiants/nouveau", page: lazy(() => import("./PageNouvelEtudiant")), acces: EQUIPE },
   { chemin: "/pilotage/etudiants/:id", page: lazy(() => import("./PageEtudiant")), acces: EQUIPE },
+  { chemin: "/pilotage/etudiants", page: lazy(() => import("./PageEtudiants")), acces: EQUIPE },
+  { chemin: "/pilotage/preinscrits", page: lazy(() => import("./PagePreinscrits")), acces: EQUIPE },
+  { chemin: "/pilotage/relances", page: lazy(() => import("./PageRelances")), acces: EQUIPE },
+  { chemin: "/pilotage/scolarite", page: lazy(() => import("./PageScolarite")), acces: EQUIPE },
+  { chemin: "/pilotage/recus/:id", page: lazy(() => import("./PageRecu")), acces: EQUIPE, coquille: "aucune" },
   { chemin: "/pilotage/ia", page: lazy(() => import("./PageIa")), acces: EQUIPE },
   { chemin: "/pilotage", page: lazy(() => import("./PageTableau")), acces: EQUIPE },
   // Public : le lien envoyé aux parents sur WhatsApp.

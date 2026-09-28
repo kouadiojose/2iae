@@ -1,17 +1,20 @@
 // /pilotage/etudiants/:id : tout sur un étudiant, sur une seule page. C'est
-// la page qu'on ouvre quand un parent appelle : identité, assiduité, notes,
-// devoirs, suivis, et le relevé à partager aux parents.
-import { useState } from "react";
-import { Link } from "wouter";
+// la page qu'on ouvre quand un parent appelle. En-tête (identité, statut,
+// contacts rapides) puis des onglets : aperçu (assiduité, notes, devoirs,
+// relevé pour les parents), identité et famille, pièces, scolarité, suivi.
+// L'onglet ouvert est dans l'adresse (?onglet=suivi) ; seuls les onglets
+// ouverts sont chargés.
+import { lazy, Suspense, useState, type ReactNode } from "react";
+import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, KeyRound, NotebookPen, Pencil, Link2, Link2Off, Copy, ExternalLink, ArrowLeft, Share2, ChevronRight, Send } from "lucide-react";
-import type { DossierEtudiant, CompteLigne, CodeRemis, ReleveCree, LignePresenceEtudiant, DevoirDossier } from "@shared/schema";
-import { LIBELLES_PRESENCE_PILOTAGE, comptePresent } from "@shared/schema";
+import { MessageCircle, KeyRound, Pencil, Link2, Link2Off, Copy, ExternalLink, ArrowLeft, Share2, ChevronRight, Send, Phone } from "lucide-react";
+import type { DossierEtudiant, CompteLigne, CodeRemis, ReleveCree, LignePresenceEtudiant, DevoirDossier, DossierCrm } from "@shared/schema";
+import { LIBELLES_PRESENCE_PILOTAGE, LIBELLES_STATUTS_SCOLARITE, comptePresent } from "@shared/schema";
 import { Page } from "@/components/layout/coquille";
-import { Avatar, Badge, Chargement, Erreur, EtatVide, type Ton } from "@/components/ui/divers";
+import { Avatar, Badge, Chargement, Erreur, EtatVide, Squelette, type Ton } from "@/components/ui/divers";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
-import { ZoneTexte } from "@/components/ui/champs";
+import { Onglets } from "@/components/ui/onglets";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { get, post, suppr } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
@@ -21,7 +24,18 @@ import { SousNav } from "./composants/SousNav";
 import { FenetreCompte } from "./composants/FenetreCompte";
 import { FenetreCode } from "./composants/FenetreCode";
 import { FenetreJustifier, type CibleJustification } from "./composants/FenetreJustifier";
+import { urlCrm } from "./composants/DossierOutils";
 import { TON_PRESENCE, FOND_PRESENCE, vuLe, telephoneLisible, pourcent, copier } from "./outils";
+import { TONS_STATUT, fcfa, jourCourt, aujourdhui } from "./outils-crm";
+
+// Les onglets du dossier ne sont téléchargés qu'à leur première ouverture.
+const DossierIdentite = lazy(() => import("./composants/DossierIdentite").then((m) => ({ default: m.DossierIdentite })));
+const DossierPieces = lazy(() => import("./composants/DossierPieces").then((m) => ({ default: m.DossierPieces })));
+const DossierScolarite = lazy(() => import("./composants/DossierScolarite").then((m) => ({ default: m.DossierScolarite })));
+const DossierSuivi = lazy(() => import("./composants/DossierSuivi").then((m) => ({ default: m.DossierSuivi })));
+
+const ONGLETS = ["apercu", "identite", "pieces", "scolarite", "suivi"] as const;
+type Onglet = (typeof ONGLETS)[number];
 
 const ETATS_DEVOIR: Record<DevoirDossier["etat"], { texte: string; ton: Ton }> = {
   a_venir: { texte: "À venir", ton: "gris" },
@@ -34,6 +48,12 @@ const ETATS_DEVOIR: Record<DevoirDossier["etat"], { texte: string; ton: Ton }> =
 export default function PageEtudiant({ id }: { id: string }) {
   const url = `/api/pilotage/etudiants/${id}`;
   const { data: d, isLoading, error, refetch } = useQuery<DossierEtudiant>({ queryKey: [url] });
+  // Le dossier CRM (identité, pièces, scolarité, suivi) est lu en parallèle.
+  const crmQ = useQuery<DossierCrm>({ queryKey: [urlCrm(id)] });
+  const crm = crmQ.data;
+  const [, naviguer] = useLocation();
+  const demande = new URLSearchParams(useSearch()).get("onglet");
+  const onglet: Onglet = ONGLETS.includes(demande as Onglet) ? (demande as Onglet) : "apercu";
   const [modifier, setModifier] = useState<CompteLigne | null>(null);
   const [code, setCode] = useState<CodeRemis | null>(null);
   const [justifier, setJustifier] = useState<CibleJustification | null>(null);
@@ -60,85 +80,127 @@ export default function PageEtudiant({ id }: { id: string }) {
       toastErreur(err);
     }
   };
+  const changerOnglet = (o: Onglet) => naviguer(o === "apercu" ? `/pilotage/etudiants/${id}` : `/pilotage/etudiants/${id}?onglet=${o}`, { replace: true });
+  const piecesATraiter = crm ? crm.pieces.filter((p) => p.statut === "a_verifier" || (p.requise && p.statut !== "recue")).length : 0;
+  const relancesOuvertes = crm ? crm.taches.filter((t) => !t.faiteLe).length : 0;
 
   return (
     <Page>
       <SousNav />
-      <Link href="/pilotage/comptes" className="-mb-2 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-bold text-texte-pale no-underline hover:text-encre print:hidden">
-        <ArrowLeft className="h-4 w-4" /> Comptes
+      <Link href="/pilotage/etudiants" className="-mb-2 inline-flex min-h-[44px] items-center gap-1.5 self-start text-sm font-bold text-texte-pale no-underline hover:text-encre print:hidden">
+        <ArrowLeft className="h-4 w-4" /> Étudiants
       </Link>
 
-      {/* En-tête : qui, où, dans quel état. */}
-      <header className="flex flex-col gap-5 rounded-[28px] bg-creme p-5 sm:flex-row sm:items-center sm:p-7">
-        <Avatar prenom={e.prenom} nom={e.nom} photo={e.photoUrl} taille={72} />
-        <div className="min-w-0 flex-1">
-          <span className="font-mono text-xs text-texte-gris">Dossier étudiant · {e.matricule}</span>
-          <h1 className="titre-page mt-1">
-            {e.prenom} {e.nom}
-          </h1>
-          <p className="mt-1 text-base text-texte-doux">{[e.classe, e.site && !(e.classe ?? "").includes(e.site) ? `Campus ${e.site}` : null].filter(Boolean).join(" · ")}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {!e.actif && <Badge ton="gris">Compte désactivé</Badge>}
-            {d.activation.active ? (
-              <Badge ton="succes">Compte activé</Badge>
+      {/* En-tête : qui, où, dans quel état, et comment le joindre. */}
+      <header className="flex flex-col gap-5 rounded-[28px] bg-creme p-5 sm:p-7">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <Avatar prenom={e.prenom} nom={e.nom} photo={e.photoUrl} taille={72} />
+          <div className="min-w-0 flex-1">
+            <span className="font-mono text-xs text-texte-gris">Dossier étudiant · {e.matricule}</span>
+            <h1 className="titre-page mt-1 break-words">
+              {e.prenom} {e.nom}
+            </h1>
+            <p className="mt-1 text-base text-texte-doux">{[e.classe, e.site && !(e.classe ?? "").includes(e.site) ? `Campus ${e.site}` : null].filter(Boolean).join(" · ")}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {crm && (
+                <Badge ton={TONS_STATUT[crm.identite.statut]}>
+                  {LIBELLES_STATUTS_SCOLARITE[crm.identite.statut]}
+                  {crm.identite.statut !== "inscrit" && crm.identite.statutLe ? ` depuis le ${jourCourt(crm.identite.statutLe)}` : ""}
+                </Badge>
+              )}
+              {!e.actif && <Badge ton="gris">Compte désactivé</Badge>}
+              {d.activation.active ? (
+                <Badge ton="succes">Compte activé</Badge>
+              ) : (
+                <Badge ton="alerte">{d.activation.codeExpireLe ? `Code provisoire jusqu'au ${dateCourte(d.activation.codeExpireLe)}` : "Pas encore activé"}</Badge>
+              )}
+              <Badge ton="gris">Vu sur le campus : {vuLe(d.derniereActivite)}</Badge>
+              {e.telephone && <Badge ton="gris">{telephoneLisible(e.telephone)}</Badge>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-col">
+            {d.whatsapp ? (
+              <a
+                href={d.whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="col-span-2 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-orange px-5 font-bold text-encre no-underline hover:bg-encre hover:text-white"
+              >
+                <MessageCircle className="h-4 w-4" /> Écrire sur WhatsApp
+              </a>
             ) : (
-              <Badge ton="alerte">{d.activation.codeExpireLe ? `Code provisoire jusqu'au ${dateCourte(d.activation.codeExpireLe)}` : "Pas encore activé"}</Badge>
+              <span className="col-span-2 text-center text-sm text-texte-gris">Pas de téléphone enregistré</span>
             )}
-            <Badge ton="gris">Vu sur le campus : {vuLe(d.derniereActivite)}</Badge>
-            {e.telephone && <Badge ton="gris">{telephoneLisible(e.telephone)}</Badge>}
+            {e.actif && (
+              <LienBouton href={`/messages/nouveau?a=${e.id}`} variante="contour" icone={<Send className="h-4 w-4" />} className="col-span-2 min-h-[48px] px-3">
+                Écrire sur le campus
+              </LienBouton>
+            )}
+            <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px] px-3">
+              Modifier
+            </Bouton>
+            <Bouton
+              variante="contour"
+              icone={<KeyRound className="h-4 w-4" />}
+              className="min-h-[48px] whitespace-nowrap px-3"
+              disabled={!e.actif}
+              onClick={async () => {
+                if (!window.confirm(`Créer un nouveau code pour ${e.prenom} ? L'ancien ne marchera plus.`)) return;
+                try {
+                  setCode(await post<CodeRemis>(`/api/pilotage/comptes/${e.id}/nouveau-code`));
+                  await rafraichir(url);
+                } catch (err) {
+                  toastErreur(err);
+                }
+              }}
+            >
+              Nouveau code
+            </Bouton>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-col">
-          {d.whatsapp ? (
-            <a
-              href={d.whatsapp}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="col-span-2 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-orange px-5 font-bold text-encre no-underline hover:bg-encre hover:text-white"
-            >
-              <MessageCircle className="h-4 w-4" /> Écrire sur WhatsApp
-            </a>
-          ) : (
-            <span className="col-span-2 text-center text-sm text-texte-gris">Pas de téléphone enregistré</span>
-          )}
-          {e.actif && (
-            <LienBouton href={`/messages/nouveau?a=${e.id}`} variante="contour" icone={<Send className="h-4 w-4" />} className="col-span-2 min-h-[48px] px-3">
-              Écrire sur le campus
-            </LienBouton>
-          )}
-          <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px] px-3">
-            Modifier
-          </Bouton>
-          <Bouton
-            variante="contour"
-            icone={<KeyRound className="h-4 w-4" />}
-            className="min-h-[48px] whitespace-nowrap px-3"
-            disabled={!e.actif}
-            onClick={async () => {
-              if (!window.confirm(`Créer un nouveau code pour ${e.prenom} ? L'ancien ne marchera plus.`)) return;
-              try {
-                setCode(await post<CodeRemis>(`/api/pilotage/comptes/${e.id}/nouveau-code`));
-                await rafraichir(url);
-              } catch (err) {
-                toastErreur(err);
-              }
-            }}
-          >
-            Nouveau code
-          </Bouton>
-        </div>
+        {crm && crm.contacts.length > 0 && <Contacts contacts={crm.contacts} />}
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6">
-          <Assiduite d={d} onJustifier={(s) => setJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: e.id, nom: `${e.prenom} ${e.nom}`, justification: s.justification })} />
-          <Notes d={d} />
-          <Devoirs d={d} />
-        </div>
-        <div className="flex flex-col gap-6">
-          <Suivis d={d} />
-          <Releve d={d} />
-        </div>
+      <Onglets<Onglet>
+        valeur={onglet}
+        onChange={changerOnglet}
+        className="print:hidden [&>button]:min-h-[44px]"
+        options={[
+          { valeur: "apercu", libelle: "Aperçu" },
+          { valeur: "identite", libelle: "Identité et famille" },
+          { valeur: "pieces", libelle: "Pièces", compteur: piecesATraiter },
+          { valeur: "scolarite", libelle: "Scolarité" },
+          { valeur: "suivi", libelle: "Suivi", compteur: relancesOuvertes },
+        ]}
+      />
+
+      <div role="tabpanel" className="flex min-w-0 flex-col gap-6">
+        {onglet === "apercu" ? (
+          <>
+            <ResumeCrm crm={crm} chargement={crmQ.isLoading} onOnglet={changerOnglet} />
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+              <div className="flex min-w-0 flex-col gap-6">
+                <Assiduite d={d} onJustifier={(s) => setJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: e.id, nom: `${e.prenom} ${e.nom}`, justification: s.justification })} />
+                <Devoirs d={d} />
+              </div>
+              <div className="flex min-w-0 flex-col gap-6">
+                <Notes d={d} />
+                <Releve d={d} />
+              </div>
+            </div>
+          </>
+        ) : crmQ.isLoading ? (
+          <Chargement lignes={3} />
+        ) : crmQ.error || !crm ? (
+          <Erreur message={(crmQ.error as Error)?.message ?? "Dossier introuvable."} reessayer={() => crmQ.refetch()} />
+        ) : (
+          <Suspense fallback={<Chargement lignes={3} />}>
+            {onglet === "identite" && <DossierIdentite etudiantId={e.id} prenom={e.prenom} identite={crm.identite} onModifierCompte={ouvrirModification} />}
+            {onglet === "pieces" && <DossierPieces etudiantId={e.id} pieces={crm.pieces} />}
+            {onglet === "scolarite" && <DossierScolarite etudiantId={e.id} prenom={e.prenom} scolarite={crm.scolarite} />}
+            {onglet === "suivi" && <DossierSuivi etudiantId={e.id} crm={crm} />}
+          </Suspense>
+        )}
       </div>
 
       <FenetreCompte ouverte={modifier !== null} compte={modifier} onFermer={() => setModifier(null)} onCode={(r) => setCode(r)} />
@@ -149,6 +211,122 @@ export default function PageEtudiant({ id }: { id: string }) {
       />
       <FenetreJustifier cible={justifier} onFermer={() => setJustifier(null)} />
     </Page>
+  );
+}
+
+/** Contacts rapides : l'étudiant et ses responsables, un appel ou un WhatsApp d'un geste. */
+function Contacts({ contacts }: { contacts: DossierCrm["contacts"] }) {
+  return (
+    <div className="flex flex-col gap-2 border-t border-ligne pt-4 print:hidden">
+      <span className="font-mono text-xs text-texte-gris">Joindre rapidement</span>
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {contacts.map((c) => (
+          <li key={`${c.libelle}-${c.telephone}`} className="flex items-center gap-1 rounded-2xl bg-white py-1 pl-4 pr-1">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-bold">{c.libelle}</div>
+              <div className="font-mono text-xs text-texte-gris">{telephoneLisible(c.telephone)}</div>
+            </div>
+            <a
+              href={`tel:${c.telephone}`}
+              aria-label={`Appeler ${c.libelle}`}
+              title="Appeler"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-encre no-underline hover:bg-creme hover:text-encre"
+            >
+              <Phone className="h-5 w-5" />
+            </a>
+            {c.whatsapp && (
+              <a
+                href={c.whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Écrire sur WhatsApp à ${c.libelle}`}
+                title="WhatsApp"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-orange text-encre no-underline hover:bg-encre hover:text-white"
+              >
+                <MessageCircle className="h-5 w-5" />
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Aperçu : pièces, argent et relances en trois tuiles qui ouvrent l'onglet correspondant. */
+function ResumeCrm({ crm, chargement, onOnglet }: { crm: DossierCrm | undefined; chargement: boolean; onOnglet: (o: Onglet) => void }) {
+  if (chargement)
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-busy="true" aria-label="Chargement">
+        {[0, 1, 2].map((i) => (
+          <Squelette key={i} className="h-28" />
+        ))}
+      </div>
+    );
+  if (!crm) return null;
+  const requises = crm.pieces.filter((p) => p.requise);
+  const recues = requises.filter((p) => p.statut === "recue").length;
+  const aVerifier = crm.pieces.filter((p) => p.statut === "a_verifier").length;
+  const sit = crm.scolarite.situation;
+  const jour = aujourdhui();
+  const ouvertes = crm.taches.filter((t) => !t.faiteLe).sort((a, b) => a.echeance.localeCompare(b.echeance));
+  const enRetard = ouvertes.filter((t) => t.echeance < jour).length;
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <TuileResume libelle="Pièces" onClick={() => onOnglet("pieces")} valeur={`${recues}/${requises.length} reçues`}>
+        {aVerifier > 0 ? (
+          <span className="font-semibold text-alerte">{aVerifier} à vérifier</span>
+        ) : recues < requises.length ? (
+          <span>{pluriel(requises.length - recues, "pièce manquante", "pièces manquantes")}</span>
+        ) : (
+          <span className="font-semibold text-succes">Dossier complet</span>
+        )}
+      </TuileResume>
+      <TuileResume libelle="Scolarité" onClick={() => onOnglet("scolarite")} valeur={sit ? `Reste ${fcfa(sit.reste)}` : "Pas d'échéancier"}>
+        {!sit ? (
+          <span>Frais à mettre en place</span>
+        ) : (
+          <>
+            {sit.retard > 0 && <span className="block font-semibold text-danger">En retard : {fcfa(sit.retard)}</span>}
+            {sit.prochaine ? (
+              <span className="block">
+                Prochaine : {jourCourt(sit.prochaine.date)}, {fcfa(sit.prochaine.reste)}
+              </span>
+            ) : (
+              sit.retard === 0 && <span className="block font-semibold text-succes">{sit.reste > 0 ? "Aucun retard" : "Tout est payé"}</span>
+            )}
+          </>
+        )}
+      </TuileResume>
+      <TuileResume libelle="Relances" onClick={() => onOnglet("suivi")} valeur={ouvertes.length ? pluriel(ouvertes.length, "ouverte") : "Aucune ouverte"}>
+        {enRetard > 0 ? (
+          <span className="font-semibold text-danger">{enRetard} en retard</span>
+        ) : ouvertes[0] ? (
+          <span className="block truncate">
+            {jourCourt(ouvertes[0].echeance)} : {ouvertes[0].titre}
+          </span>
+        ) : (
+          <span>Programmer un rappel</span>
+        )}
+      </TuileResume>
+    </div>
+  );
+}
+
+function TuileResume({ libelle, valeur, onClick, children }: { libelle: string; valeur: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-[96px] w-full items-center gap-3 rounded-2xl border border-ligne bg-white p-4 text-left transition-colors hover:border-orange focus-visible:border-orange"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-xs uppercase tracking-wider text-texte-gris">{libelle}</div>
+        <div className="mt-1 text-lg font-extrabold tabular-nums">{valeur}</div>
+        <div className="mt-0.5 text-[13px] text-texte-pale">{children}</div>
+      </div>
+      <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -303,51 +481,6 @@ function Devoirs({ d }: { d: DossierEtudiant }) {
           </ul>
         </Carte>
       )}
-    </section>
-  );
-}
-
-function Suivis({ d }: { d: DossierEtudiant }) {
-  const [texte, setTexte] = useState("");
-  const [envoi, setEnvoi] = useState(false);
-  const ajouter = async () => {
-    setEnvoi(true);
-    try {
-      await post(`/api/pilotage/etudiants/${d.etudiant.id}/suivis`, { texte });
-      setTexte("");
-      toast("Suivi enregistré");
-      await rafraichir(`/api/pilotage/etudiants/${d.etudiant.id}`, "/api/pilotage/a-contacter");
-    } catch (e) {
-      toastErreur(e);
-    } finally {
-      setEnvoi(false);
-    }
-  };
-  return (
-    <section>
-      <TitreSection titre="Suivi" />
-      <Carte className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <ZoneTexte aria-label="Nouvelle note de suivi" value={texte} onChange={(e) => setTexte(e.target.value)} rows={3} maxLength={2000} placeholder="Appel, entretien, parent prévenu… (jamais visible par l'étudiant)" />
-          <Bouton variante="encre" icone={<NotebookPen className="h-4 w-4" />} onClick={ajouter} chargement={envoi} disabled={texte.trim().length < 2} className="self-start">
-            Ajouter au suivi
-          </Bouton>
-        </div>
-        {!d.suivis.length ? (
-          <p className="text-[15px] text-texte-pale">Aucune note pour l'instant. Notez chaque échange : la personne suivante saura où on en est.</p>
-        ) : (
-          <ol className="flex flex-col gap-3 border-l-2 border-orange-peche pl-4">
-            {d.suivis.map((s) => (
-              <li key={s.id}>
-                <div className="font-mono text-xs text-texte-gris">
-                  {dateCourte(s.creeLe)} · {heure(s.creeLe)} · {s.auteur}
-                </div>
-                <p className="mt-0.5 whitespace-pre-line text-[15px] text-texte-doux">{s.texte}</p>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Carte>
     </section>
   );
 }

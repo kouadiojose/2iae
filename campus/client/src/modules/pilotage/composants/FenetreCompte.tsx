@@ -4,14 +4,14 @@
 // salles ont un campus ; les formateurs travaillent pour tout le groupe.
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { KeyRound, FolderOpen, Power, Send, MonitorSmartphone } from "lucide-react";
+import { KeyRound, FolderOpen, Power, Send, MonitorSmartphone, Repeat } from "lucide-react";
 import type { CompteLigne, CompteCree, CodeRemis, Role } from "@shared/schema";
 import { LIBELLES_ROLES } from "@shared/schema";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Bouton } from "@/components/ui/bouton";
 import { Champ, Selection } from "@/components/ui/champs";
 import { toast, toastErreur } from "@/components/ui/toast";
-import { post, patch, ErreurApi } from "@/lib/api";
+import { post, patch, suppr, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
 import { dateCourte } from "@/lib/dates";
@@ -339,6 +339,10 @@ export function FenetreCompte({
           </div>
         )}
 
+        {!creation && direction && (compte.casquette || (compte.role === "formateur" && compte.actif)) && (
+          <DoubleCasquette compte={compte} moiId={moi.id} sites={refs.data?.sites ?? []} onFait={onFermer} />
+        )}
+
         {erreur && (
           <p role="alert" className="rounded-xl bg-danger-clair px-4 py-3 text-[15px] font-semibold text-danger">
             {erreur}
@@ -346,5 +350,90 @@ export function FenetreCompte({
         )}
       </div>
     </Fenetre>
+  );
+}
+
+/**
+ * Double casquette (direction seulement) : un formateur qui est aussi de la
+ * direction ou de la vie scolaire reçoit un second compte, lié, sans code. Il
+ * passe de l'un à l'autre depuis son menu, sans se reconnecter.
+ */
+function DoubleCasquette({ compte, moiId, sites, onFait }: { compte: CompteLigne; moiId: number; sites: { id: number; nomCourt: string }[]; onFait: () => void }) {
+  const [role, setRole] = useState<"admin" | "vie_scolaire">("admin");
+  const [siteId, setSiteId] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const porteeParMoi = compte.id === moiId || compte.casquette?.id === moiId;
+
+  const donner = async () => {
+    setEnvoi(true);
+    try {
+      await post(`/api/pilotage/comptes/${compte.id}/casquette`, { role, siteId: role === "vie_scolaire" && siteId ? Number(siteId) : null });
+      toast(`${compte.prenom} a maintenant la double casquette : « Passer en ${role === "admin" ? "Direction" : "Vie scolaire"} » dans son menu.`);
+      await rafraichir("/api/pilotage/comptes");
+      onFait();
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  const retirer = async () => {
+    if (!window.confirm(`Retirer la double casquette de ${compte.prenom} ${compte.nom} ? Son second compte sera désactivé.`)) return;
+    setEnvoi(true);
+    try {
+      await suppr(`/api/pilotage/comptes/${compte.id}/casquette`);
+      toast("Double casquette retirée");
+      await rafraichir("/api/pilotage/comptes");
+      onFait();
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-ligne p-4">
+      <p className="flex items-center gap-2 text-[15px] font-extrabold">
+        <Repeat className="h-4 w-4 text-orange-fonce" /> Double casquette
+      </p>
+      {compte.casquette ? (
+        <>
+          <p className="text-sm text-texte-doux">
+            {compte.prenom} est aussi <strong>{LIBELLES_ROLES[compte.casquette.role]}</strong>. Il passe d'un compte à l'autre depuis son menu, sans se reconnecter.
+          </p>
+          {!porteeParMoi && (
+            <Bouton variante="contour" taille="sm" className="self-start" onClick={retirer} chargement={envoi}>
+              Retirer la double casquette
+            </Bouton>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-texte-doux">
+            Ce formateur fait aussi partie de l'équipe ? Donnez-lui un accès à la gestion : il passera de « Formateur » à cette casquette d'un clic, depuis son menu.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Selection libelle="Casquette" value={role} onChange={(e) => setRole(e.target.value as "admin" | "vie_scolaire")}>
+              <option value="admin">Direction (tout le groupe)</option>
+              <option value="vie_scolaire">Vie scolaire d'un campus</option>
+            </Selection>
+            {role === "vie_scolaire" && (
+              <Selection libelle="Campus" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+                <option value="">Choisir le campus…</option>
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nomCourt}
+                  </option>
+                ))}
+              </Selection>
+            )}
+          </div>
+          <Bouton variante="encre" taille="sm" className="self-start" icone={<Repeat className="h-4 w-4" />} onClick={donner} chargement={envoi} disabled={role === "vie_scolaire" && !siteId}>
+            Donner la double casquette
+          </Bouton>
+        </>
+      )}
+    </div>
   );
 }

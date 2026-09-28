@@ -48,6 +48,13 @@ export async function seDeconnecter() {
   window.location.href = "/connexion";
 }
 
+/** Double casquette : passer sur l'autre compte de la personne, puis repartir de son accueil. */
+export async function basculerCasquette() {
+  const m = await post<Moi>("/api/auth/casquette");
+  queryClient.clear();
+  window.location.assign(accueilDuRole(m.role));
+}
+
 export function rechargerMoi() {
   return queryClient.invalidateQueries({ queryKey: ["/api/auth/moi"] });
 }

@@ -3,8 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown } from "lucide-react";
-import { useMoiConnecte, seDeconnecter } from "@/lib/auth";
+import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown, Repeat } from "lucide-react";
+import { useMoiConnecte, seDeconnecter, basculerCasquette } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { navigationDuRole, estActif } from "@/navigation";
@@ -79,6 +79,32 @@ function Cloche() {
   );
 }
 
+/** Double casquette : la bascule reste visible dans l'en-tête (« Direction ⇄ »). */
+function BoutonCasquette() {
+  const moi = useMoiConnecte();
+  const [envoi, setEnvoi] = useState(false);
+  if (!moi.casquette) return null;
+  return (
+    <button
+      type="button"
+      disabled={envoi}
+      onClick={() => {
+        setEnvoi(true);
+        basculerCasquette().catch((e) => {
+          setEnvoi(false);
+          toast((e as Error).message, "erreur");
+        });
+      }}
+      className="flex items-center gap-1.5 rounded-full border border-ligne px-2.5 py-2 text-[13px] font-bold text-encre hover:border-orange hover:bg-orange-pale disabled:opacity-60 sm:px-3.5"
+      title={`Passer en ${moi.casquette.libelle}`}
+      aria-label={`Passer en ${moi.casquette.libelle}`}
+    >
+      <Repeat className="h-4 w-4 text-orange-fonce" />
+      <span className="hidden sm:inline">{moi.casquette.role === "formateur" ? "Formateur" : moi.casquette.role === "admin" ? "Direction" : "Vie scolaire"}</span>
+    </button>
+  );
+}
+
 /** Lien WhatsApp vers la vie scolaire du site, message pré-rempli (nom, matricule, page). */
 export function lienAide(moi: { prenom: string; nom: string; matricule: string | null; site: { whatsappVieScolaire: string | null } | null }) {
   const numero = moi.site?.whatsappVieScolaire?.replace(/\D/g, "");
@@ -105,6 +131,14 @@ function MenuProfil() {
         </div>
       </div>
       <SeparateurMenu />
+      {moi.casquette && (
+        <>
+          <ElementMenu icone={<Repeat className="h-4 w-4" />} onSelect={() => void basculerCasquette().catch((e) => toast((e as Error).message, "erreur"))}>
+            Passer en {moi.casquette.libelle}
+          </ElementMenu>
+          <SeparateurMenu />
+        </>
+      )}
       <ElementMenu icone={<User className="h-4 w-4" />} onSelect={() => naviguer("/profil")}>
         Mon profil
       </ElementMenu>
@@ -290,6 +324,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
             <div className="sm:hidden">
               <BoutonDirect compact />
             </div>
+            <BoutonCasquette />
             <Cloche />
             <MenuProfil />
           </div>

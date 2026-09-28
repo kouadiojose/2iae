@@ -220,6 +220,8 @@ export type CompteLigne = {
   codeExpireLe: string | null;
   derniereConnexion: string | null;
   creeLe: string;
+  /** Double casquette : l'autre compte de la personne. */
+  casquette: { id: number; role: Role } | null;
 };
 
 /** GET /api/pilotage/comptes */
@@ -532,7 +534,7 @@ export type DossierEtudiant = {
   presences: { resume: ResumePresences; seances: LignePresenceEtudiant[] };
   devoirs: DevoirDossier[];
   notes: { cours: MoyenneCours[]; generale: number | null };
-  suivis: { id: number; texte: string; auteur: string; creeLe: string }[];
+  suivis: { id: number; type: string; texte: string; auteur: string; creeLe: string }[];
   releve: { lien: string; whatsapp: string; consultations: number; partageLe: string | null } | null;
   whatsapp: string | null;
 };

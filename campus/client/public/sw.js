@@ -41,7 +41,7 @@ const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|com
  * Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels, sonde de santé,
  * radio du cours (flux audio continu) et signalisation de la visio.
  */
-const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|health$|auth\/(?!moi$)|radio\/|visio\/|invite\/)/;
+const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|health$|auth\/(?!moi$)|radio\/|visio\/|invite\/|pilotage\/(etudiants|versements)\/export)/;
 /** Le profil courant est gardé même « non connecté » (401) : sans réseau, les pages publiques s'ouvrent aussitôt. */
 const PROFIL = "/api/auth/moi";
 

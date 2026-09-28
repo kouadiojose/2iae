@@ -3,7 +3,7 @@
 // Toutes les tables vivent dans le schéma PostgreSQL « campus » (voir
 // drizzle.config.ts) : le campus peut partager la base du site sans
 // collision, ou disposer de sa propre base.
-import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, json, varchar, index } from "drizzle-orm/pg-core";
+import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, json, varchar, index, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 export const campusSchema = pgSchema("campus");
 
@@ -137,6 +137,14 @@ export const utilisateurs = campusSchema.table(
     /** Jeton du relevé partageable aux parents (lien public révocable). */
     jetonReleve: text("jeton_releve").unique(),
     actif: boolean("actif").notNull().default(true),
+    /**
+     * Double casquette : l'autre compte de la même personne (un formateur qui
+     * est aussi de la direction ou de la vie scolaire). Le lien va dans les
+     * deux sens ; on passe de l'un à l'autre sans se reconnecter. Le compte
+     * « casquette » créé par la direction n'a pas d'identifiant : il ne s'ouvre
+     * que depuis le compte formateur.
+     */
+    compteLieId: integer("compte_lie_id").references((): AnyPgColumn => utilisateurs.id, { onDelete: "set null" }),
     derniereConnexion: timestamp("derniere_connexion", { withTimezone: true }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -182,6 +190,8 @@ export const suivis = campusSchema.table(
     id: serial("id").primaryKey(),
     etudiantId: integer("etudiant_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
     auteurId: integer("auteur_id").notNull().references(() => utilisateurs.id),
+    /** note, appel, whatsapp, sms, rendez_vous, email, famille (ext-crm.ts : TYPES_SUIVI). */
+    type: text("type").notNull().default("note"),
     texte: text("texte").notNull(),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -214,7 +224,12 @@ export const LIEUX_MAX = 4;
 export type Moi = Omit<Utilisateur, "motDePasseHash" | "jetonAgenda" | "jetonReleve" | "motDePasseExpireLe"> & {
   site: Pick<Site, "id" | "nom" | "nomCourt" | "salleConference" | "whatsappVieScolaire"> | null;
   classe: Pick<Classe, "id" | "nom" | "filiere" | "niveau"> | null;
+  /** L'autre casquette de la personne (double casquette), null sinon. */
+  casquette: Casquette | null;
 };
+
+/** Casquette : l'autre compte de la même personne (formateur ↔ direction ou vie scolaire). */
+export type Casquette = { id: number; role: Role; libelle: string; site: string | null };
 
 
 /**

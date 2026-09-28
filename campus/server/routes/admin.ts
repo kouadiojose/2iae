@@ -19,6 +19,7 @@ import { Worker } from "worker_threads";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import { config } from "../config";
 import {
@@ -113,14 +114,15 @@ import {
   type ConsommationIa,
   type BudgetIa,
   LIEUX_MAX,
+  TYPES_SUIVI,
 } from "@shared/schema";
 
 // ── Outils communs ─────────────────────────────────────────────────────────
 
 const P = "/api/pilotage";
-const EQUIPE = exigerRole("admin", "vie_scolaire");
+export const EQUIPE = exigerRole("admin", "vie_scolaire");
 /** Réservé à la direction (vouvoiement : la personne est forcément de l'équipe). */
-const DIRECTION: RequestHandler = (req, res, next) => {
+export const DIRECTION: RequestHandler = (req, res, next) => {
   if (!req.utilisateur) return res.status(401).json({ message: "Connectez-vous pour continuer." });
   if (req.utilisateur.role !== "admin") return res.status(403).json({ message: "Réservé à la direction." });
   next();
@@ -141,12 +143,12 @@ const fmtJourCourt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "
 const jour = (d: Date | string) => fmtJour.format(new Date(d));
 const jourCourt = (d: Date | string) => fmtJourCourt.format(new Date(d));
 
-async function journaliser(u: Pick<Utilisateur, "id">, action: string, details: Record<string, unknown> = {}) {
+export async function journaliser(u: Pick<Utilisateur, "id">, action: string, details: Record<string, unknown> = {}) {
   await db.insert(journal).values({ utilisateurId: u.id, action, details });
 }
 
 /** Numéro pour wa.me : un numéro ivoirien (10 chiffres) reçoit l'indicatif 225. */
-function numeroWhatsApp(tel: string | null | undefined): string | null {
+export function numeroWhatsApp(tel: string | null | undefined): string | null {
   if (!tel) return null;
   const n = normaliserTelephone(tel);
   if (n.length === 10) return `225${n}`;
@@ -155,12 +157,12 @@ function numeroWhatsApp(tel: string | null | undefined): string | null {
 }
 
 /** Lien WhatsApp avec un message prêt ; sans numéro, WhatsApp demande à qui l'envoyer. */
-function lienWhatsApp(tel: string | null | undefined, texte: string): string {
+export function lienWhatsApp(tel: string | null | undefined, texte: string): string {
   return `https://wa.me/${numeroWhatsApp(tel) ?? ""}?text=${encodeURIComponent(texte)}`;
 }
 
 /** « Bonjour Aya, c'est la vie scolaire du campus Yopougon (2IAE). » */
-const entreeMessage = (prenom: string, site: string | null) =>
+export const entreeMessage = (prenom: string, site: string | null) =>
   `Bonjour ${prenom}, c'est la vie scolaire ${site ? `du campus ${site} ` : ""}(2IAE).`;
 
 /** Enlève accents, casse et ponctuation : « Prénom(s) » → « prenoms ». */
@@ -174,13 +176,13 @@ const normaliser = (s: string) =>
 const ACCENTS = "áàâäãåéèêëíìîïóòôöõúùûüýÿçñ";
 const SANS_ACCENTS = "aaaaaaeeeeiiiiooooouuuuyycn";
 /** Minuscules sans accents (côté serveur) : « Koné » → « kone ». */
-const sansAccents = (s: string) =>
+export const sansAccents = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 /** Même transformation en SQL, sans extension PostgreSQL. */
-const sqlSansAccents = (x: SQL) => sql`translate(lower(${x}), ${ACCENTS}, ${SANS_ACCENTS})`;
+export const sqlSansAccents = (x: SQL) => sql`translate(lower(${x}), ${ACCENTS}, ${SANS_ACCENTS})`;
 
 /** Lundi 00 h (heure d'Abidjan = UTC) de la semaine qui contient cette date. */
 function lundiDe(brut: unknown): Date {
@@ -211,14 +213,14 @@ function peutGerer(u: Utilisateur, cible: Pick<Utilisateur, "role" | "siteId">):
 }
 
 /** Compte géré par la personne, sinon 404 (on ne révèle pas qu'il existe). */
-async function compteGere(u: Utilisateur, id: number): Promise<Utilisateur> {
+export async function compteGere(u: Utilisateur, id: number): Promise<Utilisateur> {
   const [c] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, id));
   if (!c || !peutGerer(u, c)) throw introuvable("Compte");
   return c;
 }
 
 /** Étudiant du périmètre, sinon 404. */
-async function etudiantGere(u: Utilisateur, id: number): Promise<Utilisateur> {
+export async function etudiantGere(u: Utilisateur, id: number): Promise<Utilisateur> {
   const c = await compteGere(u, id);
   if (c.role !== "etudiant") throw introuvable("Étudiant");
   return c;
@@ -230,7 +232,7 @@ function surSites(colonne: typeof utilisateurs.siteId | typeof classes.siteId | 
 }
 
 /** Classe du périmètre, sinon 404. */
-async function classeGeree(u: Utilisateur, id: number) {
+export async function classeGeree(u: Utilisateur, id: number) {
   const [c] = await db.select().from(classes).where(eq(classes.id, id));
   const p = perimetreSites(u);
   if (!c || (p && !p.includes(c.siteId))) throw introuvable("Classe");
@@ -238,7 +240,7 @@ async function classeGeree(u: Utilisateur, id: number) {
 }
 
 /** Vérifie qu'un campus existe et appartient au périmètre. */
-async function siteGere(u: Utilisateur, id: number) {
+export async function siteGere(u: Utilisateur, id: number) {
   const [s] = await db.select().from(sites).where(eq(sites.id, id));
   const p = perimetreSites(u);
   if (!s || (p && !p.includes(s.id))) throw interdit("Ce campus n'est pas dans votre périmètre.");
@@ -733,6 +735,9 @@ async function calculerAContacter(u: Utilisateur): Promise<AContacter[]> {
 
 // ── Comptes ────────────────────────────────────────────────────────────────
 
+/** Le compte lié d'une double casquette (formateur ↔ direction ou vie scolaire). */
+const compteLie = alias(utilisateurs, "compte_lie");
+
 const colonnesCompte = {
   id: utilisateurs.id,
   role: utilisateurs.role,
@@ -752,6 +757,8 @@ const colonnesCompte = {
   codeExpireLe: utilisateurs.motDePasseExpireLe,
   derniereConnexion: utilisateurs.derniereConnexion,
   creeLe: utilisateurs.creeLe,
+  compteLieId: utilisateurs.compteLieId,
+  lieRole: compteLie.role,
 };
 
 type LigneCompteBrute = {
@@ -761,9 +768,10 @@ type LigneCompteBrute = {
 };
 
 function versCompte(l: LigneCompteBrute): CompteLigne {
-  const { doitChanger, codeExpireLe, derniereConnexion, creeLe, ...reste } = l;
+  const { doitChanger, codeExpireLe, derniereConnexion, creeLe, compteLieId, lieRole, ...reste } = l;
   return {
     ...reste,
+    casquette: compteLieId && lieRole ? { id: compteLieId, role: lieRole } : null,
     active: !doitChanger,
     codeExpireLe: iso(codeExpireLe),
     derniereConnexion: iso(derniereConnexion),
@@ -776,10 +784,11 @@ function selectionComptes() {
     .select(colonnesCompte)
     .from(utilisateurs)
     .leftJoin(sites, eq(sites.id, utilisateurs.siteId))
-    .leftJoin(classes, eq(classes.id, utilisateurs.classeId));
+    .leftJoin(classes, eq(classes.id, utilisateurs.classeId))
+    .leftJoin(compteLie, eq(compteLie.id, utilisateurs.compteLieId));
 }
 
-async function compteParId(id: number): Promise<CompteLigne> {
+export async function compteParId(id: number): Promise<CompteLigne> {
   const [l] = await selectionComptes().where(eq(utilisateurs.id, id));
   if (!l) throw introuvable("Compte");
   return versCompte(l as LigneCompteBrute);
@@ -794,7 +803,7 @@ function comptesVisibles(u: Utilisateur): SQL | undefined {
 }
 
 /** Message qui accompagne un code provisoire (tutoiement pour les étudiants, vouvoiement sinon). */
-function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "email"> & { telephone?: string | null }, code: string, lien: string, expireLe: Date): string {
+export function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "email"> & { telephone?: string | null }, code: string, lien: string, expireLe: Date): string {
   const identifiant = c.matricule ?? c.email ?? c.telephone ?? "";
   // Compte sans identifiant (formateur créé sans e-mail ni téléphone) : il le choisira en ouvrant le lien.
   if (!identifiant) {
@@ -822,18 +831,18 @@ function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "ema
   ].join("\n");
 }
 
-const vide = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
-const texteCourt = (max: number) => z.string().trim().min(1, "à remplir").max(max, "trop long");
-const optionnel = <T extends z.ZodTypeAny>(s: T) => z.preprocess(vide, s.nullable()).optional();
+export const vide = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
+export const texteCourt = (max: number) => z.string().trim().min(1, "à remplir").max(max, "trop long");
+export const optionnel = <T extends z.ZodTypeAny>(s: T) => z.preprocess(vide, s.nullable()).optional();
 
-const schemaMatricule = z
+export const schemaMatricule = z
   .string()
   .trim()
   .transform((s) => s.toUpperCase().replace(/\s+/g, ""))
   .pipe(z.string().regex(/^[A-Z0-9][A-Z0-9\-/.]{2,29}$/, "matricule illisible (lettres et chiffres, 3 à 30 caractères)"));
 
 /** E-mail saisi pour un compte : jamais une adresse du domaine de démonstration (réservée au semis). */
-const schemaEmailCompte = z
+export const schemaEmailCompte = z
   .string()
   .trim()
   .toLowerCase()
@@ -871,14 +880,14 @@ const schemaModificationCompte = z.object({
 });
 
 /** Téléphone saisi → chiffres normalisés (sans 225) ; refuse l'illisible. */
-function telephoneSaisi(brut: string | null | undefined): string | null {
+export function telephoneSaisi(brut: string | null | undefined): string | null {
   if (!brut) return null;
   const n = normaliserTelephone(brut);
   if (n.length < 8 || n.length > 15) throw invalide("Numéro de téléphone illisible (10 chiffres, ex. 07 07 12 34 56).");
   return n;
 }
 
-async function verifierUnicite(champs: { matricule?: string | null; email?: string | null }, sauf?: number) {
+export async function verifierUnicite(champs: { matricule?: string | null; email?: string | null }, sauf?: number) {
   if (champs.matricule) {
     const [x] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.matricule, champs.matricule));
     if (x && x.id !== sauf) throw new ErreurHttp(409, `Le matricule ${champs.matricule} a déjà un compte.`);
@@ -953,7 +962,7 @@ function decouper(ligne: string, sep: string): string[] {
   return cellules;
 }
 
-const espaces = (s: string) => s.replace(/\s+/g, " ").trim();
+export const espaces = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Téléphone d'un fichier : normalisé, avec les pièges d'Excel (zéro initial perdu). */
 function telephoneImporte(brut: string): { tel: string | null; avertissement?: string } {
@@ -1839,7 +1848,11 @@ export function enregistrerAdmin(app: Express) {
         await tx.insert(passagesClasses).values({ utilisateurId: avant.id, classeId: maj.classeId ?? null, depuis: new Date() });
       });
       oublierUtilisateur(avant.id);
-      if (maj.actif === false) await fermerAutresSessions(avant.id);
+      if (maj.actif === false) {
+        await fermerAutresSessions(avant.id);
+        // Double casquette : l'autre compte ne s'ouvre que depuis celui-ci, il se ferme avec lui.
+        if (avant.compteLieId) await fermerAutresSessions(avant.compteLieId);
+      }
       const action = maj.actif === false ? "compte_desactive" : maj.actif === true ? "compte_reactive" : maj.role ? "role_change" : "compte_modifie";
       await journaliser(u, action, { compteId: avant.id, champs: Object.keys(maj), ...(maj.role ? { de: avant.role, vers: maj.role } : {}) });
       res.json(await compteParId(avant.id));
@@ -1856,10 +1869,89 @@ export function enregistrerAdmin(app: Express) {
       if (!c.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
       // Un nouveau code couperait l'écran de la salle : il se réinstalle avec son propre lien.
       if (c.role === "salle") throw invalide("Un écran de salle ne reçoit pas de code : utilisez « Installer l'écran de la salle ».");
+      if (c.compteLieId && !c.matricule && !c.email && !c.telephone) {
+        throw invalide("Ce compte est une double casquette : il s'ouvre depuis le compte formateur de la personne, sans code.");
+      }
       const { code, lien } = await reinitialiserCode(c.id, u.id);
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
       const reponse: CodeRemis = { code, lien, whatsapp: lienWhatsApp(c.telephone, messageCode(c, code, lien, expireLe)), expireLe: expireLe.toISOString() };
       res.json(reponse);
+    }),
+  );
+
+  // ── Double casquette ─────────────────────────────────────────────────────
+  // Un formateur qui est aussi de la direction (ou de la vie scolaire) : la
+  // direction lui crée un second compte, lié, sans identifiant ni code. Il
+  // passe de l'un à l'autre depuis son menu (POST /api/auth/casquette).
+
+  app.post(
+    `${P}/comptes/:id(\\d+)/casquette`,
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const f = await compteGere(u, idParam(req));
+      const { role, siteId } = valider(
+        z.object({ role: z.enum(["admin", "vie_scolaire"]), siteId: z.number().int().positive().nullable().optional() }),
+        req.body,
+      );
+      if (f.role !== "formateur") throw invalide("La double casquette se donne à un compte formateur.");
+      if (!f.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
+      if (f.compteLieId) throw new ErreurHttp(409, "Ce formateur a déjà une double casquette. Retirez-la d'abord pour en donner une autre.");
+      let site: number | null = null;
+      if (role === "vie_scolaire") {
+        if (!siteId) throw invalide("Choisissez le campus de la vie scolaire.");
+        site = (await siteGere(u, siteId)).id;
+      }
+      // Mot de passe aléatoire jamais communiqué, et aucun identifiant : ce compte ne s'ouvre que par la bascule.
+      const hash = await hacher(crypto.randomBytes(24).toString("base64url"));
+      const casquette = await db.transaction(async (tx) => {
+        const [c] = await tx
+          .insert(utilisateurs)
+          .values({
+            role,
+            prenom: f.prenom,
+            nom: f.nom,
+            motDePasseHash: hash,
+            doitChangerMotDePasse: false,
+            siteId: site,
+            photoUrl: f.photoUrl,
+            fuseau: f.fuseau,
+            localisation: f.localisation,
+            charteAccepteeLe: f.charteAccepteeLe,
+            compteLieId: f.id,
+          })
+          .returning();
+        await tx.update(utilisateurs).set({ compteLieId: c.id }).where(eq(utilisateurs.id, f.id));
+        return c;
+      });
+      oublierUtilisateur(f.id);
+      await journaliser(u, "casquette_donnee", { formateurId: f.id, compteId: casquette.id, role, siteId: site });
+      res.status(201).json(await compteParId(f.id));
+    }),
+  );
+
+  app.delete(
+    `${P}/comptes/:id(\\d+)/casquette`,
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const a = await compteGere(u, idParam(req));
+      if (!a.compteLieId) throw invalide("Ce compte n'a pas de double casquette.");
+      const [b] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, a.compteLieId));
+      if (u.id === a.id || u.id === b?.id) {
+        throw interdit("Vous portez cette casquette en ce moment : retirez-la depuis un autre compte de la direction.");
+      }
+      // Le compte « casquette » (sans identifiant propre) ne sert plus à rien : il est désactivé.
+      const sansIdentifiant = (c: Utilisateur | undefined) => Boolean(c && !c.matricule && !c.email && !c.telephone);
+      const aDesactiver = [a, b].filter((c): c is Utilisateur => sansIdentifiant(c)).map((c) => c.id);
+      await db.transaction(async (tx) => {
+        await tx.update(utilisateurs).set({ compteLieId: null }).where(inArray(utilisateurs.id, [a.id, ...(b ? [b.id] : [])]));
+        if (aDesactiver.length) await tx.update(utilisateurs).set({ actif: false }).where(inArray(utilisateurs.id, aDesactiver));
+      });
+      for (const id of [a.id, ...(b ? [b.id] : [])]) oublierUtilisateur(id);
+      for (const id of aDesactiver) await fermerAutresSessions(id);
+      await journaliser(u, "casquette_retiree", { compteId: a.id, lieId: b?.id ?? null });
+      res.json(await compteParId(a.id));
     }),
   );
 
@@ -2804,7 +2896,7 @@ export function enregistrerAdmin(app: Express) {
         return { id: d.devoir_id, titre: d.titre, coursCode: d.cours_code, type: d.type, dateLimite: iso(d.date_limite)!, etat, note: n, bareme: d.bareme };
       });
       const listeSuivis = await db
-        .select({ id: suivis.id, texte: suivis.texte, creeLe: suivis.creeLe, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
+        .select({ id: suivis.id, type: suivis.type, texte: suivis.texte, creeLe: suivis.creeLe, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
         .from(suivis)
         .innerJoin(utilisateurs, eq(utilisateurs.id, suivis.auteurId))
         .where(eq(suivis.etudiantId, e.id))
@@ -2835,7 +2927,7 @@ export function enregistrerAdmin(app: Express) {
         presences: { resume: resumeDe(presencesEtudiant.rows), seances: presencesEtudiant.rows.slice(0, 40).map(versLignePresence) },
         devoirs: listeDevoirs,
         notes: moyennesDe(devoirs),
-        suivis: listeSuivis.map((s) => ({ id: s.id, texte: s.texte, auteur: `${s.prenom} ${s.nom}`, creeLe: s.creeLe.toISOString() })),
+        suivis: listeSuivis.map((s) => ({ id: s.id, type: s.type, texte: s.texte, auteur: `${s.prenom} ${s.nom}`, creeLe: s.creeLe.toISOString() })),
         releve,
         whatsapp: numeroWhatsApp(e.telephone) ? lienWhatsApp(e.telephone, entreeMessage(e.prenom, info?.site ?? null)) : null,
       };
@@ -2849,9 +2941,15 @@ export function enregistrerAdmin(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
-      const { texte } = valider(z.object({ texte: z.string().trim().min(2, "écrivez quelques mots").max(2000, "note trop longue (2 000 caractères)") }), req.body);
-      const [s] = await db.insert(suivis).values({ etudiantId: e.id, auteurId: u.id, texte }).returning();
-      res.status(201).json({ id: s.id, texte: s.texte, auteur: `${u.prenom} ${u.nom}`, creeLe: s.creeLe.toISOString() });
+      const { texte, type } = valider(
+        z.object({
+          texte: z.string().trim().min(2, "écrivez quelques mots").max(2000, "note trop longue (2 000 caractères)"),
+          type: z.enum(TYPES_SUIVI).default("note"),
+        }),
+        req.body,
+      );
+      const [s] = await db.insert(suivis).values({ etudiantId: e.id, auteurId: u.id, texte, type }).returning();
+      res.status(201).json({ id: s.id, type, texte: s.texte, auteur: `${u.prenom} ${u.nom}`, creeLe: s.creeLe.toISOString() });
     }),
   );
 

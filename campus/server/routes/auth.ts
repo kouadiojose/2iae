@@ -86,6 +86,32 @@ export function enregistrerAuth(app: Express) {
     });
   });
 
+  // Double casquette : passer sur l'autre compte de la personne (formateur ↔ direction
+  // ou vie scolaire) sans se reconnecter. Le lien est posé par la direction.
+  app.post(
+    "/api/auth/casquette",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (!u.compteLieId) throw new ErreurHttp(400, "Ce compte n'a pas d'autre casquette.");
+      const [autre] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, u.compteLieId));
+      if (!autre || !autre.actif || autre.compteLieId !== u.id) {
+        throw new ErreurHttp(403, "Votre autre casquette n'est plus disponible. Demandez à la direction de la rétablir.");
+      }
+      // Téléphone partagé (cookie de session) : on le reste.
+      const sessionNavigateur = !req.session.cookie.expires;
+      await new Promise<void>((ok, ko) => req.session.regenerate((e) => (e ? ko(e) : ok())));
+      req.session.utilisateurId = autre.id;
+      if (sessionNavigateur) req.session.cookie.expires = undefined;
+      else req.session.cookie.maxAge = dureeSession(autre.role);
+      const maintenant = new Date();
+      await db.update(utilisateurs).set({ derniereConnexion: maintenant }).where(eq(utilisateurs.id, autre.id));
+      await db.insert(journal).values({ utilisateurId: u.id, action: "casquette_changee", details: { vers: autre.id, role: autre.role, ip: req.ip } });
+      oublierUtilisateur(autre.id);
+      res.json(await versMoi({ ...autre, derniereConnexion: maintenant }));
+    }),
+  );
+
   app.get(
     "/api/auth/moi",
     route(async (req, res) => {

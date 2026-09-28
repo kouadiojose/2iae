@@ -12,7 +12,7 @@ import { eq, or } from "drizzle-orm";
 import { db, pool } from "./db";
 import { config, estProduction } from "./config";
 import { ErreurHttp } from "./http";
-import { utilisateurs, sites, classes, type Utilisateur, type Role, type Moi } from "@shared/schema";
+import { utilisateurs, sites, classes, LIBELLES_ROLES, type Utilisateur, type Role, type Moi, type Casquette } from "@shared/schema";
 
 declare module "express-session" {
   interface SessionData {
@@ -270,7 +270,22 @@ export async function versMoi(u: Utilisateur): Promise<Moi> {
         .from(classes)
         .where(eq(classes.id, u.classeId))
     : [];
-  return { ...reste, site: site ?? null, classe: classe ?? null };
+  return { ...reste, site: site ?? null, classe: classe ?? null, casquette: await casquetteDe(u) };
+}
+
+/**
+ * L'autre casquette d'une personne (double casquette) : le compte lié, s'il
+ * est actif et lié en retour. Sinon null (lien retiré, compte désactivé).
+ */
+export async function casquetteDe(u: Pick<Utilisateur, "id" | "compteLieId">): Promise<Casquette | null> {
+  if (!u.compteLieId) return null;
+  const [l] = await db
+    .select({ id: utilisateurs.id, role: utilisateurs.role, actif: utilisateurs.actif, lie: utilisateurs.compteLieId, site: sites.nomCourt })
+    .from(utilisateurs)
+    .leftJoin(sites, eq(sites.id, utilisateurs.siteId))
+    .where(eq(utilisateurs.id, u.compteLieId));
+  if (!l || !l.actif || l.lie !== u.id) return null;
+  return { id: l.id, role: l.role, libelle: l.site ? `${LIBELLES_ROLES[l.role]} · ${l.site}` : LIBELLES_ROLES[l.role], site: l.site ?? null };
 }
 
 /** Champs publics d'une personne, pour les listes (auteur d'un message, formateur…). */

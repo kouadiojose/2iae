@@ -19,6 +19,8 @@ import { enregistrerShowreel } from "./showreel";
 import { enregistrerEquipe } from "./equipe";
 import { enregistrerAndroid } from "./android";
 import { enregistrerInvite } from "./live-invite";
+import { enregistrerCrm } from "./crm";
+import { enregistrerScolarite } from "./scolarite";
 import { enregistrerVisioCampus } from "../visio-campus";
 
 export function enregistrerRoutes(app: Express) {
@@ -35,6 +37,8 @@ export function enregistrerRoutes(app: Express) {
   enregistrerAnnonces(app);
   enregistrerAgenda(app);
   enregistrerAdmin(app);
+  enregistrerCrm(app);
+  enregistrerScolarite(app);
   enregistrerIa(app);
   enregistrerPush(app);
   enregistrerProgramme(app);

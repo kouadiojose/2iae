@@ -281,10 +281,14 @@ function LigneCompte({ c, coche, onCocher, onOuvrir }: { c: CompteLigne; coche: 
               {c.prenom} {c.nom}
             </span>
             {c.role !== "etudiant" && <Badge ton="encre">{LIBELLES_ROLES[c.role]}</Badge>}
+            {c.casquette && <Badge ton="orange">Double casquette</Badge>}
           </span>
           <span className="mt-0.5 block truncate text-sm text-texte-pale">
             {[
-              c.matricule ?? c.email ?? (c.role !== "etudiant" && c.role !== "salle" && !c.telephone && !c.active ? "identifiant choisi à l'activation" : null),
+              c.matricule ??
+                c.email ??
+                (c.casquette && !c.telephone ? `s'ouvre depuis son compte ${LIBELLES_ROLES[c.casquette.role].toLowerCase()}` : null) ??
+                (c.role !== "etudiant" && c.role !== "salle" && !c.telephone && !c.active ? "identifiant choisi à l'activation" : null),
               c.role === "etudiant" ? c.classe : c.site ? `Campus ${c.site}` : c.localisation,
               telephoneLisible(c.telephone),
             ]

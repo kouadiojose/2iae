@@ -8,6 +8,8 @@
 //   GET  /api/campus/vitrine     la vitrine + l'adresse du campus
 //   GET  /api/campus/programme   l'emploi du temps publié par la direction
 //   POST /api/campus/rafraichir  webhook signé du campus : « relis la vitrine »
+//   POST /api/campus/preinscrits          passerelle signée : les contacts en cours du pipeline
+//   POST /api/campus/preinscrits/inscrit  passerelle signée : le préinscrit est inscrit au campus
 //
 // Règle d'or : le site ne tombe JAMAIS avec le campus. Chaque lecture est
 // bornée à 5 s ; une lecture ratée conserve la dernière version connue ; sans
@@ -21,8 +23,12 @@
 //                          webhook répond 503 et seul le cache de 5 min joue)
 
 import crypto from "crypto";
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { z } from "zod";
+import { desc, inArray, sql } from "drizzle-orm";
+import { db } from "./db";
+import { leads } from "@shared/schema";
+import { changerStage } from "./crm";
 import type {
   EvenementCampus,
   ProgrammeCampus,
@@ -461,9 +467,111 @@ const schemaEvenement = z.object({
 /** Signatures déjà reçues dans la fenêtre : un message n'est accepté qu'une fois. */
 const signaturesVues = new Map<string, number>();
 
+/**
+ * Message signé de la passerelle des préinscrits : même contrôle que le
+ * webhook de la vitrine (signature HMAC du corps brut, horodatage de moins de
+ * 5 minutes, message unique). Renvoie le corps lu, ou null après avoir répondu.
+ */
+function lireMessageCampus(req: Request, res: Response): Record<string, unknown> | null {
+  const secret = process.env.CAMPUS_WEBHOOK_SECRET;
+  if (!secret) {
+    res.status(503).json({ message: "Le lien avec le campus n'est pas configuré sur ce site." });
+    return null;
+  }
+  const corps: unknown = req.body;
+  if (!Buffer.isBuffer(corps) || corps.length === 0) {
+    res.status(400).json({ message: "Message vide." });
+    return null;
+  }
+  const entete = req.header("x-campus-signature");
+  if (!signatureValide(corps, entete, secret)) {
+    console.warn("⚠️  Passerelle du campus refusée : signature invalide.");
+    res.status(401).json({ message: "Signature invalide." });
+    return null;
+  }
+  let message: Record<string, unknown>;
+  try {
+    message = JSON.parse(corps.toString("utf8"));
+  } catch {
+    res.status(400).json({ message: "Message du campus illisible." });
+    return null;
+  }
+  const horodatage = Date.parse(String(message.horodatage ?? ""));
+  const maintenant = Date.now();
+  if (!Number.isFinite(horodatage) || Math.abs(maintenant - horodatage) > FENETRE_WEBHOOK_MS) {
+    res.status(401).json({ message: "Message trop ancien ou mal daté." });
+    return null;
+  }
+  signaturesVues.forEach((expire, sig) => {
+    if (expire < maintenant) signaturesVues.delete(sig);
+  });
+  const empreinte = (entete ?? "").trim().toLowerCase();
+  if (signaturesVues.has(empreinte)) {
+    res.status(409).json({ message: "Message déjà reçu." });
+    return null;
+  }
+  signaturesVues.set(empreinte, horodatage + FENETRE_WEBHOOK_MS);
+  return message;
+}
+
+/** Étapes du pipeline montrées au campus (les contacts en cours, pas les inscrits ni les perdus). */
+const ETAPES_EN_COURS = ["preinscrit", "visite", "relance", "contacte", "nouveau"];
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 export function enregistrerCampus(app: Express): void {
+  // ── Passerelle des préinscrits (campus → site, messages signés) ──────────
+  app.post("/api/campus/preinscrits", async (req, res) => {
+    const message = lireMessageCampus(req, res);
+    if (!message) return;
+    try {
+      const liste = await db
+        .select()
+        .from(leads)
+        .where(inArray(leads.stage, ETAPES_EN_COURS))
+        .orderBy(
+          sql`array_position(ARRAY['preinscrit','visite','relance','contacte','nouveau']::text[], ${leads.stage})`,
+          desc(leads.createdAt),
+        )
+        .limit(300);
+      res.json({
+        preinscrits: liste.map((l) => ({
+          id: l.id,
+          nom: l.name,
+          telephone: l.phone,
+          email: l.email,
+          campus: l.campus,
+          filiere: l.filiere,
+          etape: l.stage,
+          source: l.source,
+          notes: l.notes,
+          creeLe: l.createdAt ? l.createdAt.toISOString() : null,
+        })),
+      });
+    } catch (e) {
+      console.error("Passerelle des préinscrits : lecture impossible :", (e as Error).message);
+      res.status(500).json({ message: "Lecture des préinscrits impossible." });
+    }
+  });
+
+  app.post("/api/campus/preinscrits/inscrit", async (req, res) => {
+    const message = lireMessageCampus(req, res);
+    if (!message) return;
+    const texte = (v: unknown, max = 200) => String(v ?? "").trim().slice(0, max);
+    const leadId = texte(message.leadId, 64);
+    if (!leadId) return res.status(400).json({ message: "Préinscrit manquant." });
+    const note = `Inscrit au campus numérique par ${texte(message.par) || "la vie scolaire"} : ${texte(message.nom)}, matricule ${texte(message.matricule, 40)}, ${texte(message.classe)}.`;
+    try {
+      const lead = await changerStage(leadId, "inscrit", note);
+      if (!lead) return res.status(404).json({ message: "Préinscrit introuvable." });
+      console.log(`🎓 Passerelle : le préinscrit ${leadId} est inscrit au campus.`);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("Passerelle des préinscrits : mise à jour impossible :", (e as Error).message);
+      res.status(500).json({ message: "Mise à jour du préinscrit impossible." });
+    }
+  });
+
   app.get("/api/campus/vitrine", async (_req, res) => {
     const vitrine = await lireVitrine();
     const maintenant = new Date().toISOString();

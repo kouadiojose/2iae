@@ -198,9 +198,11 @@ export default function Header() {
                 Nos Tarifs
               </Button>
             </Link>
-            <Link
+            {/* Adresse externe : un vrai lien <a>, car le <Link> du routeur intercepte le clic. */}
+            <a
               href="https://campus.2iae.com"
               target="_blank"
+              rel="noopener noreferrer"
               className="hidden xl:block"
             >
               <Button
@@ -209,7 +211,7 @@ export default function Header() {
               >
                 Campus Numérique
               </Button>
-            </Link>
+            </a>
           </div>
 
           {/* Mobile Menu */}
@@ -284,14 +286,14 @@ export default function Header() {
                       Nos Tarifs
                     </Button>
                   </Link>
-                  <Link href="https://campus.2iae.com" target="_blank">
+                  <a href="https://campus.2iae.com" target="_blank" rel="noopener noreferrer">
                     <Button
                       className="bg-secondary hover:bg-secondary/90 text-secondary-foreground w-full"
                       data-testid="button-mobile-campus"
                     >
                       Campus Numérique 2IAE
                     </Button>
-                  </Link>
+                  </a>
                 </div>
               </div>
             </SheetContent>

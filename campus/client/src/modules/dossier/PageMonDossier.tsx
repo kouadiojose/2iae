@@ -298,17 +298,12 @@ function LignePiece({ p, enCours, occupe, envoyee, onFichier }: { p: PieceDossie
         >
           <Icone className="h-5 w-5" aria-hidden />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
           <p className="text-base font-bold leading-snug">{p.libelle}</p>
-          {p.statut === "a_verifier" && (
-            <p className="mt-0.5 text-sm text-texte-pale">{envoyee ? "Envoyée, la vie scolaire va la vérifier." : "En cours de vérification."}</p>
-          )}
-          {p.statut === "recue" && <p className="mt-0.5 text-sm text-succes">C'est bon, rien à faire.</p>}
-          {p.statut === "manquante" && <p className="mt-0.5 text-sm text-texte-pale">Pas encore reçue.</p>}
+          <Badge ton={etat.ton}>{p.statut === "a_verifier" ? "En cours de vérification" : etat.texte}</Badge>
+          {p.statut === "a_verifier" && envoyee && <p className="text-sm text-texte-pale">Envoyée, la vie scolaire va la vérifier.</p>}
+          {p.statut === "recue" && <p className="text-sm text-succes">C'est bon, rien à faire.</p>}
         </div>
-        <Badge ton={etat.ton} className="shrink-0">
-          {p.statut === "a_verifier" ? "En vérification" : etat.texte}
-        </Badge>
       </div>
       {p.statut === "refusee" && (
         <p className="rounded-xl bg-danger-clair px-3.5 py-2.5 text-[15px] text-danger">

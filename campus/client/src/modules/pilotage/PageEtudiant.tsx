@@ -4,7 +4,7 @@
 // relevé pour les parents), identité et famille, pièces, scolarité, suivi.
 // L'onglet ouvert est dans l'adresse (?onglet=suivi) ; seuls les onglets
 // ouverts sont chargés.
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { MessageCircle, KeyRound, Pencil, Link2, Link2Off, Copy, ExternalLink, ArrowLeft, Share2, ChevronRight, Send, Phone } from "lucide-react";
@@ -161,18 +161,7 @@ export default function PageEtudiant({ id }: { id: string }) {
         {crm && crm.contacts.length > 0 && <Contacts contacts={crm.contacts} />}
       </header>
 
-      <Onglets<Onglet>
-        valeur={onglet}
-        onChange={changerOnglet}
-        className="print:hidden [&>button]:min-h-[44px]"
-        options={[
-          { valeur: "apercu", libelle: "Aperçu" },
-          { valeur: "identite", libelle: "Identité et famille" },
-          { valeur: "pieces", libelle: "Pièces", compteur: piecesATraiter },
-          { valeur: "scolarite", libelle: "Scolarité" },
-          { valeur: "suivi", libelle: "Suivi", compteur: relancesOuvertes },
-        ]}
-      />
+      <BarreOnglets onglet={onglet} onChange={changerOnglet} pieces={piecesATraiter} relances={relancesOuvertes} />
 
       <div role="tabpanel" className="flex min-w-0 flex-col gap-6">
         {onglet === "apercu" ? (
@@ -211,6 +200,32 @@ export default function PageEtudiant({ id }: { id: string }) {
       />
       <FenetreJustifier cible={justifier} onFermer={() => setJustifier(null)} />
     </Page>
+  );
+}
+
+/** Les onglets du dossier ; sur téléphone, l'onglet ouvert reste visible dans la barre qui défile. */
+function BarreOnglets({ onglet, onChange, pieces, relances }: { onglet: Onglet; onChange: (o: Onglet) => void; pieces: number; relances: number }) {
+  const cadre = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const liste = cadre.current?.querySelector<HTMLElement>('[role="tablist"]');
+    const actif = liste?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (liste && actif) liste.scrollLeft = Math.max(0, actif.offsetLeft - liste.clientWidth / 2 + actif.clientWidth / 2);
+  }, [onglet]);
+  return (
+    <div ref={cadre} className="min-w-0 print:hidden">
+      <Onglets<Onglet>
+        valeur={onglet}
+        onChange={onChange}
+        className="[&>button]:min-h-[44px]"
+        options={[
+          { valeur: "apercu", libelle: "Aperçu" },
+          { valeur: "identite", libelle: "Identité et famille" },
+          { valeur: "pieces", libelle: "Pièces", compteur: pieces },
+          { valeur: "scolarite", libelle: "Scolarité" },
+          { valeur: "suivi", libelle: "Suivi", compteur: relances },
+        ]}
+      />
+    </div>
   );
 }
 

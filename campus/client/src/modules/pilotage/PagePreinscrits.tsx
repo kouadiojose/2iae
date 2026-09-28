@@ -60,8 +60,8 @@ export default function PagePreinscrits() {
         [p.nom, p.email, p.campus, p.filiere, p.notes].some((x) => normaliser(x).includes(t)) ||
         (chiffres.length >= 3 && (p.telephone ?? "").replace(/\D/g, "").includes(chiffres)),
     );
-    // Les plus récents d'abord dans chaque étape.
-    const tries = [...liste].sort((a, b) => (b.creeLe ?? "").localeCompare(a.creeLe ?? ""));
+    // Dans chaque étape : ceux qui restent à inscrire d'abord, les plus récents en tête.
+    const tries = [...liste].sort((a, b) => Number(Boolean(a.etudiant)) - Number(Boolean(b.etudiant)) || (b.creeLe ?? "").localeCompare(a.creeLe ?? ""));
     const connues = ETAPES.map((e) => ({ ...e, lignes: tries.filter((p) => p.etape === e.etape) }));
     const autres = [...new Set(tries.map((p) => p.etape).filter((x) => !ETAPES.some((e) => e.etape === x)))].map((etape) => ({
       etape,
@@ -106,7 +106,7 @@ export default function PagePreinscrits() {
             <h2 className="text-xl font-extrabold">La liste du site n'est pas disponible pour l'instant</h2>
             {data?.message && <p className="text-[15px] leading-relaxed text-texte-doux">{data.message}</p>}
             <p className="text-[15px] leading-relaxed text-texte-doux">
-              Rien ne bloque pour autant : vous pouvez inscrire un étudiant à la main, avec tout son dossier, dès maintenant.
+              Rien ne bloque pour autant&nbsp;: vous pouvez inscrire un étudiant à la main, avec tout son dossier, dès maintenant.
             </p>
             <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
               <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px]">
@@ -138,7 +138,7 @@ export default function PagePreinscrits() {
                 type="search"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Nom, téléphone, e-mail, campus ou filière"
+                placeholder="Nom, téléphone, campus, filière…"
                 aria-label="Rechercher un préinscrit"
                 className="min-h-[52px] w-full rounded-xl border border-ligne bg-white pl-12 pr-4 text-base outline-none focus:border-orange focus:ring-2 focus:ring-orange/20"
               />

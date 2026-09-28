@@ -143,7 +143,7 @@ function messageLisible(message: string, blocs: number[]): string {
   const [, champ, texte] = m;
   const r = /^responsables\.(\d+)\.(\w+)$/.exec(champ);
   const libelle = r ? `${LIBELLES_CHAMPS_RESPONSABLE[r[2]] ?? r[2]} du responsable ${(blocs[Number(r[1])] ?? Number(r[1])) + 1}` : LIBELLES_CHAMPS[champ];
-  return libelle ? `${libelle} : ${texte}.` : message;
+  return libelle ? `${libelle}\u00a0: ${texte}.` : message;
 }
 
 function libelleReference(m: MoyenPaiement): string {
@@ -233,14 +233,16 @@ export default function PageNouvelEtudiant() {
   const montantLu = lireMontant(f.montant);
   const suggestion = f.classeId ? matricule.data?.matricule ?? null : null;
   const requisesRemises = PIECES_REQUISES.filter((p) => f.pieces.includes(p)).length;
+  // Campus écrit sur le site mais pas reconnu parmi les nôtres : on le rappelle en clair.
+  const campusInconnu = Boolean(preinscrit.campus) && !siteDuFiltre && !classeChoisie;
 
   const inscrire = async () => {
     setErreur(null);
-    if (!f.prenom.trim() || !f.nom.trim()) return setErreur("Indiquez le prénom et le nom de l'étudiant (section « Identité »).");
-    if (!f.classeId) return setErreur("Choisissez la classe de l'étudiant (section « Scolarité »).");
+    if (!f.prenom.trim() || !f.nom.trim()) return setErreur("Indiquez le prénom et le nom de l'étudiant (section «\u00a0Identité\u00a0»).");
+    if (!f.classeId) return setErreur("Choisissez la classe de l'étudiant (section «\u00a0Scolarité\u00a0»).");
     const incomplet = f.responsables.findIndex((r) => !r.nom.trim() && (r.telephone.trim() || r.email.trim() || r.profession.trim()));
     if (incomplet >= 0) return setErreur(`Indiquez le nom du responsable ${incomplet + 1}, ou retirez ce bloc.`);
-    if (f.montant.trim() && !montantLu) return setErreur("Le montant du premier versement est illisible : tapez un nombre, par exemple 50 000.");
+    if (f.montant.trim() && !montantLu) return setErreur("Le montant du premier versement est illisible\u00a0: tapez un nombre, par exemple 50\u00a0000.");
 
     const vide = (s: string) => s.trim() || null;
     const blocs: number[] = [];
@@ -278,7 +280,7 @@ export default function PageNouvelEtudiant() {
       const r = await post<EtudiantCree>("/api/pilotage/etudiants", corps);
       // Le reçu s'ouvre tout de suite (encore dans le geste du clic, sinon le navigateur bloque l'onglet).
       const recu = r.versementId ? window.open(`/pilotage/recus/${r.versementId}`, "_blank") : null;
-      toast(`${r.compte.prenom} ${r.compte.nom} est inscrit${f.sexe === "F" ? "e" : ""} : matricule ${r.matricule}`);
+      toast(`${r.compte.prenom} ${r.compte.nom} est inscrit${f.sexe === "F" ? "e" : ""}\u00a0: matricule ${r.matricule}`);
       setCree({ r, recuBloque: Boolean(r.versementId) && !recu, sexe: f.sexe, classe: r.compte.classe ?? classeChoisie?.nom ?? null });
       setCodeVisible(true);
       window.scrollTo({ top: 0 });
@@ -322,7 +324,7 @@ export default function PageNouvelEtudiant() {
           {cree.recuBloque && (
             <p className="flex items-start gap-2 rounded-xl bg-white px-4 py-3 text-[15px] text-texte-doux">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-orange-fonce" aria-hidden="true" />
-              Le navigateur a bloqué l'ouverture du reçu : ouvrez-le avec le bouton ci-dessous.
+              Le navigateur a bloqué l'ouverture du reçu&nbsp;: ouvrez-le avec le bouton ci-dessous.
             </p>
           )}
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -371,7 +373,7 @@ export default function PageNouvelEtudiant() {
       <EnTetePage
         etiquette="Pilotage · Étudiants"
         titre="Inscrire un étudiant"
-        sousTitre="Tout le dossier en une fois. Seuls le nom, le prénom et la classe sont obligatoires : le reste pourra être complété dans son dossier."
+        sousTitre="Tout le dossier en une fois. Seuls le nom, le prénom et la classe sont obligatoires, le reste pourra être complété dans son dossier."
       />
 
       {preinscrit.leadId && (
@@ -380,7 +382,7 @@ export default function PageNouvelEtudiant() {
           <div className="min-w-0">
             <p className="font-bold text-encre">Préinscrit du site 2iae.com</p>
             <p className="mt-0.5 text-[15px] text-texte-doux">
-              Ses coordonnées viennent de sa préinscription : vérifiez-les avec lui. Une fois inscrit, il apparaît comme « inscrit » dans le suivi du site.
+              Ses coordonnées viennent de sa préinscription&nbsp;: vérifiez-les avec lui. Une fois inscrit, il apparaît comme «&nbsp;inscrit&nbsp;» dans le suivi du site.
             </p>
           </div>
         </div>
@@ -456,18 +458,18 @@ export default function PageNouvelEtudiant() {
                   </button>
                 </p>
               )}
-              {(preinscrit.filiere || (preinscrit.campus && !siteDuFiltre && !classeChoisie)) && (
+              {(preinscrit.filiere || campusInconnu) && (
                 <p className="rounded-xl bg-creme px-4 py-3 text-sm text-texte-doux">
                   {preinscrit.filiere && (
                     <>
-                      Filière souhaitée sur le site : <strong>{preinscrit.filiere}</strong>
-                      {preinscrit.campus ? "." : ""}
+                      Filière souhaitée sur le site&nbsp;: <strong>{preinscrit.filiere}</strong>
+                      {campusInconnu ? "." : ""}
                     </>
                   )}
-                  {preinscrit.filiere && preinscrit.campus && " "}
-                  {preinscrit.campus && (
+                  {preinscrit.filiere && campusInconnu && " "}
+                  {campusInconnu && (
                     <>
-                      Campus souhaité : <strong>{preinscrit.campus}</strong>
+                      Campus souhaité&nbsp;: <strong>{preinscrit.campus}</strong>
                     </>
                   )}
                 </p>
@@ -478,16 +480,16 @@ export default function PageNouvelEtudiant() {
                 libelle="Matricule"
                 value={f.matricule}
                 onChange={maj("matricule")}
-                placeholder={suggestion ?? (f.classeId ? "Calcul du matricule…" : "Proposé après le choix de la classe")}
+                placeholder={suggestion ?? (f.classeId ? "…" : "")}
                 aide={
                   suggestion && !f.matricule.trim() ? (
                     <>
-                      Laissez vide pour utiliser ce matricule : <span className="font-mono font-semibold text-encre">{suggestion}</span>
+                      Laissez vide pour utiliser ce matricule&nbsp;: <span className="font-mono font-semibold text-encre">{suggestion}</span>
                     </>
                   ) : f.matricule.trim() ? (
                     "C'est son identifiant de connexion."
                   ) : (
-                    "Choisissez la classe : un matricule vous sera proposé."
+                    "Choisissez la classe\u00a0: un matricule vous sera proposé."
                   )
                 }
                 className="[&_input]:font-mono"
@@ -513,7 +515,7 @@ export default function PageNouvelEtudiant() {
                 aide="Sert à recevoir un lien en cas de code oublié."
                 autoComplete="off"
               />
-              <Champ libelle="Adresse" value={f.adresse} onChange={maj("adresse")} placeholder="Commune, quartier" aide="Par exemple : Cocody, Riviera 3." />
+              <Champ libelle="Adresse" value={f.adresse} onChange={maj("adresse")} placeholder="Commune, quartier" aide="Par exemple&nbsp;: Cocody, Riviera 3." />
             </div>
           </Section>
 
@@ -568,7 +570,7 @@ export default function PageNouvelEtudiant() {
           <Section
             numero={5}
             titre="Pièces remises aujourd'hui"
-            description="Cochez les pièces reçues au guichet : elles sont notées comme vérifiées. Les autres restent à fournir."
+            description="Cochez les pièces reçues au guichet&nbsp;: elles sont notées comme vérifiées. Les autres restent à fournir."
             action={
               <button
                 type="button"
@@ -589,7 +591,7 @@ export default function PageNouvelEtudiant() {
           {/* 6. Frais et premier versement */}
           <Section numero={6} titre="Frais et premier versement">
             {!f.classeId ? (
-              <p className="rounded-xl bg-creme px-4 py-3 text-[15px] text-texte-pale">Choisissez d'abord la classe : son échéancier s'affichera ici.</p>
+              <p className="rounded-xl bg-creme px-4 py-3 text-[15px] text-texte-pale">Choisissez d'abord la classe&nbsp;: son échéancier s'affichera ici.</p>
             ) : frais.isLoading ? (
               <Squelette className="h-24" />
             ) : fraisClasse && avecFrais ? (
@@ -633,7 +635,7 @@ export default function PageNouvelEtudiant() {
             <div className="flex flex-col gap-4 rounded-2xl border border-ligne-douce p-4">
               <div>
                 <h3 className="text-[15px] font-extrabold">Premier versement (facultatif)</h3>
-                <p className="text-[13px] text-texte-gris">Encaissé aujourd'hui : un reçu numéroté est créé et s'ouvre pour l'impression.</p>
+                <p className="text-[13px] text-texte-gris">Encaissé à l'inscription&nbsp;: un reçu numéroté est créé et s'ouvre pour l'impression.</p>
               </div>
               {fraisClasse && avecFrais && !f.montant.trim() && (
                 <button
@@ -742,15 +744,15 @@ export default function PageNouvelEtudiant() {
 function Section({ numero, titre, description, action, children }: { numero: number; titre: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return (
     <Carte className="flex flex-col gap-4 p-4 sm:p-6">
-      <div className="flex items-start gap-3">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-clair font-mono text-sm font-bold text-orange-profond" aria-hidden="true">
-          {numero}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-extrabold leading-tight">{titre}</h2>
-          {description && <p className="mt-1 text-sm text-texte-pale">{description}</p>}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-3">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-clair font-mono text-sm font-bold text-orange-profond" aria-hidden="true">
+            {numero}
+          </span>
+          <h2 className="min-w-0 flex-1 text-xl font-extrabold leading-tight">{titre}</h2>
+          {action}
         </div>
-        {action}
+        {description && <p className="text-sm text-texte-pale sm:pl-11">{description}</p>}
       </div>
       {children}
     </Carte>

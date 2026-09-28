@@ -74,7 +74,7 @@ export default function PageScolarite() {
           ]}
           className="self-start"
         />
-        <div className={cn("grid gap-2 lg:w-[32rem]", refs.data?.toutLeGroupe ? "grid-cols-2" : "grid-cols-1 lg:w-64")}>
+        <div className={cn("grid grid-cols-1 gap-2", refs.data?.toutLeGroupe ? "sm:grid-cols-2 lg:w-[32rem]" : "sm:w-72")}>
           {refs.data?.toutLeGroupe && (
             <Selection aria-label="Campus" value={site} onChange={(e) => aller({ site: e.target.value, classe: "" })}>
               <option value="">Tous les campus</option>
@@ -335,7 +335,7 @@ function OngletCaisse({ data, site, classe }: { data: TableauScolarite; site: st
       </div>
 
       <section aria-labelledby="titre-versements" className="flex flex-col gap-3">
-        <TitreSection titre={<span id="titre-versements">Derniers versements</span>} action={<span className="text-sm text-texte-gris">Les 50 plus récents</span>} />
+        <TitreSection titre={<span id="titre-versements">Derniers versements</span>} action={<span className="hidden text-sm text-texte-gris sm:inline">Les 50 plus récents</span>} />
         {!data.derniersVersements.length ? (
           <EtatVide
             icone={<Wallet className="h-6 w-6" />}
@@ -363,8 +363,8 @@ function OngletCaisse({ data, site, classe }: { data: TableauScolarite; site: st
                     {jourCourt(v.dateVersement)} · {libelleMoyen(v.moyen)}
                     {v.reference && <span className="font-mono text-[13px]"> · {v.reference}</span>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-texte-gris">
-                    <span className={cn(v.annule && "line-through")}>{v.numero}</span>
+                  <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-texte-gris">
+                    <span className={cn("font-mono", v.annule && "line-through")}>{v.numero}</span>
                     {v.encaissePar && <span>· encaissé par {v.encaissePar}</span>}
                   </div>
                   {v.annule && (

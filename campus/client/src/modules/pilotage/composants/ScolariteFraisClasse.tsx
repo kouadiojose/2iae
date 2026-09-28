@@ -120,7 +120,11 @@ function EditeurFrais({ classe, classes, onFermer }: { classe: FraisClasseLigne;
       else echeancier.push({ libelle, date: l.date || null, montant: m });
     }
     setErreurs(errs);
-    if (Object.keys(errs).length) return;
+    const premiere = Object.keys(errs)[0];
+    if (premiere) {
+      document.getElementById(`ligne-frais-${premiere}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
     setEnvoi(true);
     try {
       await put(`/api/pilotage/frais-classes/${classe.classeId}`, { echeancier });
@@ -190,7 +194,7 @@ function EditeurFrais({ classe, classes, onFermer }: { classe: FraisClasseLigne;
       onFermer={onFermer}
       large
       titre={`Frais de ${nom}`}
-      description={`Année ${classe.anneeScolaire}. Ce modèle est copié à chaque nouvel étudiant de la classe ; le modifier ne change pas l'échéancier des étudiants qui en ont déjà un.`}
+      description={`Année ${classe.anneeScolaire}. Modifier ce modèle ne change pas l'échéancier des étudiants qui en ont déjà un.`}
       pied={
         <>
           <Bouton variante="contour" onClick={onFermer} className="min-h-[48px]">
@@ -237,7 +241,7 @@ function EditeurFrais({ classe, classes, onFermer }: { classe: FraisClasseLigne;
             </div>
             <ol className="flex flex-col gap-2">
               {lignes.map((l, i) => (
-                <li key={l.cle} className={cn("rounded-2xl border bg-white p-3", erreurs[l.cle] ? "border-danger" : "border-ligne")}>
+                <li key={l.cle} id={`ligne-frais-${l.cle}`} className={cn("rounded-2xl border bg-white p-3", erreurs[l.cle] ? "border-danger" : "border-ligne")}>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_10.5rem_9.5rem_9.5rem] sm:items-end">
                     <Champ
                       libelle={<span className="sm:sr-only">Libellé</span>}

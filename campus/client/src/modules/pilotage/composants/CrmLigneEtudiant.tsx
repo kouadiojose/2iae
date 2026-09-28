@@ -65,7 +65,7 @@ export function CrmLigneEtudiant({ e }: { e: EtudiantCrmLigne }) {
         </span>
 
         {/* Le reste : une rangée compacte sur téléphone, des colonnes sur ordinateur. */}
-        <span className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-[52px] text-sm lg:contents lg:pl-0">
+        <span className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:pl-[52px] lg:contents">
           {/* Pièces */}
           <span className="inline-flex flex-wrap items-center gap-2">
             <span className="text-texte-pale lg:hidden">Pièces</span>
@@ -106,7 +106,7 @@ export function CrmLigneEtudiant({ e }: { e: EtudiantCrmLigne }) {
           {/* Compte */}
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 lg:flex-col lg:items-start">
             {e.actif && !e.compteActive && <Badge ton="alerte">Code pas encore utilisé</Badge>}
-            <span className="text-xs text-texte-gris">Connexion : {vuLe(e.derniereConnexion)}</span>
+            <span className="text-xs text-texte-gris">Connexion&nbsp;: {vuLe(e.derniereConnexion)}</span>
           </span>
         </span>
       </Link>

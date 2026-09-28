@@ -22,10 +22,10 @@ const PAR_PAGE = 25;
 const TRIS = ["nom", "recent", "retard", "connexion"] as const;
 type Tri = (typeof TRIS)[number];
 const LIBELLES_TRIS: Record<Tri, string> = {
-  nom: "Tri : nom (A à Z)",
-  recent: "Tri : inscrits récemment",
-  retard: "Tri : plus gros retard",
-  connexion: "Tri : moins connectés",
+  nom: "Tri\u00a0: nom (A à Z)",
+  recent: "Tri\u00a0: inscrits récemment",
+  retard: "Tri\u00a0: plus gros retard",
+  connexion: "Tri\u00a0: moins connectés",
 };
 
 /** Libellé du filtre actif (pastille au-dessus de la liste). */
@@ -139,14 +139,17 @@ export default function PageEtudiants() {
       />
 
       {i && (
-        <section aria-label="Indicateurs du périmètre" className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-7">
+        // Sur téléphone, une bande qui défile : la recherche reste visible sans descendre.
+        <section
+          aria-label="Indicateurs du périmètre"
+          className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-4 sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-7"
+        >
           <Tuile
             libelle="Étudiants suivis"
             valeur={i.etudiants}
             detail="inscrits ou suspendus"
             actif={!f.filtre}
             onClick={() => changer({ filtre: "" })}
-            className="col-span-2 sm:col-span-1"
           />
           <Tuile
             libelle="Comptes activés"
@@ -250,7 +253,7 @@ export default function PageEtudiants() {
           <EtatVide
             icone={<Users className="h-6 w-6" />}
             titre="Aucun étudiant ne correspond."
-            texte={f.filtre ? `Personne dans « ${LIBELLES_FILTRES[f.filtre]} » avec ces critères. Retirez un filtre pour élargir.` : "Essayez une autre orthographe, ou retirez un filtre."}
+            texte={f.filtre ? `Personne dans «\u00a0${LIBELLES_FILTRES[f.filtre]}\u00a0» avec ces critères. Retirez un filtre pour élargir.` : "Essayez une autre orthographe, ou retirez un filtre."}
             action={
               <Bouton variante="contour" icone={<X className="h-4 w-4" />} onClick={toutRetirer} className="min-h-[48px]">
                 Retirer les filtres
@@ -261,7 +264,7 @@ export default function PageEtudiants() {
           <EtatVide
             icone={<Users className="h-6 w-6" />}
             titre="Aucun étudiant pour l'instant."
-            texte="Inscrivez un étudiant avec son dossier complet, ou importez la liste de la scolarité depuis Excel : les comptes et leurs fiches de connexion sont créés d'un coup."
+            texte="Inscrivez un étudiant avec son dossier complet, ou importez la liste de la scolarité depuis Excel&nbsp;: les comptes et leurs fiches de connexion sont créés d'un coup."
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px]">
@@ -287,7 +290,7 @@ export default function PageEtudiants() {
                 type="button"
                 onClick={() => changer({ filtre: "" })}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-encre bg-white px-4 text-sm font-bold text-encre hover:bg-orange-pale"
-                aria-label={`Retirer le filtre « ${LIBELLES_FILTRES[f.filtre]} »`}
+                aria-label={`Retirer le filtre «\u00a0${LIBELLES_FILTRES[f.filtre]}\u00a0»`}
               >
                 {LIBELLES_FILTRES[f.filtre]}
                 <X className="h-4 w-4" />
@@ -349,15 +352,15 @@ function Tuile({
   className?: string;
 }) {
   const classes = cn(
-    "flex min-h-[92px] flex-col justify-between gap-1 rounded-2xl border p-3 text-left no-underline transition-colors sm:p-4",
+    "flex min-h-[96px] w-[150px] shrink-0 snap-start flex-col justify-between gap-1 rounded-2xl border p-3 text-left no-underline transition-colors sm:w-auto sm:p-4",
     actif ? "border-encre bg-encre text-white hover:text-white" : "border-ligne bg-white text-encre hover:border-orange hover:text-encre",
     className,
   );
   const contenu = (
     <>
-      <span className={cn("font-mono text-[11px] uppercase leading-tight tracking-wider", actif ? "text-white/75" : "text-texte-gris")}>{libelle}</span>
+      <span className={cn("min-h-[2.5em] font-mono text-[11px] uppercase leading-tight tracking-wider", actif ? "text-white/75" : "text-texte-gris")}>{libelle}</span>
       <span className={cn("text-2xl font-black tabular-nums tracking-serre sm:text-3xl", actif ? "text-white" : TONS_TUILE[ton])}>{valeur}</span>
-      <span className={cn("truncate text-[13px]", actif ? "text-white/80" : "text-texte-pale")}>{detail}</span>
+      <span className={cn("line-clamp-2 text-[13px] leading-snug", actif ? "text-white/80" : "text-texte-pale")}>{detail}</span>
     </>
   );
   if (href)

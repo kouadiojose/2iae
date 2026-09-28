@@ -108,8 +108,8 @@ export function Recu({ recu, equipe = false }: { recu: RecuPaiement; equipe?: bo
 
         <section className="rounded-[1.125rem] bg-creme p-4 sm:p-5">
           <div className="font-mono text-[0.6875rem] uppercase tracking-wider text-texte-gris">Montant reçu</div>
-          <div className={cn("mt-1.5 text-[2.5rem] font-black leading-none tabular-nums tracking-tres-serre sm:text-[3rem]", r.annule && "line-through decoration-danger decoration-[0.2rem]")}>
-            {montant(r.montant)}
+          <div className="mt-1.5 text-[2.5rem] font-black leading-none tabular-nums tracking-tres-serre sm:text-[3rem]">
+            <span className={cn(r.annule && "line-through decoration-danger decoration-[0.2rem]")}>{montant(r.montant)}</span>
             <span className="ml-2 whitespace-nowrap text-[1.125rem] font-extrabold tracking-normal">F CFA</span>
           </div>
           <p className="mt-2 text-[0.9375rem] italic leading-snug text-texte-doux">{enToutesLettres(r.montantEnLettres)}</p>
@@ -249,8 +249,8 @@ export function EcranRecu({ url, retour, equipe = false }: { url: string; retour
             <Recu recu={data} equipe={equipe} />
             <p className="mx-auto mt-4 max-w-[35rem] text-center text-sm text-texte-gris print:hidden">
               {equipe
-                ? "Conseil : imprimez à 100 %, sur A4 ou A5. Pour l'envoyer en fichier, choisissez « Enregistrer au format PDF » dans la fenêtre d'impression."
-                : "Pour garder ton reçu sur ton téléphone : touche « Imprimer », puis choisis « Enregistrer au format PDF »."}
+                ? "Conseil : imprimez à 100 %, sur A4 ou A5. Pour l'envoyer en fichier, choisissez «\u00a0Enregistrer au format PDF\u00a0» dans la fenêtre d'impression."
+                : "Pour garder ton reçu sur ton téléphone : touche «\u00a0Imprimer\u00a0», puis choisis «\u00a0Enregistrer au format PDF\u00a0»."}
             </p>
           </>
         )}

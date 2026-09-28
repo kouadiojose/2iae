@@ -406,8 +406,8 @@ const peutEnvoyerSon = (p: DailyEventObjectParticipant["participant"]) => {
   return cs === true || (cs instanceof Set && cs.has("audio"));
 };
 
-/** Relances du replay après une erreur d'enregistrement Daily : trois au plus, espacées. */
-const RELANCES_ENREGISTREMENT = 3;
+/** Relance du replay après une erreur d'enregistrement Daily : sans limite, 10 s après l'erreur (30 s si elles s'enchaînent). */
+const relanceApres = (n: number) => (n < 3 ? 10_000 : 30_000);
 
 function SceneDaily({
   seance,
@@ -463,12 +463,12 @@ function SceneDaily({
     enregistre.current = false;
     const debut = () => (enregistre.current = true);
     const fin = () => (enregistre.current = false);
-    // Enregistrement tombé en erreur en plein cours : on le relance (le replay garde tous les morceaux).
+    // Enregistrement tombé en erreur en plein cours : on le relance à chaque fois (le replay garde tous les morceaux).
     const erreur = () => {
       enregistre.current = false;
-      if (relancesEnregistrement.current >= RELANCES_ENREGISTREMENT) return;
+      const delai = relanceApres(relancesEnregistrement.current);
       relancesEnregistrement.current += 1;
-      setTimeout(() => setRelanceEnregistrement((n) => n + 1), 10_000);
+      setTimeout(() => setRelanceEnregistrement((n) => n + 1), delai);
     };
     call.on("recording-started", debut);
     call.on("recording-stopped", fin);

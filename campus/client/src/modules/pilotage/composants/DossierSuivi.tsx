@@ -165,8 +165,7 @@ function Relances({ etudiantId, taches, equipe }: { etudiantId: number; taches: 
     <section className="min-w-0">
       <TitreSection titre={ouvertes.length ? `Relances (${ouvertes.length})` : "Relances"} />
       <div className="flex flex-col gap-4">
-        <NouvelleRelance etudiantId={etudiantId} equipe={equipe} moiId={moi.id} />
-        <Carte className="p-0">
+        <Carte className="overflow-hidden p-0">
           {!taches.length ? (
             <p className="px-5 py-4 text-[15px] text-texte-pale">Aucune relance pour cet étudiant. Programmez un rappel : il apparaîtra le jour venu dans la page Relances de la personne choisie.</p>
           ) : (
@@ -184,6 +183,7 @@ function Relances({ etudiantId, taches, equipe }: { etudiantId: number; taches: 
             </ul>
           )}
         </Carte>
+        <NouvelleRelance etudiantId={etudiantId} equipe={equipe} moiId={moi.id} />
       </div>
     </section>
   );
@@ -319,7 +319,7 @@ function NouvelleRelance({ etudiantId, equipe, moiId }: { etudiantId: number; eq
           {!parDefaut && <option value="">Moi</option>}
           {equipe.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.id === moiId ? `${p.nom} (moi)` : p.nom}
+              {p.id === moiId ? `Moi : ${p.nom}` : p.nom}
             </option>
           ))}
         </Selection>

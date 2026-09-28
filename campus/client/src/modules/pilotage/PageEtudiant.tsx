@@ -209,7 +209,9 @@ function BarreOnglets({ onglet, onChange, pieces, relances }: { onglet: Onglet; 
   useEffect(() => {
     const liste = cadre.current?.querySelector<HTMLElement>('[role="tablist"]');
     const actif = liste?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (liste && actif) liste.scrollLeft = Math.max(0, actif.offsetLeft - liste.clientWidth / 2 + actif.clientWidth / 2);
+    if (!liste || !actif) return;
+    const gauche = actif.getBoundingClientRect().left - liste.getBoundingClientRect().left + liste.scrollLeft;
+    liste.scrollLeft = Math.max(0, gauche - liste.clientWidth / 2 + actif.clientWidth / 2);
   }, [onglet]);
   return (
     <div ref={cadre} className="min-w-0 print:hidden">

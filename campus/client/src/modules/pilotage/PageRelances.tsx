@@ -180,7 +180,7 @@ function Groupe({ titre, danger, ...props }: PropsListe & { titre: string; dange
 
 function Liste({ relances, section, envoi, tous, onModifier }: PropsListe) {
   return (
-    <Carte className="p-0">
+    <Carte className="overflow-hidden p-0">
       <ul className="flex flex-col divide-y divide-ligne-douce">
         {relances.map((r) => (
           <LigneRelance key={r.id} r={r} section={section} occupe={envoi === r.id} tous={tous} onModifier={onModifier} />

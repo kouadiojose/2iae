@@ -191,50 +191,50 @@ function LignePiece({
   const etat = ETATS_PIECE[p.statut];
   const aRecevoir = p.statut === "manquante" || p.statut === "refusee" || p.statut === "a_verifier";
   return (
-    <li className={cn("flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center", occupe && "opacity-60")} aria-busy={occupe}>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold">{p.libelle}</span>
-          <Badge ton={etat.ton}>{etat.texte}</Badge>
-          {!p.requise && <span className="font-mono text-[11px] text-texte-gris">facultative</span>}
+    <li className={cn("flex items-start gap-1 py-4 pl-5 pr-2", occupe && "opacity-60")} aria-busy={occupe}>
+      <div className="flex min-w-0 flex-1 flex-col gap-3 md:flex-row md:items-center">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">{p.libelle}</span>
+            <Badge ton={etat.ton}>{etat.texte}</Badge>
+            {!p.requise && <span className="font-mono text-[11px] text-texte-gris">facultative</span>}
+          </div>
+          <div className="mt-0.5 text-[13px] text-texte-gris">
+            {p.statut === "manquante"
+              ? "Pas encore remise."
+              : [p.statut === "a_verifier" ? `Déposée par ${p.ajouteePar ?? "l'étudiant"}` : p.ajouteePar ? `Ajoutée par ${p.ajouteePar}` : null, p.creeLe ? `le ${dateCourte(p.creeLe)}` : null]
+                  .filter(Boolean)
+                  .join(" ")}
+          </div>
+          {p.note && (
+            <p className={cn("mt-1 text-sm", p.statut === "refusee" ? "font-semibold text-danger" : "text-texte-doux")}>
+              {p.statut === "refusee" ? `Motif du refus : ${p.note}` : `« ${p.note} »`}
+            </p>
+          )}
+          {p.fichier && (
+            <a
+              href={p.fichier.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex min-h-[44px] max-w-full items-center gap-1.5 text-sm font-bold text-orange-fonce no-underline hover:text-encre"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" /> Voir <span className="truncate font-normal text-texte-gris">({p.fichier.nom})</span>
+            </a>
+          )}
         </div>
-        <div className="mt-0.5 text-[13px] text-texte-gris">
-          {p.statut === "manquante"
-            ? "Pas encore remise."
-            : [p.statut === "a_verifier" ? `Déposée par ${p.ajouteePar ?? "l'étudiant"}` : p.ajouteePar ? `Ajoutée par ${p.ajouteePar}` : null, p.creeLe ? `le ${dateCourte(p.creeLe)}` : null]
-                .filter(Boolean)
-                .join(" ")}
-        </div>
-        {p.note && (
-          <p className={cn("mt-1 text-sm", p.statut === "refusee" ? "font-semibold text-danger" : "text-texte-doux")}>
-            {p.statut === "refusee" ? `Motif du refus : ${p.note}` : `« ${p.note} »`}
-          </p>
-        )}
-        {p.fichier && (
-          <a
-            href={p.fichier.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 inline-flex min-h-[44px] max-w-full items-center gap-1.5 text-sm font-bold text-orange-fonce no-underline hover:text-encre"
-          >
-            <ExternalLink className="h-4 w-4 shrink-0" /> Voir <span className="truncate font-normal text-texte-gris">({p.fichier.nom})</span>
-          </a>
-        )}
-      </div>
 
-      <div className="flex flex-wrap items-center gap-2 md:justify-end">
-        {p.statut === "a_verifier" && (
-          <>
-            <Bouton taille="sm" icone={<Check className="h-4 w-4" />} onClick={onValider} disabled={bloque} className="min-h-[44px]">
-              Valider
-            </Bouton>
-            <Bouton taille="sm" variante="contour" icone={<X className="h-4 w-4" />} onClick={onRefuser} disabled={bloque} className="min-h-[44px] border-danger text-danger hover:bg-danger-clair">
-              Refuser
-            </Bouton>
-          </>
-        )}
         {aRecevoir && (
-          <>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            {p.statut === "a_verifier" && (
+              <>
+                <Bouton taille="sm" icone={<Check className="h-4 w-4" />} onClick={onValider} disabled={bloque} className="min-h-[44px]">
+                  Valider
+                </Bouton>
+                <Bouton taille="sm" variante="contour" icone={<X className="h-4 w-4" />} onClick={onRefuser} disabled={bloque} className="min-h-[44px] border-danger text-danger hover:bg-danger-clair">
+                  Refuser
+                </Bouton>
+              </>
+            )}
             <Bouton taille="sm" variante={p.statut === "a_verifier" ? "fantome" : "encre"} icone={<Check className="h-4 w-4" />} onClick={onRecue} disabled={bloque} className="min-h-[44px]">
               Reçue au guichet
             </Bouton>
@@ -247,22 +247,25 @@ function LignePiece({
               <Camera className="h-4 w-4" /> Scanner ou photographier
               <input type="file" accept={TYPES_FICHIER} className="sr-only" onChange={onScanner} disabled={bloque} />
             </label>
-          </>
-        )}
-        {p.id !== null && (
-          <Menu
-            declencheur={
-              <button type="button" className="grid h-11 w-11 place-items-center rounded-xl text-texte-pale hover:bg-creme hover:text-encre" aria-label={`Plus d'actions : ${p.libelle}`} disabled={bloque}>
-                <MoreVertical className="h-5 w-5" />
-              </button>
-            }
-          >
-            <ElementMenu danger icone={<Trash2 className="h-4 w-4" />} onSelect={onRetirer}>
-              Retirer du dossier
-            </ElementMenu>
-          </Menu>
+          </div>
         )}
       </div>
+
+      {p.id !== null ? (
+        <Menu
+          declencheur={
+            <button type="button" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-texte-pale hover:bg-creme hover:text-encre" aria-label={`Plus d'actions : ${p.libelle}`} disabled={bloque}>
+              <MoreVertical className="h-5 w-5" />
+            </button>
+          }
+        >
+          <ElementMenu danger icone={<Trash2 className="h-4 w-4" />} onSelect={onRetirer}>
+            Retirer du dossier
+          </ElementMenu>
+        </Menu>
+      ) : (
+        <span className="hidden w-11 shrink-0 md:block" aria-hidden="true" />
+      )}
     </li>
   );
 }

@@ -8,6 +8,20 @@ Deux applications dans ce dépôt, deux services Railway dans le même projet
 | racine du dépôt | site vitrine www.2iae.com | `2iae` | **automatique** à chaque push sur `main` (GitHub) |
 | `campus/` | campus numérique campus.2iae.com | `campus` | **uniquement** `bash campus/scripts/deployer.sh` |
 
+## Qui travaille sur quoi
+
+Deux sessions Claude travaillent en parallèle sur ce dépôt :
+
+- **la session du site** (www.2iae.com, racine du dépôt) ne touche pas au
+  campus : ni au dossier `campus/`, ni au service Railway `campus` (pas de
+  code, pas de migration, pas de déploiement). Consigne de José du 29 septembre
+  2026 : si on lui demande quelque chose sur le campus, elle répond « Je ne suis
+  pas autorisé à intervenir sur le campus numérique. » Lire les données
+  publiques du campus depuis le site reste permis.
+- **la session du campus** (campus.2iae.com, dossier `campus/`) ne modifie le
+  site que lorsque le campus l'exige (passerelle, liens vers le campus), et le
+  signale à José.
+
 ## Règles de mise en ligne (toutes les sessions, sans exception)
 
 1. **Ne jamais lancer `railway up` depuis la racine du dépôt**, vers aucun

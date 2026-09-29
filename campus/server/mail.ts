@@ -63,9 +63,9 @@ export type ContenuEmail = {
   apresBouton?: string[];
   /** Encadré crème : paires libellé / valeur (identifiant, lien à copier…). */
   encadre?: { libelle: string; valeur: string; mono?: boolean }[];
-  /** Guide pas à pas, sous l'encadré : étapes numérotées (texte brut, ** pour le gras). */
-  etapes?: { titre: string; texte: string }[];
-  /** Titre au-dessus des étapes (« Votre campus, pas à pas »). */
+  /** Étapes numérotées (guide pas à pas), sous l'encadré : titre, texte, et une adresse facultative. */
+  etapes?: { titre: string; texte: string; adresse?: string }[];
+  /** Intertitre au-dessus des étapes (« Votre guide pas à pas »). */
   titreEtapes?: string;
 };
 
@@ -134,6 +134,7 @@ ${
     <td valign="top" style="padding:3px 0 16px">
       <p style="margin:0 0 4px;font-size:16px;line-height:1.3;font-weight:800;color:${ENCRE}">${echapper(e.titre)}</p>
       <p style="margin:0;font-size:15px;line-height:1.55;color:#3D3833">${enrichir(e.texte)}</p>
+      ${e.adresse ? `<p style="margin:6px 0 0;font-family:'IBM Plex Mono',Menlo,Consolas,monospace;font-size:12.5px"><a href="${echapper(e.adresse)}" style="color:${ORANGE_FONCE};text-decoration:none;font-weight:600">${echapper(e.adresse.replace(/^https?:\/\//, ""))}</a></p>` : ""}
     </td>
   </tr>`,
     )
@@ -164,7 +165,9 @@ ${
     ...(c.bouton ? [`${c.bouton.libelle} : ${c.bouton.lien}`, ""] : []),
     ...(c.apresBouton ?? []).map(enClair),
     ...(c.encadre?.length ? ["", ...c.encadre.map((l) => `${l.libelle} : ${l.valeur}`)] : []),
-    ...(c.etapes?.length ? ["", ...(c.titreEtapes ? [c.titreEtapes.toUpperCase(), ""] : []), ...c.etapes.flatMap((e, i) => [`${i + 1}. ${e.titre}`, `   ${enClair(e.texte)}`, ""])] : []),
+    ...(c.etapes?.length
+      ? ["", ...(c.titreEtapes ? [c.titreEtapes.toUpperCase(), ""] : []), ...c.etapes.flatMap((e, i) => [`${i + 1}. ${e.titre}`, `   ${enClair(e.texte)}`, ...(e.adresse ? [`   ${e.adresse}`] : []), ""])]
+      : []),
     "",
     `Une question ? WhatsApp ${CONTACTS_2IAE.whatsapp} · ${CONTACTS_2IAE.email}`,
     "Campus numérique · Groupe Écoles 2IAE International · www.2iae.com",
@@ -322,4 +325,26 @@ export function emailReinitialisation(o: { prenom: string; etudiant: boolean; li
     ],
   });
   return { sujet: tu ? "Ton nouveau code secret · Campus 2IAE" : "Votre nouveau mot de passe · Campus 2IAE", html, texte };
+}
+
+/** Guide complet du formateur (PDF servi par le campus). */
+export const guideFormateurUrl = () => `${config.urlCampus}/guides/guide-formateurs.pdf`;
+
+/** Lien personnel d'inscription d'un formateur, envoyé par e-mail depuis le pilotage. */
+export function emailLienFormateur(o: { pour: string; lien: string; expireLe: Date }): { sujet: string; html: string; texte: string } {
+  const { html, texte } = gabaritEmail({
+    etiquette: "Invitation · Campus numérique",
+    titre: o.pour ? `Bonjour ${o.pour},` : "Bonjour,",
+    paragraphes: [
+      "Le Groupe Écoles 2IAE International vous ouvre son campus numérique. C'est de là que vous donnerez vos cours en direct, en même temps aux salles de conférence de nos campus et aux étudiants connectés depuis leur téléphone.",
+      "Pour créer votre compte, ouvrez ce lien : vous y entrerez votre nom, votre adresse e-mail et le mot de passe de votre choix. Dès que c'est fait, vous êtes connecté et vous recevez par e-mail votre guide pas à pas.",
+    ],
+    bouton: { libelle: "Créer mon compte formateur", lien: o.lien },
+    apresBouton: [
+      `Ce lien est personnel et ne sert qu'une fois. Il reste valable jusqu'au ${fmtDate.format(o.expireLe)}.`,
+      "Le bouton ne s'ouvre pas ? Copiez le lien ci-dessous dans votre navigateur (Chrome, Edge, Firefox ou Safari).",
+    ],
+    encadre: [{ libelle: "Lien d'inscription", valeur: o.lien, mono: true }],
+  });
+  return { sujet: "Créez votre compte formateur · Campus numérique 2IAE", html, texte };
 }

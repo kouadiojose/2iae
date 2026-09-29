@@ -749,7 +749,7 @@ async function calculerRentree(u: Utilisateur): Promise<EtatRentree> {
 // ── Invitations ────────────────────────────────────────────────────────────
 
 /** Prochain cours d'un formateur : « Initiation à l'IA, lundi 28 septembre à 08:30 (heure d'Abidjan) ». */
-async function prochainCours(id: number): Promise<string | null> {
+export async function prochainCours(id: number): Promise<string | null> {
   const format = (titre: string, debut: Date) => `${titre}, ${jourLong(debut)} à ${heure(debut)} (heure d'Abidjan)`;
   if (await existe("seances_creneaux")) {
     const { rows } = await pool.query<{ titre: string; debut: Date }>(
@@ -943,6 +943,16 @@ function reseauClient(ip: string | undefined): string {
 }
 
 const ROLES_INVITABLES: Role[] = ["formateur", "vie_scolaire", "admin"];
+
+/**
+ * Guide pas à pas d'un compte qui vient d'être prêt (formateur ou équipe) : un seul modèle d'e-mail,
+ * celui de guide-bienvenue.ts, quel que soit le lien qui a servi. Ne lève jamais d'erreur.
+ */
+export async function envoyerGuideFormateur(c: Pick<Utilisateur, "id" | "prenom" | "nom" | "email" | "role">): Promise<boolean> {
+  const envoye = await envoyerGuideBienvenue(c, await prochainCours(c.id).catch(() => null));
+  await journaliser(c, "guide_bienvenue", { envoye }).catch(() => undefined);
+  return envoye;
+}
 
 // ── Identifiant choisi à la première connexion ─────────────────────────────
 
@@ -1398,8 +1408,7 @@ export function enregistrerLancement(app: Express) {
       await journaliser(apres, "premiere_connexion", { identifiant: "email", par: "invitation", nomModifie });
       if ((nomModifie || titre !== c.titre) && apres.publierSurSite) prevenirSite("fiche d'un formateur");
 
-      const envoye = await envoyerGuideBienvenue(apres, await prochainCours(apres.id));
-      await journaliser(apres, "guide_bienvenue", { envoye });
+      const envoye = await envoyerGuideFormateur(apres);
       void prevenirCompteCree(apres, envoye).catch((e) => console.error("[invitation] notification :", (e as Error).message));
       const r: InvitationAcceptee = { moi: await versMoi(apres), guide: { adresse: d.email, envoye } };
       res.status(201).json(r);
@@ -1475,13 +1484,8 @@ export function enregistrerLancement(app: Express) {
       for (const x of [u.email, u.telephone, apres.email, apres.telephone]) if (x) effacerTentatives(`compte|${x.toLowerCase()}`);
       await journaliser(u, "premiere_connexion", { identifiant: id.type, nomModifie });
       if (nomModifie && apres.publierSurSite) prevenirSite("fiche d'un formateur");
-      // Identifiant e-mail : le guide pas à pas part aussi (sans faire attendre la personne).
-      if (id.type === "email") {
-        void prochainCours(apres.id)
-          .then((premier) => envoyerGuideBienvenue(apres, premier))
-          .then((envoye) => journaliser(apres, "guide_bienvenue", { envoye }))
-          .catch((e) => console.error("[premiere-connexion] guide :", (e as Error).message));
-      }
+      // Le guide pas à pas part à son adresse e-mail, une seule fois, sans faire attendre la personne.
+      if (apres.email) void envoyerGuideFormateur(apres);
       res.json(await versMoi(apres));
     }),
   );

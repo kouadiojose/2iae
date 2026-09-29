@@ -85,6 +85,13 @@
       "when": 1790554418396,
       "tag": "0011_crm_etudiants",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790705642279,
+      "tag": "0012_formateurs_inscription",
+      "breakpoints": true
     }
   ]
 }

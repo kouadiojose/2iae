@@ -58,6 +58,10 @@ export type ContenuEmail = {
   apresBouton?: string[];
   /** Encadré crème : paires libellé / valeur (identifiant, lien à copier…). */
   encadre?: { libelle: string; valeur: string; mono?: boolean }[];
+  /** Étapes numérotées (guide pas à pas), sous l'encadré : titre, texte, et une adresse facultative. */
+  etapes?: { titre: string; texte: string; adresse?: string }[];
+  /** Intertitre au-dessus des étapes (« Votre guide pas à pas »). */
+  titreEtapes?: string;
 };
 
 /** Paragraphe : échappe puis met en gras ce qui est entre ** **. */
@@ -111,6 +115,27 @@ ${
 </td></tr>`
     : ""
 }
+${
+  c.etapes?.length
+    ? `<tr><td style="padding:22px 32px 0">
+  ${c.titreEtapes ? `<h2 style="margin:0 0 6px;font-size:20px;line-height:1.2;font-weight:900;letter-spacing:-.01em;color:${ENCRE}">${echapper(c.titreEtapes)}</h2>` : ""}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  ${c.etapes
+    .map(
+      (e, i) => `<tr>
+    <td valign="top" width="40" style="padding:14px 0 0;width:40px"><div style="width:30px;height:30px;border-radius:15px;background:${ORANGE};color:${ENCRE};font-size:14px;font-weight:900;line-height:30px;text-align:center">${i + 1}</div></td>
+    <td valign="top" style="padding:14px 0 0">
+      <p style="margin:0 0 4px;font-size:16px;line-height:1.3;font-weight:800;color:${ENCRE}">${echapper(e.titre)}</p>
+      <p style="margin:0;font-size:15px;line-height:1.55;color:#3D3833">${enrichir(e.texte)}</p>
+      ${e.adresse ? `<p style="margin:6px 0 0;font-family:'IBM Plex Mono',Menlo,Consolas,monospace;font-size:12.5px"><a href="${echapper(e.adresse)}" style="color:${ORANGE_FONCE};text-decoration:none;font-weight:600">${echapper(e.adresse.replace(/^https?:\/\//, ""))}</a></p>` : ""}
+    </td>
+  </tr>`,
+    )
+    .join("\n  ")}
+  </table>
+</td></tr>`
+    : ""
+}
 <tr><td style="padding:24px 32px 28px">
   <p style="margin:0;padding-top:18px;border-top:1px solid ${LIGNE};font-size:13px;line-height:1.55;color:${TEXTE_PALE}">
     Une question ? Écrivez-nous sur WhatsApp au <a href="${CONTACTS_2IAE.lienWhatsapp}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.whatsapp}</a> ou à <a href="mailto:${CONTACTS_2IAE.email}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.email}</a>.
@@ -133,6 +158,9 @@ ${
     ...(c.bouton ? [`${c.bouton.libelle} : ${c.bouton.lien}`, ""] : []),
     ...(c.apresBouton ?? []).map(enClair),
     ...(c.encadre?.length ? ["", ...c.encadre.map((l) => `${l.libelle} : ${l.valeur}`)] : []),
+    ...(c.etapes?.length
+      ? ["", ...(c.titreEtapes ? [c.titreEtapes.toUpperCase(), ""] : []), ...c.etapes.flatMap((e, i) => [`${i + 1}. ${e.titre}`, `   ${enClair(e.texte)}`, ...(e.adresse ? [`   ${e.adresse}`] : []), ""])]
+      : []),
     "",
     `Une question ? WhatsApp ${CONTACTS_2IAE.whatsapp} · ${CONTACTS_2IAE.email}`,
     "Campus numérique · Groupe Écoles 2IAE International · www.2iae.com",
@@ -198,4 +226,108 @@ export function emailReinitialisation(o: { prenom: string; etudiant: boolean; li
     ],
   });
   return { sujet: tu ? "Ton nouveau code secret · Campus 2IAE" : "Votre nouveau mot de passe · Campus 2IAE", html, texte };
+}
+
+/** Guide complet du formateur (PDF servi par le campus). */
+export const guideFormateurUrl = () => `${config.urlCampus}/guides/guide-formateurs.pdf`;
+
+/**
+ * Guide pas à pas envoyé au formateur dès que son compte est prêt (lien
+ * d'inscription, ou première connexion après une invitation) : comment
+ * entrer, préparer une séance, déposer ses documents, faire cours en direct,
+ * donner un devoir, corriger. Les noms des menus sont ceux du campus.
+ */
+export function emailGuideFormateur(o: {
+  personne: { prenom: string; nom: string };
+  identifiant: string;
+  /** « Marketing digital, mercredi 30 septembre à 13h00 (heure d'Abidjan) » */
+  premierCours?: string | null;
+}): { sujet: string; html: string; texte: string } {
+  const u = config.urlCampus;
+  const { html, texte } = gabaritEmail({
+    etiquette: "Bienvenue · Campus numérique",
+    titre: `Bienvenue, ${nomAffiche(o.personne)}.`,
+    paragraphes: [
+      "Votre compte formateur est prêt. C'est depuis le campus numérique que vous donnerez vos cours en direct, en même temps aux salles de conférence de nos campus et aux étudiants connectés depuis leur téléphone.",
+      ...(o.premierCours ? [`Votre prochain cours : **${o.premierCours}**.`] : []),
+      "Gardez ce message : il contient tout ce qu'il faut pour vous connecter et pour faire vos premiers pas.",
+    ],
+    bouton: { libelle: "Accéder à mon espace formateur", lien: `${u}/enseigner` },
+    encadre: [
+      { libelle: "Adresse du campus", valeur: u.replace(/^https?:\/\//, ""), mono: true },
+      { libelle: "Votre identifiant", valeur: o.identifiant, mono: true },
+      { libelle: "Votre mot de passe", valeur: "celui que vous venez de choisir" },
+    ],
+    titreEtapes: "Votre guide pas à pas",
+    etapes: [
+      {
+        titre: "Se connecter",
+        texte:
+          "Ouvrez le campus dans Chrome, Edge, Firefox ou Safari, puis entrez votre identifiant et votre mot de passe. Mot de passe oublié ? Sur la page de connexion, touchez **« Code ou mot de passe oublié »** : un lien vous arrive par e-mail.",
+        adresse: `${u}/connexion`,
+      },
+      {
+        titre: "Installer le campus sur votre ordinateur",
+        texte:
+          "Dans Chrome, l'icône **« Installer »** de la barre d'adresse met le campus dans une fenêtre à lui, comme un logiciel. Sur téléphone, le campus vous le propose de lui-même.",
+      },
+      {
+        titre: "Votre page du jour, et votre lieu",
+        texte:
+          "Le menu **« Enseigner »** ouvre votre page « Aujourd'hui » : votre prochaine séance et vos cours. Réglez-y d'un clic la ville d'où vous enseignez (Montréal, Nice…) : les salles la liront sous votre nom, et les horaires s'afficheront aussi à votre heure.",
+        adresse: `${u}/enseigner`,
+      },
+      {
+        titre: "Préparer une séance",
+        texte:
+          "Chaque séance de l'emploi du temps a sa page **« Préparer la séance »** : le déroulé minuté, vos diapos (déposez votre PowerPoint, votre PDF ou vos images) et vos sondages. L'assistant IA peut vous proposer un déroulé à partir d'un sujet et d'une durée.",
+        adresse: `${u}/enseigner/seances`,
+      },
+      {
+        titre: "Déposer vos cours et vos documents",
+        texte:
+          "**« Mes cours »**, puis votre cours : ajoutez des leçons avec un texte et vos documents (PDF, PowerPoint, Word, images, audio, vidéos courtes, jusqu'à 50 Mo par fichier). Seuls vos étudiants y ont accès, même hors connexion une fois ouverts.",
+        adresse: `${u}/enseigner/cours`,
+      },
+      {
+        titre: "Faire cours en direct",
+        texte:
+          "Une vingtaine de minutes avant l'heure, ouvrez le **Studio**, touchez **« Tester mon micro et ma caméra »**, puis **« Démarrer le direct »** : les salles et les étudiants en ligne basculent sur votre cours, et l'enregistrement démarre tout seul. La visio flanche ? **« Plan B »** : collez un lien Zoom, Meet ou Teams et tout le monde y bascule.",
+        adresse: `${u}/visio/essai`,
+      },
+      {
+        titre: "Donner un devoir ou une interrogation",
+        texte:
+          "**« Devoirs »**, puis choisissez le type : devoir à rendre (copie en photo, PDF ou Word) ou interrogation (questions à choix, corrigées toutes seules). Fixez la consigne, la date limite et le barème, puis publiez : les étudiants sont prévenus sur leur téléphone.",
+        adresse: `${u}/enseigner/devoirs`,
+      },
+      {
+        titre: "Corriger et publier les notes",
+        texte:
+          "**« Corrections »** rassemble les copies à corriger. L'IA peut proposer une note et un commentaire : vous relisez, vous ajustez, vous décidez. Quand tout est corrigé, les notes partent d'un coup dans le carnet.",
+        adresse: `${u}/corrections`,
+      },
+    ],
+    apresBouton: [`Le guide complet du formateur, illustré (16 pages) : ${guideFormateurUrl()}`],
+  });
+  return { sujet: "Bienvenue sur le campus numérique 2IAE : votre guide pas à pas", html, texte };
+}
+
+/** Lien personnel d'inscription d'un formateur, envoyé par e-mail depuis le pilotage. */
+export function emailLienFormateur(o: { pour: string; lien: string; expireLe: Date }): { sujet: string; html: string; texte: string } {
+  const { html, texte } = gabaritEmail({
+    etiquette: "Invitation · Campus numérique",
+    titre: o.pour ? `Bonjour ${o.pour},` : "Bonjour,",
+    paragraphes: [
+      "Le Groupe Écoles 2IAE International vous ouvre son campus numérique. C'est de là que vous donnerez vos cours en direct, en même temps aux salles de conférence de nos campus et aux étudiants connectés depuis leur téléphone.",
+      "Pour créer votre compte, ouvrez ce lien : vous y entrerez votre nom, votre adresse e-mail et le mot de passe de votre choix. Dès que c'est fait, vous êtes connecté et vous recevez par e-mail votre guide pas à pas.",
+    ],
+    bouton: { libelle: "Créer mon compte formateur", lien: o.lien },
+    apresBouton: [
+      `Ce lien est personnel et ne sert qu'une fois. Il reste valable jusqu'au ${fmtDate.format(o.expireLe)}.`,
+      "Le bouton ne s'ouvre pas ? Copiez le lien ci-dessous dans votre navigateur (Chrome, Edge, Firefox ou Safari).",
+    ],
+    encadre: [{ libelle: "Lien d'inscription", valeur: o.lien, mono: true }],
+  });
+  return { sujet: "Créez votre compte formateur · Campus numérique 2IAE", html, texte };
 }

@@ -76,7 +76,7 @@ const jetonBienForme = (j: string) => /^[A-Za-z0-9_-]{20,80}$/.test(j);
  * renouvelé : protège contre la fixation de session), avec la durée de son
  * rôle : 90 jours pour les étudiants, 30 jours pour le personnel.
  */
-async function ouvrirSession(req: Request, u: Utilisateur) {
+export async function ouvrirSession(req: Request, u: Utilisateur) {
   await new Promise<void>((ok, ko) => req.session.regenerate((e) => (e ? ko(e) : ok())));
   req.session.utilisateurId = u.id;
   req.session.cookie.maxAge = dureeSession(u.role);

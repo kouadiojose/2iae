@@ -43,7 +43,7 @@ import {
 import { creerJeton, hacherJeton, lienActivation } from "../activation";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { iaDisponible, raisonIndisponible } from "../ia";
-import { emailDisponible, envoyerEmail, emailInvitation, nomAffiche } from "../mail";
+import { emailDisponible, envoyerEmail, emailInvitation, emailGuideFormateur, nomAffiche } from "../mail";
 import { prevenirSite } from "../site";
 import { invaliderJetons } from "./compte";
 import { sallePasEncoreNommee, SALLES_INVENTEES } from "../amorcage";
@@ -745,7 +745,7 @@ async function calculerRentree(u: Utilisateur): Promise<EtatRentree> {
 // ── Invitations ────────────────────────────────────────────────────────────
 
 /** Prochain cours d'un formateur : « Initiation à l'IA, lundi 28 septembre à 08:30 (heure d'Abidjan) ». */
-async function prochainCours(id: number): Promise<string | null> {
+export async function prochainCours(id: number): Promise<string | null> {
   const format = (titre: string, debut: Date) => `${titre}, ${jourLong(debut)} à ${heure(debut)} (heure d'Abidjan)`;
   if (await existe("seances_creneaux")) {
     const { rows } = await pool.query<{ titre: string; debut: Date }>(
@@ -938,6 +938,20 @@ function reseauClient(ip: string | undefined): string {
 }
 
 const ROLES_INVITABLES: Role[] = ["formateur", "vie_scolaire", "admin"];
+
+/** Envoie le guide pas à pas à un formateur dont le compte vient d'être prêt. Ne lève jamais d'erreur. */
+export async function envoyerGuideFormateur(c: Pick<Utilisateur, "id" | "prenom" | "nom" | "email">): Promise<boolean> {
+  if (!c.email || !emailDisponible()) return false;
+  try {
+    const e = emailGuideFormateur({ personne: c, identifiant: c.email, premierCours: await prochainCours(c.id).catch(() => null) });
+    const envoye = await envoyerEmail({ a: c.email, sujet: e.sujet, texte: e.texte, html: e.html });
+    if (envoye) await journaliser(null, "guide_formateur_envoye", { compteId: c.id });
+    return envoye;
+  } catch (e) {
+    console.error("[formateurs] guide non envoyé :", (e as Error).message);
+    return false;
+  }
+}
 
 // ── Identifiant choisi à la première connexion ─────────────────────────────
 
@@ -1296,6 +1310,8 @@ export function enregistrerLancement(app: Express) {
       oublierUtilisateur(u.id);
       for (const x of [u.email, u.telephone, apres.email, apres.telephone]) if (x) effacerTentatives(`compte|${x.toLowerCase()}`);
       await journaliser(u, "premiere_connexion", { identifiant: id.type, nomModifie });
+      // Formateur : son guide pas à pas part par e-mail dès que son compte est prêt (sans retarder la réponse).
+      if (apres.role === "formateur" && apres.email) void envoyerGuideFormateur(apres);
       if (nomModifie && apres.publierSurSite) prevenirSite("fiche d'un formateur");
       res.json(await versMoi(apres));
     }),

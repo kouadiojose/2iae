@@ -19,6 +19,7 @@ import { FenetreCode } from "./composants/FenetreCode";
 import { FenetreInvitation, type PersonneAInviter } from "./composants/FenetreInvitation";
 import { FenetreEcran } from "./composants/FenetreEcran";
 import { PanneauEquipe } from "./composants/PanneauEquipe";
+import { PanneauFormateurs } from "./composants/PanneauFormateurs";
 import { useReferences, etatCompte, vuLe, telephoneLisible, lienFiches } from "./outils";
 
 const PAR_PAGE = 25;
@@ -95,6 +96,8 @@ export default function PageComptes() {
           </>
         }
       />
+
+      {refs.data?.estDirection && <PanneauFormateurs />}
 
       {refs.data?.estDirection && <PanneauEquipe sites={refs.data.sites} />}
 

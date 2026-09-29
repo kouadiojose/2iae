@@ -3,9 +3,13 @@
 // son + diapos (léger, ≈ 12 à 15 Mo/h) ou en vidéo. Il ne pose pas de question
 // et n'émarge pas : pour cela, il faut se connecter avec son compte. La diapo
 // suit par une relecture toutes les 2 secondes (pas de temps réel sans compte).
-import { useState } from "react";
+//
+// Lien intervenant (même page, autre signature) : la vidéo seulement, avec
+// micro et caméra ; la personne entend toute la visio (formateur, salles) et
+// peut entrer 30 minutes avant le début pour régler son micro.
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link2Off, MonitorPlay, Radio, UserRound } from "lucide-react";
+import { Link2Off, Mic, MonitorPlay, Radio, UserRound } from "lucide-react";
 import type { AccesDaily, InfoInviteDto } from "@shared/schema";
 import { post, ErreurApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -15,6 +19,8 @@ import { CadreDaily, LecteurRadio } from "@/modules/visio";
 
 type Mode = "radio" | "video";
 const CLE_NOM = "campus:invite-nom";
+/** La visio ouvre 30 minutes avant le début (même règle que le serveur). */
+const OUVERTURE_VIDEO_MS = 30 * 60_000;
 
 const lireNom = () => {
   try {
@@ -29,6 +35,10 @@ export default function PageInvite({ jeton }: { jeton: string }) {
   const { data: info, error, isLoading } = useQuery<InfoInviteDto>({ queryKey: [racine], refetchInterval: 2000, retry: 1 });
   const [nom, setNom] = useState(lireNom);
   const [mode, setMode] = useState<Mode>("radio");
+  // Un intervenant parle : la vidéo, toujours.
+  useEffect(() => {
+    if (info?.intervenant) setMode("video");
+  }, [info?.intervenant]);
   const [entre, setEntre] = useState<Mode | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -58,7 +68,7 @@ export default function PageInvite({ jeton }: { jeton: string }) {
     <div className="flex min-h-dvh flex-col bg-nuit text-white">
       <header className="flex items-center justify-between gap-3 border-b border-nuit-ligne px-4 py-3 sm:px-6">
         <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE International" className="h-10 w-auto" />
-        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-orange-peche">Campus numérique · lien invité</span>
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-orange-peche">Campus numérique · {info?.intervenant ? "intervenant" : "lien invité"}</span>
       </header>
 
       <main className="mx-auto flex w-full max-w-[880px] flex-1 flex-col gap-5 px-4 py-6 sm:px-6">
@@ -86,14 +96,33 @@ export default function PageInvite({ jeton }: { jeton: string }) {
                     placeholder="Prénom et nom"
                     className="min-h-[52px] rounded-xl border border-nuit-ligne bg-nuit px-4 text-lg text-white placeholder:text-nuit-gris focus:border-orange focus:outline-none"
                   />
-                  <span className="text-[13px] text-nuit-doux">Pas de compte ni de mot de passe : votre nom suffit, pour que le formateur sache qui suit.</span>
+                  <span className="text-[13px] text-nuit-doux">
+                    {info.intervenant
+                      ? "Pas de compte ni de mot de passe : votre nom suffit. Il s'affiche sous votre image, pour le formateur et les salles."
+                      : "Pas de compte ni de mot de passe : votre nom suffit, pour que le formateur sache qui suit."}
+                  </span>
                 </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <ChoixMode actif={mode === "radio"} onClick={() => setMode("radio")} icone={<Radio className="h-5 w-5" />} titre="Son + diapos" detail="≈ 12 à 15 Mo par heure · recommandé en 3G/4G" />
-                  {info.video && (
-                    <ChoixMode actif={mode === "video"} onClick={() => setMode("video")} icone={<MonitorPlay className="h-5 w-5" />} titre="Vidéo" detail="150 à 250 Mo par heure · au Wi-Fi" />
-                  )}
-                </div>
+                {info.intervenant ? (
+                  <div className="flex items-start gap-3 rounded-2xl border-2 border-orange bg-orange/10 p-4">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange text-encre">
+                      <Mic className="h-5 w-5" />
+                    </span>
+                    <span className="flex flex-col gap-1">
+                      <span className="text-[16px] font-bold">Vidéo, micro et caméra</span>
+                      <span className="text-[14px] leading-relaxed text-nuit-doux">
+                        Vous entendez tout le cours (le formateur et les cinq salles) et vous pouvez parler et vous montrer. Prenez un ordinateur au Wi-Fi, avec des écouteurs ou un
+                        casque, et autorisez le micro et la caméra quand le navigateur le demande. La visio ouvre 30 minutes avant le début.
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <ChoixMode actif={mode === "radio"} onClick={() => setMode("radio")} icone={<Radio className="h-5 w-5" />} titre="Son + diapos" detail="≈ 12 à 15 Mo par heure · recommandé en 3G/4G" />
+                    {info.video && (
+                      <ChoixMode actif={mode === "video"} onClick={() => setMode("video")} icone={<MonitorPlay className="h-5 w-5" />} titre="Vidéo" detail="150 à 250 Mo par heure · au Wi-Fi" />
+                    )}
+                  </div>
+                )}
                 {erreur && (
                   <p className="rounded-xl bg-danger/20 px-4 py-3 text-[15px] font-semibold text-white" role="alert">
                     {erreur}
@@ -156,20 +185,32 @@ function ChoixMode({ actif, onClick, icone, titre, detail }: { actif: boolean; o
 
 function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; racine: string; mode: Mode; nom: string; onChanger: () => void }) {
   const avant = info.statut === "planifiee";
+  // L'intervenant entre dans la visio dès son ouverture (30 minutes avant) pour régler son micro et sa caméra.
+  const visioOuverte = !avant || (info.intervenant && new Date(info.debut).getTime() - Date.now() <= OUVERTURE_VIDEO_MS);
   return (
     <div className="flex flex-col gap-4">
       {avant && (
         <p className="rounded-2xl bg-nuit-carte px-4 py-3 text-[15px] text-nuit-doux">
-          Le cours commence à <strong className="text-white">{heure(info.debut)}</strong> (heure d'Abidjan). Restez sur cette page : il s'affichera tout seul.
+          Le cours commence à <strong className="text-white">{heure(info.debut)}</strong> (heure d'Abidjan).{" "}
+          {info.intervenant
+            ? visioOuverte
+              ? "La visio est ouverte : réglez votre micro et votre caméra, le cours démarrera ici."
+              : "Restez sur cette page : la visio s'ouvrira toute seule 30 minutes avant le début."
+            : "Restez sur cette page : il s'affichera tout seul."}
         </p>
       )}
-      {mode === "video" && !avant && (
+      {info.intervenant && visioOuverte && (
+        <p className="rounded-2xl border border-nuit-ligne px-4 py-3 text-[14px] leading-relaxed text-nuit-doux">
+          <strong className="text-white">Micro et caméra :</strong> les boutons en bas de la visio. Votre micro est coupé en entrant : ouvrez-le pour parler, coupez-le quand vous écoutez.
+        </p>
+      )}
+      {mode === "video" && visioOuverte && (
         <div className="aspect-video overflow-hidden rounded-[22px] border-2 border-nuit-ligne bg-nuit-carte">
           <CadreDaily
             obtenirAcces={() => post<AccesDaily>(`${racine}/visio`, { nom })}
             role="etudiant"
             tu={false}
-            cameraAuDepart={false}
+            cameraAuDepart={info.intervenant}
             microAuDepart={false}
             relanceAuto
             className="h-full w-full"
@@ -204,17 +245,25 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
         )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 text-[14px] text-nuit-doux">
-        <span>
-          Vous suivez en invité, sous le nom <strong className="text-white">{nom}</strong>. Pour poser vos questions et être compté présent, connectez-vous avec votre compte.
-        </span>
-        <div className="flex gap-2">
-          <Bouton variante="nuit" taille="sm" onClick={onChanger}>
-            Changer de mode
-          </Bouton>
-          <a href="/connexion" className="inline-flex items-center rounded-[10px] bg-orange px-3 py-2 text-[13px] font-bold text-encre no-underline hover:bg-orange-peche">
-            Me connecter
-          </a>
-        </div>
+        {info.intervenant ? (
+          <span>
+            Vous intervenez dans le cours sous le nom <strong className="text-white">{nom}</strong>. Un souci de son ou d'image : rechargez la page.
+          </span>
+        ) : (
+          <span>
+            Vous suivez en invité, sous le nom <strong className="text-white">{nom}</strong>. Pour poser vos questions et être compté présent, connectez-vous avec votre compte.
+          </span>
+        )}
+        {!info.intervenant && (
+          <div className="flex gap-2">
+            <Bouton variante="nuit" taille="sm" onClick={onChanger}>
+              Changer de mode
+            </Bouton>
+            <a href="/connexion" className="inline-flex items-center rounded-[10px] bg-orange px-3 py-2 text-[13px] font-bold text-encre no-underline hover:bg-orange-peche">
+              Me connecter
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

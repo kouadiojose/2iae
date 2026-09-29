@@ -462,6 +462,8 @@ export async function jetonDaily(o: {
   /** Sortie automatique au bout de N secondes (salle d'essai, répétition). */
   ejecterApres?: number;
   envoi?: ("audio" | "video")[] | false;
+  /** Caméra ouverte dès l'entrée (un intervenant invité), quel que soit le profil. */
+  cameraAuDepart?: boolean;
 }): Promise<string> {
   const proprietaire = o.profil === "formateur";
   const proprietes: Record<string, unknown> = {
@@ -472,7 +474,7 @@ export async function jetonDaily(o: {
     exp: o.exp,
     lang: "fr",
     start_audio_off: !proprietaire,
-    start_video_off: o.profil === "etudiant" || o.profil === "observateur",
+    start_video_off: o.cameraAuDepart ? false : o.profil === "etudiant" || o.profil === "observateur",
     enable_screenshare: proprietaire,
     enable_prejoin_ui: false,
   };

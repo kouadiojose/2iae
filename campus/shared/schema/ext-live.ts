@@ -523,7 +523,12 @@ export type BattementPresenceDto =
 // ── Lien invité d'une séance (sans compte) ─────────────────────────────────
 
 /** GET /api/seances/:id/lien-invite : le lien à partager, pour cette séance seulement. */
-export type LienInviteDto = { url: string; valableJusquau: string };
+export type LienInviteDto = {
+  url: string;
+  valableJusquau: string;
+  /** Même lien, avec micro et caméra (un intervenant) : direction, vie scolaire et formateur du cours seulement. */
+  urlIntervenant?: string;
+};
 
 /** GET /api/invite/:jeton : ce qu'un invité voit de la séance (sans compte). */
 export type InfoInviteDto = {
@@ -540,4 +545,6 @@ export type InfoInviteDto = {
   video: boolean;
   diapo: { index: number; total: number; masquee: boolean; url: string | null };
   sousTitre: string | null;
+  /** Lien intervenant : vidéo avec micro et caméra. */
+  intervenant: boolean;
 };

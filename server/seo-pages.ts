@@ -96,7 +96,7 @@ const RENTREE_COURS_IA = {
   "@type": "VideoObject",
   name: "Rentrée 2026-2027 effective : les cours commencent par l'intelligence artificielle",
   description:
-    "Lundi 28 septembre 2026, la rentrée est effective sur les quatre campus du Groupe Écoles 2IAE International. Premier cours sur tous les campus : une initiation pratique à l'intelligence artificielle, formation certifiante offerte aux étudiants sur le campus numérique, donnée par José Kouadio, ingénieur logiciel senior.",
+    "Lundi 28 septembre 2026, la rentrée est effective sur les quatre campus du Groupe Écoles 2IAE International. Premier cours : l'initiation à l'intelligence artificielle, donnée en direct sur le campus numérique par José Kouadio, ingénieur logiciel senior et fondateur de Markel Technology.",
   thumbnailUrl: [SITE + "/videos/rentree-2026-cours-ia-poster.jpg"],
   contentUrl: SITE + "/videos/rentree-2026-cours-ia.mp4",
   uploadDate: "2026-09-29",

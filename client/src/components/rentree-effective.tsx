@@ -3,13 +3,14 @@
 // Sources : la vidéo tournée le jour même (« l'IA est un outil d'aide à la
 // décision », « on ne va pas revenir en arrière », cours hors programme
 // offert par l'école), et l'emploi du temps officiel publié sur le campus
-// numérique (campus.2iae.com/programme) : première session du 28 septembre
-// au 10 octobre, intervenants et intitulés des cours. La liste des prochains
-// cours est lue en direct sur le campus via /api/campus/programme : elle
-// suit les annulations et disparaît quand il n'y a plus rien à venir.
+// numérique (campus.2iae.com/programme). Les prochains cours sont lus en
+// direct via /api/campus/programme : ils suivent les annulations et
+// disparaissent quand il n'y a plus rien à venir.
 //
-// L'appel aux retardataires n'a de sens que pendant les premières semaines :
-// la section disparaît d'elle-même à la date ci-dessous.
+// Trois étages : la vidéo et l'essentiel côte à côte, les prochains cours
+// en cartes sur toute la largeur, puis l'appel aux retardataires en bandeau.
+// L'appel n'a de sens que pendant les premières semaines : la section
+// disparaît d'elle-même à la date ci-dessous.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useProgrammeCampus } from "@/components/emploi-du-temps-campus";
@@ -25,11 +26,11 @@ export function rentreeEffectiveActive(): boolean {
 const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
 const MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
-/** « 2026-09-30 » → « mercredi 30 septembre » (jour civil, sans fuseau). */
-function jourEtDate(jour: string): string {
+/** « 2026-09-30 » → { jour: « mercredi », date: « 30 septembre » } (jour civil, sans fuseau). */
+function jourEtDate(jour: string): { jour: string; date: string } {
   const [a, m, j] = jour.split("-").map(Number);
   const d = new Date(Date.UTC(a, m - 1, j));
-  return `${JOURS[d.getUTCDay()]} ${j === 1 ? "1er" : j} ${MOIS[m - 1]}`;
+  return { jour: JOURS[d.getUTCDay()], date: `${j === 1 ? "1er" : j}${N}${MOIS[m - 1]}` };
 }
 
 /** « 2026-09-30T13:00:00.000Z » → « 13 h » ; « …08:30… » → « 8 h 30 » (Abidjan = UTC). */
@@ -44,42 +45,47 @@ function ProchainsCours() {
   if (!programme) return null;
   const creneaux = new Map<number, CreneauCampus>();
   for (const s of programme.sessions) for (const c of s.creneaux) creneaux.set(c.id, c);
-  const aVenir: OccurrenceCampus[] = programme.prochaines
-    .filter((o) => o.statut !== "terminee")
-    .slice(0, 5);
+  const aVenir: OccurrenceCampus[] = programme.prochaines.filter((o) => o.statut !== "terminee").slice(0, 4);
   if (!aVenir.length) return null;
 
   return (
-    <div className="rounded-lg border border-border bg-[#faf7f3] p-5 mb-6" data-testid="liste-prochains-cours">
-      <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">Les prochains cours</p>
-      <ul className="divide-y divide-border">
+    <div className="mt-12" data-testid="liste-prochains-cours">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 mb-5">
+        <p className="text-xs tracking-[0.25em] uppercase text-primary">Les prochains cours</p>
+        <Link href="/campus-numerique">
+          <span className="text-sm font-semibold text-primary hover:underline cursor-pointer">
+            Tout l'emploi du temps du campus numérique →
+          </span>
+        </Link>
+      </div>
+      <ul className="-mx-4 px-4 scroll-px-4 flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 md:mx-0 md:px-0 md:grid md:grid-cols-2 lg:grid-cols-4 md:overflow-visible">
         {aVenir.map((o) => {
           const c = creneaux.get(o.creneauId);
-          const qui = [o.intervenant, c?.mention].filter(Boolean).join(" · ");
+          const { jour, date } = jourEtDate(o.date);
+          const annule = o.statut === "annulee";
           return (
-            <li key={`${o.creneauId}-${o.date}`} className="py-2.5 flex items-baseline gap-4">
-              <span className="w-32 sm:w-40 shrink-0 text-sm text-muted-foreground first-letter:uppercase">
-                {jourEtDate(o.date)}
-                <span className="block text-xs">
-                  {o.statut === "en_direct" ? "En direct" : heure(o.debut)}
-                </span>
-              </span>
-              <span className="min-w-0">
-                <span className={`block font-semibold text-foreground ${o.statut === "annulee" ? "line-through opacity-60" : ""}`}>
-                  {o.libelle}
-                  {o.statut === "annulee" ? " — annulé" : ""}
-                </span>
-                {qui && <span className="block text-sm text-muted-foreground">{qui}</span>}
-              </span>
+            <li
+              key={`${o.creneauId}-${o.date}`}
+              className="snap-start shrink-0 w-[78%] sm:w-[46%] md:w-auto rounded-xl border border-border bg-white p-5 flex flex-col"
+              style={{ boxShadow: `inset 0 4px 0 ${c?.cours?.couleur ?? "#E8720C"}` }}
+            >
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{jour}</p>
+              <p className="font-serif text-2xl text-foreground leading-tight mt-1">{date}</p>
+              <p className="text-sm text-muted-foreground mb-4">{o.statut === "en_direct" ? "En direct" : heure(o.debut)}</p>
+              <p className={`font-semibold text-foreground leading-snug mt-auto ${annule ? "line-through opacity-60" : ""}`}>
+                {o.libelle}
+                {annule ? " — annulé" : ""}
+              </p>
+              {(o.intervenant || c?.mention) && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  {o.intervenant}
+                  {o.intervenant && c?.mention ? <span className="block text-xs">{c.mention}</span> : c?.mention}
+                </p>
+              )}
             </li>
           );
         })}
       </ul>
-      <Link href="/campus-numerique">
-        <span className="inline-block mt-3 text-sm font-semibold text-primary hover:underline cursor-pointer">
-          Tout l'emploi du temps du campus numérique →
-        </span>
-      </Link>
     </div>
   );
 }
@@ -87,73 +93,68 @@ function ProchainsCours() {
 export function RentreeEffective() {
   if (!rentreeEffectiveActive()) return null;
   return (
-    <section className="py-14 bg-white" data-testid="section-rentree-effective">
-      <div className="container mx-auto px-4 max-w-6xl grid lg:grid-cols-2 gap-10 items-start">
-        <div className="lg:sticky lg:top-24 rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
-          <video
-            className="w-full h-auto block bg-black aspect-video"
-            src="/videos/rentree-2026-cours-ia.mp4"
-            poster="/videos/rentree-2026-cours-ia-poster.jpg"
-            controls
-            playsInline
-            preload="none"
-            data-testid="video-rentree-effective"
-          >
-            Votre navigateur ne prend pas en charge la lecture vidéo.
-          </video>
-        </div>
-
-        <div>
-          <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
-            Rentrée 2026-2027 · Effective depuis le{N}28{N}septembre
-          </p>
-          <h2 className="font-serif text-3xl md:text-4xl text-foreground mb-5 leading-tight">
-            Les cours ont repris.
-            <span className="block text-primary">Par l'intelligence artificielle.</span>
-          </h2>
-          <p className="text-muted-foreground leading-relaxed mb-4">
-            Lundi 28 septembre à 8{N}h{N}30, les étudiants de première et de
-            deuxième année de BTS ont repris les cours. Le premier : une
-            initiation à l'intelligence artificielle, donnée en direct sur
-            notre campus numérique par José Kouadio, ingénieur logiciel senior
-            et fondateur de Markel Technology.
-          </p>
-          <p className="text-muted-foreground leading-relaxed mb-4">
-            Premier conseil aux étudiants : l'IA est un outil d'aide à la
-            décision. On ne lui confie pas tout.
-          </p>
-          <p className="text-muted-foreground leading-relaxed mb-6">
-            Le même cours, au même moment, dans tous nos campus : chaque salle
-            de conférence le suit sur grand écran, lève la main, et le
-            formateur lui donne la parole. Au programme de cette première
-            session, jusqu'au 10 octobre : l'initiation à l'IA avec deux
-            consultants, l'un canadien, l'autre allemand ; le marketing
-            digital avec Claude Trépanier, président de Rhizoviva System, à
-            Montréal ; et un séminaire chaque samedi.
-          </p>
-
-          <ProchainsCours />
-
-          <div className="bg-[#fff4ea] border-l-4 border-[#E8720C] rounded-r-lg p-5 mb-6">
-            <p className="font-serif text-xl text-foreground mb-2">
-              Encore à la maison{N}?
-            </p>
-            <p className="text-muted-foreground leading-relaxed">
-              Le cours d'IA ne figure pas au programme du BTS : l'école l'offre
-              à ses étudiants. Il a commencé lundi, et on ne reviendra pas en
-              arrière. Chaque jour à la maison est un cours manqué —
-              inscrivez-vous et venez prendre votre place.
-            </p>
+    <section className="py-16 bg-white" data-testid="section-rentree-effective">
+      <div className="container mx-auto px-4 max-w-6xl">
+        {/* 1. La vidéo et l'essentiel, côte à côte */}
+        <div className="grid lg:grid-cols-2 gap-10 items-center">
+          <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E8720C]/60">
+            <video
+              className="w-full h-auto block bg-black aspect-video"
+              src="/videos/rentree-2026-cours-ia.mp4"
+              poster="/videos/rentree-2026-cours-ia-poster.jpg"
+              controls
+              playsInline
+              preload="none"
+              data-testid="video-rentree-effective"
+            >
+              Votre navigateur ne prend pas en charge la lecture vidéo.
+            </video>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div>
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
+              Rentrée 2026-2027 · Effective depuis le{N}28{N}septembre
+            </p>
+            <h2 className="font-serif text-3xl md:text-4xl text-foreground mb-5 leading-tight">
+              Les cours ont repris.
+              <span className="block text-primary">Par l'intelligence artificielle.</span>
+            </h2>
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              Lundi 28 septembre à 8{N}h{N}30, les étudiants de première et de
+              deuxième année de BTS ont repris les cours. Le premier : une
+              initiation à l'intelligence artificielle, donnée en direct sur
+              notre campus numérique par José Kouadio, ingénieur logiciel senior
+              et fondateur de Markel Technology. Le même cours, au même moment,
+              dans tous nos campus.
+            </p>
+            <p className="border-l-4 border-[#E8720C] pl-4 text-foreground font-medium leading-relaxed">
+              Premier conseil aux étudiants : l'IA est un outil d'aide à la
+              décision. On ne lui confie pas tout.
+            </p>
+          </div>
+        </div>
+
+        {/* 2. Les prochains cours, lus en direct sur le campus numérique */}
+        <ProchainsCours />
+
+        {/* 3. L'appel aux retardataires */}
+        <div className="mt-12 bg-[#E8720C] rounded-xl p-7 md:p-8 flex flex-col md:flex-row md:items-center gap-6" data-testid="bandeau-retardataires">
+          <div className="flex-1">
+            <p className="font-serif text-2xl md:text-3xl text-white mb-2">Encore à la maison{N}?</p>
+            <p className="text-white/90 leading-relaxed max-w-2xl">
+              Le cours d'IA ne figure pas au programme du BTS : l'école l'offre à
+              ses étudiants. Il a commencé lundi, et on ne reviendra pas en
+              arrière. Chaque jour à la maison est un cours manqué.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row md:flex-col gap-3 shrink-0">
             <Link href="/preinscription">
-              <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto w-full sm:w-auto" data-testid="button-rentree-inscription">
+              <Button className="bg-white text-[#E8720C] hover:bg-white/90 font-bold px-8 py-3 h-auto w-full" data-testid="button-rentree-inscription">
                 Je m'inscris maintenant
               </Button>
             </Link>
             <Link href="/tarifs">
-              <Button variant="outline" className="font-semibold px-8 py-3 h-auto w-full sm:w-auto">
+              <Button variant="outline" className="border-white/70 bg-transparent text-white hover:bg-white/10 hover:text-white font-semibold px-8 py-3 h-auto w-full">
                 Les tarifs — paiement échelonné
               </Button>
             </Link>

@@ -91,12 +91,31 @@ const RENCONTRE_YOPOUGON = {
   },
 };
 
+const RENTREE_COURS_IA = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "Rentrée 2026-2027 effective : les cours commencent par l'intelligence artificielle",
+  description:
+    "Lundi 28 septembre 2026, la rentrée est effective sur les quatre campus du Groupe Écoles 2IAE International. Premier cours sur tous les campus : une initiation pratique à l'intelligence artificielle, formation certifiante offerte aux étudiants sur le campus numérique, donnée par José Kouadio, ingénieur logiciel senior.",
+  thumbnailUrl: [SITE + "/videos/rentree-2026-cours-ia-poster.jpg"],
+  contentUrl: SITE + "/videos/rentree-2026-cours-ia.mp4",
+  uploadDate: "2026-09-29",
+  duration: "PT1M38S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: {
+    "@type": "Organization",
+    name: "Groupe Écoles 2IAE International",
+    url: SITE,
+  },
+};
+
 const PAGES: Record<string, MetaPage> = {
   "/": {
     titre: "Groupe 2IAE International — 5e Grande École de Côte d'Ivoire | BTS, Licences, Entrepreneuriat",
     description:
       "67,38 % d'admis au BTS 2026 contre 42,48 % au national (chiffres MESRS), et 66 % des anciens insérés dont 13 % chefs d'entreprise — insertion mesurée par le cabinet indépendant 60 Decibels. 5e grande école de Côte d'Ivoire au classement officiel. 5 campus, internat, préinscriptions ouvertes.",
-    jsonLd: [RENCONTRE_YOPOUGON],
+    jsonLd: [RENTREE_COURS_IA, RENCONTRE_YOPOUGON],
   },
   "/filieres": {
     titre: "Filières BTS et Licences en Côte d'Ivoire — Bâtiment, Agriculture, Management, Informatique | 2IAE",

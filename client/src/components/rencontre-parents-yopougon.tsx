@@ -49,9 +49,9 @@ export function RencontreParentsYopougon() {
             dans les salles de classe.
           </p>
           <p className="text-muted-foreground leading-relaxed mb-6">
-            Rentrée le lundi 28 septembre. Premier module : l'intelligence
-            artificielle, deux semaines avec trois consultants — canadien,
-            allemand et français — sur notre campus numérique.
+            Premier module de la rentrée : l'intelligence artificielle, deux
+            semaines avec trois consultants — canadien, allemand et
+            français — sur notre campus numérique.
           </p>
 
           <div className="grid grid-cols-2 gap-3 mb-6">

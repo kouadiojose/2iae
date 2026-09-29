@@ -93,6 +93,7 @@ import {
   type CampusDirectDto,
   type SousTitreDto,
   type EtatDirectDto,
+  type DiapoDirectDto,
   type RejoindreDto,
   type CodeSalleDto,
   type EmargementDto,
@@ -2100,6 +2101,18 @@ export function enregistrerLive(app: Express) {
   );
 
   // ── État complet du direct (un appel, puis le temps réel) ────────────────
+  // Relecture légère de la diapo (temps réel coupé ou retenu en route) : la séance seule, sans le reste de l'état.
+  app.get(
+    "/api/seances/:id/diapo",
+    exigerConnexion,
+    route(async (req, res) => {
+      const s = await seanceAccessible(moi(req), idParam(req));
+      const r: DiapoDirectDto = { statut: s.statut, planB: s.planBLe ? s.lienSecours : null, diapo: diapoCourante(s) };
+      res.setHeader("Cache-Control", "no-store");
+      res.json(r);
+    }),
+  );
+
   app.get(
     "/api/seances/:id/direct",
     exigerConnexion,

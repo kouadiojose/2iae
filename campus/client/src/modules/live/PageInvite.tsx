@@ -2,7 +2,7 @@
 // partagé par le formateur ou l'équipe). L'invité donne son nom, puis suit en
 // son + diapos (léger, ≈ 12 à 15 Mo/h) ou en vidéo. Il ne pose pas de question
 // et n'émarge pas : pour cela, il faut se connecter avec son compte. La diapo
-// suit par une relecture toutes les 3 secondes (pas de temps réel sans compte).
+// suit par une relecture toutes les 2 secondes (pas de temps réel sans compte).
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link2Off, MonitorPlay, Radio, UserRound } from "lucide-react";
@@ -26,7 +26,7 @@ const lireNom = () => {
 
 export default function PageInvite({ jeton }: { jeton: string }) {
   const racine = `/api/invite/${encodeURIComponent(jeton)}`;
-  const { data: info, error, isLoading } = useQuery<InfoInviteDto>({ queryKey: [racine], refetchInterval: 3000, retry: 1 });
+  const { data: info, error, isLoading } = useQuery<InfoInviteDto>({ queryKey: [racine], refetchInterval: 2000, retry: 1 });
   const [nom, setNom] = useState(lireNom);
   const [mode, setMode] = useState<Mode>("radio");
   const [entre, setEntre] = useState<Mode | null>(null);

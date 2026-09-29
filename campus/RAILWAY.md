@@ -74,16 +74,33 @@ de cours). Pilotage → Visio indique le nombre de replays copiés et leur poids
 
 ## 4. Déployer
 
-- **Depuis le poste (immédiat)** : `cd campus && railway up --service campus`.
-  Réglages du service (Settings, ou `railway.json` quand le service est relié à
-  GitHub) : build `npm run build`, démarrage
-  `node dist/scripts/migrate.js && npm run start` (les migrations, idempotentes,
-  passent avant le serveur), santé `/api/health`. Un envoi par `railway up` ne
-  lit pas `railway.json` : ces réglages ont donc été posés sur le service.
-- **Depuis GitHub (automatique, une fois le code sur `main`)** : réglages du
-  service `campus` → Source → dépôt `kouadiojose/2iae`, branche `main`,
-  **Root Directory `/campus`**. Les chemins surveillés (`/campus/**`) évitent
-  de redéployer le campus quand seul le site change.
+**Une seule commande, depuis n'importe quel dossier du dépôt :**
+
+```bash
+bash campus/scripts/deployer.sh
+```
+
+Le script envoie le dossier `campus/` du commit courant (jamais la racine,
+qui est le site), refuse une version qui ne contient pas tout `origin/main`,
+refuse de déployer pendant un cours en direct (`FORCER=1` en cas d'urgence),
+construit le campus en local avant l'envoi, puis suit le déploiement jusqu'à
+`/api/health` = 200. Ne jamais lancer `railway up` à la main.
+
+Pourquoi tant de précautions : le service a un volume (`/data`), Railway
+arrête donc l'ancien campus **avant** de démarrer le nouveau. Une version qui
+ne démarre pas laisse le campus hors ligne (29 septembre 2026 : la racine du
+dépôt, le site, envoyée dans le service `campus`, vingt minutes de coupure).
+Deux garde-fous arrêtent désormais la construction avant tout déploiement :
+`scripts/garde-service.mjs` (le site construit pour le service `campus`) et
+`campus/scripts/garde-service.mjs` (le campus construit pour un autre service).
+
+Réglages posés sur le service (un envoi par `railway up` ne lit pas
+`railway.json`) : build `npm run build`, démarrage
+`node dist/scripts/migrate.js && npm run start` (les migrations, idempotentes,
+passent avant le serveur), santé `/api/health`.
+
+Le campus n'est **pas** relié à GitHub : un push sur `main` ne le redéploie
+pas (seul le site `2iae` se redéploie depuis GitHub).
 
 ## 5. Domaine personnalisé
 

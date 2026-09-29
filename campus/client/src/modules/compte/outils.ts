@@ -10,7 +10,7 @@ import type { Moi } from "@shared/schema";
 export function retourSur(brut: string | null | undefined): string | null {
   if (!brut) return null;
   if (!brut.startsWith("/") || brut.startsWith("//") || brut.startsWith("/\\")) return null;
-  if (/^\/(connexion|activer|bienvenue|mot-de-passe-oublie|reinitialiser)(\/|\?|$)/.test(brut)) return null;
+  if (/^\/(connexion|activer|invitation|rejoindre|bienvenue|mot-de-passe-oublie|reinitialiser)(\/|\?|$)/.test(brut)) return null;
   return brut;
 }
 

@@ -1,4 +1,10 @@
-// Inscription des formateurs par un lien personnel.
+// Inscription des formateurs par un lien personnel : PREMIÈRE VERSION (/inscription-formateur/<jeton>).
+//
+// Les invitations se font désormais par la fenêtre « Inviter » du pilotage (lien /invitation/<jeton>,
+// module lancement). Ces routes restent pour que les liens déjà envoyés marchent jusqu'à leur
+// expiration (30 jours) ; le guide envoyé est le même (guide-bienvenue.ts). Plus rien ne crée de
+// nouveau lien de ce type depuis l'interface.
+//
 //
 //   GET    /api/pilotage/formateurs/liens              les liens et les fiches à activer (direction)
 //   POST   /api/pilotage/formateurs/liens              crée le lien d'un formateur (nom prévu, ou fiche existante)

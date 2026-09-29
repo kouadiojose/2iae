@@ -43,8 +43,23 @@ export type PropsScene = {
   className?: string;
 };
 
+/** Téléphone (moins de 640 px de large) : la vidéo et la diapo s'empilent au lieu de se superposer. */
+function usePetitEcran() {
+  const requete = "(max-width: 639px)";
+  const [petit, setPetit] = useState(() => typeof window !== "undefined" && window.matchMedia(requete).matches);
+  useEffect(() => {
+    const m = window.matchMedia(requete);
+    const maj = () => setPetit(m.matches);
+    maj();
+    m.addEventListener("change", maj);
+    return () => m.removeEventListener("change", maj);
+  }, []);
+  return petit;
+}
+
 export function Scene(p: PropsScene) {
   const { seance, etat, role, mode } = p;
+  const petitEcran = usePetitEcran();
   const planB = etat.planB ?? seance.planB;
   // Bascule locale quand Daily échoue deux fois (ou que la visio est complète) : on écoute la radio sans quitter la page.
   const [secoursRadio, setSecoursRadio] = useState<RaisonSecours | null>(null);
@@ -75,33 +90,43 @@ export function Scene(p: PropsScene) {
   const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url) && !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio);
   const disposition = etat.diapo.disposition ?? "diapo";
   const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
+  // Téléphone en vidéo : une vignette de 140 px sur la diapo ne se voit pas. La vidéo passe au-dessus,
+  // en pleine largeur, et la diapo dessous (seules les classes changent : la visio ne se recharge pas).
+  const empile = avecDiapo && petitEcran && !p.grand;
   // Diapo seule (écran de salle) : la vidéo sort de l'écran sans être démontée, le son continue.
-  const diapoSeule = avecDiapo && Boolean(p.videoMasquee) && disposition !== "cameras";
+  const diapoSeule = avecDiapo && !empile && Boolean(p.videoMasquee) && disposition !== "cameras";
   return (
     <div
       className={cn(
         "relative overflow-hidden rounded-[22px] border-2 bg-nuit-carte",
         parole ? "border-orange" : "border-nuit-ligne",
-        p.grand ? "h-full min-h-[40vh]" : libre ? "" : "aspect-video",
+        p.grand ? "h-full min-h-[40vh]" : libre || empile ? "" : "aspect-video",
+        empile && "flex flex-col",
         p.className,
       )}
     >
       {avecDiapo && (
         <DiapoCourante
           etat={etat}
-          discrete={disposition === "cameras"}
-          className={cn(
-            (disposition === "diapo" || diapoSeule) && "absolute inset-0",
-            disposition === "cote" && !diapoSeule && "absolute inset-y-0 left-0 w-[58%]",
-            // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
-            disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
-          )}
+          discrete={disposition === "cameras" && !empile}
+          className={
+            empile
+              ? "relative order-2 aspect-video h-auto w-full border-t-2 border-nuit-ligne"
+              : cn(
+                  (disposition === "diapo" || diapoSeule) && "absolute inset-0",
+                  disposition === "cote" && !diapoSeule && "absolute inset-y-0 left-0 w-[58%]",
+                  // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
+                  disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
+                )
+          }
         />
       )}
       {/* Même structure dans toutes les mises en page (cadre > contenu) : la visio ne se recharge jamais. */}
       <div
         className={
-          !avecDiapo || disposition === "cameras"
+          empile
+            ? "relative order-1 aspect-video w-full bg-black"
+            : !avecDiapo || disposition === "cameras"
             ? "contents"
             : diapoSeule
               ? "pointer-events-none fixed -left-[4000px] top-0 h-[180px] w-[320px] opacity-0"
@@ -113,7 +138,9 @@ export function Scene(p: PropsScene) {
       >
         <div
           className={
-            !avecDiapo || disposition === "cameras"
+            empile
+              ? "h-full w-full overflow-hidden"
+              : !avecDiapo || disposition === "cameras"
               ? "contents"
               : disposition === "diapo" && !diapoSeule
                 ? "h-full w-full overflow-hidden rounded-xl border-2 border-nuit-ligne bg-nuit-carte shadow-2xl"
@@ -122,7 +149,7 @@ export function Scene(p: PropsScene) {
         >
           {contenu}
         </div>
-        {p.onVideoMasquee && avecDiapo && disposition === "diapo" && !diapoSeule && (
+        {p.onVideoMasquee && avecDiapo && !empile && disposition === "diapo" && !diapoSeule && (
           <button
             onClick={() => p.onVideoMasquee?.(true)}
             className="absolute -top-12 right-0 flex items-center gap-1.5 rounded-full bg-black/80 px-3.5 py-2 text-sm font-bold text-white opacity-70 shadow-lg transition-opacity hover:opacity-100"
@@ -379,8 +406,8 @@ const peutEnvoyerSon = (p: DailyEventObjectParticipant["participant"]) => {
   return cs === true || (cs instanceof Set && cs.has("audio"));
 };
 
-/** Relances du replay après une erreur d'enregistrement Daily : trois au plus, espacées. */
-const RELANCES_ENREGISTREMENT = 3;
+/** Relance du replay après une erreur d'enregistrement Daily : sans limite, 10 s après l'erreur (30 s si elles s'enchaînent). */
+const relanceApres = (n: number) => (n < 3 ? 10_000 : 30_000);
 
 function SceneDaily({
   seance,
@@ -436,12 +463,12 @@ function SceneDaily({
     enregistre.current = false;
     const debut = () => (enregistre.current = true);
     const fin = () => (enregistre.current = false);
-    // Enregistrement tombé en erreur en plein cours : on le relance (le replay garde tous les morceaux).
+    // Enregistrement tombé en erreur en plein cours : on le relance à chaque fois (le replay garde tous les morceaux).
     const erreur = () => {
       enregistre.current = false;
-      if (relancesEnregistrement.current >= RELANCES_ENREGISTREMENT) return;
+      const delai = relanceApres(relancesEnregistrement.current);
       relancesEnregistrement.current += 1;
-      setTimeout(() => setRelanceEnregistrement((n) => n + 1), 10_000);
+      setTimeout(() => setRelanceEnregistrement((n) => n + 1), delai);
     };
     call.on("recording-started", debut);
     call.on("recording-stopped", fin);

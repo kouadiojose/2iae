@@ -7,7 +7,9 @@ export const routes: DefRoute[] = [
   { chemin: "/activer/:jeton", page: lazy(() => import("./PageActiver")), acces: "public", coquille: "aucune" },
   // Public : le lien d'inscription que la direction partage à l'équipe administrative.
   { chemin: "/rejoindre/:jeton", page: lazy(() => import("./PageRejoindre")), acces: "public", coquille: "aucune" },
-  // Public : le lien personnel d'inscription d'un formateur (compte prêt aussitôt, guide par e-mail).
+  // Public : le lien personnel d'un formateur (ou de l'équipe) pour créer son compte ; le guide part par e-mail.
+  { chemin: "/invitation/:jeton", page: lazy(() => import("./PageInvitation")), acces: "public", coquille: "aucune" },
+  // Public : l'ancien lien d'inscription d'un formateur (/inscription-formateur) : les liens déjà envoyés restent valables.
   { chemin: "/inscription-formateur/:jeton", page: lazy(() => import("./PageInscriptionFormateur")), acces: "public", coquille: "aucune" },
   { chemin: "/mot-de-passe-oublie", page: lazy(() => import("./PageMotDePasseOublie")), acces: "public", coquille: "aucune" },
   { chemin: "/reinitialiser/:jeton", page: lazy(() => import("./PageReinitialiser")), acces: "public", coquille: "aucune" },

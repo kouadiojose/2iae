@@ -65,7 +65,7 @@ function exigerValide(s: Seance) {
   if (!lienValide(s)) throw new ErreurHttp(410, "Ce cours est terminé : le lien ne marche plus.");
 }
 
-/** Un invité interroge la séance toutes les quelques secondes : réponse gardée 2 s par séance. */
+/** Un invité interroge la séance toutes les 2 secondes : réponse gardée 1 s par séance. */
 const cacheInfos = new Map<number, { exp: number; info: InfoInviteDto }>();
 
 async function infoInvite(s: Seance, jeton: string): Promise<InfoInviteDto> {
@@ -91,7 +91,7 @@ async function infoInvite(s: Seance, jeton: string): Promise<InfoInviteDto> {
     diapo: { index, total, masquee, url: total && !masquee ? `/api/invite/${jeton}/diapo/${index}` : null },
     sousTitre: st?.texte ?? null,
   };
-  cacheInfos.set(s.id, { exp: Date.now() + 2000, info });
+  cacheInfos.set(s.id, { exp: Date.now() + 1000, info });
   return info;
 }
 

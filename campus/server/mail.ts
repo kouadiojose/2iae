@@ -11,14 +11,19 @@ import { config } from "./config";
 /** Le service d'e-mail est-il configuré ? */
 export const emailDisponible = () => Boolean(config.mail.resendCle);
 
-export async function envoyerEmail(o: { a: string; sujet: string; texte: string; html?: string }): Promise<boolean> {
+/** Pièce jointe d'un e-mail (le guide PDF, par exemple). */
+export type PieceJointe = { nom: string; contenu: Buffer };
+
+export async function envoyerEmail(o: { a: string; sujet: string; texte: string; html?: string; pieces?: PieceJointe[] }): Promise<boolean> {
   if (!config.mail.resendCle || !o.a) return false;
   try {
+    const attachments = o.pieces?.map((p) => ({ filename: p.nom, content: p.contenu.toString("base64") }));
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${config.mail.resendCle}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: config.mail.expediteur, to: [o.a], subject: o.sujet, text: o.texte, html: o.html }),
-      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ from: config.mail.expediteur, to: [o.a], subject: o.sujet, text: o.texte, html: o.html, ...(attachments?.length ? { attachments } : {}) }),
+      // Une pièce jointe de quelques Mo met plus longtemps à partir.
+      signal: AbortSignal.timeout(o.pieces?.length ? 45_000 : 15_000),
     });
     if (!r.ok) console.error("[mail] Resend :", r.status, await r.text().catch(() => ""));
     return r.ok;
@@ -58,6 +63,10 @@ export type ContenuEmail = {
   apresBouton?: string[];
   /** Encadré crème : paires libellé / valeur (identifiant, lien à copier…). */
   encadre?: { libelle: string; valeur: string; mono?: boolean }[];
+  /** Guide pas à pas, sous l'encadré : étapes numérotées (texte brut, ** pour le gras). */
+  etapes?: { titre: string; texte: string }[];
+  /** Titre au-dessus des étapes (« Votre campus, pas à pas »). */
+  titreEtapes?: string;
 };
 
 /** Paragraphe : échappe puis met en gras ce qui est entre ** **. */
@@ -111,6 +120,28 @@ ${
 </td></tr>`
     : ""
 }
+${
+  c.etapes?.length
+    ? `<tr><td style="padding:26px 32px 0">
+  ${c.titreEtapes ? `<h2 style="margin:0 0 14px;font-size:19px;line-height:1.2;font-weight:900;letter-spacing:-.01em;color:${ENCRE}">${echapper(c.titreEtapes)}</h2>` : ""}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  ${c.etapes
+    .map(
+      (e, i) => `<tr>
+    <td width="40" valign="top" style="padding:0 0 16px">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr><td align="center" valign="middle" width="30" height="30" style="width:30px;height:30px;border-radius:15px;background:${ORANGE};font-size:14px;font-weight:900;color:${ENCRE}">${i + 1}</td></tr></table>
+    </td>
+    <td valign="top" style="padding:3px 0 16px">
+      <p style="margin:0 0 4px;font-size:16px;line-height:1.3;font-weight:800;color:${ENCRE}">${echapper(e.titre)}</p>
+      <p style="margin:0;font-size:15px;line-height:1.55;color:#3D3833">${enrichir(e.texte)}</p>
+    </td>
+  </tr>`,
+    )
+    .join("\n  ")}
+  </table>
+</td></tr>`
+    : ""
+}
 <tr><td style="padding:24px 32px 28px">
   <p style="margin:0;padding-top:18px;border-top:1px solid ${LIGNE};font-size:13px;line-height:1.55;color:${TEXTE_PALE}">
     Une question ? Écrivez-nous sur WhatsApp au <a href="${CONTACTS_2IAE.lienWhatsapp}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.whatsapp}</a> ou à <a href="mailto:${CONTACTS_2IAE.email}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.email}</a>.
@@ -133,6 +164,7 @@ ${
     ...(c.bouton ? [`${c.bouton.libelle} : ${c.bouton.lien}`, ""] : []),
     ...(c.apresBouton ?? []).map(enClair),
     ...(c.encadre?.length ? ["", ...c.encadre.map((l) => `${l.libelle} : ${l.valeur}`)] : []),
+    ...(c.etapes?.length ? ["", ...(c.titreEtapes ? [c.titreEtapes.toUpperCase(), ""] : []), ...c.etapes.flatMap((e, i) => [`${i + 1}. ${e.titre}`, `   ${enClair(e.texte)}`, ""])] : []),
     "",
     `Une question ? WhatsApp ${CONTACTS_2IAE.whatsapp} · ${CONTACTS_2IAE.email}`,
     "Campus numérique · Groupe Écoles 2IAE International · www.2iae.com",
@@ -148,9 +180,9 @@ const fmtDate = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long"
 export const nomAffiche = (p: { prenom: string; nom: string }) => `${p.prenom} ${p.nom}`.replace(/\s+/g, " ").trim();
 
 /**
- * Invitation d'un formateur (ou d'un membre de l'équipe) : le lien
- * d'activation lui fait vérifier son nom, choisir son identifiant de
- * connexion et son mot de passe.
+ * Invitation d'un formateur (ou d'un membre de l'équipe) : le lien lui fait
+ * créer son compte (nom, e-mail, téléphone, mot de passe) ; le guide pas à
+ * pas part par e-mail dès que le compte est créé.
  */
 export function emailInvitation(o: {
   personne: { prenom: string; nom: string; role: string };
@@ -168,16 +200,108 @@ export function emailInvitation(o: {
         ? "Le Groupe Écoles 2IAE International vous ouvre son campus numérique. C'est de là que vous donnerez vos cours en direct, en même temps aux salles de conférence de nos cinq campus et aux étudiants connectés depuis leur téléphone."
         : "Le Groupe Écoles 2IAE International vous ouvre son campus numérique, l'outil de la vie scolaire de ses cinq campus.",
       ...(o.premierCours ? [`Votre prochain cours : **${o.premierCours}**.`] : []),
-      "Pour entrer, un seul lien. Vous y vérifierez votre nom, puis vous choisirez l'identifiant avec lequel vous vous connecterez ensuite (votre e-mail ou votre numéro de téléphone) et votre mot de passe.",
+      "Pour entrer, un seul lien. Vous y créerez votre compte : votre nom, votre adresse e-mail (elle sera votre identifiant), votre téléphone et votre mot de passe.",
+      "Dès que votre compte est créé, vous recevez par e-mail le **guide pas à pas** du campus : comment vous connecter, préparer et donner vos cours, déposer vos documents et corriger les devoirs.",
     ],
-    bouton: { libelle: "Activer mon compte", lien: o.lien },
+    bouton: { libelle: "Créer mon compte", lien: o.lien },
     apresBouton: [
       `Ce lien est personnel et ne sert qu'une fois. Il reste valable jusqu'au ${fmtDate.format(o.expireLe)}.`,
       "Le bouton ne s'ouvre pas ? Copiez le lien ci-dessous dans votre navigateur (Chrome, Edge, Firefox ou Safari).",
     ],
-    encadre: [{ libelle: "Lien d'activation", valeur: o.lien, mono: true }],
+    encadre: [{ libelle: "Lien d'invitation", valeur: o.lien, mono: true }],
   });
   return { sujet: formateur ? "Votre accès au campus numérique 2IAE" : "Votre accès au campus numérique 2IAE (équipe)", html, texte };
+}
+
+/**
+ * Guide de bienvenue, envoyé dès que le formateur (ou le membre de l'équipe)
+ * a créé son compte : ses identifiants, puis le campus pas à pas. Le guide
+ * complet en PDF est joint quand il est disponible.
+ */
+export function emailGuideBienvenue(o: {
+  personne: { prenom: string; nom: string; role: string };
+  email: string;
+  premierCours?: string | null;
+  pdfJoint: boolean;
+  lienPdf: string;
+}): { sujet: string; html: string; texte: string } {
+  const formateur = o.personne.role === "formateur";
+  const hote = config.urlCampus.replace(/^https?:\/\//, "");
+  const appel = /^(m|mme|mlle|dr|pr)\.?$/i.test(o.personne.prenom.trim()) ? nomAffiche(o.personne) : o.personne.prenom.trim();
+  const etapes: { titre: string; texte: string }[] = formateur
+    ? [
+        {
+          titre: "Se connecter",
+          texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Code oublié ? » : un lien vous arrive par e-mail.`,
+        },
+        {
+          titre: "Installer l'application",
+          texte: "Sur ordinateur, dans Chrome ou Edge, l'icône « Installer » de la barre d'adresse met le campus dans une fenêtre à lui, comme un logiciel. Sur téléphone, le campus vous propose de l'installer.",
+        },
+        {
+          titre: "Votre page « Aujourd'hui »",
+          texte: "C'est votre accueil : votre prochaine séance, vos cours, et votre lieu. Un clic sur **Nice**, **Toronto** ou votre ville règle ce que voient les salles (« depuis Toronto ») et vos horaires « chez vous ».",
+        },
+        {
+          titre: "Préparer une séance",
+          texte: "Sur votre page « Aujourd'hui » ou dans « Studio », chaque séance a son bouton « Préparer la séance » : déposez votre **PowerPoint** ou votre PDF (chaque diapo devient une image légère), le déroulé minuté et vos sondages. L'assistant IA peut vous proposer un déroulé.",
+        },
+        {
+          titre: "Donner le cours en direct",
+          texte: "Ouvrez le **Studio** une vingtaine de minutes avant l'heure. Testez votre micro et votre caméra, vérifiez que les salles passent au vert, puis « **Démarrer le direct** ». Les cinq salles et les étudiants basculent sur votre cours, et l'enregistrement démarre tout seul. À la fin, « **Terminer** ».",
+        },
+        {
+          titre: "Mettre vos leçons et vos documents",
+          texte: "« **Mes cours** », puis votre cours : ajoutez des leçons avec un texte, des PDF, des PowerPoint, des documents Word ou des vidéos courtes (50 Mo par fichier). Vos étudiants les retrouvent sur leur téléphone.",
+        },
+        {
+          titre: "Donner et corriger les devoirs",
+          texte: "Dans « **Corrections** », « Nouveau devoir » : un **devoir à rendre** (copie en photo, PDF ou Word) ou une **interrogation** corrigée toute seule, avec la consigne, la date limite et le barème, puis « Publier ». Quand les copies arrivent, l'IA vous propose une note et un commentaire : vous relisez, vous décidez, puis « Publier les notes ».",
+        },
+        {
+          titre: "Après le cours",
+          texte: "Sur la page de la séance : le bilan des présences par campus, la fiche de révision rédigée par l'IA (vous la relisez avant de la publier), et le **replay**, qui arrive tout seul dans le cours.",
+        },
+      ]
+    : [
+        {
+          titre: "Se connecter",
+          texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Code oublié ? ».`,
+        },
+        {
+          titre: "Installer l'application",
+          texte: "Sur ordinateur, l'icône « Installer » de la barre d'adresse de Chrome ou d'Edge. Sur téléphone, le campus vous propose de l'installer.",
+        },
+        {
+          titre: "Le pilotage",
+          texte: "« **Pilotage** » rassemble les cours du jour, les présences par campus, les étudiants, la scolarité et les annonces.",
+        },
+        {
+          titre: "Suivre les cours en direct",
+          texte: "« **Live** » : les cours en cours, les salles prêtes, et le replay de chaque séance terminée.",
+        },
+      ];
+  const pdf = formateur ? "Le **guide du formateur** complet (16 pages, PDF) est joint à cet e-mail." : "Le **guide de l'administration** complet (PDF) est joint à cet e-mail.";
+  const { html, texte } = gabaritEmail({
+    etiquette: formateur ? "Bienvenue · Guide du formateur" : "Bienvenue · Campus numérique",
+    titre: `Bienvenue, ${appel} !`,
+    paragraphes: [
+      formateur
+        ? "Votre compte formateur est créé. Voici, pas à pas, comment entrer sur le campus numérique du Groupe Écoles 2IAE International et y donner vos cours. Gardez cet e-mail : il vous servira d'aide-mémoire."
+        : "Votre compte est créé. Voici, pas à pas, comment entrer sur le campus numérique du Groupe Écoles 2IAE International. Gardez cet e-mail : il vous servira d'aide-mémoire.",
+      ...(o.premierCours ? [`Votre prochain cours : **${o.premierCours}**.`] : []),
+    ],
+    bouton: { libelle: "Entrer dans mon campus", lien: `${config.urlCampus}/connexion` },
+    apresBouton: [o.pdfJoint ? pdf : `Le guide complet (PDF) se télécharge ici : ${o.lienPdf}`],
+    encadre: [
+      { libelle: "Adresse du campus", valeur: hote },
+      { libelle: "Votre identifiant", valeur: o.email, mono: true },
+      { libelle: "Votre mot de passe", valeur: "Celui que vous venez de choisir" },
+    ],
+    titreEtapes: "Votre campus, pas à pas",
+    etapes,
+  });
+  return { sujet: formateur ? "Bienvenue sur le campus numérique 2IAE : votre guide pas à pas" : "Bienvenue sur le campus numérique 2IAE", html, texte };
 }
 
 /** Lien « code oublié » reçu par e-mail (tutoiement pour les étudiants). */

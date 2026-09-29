@@ -1,8 +1,8 @@
-// « Inviter » un formateur (ou un membre de l'équipe) : un lien d'activation
+// « Inviter » un formateur (ou un membre de l'équipe) : un lien personnel
 // à usage unique, à envoyer par WhatsApp, par e-mail ou à copier. En
-// l'ouvrant, la personne vérifie son nom, choisit son identifiant (e-mail ou
-// téléphone) et son mot de passe. Chaque ouverture de la fenêtre crée un
-// nouveau lien : le précédent ne marche plus.
+// l'ouvrant, la personne crée son compte (nom, e-mail, téléphone, mot de
+// passe) et reçoit aussitôt par e-mail le guide pas à pas du campus. Chaque
+// ouverture de la fenêtre crée un nouveau lien : le précédent ne marche plus.
 import { useEffect, useRef, useState } from "react";
 import { Copy, Mail, MessageCircle, Link2, TriangleAlert, CalendarClock, CheckCircle2 } from "lucide-react";
 import type { InvitationRemise, EnvoiInvitation } from "@shared/lancement";
@@ -70,7 +70,7 @@ export function FenetreInvitation({ personne, onFermer }: { personne: PersonneAI
       onFermer={onFermer}
       large
       titre={`Inviter ${nom}`}
-      description="Un lien personnel, valable une seule fois : il vérifie son nom, choisit son identifiant (e-mail ou téléphone) et son mot de passe."
+      description="Un lien personnel, valable une seule fois : la personne y crée son compte (nom, e-mail, téléphone, mot de passe), puis reçoit aussitôt le guide du campus par e-mail."
       pied={
         invitation ? (
           <>
@@ -110,7 +110,7 @@ export function FenetreInvitation({ personne, onFermer }: { personne: PersonneAI
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <div className="min-w-0 flex-1">
-              <div className="etiquette">Lien d'activation</div>
+              <div className="etiquette">Lien d'invitation</div>
               <p className="mt-1.5 break-all rounded-xl border border-ligne bg-white px-3 py-2.5 font-mono text-[13px] leading-snug text-encre">{invitation.lien}</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                 <button
@@ -125,7 +125,7 @@ export function FenetreInvitation({ personne, onFermer }: { personne: PersonneAI
               </div>
             </div>
             <div className="flex flex-col items-center gap-1.5 self-center sm:self-start">
-              <Qr texte={invitation.lien} className="w-32 rounded-xl border border-ligne bg-white p-2.5" titre={`QR du lien d'activation de ${nom}`} />
+              <Qr texte={invitation.lien} className="w-32 rounded-xl border border-ligne bg-white p-2.5" titre={`QR du lien d'invitation de ${nom}`} />
               <span className="text-center text-[13px] text-texte-gris">Ou à scanner avec son téléphone</span>
             </div>
           </div>
@@ -150,7 +150,7 @@ export function FenetreInvitation({ personne, onFermer }: { personne: PersonneAI
                   value={adresse}
                   onChange={(e) => setAdresse(e.target.value)}
                   placeholder="adresse.personnelle@exemple.com"
-                  aide={personne.email ? "Celle du compte. Vous pouvez en taper une autre." : "Elle ne sera pas enregistrée : la personne choisira son identifiant en activant son compte."}
+                  aide={personne.email ? "Celle du compte. Vous pouvez en taper une autre." : "Elle ne sera pas enregistrée : la personne tapera son adresse en créant son compte."}
                 />
                 <Bouton variante="encre" onClick={envoyerEmail} chargement={envoi} disabled={!adresse.trim()} className="sm:mb-[26px]">
                   Envoyer

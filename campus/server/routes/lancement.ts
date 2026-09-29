@@ -40,10 +40,12 @@ import {
   motDePasseProvisoire,
   DUREE_CODE_PROVISOIRE_MS,
 } from "../auth";
-import { creerJeton, hacherJeton, lienActivation } from "../activation";
+import { creerJeton, hacherJeton, lienInvitation } from "../activation";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { iaDisponible, raisonIndisponible } from "../ia";
 import { emailDisponible, envoyerEmail, emailInvitation, nomAffiche } from "../mail";
+import { envoyerGuideBienvenue } from "../guide-bienvenue";
+import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
 import { invaliderJetons } from "./compte";
 import { sallePasEncoreNommee, SALLES_INVENTEES } from "../amorcage";
@@ -61,6 +63,8 @@ import type {
   EnvoiInvitation,
   InstallationEcran,
   EtatEcranSalle,
+  InfoInvitation,
+  InvitationAcceptee,
 } from "@shared/lancement";
 
 const P = "/api/pilotage";
@@ -779,7 +783,7 @@ async function prochainCours(id: number): Promise<string | null> {
   return rows[0] ? format(rows[0].titre, new Date(rows[0].debut)) : null;
 }
 
-function messageInvitation(c: Pick<Utilisateur, "prenom" | "nom" | "role">, lienActivationTexte: string, expireLe: Date, premier: string | null): string {
+function messageInvitation(c: Pick<Utilisateur, "prenom" | "nom" | "role">, lienTexte: string, expireLe: Date, premier: string | null): string {
   return [
     `Bonjour ${nomAffiche(c)},`,
     c.role === "formateur"
@@ -787,10 +791,11 @@ function messageInvitation(c: Pick<Utilisateur, "prenom" | "nom" | "role">, lien
       : "Le Groupe Écoles 2IAE International vous ouvre son campus numérique.",
     ...(premier ? [`Votre prochain cours : ${premier}.`] : []),
     "",
-    `Pour activer votre compte, ouvrez ce lien (il ne sert qu'une fois, jusqu'au ${fmtDate.format(expireLe)}) :`,
-    lienActivationTexte,
+    `Pour créer votre compte, ouvrez ce lien (il est personnel et ne sert qu'une fois, jusqu'au ${fmtDate.format(expireLe)}) :`,
+    lienTexte,
     "",
-    "Vous y vérifierez votre nom, puis vous choisirez votre identifiant (votre e-mail ou votre numéro de téléphone) et votre mot de passe.",
+    "Vous y indiquerez votre nom, votre adresse e-mail (votre identifiant), votre téléphone et votre mot de passe.",
+    "Dès que votre compte est créé, vous recevez par e-mail le guide pas à pas du campus : connexion, préparation des cours, cours en direct, documents et devoirs.",
   ].join("\n");
 }
 
@@ -964,6 +969,70 @@ function lireIdentifiant(brut: string): Identifiant {
 
 const nomPropre = (s: string) => s.replace(/\s+/g, " ").trim();
 
+// ── Invitation : la personne crée son compte depuis son lien personnel ─────
+
+const lienPerimeInvitation = () =>
+  new ErreurHttp(
+    410,
+    "Ce lien d'invitation ne marche plus : il a déjà servi, il a expiré, ou un lien plus récent l'a remplacé. Votre compte est déjà créé ? Connectez-vous avec votre adresse e-mail. Sinon, demandez un nouveau lien à la direction.",
+  );
+
+/** Le compte que ce lien d'invitation permet de créer, sans consommer le lien. */
+async function lireInvitation(jeton: string): Promise<{ ligneId: number; expireLe: Date; compte: Utilisateur } | null> {
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(jeton)) return null;
+  const [ligne] = await db
+    .select({ id: reinitialisations.id, utilisateurId: reinitialisations.utilisateurId, expireLe: reinitialisations.expireLe })
+    .from(reinitialisations)
+    .where(
+      and(
+        eq(reinitialisations.jetonHash, hacherJeton(jeton)),
+        eq(reinitialisations.type, "activation"),
+        isNull(reinitialisations.utiliseLe),
+        gt(reinitialisations.expireLe, new Date()),
+      ),
+    );
+  if (!ligne) return null;
+  const [c] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, ligne.utilisateurId));
+  // Un compte déjà créé ne se recrée pas : on se connecte avec lui.
+  if (!c || !c.actif || !ROLES_INVITABLES.includes(c.role) || !c.doitChangerMotDePasse) return null;
+  return { ligneId: ligne.id, expireLe: ligne.expireLe, compte: c };
+}
+
+/** Téléphone de contact : international (+1 514 555 0123) ou ivoirien à 10 chiffres. */
+function lireTelephone(brut: string): string {
+  const t = brut.trim();
+  if (/^\s*(\+|00)/.test(t)) {
+    const n = normaliserTelephone(t);
+    if (n.length >= 8 && n.length <= 15) return n;
+  } else {
+    const chiffres = t.replace(/\D/g, "");
+    if (/^0\d{9}$/.test(chiffres)) return chiffres;
+  }
+  throw invalide("Numéro de téléphone illisible : tapez l'indicatif du pays puis le numéro, par exemple +1 514 555 0123 ou +225 07 07 12 34 56.");
+}
+
+/** La direction, et la personne qui a envoyé l'invitation, apprennent que le compte est créé. */
+async function prevenirCompteCree(c: Utilisateur, guideEnvoye: boolean) {
+  const { rows } = await pool.query<{ utilisateur_id: number | null }>(
+    `SELECT utilisateur_id FROM campus.journal WHERE action IN ('invitation', 'invitation_email') AND details->>'compteId' = $1 ORDER BY cree_le DESC LIMIT 1`,
+    [String(c.id)],
+  );
+  const direction = await db
+    .select({ id: utilisateurs.id })
+    .from(utilisateurs)
+    .where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));
+  const ids = new Set(direction.map((x) => x.id));
+  if (rows[0]?.utilisateur_id) ids.add(rows[0].utilisateur_id);
+  ids.delete(c.id);
+  await notifier([...ids], {
+    type: "systeme",
+    titre: `${nomAffiche(c)} a créé son compte`,
+    corps: `${c.role === "formateur" ? "Formateur" : "Équipe"} · ${guideEnvoye ? `guide du campus envoyé à ${c.email}` : "le guide n'a pas pu partir par e-mail"}.`,
+    lien: `/pilotage/comptes?q=${encodeURIComponent(c.nom)}`,
+    push: true,
+  });
+}
+
 // ── Routes ─────────────────────────────────────────────────────────────────
 
 export function enregistrerLancement(app: Express) {
@@ -1047,7 +1116,7 @@ export function enregistrerLancement(app: Express) {
       oublierUtilisateur(c.id);
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
       const jeton = await creerJeton(c.id, "activation", DUREE_CODE_PROVISOIRE_MS);
-      const lienTexte = lienActivation(jeton);
+      const lienTexte = lienInvitation(jeton);
       const premier = await prochainCours(c.id);
       const message = messageInvitation(c, lienTexte, expireLe, premier);
       let envoye = false;
@@ -1090,7 +1159,7 @@ export function enregistrerLancement(app: Express) {
       if (!adresse) throw invalide("Indiquez l'adresse e-mail à laquelle envoyer l'invitation.");
       if (!emailDisponible()) throw new ErreurHttp(503, "Le campus n'envoie pas encore d'e-mails. Envoyez le lien par WhatsApp ou copiez-le.");
       const [ligne] = await db.select({ expireLe: reinitialisations.expireLe }).from(reinitialisations).where(eq(reinitialisations.jetonHash, hacherJeton(d.jeton)));
-      const envoye = await envoyerInvitationEmail(c, adresse, lienActivation(d.jeton), ligne.expireLe, await prochainCours(c.id));
+      const envoye = await envoyerInvitationEmail(c, adresse, lienInvitation(d.jeton), ligne.expireLe, await prochainCours(c.id));
       if (envoye) await journaliser(u, "invitation_email", { compteId: c.id, autreAdresse: Boolean(d.adresse && d.adresse !== c.email) });
       const r: EnvoiInvitation = {
         envoye,
@@ -1228,6 +1297,115 @@ export function enregistrerLancement(app: Express) {
     }),
   );
 
+  // Page « Créer mon compte » (/invitation/:jeton) : ce qu'elle pré-remplit.
+  app.get(
+    "/api/invitation/:jeton",
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const cleIp = `invitation|${reseauClient(req.ip)}`;
+      verifierTentatives(cleIp, 20);
+      const inv = await lireInvitation(String(req.params.jeton ?? ""));
+      if (!inv) {
+        noterEchec(cleIp);
+        throw lienPerimeInvitation();
+      }
+      const c = inv.compte;
+      const r: InfoInvitation = {
+        role: c.role as InfoInvitation["role"],
+        prenom: c.prenom,
+        nom: c.nom,
+        email: c.email && !adresseDeDemonstration(c.email) ? c.email : null,
+        telephone: c.telephone,
+        titre: c.titre,
+        premierCours: await prochainCours(c.id),
+        expireLe: inv.expireLe.toISOString(),
+        longueurMinimale: longueurMinimale(c.role),
+        emailDisponible: emailDisponible(),
+      };
+      res.json(r);
+    }),
+  );
+
+  // La personne crée son compte : nom, e-mail (son identifiant), téléphone, mot de passe. Le lien est
+  // consommé, sa session s'ouvre, et le guide pas à pas part aussitôt à son adresse e-mail.
+  app.post(
+    "/api/invitation/:jeton",
+    route(async (req: Request, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const cleIp = `invitation|${reseauClient(req.ip)}`;
+      verifierTentatives(cleIp, 20);
+      const inv = await lireInvitation(String(req.params.jeton ?? ""));
+      if (!inv) {
+        noterEchec(cleIp);
+        throw lienPerimeInvitation();
+      }
+      const c = inv.compte;
+      const d = valider(
+        z.object({
+          prenom: z.string().trim().min(1, "indiquez votre prénom").max(80, "trop long"),
+          nom: z.string().trim().min(1, "indiquez votre nom").max(80, "trop long"),
+          email: z.string().trim().toLowerCase().min(1, "indiquez votre adresse e-mail").email("adresse e-mail non valide (exemple : prenom.nom@gmail.com)").max(160, "trop long"),
+          telephone: z.string().trim().max(30, "trop long").optional(),
+          titre: z.string().trim().max(120, "120 caractères au maximum").optional(),
+          motDePasse: z.string().min(1, "choisissez votre mot de passe").max(200),
+        }),
+        req.body,
+      );
+      if (adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tapez votre vraie adresse e-mail.");
+      const telephone = d.telephone ? lireTelephone(d.telephone) : c.telephone;
+      const minimum = longueurMinimale(c.role);
+      if (d.motDePasse.length < minimum) throw invalide(`Votre mot de passe doit faire au moins ${minimum} caractères.`);
+      if (!codeSecretAcceptable(d.motDePasse)) throw invalide("Ce mot de passe est trop facile à deviner. Mélangez des mots, des chiffres ou des signes.");
+      const [pris] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(eq(utilisateurs.email, d.email), ne(utilisateurs.id, c.id)));
+      if (pris) throw new ErreurHttp(409, "Cette adresse e-mail est déjà utilisée par un autre compte du campus. Tapez une autre adresse, ou écrivez à la direction.");
+
+      const prenom = nomPropre(d.prenom);
+      const nom = nomPropre(d.nom);
+      const titre = c.role === "formateur" && d.titre ? nomPropre(d.titre) : c.titre;
+      const motDePasseHash = await hacher(d.motDePasse);
+      let apres: Utilisateur;
+      try {
+        apres = await db.transaction(async (tx) => {
+          // Le lien ne sert qu'une fois, même si la page est envoyée deux fois de suite.
+          const [consomme] = await tx
+            .update(reinitialisations)
+            .set({ utiliseLe: new Date() })
+            .where(and(eq(reinitialisations.id, inv.ligneId), isNull(reinitialisations.utiliseLe)))
+            .returning({ id: reinitialisations.id });
+          if (!consomme) throw lienPerimeInvitation();
+          const [a] = await tx
+            .update(utilisateurs)
+            .set({ prenom, nom, email: d.email, telephone, titre, motDePasseHash, doitChangerMotDePasse: false, motDePasseExpireLe: null, derniereConnexion: new Date() })
+            .where(and(eq(utilisateurs.id, c.id), eq(utilisateurs.doitChangerMotDePasse, true)))
+            .returning();
+          if (!a) throw lienPerimeInvitation();
+          return a;
+        });
+      } catch (e) {
+        if ((e as { code?: string }).code === "23505") throw new ErreurHttp(409, "Cette adresse e-mail vient d'être prise par un autre compte. Tapez-en une autre.");
+        throw e;
+      }
+      // Plus aucun autre lien (fiche, ancienne invitation) n'ouvre ce compte ; seule cette session reste.
+      await invaliderJetons(c.id);
+      await fermerAutresSessions(c.id);
+      await new Promise<void>((ok, ko) => req.session.regenerate((e) => (e ? ko(e) : ok())));
+      req.session.utilisateurId = apres.id;
+      req.session.cookie.maxAge = dureeSession(apres.role);
+      oublierUtilisateur(apres.id);
+      effacerTentatives(cleIp);
+      for (const x of [c.email, c.telephone, apres.email, apres.telephone]) if (x) effacerTentatives(`compte|${x.toLowerCase()}`);
+      const nomModifie = prenom !== c.prenom || nom !== c.nom;
+      await journaliser(apres, "premiere_connexion", { identifiant: "email", par: "invitation", nomModifie });
+      if ((nomModifie || titre !== c.titre) && apres.publierSurSite) prevenirSite("fiche d'un formateur");
+
+      const envoye = await envoyerGuideBienvenue(apres, await prochainCours(apres.id));
+      await journaliser(apres, "guide_bienvenue", { envoye });
+      void prevenirCompteCree(apres, envoye).catch((e) => console.error("[invitation] notification :", (e as Error).message));
+      const r: InvitationAcceptee = { moi: await versMoi(apres), guide: { adresse: d.email, envoye } };
+      res.status(201).json(r);
+    }),
+  );
+
   // Première connexion d'un formateur (ou d'un membre de l'équipe sans identifiant) :
   // nom vérifié, identifiant de connexion choisi (e-mail ou téléphone), mot de passe.
   app.post(
@@ -1297,6 +1475,13 @@ export function enregistrerLancement(app: Express) {
       for (const x of [u.email, u.telephone, apres.email, apres.telephone]) if (x) effacerTentatives(`compte|${x.toLowerCase()}`);
       await journaliser(u, "premiere_connexion", { identifiant: id.type, nomModifie });
       if (nomModifie && apres.publierSurSite) prevenirSite("fiche d'un formateur");
+      // Identifiant e-mail : le guide pas à pas part aussi (sans faire attendre la personne).
+      if (id.type === "email") {
+        void prochainCours(apres.id)
+          .then((premier) => envoyerGuideBienvenue(apres, premier))
+          .then((envoye) => journaliser(apres, "guide_bienvenue", { envoye }))
+          .catch((e) => console.error("[premiere-connexion] guide :", (e as Error).message));
+      }
       res.json(await versMoi(apres));
     }),
   );

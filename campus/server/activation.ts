@@ -45,6 +45,8 @@ export async function consommerJeton(jeton: string, type: "activation" | "reinit
 }
 
 export const lienActivation = (jeton: string) => `${config.urlCampus}/activer/${jeton}`;
+/** Lien d'invitation d'un formateur ou de l'équipe : la page « Créer mon compte » (même jeton d'activation). */
+export const lienInvitation = (jeton: string) => `${config.urlCampus}/invitation/${jeton}`;
 
 /**
  * Nouveau code provisoire à 6 chiffres (valable 30 jours) + jeton QR

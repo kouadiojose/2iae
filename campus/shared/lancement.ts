@@ -64,7 +64,7 @@ export type ResultatPurge = { comptes: number; tables: Record<string, number>; f
 /** POST /api/pilotage/comptes/:id/invitation : le lien d'activation, montré dans la fenêtre « Inviter ». */
 export type InvitationRemise = {
   compteId: number;
-  /** Lien d'activation (usage unique) : https://…/activer/<jeton>. */
+  /** Lien d'invitation (usage unique) : https://…/invitation/<jeton>. */
   lien: string;
   /** Le jeton du lien, pour demander ensuite l'envoi par e-mail du MÊME lien. */
   jeton: string;
@@ -84,6 +84,29 @@ export type InvitationRemise = {
 
 /** POST /api/pilotage/comptes/:id/invitation/email */
 export type EnvoiInvitation = { envoye: boolean; adresse: string; message: string };
+
+/** GET /api/invitation/:jeton (public) : ce que la page « Créer mon compte » pré-remplit. */
+export type InfoInvitation = {
+  role: "formateur" | "vie_scolaire" | "admin";
+  prenom: string;
+  nom: string;
+  email: string | null;
+  telephone: string | null;
+  titre: string | null;
+  /** Prochain cours de la personne, s'il est déjà au programme. */
+  premierCours: string | null;
+  expireLe: string;
+  /** Longueur minimale du mot de passe (10 pour le personnel). */
+  longueurMinimale: number;
+  /** Le campus envoie des e-mails : le guide partira dès la création du compte. */
+  emailDisponible: boolean;
+};
+
+/** POST /api/invitation/:jeton : compte créé, session ouverte, guide envoyé (ou non). */
+export type InvitationAcceptee = {
+  moi: Moi;
+  guide: { adresse: string; envoye: boolean };
+};
 
 // ── Écran de la salle de conférence ────────────────────────────────────────
 

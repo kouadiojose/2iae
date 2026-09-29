@@ -13,6 +13,7 @@ import { VideoYoutube } from "@/components/video-youtube";
 import { AfficheRTI } from "@/components/annonce-rti";
 import { ReportageRtiBts } from "@/components/reportage-rti";
 import { RencontreParentsYopougon } from "@/components/rencontre-parents-yopougon";
+import { RentreeEffective } from "@/components/rentree-effective";
 import { SectionCampusAccueil } from "@/components/campus-numerique";
 
 interface News {
@@ -375,6 +376,9 @@ export default function AccueilPage() {
           </div>
         </div>
       </section>
+
+      {/* La rentrée a eu lieu — appel aux retardataires (auto-expirant) */}
+      <RentreeEffective />
 
       {/* Les deux rendements — la réponse chiffrée, et vérifiable par des
           tiers, à qui met en doute la valeur de l'école. Placée juste sous le

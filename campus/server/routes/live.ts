@@ -3770,7 +3770,8 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
 
 /**
  * Replay prêt : tous les formateurs sont prévenus (campus et téléphone), ceux du cours avec leur propre
- * message. Le lien ouvre le replay ; la liste complète est dans « Enregistrements ».
+ * message, ainsi que les étudiants du cours. Le lien ouvre le replay ; pour les formateurs, la liste
+ * complète est dans « Enregistrements ».
  */
 async function annoncerReplay(s: Seance): Promise<void> {
   const [c] = await db.select({ code: cours.code, formateurId: cours.formateurId }).from(cours).where(eq(cours.id, s.coursId));
@@ -3794,6 +3795,15 @@ async function annoncerReplay(s: Seance): Promise<void> {
     corps: `${c?.code ?? ""}${a ? ` · ${a.prenom} ${a.nom}` : ""}${duree}. À voir dans « Enregistrements », depuis votre tableau de bord.`,
     lien,
   });
+  await notifier(
+    (await etudiantsDuCours(s.coursId)).map((e) => e.id),
+    {
+      type: "cours",
+      titre: `Replay disponible : ${s.titre}`,
+      corps: `${c?.code ?? ""}${duree} · tu peux revoir le cours quand tu veux, avec la transcription et les questions posées.`,
+      lien,
+    },
+  );
 }
 
 /** Lien de lecture d'un enregistrement : dans le bucket des replays s'il y est copié, chez Daily sinon. */

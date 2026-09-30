@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { PlayCircle, Search, FileText, MessageSquare, Presentation, ExternalLink } from "lucide-react";
 import { get, post } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
+import { rafraichir } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { dateComplete, dateEtHeure, heure } from "@/lib/dates";
 import { Page, EnTetePage } from "@/components/layout/coquille";
@@ -35,8 +36,10 @@ export default function PageReplay({ id }: { id: string }) {
   const enseignant = moi.role === "formateur" || moi.role === "admin" || moi.role === "vie_scolaire";
 
   useEffect(() => {
-    // « Revu en replay » : suivi à part, ne compte jamais comme une présence.
-    if (moi.role === "etudiant" && r) void post(`/api/seances/${seanceId}/replay/vu`).catch(() => undefined);
+    // « Revu en replay » : suivi à part, ne compte jamais comme une présence. Formateur : le « Nouveau » de ses Enregistrements s'efface.
+    if (!r) return;
+    if (moi.role === "etudiant") void post(`/api/seances/${seanceId}/replay/vu`).catch(() => undefined);
+    if (moi.role === "formateur") void post(`/api/seances/${seanceId}/replay/vu`).then(() => rafraichir("/api/replays"), () => undefined);
   }, [r?.seance.id]);
 
   const resultats = useMemo(() => {
@@ -92,7 +95,17 @@ export default function PageReplay({ id }: { id: string }) {
         etiquette={`${r.seance.coursCode} · Replay`}
         titre={r.seance.titre}
         sousTitre={`${enseignant ? dateEtHeure(r.seance.debut) : `${dateComplete(r.seance.debut)} · ${heure(r.seance.debut)}`}${r.seance.formateur ? ` · ${r.seance.formateur}` : ""}`}
-        actions={enseignant ? <LienBouton href={`/enseigner/seances/${r.seance.id}`} variante="contour">Bilan et fiche</LienBouton> : undefined}
+        actions={
+          r.anime ? (
+            <LienBouton href={`/enseigner/seances/${r.seance.id}`} variante="contour">
+              Bilan et fiche
+            </LienBouton>
+          ) : moi.role === "formateur" ? (
+            <LienBouton href="/replays" variante="contour">
+              Tous les enregistrements
+            </LienBouton>
+          ) : undefined
+        }
       />
 
       {/* Lecteur : rien ne se charge sans l'accord de l'étudiant */}
@@ -126,7 +139,7 @@ export default function PageReplay({ id }: { id: string }) {
                 <p className="max-w-md text-[15px] text-nuit-doux">
                   {r.video.poidsEstimeMo ? `Environ ${r.video.poidsEstimeMo} Mo` : "Poids selon la plateforme vidéo"}
                   {r.video.dureeSecondes ? ` · ${Math.round(r.video.dureeSecondes / 60)} min` : ""}
-                  {morceaux && morceaux.length > 1 ? ` en ${morceaux.length} parties` : ""}. En 4G, commence plutôt par la fiche et la transcription (quelques Ko).
+                  {morceaux && morceaux.length > 1 ? ` en ${morceaux.length} parties` : ""}. En 4G, {enseignant ? "commencez" : "commence"} plutôt par la fiche et la transcription (quelques Ko).
                 </p>
                 {lienDirect ? (
                   <LienBouton href={video!} externe icone={<ExternalLink className="h-4 w-4" />}>
@@ -176,8 +189,14 @@ export default function PageReplay({ id }: { id: string }) {
           <EtatVide
             icone={<FileText className="h-6 w-6" />}
             titre="La fiche de révision arrive bientôt"
-            texte={enseignant ? "Générez-la depuis le bilan de la séance, relisez-la puis publiez-la." : "Ton formateur relit la fiche avant de la publier. Tu recevras une notification dès qu'elle est prête."}
-            action={enseignant ? <LienBouton href={`/enseigner/seances/${r.seance.id}`}>Préparer la fiche</LienBouton> : undefined}
+            texte={
+              r.anime
+                ? "Générez-la depuis le bilan de la séance, relisez-la puis publiez-la."
+                : enseignant
+                  ? "Le formateur du cours la relit avant de la publier. En attendant, la vidéo, la transcription et les questions sont là."
+                  : "Ton formateur relit la fiche avant de la publier. Tu recevras une notification dès qu'elle est prête."
+            }
+            action={r.anime ? <LienBouton href={`/enseigner/seances/${r.seance.id}`}>Préparer la fiche</LienBouton> : undefined}
           />
         ))}
 
@@ -196,7 +215,7 @@ export default function PageReplay({ id }: { id: string }) {
           {!r.transcription.length ? (
             <EtatVide icone={<MessageSquare className="h-6 w-6" />} titre="Pas de transcription pour ce live" texte="Elle est écrite pendant le cours quand le formateur active les sous-titres." />
           ) : !resultats.length ? (
-            <p className="rounded-2xl bg-creme p-4 text-[15px] text-texte-pale">Aucun passage ne parle de « {recherche} ». Essaie un autre mot.</p>
+            <p className="rounded-2xl bg-creme p-4 text-[15px] text-texte-pale">Aucun passage ne parle de « {recherche} ». {enseignant ? "Essayez" : "Essaie"} un autre mot.</p>
           ) : (
             <ol className="flex flex-col divide-y divide-ligne-douce rounded-2xl border border-ligne">
               {resultats.map((l) => (

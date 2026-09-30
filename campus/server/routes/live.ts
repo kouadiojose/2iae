@@ -102,6 +102,8 @@ import {
   type BilanSiteDto,
   type RattrapageDto,
   type ReplayDto,
+  type ReplaysDto,
+  type ReplayResumeDto,
   type TypeEvenementSeance,
   type EvenementLiveDto,
   type EvenementMainsDto,
@@ -243,6 +245,19 @@ async function chargerSeance(id: number): Promise<Seance> {
 /** Séance que la personne peut voir (étudiant inscrit, formateur du cours, équipe, écran de salle). */
 async function seanceAccessible(u: Utilisateur, id: number): Promise<Seance> {
   return seanceVisible(u, id);
+}
+
+/**
+ * Replay d'une séance : ceux qui voient le cours, et tout formateur pour les séances terminées des autres
+ * cours (voir comment enseigne un collègue, reprendre un cours au pied levé). En lecture seule : bilan,
+ * fiche et présences restent au formateur du cours.
+ */
+async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance> {
+  if (u.role === "formateur") {
+    const s = await chargerSeance(id);
+    if (replayDisponible(s)) return s;
+  }
+  return seanceAccessible(u, id);
 }
 
 /** Séance que la personne anime (formateur du cours ou équipe). */
@@ -1329,7 +1344,8 @@ export function enregistrerLive(app: Express) {
       .where(sql`${seances.diapos} @> ${JSON.stringify([f.id])}::jsonb`);
     for (const l of lignes) {
       try {
-        await seanceVisible(u, l.id);
+        // Un formateur qui regarde le replay d'un collègue voit aussi ses diapos.
+        await seanceDuReplay(u, l.id);
         return true;
       } catch {
         /* séance suivante */
@@ -1490,6 +1506,10 @@ export function enregistrerLive(app: Express) {
         })
         .where(eq(seances.id, s.id))
         .returning();
+      // Vidéo déposée à la main (lien) sur une séance terminée sans enregistrement : les formateurs sont prévenus.
+      if (maj.statut === "terminee" && maj.replayUrl && !s.replayUrl && !s.enregistrementId) {
+        void annoncerReplay(maj).catch((e) => console.error(`[replays] annonce de la séance ${s.id} :`, (e as Error).message));
+      }
       // Séance de l'emploi du temps : « Mettre à jour les séances » gardera ces retouches au lieu de les réaligner sur le créneau.
       await noterRetouches(s.id, [
         ...(maj.titre !== s.titre ? (["titre"] as const) : []),
@@ -3169,7 +3189,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAccessible(u, idParam(req));
+      const s = await seanceDuReplay(u, idParam(req));
       const role = await roleDans(u, s);
       const privilegie = role === "formateur" || role === "equipe";
       if (!privilegie && s.statut !== "terminee") throw new ErreurHttp(409, "Le replay sera disponible après la séance.");
@@ -3225,6 +3245,7 @@ export function enregistrerLive(app: Express) {
         transcription,
         questions,
         diapos: versDiapos(s),
+        anime: privilegie,
       };
       res.json(dto);
     }),
@@ -3236,7 +3257,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAccessible(u, idParam(req));
+      const s = await seanceDuReplay(u, idParam(req));
       const role = await roleDans(u, s);
       if (role === "etudiant" && s.statut !== "terminee") throw new ErreurHttp(409, "Le replay sera disponible après la séance.");
       let lien: { url: string; expire: string | null };
@@ -3248,7 +3269,7 @@ export function enregistrerLive(app: Express) {
         if (numero > 1 && !m) throw introuvable("Morceau du replay");
         lien = await lienEnregistrement(m?.enregistrementId ?? s.enregistrementId);
       } else throw introuvable("Vidéo du replay");
-      if (u.role === "etudiant") await marquerVu(s.id, u.id);
+      if (u.role === "etudiant" || u.role === "formateur") await marquerVu(s.id, u.id);
       res.setHeader("Cache-Control", "no-store");
       res.json(lien);
     }),
@@ -3259,9 +3280,67 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAccessible(u, idParam(req));
-      if (u.role === "etudiant") await marquerVu(s.id, u.id);
+      const s = await seanceDuReplay(u, idParam(req));
+      if (u.role === "etudiant" || u.role === "formateur") await marquerVu(s.id, u.id);
       res.json({ ok: true });
+    }),
+  );
+
+  // Enregistrements : les replays vidéo de tous les cours, pour chaque formateur (les siens et ceux des
+  // collègues) et pour l'équipe (la vie scolaire d'un campus : les cours que suit son campus).
+  app.get(
+    "/api/replays",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur" && !estEquipe(u)) throw interdit("Les enregistrements sont réservés aux formateurs et à l'équipe.");
+      const limite = Math.min(300, Math.max(1, Number(req.query.limite) || 200));
+      const lignes = await db
+        .select({ s: seances, code: cours.code, coursTitre: cours.titre, formateurId: cours.formateurId })
+        .from(seances)
+        .innerJoin(cours, eq(cours.id, seances.coursId))
+        .where(and(eq(seances.statut, "terminee"), or(isNotNull(seances.enregistrementId), isNotNull(seances.replayUrl))))
+        .orderBy(desc(seances.debut))
+        .limit(limite);
+      let visibles = lignes;
+      if (estEquipe(u) && perimetreSites(u)) {
+        const ok = new Map<number, boolean>();
+        for (const id of new Set(lignes.map((l) => l.s.coursId))) ok.set(id, await peutVoirCours(u, id));
+        visibles = lignes.filter((l) => ok.get(l.s.coursId));
+      }
+      const ids = visibles.map((l) => l.s.id);
+      const animateurs = await animateursDes(visibles.map((l) => ({ seanceId: l.s.id, formateurId: l.formateurId })));
+      const idsAnimateurs = [...new Set([...animateurs.values()].filter((x): x is number => typeof x === "number"))];
+      const [noms, vus, mesCours] = await Promise.all([
+        idsAnimateurs.length
+          ? db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(inArray(utilisateurs.id, idsAnimateurs))
+          : Promise.resolve([]),
+        ids.length
+          ? db.select({ seanceId: vuesReplay.seanceId }).from(vuesReplay).where(and(eq(vuesReplay.utilisateurId, u.id), inArray(vuesReplay.seanceId, ids)))
+          : Promise.resolve([]),
+        u.role === "formateur" ? idsCoursAccessibles(u) : Promise.resolve([] as number[]),
+      ]);
+      const nomDe = new Map(noms.map((n) => [n.id, `${n.prenom} ${n.nom}`]));
+      const dejaVus = new Set(vus.map((v) => v.seanceId));
+      const recent = Date.now() - 14 * 24 * 3600_000;
+      const replays = visibles.map((l): ReplayResumeDto => {
+        const animateurId = animateurs.get(l.s.id) ?? null;
+        return {
+          seanceId: l.s.id,
+          titre: l.s.titre,
+          coursId: l.s.coursId,
+          coursCode: l.code,
+          coursTitre: l.coursTitre,
+          debut: l.s.debut.toISOString(),
+          dureeSecondes: l.s.replayDureeSecondes,
+          formateur: animateurId ? (nomDe.get(animateurId) ?? null) : null,
+          mien: animateurId === u.id || mesCours.includes(l.s.coursId),
+          nouveau: !dejaVus.has(l.s.id) && (l.s.termineeLe ?? l.s.debut).getTime() > recent,
+        };
+      });
+      const dto: ReplaysDto = { replays, nouveaux: replays.filter((r) => r.nouveau).length };
+      res.setHeader("Cache-Control", "no-store");
+      res.json(dto);
     }),
   );
 
@@ -3682,8 +3761,40 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
           .values(morceaux.map((e, i) => ({ seanceId: s.id, numero: i + 1, enregistrementId: e.id, debut: new Date(e.debut * 1000), dureeSecondes: e.dureeSecondes ?? 0 })));
       }
     });
+    // Une seule fois par séance : l'enregistrement n'est cherché que tant qu'il manque.
+    await annoncerReplay({ ...s, enregistrementId: morceaux[0].id, replayDureeSecondes: total }).catch((e) =>
+      console.error(`[replays] annonce de la séance ${s.id} :`, (e as Error).message),
+    );
   }
 });
+
+/**
+ * Replay prêt : tous les formateurs sont prévenus (campus et téléphone), ceux du cours avec leur propre
+ * message. Le lien ouvre le replay ; la liste complète est dans « Enregistrements ».
+ */
+async function annoncerReplay(s: Seance): Promise<void> {
+  const [c] = await db.select({ code: cours.code, formateurId: cours.formateurId }).from(cours).where(eq(cours.id, s.coursId));
+  const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id) ?? null;
+  const [a] = animateurId ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, animateurId)) : [];
+  const duCours = new Set((await formateursDuCours(s.coursId)).filter((f) => f.actif).map((f) => f.id));
+  if (animateurId) duCours.add(animateurId);
+  const formateurs = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(eq(utilisateurs.role, "formateur"), eq(utilisateurs.actif, true)));
+  const collegues = formateurs.map((f) => f.id).filter((id) => !duCours.has(id));
+  const duree = s.replayDureeSecondes ? ` · ${Math.max(1, Math.round(s.replayDureeSecondes / 60))} min` : "";
+  const lien = `/replays/${s.id}`;
+  await notifier([...duCours], {
+    type: "cours",
+    titre: `Votre replay est prêt : ${s.titre}`,
+    corps: `${c?.code ?? ""}${duree} · la vidéo de votre séance est en ligne, pour vous et vos étudiants.`,
+    lien,
+  });
+  await notifier(collegues, {
+    type: "cours",
+    titre: `Nouveau replay : ${s.titre}`,
+    corps: `${c?.code ?? ""}${a ? ` · ${a.prenom} ${a.nom}` : ""}${duree}. À voir dans « Enregistrements », depuis votre tableau de bord.`,
+    lien,
+  });
+}
 
 /** Lien de lecture d'un enregistrement : dans le bucket des replays s'il y est copié, chez Daily sinon. */
 async function lienEnregistrement(enregistrementId: string): Promise<{ url: string; expire: string }> {

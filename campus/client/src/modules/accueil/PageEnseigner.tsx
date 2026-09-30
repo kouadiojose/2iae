@@ -4,7 +4,8 @@
 // rebours, préparation, et UN bouton principal qui change avec l'heure
 // (« Préparer la séance » longtemps avant, « Ouvrir le studio » à 30 min).
 // Puis ce qui attend : copies à corriger, questions restées sans réponse au
-// dernier live, messages ; enfin ses cours et sa semaine.
+// dernier live, messages ; les enregistrements de tous les cours (les siens et
+// ceux des collègues) ; enfin ses cours et sa semaine.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -22,6 +23,7 @@ import {
   ThumbsUp,
   CalendarDays,
   ClipboardList,
+  PlayCircle,
 } from "lucide-react";
 import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
@@ -35,6 +37,7 @@ import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours"
 import type { AccueilFormateur, CoursFormateur, ElementAgenda, SeanceFormateur } from "@shared/schema";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
+import { LigneReplay, useReplays } from "@/modules/live/replays";
 
 const MINUTE = 60_000;
 
@@ -126,6 +129,7 @@ export default function PageEnseigner() {
             </span>
             <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
           </CarteLien>
+          <Enregistrements />
           <MesCours cours={data.cours} />
           <MaSemaine elements={data.semaine} />
         </div>
@@ -233,6 +237,48 @@ function LigneSeanceSuivante({ seance }: { seance: SeanceFormateur }) {
       </span>
       <ChevronRight className="h-5 w-5 text-texte-gris" aria-hidden />
     </Link>
+  );
+}
+
+// ── Enregistrements : les derniers replays, tous cours confondus ───────────
+
+function Enregistrements() {
+  const { data } = useReplays();
+  if (!data) return null;
+  const derniers = data.replays.slice(0, 4);
+  return (
+    <section aria-labelledby="titre-enregistrements">
+      <TitreSection
+        titre={
+          <span id="titre-enregistrements" className="flex items-center gap-2">
+            Enregistrements {data.nouveaux > 0 && <Badge ton="orange">{pluriel(data.nouveaux, "nouveau", "nouveaux")}</Badge>}
+          </span>
+        }
+        action={
+          data.replays.length > 0 ? (
+            <Link href="/replays" className="-my-2.5 inline-flex items-center gap-1 py-2.5 text-[15px] font-bold">
+              Tout voir <ChevronRight className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : undefined
+        }
+      />
+      {derniers.length ? (
+        <ul className="flex flex-col gap-2.5">
+          {derniers.map((r) => (
+            <li key={r.seanceId}>
+              <LigneReplay replay={r} compacte />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Carte className="flex items-center gap-4 px-5 py-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-creme text-orange-fonce">
+            <PlayCircle className="h-5 w-5" aria-hidden />
+          </span>
+          <span className="text-sm text-texte-pale">Les replays de tous les cours, les vôtres et ceux de vos collègues, arrivent ici dès que la vidéo est prête. Vous recevrez une alerte.</span>
+        </Carte>
+      )}
+    </section>
   );
 }
 

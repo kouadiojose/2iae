@@ -22,6 +22,7 @@ import {
   Video,
   Wallet,
   FolderOpen,
+  PlayCircle,
 } from "lucide-react";
 import type { Role } from "@shared/schema";
 
@@ -54,10 +55,12 @@ const ETUDIANT: ElementNav[] = [
 
 const FORMATEUR: ElementNav[] = [
   { href: "/enseigner", libelle: "Aujourd'hui", icone: Home, mobile: true },
-  { href: "/cours", libelle: "Mes cours", icone: BookOpen, mobile: true, prefixes: ["/cours", "/enseigner/cours", "/replays"] },
+  { href: "/cours", libelle: "Mes cours", icone: BookOpen, mobile: true, prefixes: ["/cours", "/enseigner/cours"] },
   { href: "/direct", libelle: "Studio", icone: Radio, mobile: true, central: true, prefixes: ["/direct", "/live", "/enseigner/seances"] },
   { href: "/corrections", libelle: "Corrections", icone: CheckSquare, mobile: true, prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
+  // Les replays de tous les cours, les siens et ceux des collègues.
+  { href: "/replays", libelle: "Enregistrements", icone: PlayCircle, prefixes: ["/replays"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },

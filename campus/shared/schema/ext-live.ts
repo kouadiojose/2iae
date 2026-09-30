@@ -49,7 +49,10 @@ export const evenementsSeances = campusSchema.table(
   (t) => [index("evenements_seances_idx").on(t.seanceId, t.creeLe)],
 );
 
-/** « Revu en replay » : suivi à part, ne vaut jamais présence (CONCEPTION §9.7). */
+/**
+ * « Revu en replay » : suivi à part, ne vaut jamais présence (CONCEPTION §9.7). Les formateurs y sont aussi
+ * (le « Nouveau » de leurs Enregistrements) : un décompte d'étudiants filtre sur le rôle.
+ */
 export const vuesReplay = campusSchema.table(
   "vues_replay",
   {
@@ -481,7 +484,27 @@ export type ReplayDto = {
   transcription: SousTitreDto[];
   questions: QuestionDirectDto[];
   diapos: DiapoDto[];
+  /** La personne anime ce cours (ou fait partie de l'équipe) : bilan et fiche à portée de clic. Faux pour un collègue formateur. */
+  anime: boolean;
 };
+
+/** Un enregistrement vidéo dans la liste des formateurs (« Enregistrements »), tous cours confondus. */
+export type ReplayResumeDto = {
+  seanceId: number;
+  titre: string;
+  coursId: number;
+  coursCode: string;
+  coursTitre: string;
+  debut: string;
+  dureeSecondes: number | null;
+  formateur: string | null;
+  /** Séance d'un cours que la personne enseigne (ou qu'elle a animée). */
+  mien: boolean;
+  /** Pas encore ouvert par la personne, et prêt depuis moins de 14 jours. */
+  nouveau: boolean;
+};
+
+export type ReplaysDto = { replays: ReplayResumeDto[]; nouveaux: number };
 
 
 /**

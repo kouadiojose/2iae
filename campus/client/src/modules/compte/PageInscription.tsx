@@ -1,6 +1,6 @@
 // /inscription/:jeton : le lien que la vie scolaire partage aux étudiants
 // (groupes WhatsApp des classes). L'étudiant crée son compte lui-même : nom,
-// campus, classe, téléphone, e-mail (facultatif) et code secret. Son
+// campus, classe, téléphone, e-mail (obligatoires) et code secret. Son
 // matricule est tiré tout seul ; sa session s'ouvre et il passe par le
 // parcours de bienvenue (charte, alertes des cours en direct). Tutoiement.
 import { useMemo, useState } from "react";
@@ -70,7 +70,7 @@ function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscript
         nom: f.nom,
         classeId: Number(f.classe),
         telephone: f.telephone,
-        email: f.email.trim() || undefined,
+        email: f.email.trim(),
         motDePasse: f.code,
       });
       onFait(r);
@@ -124,7 +124,7 @@ function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscript
         required
       />
       <Champ
-        libelle="Ton adresse e-mail (conseillé)"
+        libelle="Ton adresse e-mail"
         type="email"
         inputMode="email"
         value={f.email}
@@ -132,6 +132,7 @@ function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscript
         autoComplete="email"
         placeholder="prenom.nom@gmail.com"
         aide={info.emailDisponible ? "Tu y reçois ton guide pas à pas, et le lien si tu oublies ton code." : "Pour recevoir le lien si tu oublies ton code."}
+        required
       />
       <div className="relative">
         <Champ

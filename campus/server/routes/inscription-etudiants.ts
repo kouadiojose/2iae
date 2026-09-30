@@ -3,7 +3,7 @@
 //    réservé à un campus), valable 60 jours par défaut, et le partage dans les
 //    groupes WhatsApp des classes ;
 //  - l'étudiant y crée son compte lui-même : nom, campus, classe, téléphone,
-//    e-mail (facultatif) et code secret. Son matricule est tiré tout seul, son
+//    e-mail (tous deux obligatoires) et code secret. Son matricule est tiré tout seul, son
 //    dossier CRM est ouvert (origine « lien »), sa session s'ouvre et il suit
 //    le parcours de bienvenue (charte, notifications des cours en direct) ;
 //  - le guide de l'étudiant part à son adresse e-mail, et la vie scolaire de
@@ -89,7 +89,7 @@ function messageLien(url: string, expireLe: Date, site: string | null): string {
     "Crée ton compte sur le campus numérique, en 2 minutes, avec ce lien :",
     url,
     "",
-    "Tu choisis ton campus et ta classe, puis ton code secret. Ton compte est prêt tout de suite : tu suis les cours en direct sur ton téléphone, tu reçois une alerte quand un cours commence, tu rends tes devoirs en photo et tu revois les replays.",
+    "Prépare ton numéro de téléphone et ton adresse e-mail. Tu choisis ton campus et ta classe, puis ton code secret. Ton compte est prêt tout de suite : tu suis les cours en direct sur ton téléphone, tu reçois une alerte quand un cours commence, tu rends tes devoirs en photo et tu revois les replays.",
     `Lien valable jusqu'au ${fmtDate.format(expireLe)}.`,
   ].join("\n");
 }
@@ -261,12 +261,12 @@ export function enregistrerInscriptionEtudiants(app: Express) {
       }
       const d = valider(
         z.object({
-          prenom: z.string().trim().min(1, "indique ton prénom").max(80, "trop long"),
-          nom: z.string().trim().min(1, "indique ton nom").max(80, "trop long"),
-          classeId: z.number({ invalid_type_error: "choisis ta classe" }).int().positive("choisis ta classe"),
-          telephone: z.string().trim().min(1, "indique ton numéro de téléphone").max(30, "trop long"),
-          email: z.preprocess((v) => (typeof v === "string" && !v.trim() ? undefined : v), z.string().trim().toLowerCase().email("adresse e-mail non valide").max(160).optional()),
-          motDePasse: z.string().min(1, "choisis ton code secret").max(200),
+          prenom: z.string({ required_error: "indique ton prénom" }).trim().min(1, "indique ton prénom").max(80, "trop long"),
+          nom: z.string({ required_error: "indique ton nom" }).trim().min(1, "indique ton nom").max(80, "trop long"),
+          classeId: z.number({ required_error: "choisis ta classe", invalid_type_error: "choisis ta classe" }).int().positive("choisis ta classe"),
+          telephone: z.string({ required_error: "indique ton numéro de téléphone" }).trim().min(1, "indique ton numéro de téléphone").max(30, "trop long"),
+          email: z.string({ required_error: "indique ton adresse e-mail" }).trim().toLowerCase().min(1, "indique ton adresse e-mail").email("adresse e-mail non valide (exemple : prenom.nom@gmail.com)").max(160, "trop long"),
+          motDePasse: z.string({ required_error: "choisis ton code secret" }).min(1, "choisis ton code secret").max(200),
         }),
         req.body,
       );
@@ -274,12 +274,12 @@ export function enregistrerInscriptionEtudiants(app: Express) {
       const [classe] = await db.select().from(classes).where(eq(classes.id, d.classeId));
       const ouvertes = await classesOuvertes(l.siteId);
       if (!classe || !ouvertes.some((c) => c.id === classe.id)) throw invalide("Choisis ta classe dans la liste.");
-      if (d.email && adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tape ta vraie adresse e-mail.");
+      if (adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tape ta vraie adresse e-mail.");
       const telephone = telephoneSaisi(d.telephone);
       const minimum = longueurMinimale("etudiant");
       if (d.motDePasse.length < minimum) throw invalide(`Ton code secret doit faire au moins ${minimum} caractères.`);
       if (!codeSecretAcceptable(d.motDePasse)) throw invalide("Ce code est trop facile à deviner (123456, 000000…). Choisis-en un autre.");
-      await verifierUnicite({ email: d.email ?? null });
+      await verifierUnicite({ email: d.email });
 
       // Déjà un compte à ce nom dans cette classe (créé par la vie scolaire, ou inscrit deux fois) : pas de doublon.
       const prenom = espaces(d.prenom);
@@ -311,7 +311,7 @@ export function enregistrerInscriptionEtudiants(app: Express) {
                 prenom,
                 nom,
                 matricule,
-                email: d.email ?? null,
+                email: d.email,
                 telephone,
                 motDePasseHash: hash,
                 doitChangerMotDePasse: false,

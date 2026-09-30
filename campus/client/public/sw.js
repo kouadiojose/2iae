@@ -36,12 +36,12 @@ const HORS_LIGNE = "/hors-ligne";
 const A_PRECHARGER = ["/manifest.webmanifest", "/marque-2iae.png", "/icons/favicon-48.png", "/icons/icone-192.png", "/icons/icone-512.png", "/icons/badge-96.png"];
 
 /** Requêtes qui ouvrent ou ferment une session : les données de la personne précédente sont oubliées (téléphones partagés). */
-const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|invitation\/|compte\/(reinitialiser|deconnecter-partout))/;
+const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|invitation\/|inscription\/|ecran\/installer|compte\/(reinitialiser|deconnecter-partout))/;
 /**
  * Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels, sonde de santé,
  * radio du cours (flux audio continu) et signalisation de la visio.
  */
-const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|invitation\/|health$|auth\/(?!moi$)|radio\/|visio\/|invite\/|pilotage\/(etudiants|versements)\/export)/;
+const JAMAIS_EN_CACHE = /^\/api\/(flux(\/|$)|push\/|activer\/|invitation\/|inscription\/|health$|auth\/(?!moi$)|radio\/|visio\/|invite\/|pilotage\/(etudiants|versements)\/export)/;
 /** Le profil courant est gardé même « non connecté » (401) : sans réseau, les pages publiques s'ouvrent aussitôt. */
 const PROFIL = "/api/auth/moi";
 

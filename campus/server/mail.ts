@@ -307,6 +307,68 @@ export function emailGuideBienvenue(o: {
   return { sujet: formateur ? "Bienvenue sur le campus numérique 2IAE : votre guide pas à pas" : "Bienvenue sur le campus numérique 2IAE", html, texte };
 }
 
+/**
+ * Guide de bienvenue d'un étudiant qui vient de créer son compte par le lien
+ * d'inscription (tutoiement) : son matricule, puis le campus pas à pas.
+ */
+export function emailGuideEtudiant(o: {
+  prenom: string;
+  matricule: string;
+  classe: string | null;
+  premierCours?: string | null;
+  pdfJoint: boolean;
+  lienPdf: string;
+}): { sujet: string; html: string; texte: string } {
+  const hote = config.urlCampus.replace(/^https?:\/\//, "");
+  const { html, texte } = gabaritEmail({
+    etiquette: "Bienvenue · Ton campus numérique",
+    titre: `Bienvenue, ${o.prenom.trim()} !`,
+    paragraphes: [
+      `Ton compte étudiant est prêt${o.classe ? `, en classe **${o.classe}**` : ""}. Voici, pas à pas, comment suivre tes cours sur le campus numérique du Groupe Écoles 2IAE International. Garde cet e-mail : il te servira d'aide-mémoire.`,
+      ...(o.premierCours ? [`Ton prochain cours : **${o.premierCours}**.`] : []),
+    ],
+    bouton: { libelle: "Entrer dans mon campus", lien: `${config.urlCampus}/connexion` },
+    apresBouton: [o.pdfJoint ? "Le **guide de l'étudiant** complet (PDF) est joint à cet e-mail." : `Le guide de l'étudiant complet (PDF) se télécharge ici : ${o.lienPdf}`],
+    encadre: [
+      { libelle: "Adresse du campus", valeur: hote },
+      { libelle: "Ton matricule (ton identifiant)", valeur: o.matricule, mono: true },
+      { libelle: "Ton code secret", valeur: "Celui que tu viens de choisir" },
+    ],
+    titreEtapes: "Ton campus, pas à pas",
+    etapes: [
+      {
+        titre: "Te connecter",
+        texte: `Va sur **${hote}/connexion**. Tape ton matricule (ou ton numéro de téléphone, ou ton e-mail) et ton code secret. Code oublié ? Touche « Code oublié ? » sur la page de connexion.`,
+      },
+      {
+        titre: "Installer l'application",
+        texte: "Sur ton téléphone, ouvre le campus dans Chrome : il te propose de l'installer. Il s'ouvre ensuite comme une application, avec son icône.",
+      },
+      {
+        titre: "Activer les alertes",
+        texte: "Quand le campus te le demande, touche « Autoriser » : tu reçois une alerte dès qu'un cours commence, qu'un devoir est publié ou qu'une note arrive.",
+      },
+      {
+        titre: "Suivre un cours en direct",
+        texte: "Au début du cours, tu reçois l'alerte « En direct ». Touche-la, ou ouvre « **Live** » puis « Entrer dans la classe ». Choisis **Son + diapos** (très léger, pour la 3G/4G) ou **Vidéo** (au Wi-Fi). Tu peux lever la main, poser tes questions et répondre aux sondages.",
+      },
+      {
+        titre: "Tes cours et les replays",
+        texte: "« **Cours** » : les leçons et les documents de tes formateurs, et le **replay** de chaque cours en direct pour revoir ce que tu as manqué.",
+      },
+      {
+        titre: "Rendre un devoir",
+        texte: "« **Devoirs** » : ouvre le devoir, touche « Rendre mon devoir » et prends ta copie en photo (ou joins un PDF). Ta note et le commentaire du formateur arrivent dès qu'ils sont publiés.",
+      },
+      {
+        titre: "Besoin d'aide",
+        texte: "« **Messages** » : écris à tes formateurs et à la vie scolaire de ton campus.",
+      },
+    ],
+  });
+  return { sujet: "Bienvenue sur ton campus numérique 2IAE : ton guide pas à pas", html, texte };
+}
+
 /** Lien « code oublié » reçu par e-mail (tutoiement pour les étudiants). */
 export function emailReinitialisation(o: { prenom: string; etudiant: boolean; lien: string }): { sujet: string; html: string; texte: string } {
   const tu = o.etudiant;

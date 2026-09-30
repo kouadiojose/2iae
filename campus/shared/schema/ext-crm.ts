@@ -114,7 +114,7 @@ export const dossiersEtudiants = campusSchema.table(
     statutLe: timestamp("statut_le", { withTimezone: true }),
     dateInscription: date("date_inscription", { mode: "string" }),
     responsables: jsonb("responsables").$type<Responsable[]>().notNull().default([]),
-    origine: text("origine").$type<"saisie" | "import" | "site">().notNull().default("saisie"),
+    origine: text("origine").$type<"saisie" | "import" | "site" | "lien">().notNull().default("saisie"),
     /** Identifiant du préinscrit dans le pipeline du site 2iae.com. */
     leadId: text("lead_id").unique(),
     remarques: text("remarques"),
@@ -262,7 +262,7 @@ export type EtudiantCrmLigne = {
   siteId: number | null;
   site: string | null;
   statut: StatutScolarite;
-  origine: "saisie" | "import" | "site";
+  origine: "saisie" | "import" | "site" | "lien";
   /** Compte désactivé. */
   actif: boolean;
   /** Code secret personnel choisi (le code de la fiche a été remplacé). */
@@ -404,7 +404,7 @@ export type IdentiteCrm = {
   statut: StatutScolarite;
   statutLe: string | null;
   dateInscription: string | null;
-  origine: "saisie" | "import" | "site";
+  origine: "saisie" | "import" | "site" | "lien";
   leadId: string | null;
   remarques: string | null;
   responsables: Responsable[];

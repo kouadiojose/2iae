@@ -92,6 +92,13 @@
       "when": 1790705642279,
       "tag": "0012_formateurs_inscription",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790755428973,
+      "tag": "0013_etudiants_inscription",
+      "breakpoints": true
     }
   ]
 }

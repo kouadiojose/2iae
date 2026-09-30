@@ -53,7 +53,7 @@ async function lienValable(jeton: string) {
   const [l] = await db
     .select()
     .from(liensInscription)
-    .where(and(eq(liensInscription.jeton, jeton), isNull(liensInscription.revoqueLe), gt(liensInscription.expireLe, new Date())));
+    .where(and(eq(liensInscription.jeton, jeton), eq(liensInscription.type, "equipe"), isNull(liensInscription.revoqueLe), gt(liensInscription.expireLe, new Date())));
   return l ?? null;
 }
 
@@ -62,7 +62,7 @@ async function etat(): Promise<EquipeInscriptionDto> {
     db
       .select()
       .from(liensInscription)
-      .where(and(isNull(liensInscription.revoqueLe), gt(liensInscription.expireLe, new Date())))
+      .where(and(eq(liensInscription.type, "equipe"), isNull(liensInscription.revoqueLe), gt(liensInscription.expireLe, new Date())))
       .orderBy(desc(liensInscription.creeLe)),
     db
       .select()
@@ -154,7 +154,11 @@ export function enregistrerEquipe(app: Express) {
     DIRECTION,
     route(async (req, res) => {
       const u = moi(req);
-      const [l] = await db.update(liensInscription).set({ revoqueLe: new Date() }).where(eq(liensInscription.id, idParam(req))).returning();
+      const [l] = await db
+        .update(liensInscription)
+        .set({ revoqueLe: new Date() })
+        .where(and(eq(liensInscription.id, idParam(req)), eq(liensInscription.type, "equipe")))
+        .returning();
       if (!l) throw introuvable("Lien");
       await journaliser(u, "lien_equipe_revoque", { lienId: l.id });
       res.json(await etat());

@@ -147,7 +147,7 @@ function codeFiliere(filiere: string): string {
 }
 
 /** Matricule proposé : 2 chiffres de l'année de rentrée + code filière + numéro à 4 chiffres (26TC0042). */
-async function matriculePropose(classe: { filiere: string; anneeScolaire: string }): Promise<string> {
+export async function matriculePropose(classe: { filiere: string; anneeScolaire: string }): Promise<string> {
   const annee = /^(\d{4})/.exec(classe.anneeScolaire)?.[1] ?? String(new Date().getUTCFullYear());
   const prefixe = `${annee.slice(2)}${codeFiliere(classe.filiere)}`;
   const r = await db.execute<{ max: number | null }>(

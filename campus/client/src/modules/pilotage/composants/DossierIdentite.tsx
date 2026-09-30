@@ -39,6 +39,7 @@ const LIBELLES_ORIGINE: Record<IdentiteCrm["origine"], string> = {
   saisie: "Saisi au campus",
   import: "Importé depuis Excel",
   site: "Préinscription sur 2iae.com",
+  lien: "Inscrit lui-même par le lien des étudiants",
 };
 const LIBELLES_CHAMPS: Record<string, string> = {
   sexe: "Sexe",

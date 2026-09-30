@@ -1,0 +1,3 @@
+ALTER TABLE "campus"."liens_inscription" ADD COLUMN "type" text DEFAULT 'equipe' NOT NULL;--> statement-breakpoint
+ALTER TABLE "campus"."liens_inscription" ADD COLUMN "site_id" integer;--> statement-breakpoint
+ALTER TABLE "campus"."liens_inscription" ADD CONSTRAINT "liens_inscription_site_id_sites_id_fk" FOREIGN KEY ("site_id") REFERENCES "campus"."sites"("id") ON DELETE set null ON UPDATE no action;

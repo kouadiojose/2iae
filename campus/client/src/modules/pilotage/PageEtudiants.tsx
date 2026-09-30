@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Search, UserPlus, FileSpreadsheet, Globe, Download, Users, ChevronLeft, ChevronRight, X, type LucideIcon } from "lucide-react";
+import { Search, UserPlus, FileSpreadsheet, Globe, Download, Users, ChevronLeft, ChevronRight, X, Link2, type LucideIcon } from "lucide-react";
 import type { PageEtudiantsCrm, FiltreCrm, StatutScolarite } from "@shared/schema";
 import { FILTRES_CRM, STATUTS_SCOLARITE, LIBELLES_STATUTS_SCOLARITE } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
@@ -15,6 +15,7 @@ import { Selection } from "@/components/ui/champs";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
 import { CrmLigneEtudiant, CrmEnTeteListe } from "./composants/CrmLigneEtudiant";
+import { FenetreLienEtudiants } from "./composants/FenetreLienEtudiants";
 import { useReferences } from "./outils";
 import { fcfa } from "./outils-crm";
 
@@ -76,6 +77,7 @@ export default function PageEtudiants() {
   const refs = useReferences();
   const [f, setF] = useState<Filtres>(() => lireFiltres(search));
   const [saisie, setSaisie] = useState(f.q);
+  const [lienOuvert, setLienOuvert] = useState(false);
   const ecrit = useRef(search);
 
   // Recherche différée (300 ms) : pas une requête par lettre tapée.
@@ -129,6 +131,9 @@ export default function PageEtudiants() {
             <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px] w-full sm:w-auto">
               Inscrire un étudiant
             </LienBouton>
+            <Bouton variante="contour" icone={<Link2 className="h-4 w-4" />} onClick={() => setLienOuvert(true)} className="min-h-[48px] w-full sm:w-auto">
+              Lien d'inscription
+            </Bouton>
             <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap">
               <ActionSecondaire href="/pilotage/comptes/import" Icone={FileSpreadsheet} court="Importer" long="Importer depuis Excel" />
               <ActionSecondaire href="/pilotage/preinscrits" Icone={Globe} court="Préinscrits" long="Préinscrits du site" />
@@ -320,6 +325,7 @@ export default function PageEtudiants() {
           )}
         </section>
       )}
+      <FenetreLienEtudiants ouverte={lienOuvert} onFermer={() => setLienOuvert(false)} />
     </Page>
   );
 }

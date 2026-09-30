@@ -4,7 +4,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { config, estProduction } from "./config";
-import { emailDisponible, envoyerEmail, emailGuideBienvenue, type PieceJointe } from "./mail";
+import { emailDisponible, envoyerEmail, emailGuideBienvenue, emailGuideEtudiant, type PieceJointe } from "./mail";
 import type { Utilisateur } from "@shared/schema";
 
 /** Au-delà, le PDF n'est pas joint (le lien suffit) : certaines messageries refusent les gros e-mails. */
@@ -13,7 +13,9 @@ const TAILLE_MAX_PDF = 8 * 1024 * 1024;
 const guideDuRole = (role: Utilisateur["role"]) =>
   role === "formateur"
     ? { fichier: "guide-formateurs.pdf", nom: "Guide du formateur · Campus 2IAE.pdf" }
-    : { fichier: "guide-administration.pdf", nom: "Guide de l'administration · Campus 2IAE.pdf" };
+    : role === "etudiant"
+      ? { fichier: "guide-etudiants.pdf", nom: "Guide de l'étudiant · Campus 2IAE.pdf" }
+      : { fichier: "guide-administration.pdf", nom: "Guide de l'administration · Campus 2IAE.pdf" };
 
 const enMemoire = new Map<string, Buffer | null>();
 
@@ -38,19 +40,20 @@ async function lirePdf(fichier: string): Promise<Buffer | null> {
 }
 
 /** Envoie le guide de bienvenue à l'adresse du compte. Ne lève jamais : renvoie vrai si l'e-mail est parti. */
-export async function envoyerGuideBienvenue(u: Pick<Utilisateur, "prenom" | "nom" | "role" | "email">, premierCours: string | null): Promise<boolean> {
+export async function envoyerGuideBienvenue(
+  u: Pick<Utilisateur, "prenom" | "nom" | "role" | "email"> & { matricule?: string | null; classeNom?: string | null },
+  premierCours: string | null,
+): Promise<boolean> {
   if (!u.email) return false;
   try {
     const guide = guideDuRole(u.role);
     const pdf = await lirePdf(guide.fichier);
     const pieces: PieceJointe[] = pdf ? [{ nom: guide.nom, contenu: pdf }] : [];
-    const e = emailGuideBienvenue({
-      personne: u,
-      email: u.email,
-      premierCours,
-      pdfJoint: pieces.length > 0,
-      lienPdf: `${config.urlCampus}/guides/${guide.fichier}`,
-    });
+    const lienPdf = `${config.urlCampus}/guides/${guide.fichier}`;
+    const e =
+      u.role === "etudiant"
+        ? emailGuideEtudiant({ prenom: u.prenom, matricule: u.matricule ?? "", classe: u.classeNom ?? null, premierCours, pdfJoint: pieces.length > 0, lienPdf })
+        : emailGuideBienvenue({ personne: u, email: u.email, premierCours, pdfJoint: pieces.length > 0, lienPdf });
     if (!emailDisponible()) {
       if (!estProduction) console.log(`[bienvenue] (dev) e-mail non envoyé à ${u.email} : « ${e.sujet} »${pieces.length ? " avec le PDF" : ""}`);
       return false;

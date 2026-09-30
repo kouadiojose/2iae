@@ -3,12 +3,22 @@
 // direction la valide en choisissant son accès (vie scolaire d'un campus ou
 // de tous, ou direction). Rien n'est ouvert avant cette validation.
 import { serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
-import { campusSchema, utilisateurs, sites, type Role } from "./base";
+import { campusSchema, utilisateurs, sites, type Role, type Moi } from "./base";
+
+/**
+ * equipe : demande validée par la direction (/rejoindre/<jeton>) ;
+ * etudiants : l'étudiant crée son compte lui-même, ouvert aussitôt (/inscription/<jeton>).
+ */
+export const TYPES_LIEN_INSCRIPTION = ["equipe", "etudiants"] as const;
+export type TypeLienInscription = (typeof TYPES_LIEN_INSCRIPTION)[number];
 
 export const liensInscription = campusSchema.table("liens_inscription", {
   id: serial("id").primaryKey(),
-  /** Morceau secret de l'adresse (/rejoindre/<jeton>), tiré au sort. */
+  /** Morceau secret de l'adresse (/rejoindre/<jeton> ou /inscription/<jeton>), tiré au sort. */
   jeton: text("jeton").notNull().unique(),
+  type: text("type").$type<TypeLienInscription>().notNull().default("equipe"),
+  /** Lien des étudiants réservé à un campus (null : l'étudiant choisit son campus). */
+  siteId: integer("site_id").references(() => sites.id, { onDelete: "set null" }),
   libelle: text("libelle").notNull().default("Équipe administrative"),
   creeParId: integer("cree_par_id").references(() => utilisateurs.id, { onDelete: "set null" }),
   creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
@@ -68,3 +78,41 @@ export type EquipeInscriptionDto = { liens: LienInscriptionDto[]; demandes: Dema
 
 /** Ce que voit la personne qui ouvre le lien. */
 export type InfoLienInscriptionDto = { expireLe: string; sites: { id: number; nomCourt: string }[] };
+
+// ── Inscription des étudiants par lien ─────────────────────────────────────
+
+export type LienEtudiantsDto = {
+  id: number;
+  url: string;
+  libelle: string;
+  /** Campus imposé par le lien (null : au choix de l'étudiant). */
+  siteId: number | null;
+  site: string | null;
+  creeLe: string;
+  expireLe: string;
+  /** Comptes créés avec ce lien. */
+  inscrits: number;
+  /** Message prêt à envoyer (WhatsApp, groupe de classe). */
+  message: string;
+};
+
+export type InscriptionEtudiantsDto = { liens: LienEtudiantsDto[]; sites: { id: number; nomCourt: string }[] };
+
+/** GET /api/inscription/:jeton (public) : ce que voit l'étudiant qui ouvre le lien. */
+export type InfoInscriptionEtudiantDto = {
+  expireLe: string;
+  sites: { id: number; nomCourt: string }[];
+  classes: { id: number; nom: string; siteId: number }[];
+  /** Campus imposé par le lien. */
+  siteId: number | null;
+  longueurMinimale: number;
+  emailDisponible: boolean;
+};
+
+/** POST /api/inscription/:jeton : compte créé, session ouverte. */
+export type InscriptionEtudiantFaite = {
+  moi: Moi;
+  matricule: string;
+  classe: string;
+  guide: { adresse: string | null; envoye: boolean };
+};

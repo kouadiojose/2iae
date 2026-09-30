@@ -3344,6 +3344,23 @@ export function enregistrerLive(app: Express) {
     }),
   );
 
+  // Direction : renvoyer l'alerte d'un replay déjà prêt (replay arrivé avant que l'alerte existe, oubli) aux
+  // étudiants du cours, et aux formateurs seulement si c'est demandé.
+  app.post(
+    "/api/seances/:id/replay/annoncer",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "admin") throw interdit("Réservé à la direction.");
+      const s = await chargerSeance(idParam(req));
+      if (s.statut !== "terminee" || !(s.enregistrementId || s.replayUrl)) throw new ErreurHttp(409, "Cette séance n'a pas encore de vidéo.");
+      const d = valider(z.object({ formateurs: z.boolean().default(false) }), req.body ?? {});
+      const prevenus = await annoncerReplay(s, { formateurs: d.formateurs });
+      await db.insert(journal).values({ utilisateurId: u.id, action: "replay_annonce", details: { seanceId: s.id, ...prevenus } });
+      res.json(prevenus);
+    }),
+  );
+
   // ── IA : question éclair et fiche de révision ────────────────────────────
   app.post(
     "/api/seances/:id/question-eclair",
@@ -3773,7 +3790,7 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
  * message, ainsi que les étudiants du cours. Le lien ouvre le replay ; pour les formateurs, la liste
  * complète est dans « Enregistrements ».
  */
-async function annoncerReplay(s: Seance): Promise<void> {
+async function annoncerReplay(s: Seance, { formateurs: prevenirFormateurs = true }: { formateurs?: boolean } = {}): Promise<{ formateurs: number; etudiants: number }> {
   const [c] = await db.select({ code: cours.code, formateurId: cours.formateurId }).from(cours).where(eq(cours.id, s.coursId));
   const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id) ?? null;
   const [a] = animateurId ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, animateurId)) : [];
@@ -3783,6 +3800,14 @@ async function annoncerReplay(s: Seance): Promise<void> {
   const collegues = formateurs.map((f) => f.id).filter((id) => !duCours.has(id));
   const duree = s.replayDureeSecondes ? ` · ${Math.max(1, Math.round(s.replayDureeSecondes / 60))} min` : "";
   const lien = `/replays/${s.id}`;
+  const etudiants = (await etudiantsDuCours(s.coursId)).map((e) => e.id);
+  await notifier(etudiants, {
+    type: "cours",
+    titre: `Replay disponible : ${s.titre}`,
+    corps: `${c?.code ?? ""}${duree} · tu peux revoir le cours quand tu veux, avec la transcription et les questions posées.`,
+    lien,
+  });
+  if (!prevenirFormateurs) return { formateurs: 0, etudiants: etudiants.length };
   await notifier([...duCours], {
     type: "cours",
     titre: `Votre replay est prêt : ${s.titre}`,
@@ -3795,15 +3820,7 @@ async function annoncerReplay(s: Seance): Promise<void> {
     corps: `${c?.code ?? ""}${a ? ` · ${a.prenom} ${a.nom}` : ""}${duree}. À voir dans « Enregistrements », depuis votre tableau de bord.`,
     lien,
   });
-  await notifier(
-    (await etudiantsDuCours(s.coursId)).map((e) => e.id),
-    {
-      type: "cours",
-      titre: `Replay disponible : ${s.titre}`,
-      corps: `${c?.code ?? ""}${duree} · tu peux revoir le cours quand tu veux, avec la transcription et les questions posées.`,
-      lien,
-    },
-  );
+  return { formateurs: duCours.size + collegues.length, etudiants: etudiants.length };
 }
 
 /** Lien de lecture d'un enregistrement : dans le bucket des replays s'il y est copié, chez Daily sinon. */

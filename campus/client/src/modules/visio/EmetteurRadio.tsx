@@ -10,7 +10,21 @@ import { cn, pluriel } from "@/lib/utils";
 import type { EtatRadio } from "@shared/schema";
 import { EmetteurRadioMoteur, type EtatEmission } from "./moteur/radio";
 
-export function EmetteurRadio({ seanceId, flux, actif, muet = false }: { seanceId: number; flux: MediaStream | null; actif: boolean; /** Micro coupé par le formateur : la radio continue en silence. */ muet?: boolean }) {
+export function EmetteurRadio({
+  seanceId,
+  flux,
+  actif,
+  muet = false,
+  classe = false,
+}: {
+  seanceId: number;
+  flux: MediaStream | null;
+  actif: boolean;
+  /** Micro coupé par le formateur : la radio continue sans sa voix. */
+  muet?: boolean;
+  /** Le flux est toute la classe (micro et visio mélangés), pas le micro seul. */
+  classe?: boolean;
+}) {
   const piste = flux?.getAudioTracks()[0] ?? null;
   const [etat, setEtat] = useState<EtatEmission>("arret");
   const moteur = useRef<EmetteurRadioMoteur | null>(null);
@@ -46,14 +60,16 @@ export function EmetteurRadio({ seanceId, flux, actif, muet = false }: { seanceI
     etat === "indisponible"
       ? "Radio indisponible sur ce navigateur"
       : muet && piste
-        ? `Radio en silence : micro coupé · ${pluriel(auditeurs, "auditeur")}`
+        ? classe
+          ? `Radio : la classe, sans votre micro · ${pluriel(auditeurs, "auditeur")}`
+          : `Radio en silence : micro coupé · ${pluriel(auditeurs, "auditeur")}`
         : etat === "reprise"
         ? "Radio : reprise…"
         : etat === "connexion" || etat === "arret"
           ? piste
             ? "Radio : démarrage…"
             : "Radio : micro coupé"
-          : `Radio : ${pluriel(auditeurs, "auditeur")}`;
+          : `Radio${classe ? " de toute la classe" : ""} : ${pluriel(auditeurs, "auditeur")}`;
 
   return (
     <span
@@ -63,7 +79,11 @@ export function EmetteurRadio({ seanceId, flux, actif, muet = false }: { seanceI
       )}
       role="status"
       aria-live="polite"
-      title="Son du formateur diffusé aux étudiants qui suivent en audio (environ 12 à 15 Mo par heure)"
+      title={
+        classe
+          ? "Toute la classe (vous, les salles, les intervenants) diffusée aux étudiants qui suivent en audio (environ 12 à 15 Mo par heure)"
+          : "Son du formateur diffusé aux étudiants qui suivent en audio (environ 12 à 15 Mo par heure)"
+      }
     >
       <Radio className={cn("h-3.5 w-3.5", etat === "direct" && "text-direct")} />
       {texte}

@@ -14,7 +14,7 @@ import { Fenetre } from "@/components/ui/fenetre";
 import { Champ, ZoneTexte, Interrupteur } from "@/components/ui/champs";
 import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toast, toastErreur } from "@/components/ui/toast";
-import { EmetteurRadio, LieuDuCours, TestMicroCamera } from "@/modules/visio";
+import { EmetteurRadio, LieuDuCours, TestMicroCamera, useRadioClasse } from "@/modules/visio";
 import { Scene } from "./scene";
 import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, type ModeScene } from "./presentateur";
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
@@ -47,6 +47,9 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   useEffect(() => {
     flux?.getAudioTracks().forEach((t) => (t.enabled = micro));
   }, [flux, micro]);
+  // Visio Daily : la radio diffuse toute la classe (salles, intervenants, discussions) et pas seulement le
+  // micro du formateur. Tant que ce mélange n'est pas prêt, le micro seul part, comme avant.
+  const diffusion = useRadioClasse({ seanceId: seance.id, actif: Boolean(flux) && seance.fournisseur === "daily", micro: flux, moiId: moi.id });
 
   const agir = async (chemin: string, corps?: unknown, message?: string) => {
     try {
@@ -139,7 +142,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           <div className={cn("order-3 flex flex-col gap-4", !avecDiapos && "xl:order-1")}>
             <ChronoPlan seance={seance} etat={etat} />
             {!observation && (
-              <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={flux} />
+              <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={diffusion.flux} classe={diffusion.classe} />
             )}
           </div>
 
@@ -749,6 +752,7 @@ function OutilsDiffusion({
   radio,
   setRadio,
   fluxRadio,
+  classe,
 }: {
   seance: SeanceDetailDto;
   enDirect: boolean;
@@ -757,6 +761,8 @@ function OutilsDiffusion({
   radio: boolean;
   setRadio: (v: boolean) => void;
   fluxRadio: MediaStream | null;
+  /** La radio diffuse toute la classe (visio Daily mélangée au micro). */
+  classe: boolean;
 }) {
   const [sousTitres, setSousTitres] = useState(false);
   const [provisoire, setProvisoire] = useState("");
@@ -829,12 +835,16 @@ function OutilsDiffusion({
           <span className="flex items-center gap-2 text-[15px] font-bold">
             <Radio className="h-4 w-4 text-orange" /> Radio pour les étudiants en ligne
           </span>
-          <span className="text-[12px] text-nuit-gris">Votre voix en son léger (≈ 12 à 15 Mo/h) : des centaines d'étudiants en 3G/4G.</span>
+          <span className="text-[12px] text-nuit-gris">
+            {seance.fournisseur === "daily"
+              ? "Toute la classe en son léger (≈ 12 à 15 Mo/h) : votre voix, les salles et les intervenants, pour des centaines d'étudiants en 3G/4G."
+              : "Votre voix en son léger (≈ 12 à 15 Mo/h) : des centaines d'étudiants en 3G/4G."}
+          </span>
         </div>
         <Interrupteur actif={radio} onChange={setRadio} libelle="Radio pour les étudiants en ligne" />
       </div>
       {seance.fournisseur === "demo" && radio && <span className="text-[12px] text-nuit-gris">Pas de radio en démonstration (aucun micro utilisé).</span>}
-      <EmetteurRadio seanceId={seance.id} flux={fluxRadio} actif={radio && enDirect && Boolean(fluxRadio)} muet={!micro} />
+      <EmetteurRadio seanceId={seance.id} flux={fluxRadio} actif={radio && enDirect && Boolean(fluxRadio)} muet={!micro} classe={classe} />
       <div className="flex items-start justify-between gap-3 border-t border-nuit-ligne pt-3">
         <div className="flex flex-col">
           <span className="flex items-center gap-2 text-[15px] font-bold">

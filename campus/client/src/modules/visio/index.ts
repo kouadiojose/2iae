@@ -11,3 +11,5 @@ export { CartePretClasse } from "./CartePretClasse";
 export { ChoixFuseau, ConfirmationFuseau } from "./Fuseau";
 export { LieuDuCours } from "./Lieu";
 export { useOptionsVisio } from "./options";
+// Radio de toute la classe : le micro du formateur mélangé au son de la visio Daily.
+export { useRadioClasse } from "./radio-classe";

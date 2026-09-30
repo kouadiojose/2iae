@@ -117,6 +117,7 @@ import {
   DISPOSITIONS_SCENE,
   type DemandeDirectImmediat,
   type RejoindreVisioDto,
+  type AccesDaily,
 } from "@shared/schema";
 import type { SeanceResume, EnCours } from "@shared/api";
 
@@ -1858,6 +1859,39 @@ export function enregistrerLive(app: Express) {
           break;
       }
       res.json(reponse);
+    }),
+  );
+
+  // ── Radio de toute la classe ──────────────────────────────────────────────
+  // Le navigateur de celui qui anime le direct écoute la visio Daily avec un participant INVISIBLE (ni vu
+  // ni compté, n'envoie rien) : il mélange le son des salles et des intervenants à son propre micro, et la
+  // radio des téléphones entend ainsi toute la classe (discussions comprises), pas seulement le formateur.
+  app.post(
+    "/api/seances/:id/radio-visio",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      if ((await roleDans(u, s)) !== "formateur") throw interdit("Seule la personne qui anime le cours diffuse la radio.");
+      if (s.fournisseur !== "daily") throw new ErreurHttp(409, "Pas de visio Daily pour ce cours : la radio diffuse le micro du formateur.");
+      if (s.statut !== "en_direct") throw new ErreurHttp(409, "La radio de la classe démarre avec le direct.");
+      const salle = await visio.obtenirSalleDaily(s);
+      const acces: AccesDaily = {
+        url: salle.url,
+        nomAffiche: "Radio des téléphones",
+        profil: "observateur",
+        jeton: await visio.jetonDaily({
+          salle: salle.nom,
+          nomAffiche: "Radio des téléphones",
+          // Identifiant négatif : jamais confondu avec un compte, ni compté parmi les présents.
+          utilisateurId: -(2_000_000_000 + s.id),
+          profil: "observateur",
+          exp: visio.expirationJetonSeance(s),
+          envoi: false,
+          invisible: true,
+        }),
+      };
+      res.json(acces);
     }),
   );
 

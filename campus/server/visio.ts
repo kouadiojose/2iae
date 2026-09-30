@@ -464,6 +464,8 @@ export async function jetonDaily(o: {
   envoi?: ("audio" | "video")[] | false;
   /** Caméra ouverte dès l'entrée (un intervenant invité), quel que soit le profil. */
   cameraAuDepart?: boolean;
+  /** Participant invisible (ni vu ni compté par les autres) : l'écoute de la classe pour la radio. */
+  invisible?: boolean;
 }): Promise<string> {
   const proprietaire = o.profil === "formateur";
   const proprietes: Record<string, unknown> = {
@@ -488,7 +490,7 @@ export async function jetonDaily(o: {
     }
   } else {
     const envoi = o.envoi !== undefined ? o.envoi : o.profil === "salle" ? (["video", "audio"] as const) : false;
-    proprietes.permissions = { canSend: envoi === false ? false : [...envoi] };
+    proprietes.permissions = { canSend: envoi === false ? false : [...envoi], ...(o.invisible ? { hasPresence: false } : {}) };
   }
   if (o.ejecterApres) proprietes.eject_after_elapsed = o.ejecterApres;
   const r = await appelDaily<{ token: string }>("/meeting-tokens", { methode: "POST", corps: { properties: proprietes } });

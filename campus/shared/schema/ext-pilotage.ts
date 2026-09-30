@@ -569,3 +569,16 @@ export type BudgetIa = {
   parPersonne: (ConsommationIa & { id: number; prenom: string; nom: string; role: Role; site: string | null })[];
   parRole: (ConsommationIa & { role: Role })[];
 };
+
+/** POST /api/pilotage/classes/filieres : classes des filières de 2iae.com (créées, ou à créer en simulation). */
+export type BilanClassesFilieres = {
+  anneeScolaire: string;
+  creees: { campus: string; nom: string }[];
+  dejaLa: number;
+  /** Rattachements recopiés depuis le tronc commun de même année : cours, et sessions d'emploi du temps. */
+  liensCours: number;
+  liensSessions: number;
+  /** Campus dont la fiche ne présente aucun BTS : licences et certificats seulement. */
+  campusSansBts: string[];
+  simulation: boolean;
+};

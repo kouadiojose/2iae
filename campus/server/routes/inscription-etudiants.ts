@@ -24,6 +24,7 @@ import { envoyerGuideBienvenue } from "../guide-bienvenue";
 import { adresseDeDemonstration } from "../demo-constantes";
 import { sansAccents, telephoneSaisi, verifierUnicite, espaces } from "./admin";
 import { matriculePropose } from "./crm";
+import { estTroncCommun } from "../classes-filieres";
 import {
   utilisateurs,
   sites,
@@ -76,7 +77,7 @@ async function classesOuvertes(siteId: number | null) {
   const [derniere] = await db.select({ annee: sql<string>`max(${classes.anneeScolaire})` }).from(classes);
   if (!derniere?.annee) return [];
   return db
-    .select({ id: classes.id, nom: classes.nom, siteId: classes.siteId, filiere: classes.filiere, anneeScolaire: classes.anneeScolaire })
+    .select({ id: classes.id, nom: classes.nom, siteId: classes.siteId, filiere: classes.filiere, niveau: classes.niveau, anneeScolaire: classes.anneeScolaire })
     .from(classes)
     .where(and(eq(classes.anneeScolaire, derniere.annee), siteId ? eq(classes.siteId, siteId) : undefined))
     .orderBy(asc(classes.nom));
@@ -147,6 +148,16 @@ async function prochainCoursClasse(classeId: number): Promise<string | null> {
     .format(s.debut)
     .replace(":", "h");
   return `${s.titre}, ${quand} (heure d'Abidjan)`;
+}
+
+/**
+ * Classes proposées à l'inscription : celles de l'année, sauf le « Tronc commun » d'un campus qui a ses classes
+ * de filières BTS (l'étudiant choisit alors sa vraie filière ; les cours du tronc commun y sont rattachés).
+ */
+async function classesInscription(siteId: number | null) {
+  const liste = await classesOuvertes(siteId);
+  const avecFilieresBts = new Set(liste.filter((c) => !estTroncCommun(c) && /BTS/i.test(c.niveau)).map((c) => c.siteId));
+  return liste.filter((c) => !(estTroncCommun(c) && avecFilieresBts.has(c.siteId)));
 }
 
 /** Nom comparé sans accents, casse ni espaces en trop (« Kouassi  Aya » = « KOUASSI Aya »). */
@@ -233,12 +244,12 @@ export function enregistrerInscriptionEtudiants(app: Express) {
       }
       const [listeSites, liste] = await Promise.all([
         db.select({ id: sites.id, nomCourt: sites.nomCourt }).from(sites).orderBy(asc(sites.ordre)),
-        classesOuvertes(l.siteId),
+        classesInscription(l.siteId),
       ]);
       const r: InfoInscriptionEtudiantDto = {
         expireLe: l.expireLe.toISOString(),
         sites: listeSites.filter((s) => (l.siteId ? s.id === l.siteId : liste.some((c) => c.siteId === s.id))),
-        classes: liste.map((c) => ({ id: c.id, nom: c.nom, siteId: c.siteId })),
+        classes: liste.map((c) => ({ id: c.id, nom: c.nom, siteId: c.siteId, filiere: c.filiere, niveau: c.niveau })),
         siteId: l.siteId,
         longueurMinimale: longueurMinimale("etudiant"),
         emailDisponible: emailDisponible(),
@@ -272,7 +283,7 @@ export function enregistrerInscriptionEtudiants(app: Express) {
       );
       noterEchec(cle); // chaque inscription compte dans la limite du réseau
       const [classe] = await db.select().from(classes).where(eq(classes.id, d.classeId));
-      const ouvertes = await classesOuvertes(l.siteId);
+      const ouvertes = await classesInscription(l.siteId);
       if (!classe || !ouvertes.some((c) => c.id === classe.id)) throw invalide("Choisis ta classe dans la liste.");
       if (adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tape ta vraie adresse e-mail.");
       const telephone = telephoneSaisi(d.telephone);

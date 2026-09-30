@@ -102,7 +102,8 @@ export type InscriptionEtudiantsDto = { liens: LienEtudiantsDto[]; sites: { id: 
 export type InfoInscriptionEtudiantDto = {
   expireLe: string;
   sites: { id: number; nomCourt: string }[];
-  classes: { id: number; nom: string; siteId: number }[];
+  /** Classes proposées : l'étudiant choisit sa filière, puis son niveau (1BTS, Licence 2, Certificat…). */
+  classes: { id: number; nom: string; siteId: number; filiere: string; niveau: string }[];
   /** Campus imposé par le lien. */
   siteId: number | null;
   longueurMinimale: number;

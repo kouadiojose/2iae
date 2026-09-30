@@ -140,6 +140,9 @@ export const FILIERES_BTS: FiliereBts[] = [
 /** Licences professionnelles (3 ans). */
 export const LICENCES_PRO = ["Management & Entrepreneuriat", "Marketing Digital & Communication", "Gestion Financière & Contrôle"];
 
+/** Certificats (quelques mois), site 2iae.com. */
+export const CERTIFICATS = ["Création & Gestion d'Entreprise", "Leadership & Management d'Équipe", "Comptabilité Analytique & Fiscalité"];
+
 /** Noms de salles inventés pour la démonstration : en réel, on dit « Salle de conférence » tant que la direction n'a pas saisi le vrai nom. */
 export const SALLES_INVENTEES = ["Salle Palmeraie", "Salle Kédjénou", "Salle Baoulé", "Salle Agro-pastorale", "Salle Akwaba"];
 export const SALLE_PAR_DEFAUT = "Salle de conférence";

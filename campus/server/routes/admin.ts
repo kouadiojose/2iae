@@ -36,6 +36,7 @@ import {
 } from "../auth";
 import { creerJeton, lienActivation, reinitialiserCode } from "../activation";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
+import { creerClassesFilieres } from "../classes-filieres";
 import { prevenirSite } from "../site";
 import { fuseauValide } from "../visio-daily";
 import { iaDisponible } from "../ia";
@@ -2245,6 +2246,16 @@ export function enregistrerAdmin(app: Express) {
       const [c] = await db.insert(classes).values({ ...d, nom: espaces(d.nom) }).returning();
       await journaliser(u, "classe_creee", { classeId: c.id, nom: c.nom });
       res.status(201).json(c);
+    }),
+  );
+
+  // Classes des filières de 2iae.com (BTS de chaque campus, licences, certificats), rattachées au tronc commun.
+  app.post(
+    `${P}/classes/filieres`,
+    DIRECTION,
+    route(async (req, res) => {
+      const { simulation } = valider(z.object({ simulation: z.boolean().default(false) }), req.body ?? {});
+      res.json(await creerClassesFilieres(moi(req), simulation));
     }),
   );
 

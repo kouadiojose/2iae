@@ -14,8 +14,22 @@ import type { InfoInscriptionEtudiantDto, InscriptionEtudiantFaite } from "@shar
 import { CadrePublic } from "./composants/CadrePublic";
 import { installerMoi } from "./outils";
 
-/** « Tronc commun 1BTS · Yopougon » → « Tronc commun 1BTS » (le campus est déjà choisi au-dessus). */
-const sansCampus = (nom: string) => nom.replace(/\s*·\s*[^·]+$/, "");
+type ClasseInscription = InfoInscriptionEtudiantDto["classes"][number];
+
+/** Famille d'une classe, pour ranger les filières : BTS, licences, certificats, autres (tronc commun). */
+const famille = (c: ClasseInscription) =>
+  /BTS/i.test(c.niveau) && c.filiere !== "Tronc commun" ? "BTS" : /^licence/i.test(c.niveau) ? "Licences" : /^certificat/i.test(c.niveau) ? "Certificats" : "Autres";
+const FAMILLES = ["BTS", "Licences", "Certificats", "Autres"] as const;
+
+/** « 1BTS » → « 1re année (BTS 1) », « Licence 2 » → « 2e année (Licence 2) ». */
+function libelleAnnee(niveau: string): string {
+  const n = niveau.trim();
+  const bts = /^(\d)\s*BTS$/i.exec(n) ?? /^BTS\s*(\d)$/i.exec(n);
+  if (bts) return `${bts[1] === "1" ? "1re" : `${bts[1]}e`} année (BTS ${bts[1]})`;
+  const licence = /^Licence\s*(\d)$/i.exec(n);
+  if (licence) return `${licence[1] === "1" ? "1re" : `${licence[1]}e`} année (Licence ${licence[1]})`;
+  return n;
+}
 
 export default function PageInscription({ jeton }: { jeton: string }) {
   const { data, error, isLoading } = useQuery<InfoInscriptionEtudiantDto>({ queryKey: [`/api/inscription/${encodeURIComponent(jeton)}`], retry: false, staleTime: Infinity });
@@ -47,12 +61,29 @@ export default function PageInscription({ jeton }: { jeton: string }) {
 
 function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscriptionEtudiantDto; onFait: (r: InscriptionEtudiantFaite) => void }) {
   const campusUnique = info.siteId ?? (info.sites.length === 1 ? info.sites[0].id : null);
-  const [f, setF] = useState({ prenom: "", nom: "", site: campusUnique ? String(campusUnique) : "", classe: "", telephone: "", email: "", code: "", confirmation: "" });
+  const [f, setF] = useState({ prenom: "", nom: "", site: campusUnique ? String(campusUnique) : "", filiere: "", classe: "", telephone: "", email: "", code: "", confirmation: "" });
   const [voir, setVoir] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const maj = (cle: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [cle]: e.target.value, ...(cle === "site" ? { classe: "" } : {}) }));
-  const classes = useMemo(() => info.classes.filter((c) => String(c.siteId) === f.site), [info.classes, f.site]);
+  const maj = (cle: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [cle]: e.target.value, ...(cle === "site" ? { filiere: "", classe: "" } : {}) }));
+  const classesCampus = useMemo(() => info.classes.filter((c) => String(c.siteId) === f.site), [info.classes, f.site]);
+  // Les filières du campus, rangées par famille (BTS, licences, certificats), puis les années de la filière choisie.
+  const filieres = useMemo(() => {
+    const parFamille = new Map<string, string[]>();
+    for (const c of classesCampus) {
+      const liste = parFamille.get(famille(c)) ?? [];
+      if (!liste.includes(c.filiere)) liste.push(c.filiere);
+      parFamille.set(famille(c), liste);
+    }
+    return FAMILLES.filter((x) => parFamille.has(x)).map((x) => ({ famille: x, filieres: [...(parFamille.get(x) ?? [])].sort((a, b) => a.localeCompare(b, "fr")) }));
+  }, [classesCampus]);
+  const annees = useMemo(() => classesCampus.filter((c) => c.filiere === f.filiere).sort((a, b) => a.niveau.localeCompare(b.niveau, "fr", { numeric: true })), [classesCampus, f.filiere]);
+  const choisirFiliere = (e: { target: { value: string } }) => {
+    const filiere = e.target.value;
+    const liste = classesCampus.filter((c) => c.filiere === filiere);
+    // Une seule classe (un certificat) : elle est choisie d'office.
+    setF((x) => ({ ...x, filiere, classe: liste.length === 1 ? String(liste[0].id) : "" }));
+  };
   const differents = f.confirmation.length > 0 && f.confirmation !== f.code;
   const tropCourt = f.code.length > 0 && f.code.length < info.longueurMinimale;
   const campus = info.sites.find((s) => String(s.id) === f.site)?.nomCourt;
@@ -60,7 +91,8 @@ function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscript
   const envoyer = async (e: React.FormEvent) => {
     e.preventDefault();
     setErreur(null);
-    if (!f.classe) return setErreur("Choisis ta classe.");
+    if (!f.filiere) return setErreur("Choisis ta filière.");
+    if (!f.classe) return setErreur("Choisis ton année.");
     if (f.code !== f.confirmation) return setErreur("Les deux codes ne sont pas identiques.");
     if (f.code.length < info.longueurMinimale) return setErreur(`Ton code secret doit faire au moins ${info.longueurMinimale} caractères.`);
     setEnvoi(true);
@@ -104,14 +136,28 @@ function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscript
           ))}
         </Selection>
       )}
-      <Selection libelle="Ta classe" value={f.classe} onChange={maj("classe")} disabled={!f.site} required aide={!f.site ? "Choisis d'abord ton campus." : undefined}>
-        <option value="">{f.site ? "Choisis ta classe" : "…"}</option>
-        {classes.map((c) => (
-          <option key={c.id} value={c.id}>
-            {sansCampus(c.nom)}
-          </option>
+      <Selection libelle="Ta filière" value={f.filiere} onChange={choisirFiliere} disabled={!f.site} required aide={!f.site ? "Choisis d'abord ton campus." : undefined}>
+        <option value="">{f.site ? "Choisis ta filière" : "…"}</option>
+        {filieres.map((g) => (
+          <optgroup key={g.famille} label={g.famille}>
+            {g.filieres.map((nom) => (
+              <option key={nom} value={nom}>
+                {nom}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </Selection>
+      {f.filiere && annees.length > 1 && (
+        <Selection libelle="Ton année" value={f.classe} onChange={maj("classe")} required>
+          <option value="">Choisis ton année</option>
+          {annees.map((c) => (
+            <option key={c.id} value={c.id}>
+              {libelleAnnee(c.niveau)}
+            </option>
+          ))}
+        </Selection>
+      )}
       <Champ
         libelle="Ton numéro de téléphone"
         type="tel"

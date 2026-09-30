@@ -4,8 +4,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone } from "lucide-react";
-import type { ClasseLigne, PageComptes, SiteLigne } from "@shared/schema";
+import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone, Layers } from "lucide-react";
+import type { BilanClassesFilieres, ClasseLigne, PageComptes, SiteLigne } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { BarreProgression, Chargement, Erreur, EtatVide, Badge } from "@/components/ui/divers";
 import { Bouton } from "@/components/ui/bouton";
@@ -35,6 +35,28 @@ export default function PageClasses() {
   const [site, setSite] = useState<SiteLigne | null>(null);
   const [ecran, setEcran] = useState<{ id: number; nom: string } | null>(null);
   const sites = refs.data?.sites ?? [];
+  const [filieresEnCours, setFilieresEnCours] = useState(false);
+
+  // Les classes des filières de 2iae.com : on montre d'abord ce qui sera créé, puis on crée.
+  const creerFilieres = async () => {
+    setFilieresEnCours(true);
+    try {
+      const sim = await post<BilanClassesFilieres>("/api/pilotage/classes/filieres", { simulation: true });
+      if (!sim.creees.length) return toast("Toutes les classes des filières existent déjà.", "info");
+      const parCampus = [...new Set(sim.creees.map((c) => c.campus))].map((campus) => `${campus} : ${sim.creees.filter((c) => c.campus === campus).length}`).join(", ");
+      const confirme = window.confirm(
+        `Créer ${sim.creees.length} classes pour ${sim.anneeScolaire} (${parCampus}) ?\n\nUne classe par BTS de chaque campus et par année, plus les licences (L1 à L3) et les certificats. Chaque classe BTS reçoit les cours et l'emploi du temps du tronc commun de son année.`,
+      );
+      if (!confirme) return;
+      const r = await post<BilanClassesFilieres>("/api/pilotage/classes/filieres", { simulation: false });
+      toast(`${pluriel(r.creees.length, "classe créée", "classes créées")} · ${pluriel(r.liensCours, "cours rattaché", "cours rattachés")} depuis le tronc commun.`);
+      void rafraichir("/api/pilotage/classes");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setFilieresEnCours(false);
+    }
+  };
 
   return (
     <Page>
@@ -44,9 +66,16 @@ export default function PageClasses() {
         titre="Classes et campus"
         sousTitre="Une classe regroupe les étudiants d'un campus, d'une filière et d'un niveau. Les cours sont suivis par des classes."
         actions={
-          <Bouton taille="lg" icone={<Plus className="h-5 w-5" />} onClick={() => setEdition("nouvelle")} className="min-h-[52px]">
-            Nouvelle classe
-          </Bouton>
+          <>
+            <Bouton taille="lg" icone={<Plus className="h-5 w-5" />} onClick={() => setEdition("nouvelle")} className="min-h-[52px]">
+              Nouvelle classe
+            </Bouton>
+            {refs.data?.estDirection && (
+              <Bouton taille="lg" variante="contour" icone={<Layers className="h-5 w-5" />} onClick={() => void creerFilieres()} chargement={filieresEnCours} className="min-h-[52px]">
+                Classes des filières
+              </Bouton>
+            )}
+          </>
         }
       />
 

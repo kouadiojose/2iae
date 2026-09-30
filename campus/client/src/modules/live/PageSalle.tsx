@@ -17,7 +17,7 @@ import { heure, dateEtHeure, decompte } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toastErreur, Toasts } from "@/components/ui/toast";
-import { Scene } from "./scene";
+import { Scene, usePetitEcran } from "./scene";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { BoutonLienInvite } from "./LienInvite";
 import { ResultatsParCampus } from "./panneaux";
@@ -74,18 +74,21 @@ function usePreferenceSalle(cle: string): [boolean, (v: boolean) => void] {
   return [valeur, changer];
 }
 
+/** Plein écran possible dans ce navigateur (pas sur iPhone : le bouton n'y ferait rien). */
+const pleinEcranPossible = () => typeof document !== "undefined" && Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+
 function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetailDto; siteId: number | null; onPresentation?: () => void }) {
   const maintenant = useMaintenant(1000);
   const site = seance?.sites.find((s) => s.id === siteId);
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 px-4 pt-5 sm:px-6 lg:px-10">
-      <div className="flex items-center gap-4">
-        <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE International" className="h-12 w-auto" />
-        <span className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-doux lg:text-base">
+    <header className="flex items-center justify-between gap-3 px-4 pt-4 sm:flex-wrap sm:gap-4 sm:px-6 sm:pt-5 lg:px-10">
+      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+        <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE International" className="h-9 w-auto shrink-0 sm:h-12" />
+        <span className="min-w-0 font-mono text-[11px] uppercase leading-snug tracking-[0.12em] text-nuit-doux sm:text-sm sm:tracking-[0.14em] lg:text-base">
           {site ? `${site.salleConference} · ${site.nomCourt}` : "Salle de conférence"}
         </span>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-4">
         {seance && (
           <span className="hidden items-center gap-2 rounded-full bg-[#2A1510] px-4 py-2 font-mono text-sm text-[#FF8A6B] md:flex">
             <span className="point-direct" />
@@ -101,14 +104,16 @@ function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetail
             <MonitorPlay className="h-5 w-5" /> Présentation seule
           </button>
         )}
-        <span className="font-mono text-2xl tabular-nums text-white lg:text-3xl">{heure(maintenant)}</span>
-        <button
-          onClick={() => void document.documentElement.requestFullscreen?.().catch(() => undefined)}
-          className="rounded-full p-2 text-nuit-gris hover:text-white"
-          aria-label="Plein écran"
-        >
-          <Maximize className="h-5 w-5" />
-        </button>
+        <span className="font-mono text-xl tabular-nums text-white sm:text-2xl lg:text-3xl">{heure(maintenant)}</span>
+        {pleinEcranPossible() && (
+          <button
+            onClick={() => void document.documentElement.requestFullscreen?.().catch(() => undefined)}
+            className="rounded-full p-2 text-nuit-gris hover:text-white"
+            aria-label="Plein écran"
+          >
+            <Maximize className="h-5 w-5" />
+          </button>
+        )}
       </div>
     </header>
   );
@@ -139,6 +144,8 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   const { data: etat } = useEtatDirect(seanceId, false);
   // Groupe de travail : la salle quitte la classe pour la visio de son groupe, puis revient.
   const { data: groupes } = useGroupes(seanceId);
+  // Téléphone : tout s'empile et défile (visio, diapo, code, console) ; pas de présentation seule.
+  const petit = usePetitEcran();
   // « Présentation seule » : la diapo en plein écran, sans bandeau, panneau ni console (pendant le direct).
   const [presentation, setPresentation] = usePreferenceSalle("campus:salle-presentation");
   const [videoMasquee, setVideoMasquee] = usePreferenceSalle("campus:salle-video-masquee");
@@ -158,7 +165,7 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   }, [setPresentation]);
   // Touche P : entrer ou sortir ; Échap : sortir (quand le navigateur n'est pas en plein écran).
   useEffect(() => {
-    if (!enDirect) return;
+    if (!enDirect || petit) return;
     const touche = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
       if (e.key === "p" || e.key === "P") (presentation ? sortir : entrer)();
@@ -166,16 +173,16 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
     };
     window.addEventListener("keydown", touche);
     return () => window.removeEventListener("keydown", touche);
-  }, [enDirect, presentation, entrer, sortir]);
+  }, [enDirect, petit, presentation, entrer, sortir]);
   if (!seance || !etat) return <div className="min-h-dvh" aria-busy="true" />;
   const statut = etat.statut;
   const groupe = statut === "en_direct" ? monGroupe(groupes) : null;
-  const seule = statut === "en_direct" && presentation && !groupe;
+  const seule = statut === "en_direct" && presentation && !groupe && !petit;
   // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
   // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
   return (
     <div className={seule ? "relative h-dvh w-screen overflow-hidden bg-black" : "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden"}>
-      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe ? entrer : undefined} />}
+      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe && !petit ? entrer : undefined} />}
       {statut === "annulee" ? (
         <Message titre="Cours annulé" texte={etat.motifAnnulation ?? seance.motifAnnulation ?? "Le formateur a un empêchement."} seance={seance} />
       ) : statut === "terminee" ? (
@@ -185,9 +192,9 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
       ) : groupe && groupes ? (
         <VueGroupeSalle seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} />
       ) : (
-        <PendantLeCours seance={seance} etat={etat} siteId={siteId} videoMasquee={videoMasquee} onVideoMasquee={setVideoMasquee} presentation={seule} onSortir={sortir} />
+        <PendantLeCours seance={seance} etat={etat} siteId={siteId} videoMasquee={videoMasquee} onVideoMasquee={setVideoMasquee} presentation={seule} onSortir={sortir} petit={petit} />
       )}
-      {siteId && !seule && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} />}
+      {siteId && !seule && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} petit={petit} />}
     </div>
   );
 }
@@ -416,7 +423,8 @@ function PendantLeCours({
   onVideoMasquee,
   presentation,
   onSortir,
-}: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; presentation: boolean; onSortir: () => void } & PropsVideo) {
+  petit,
+}: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; presentation: boolean; onSortir: () => void; petit: boolean } & PropsVideo) {
   const aLaParole = etat.parole?.type === "salle" && etat.parole.siteId === siteId;
   const questionEnCours = etat.questions.find((q) => q.epinglee && !q.masquee);
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
@@ -428,7 +436,7 @@ function PendantLeCours({
       className={
         presentation
           ? cn("absolute inset-0", !commandes && "cursor-none")
-          : "grid flex-1 gap-6 px-4 py-4 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10"
+          : "grid flex-1 gap-4 px-3 py-3 sm:gap-6 sm:px-6 sm:py-4 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,30%)] lg:px-10"
       }
     >
       <div className={presentation ? "absolute inset-0" : "flex min-w-0 flex-col gap-4 lg:min-h-0"}>
@@ -443,7 +451,7 @@ function PendantLeCours({
             C'est à vous : passez le micro
           </div>
         )}
-        <div className={presentation ? "absolute inset-0" : "min-h-[40vh] lg:min-h-0 lg:flex-1"}>
+        <div className={presentation ? "absolute inset-0" : petit ? "" : "min-h-[40vh] lg:min-h-0 lg:flex-1"}>
           <Scene
             seance={seance}
             etat={etat}
@@ -456,6 +464,16 @@ function PendantLeCours({
             className={presentation ? "h-full rounded-none border-0" : "h-full"}
           />
         </div>
+        {/* Téléphone : la vidéo est au-dessus de la diapo ; le bouton se range sous la scène. */}
+        {petit && !presentation && etat.diapo.url && !cacheeParFormateur && seance.fournisseur !== "demo" && (
+          <button
+            onClick={() => onVideoMasquee(!videoMasquee)}
+            className="flex min-h-11 items-center justify-center gap-2 self-start rounded-full bg-nuit-carte px-4 text-[15px] font-bold text-white hover:bg-nuit-ligne"
+          >
+            {videoMasquee ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+            {videoMasquee ? "Afficher la caméra" : "Masquer la caméra (la diapo seule)"}
+          </button>
+        )}
         <div className={presentation ? "absolute inset-x-6 bottom-6 z-40 flex flex-col gap-3" : "contents"}>
           {/* Question affichée par le formateur, puis sous-titres : lisibles du fond de la salle. */}
           {questionEnCours && (
@@ -516,7 +534,7 @@ function PendantLeCours({
           </button>
         </div>
       )}
-      {!presentation && videoMasquee && !cacheeParFormateur && (
+      {!presentation && !petit && videoMasquee && !cacheeParFormateur && (
         <button
           onClick={() => onVideoMasquee(false)}
           className="fixed bottom-24 left-4 z-40 flex min-h-11 items-center gap-2 rounded-full bg-nuit-carte px-4 text-[15px] font-bold text-white shadow-xl hover:bg-nuit-ligne lg:bottom-20"
@@ -553,7 +571,11 @@ function useCommandesVisibles(actif: boolean): boolean {
 
 // ── Console du responsable de salle ────────────────────────────────────────
 
-function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number }) {
+/**
+ * Grand écran : barre en bas de l'écran. Téléphone : la console suit le cours (elle ne reste pas collée en
+ * bas, où elle cachait la visio), boutons rangés sur deux colonnes.
+ */
+function ConsoleResponsable({ seance, etat, siteId, petit }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number; petit: boolean }) {
   const moi = useMoiConnecte();
   const campus = etat.campus.find((c) => c.siteId === siteId);
   const [effectif, setEffectif] = useState<number | null>(campus?.effectif ?? null);
@@ -580,17 +602,18 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
       toastErreur(e);
     }
   };
-  const bouton = "flex min-h-12 items-center gap-2 rounded-2xl px-4 text-[15px] font-bold transition-colors";
+  const bouton = "flex min-h-12 items-center justify-center gap-2 rounded-2xl px-4 text-[15px] font-bold transition-colors";
   return (
-    <footer className="sticky bottom-0 mt-auto shrink-0 border-t border-nuit-ligne bg-nuit-panneau/95 px-4 py-3 backdrop-blur lg:static lg:px-10">
-      <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-center gap-2.5">
+    <footer className={cn("mt-auto shrink-0 border-t border-nuit-ligne bg-nuit-panneau/95 px-3 py-3 backdrop-blur sm:px-4 lg:px-10", !petit && "sticky bottom-0 lg:static")}>
+      <p className="mb-2 font-mono text-[12px] uppercase tracking-wider text-nuit-gris md:hidden">Responsable de salle</p>
+      <div className="mx-auto grid max-w-[1800px] grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-2.5">
         <span className="mr-2 hidden font-mono text-[12px] uppercase tracking-wider text-nuit-gris md:inline">Responsable de salle</span>
         {peutLever && (
-          <button onClick={main} disabled={!enDirect} className={cn(bouton, mainSalle ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne", !enDirect && "opacity-50")}>
+          <button onClick={main} disabled={!enDirect} className={cn(bouton, "col-span-2", mainSalle ? "bg-orange text-encre" : "bg-nuit-carte text-white hover:bg-nuit-ligne", !enDirect && "opacity-50")}>
             <Hand className="h-5 w-5" /> {mainSalle ? "Main de la salle levée" : "Lever la main de la salle"}
           </button>
         )}
-        <div className="flex items-center gap-1 rounded-2xl bg-nuit-carte p-1">
+        <div className="col-span-2 flex items-center justify-between gap-1 rounded-2xl bg-nuit-carte p-1">
           <button
             onClick={() => {
               const n = Math.max(0, (effectif ?? 0) - 1);
@@ -615,7 +638,7 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
             <Plus className="h-5 w-5" />
           </button>
         </div>
-        <button onClick={() => declarer({ prete: !campus?.prete })} className={cn(bouton, campus?.prete ? "bg-[#1F3A2B] text-[#6FCF97]" : "bg-nuit-carte text-white hover:bg-nuit-ligne")}>
+        <button onClick={() => declarer({ prete: !campus?.prete })} className={cn(bouton, "col-span-2", campus?.prete ? "bg-[#1F3A2B] text-[#6FCF97]" : "bg-nuit-carte text-white hover:bg-nuit-ligne")}>
           <CheckCircle2 className="h-5 w-5" /> {campus?.prete ? "Salle prête" : "Déclarer la salle prête"}
         </button>
         <button
@@ -626,14 +649,14 @@ function ConsoleResponsable({ seance, etat, siteId }: { seance: SeanceDetailDto;
           <MessageSquare className="h-5 w-5" /> Discussion
           {nonLus > 0 && <span className="rounded-full bg-orange px-2 font-mono text-[12px] text-encre">{nonLus}</span>}
         </button>
-        <BoutonLienInvite seance={seance} variante="nuit" qrGrand className="min-h-12 rounded-2xl px-4 text-[15px]" />
+        <BoutonLienInvite seance={seance} variante="nuit" qrGrand className="min-h-12 justify-center rounded-2xl px-4 text-[15px]" />
         {campus?.incident ? (
-          <button onClick={() => declarer({ incident: null })} className={cn(bouton, "bg-direct text-white")}>
+          <button onClick={() => declarer({ incident: null })} className={cn(bouton, "col-span-2 bg-direct text-white")}>
             <CircleAlert className="h-5 w-5" /> {campus.incident} · résolu ?
           </button>
         ) : (
-          <div className="relative">
-            <button onClick={() => setIncidents((v) => !v)} className={cn(bouton, "bg-nuit-carte text-white hover:bg-nuit-ligne")} aria-expanded={incidents}>
+          <div className="relative col-span-2">
+            <button onClick={() => setIncidents((v) => !v)} className={cn(bouton, "w-full bg-nuit-carte text-white hover:bg-nuit-ligne")} aria-expanded={incidents}>
               <CircleAlert className="h-5 w-5 text-orange" /> Incident
             </button>
             {incidents && (

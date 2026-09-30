@@ -43,9 +43,13 @@ export type PropsScene = {
   className?: string;
 };
 
-/** Téléphone (moins de 640 px de large) : la vidéo et la diapo s'empilent au lieu de se superposer. */
-function usePetitEcran() {
-  const requete = "(max-width: 639px)";
+/**
+ * Téléphone (moins de 640 px de large, ou tenu à l'horizontale) : la vidéo et la diapo s'empilent au lieu
+ * de se superposer. Sur un téléphone, Daily affiche ses propres barres (enregistrement, boutons, liste des
+ * présents) : dans une vignette, elles recouvraient toute la vidéo.
+ */
+export function usePetitEcran() {
+  const requete = "(max-width: 639px), (max-height: 520px) and (max-width: 1023px)";
   const [petit, setPetit] = useState(() => typeof window !== "undefined" && window.matchMedia(requete).matches);
   useEffect(() => {
     const m = window.matchMedia(requete);
@@ -90,17 +94,21 @@ export function Scene(p: PropsScene) {
   const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url) && !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio);
   const disposition = etat.diapo.disposition ?? "diapo";
   const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
-  // Téléphone en vidéo : une vignette de 140 px sur la diapo ne se voit pas. La vidéo passe au-dessus,
-  // en pleine largeur, et la diapo dessous (seules les classes changent : la visio ne se recharge pas).
-  const empile = avecDiapo && petitEcran && !p.grand;
+  // Téléphone en vidéo (écran de salle compris) : une vignette sur la diapo ne se voit pas. La vidéo passe
+  // au-dessus, en pleine largeur, et la diapo dessous (seules les classes changent : la visio ne se recharge pas).
+  const empile = avecDiapo && petitEcran;
+  // Daily sur téléphone : ses barres du haut et du bas prennent de la place, le cadre est carré pour que
+  // la vidéo garde toute la largeur entre les deux.
+  const cadreEmpile = seance.fournisseur === "daily" && !secoursRadio ? "aspect-square" : "aspect-video";
+  const grand = p.grand && !petitEcran;
   // Diapo seule (écran de salle) : la vidéo sort de l'écran sans être démontée, le son continue.
-  const diapoSeule = avecDiapo && !empile && Boolean(p.videoMasquee) && disposition !== "cameras";
+  const diapoSeule = avecDiapo && Boolean(p.videoMasquee) && disposition !== "cameras";
   return (
     <div
       className={cn(
         "relative overflow-hidden rounded-[22px] border-2 bg-nuit-carte",
         parole ? "border-orange" : "border-nuit-ligne",
-        p.grand ? "h-full min-h-[40vh]" : libre || empile ? "" : "aspect-video",
+        p.grand && !empile ? "h-full min-h-[40vh]" : libre || empile ? "" : "aspect-video",
         empile && "flex flex-col",
         p.className,
       )}
@@ -111,7 +119,7 @@ export function Scene(p: PropsScene) {
           discrete={disposition === "cameras" && !empile}
           className={
             empile
-              ? "relative order-2 aspect-video h-auto w-full border-t-2 border-nuit-ligne"
+              ? cn("relative order-2 aspect-video h-auto max-h-[80dvh] w-full", !diapoSeule && "border-t-2 border-nuit-ligne")
               : cn(
                   (disposition === "diapo" || diapoSeule) && "absolute inset-0",
                   disposition === "cote" && !diapoSeule && "absolute inset-y-0 left-0 w-[58%]",
@@ -124,12 +132,12 @@ export function Scene(p: PropsScene) {
       {/* Même structure dans toutes les mises en page (cadre > contenu) : la visio ne se recharge jamais. */}
       <div
         className={
-          empile
-            ? "relative order-1 aspect-video w-full bg-black"
+          diapoSeule
+            ? "pointer-events-none fixed -left-[4000px] top-0 h-[180px] w-[320px] opacity-0"
+            : empile
+            ? cn("relative order-1 max-h-[80dvh] w-full bg-black", cadreEmpile)
             : !avecDiapo || disposition === "cameras"
-            ? "contents"
-            : diapoSeule
-              ? "pointer-events-none fixed -left-[4000px] top-0 h-[180px] w-[320px] opacity-0"
+              ? "contents"
               : disposition === "cote"
                 ? "absolute inset-y-0 right-0 w-[42%] border-l-2 border-nuit-ligne bg-nuit-carte"
                 : cn("absolute z-10 aspect-video", vignette)
@@ -163,12 +171,12 @@ export function Scene(p: PropsScene) {
         <div
           className={cn(
             "pointer-events-none absolute inset-x-0 top-0 flex items-center justify-center gap-3 bg-orange text-center font-black uppercase tracking-serre text-encre",
-            p.grand ? "px-6 py-5 text-[clamp(28px,4vw,64px)]" : "px-4 py-2 text-base sm:text-lg",
+            grand ? "px-6 py-5 text-[clamp(28px,4vw,64px)]" : "px-4 py-2 text-base sm:text-lg",
           )}
           role="status"
           aria-live="polite"
         >
-          <Mic className={p.grand ? "h-12 w-12" : "h-5 w-5"} />
+          <Mic className={grand ? "h-12 w-12" : "h-5 w-5"} />
           {parole.type === "salle" ? `${parole.site ?? "La salle"} a la parole` : `${parole.libelle} a la parole`}
         </div>
       )}

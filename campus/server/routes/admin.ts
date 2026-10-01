@@ -35,6 +35,7 @@ import {
   oublierUtilisateur,
 } from "../auth";
 import { creerJeton, lienActivation, reinitialiserCode } from "../activation";
+import { urlFichier } from "../fichiers";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { creerClassesFilieres } from "../classes-filieres";
 import { prevenirSite } from "../site";
@@ -45,6 +46,7 @@ import { lireVitrine, oublierVitrine } from "./public";
 import {
   ROLES,
   utilisateurs,
+  fichiers,
   sites,
   classes,
   suivis,
@@ -877,6 +879,8 @@ const schemaModificationCompte = z.object({
   localisation: optionnel(z.string().trim().max(120)),
   /** Formateurs : lieux d'enseignement (le premier devient la localisation et le fuseau). */
   lieux: z.array(z.object({ ville: z.string().trim().min(2).max(80), fuseau: z.string().trim().min(3).max(64) })).max(LIEUX_MAX).optional(),
+  /** Photo du compte (image téléversée par la personne qui modifie, usage « avatar ») ; null la retire. */
+  photoFichierId: z.number().int().positive().nullable().optional(),
   actif: z.boolean().optional(),
 });
 
@@ -1792,6 +1796,14 @@ export function enregistrerAdmin(app: Express) {
       if (d.telephone !== undefined) maj.telephone = telephoneSaisi(d.telephone);
       if (d.titre !== undefined) maj.titre = d.titre;
       if (d.localisation !== undefined) maj.localisation = d.localisation;
+      if (d.photoFichierId !== undefined) {
+        if (d.photoFichierId === null) maj.photoUrl = null;
+        else {
+          const [f] = await db.select().from(fichiers).where(eq(fichiers.id, d.photoFichierId));
+          if (!f || f.proprietaireId !== u.id || f.usage !== "avatar" || !f.mime.startsWith("image/")) throw invalide("Photo introuvable : téléversez d'abord l'image.");
+          maj.photoUrl = urlFichier(f.id);
+        }
+      }
       if (d.lieux !== undefined) {
         if ((d.role ?? avant.role) !== "formateur") throw invalide("Les lieux d'enseignement sont réservés aux formateurs.");
         const inconnu = d.lieux.find((l) => !fuseauValide(l.fuseau));

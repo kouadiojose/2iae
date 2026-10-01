@@ -14,6 +14,7 @@ import { db } from "../db";
 import { exigerRole, moi } from "../auth";
 import { route } from "../http";
 import { idsCoursAccessibles, etudiantsDuCours } from "../acces";
+import { intervenantsDesSeances } from "../programme-outils";
 import { compterMessagesNonLus } from "../messages-outils";
 import { annoncesPour, extrait } from "./annonces";
 import { elementsAgenda, debutSemaine, numeroSemaine, jourFr, heureFr } from "./agenda";
@@ -209,8 +210,20 @@ export function enregistrerAccueil(app: Express) {
       const candidats: Candidat[] = [];
       const ajouter = (e: ElementAFaire, t: number) => candidats.push({ ...e, rang: RANGS[e.type], t });
 
+      // Qui anime : l'intervenant du créneau de l'emploi du temps (M. Konaté le vendredi en Initiation à l'IA), sinon le formateur du cours.
+      const intervenants = await intervenantsDesSeances(lives.map((l) => l.s.id));
+      const idsIntervenants = [...new Set([...intervenants.values()].map((i) => i.id).filter((x): x is number => x !== null))];
+      const lieuDe = new Map(
+        (idsIntervenants.length ? await db.select({ id: utilisateurs.id, localisation: utilisateurs.localisation }).from(utilisateurs).where(inArray(utilisateurs.id, idsIntervenants)) : []).map(
+          (x) => [x.id, x.localisation],
+        ),
+      );
+
       for (const { s, code, couleur, prenom, nom, localisation } of lives) {
-        const formateur = prenom ? `${prenom} ${nom}${ville(localisation) ? ` depuis ${ville(localisation)}` : ""}` : null;
+        const i = intervenants.get(s.id);
+        const lieu = i ? ville(i.id ? (lieuDe.get(i.id) ?? null) : null) : ville(localisation);
+        const nomAnimateur = i ? i.nom : prenom ? `${prenom} ${nom}` : null;
+        const formateur = nomAnimateur ? `${nomAnimateur}${lieu ? ` depuis ${lieu}` : ""}` : null;
         if (s.statut === "en_direct") {
           ajouter(
             {

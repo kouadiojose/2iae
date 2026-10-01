@@ -7,13 +7,19 @@ import { Avatar } from "@/components/ui/divers";
 import { jourLong, heure, heureDouble } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { texteSur } from "../outils";
-import type { CoursDetail } from "@shared/schema";
+import type { CoursDetail, FormateurDuCours } from "@shared/schema";
 
 export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetail; action?: ReactNode; etudiant: boolean }) {
   const clair = texteSur(cours.couleur) === "encre";
   const f = cours.formateur;
   const s = cours.prochaineSeance;
   const p = cours.progression;
+  // Tous les formateurs du cours ; celui qui anime le prochain live d'abord (M. Konaté le vendredi en Initiation à l'IA).
+  const vedette = s?.animateur?.id ?? f?.id ?? null;
+  const formateurs = [f, ...cours.coFormateurs]
+    .filter((x): x is FormateurDuCours => Boolean(x))
+    .sort((a, b) => Number(b.id === vedette) - Number(a.id === vedette));
+  const animeParUnAutre = Boolean(s?.animateur && s.animateur.id !== f?.id);
   return (
     <header
       className={cn("relative overflow-hidden rounded-[24px] px-5 py-6 sm:px-8 sm:py-8", clair ? "text-encre" : "text-white")}
@@ -34,16 +40,20 @@ export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetail; a
           <h1 className="text-[30px] font-black leading-[1.02] tracking-serre sm:text-[42px]">{cours.titre}</h1>
         </div>
 
-        {f && (
-          <div className="flex items-center gap-3">
-            <Avatar prenom={f.prenom} nom={f.nom} photo={f.photoUrl} taille={44} className={clair ? "bg-encre text-white" : "bg-white text-encre"} />
-            <div className="flex min-w-0 flex-col">
-              <span className="text-base font-bold leading-tight">
-                {f.prenom} {f.nom}
-                {f.ville && <span className={cn("font-normal", clair ? "text-encre/75" : "text-white/80")}> · depuis {f.ville}</span>}
-              </span>
-              {f.titre && <span className={cn("text-[13px]", clair ? "text-encre/70" : "text-white/75")}>{f.titre}</span>}
-            </div>
+        {formateurs.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {formateurs.map((x) => (
+              <div key={x.id} className="flex items-center gap-3">
+                <Avatar prenom={x.prenom} nom={x.nom} photo={x.photoUrl} taille={44} className={clair ? "bg-encre text-white" : "bg-white text-encre"} />
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-base font-bold leading-tight">
+                    {x.prenom} {x.nom}
+                    {x.ville && <span className={cn("font-normal", clair ? "text-encre/75" : "text-white/80")}> · depuis {x.ville}</span>}
+                  </span>
+                  {x.titre && <span className={cn("text-[13px]", clair ? "text-encre/70" : "text-white/75")}>{x.titre}</span>}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -58,6 +68,7 @@ export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetail; a
                 <Radio className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <span>
                   Prochain live {jourLong(s.debut)} à {etudiant ? heure(s.debut) : heureDouble(s.debut)}
+                  {animeParUnAutre && <strong className="font-bold"> avec {s.animateur!.nom}</strong>}
                 </span>
               </>
             )}

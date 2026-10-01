@@ -43,6 +43,11 @@ export type SeanceDuCours = {
   debut: string;
   dureeMinutes: number;
   statut: StatutSeance;
+  /**
+   * Qui anime cette séance quand l'emploi du temps le précise (Initiation à l'IA : M. Kouadio le lundi,
+   * M. Konaté le vendredi) ; absent ou null : le formateur principal du cours.
+   */
+  animateur?: { id: number | null; nom: string } | null;
 };
 
 /** GET /api/cours — un élément de la liste « Mes cours ». */

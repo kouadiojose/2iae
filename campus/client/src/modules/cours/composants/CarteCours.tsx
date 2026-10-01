@@ -24,6 +24,7 @@ function LigneSeance({ cours, formateur }: { cours: CoursResume; formateur?: boo
     <span className="inline-flex items-center gap-1.5 text-[13px] text-texte-pale">
       <Radio className="h-3.5 w-3.5 text-orange-fonce" />
       Prochain live : {jourLong(s.debut)} · {formateur ? heureDouble(s.debut) : heure(s.debut)}
+      {s.animateur && s.animateur.id !== cours.formateur?.id && ` · avec ${s.animateur.nom}`}
     </span>
   );
 }

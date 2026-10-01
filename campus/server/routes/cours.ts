@@ -22,6 +22,7 @@ import { exigerConnexion, exigerRole, moi, estEquipe, perimetreSites } from "../
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { idsCoursAccessibles, coursVisible, coursEnseigne, enseigneCours, peutVoirCours, etudiantsDuCours } from "../acces";
 import { enregistrerGardienFichier, urlFichier } from "../fichiers";
+import { intervenantsDesSeances } from "../programme-outils";
 import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
 import { demanderClaude, iaDisponible, verifierQuota } from "../ia";
@@ -169,6 +170,12 @@ async function prochainesSeances(coursIds: number[], etudiant = false): Promise<
     if (!resultat.has(s.coursId)) {
       resultat.set(s.coursId, { id: s.id, titre: s.titre, debut: s.debut.toISOString(), dureeMinutes: s.dureeMinutes, statut: s.statut });
     }
+  }
+  // L'intervenant du créneau de l'emploi du temps, quand la séance en vient (il n'est pas toujours le formateur principal).
+  const intervenants = await intervenantsDesSeances([...resultat.values()].map((s) => s.id));
+  for (const s of resultat.values()) {
+    const i = intervenants.get(s.id);
+    s.animateur = i ? { id: i.id, nom: i.nom } : null;
   }
   return resultat;
 }

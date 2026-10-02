@@ -8,9 +8,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare } from "lucide-react";
+import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft } from "lucide-react";
 import { get, post, put, suppr } from "@/lib/api";
-import { useMoiConnecte } from "@/lib/auth";
+import { accueilDuRole, seDeconnecter, useMoiConnecte } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { heure, dateEtHeure, decompte } from "@/lib/dates";
@@ -77,6 +77,30 @@ function usePreferenceSalle(cle: string): [boolean, (v: boolean) => void] {
 /** Plein écran possible dans ce navigateur (pas sur iPhone : le bouton n'y ferait rien). */
 const pleinEcranPossible = () => typeof document !== "undefined" && Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
 
+/**
+ * Quitter l'écran : le compte d'une salle se déconnecte (après confirmation : l'écran ne reçoit plus les
+ * cours tant qu'on ne le réinstalle pas) ; l'équipe revient au campus.
+ */
+function BoutonQuitter() {
+  const moi = useMoiConnecte();
+  const classe = "flex items-center gap-1.5 rounded-full p-2 font-mono text-[12px] text-nuit-gris hover:text-white";
+  if (moi.role !== "salle") {
+    return (
+      <a href={accueilDuRole(moi.role)} className={classe} title="Revenir au campus">
+        <ArrowLeft className="h-5 w-5" /> <span className="hidden xl:inline">Campus</span>
+      </a>
+    );
+  }
+  const quitter = () => {
+    if (window.confirm("Déconnecter cet écran ?\n\nLa salle ne recevra plus les cours sur cet appareil tant qu'il n'est pas reconnecté (lien d'installation de la salle, ou identifiant et mot de passe).")) void seDeconnecter();
+  };
+  return (
+    <button onClick={quitter} className={classe} aria-label="Déconnecter cet écran" title="Déconnecter cet écran">
+      <LogOut className="h-5 w-5" /> <span className="hidden xl:inline">Déconnexion</span>
+    </button>
+  );
+}
+
 function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetailDto; siteId: number | null; onPresentation?: () => void }) {
   const maintenant = useMaintenant(1000);
   const site = seance?.sites.find((s) => s.id === siteId);
@@ -114,6 +138,7 @@ function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetail
             <Maximize className="h-5 w-5" />
           </button>
         )}
+        <BoutonQuitter />
       </div>
     </header>
   );

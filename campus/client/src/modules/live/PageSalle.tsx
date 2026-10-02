@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft } from "lucide-react";
+import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft, Video } from "lucide-react";
 import { get, post, put, suppr } from "@/lib/api";
 import { accueilDuRole, seDeconnecter, useMoiConnecte } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
@@ -377,10 +377,22 @@ function GrandCompteARebours({ cible }: { cible: string }) {
   );
 }
 
+/** Avant le cours, la visio s'ouvre toute seule 30 min avant le début ; d'un bouton dès 90 min (réglages de la salle). */
+const VISIO_AUTO_MIN = 30;
+const VISIO_POSSIBLE_MIN = 90;
+
 function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null }) {
+  const moi = useMoiConnecte();
   const ville = seance.formateur?.localisation?.split(",")[0] ?? null;
   const maintenant = useMaintenant(1000);
   const avantDebutMin = (new Date(seance.debut).getTime() - maintenant) / 60_000;
+  // Réglages avant le formateur : image, son, micro, avec les autres salles déjà connectées. Le micro reste
+  // à la main de la salle (bouton de la visio) ; au début du cours, il se coupe et suit la parole.
+  const visioPossible = moi.role === "salle" && seance.fournisseur === "daily" && avantDebutMin <= VISIO_POSSIBLE_MIN;
+  const [visioDemandee, setVisioDemandee] = useState(false);
+  const visioOuverte = visioPossible && (visioDemandee || avantDebutMin <= VISIO_AUTO_MIN);
+  // Sans la diapo : la vidéo en grand, et la salle se voit elle-même pour régler sa caméra.
+  const etatReglages = useMemo(() => ({ ...etat, diapo: { ...etat.diapo, url: null } }), [etat]);
   return (
     <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
@@ -399,9 +411,31 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
         ) : (
           <p className="rounded-[20px] bg-[#242120] px-6 py-5 text-[clamp(24px,2.4vw,44px)] font-black">Le cours commence dès que le formateur ouvre l'antenne.</p>
         )}
-        <div className="flex min-h-[260px] justify-center lg:min-h-0 lg:flex-1">
-          <CarteCoteIvoire campus={etat.campus} villeFormateur={ville} className="w-full max-w-md lg:h-full lg:max-h-[560px] lg:w-auto lg:max-w-full" />
-        </div>
+        {visioOuverte ? (
+          <div className="flex flex-col gap-2 lg:min-h-0 lg:flex-1">
+            <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">Réglages de la salle · visio ouverte</p>
+            <div className="lg:min-h-0 lg:flex-1">
+              <Scene seance={seance} etat={etatReglages} role="salle" camera className="mx-auto w-full lg:h-full lg:w-auto lg:max-w-full" />
+            </div>
+            <p className="text-[15px] leading-snug text-nuit-doux">
+              Vérifiez l'image, le son et le micro (bouton du micro dans la visio). Les salles déjà connectées vous voient. Au début du cours, le micro se coupe : le formateur vous donne la parole.
+            </p>
+          </div>
+        ) : (
+          <>
+            {visioPossible && (
+              <button
+                onClick={() => setVisioDemandee(true)}
+                className="flex min-h-12 items-center justify-center gap-2 self-start rounded-2xl bg-orange px-5 text-[16px] font-bold text-encre hover:bg-orange-peche"
+              >
+                <Video className="h-5 w-5" /> Ouvrir la visio pour les réglages
+              </button>
+            )}
+            <div className="flex min-h-[260px] justify-center lg:min-h-0 lg:flex-1">
+              <CarteCoteIvoire campus={etat.campus} villeFormateur={ville} className="w-full max-w-md lg:h-full lg:max-h-[560px] lg:w-auto lg:max-w-full" />
+            </div>
+          </>
+        )}
       </div>
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
         <BlocCode seance={seance} siteId={siteId} />

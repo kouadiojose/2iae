@@ -78,6 +78,24 @@ const MOTS_HORS_SUJET = [
   "bon week end", "bonne semaine", "bon dimanche",
 ];
 
+// Publications faites pour animer la page Facebook (pronostics de match, jeux,
+// « donne ton score en commentaire ») : elles vivent sur les réseaux sociaux,
+// pas sur le site institutionnel. Demande de José du 3 octobre 2026, après
+// qu'un pronostic Côte d'Ivoire – Cameroun s'est retrouvé dans les actualités.
+// Les marqueurs sont précis à dessein : « en commentaire » seul apparaît aussi
+// dans de vraies annonces (« posez vos questions en commentaire »).
+const MARQUEURS_RESEAUX_SOCIAUX = [
+  "pronostic", "pronostics", "donne ton score", "donnez votre score", "donne ton prono",
+  "jeu concours", "concours photo", "tague un ami", "taguez un ami", "tag un ami",
+  "identifie un ami", "identifiez un ami", "identifie tes amis", "identifiez vos amis",
+];
+
+/** Marqueur d'une publication d'animation des réseaux sociaux, ou null. */
+export function publicationReseauxSociaux(message: string | null | undefined): string | null {
+  const norme = ` ${normaliser(nettoyer(message ?? ""))} `;
+  return MARQUEURS_RESEAUX_SOCIAUX.find((m) => norme.includes(` ${m} `)) ?? null;
+}
+
 let client: OpenAI | null = null;
 function openai(): OpenAI | null {
   if (!process.env.OPENAI_API_KEY) return null;
@@ -533,7 +551,12 @@ export async function classer(
   texteImage?: string,
 ): Promise<Classement> {
   const parIA = await classerParIA(message, nbMedias, cheminImage, texteImage);
-  return parIA ?? classerParRegles(message, nbMedias);
+  const c = parIA ?? classerParRegles(message, nbMedias);
+  const marqueur = publicationReseauxSociaux(message);
+  if (marqueur) {
+    return { ...c, publiable: false, banniere: false, raison: `Publication pour les réseaux sociaux (« ${marqueur} ») : pas sur le site` };
+  }
+  return c;
 }
 
 /** Une publication passe-t-elle à la une ? Le seuil dépend de la rubrique. */

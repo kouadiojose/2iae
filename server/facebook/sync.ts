@@ -26,6 +26,7 @@ import {
   meriteLaUne,
   nettoyer,
   tronquer,
+  publicationReseauxSociaux,
   empreinteContenu,
   MAX_BANNIERES,
 } from "./classification";
@@ -431,6 +432,31 @@ async function banniereDejaPresente(titre: string): Promise<boolean> {
  * Sans ce rattrapage, elles resteraient affichées jusqu'à ce que la rotation
  * les évince d'elle-même, ce qui peut prendre des jours.
  */
+/**
+ * Retire du site les publications d'animation des réseaux sociaux déjà en
+ * ligne (pronostics, jeux…) : l'article et sa bannière disparaissent, et la
+ * publication est journalisée « skipped » pour ne jamais revenir.
+ */
+export async function retirerPublicationsReseauxSociaux(): Promise<string[]> {
+  const publiees = await db
+    .select({ id: facebookPosts.id, message: facebookPosts.message, newsId: facebookPosts.newsId, sliderId: facebookPosts.sliderId })
+    .from(facebookPosts)
+    .where(eq(facebookPosts.status, "published"));
+  const retirees: string[] = [];
+  for (const p of publiees) {
+    const marqueur = publicationReseauxSociaux(p.message);
+    if (!marqueur) continue;
+    if (p.sliderId) await db.update(sliders).set({ isActive: false, updatedAt: new Date() }).where(eq(sliders.id, p.sliderId));
+    await db
+      .update(facebookPosts)
+      .set({ status: "skipped", reason: `Publication pour les réseaux sociaux (« ${marqueur} ») : retirée du site`, newsId: null, sliderId: null, updatedAt: new Date() })
+      .where(eq(facebookPosts.id, p.id));
+    if (p.newsId) await db.delete(news).where(eq(news.id, p.newsId));
+    retirees.push(tronquer(nettoyer(p.message ?? ""), 60));
+  }
+  return retirees;
+}
+
 export async function dedupliquerBannieres(): Promise<number> {
   const actives = await db
     .select({ id: sliders.id, title: sliders.title, source: sliders.source })

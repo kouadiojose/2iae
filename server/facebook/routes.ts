@@ -16,6 +16,7 @@ import {
   synchroniser,
   synchroniserUne,
   dedupliquerBannieres,
+  retirerPublicationsReseauxSociaux,
   harmoniserBannieres,
   reviserArticlesPublies,
   etofferArticlesMaigres,
@@ -160,6 +161,10 @@ export function demarrerRattrapage(): void {
       // s'appuient sur ces mêmes visuels.
       const videes = await purgerImagesSansInformation();
       videes.forEach((t) => console.log(`📘 Facebook : ${t}`));
+
+      // Publications d'animation des réseaux sociaux (pronostics, jeux) : pas sur le site.
+      const retirees = await retirerPublicationsReseauxSociaux();
+      retirees.forEach((t) => console.log(`📘 Facebook : retirée du site (réseaux sociaux) — ${t}`));
 
       // Rattrapage des bannières redondantes créées avant la déduplication.
       const nettoyees = await dedupliquerBannieres();

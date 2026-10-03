@@ -13,6 +13,7 @@ import { VideoYoutube } from "@/components/video-youtube";
 import { AfficheRTI } from "@/components/annonce-rti";
 import { ReportageRtiBts } from "@/components/reportage-rti";
 import { RencontreParentsYopougon } from "@/components/rencontre-parents-yopougon";
+import { RencontreParentsAzaguie } from "@/components/rencontre-parents-azaguie";
 import { RentreeEffective } from "@/components/rentree-effective";
 import { SectionCampusAccueil } from "@/components/campus-numerique";
 
@@ -498,6 +499,7 @@ export default function AccueilPage() {
 
       {/* Le fondateur face aux parents de Yopougon — les chiffres commentés
           devant les familles, et l'engagement pour l'an prochain */}
+      <RencontreParentsAzaguie />
       <RencontreParentsYopougon />
 
       {/* Annonce temporaire : passage du fondateur sur la RTI (auto-expirante) */}

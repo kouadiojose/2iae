@@ -11,14 +11,29 @@ const N = " ";
 
 const PHOTOS = [
   {
+    src: "/images/rencontre-parents-azaguie-8.jpg",
+    alt: "Présentation aux parents des performances du Groupe 2IAE au BTS de 2017 à 2022, sur l'écran de la salle de réunion d'Azaguié",
+    legende: "Les résultats au BTS présentés aux parents",
+  },
+  {
     src: "/images/rencontre-parents-azaguie-3.jpg",
     alt: "Réunion de la direction du Groupe 2IAE avec les parents d'élèves et les étudiants, en salle, sur le campus d'Azaguié",
     legende: "La réunion",
   },
   {
+    src: "/images/rencontre-parents-azaguie-7.jpg",
+    alt: "Parents d'élèves et étudiants réunis dans la salle de réunion du campus d'Azaguié",
+    legende: "Les parents et les étudiants",
+  },
+  {
     src: "/images/rencontre-parents-azaguie-1.jpg",
     alt: "Parents d'élèves et membres de la direction au bord des bassins de pisciculture de la ferme-école d'Azaguié",
     legende: "Les bassins de pisciculture",
+  },
+  {
+    src: "/images/rencontre-parents-azaguie-6.jpg",
+    alt: "Les parents d'élèves visitent les bassins de pisciculture, devant les serres de la ferme-école d'Azaguié",
+    legende: "Les bassins et les serres",
   },
   {
     src: "/images/rencontre-parents-azaguie-5.jpg",
@@ -35,8 +50,8 @@ const PHOTOS = [
 export function RencontreParentsAzaguie() {
   return (
     <section className="py-16 bg-white" data-testid="section-rencontre-azaguie">
-      <div className="container mx-auto px-4 max-w-6xl grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-10 items-center">
-        <div>
+      <div className="container mx-auto px-4 max-w-6xl grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-10 items-start">
+        <div className="lg:sticky lg:top-24">
           <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">
             Rencontre parents · Azaguié · 3{N}octobre 2026
           </p>
@@ -45,9 +60,10 @@ export function RencontreParentsAzaguie() {
           </h2>
           <p className="text-muted-foreground leading-relaxed mb-4">
             Ce samedi, la direction du Groupe 2IAE a reçu les parents d'élèves
-            sur le campus de l'Université de l'Entrepreneuriat. Une réunion
-            d'abord, puis la visite de ce qui fait l'école : les bassins de
-            pisciculture, les cultures de la ferme-école, les bâtiments du
+            sur le campus de l'Université de l'Entrepreneuriat. En salle
+            d'abord, avec les résultats du groupe au BTS année par année,
+            projetés à l'écran. Puis sur le terrain : les bassins de
+            pisciculture, les serres, les cultures de la ferme-école, le
             campus.
           </p>
           <p className="text-muted-foreground leading-relaxed mb-6">
@@ -71,7 +87,7 @@ export function RencontreParentsAzaguie() {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {PHOTOS.map((p, i) => (
-            <figure key={p.src} className={`relative overflow-hidden rounded-xl ${i === 0 ? "col-span-2 sm:col-span-3 aspect-[16/9]" : "aspect-[4/3]"} ${i === 3 ? "col-span-2 sm:col-span-1" : ""}`}>
+            <figure key={p.src} className={`relative overflow-hidden rounded-xl ${i === 0 ? "col-span-2 sm:col-span-3 aspect-[16/9]" : "aspect-[4/3]"}`}>
               <img src={p.src} alt={p.alt} loading="lazy" className="absolute inset-0 w-full h-full object-cover" data-testid={`img-rencontre-azaguie-${i + 1}`} />
               <figcaption className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-3 pt-6 pb-2 text-xs font-semibold text-white">
                 {p.legende}

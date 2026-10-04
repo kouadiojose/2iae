@@ -196,7 +196,15 @@ export function FenetreCompte({
     setEnvoi("actif");
     try {
       await patch(`/api/pilotage/comptes/${compte.id}`, { actif: !compte.actif });
-      toast(compte.actif ? `Compte de ${compte.prenom} désactivé : il ne peut plus se connecter.` : `Compte de ${compte.prenom} réactivé`);
+      toast(
+        compte.role === "etudiant"
+          ? compte.actif
+            ? `Accès de ${compte.prenom} mis en pause : à sa prochaine connexion, il verra qu'il doit passer à la scolarité.`
+            : `Accès de ${compte.prenom} réactivé`
+          : compte.actif
+            ? `Compte de ${compte.prenom} désactivé : il ne peut plus se connecter.`
+            : `Compte de ${compte.prenom} réactivé`,
+      );
       await rafraichir("/api/pilotage/comptes", "/api/pilotage/etudiants", "/api/pilotage/tableau");
       onFermer();
     } catch (e) {
@@ -231,7 +239,7 @@ export function FenetreCompte({
           <>
             {!creation && compte.id !== moi.id && (
               <Bouton variante="fantome" icone={<Power className="h-4 w-4" />} onClick={basculerActif} chargement={envoi === "actif"}>
-                {compte.actif ? "Désactiver" : "Réactiver"}
+                {compte.actif ? (compte.role === "etudiant" ? "Mettre en pause" : "Désactiver") : "Réactiver"}
               </Bouton>
             )}
             <Bouton onClick={enregistrer} chargement={envoi === "enregistrer"}>
@@ -348,7 +356,7 @@ export function FenetreCompte({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Champ libelle="Matricule" value={f.matricule} onChange={maj("matricule")} placeholder="24GC0123" aide="C'est son identifiant de connexion." className="font-mono" autoCapitalize="characters" />
             <Selection libelle="Classe" value={f.classeId} onChange={maj("classeId")}>
-              <option value="">Choisir la classe…</option>
+              <option value="">{creation ? "Choisir la classe…" : "Aucune classe (retirer de la classe)"}</option>
               {classesParSite.map(({ site, classes }) =>
                 classes.length ? (
                   <optgroup key={site.id} label={site.nomCourt}>

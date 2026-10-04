@@ -1,5 +1,6 @@
-// /inscription/:jeton : le lien que la vie scolaire partage aux étudiants
-// (groupes WhatsApp des classes). L'étudiant crée son compte lui-même : nom,
+// /inscription (« Créer mon compte », ouvert à tous depuis la page de
+// connexion) et /inscription/:jeton (le lien que la vie scolaire partage dans
+// les groupes WhatsApp des classes). L'étudiant crée son compte lui-même : nom,
 // campus, classe, téléphone, e-mail (obligatoires) et code secret. Son
 // matricule est tiré tout seul ; sa session s'ouvre et il passe par le
 // parcours de bienvenue (charte, alertes des cours en direct). Tutoiement.
@@ -31,8 +32,11 @@ function libelleAnnee(niveau: string): string {
   return n;
 }
 
-export default function PageInscription({ jeton }: { jeton: string }) {
-  const { data, error, isLoading } = useQuery<InfoInscriptionEtudiantDto>({ queryKey: [`/api/inscription/${encodeURIComponent(jeton)}`], retry: false, staleTime: Infinity });
+/** Adresse de l'API : avec le jeton d'un lien, ou sans (inscription libre). */
+const urlInscription = (jeton?: string) => (jeton ? `/api/inscription/${encodeURIComponent(jeton)}` : "/api/inscription");
+
+export default function PageInscription({ jeton }: { jeton?: string }) {
+  const { data, error, isLoading } = useQuery<InfoInscriptionEtudiantDto>({ queryKey: [urlInscription(jeton)], retry: false, staleTime: Infinity });
   const [fait, setFait] = useState<InscriptionEtudiantFaite | null>(null);
 
   if (isLoading) return <CadrePublic>{<p className="text-texte-gris">Chargement…</p>}</CadrePublic>;
@@ -44,8 +48,10 @@ export default function PageInscription({ jeton }: { jeton: string }) {
           <span className="grid h-14 w-14 place-items-center rounded-2xl bg-orange-clair text-orange-fonce">
             <Link2Off className="h-7 w-7" />
           </span>
-          <h1 className="text-[34px] font-black leading-[1.02] tracking-tres-serre">Ce lien ne marche plus.</h1>
-          <p className="text-base leading-relaxed text-texte-pale">{(error as Error | null)?.message ?? "Demande le nouveau lien à la vie scolaire de ton campus."}</p>
+          <h1 className="text-[34px] font-black leading-[1.02] tracking-tres-serre">{jeton ? "Ce lien ne marche plus." : "Inscription indisponible pour le moment."}</h1>
+          <p className="text-base leading-relaxed text-texte-pale">
+            {(error as Error | null)?.message ?? (jeton ? "Demande le nouveau lien à la vie scolaire de ton campus." : "Réessaie dans quelques minutes, ou demande de l'aide à la scolarité de ton campus.")}
+          </p>
           <LienBouton href="/connexion" taille="lg" className="mt-2 min-h-[56px] w-full text-[17px]">
             J'ai déjà un compte : me connecter
           </LienBouton>
@@ -59,7 +65,7 @@ export default function PageInscription({ jeton }: { jeton: string }) {
   );
 }
 
-function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscriptionEtudiantDto; onFait: (r: InscriptionEtudiantFaite) => void }) {
+function Formulaire({ jeton, info, onFait }: { jeton?: string; info: InfoInscriptionEtudiantDto; onFait: (r: InscriptionEtudiantFaite) => void }) {
   const campusUnique = info.siteId ?? (info.sites.length === 1 ? info.sites[0].id : null);
   const [f, setF] = useState({ prenom: "", nom: "", site: campusUnique ? String(campusUnique) : "", filiere: "", classe: "", telephone: "", email: "", code: "", confirmation: "" });
   const [voir, setVoir] = useState(false);
@@ -97,7 +103,7 @@ function Formulaire({ jeton, info, onFait }: { jeton: string; info: InfoInscript
     if (f.code.length < info.longueurMinimale) return setErreur(`Ton code secret doit faire au moins ${info.longueurMinimale} caractères.`);
     setEnvoi(true);
     try {
-      const r = await post<InscriptionEtudiantFaite>(`/api/inscription/${encodeURIComponent(jeton)}`, {
+      const r = await post<InscriptionEtudiantFaite>(urlInscription(jeton), {
         prenom: f.prenom,
         nom: f.nom,
         classeId: Number(f.classe),

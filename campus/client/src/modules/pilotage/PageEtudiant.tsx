@@ -16,7 +16,7 @@ import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
 import { Onglets } from "@/components/ui/onglets";
 import { toast, toastErreur } from "@/components/ui/toast";
-import { get, post, suppr } from "@/lib/api";
+import { get, post, patch, suppr } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { dateCourte, jourLong, heure } from "@/lib/dates";
@@ -26,7 +26,8 @@ import { FenetreCompte } from "./composants/FenetreCompte";
 import { FenetreCode } from "./composants/FenetreCode";
 import { FenetreJustifier, type CibleJustification } from "./composants/FenetreJustifier";
 import { urlCrm } from "./composants/DossierOutils";
-import { TON_PRESENCE, FOND_PRESENCE, vuLe, telephoneLisible, pourcent, copier } from "./outils";
+import { TON_PRESENCE, FOND_PRESENCE, vuLe, telephoneLisible, pourcent, copier, useReferences } from "./outils";
+import { Selection } from "@/components/ui/champs";
 import { TONS_STATUT, fcfa, jourCourt, aujourdhui } from "./outils-crm";
 
 // Les onglets du dossier ne sont téléchargés qu'à leur première ouverture.
@@ -177,6 +178,10 @@ export default function PageEtudiant({ id }: { id: string }) {
         </div>
         {crm && crm.contacts.length > 0 && <Contacts contacts={crm.contacts} />}
       </header>
+
+      <FicheInscription etudiant={e} inscritLe={crm?.identite.dateInscription ?? null} origine={crm?.identite.origine ?? null} />
+
+      {droits.modifier && <ClasseEtAcces etudiant={e} onFait={() => void rafraichir(url, "/api/pilotage")} />}
 
       {ongletsPermis.length > 1 && <BarreOnglets onglets={ongletsPermis} onglet={onglet} onChange={changerOnglet} pieces={piecesATraiter} relances={relancesOuvertes} />}
 
@@ -625,6 +630,138 @@ function Releve({ d }: { d: DossierEtudiant }) {
           </>
         )}
       </Carte>
+    </section>
+  );
+}
+
+/**
+ * La scolarité règle la place de l'étudiant : changer de classe, le retirer de
+ * sa classe (il garde son compte et son campus, sans les cours de la classe),
+ * mettre son accès en pause ou le réactiver.
+ */
+function ClasseEtAcces({ etudiant: e, onFait }: { etudiant: DossierEtudiant["etudiant"]; onFait: () => void }) {
+  const refs = useReferences();
+  const [classe, setClasse] = useState("");
+  const [envoi, setEnvoi] = useState<null | "classe" | "retirer" | "acces">(null);
+  const parSite = (refs.data?.sites ?? []).map((s) => ({ site: s, classes: (refs.data?.classes ?? []).filter((c) => c.siteId === s.id) })).filter((g) => g.classes.length);
+
+  const agir = async (quoi: "classe" | "retirer" | "acces", corps: Record<string, unknown>, message: string) => {
+    setEnvoi(quoi);
+    try {
+      await patch(`/api/pilotage/comptes/${e.id}`, corps);
+      toast(message);
+      setClasse("");
+      onFait();
+    } catch (err) {
+      toastErreur(err);
+    } finally {
+      setEnvoi(null);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-ligne bg-white p-4 print:hidden" aria-label="Classe et accès">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-mono text-xs uppercase tracking-[0.12em] text-texte-gris">Classe et accès</h2>
+        <span className="text-sm text-texte-pale">
+          {e.classe ? `En classe : ${e.classe}` : "Retiré de sa classe : il ne voit plus les cours"} · {e.actif ? "Accès ouvert" : "Accès en pause"}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <Selection libelle="Changer de classe" value={classe} onChange={(ev) => setClasse(ev.target.value)} className="flex-1">
+          <option value="">Choisir la nouvelle classe…</option>
+          {parSite.map(({ site, classes }) => (
+            <optgroup key={site.id} label={site.nomCourt}>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nom}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </Selection>
+        <Bouton
+          disabled={!classe}
+          chargement={envoi === "classe"}
+          onClick={() => void agir("classe", { classeId: Number(classe) }, `${e.prenom} change de classe : il voit tout de suite les cours de sa nouvelle classe.`)}
+          className="min-h-[48px]"
+        >
+          Changer de classe
+        </Bouton>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {e.classe && (
+          <Bouton
+            variante="contour"
+            chargement={envoi === "retirer"}
+            onClick={() => {
+              if (!window.confirm(`Retirer ${e.prenom} ${e.nom} de la classe ${e.classe} ? Il garde son compte mais ne voit plus les cours, les lives ni les devoirs de la classe.`)) return;
+              void agir("retirer", { classeId: null }, `${e.prenom} est retiré de sa classe.`);
+            }}
+            className="min-h-[48px]"
+          >
+            Retirer de la classe
+          </Bouton>
+        )}
+        <Bouton
+          variante={e.actif ? "contour" : "principal"}
+          chargement={envoi === "acces"}
+          onClick={() => {
+            if (e.actif && !window.confirm(`Mettre en pause l'accès de ${e.prenom} ${e.nom} ? Il est déconnecté et, à sa prochaine connexion, il lit qu'il doit passer à la scolarité.`)) return;
+            void agir("acces", { actif: !e.actif }, e.actif ? `Accès de ${e.prenom} mis en pause.` : `Accès de ${e.prenom} réactivé.`);
+          }}
+          className="min-h-[48px]"
+        >
+          {e.actif ? "Mettre l'accès en pause" : "Réactiver l'accès"}
+        </Bouton>
+      </div>
+    </section>
+  );
+}
+
+/** « 1BTS » → « 1re année (BTS 1) », « Licence 2 » → « 2e année (Licence 2) ». */
+function libelleAnnee(niveau: string): string {
+  const n = niveau.trim();
+  const bts = /^(\d)\s*BTS$/i.exec(n) ?? /^BTS\s*(\d)$/i.exec(n);
+  if (bts) return `${bts[1] === "1" ? "1re" : `${bts[1]}e`} année (BTS ${bts[1]})`;
+  const licence = /^(?:Licence|L)\s*(\d)$/i.exec(n);
+  if (licence) return `${licence[1] === "1" ? "1re" : `${licence[1]}e`} année (Licence ${licence[1]})`;
+  return n;
+}
+
+const ORIGINES: Record<string, string> = {
+  lien: "Inscrit lui-même (Créer mon compte, ou lien des étudiants)",
+  saisie: "Saisi par l'équipe",
+  import: "Import d'un fichier",
+  site: "Préinscription sur 2iae.com",
+};
+
+/** La fiche d'inscription : ce que l'étudiant a donné en créant son compte, d'un coup d'œil. */
+function FicheInscription({ etudiant: e, inscritLe, origine }: { etudiant: DossierEtudiant["etudiant"]; inscritLe: string | null; origine: string | null }) {
+  const lignes: [string, string | null][] = [
+    ["Nom", e.nom],
+    ["Prénom(s)", e.prenom],
+    ["Campus", e.site],
+    ["Filière", e.filiere],
+    ["Année", e.niveau ? libelleAnnee(e.niveau) : null],
+    ["Classe", e.classe ?? "Aucune (retiré de sa classe)"],
+    ["Téléphone", e.telephone ? telephoneLisible(e.telephone) : null],
+    ["E-mail", e.email],
+    ["Matricule", e.matricule],
+    ["Inscrit le", inscritLe ? dateCourte(inscritLe) : dateCourte(e.creeLe)],
+    ["Origine", origine ? (ORIGINES[origine] ?? origine) : null],
+  ];
+  return (
+    <section className="rounded-2xl border border-ligne bg-white p-4 sm:p-5" aria-label="Fiche d'inscription">
+      <h2 className="mb-3 font-mono text-xs uppercase tracking-[0.12em] text-texte-gris">Fiche d'inscription</h2>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 lg:grid-cols-3">
+        {lignes.map(([cle, valeur]) => (
+          <div key={cle} className="flex min-w-0 flex-col">
+            <dt className="text-[13px] text-texte-gris">{cle}</dt>
+            <dd className={cn("break-words text-[15px] font-semibold", !valeur && "font-normal text-texte-gris")}>{valeur || "Non renseigné"}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }

@@ -56,7 +56,17 @@ export function enregistrerAuth(app: Express) {
       verifierTentatives(cleCompte);
       verifierTentatives(cleIp, 30);
       const u = await trouverParIdentifiant(identifiant);
-      if (!u || !u.actif || !(await verifier(motDePasse, u.motDePasseHash))) {
+      const codeJuste = u ? await verifier(motDePasse, u.motDePasseHash) : false;
+      // Compte mis en pause par la scolarité : on le dit clairement (seulement à qui connaît le bon code).
+      if (u && codeJuste && !u.actif) {
+        throw new ErreurHttp(
+          403,
+          u.role === "etudiant"
+            ? "Ton accès au campus est en pause. Passe voir la scolarité de ton campus (ou écris-lui sur WhatsApp) pour le réactiver."
+            : "Ce compte est désactivé. Contactez la direction pour le réactiver.",
+        );
+      }
+      if (!u || !u.actif || !codeJuste) {
         noterEchec(cleCompte);
         noterEchec(cleIp);
         echecsGlobaux.push(maintenant);

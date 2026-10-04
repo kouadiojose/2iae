@@ -2,10 +2,10 @@
 // un champ pour le code secret, un gros bouton. Rien d'autre à comprendre.
 import { useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
-import { Eye, EyeOff, QrCode } from "lucide-react";
+import { Eye, EyeOff, QrCode, UserPlus } from "lucide-react";
 import { useMoi } from "@/lib/auth";
 import { post, ErreurApi } from "@/lib/api";
-import { Bouton } from "@/components/ui/bouton";
+import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Champ, CaseACocher } from "@/components/ui/champs";
 import { Erreur } from "@/components/ui/divers";
 import type { Moi } from "@shared/schema";
@@ -64,13 +64,23 @@ export default function PageConnexion() {
           <br />
           <span className="text-orange">au campus.</span>
         </h1>
-        <p className="text-base leading-relaxed text-texte-pale">Ton matricule et ton code sont sur ta fiche de connexion.</p>
+        <p className="text-base leading-relaxed text-texte-pale">Connecte-toi avec ton e-mail, ton numéro de téléphone ou ton matricule, et ton code secret.</p>
+        <Link
+          href="/inscription"
+          className="mt-1 flex min-h-[56px] items-center justify-between gap-3 rounded-2xl bg-encre px-4 text-[16px] font-extrabold text-white no-underline hover:bg-orange-fonce hover:text-white"
+        >
+          <span className="flex items-center gap-3">
+            <UserPlus className="h-5 w-5 text-orange" aria-hidden />
+            Nouveau ? Créer mon compte étudiant
+          </span>
+          <span aria-hidden>→</span>
+        </Link>
       </div>
 
       <form onSubmit={entrer} className="mt-7 flex flex-col gap-5" noValidate>
         <Champ
-          libelle="Matricule ou numéro de téléphone"
-          placeholder="24GC0123 ou 07 07 12 34 56"
+          libelle="E-mail, téléphone ou matricule"
+          placeholder="e-mail ou 07 07 12 34 56"
           aide="Personnel du campus : votre adresse e-mail."
           value={identifiant}
           onChange={(e) => setIdentifiant(e.target.value)}
@@ -133,12 +143,26 @@ export default function PageConnexion() {
         </div>
       </form>
 
+      <div className="mt-6 flex flex-col gap-3 rounded-2xl border-2 border-orange bg-orange-clair p-4">
+        <div className="flex gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-orange-fonce">
+            <UserPlus className="h-5 w-5" />
+          </span>
+          <p className="text-[15px] leading-snug text-texte-doux">
+            <strong className="text-encre">Étudiant, pas encore de compte ?</strong> Nom, téléphone, e-mail, campus et année : ton compte est prêt tout de suite.
+          </p>
+        </div>
+        <LienBouton href="/inscription" taille="lg" variante="encre" className="min-h-[56px] w-full text-[17px]">
+          Créer mon compte
+        </LienBouton>
+      </div>
+
       <div className="mt-4 flex gap-3 rounded-2xl bg-creme p-4">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-orange-fonce">
           <QrCode className="h-5 w-5" />
         </span>
         <p className="text-[15px] leading-snug text-texte-doux">
-          <strong className="text-encre">Première fois ?</strong> Scanne le QR code de ta fiche avec l'appareil photo : tu entres sans rien taper.
+          <strong className="text-encre">Tu as reçu une fiche de connexion ?</strong> Scanne son QR code avec l'appareil photo : tu entres sans rien taper.
         </p>
       </div>
 

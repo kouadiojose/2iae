@@ -549,7 +549,16 @@ export type DevoirDossier = {
 
 /** GET /api/pilotage/etudiants/:id */
 export type DossierEtudiant = {
-  etudiant: EtudiantResume & { email: string | null; photoUrl: string | null; actif: boolean; creeLe: string; anneeScolaire: string | null };
+  etudiant: EtudiantResume & {
+    email: string | null;
+    photoUrl: string | null;
+    actif: boolean;
+    creeLe: string;
+    anneeScolaire: string | null;
+    /** Filière et niveau (année) de sa classe : « Génie civil option Bâtiment », « 1BTS ». */
+    filiere: string | null;
+    niveau: string | null;
+  };
   activation: { active: boolean; codeExpireLe: string | null; charteAccepteeLe: string | null };
   derniereConnexion: string | null;
   derniereActivite: string | null;

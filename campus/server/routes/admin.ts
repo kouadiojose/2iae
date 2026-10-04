@@ -1836,7 +1836,11 @@ export function enregistrerAdmin(app: Express) {
       }
 
       // Classe et campus selon le rôle (celui d'après la modification).
-      if (role === "etudiant") {
+      if (role === "etudiant" && d.classeId === null && avant.role === "etudiant" && !maj.role) {
+        // Retiré de sa classe par la scolarité (dossier à régulariser…) : il garde son campus et son compte,
+        // mais ne voit plus les cours, les lives ni les devoirs de la classe.
+        if (avant.classeId !== null) maj.classeId = null;
+      } else if (role === "etudiant") {
         const classeVoulue = d.classeId !== undefined ? d.classeId : avant.classeId;
         if (!classeVoulue) throw invalide("Un étudiant doit appartenir à une classe.");
         if (classeVoulue !== avant.classeId || maj.role) {
@@ -2934,7 +2938,7 @@ export function enregistrerAdmin(app: Express) {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
       const [info] = await db
-        .select({ classe: classes.nom, annee: classes.anneeScolaire, site: sites.nomCourt })
+        .select({ classe: classes.nom, annee: classes.anneeScolaire, site: sites.nomCourt, filiere: classes.filiere, niveau: classes.niveau })
         .from(utilisateurs)
         .leftJoin(classes, eq(classes.id, utilisateurs.classeId))
         .leftJoin(sites, eq(sites.id, utilisateurs.siteId))
@@ -2989,7 +2993,16 @@ export function enregistrerAdmin(app: Express) {
       }
 
       const dossier: DossierEtudiant = {
-        etudiant: { ...resumeEtudiant, email: e.email, photoUrl: e.photoUrl, actif: e.actif, creeLe: e.creeLe.toISOString(), anneeScolaire: info?.annee ?? null },
+        etudiant: {
+          ...resumeEtudiant,
+          email: e.email,
+          photoUrl: e.photoUrl,
+          actif: e.actif,
+          creeLe: e.creeLe.toISOString(),
+          anneeScolaire: info?.annee ?? null,
+          filiere: info?.filiere ?? null,
+          niveau: info?.niveau ?? null,
+        },
         activation: { active: !e.doitChangerMotDePasse, codeExpireLe: iso(e.motDePasseExpireLe), charteAccepteeLe: iso(e.charteAccepteeLe) },
         derniereConnexion: iso(e.derniereConnexion),
         derniereActivite: iso(activite.get(e.id)),

@@ -104,7 +104,8 @@ export type InscriptionEtudiantsDto = { liens: LienEtudiantsDto[]; sites: { id: 
 
 /** GET /api/inscription/:jeton (public) : ce que voit l'étudiant qui ouvre le lien. */
 export type InfoInscriptionEtudiantDto = {
-  expireLe: string;
+  /** null : inscription libre (« Créer mon compte »), sans lien ni date limite. */
+  expireLe: string | null;
   sites: { id: number; nomCourt: string }[];
   /** Classes proposées : l'étudiant choisit sa filière, puis son niveau (1BTS, Licence 2, Certificat…). */
   classes: { id: number; nom: string; siteId: number; filiere: string; niveau: string }[];

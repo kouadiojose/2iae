@@ -11,12 +11,12 @@
 //    qui ne serait pas celui d'un étudiant.
 // Un lien qui circule trop loin se remplace d'un clic (l'ancien ne marche plus).
 import { randomBytes } from "crypto";
-import type { Express, Request } from "express";
+import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { config } from "../config";
-import { exigerRole, exigerDroit, moi, hacher, codeSecretAcceptable, longueurMinimale, perimetreSites, verifierTentatives, noterEchec, versMoi, oublierUtilisateur, dureeSession } from "../auth";
+import { exigerRole, exigerDroit, equipeAvecDroit, moi, hacher, codeSecretAcceptable, longueurMinimale, perimetreSites, verifierTentatives, noterEchec, versMoi, oublierUtilisateur, dureeSession } from "../auth";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { notifier } from "../notifications";
 import { emailDisponible, nomAffiche } from "../mail";
@@ -164,6 +164,154 @@ async function classesInscription(siteId: number | null) {
 /** Nom comparé sans accents, casse ni espaces en trop (« Kouassi  Aya » = « KOUASSI Aya »). */
 const nomCompare = (s: string) => sansAccents(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+
+/** Plafond global des inscriptions libres (toutes adresses confondues), par fenêtre de 15 minutes. */
+const CLE_INSCRIPTIONS_LIBRES = "inscription-libre|tout";
+
+/** Ce que le formulaire d'inscription doit proposer : campus et classes ouvertes (d'un campus, avec un lien réservé). */
+async function infoInscription(l: { siteId: number | null; expireLe: Date } | null): Promise<InfoInscriptionEtudiantDto> {
+  const siteId = l?.siteId ?? null;
+  const [listeSites, liste] = await Promise.all([
+    db.select({ id: sites.id, nomCourt: sites.nomCourt }).from(sites).orderBy(asc(sites.ordre)),
+    classesInscription(siteId),
+  ]);
+  return {
+    expireLe: l?.expireLe.toISOString() ?? null,
+    sites: listeSites.filter((s) => (siteId ? s.id === siteId : liste.some((c) => c.siteId === s.id))),
+    classes: liste.map((c) => ({ id: c.id, nom: c.nom, siteId: c.siteId, filiere: c.filiere, niveau: c.niveau })),
+    siteId,
+    longueurMinimale: longueurMinimale("etudiant"),
+    emailDisponible: emailDisponible(),
+  };
+}
+
+/**
+ * Crée le compte de l'étudiant (par un lien, ou librement depuis « Créer mon
+ * compte »), ouvre sa session tout de suite, envoie le guide et prévient la
+ * scolarité de son campus.
+ */
+async function creerCompte(req: Request, res: Response, l: { id: number; siteId: number | null } | null, cle: string) {
+      const d = valider(
+        z.object({
+          prenom: z.string({ required_error: "indique ton prénom" }).trim().min(1, "indique ton prénom").max(80, "trop long"),
+          nom: z.string({ required_error: "indique ton nom" }).trim().min(1, "indique ton nom").max(80, "trop long"),
+          classeId: z.number({ required_error: "choisis ta classe", invalid_type_error: "choisis ta classe" }).int().positive("choisis ta classe"),
+          telephone: z.string({ required_error: "indique ton numéro de téléphone" }).trim().min(1, "indique ton numéro de téléphone").max(30, "trop long"),
+          email: z.string({ required_error: "indique ton adresse e-mail" }).trim().toLowerCase().min(1, "indique ton adresse e-mail").email("adresse e-mail non valide (exemple : prenom.nom@gmail.com)").max(160, "trop long"),
+          motDePasse: z.string({ required_error: "choisis ton code secret" }).min(1, "choisis ton code secret").max(200),
+        }),
+        req.body,
+      );
+      noterEchec(cle); // chaque inscription compte dans la limite du réseau
+      const [classe] = await db.select().from(classes).where(eq(classes.id, d.classeId));
+      const ouvertes = await classesInscription(l?.siteId ?? null);
+      if (!classe || !ouvertes.some((c) => c.id === classe.id)) throw invalide("Choisis ta classe dans la liste.");
+      if (adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tape ta vraie adresse e-mail.");
+      const telephone = telephoneSaisi(d.telephone);
+      const minimum = longueurMinimale("etudiant");
+      if (d.motDePasse.length < minimum) throw invalide(`Ton code secret doit faire au moins ${minimum} caractères.`);
+      if (!codeSecretAcceptable(d.motDePasse)) throw invalide("Ce code est trop facile à deviner (123456, 000000…). Choisis-en un autre.");
+      await verifierUnicite({ email: d.email });
+
+      // Déjà un compte à ce nom dans cette classe (créé par la vie scolaire, ou inscrit deux fois) : pas de doublon.
+      const prenom = espaces(d.prenom);
+      const nom = espaces(d.nom);
+      const memesClasse = await db
+        .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
+        .from(utilisateurs)
+        .where(and(eq(utilisateurs.role, "etudiant"), eq(utilisateurs.classeId, classe.id)));
+      const cible = nomCompare(`${prenom} ${nom}`);
+      const cibleInverse = nomCompare(`${nom} ${prenom}`);
+      if (memesClasse.some((x) => [cible, cibleInverse].includes(nomCompare(`${x.prenom} ${x.nom}`)))) {
+        throw new ErreurHttp(
+          409,
+          "Un compte existe déjà à ton nom dans cette classe. Connecte-toi avec ton matricule (ou ton téléphone) et ton code secret, ou demande ta fiche de connexion à la vie scolaire de ton campus.",
+        );
+      }
+
+      const hash = await hacher(d.motDePasse);
+      let cree: Utilisateur | null = null;
+      // Matricule tiré tout seul : deux inscriptions à la même seconde peuvent viser le même numéro, on réessaie.
+      for (let essai = 0; essai < 4 && !cree; essai++) {
+        const matricule = await matriculePropose(classe);
+        try {
+          cree = await db.transaction(async (tx) => {
+            const [c] = await tx
+              .insert(utilisateurs)
+              .values({
+                role: "etudiant",
+                prenom,
+                nom,
+                matricule,
+                email: d.email,
+                telephone,
+                motDePasseHash: hash,
+                doitChangerMotDePasse: false,
+                siteId: classe.siteId,
+                classeId: classe.id,
+              })
+              .returning();
+            await tx.insert(dossiersEtudiants).values({
+              etudiantId: c.id,
+              statut: "inscrit",
+              statutLe: new Date(),
+              dateInscription: new Date().toISOString().slice(0, 10),
+              origine: "lien",
+              whatsapp: telephone,
+            });
+            return c;
+          });
+        } catch (e) {
+          const code = (e as { code?: string; constraint?: string }).code;
+          if (code !== "23505") throw e;
+          if (d.email && (e as { constraint?: string }).constraint?.includes("email")) throw new ErreurHttp(409, "Cette adresse e-mail est déjà utilisée par un autre compte.");
+        }
+      }
+      if (!cree) throw new ErreurHttp(409, "Le campus est très sollicité : réessaie dans un instant.");
+
+      await new Promise<void>((ok, ko) => req.session.regenerate((e) => (e ? ko(e) : ok())));
+      req.session.utilisateurId = cree.id;
+      req.session.cookie.maxAge = dureeSession("etudiant");
+      await db.update(utilisateurs).set({ derniereConnexion: new Date() }).where(eq(utilisateurs.id, cree.id));
+      oublierUtilisateur(cree.id);
+      await journaliser(cree, l ? "etudiant_inscrit_lien" : "etudiant_inscrit_libre", { lienId: l ? String(l.id) : null, classeId: classe.id, siteId: classe.siteId });
+
+      const envoye = cree.email ? await envoyerGuideBienvenue({ ...cree, classeNom: classe.nom }, await prochainCoursClasse(classe.id).catch(() => null)) : false;
+      if (cree.email) await journaliser(cree, "guide_bienvenue", { envoye });
+
+      // La scolarité du campus (profils qui gèrent les comptes) et la direction voient arriver l'inscription :
+      // elles vérifient le dossier (paiement…) et mettent en pause ou retirent de la classe si besoin.
+      void (async () => {
+        const equipe = await db
+          .select({ id: utilisateurs.id })
+          .from(utilisateurs)
+          .where(
+            and(
+              eq(utilisateurs.actif, true),
+              or(eq(utilisateurs.role, "admin"), and(equipeAvecDroit("comptes_gerer"), or(isNull(utilisateurs.siteId), eq(utilisateurs.siteId, classe.siteId)))),
+            ),
+          );
+        await notifier(
+          equipe.map((x) => x.id),
+          {
+            type: "systeme",
+            titre: `Nouvel étudiant inscrit : ${nomAffiche(cree!)}`,
+            corps: `${classe.nom} · matricule ${cree!.matricule} · ${cree!.telephone ?? "sans téléphone"} · inscrit lui-même${l ? " par le lien" : " (Créer mon compte)"}, accès immédiat. Vérifiez son dossier.`,
+            lien: `/pilotage/etudiants/${cree!.id}`,
+            push: false,
+          },
+        );
+      })().catch((e) => console.error("[inscription] notification :", (e as Error).message));
+
+      const r: InscriptionEtudiantFaite = {
+        moi: await versMoi({ ...cree, derniereConnexion: new Date() }),
+        matricule: cree.matricule ?? "",
+        classe: classe.nom,
+        guide: { adresse: cree.email, envoye },
+      };
+      res.status(201).json(r);
+}
+
 export function enregistrerInscriptionEtudiants(app: Express) {
   // ── Direction et vie scolaire : les liens ─────────────────────────────────
   app.get(
@@ -243,19 +391,32 @@ export function enregistrerInscriptionEtudiants(app: Express) {
         noterEchec(cle);
         throw lienMort();
       }
-      const [listeSites, liste] = await Promise.all([
-        db.select({ id: sites.id, nomCourt: sites.nomCourt }).from(sites).orderBy(asc(sites.ordre)),
-        classesInscription(l.siteId),
-      ]);
-      const r: InfoInscriptionEtudiantDto = {
-        expireLe: l.expireLe.toISOString(),
-        sites: listeSites.filter((s) => (l.siteId ? s.id === l.siteId : liste.some((c) => c.siteId === s.id))),
-        classes: liste.map((c) => ({ id: c.id, nom: c.nom, siteId: c.siteId, filiere: c.filiere, niveau: c.niveau })),
-        siteId: l.siteId,
-        longueurMinimale: longueurMinimale("etudiant"),
-        emailDisponible: emailDisponible(),
-      };
-      res.json(r);
+      res.json(await infoInscription(l));
+    }),
+  );
+
+  // ── Public, sans lien : « Créer mon compte » depuis la page de connexion ──
+  // Décision de la direction (octobre 2026) : tout étudiant crée son compte et
+  // entre aussitôt sur le campus ; la scolarité reçoit une alerte, vérifie le
+  // dossier, et met en pause ou retire de la classe un compte qui ne va pas.
+  app.get(
+    "/api/inscription",
+    route(async (_req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await infoInscription(null));
+    }),
+  );
+
+  app.post(
+    "/api/inscription",
+    route(async (req: Request, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      // Toute une classe peut s'inscrire depuis le Wi-Fi du campus : limite large par réseau, et plafond global.
+      const cle = `inscription-libre|${reseau(req)}`;
+      verifierTentatives(cle, 150);
+      verifierTentatives(CLE_INSCRIPTIONS_LIBRES, 600);
+      await creerCompte(req, res, null, cle);
+      noterEchec(CLE_INSCRIPTIONS_LIBRES);
     }),
   );
 
@@ -271,124 +432,7 @@ export function enregistrerInscriptionEtudiants(app: Express) {
         noterEchec(cle);
         throw lienMort();
       }
-      const d = valider(
-        z.object({
-          prenom: z.string({ required_error: "indique ton prénom" }).trim().min(1, "indique ton prénom").max(80, "trop long"),
-          nom: z.string({ required_error: "indique ton nom" }).trim().min(1, "indique ton nom").max(80, "trop long"),
-          classeId: z.number({ required_error: "choisis ta classe", invalid_type_error: "choisis ta classe" }).int().positive("choisis ta classe"),
-          telephone: z.string({ required_error: "indique ton numéro de téléphone" }).trim().min(1, "indique ton numéro de téléphone").max(30, "trop long"),
-          email: z.string({ required_error: "indique ton adresse e-mail" }).trim().toLowerCase().min(1, "indique ton adresse e-mail").email("adresse e-mail non valide (exemple : prenom.nom@gmail.com)").max(160, "trop long"),
-          motDePasse: z.string({ required_error: "choisis ton code secret" }).min(1, "choisis ton code secret").max(200),
-        }),
-        req.body,
-      );
-      noterEchec(cle); // chaque inscription compte dans la limite du réseau
-      const [classe] = await db.select().from(classes).where(eq(classes.id, d.classeId));
-      const ouvertes = await classesInscription(l.siteId);
-      if (!classe || !ouvertes.some((c) => c.id === classe.id)) throw invalide("Choisis ta classe dans la liste.");
-      if (adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tape ta vraie adresse e-mail.");
-      const telephone = telephoneSaisi(d.telephone);
-      const minimum = longueurMinimale("etudiant");
-      if (d.motDePasse.length < minimum) throw invalide(`Ton code secret doit faire au moins ${minimum} caractères.`);
-      if (!codeSecretAcceptable(d.motDePasse)) throw invalide("Ce code est trop facile à deviner (123456, 000000…). Choisis-en un autre.");
-      await verifierUnicite({ email: d.email });
-
-      // Déjà un compte à ce nom dans cette classe (créé par la vie scolaire, ou inscrit deux fois) : pas de doublon.
-      const prenom = espaces(d.prenom);
-      const nom = espaces(d.nom);
-      const memesClasse = await db
-        .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
-        .from(utilisateurs)
-        .where(and(eq(utilisateurs.role, "etudiant"), eq(utilisateurs.classeId, classe.id)));
-      const cible = nomCompare(`${prenom} ${nom}`);
-      const cibleInverse = nomCompare(`${nom} ${prenom}`);
-      if (memesClasse.some((x) => [cible, cibleInverse].includes(nomCompare(`${x.prenom} ${x.nom}`)))) {
-        throw new ErreurHttp(
-          409,
-          "Un compte existe déjà à ton nom dans cette classe. Connecte-toi avec ton matricule (ou ton téléphone) et ton code secret, ou demande ta fiche de connexion à la vie scolaire de ton campus.",
-        );
-      }
-
-      const hash = await hacher(d.motDePasse);
-      let cree: Utilisateur | null = null;
-      // Matricule tiré tout seul : deux inscriptions à la même seconde peuvent viser le même numéro, on réessaie.
-      for (let essai = 0; essai < 4 && !cree; essai++) {
-        const matricule = await matriculePropose(classe);
-        try {
-          cree = await db.transaction(async (tx) => {
-            const [c] = await tx
-              .insert(utilisateurs)
-              .values({
-                role: "etudiant",
-                prenom,
-                nom,
-                matricule,
-                email: d.email,
-                telephone,
-                motDePasseHash: hash,
-                doitChangerMotDePasse: false,
-                siteId: classe.siteId,
-                classeId: classe.id,
-              })
-              .returning();
-            await tx.insert(dossiersEtudiants).values({
-              etudiantId: c.id,
-              statut: "inscrit",
-              statutLe: new Date(),
-              dateInscription: new Date().toISOString().slice(0, 10),
-              origine: "lien",
-              whatsapp: telephone,
-            });
-            return c;
-          });
-        } catch (e) {
-          const code = (e as { code?: string; constraint?: string }).code;
-          if (code !== "23505") throw e;
-          if (d.email && (e as { constraint?: string }).constraint?.includes("email")) throw new ErreurHttp(409, "Cette adresse e-mail est déjà utilisée par un autre compte.");
-        }
-      }
-      if (!cree) throw new ErreurHttp(409, "Le campus est très sollicité : réessaie dans un instant.");
-
-      await new Promise<void>((ok, ko) => req.session.regenerate((e) => (e ? ko(e) : ok())));
-      req.session.utilisateurId = cree.id;
-      req.session.cookie.maxAge = dureeSession("etudiant");
-      await db.update(utilisateurs).set({ derniereConnexion: new Date() }).where(eq(utilisateurs.id, cree.id));
-      oublierUtilisateur(cree.id);
-      await journaliser(cree, "etudiant_inscrit_lien", { lienId: String(l.id), classeId: classe.id, siteId: classe.siteId });
-
-      const envoye = cree.email ? await envoyerGuideBienvenue({ ...cree, classeNom: classe.nom }, await prochainCoursClasse(classe.id).catch(() => null)) : false;
-      if (cree.email) await journaliser(cree, "guide_bienvenue", { envoye });
-
-      // La vie scolaire du campus (et la direction) voient arriver l'inscription : elles vérifient le dossier.
-      void (async () => {
-        const equipe = await db
-          .select({ id: utilisateurs.id })
-          .from(utilisateurs)
-          .where(
-            and(
-              eq(utilisateurs.actif, true),
-              or(eq(utilisateurs.role, "admin"), and(eq(utilisateurs.role, "vie_scolaire"), or(isNull(utilisateurs.siteId), eq(utilisateurs.siteId, classe.siteId)))),
-            ),
-          );
-        await notifier(
-          equipe.map((x) => x.id),
-          {
-            type: "systeme",
-            titre: `Nouvel étudiant inscrit : ${nomAffiche(cree!)}`,
-            corps: `${classe.nom} · matricule ${cree!.matricule} · inscrit lui-même par le lien. Vérifiez son dossier.`,
-            lien: `/pilotage/etudiants/${cree!.id}`,
-            push: false,
-          },
-        );
-      })().catch((e) => console.error("[inscription] notification :", (e as Error).message));
-
-      const r: InscriptionEtudiantFaite = {
-        moi: await versMoi({ ...cree, derniereConnexion: new Date() }),
-        matricule: cree.matricule ?? "",
-        classe: classe.nom,
-        guide: { adresse: cree.email, envoye },
-      };
-      res.status(201).json(r);
+      await creerCompte(req, res, l, cle);
     }),
   );
 }

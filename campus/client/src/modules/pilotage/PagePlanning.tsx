@@ -17,6 +17,7 @@ import { post, patch, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { heure, heureChezVous, jourLong, dateEtHeure } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
 import { lundiIso, decalerSemaine, libelleSemaine } from "./outils";
@@ -31,6 +32,8 @@ export default function PagePlanning() {
   const [semaine, setSemaine] = useState(lundiIso());
   const url = `/api/pilotage/planning?semaine=${semaine}`;
   const { data, isLoading, error, refetch, isFetching } = useQuery<PlanningSemaine>({ queryKey: [url] });
+  // Programmer ou déplacer un live : profils avec le droit « programme » (ext-profils.ts) ; les autres lisent.
+  const programme = profilPermet(useMoiConnecte(), "programme");
   const [creation, setCreation] = useState(false);
   const [ouverte, setOuverte] = useState<SeancePlanning | null>(null);
   const courante = lundiIso();
@@ -54,9 +57,11 @@ export default function PagePlanning() {
         titre="Planning"
         sousTitre="Heures d'Abidjan. Une salle de conférence par campus : deux lives qui se chevauchent sur un même campus sont signalés en rouge."
         actions={
-          <Bouton taille="lg" icone={<Plus className="h-5 w-5" />} onClick={() => setCreation(true)} className="min-h-[52px]">
-            Programmer un live
-          </Bouton>
+          programme ? (
+            <Bouton taille="lg" icone={<Plus className="h-5 w-5" />} onClick={() => setCreation(true)} className="min-h-[52px]">
+              Programmer un live
+            </Bouton>
+          ) : undefined
         }
       />
 
@@ -107,7 +112,7 @@ export default function PagePlanning() {
               icone={<CalendarClock className="h-6 w-6" />}
               titre="Aucun live programmé cette semaine."
               texte="Les formateurs peuvent proposer leurs créneaux ; vous pouvez aussi en programmer un ici. Les étudiants reçoivent un rappel la veille et 15 minutes avant."
-              action={<Bouton onClick={() => setCreation(true)}>Programmer un live</Bouton>}
+              action={programme ? <Bouton onClick={() => setCreation(true)}>Programmer un live</Bouton> : undefined}
             />
           )}
           <div className={cn("grid gap-3 transition-opacity lg:grid-cols-7", isFetching && "opacity-70", !data?.seances.length && "hidden lg:grid")}>
@@ -302,7 +307,7 @@ function FenetreSeance({ s, onFermer }: { s: SeancePlanning; onFermer: () => voi
   const [motif, setMotif] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const passee = new Date(s.debut).getTime() < maintenantServeur();
-  const modifiable = s.statut === "planifiee" && !passee;
+  const modifiable = s.statut === "planifiee" && !passee && profilPermet(useMoiConnecte(), "programme");
   const fermer = onFermer;
   const deplacer = async () => {
     setEnvoi(true);

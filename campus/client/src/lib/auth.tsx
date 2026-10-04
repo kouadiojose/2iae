@@ -3,7 +3,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ErreurApi, post } from "./api";
 import { queryClient } from "./queryClient";
-import type { Moi, Role } from "@shared/schema";
+import { peut, type Droit, type Moi, type Role } from "@shared/schema";
 
 type ContexteAuth = { moi: Moi | null; chargement: boolean };
 const Contexte = createContext<ContexteAuth>({ moi: null, chargement: true });
@@ -60,6 +60,19 @@ export function rechargerMoi() {
 }
 
 export const estEquipe = (r: Role | undefined) => r === "admin" || r === "vie_scolaire";
+
+/**
+ * Le profil de la personne permet-il cela ? (shared/schema/ext-profils.ts)
+ * Ne concerne que l'équipe : la direction a tout ; un formateur ou un
+ * étudiant reste soumis aux seules règles de son rôle (réponse « oui » ici).
+ * Sert aux menus et aux boutons : le serveur reste la vraie barrière.
+ */
+export function profilPermet(moi: Pick<Moi, "role" | "profil"> | null | undefined, droit?: Droit | readonly Droit[]): boolean {
+  if (!droit) return true;
+  if (!moi) return false;
+  if (moi.role !== "vie_scolaire") return true;
+  return (typeof droit === "string" ? [droit] : droit).some((d) => peut(moi, d));
+}
 
 /** Page d'arrivée de chaque rôle après connexion. */
 export function accueilDuRole(r: Role): string {

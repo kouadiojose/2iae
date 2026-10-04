@@ -24,7 +24,8 @@ import {
   FolderOpen,
   PlayCircle,
 } from "lucide-react";
-import type { Role } from "@shared/schema";
+import type { Droit, Moi, Role } from "@shared/schema";
+import { profilPermet } from "@/lib/auth";
 
 export type ElementNav = {
   href: string;
@@ -36,6 +37,12 @@ export type ElementNav = {
   central?: boolean;
   /** Pages dont l'URL commence par ces préfixes activent l'onglet. */
   prefixes?: string[];
+  /** Équipe : droit du profil qu'il faut pour voir l'entrée, un seul suffit dans une liste (ext-profils.ts). */
+  droit?: Droit | Droit[];
+  /** Équipe : entrée montrée seulement aux profils SANS ce droit (la version en lecture d'une page). */
+  sansDroit?: Droit;
+  /** Réservé à la direction. */
+  direction?: boolean;
 };
 
 const ETUDIANT: ElementNav[] = [
@@ -67,29 +74,48 @@ const FORMATEUR: ElementNav[] = [
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
 ];
 
+// Chaque entrée de l'équipe porte le droit du profil qu'elle demande
+// (shared/schema/ext-profils.ts) : un profil ne voit que ce qu'il peut utiliser.
 const EQUIPE: ElementNav[] = [
   { href: "/pilotage", libelle: "Pilotage", icone: LayoutDashboard, mobile: true },
-  { href: "/pilotage/etudiants", libelle: "Étudiants", icone: GraduationCap, mobile: true, prefixes: ["/pilotage/etudiants", "/pilotage/preinscrits", "/pilotage/relances"] },
-  { href: "/pilotage/scolarite", libelle: "Scolarité", icone: Wallet, prefixes: ["/pilotage/scolarite", "/pilotage/recus"] },
-  { href: "/pilotage/comptes", libelle: "Comptes", icone: Users, prefixes: ["/pilotage/comptes", "/pilotage/fiches", "/pilotage/classes"] },
-  { href: "/pilotage/programme", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/pilotage/programme"] },
+  {
+    href: "/pilotage/etudiants",
+    libelle: "Étudiants",
+    icone: GraduationCap,
+    mobile: true,
+    prefixes: ["/pilotage/etudiants", "/pilotage/preinscrits", "/pilotage/relances"],
+    droit: "comptes_voir",
+  },
+  { href: "/pilotage/scolarite", libelle: "Scolarité", icone: Wallet, prefixes: ["/pilotage/scolarite", "/pilotage/recus"], droit: "argent" },
+  { href: "/pilotage/comptes", libelle: "Comptes", icone: Users, prefixes: ["/pilotage/comptes", "/pilotage/fiches", "/pilotage/classes"], droit: "comptes_voir" },
+  { href: "/pilotage/programme", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/pilotage/programme"], droit: "programme" },
+  // Sans le droit « programme » : l'emploi du temps en lecture.
+  { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/emploi-du-temps"], sansDroit: "programme" },
   { href: "/pilotage/planning", libelle: "Planning", icone: CalendarClock, prefixes: ["/pilotage/planning", "/pilotage/cours"] },
-  { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"] },
-  { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: true },
-  { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"] },
-  { href: "/pilotage/formateurs", libelle: "Présentations", icone: Clapperboard, prefixes: ["/pilotage/formateurs"] },
-  { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"] },
+  { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"], droit: "presences_voir" },
+  { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: true, droit: "annonces" },
+  { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"], droit: "outils_campus" },
+  { href: "/pilotage/formateurs", libelle: "Présentations", icone: Clapperboard, prefixes: ["/pilotage/formateurs"], direction: true },
+  { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"], droit: "outils_campus" },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
-  { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"] },
+  { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"], droit: ["programme", "presences", "presences_voir"] },
 ];
 
-export function navigationDuRole(role: Role): ElementNav[] {
+/** L'entrée est-elle pour cette personne de l'équipe (direction, ou profil de la vie scolaire) ? */
+export function entreeVisible(el: Pick<ElementNav, "droit" | "sansDroit" | "direction">, moi: Pick<Moi, "role" | "profil">): boolean {
+  if (el.direction) return moi.role === "admin";
+  if (el.sansDroit) return moi.role === "vie_scolaire" && !profilPermet(moi, el.sansDroit);
+  return profilPermet(moi, el.droit);
+}
+
+export function navigationDe(moi: Pick<Moi, "role" | "profil">): ElementNav[] {
+  const role: Role = moi.role;
   switch (role) {
     case "formateur":
       return FORMATEUR;
     case "admin":
     case "vie_scolaire":
-      return EQUIPE;
+      return EQUIPE.filter((el) => entreeVisible(el, moi));
     case "salle":
       return [];
     default:

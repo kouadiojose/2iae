@@ -3,7 +3,9 @@
 //  - la personne remplit sa demande (nom, e-mail professionnel ou personnel,
 //    fonction, campus, mot de passe) ; rien n'est ouvert à ce stade ;
 //  - la direction est prévenue et valide la demande en choisissant l'accès :
-//    vie scolaire d'un campus, vie scolaire de tous les campus, ou direction ;
+//    un profil de l'équipe (scolarité, vie scolaire, secrétariat / accueil,
+//    responsable pédagogique : ext-profils.ts) pour un campus ou pour tous les
+//    campus, ou la direction ;
 //  - la personne reçoit un e-mail et se connecte avec son e-mail et le mot de
 //    passe qu'elle a choisi.
 // Un lien qui circule trop loin ne donne donc accès à rien sans la direction.
@@ -23,6 +25,9 @@ import {
   journal,
   liensInscription,
   demandesAcces,
+  PROFILS_EQUIPE,
+  DROITS_PROFILS,
+  LIBELLES_PROFILS,
   type Utilisateur,
   type DemandeAccesDto,
   type EquipeInscriptionDto,
@@ -74,7 +79,10 @@ async function etat(): Promise<EquipeInscriptionDto> {
   const nomsSites = new Map(listeSites.map((s) => [s.id, s.nomCourt]));
   const idsPersonnes = [...new Set(demandes.flatMap((d) => [d.traiteParId, d.compteId]).filter((x): x is number => x !== null))];
   const personnes = idsPersonnes.length
-    ? await db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role }).from(utilisateurs).where(inArray(utilisateurs.id, idsPersonnes))
+    ? await db
+        .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, profil: utilisateurs.profil })
+        .from(utilisateurs)
+        .where(inArray(utilisateurs.id, idsPersonnes))
     : [];
   const parId = new Map(personnes.map((p) => [p.id, p]));
   const parLien = new Map<number, number>();
@@ -99,20 +107,21 @@ async function etat(): Promise<EquipeInscriptionDto> {
         traiteLe: d.traiteLe?.toISOString() ?? null,
         traitePar: par ? nomAffiche(par) : null,
         role: d.compteId ? (parId.get(d.compteId)?.role ?? null) : null,
+        profil: d.compteId && parId.get(d.compteId)?.role === "vie_scolaire" ? (parId.get(d.compteId)?.profil ?? null) : null,
         motif: d.motif,
       };
     }),
   };
 }
 
-function emailAccesValide(o: { prenom: string; nom: string; email: string; acces: string }) {
+function emailAccesValide(o: { prenom: string; nom: string; email: string; acces: string; detail: string }) {
   const lien = `${config.urlCampus}/connexion`;
   const { html, texte } = gabaritEmail({
     etiquette: "Accès validé · Campus numérique",
     titre: `Bonjour ${nomAffiche(o)},`,
     paragraphes: [
       `La direction du Groupe Écoles 2IAE International a validé votre accès au campus numérique : **${o.acces}**.`,
-      "Connectez-vous avec votre adresse e-mail et le mot de passe que vous avez choisi en faisant votre demande. Vous y suivrez les cours en direct, les présences et les statistiques des campus.",
+      `Connectez-vous avec votre adresse e-mail et le mot de passe que vous avez choisi en faisant votre demande. ${o.detail}`,
     ],
     bouton: { libelle: "Me connecter", lien },
     encadre: [{ libelle: "Identifiant", valeur: o.email, mono: true }],
@@ -171,9 +180,16 @@ export function enregistrerEquipe(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(
-        z.object({ role: z.enum(["vie_scolaire", "admin"]), siteId: z.number().int().positive().nullable().default(null) }),
+        z.object({
+          role: z.enum(["vie_scolaire", "admin"]),
+          siteId: z.number().int().positive().nullable().default(null),
+          /** Obligatoire pour l'équipe : ce que la personne pourra voir et faire (ext-profils.ts). */
+          profil: z.enum(PROFILS_EQUIPE).nullable().optional(),
+        }),
         req.body,
       );
+      if (d.role === "vie_scolaire" && !d.profil) throw invalide("Choisissez le profil de cette personne : scolarité, vie scolaire, secrétariat / accueil ou responsable pédagogique.");
+      const profil = d.role === "vie_scolaire" ? d.profil! : null;
       const [demande] = await db.select().from(demandesAcces).where(eq(demandesAcces.id, idParam(req)));
       if (!demande) throw introuvable("Demande");
       if (demande.statut !== "en_attente") throw new ErreurHttp(409, "Cette demande est déjà traitée.");
@@ -197,6 +213,7 @@ export function enregistrerEquipe(app: Express) {
             motDePasseHash: demande.motDePasseHash,
             doitChangerMotDePasse: false,
             siteId: d.role === "vie_scolaire" ? d.siteId : null,
+            profil,
           })
           .returning();
         const [maj] = await tx
@@ -207,11 +224,14 @@ export function enregistrerEquipe(app: Express) {
         if (!maj) throw new ErreurHttp(409, "Cette demande vient d'être traitée.");
         return c;
       });
-      const acces = d.role === "admin" ? "direction (tous les campus)" : siteNom ? `vie scolaire du campus ${siteNom}` : "vie scolaire de tous les campus";
-      await journaliser(u, "demande_acces_acceptee", { demandeId: demande.id, compteId: compte.id, role: d.role, siteId: compte.siteId });
+      const acces =
+        d.role === "admin" ? "direction (tous les campus)" : `${LIBELLES_PROFILS[profil!]}, ${siteNom ? `campus ${siteNom}` : "tous les campus"}`;
+      const detail =
+        d.role === "admin" ? "Vous y retrouverez le pilotage de tous les campus." : `Avec ce profil : ${DROITS_PROFILS[profil!].description.replace(/\.$/, "")}.`;
+      await journaliser(u, "demande_acces_acceptee", { demandeId: demande.id, compteId: compte.id, role: d.role, profil, siteId: compte.siteId });
       let emailEnvoye = false;
       if (emailDisponible()) {
-        const e = emailAccesValide({ prenom: demande.prenom, nom: demande.nom, email: demande.email, acces });
+        const e = emailAccesValide({ prenom: demande.prenom, nom: demande.nom, email: demande.email, acces, detail });
         emailEnvoye = await envoyerEmail({ a: demande.email, sujet: e.sujet, texte: e.texte, html: e.html }).catch(() => false);
       }
       res.json({ ...(await etat()), emailEnvoye, acces });

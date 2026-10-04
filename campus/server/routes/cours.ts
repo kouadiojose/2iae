@@ -18,7 +18,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "../db";
-import { exigerConnexion, exigerRole, moi, estEquipe, perimetreSites } from "../auth";
+import { exigerConnexion, exigerRole, droitSiEquipe, moi, estEquipe, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { idsCoursAccessibles, coursVisible, coursEnseigne, enseigneCours, peutVoirCours, etudiantsDuCours } from "../acces";
 import { enregistrerGardienFichier, urlFichier } from "../fichiers";
@@ -779,6 +779,7 @@ export function enregistrerCours(app: Express) {
   app.post(
     "/api/cours",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaCreation, req.body);
@@ -817,6 +818,7 @@ export function enregistrerCours(app: Express) {
   app.patch(
     "/api/cours/:id(\\d+)",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const avant = await coursModifiable(u, idParam(req));
@@ -899,6 +901,7 @@ export function enregistrerCours(app: Express) {
   app.put(
     "/api/cours/:id(\\d+)/classes",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await coursEnseigne(u, idParam(req));
@@ -945,6 +948,7 @@ export function enregistrerCours(app: Express) {
   app.post(
     "/api/cours/:id(\\d+)/accroche-ia",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await coursModifiable(u, idParam(req));
@@ -977,6 +981,7 @@ export function enregistrerCours(app: Express) {
   app.post(
     "/api/cours/:id(\\d+)/chapitres",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await coursModifiable(u, idParam(req));
@@ -990,6 +995,7 @@ export function enregistrerCours(app: Express) {
   app.put(
     "/api/cours/:id(\\d+)/chapitres/ordre",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await coursModifiable(u, idParam(req));
@@ -1008,6 +1014,7 @@ export function enregistrerCours(app: Express) {
   app.patch(
     "/api/chapitres/:id(\\d+)",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const { chapitre } = await chapitreModifiable(u, idParam(req));
@@ -1020,6 +1027,7 @@ export function enregistrerCours(app: Express) {
   app.delete(
     "/api/chapitres/:id(\\d+)",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const { chapitre, cours: c } = await chapitreModifiable(u, idParam(req));
@@ -1035,6 +1043,7 @@ export function enregistrerCours(app: Express) {
   app.post(
     "/api/chapitres/:id(\\d+)/lecons",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const { chapitre, cours: c } = await chapitreModifiable(u, idParam(req));
@@ -1065,6 +1074,7 @@ export function enregistrerCours(app: Express) {
   app.patch(
     "/api/lecons/:id(\\d+)",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const { lecon: avant, cours: c } = await leconModifiable(u, idParam(req));
@@ -1097,6 +1107,7 @@ export function enregistrerCours(app: Express) {
   app.delete(
     "/api/lecons/:id(\\d+)",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const { lecon, cours: c } = await leconModifiable(u, idParam(req));
@@ -1109,6 +1120,7 @@ export function enregistrerCours(app: Express) {
   app.put(
     "/api/chapitres/:id(\\d+)/lecons/ordre",
     exigerRole("formateur", "admin", "vie_scolaire"),
+    droitSiEquipe("programme"),
     route(async (req, res) => {
       const u = moi(req);
       const { chapitre } = await chapitreModifiable(u, idParam(req));

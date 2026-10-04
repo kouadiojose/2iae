@@ -416,7 +416,8 @@ export type DossierCrm = {
   pieces: PieceDossier[];
   suivis: SuiviCrm[];
   taches: TacheSuivi[];
-  scolarite: ScolariteEtudiant;
+  /** null : le profil de la personne n'a pas le droit « argent » (ext-profils.ts). */
+  scolarite: ScolariteEtudiant | null;
   /** Personnes de l'équipe à qui confier une relance. */
   equipe: { id: number; nom: string }[];
   /** Liens WhatsApp prêts (étudiant, responsables), null sans numéro. */

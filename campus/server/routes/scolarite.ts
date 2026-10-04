@@ -19,15 +19,15 @@
 //   GET    /api/mon-dossier/versements/:id/recu                l'étudiant : un de ses reçus
 //
 // Un versement ne se supprime jamais : il s'annule (motif, auteur, date).
-// Seules la direction et la vie scolaire du campus voient l'argent.
+// Seules la direction et l'équipe du campus avec le droit « argent » (profil) voient l'argent.
 import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
-import { moi, perimetreSites, exigerRole } from "../auth";
+import { moi, perimetreSites, exigerRole, exigerDroit } from "../auth";
 import { enregistrerGardienFichier } from "../fichiers";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
-import { EQUIPE, journaliser, lienWhatsApp, numeroWhatsApp, etudiantGere, classeGeree, optionnel, texteCourt, espaces } from "./admin";
+import { journaliser, lienWhatsApp, numeroWhatsApp, etudiantGere, classeGeree, optionnel, texteCourt, espaces } from "./admin";
 import { piecesDe, fichierDePiece } from "./crm";
 import {
   aujourdhui,
@@ -160,6 +160,8 @@ const cellule = (v: unknown) => {
 };
 
 const ETUDIANT = exigerRole("etudiant");
+/** Frais, échéances, versements et reçus : profils avec le droit « argent » (ext-profils.ts). */
+const ARGENT = exigerDroit("argent");
 
 export function enregistrerScolarite(app: Express) {
   // Pièces du dossier : l'étudiant lit les siennes (déposées par lui ou par la vie scolaire).
@@ -177,7 +179,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.get(
     `${P}/frais-classes`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const p = perimetreSites(u);
@@ -228,7 +230,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.put(
     `${P}/frais-classes/:classeId(\\d+)`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const c = await classeGeree(u, idParam(req, "classeId"));
@@ -245,7 +247,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.post(
     `${P}/frais-classes/:classeId(\\d+)/appliquer`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const c = await classeGeree(u, idParam(req, "classeId"));
@@ -267,7 +269,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.post(
     `${P}/etudiants/:id(\\d+)/echeances/classe`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -292,7 +294,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.post(
     `${P}/etudiants/:id(\\d+)/echeances`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -324,7 +326,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.patch(
     `${P}/echeances/:id(\\d+)`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const { x, e } = await echeanceGeree(u, idParam(req));
@@ -350,7 +352,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.delete(
     `${P}/echeances/:id(\\d+)`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const { x, e } = await echeanceGeree(u, idParam(req));
@@ -364,7 +366,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.post(
     `${P}/etudiants/:id(\\d+)/versements`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -407,7 +409,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.post(
     `${P}/versements/:id(\\d+)/annuler`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const { v, e } = await versementGere(u, idParam(req));
@@ -425,7 +427,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.get(
     `${P}/versements/:id(\\d+)/recu`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const { v } = await versementGere(u, idParam(req));
@@ -438,7 +440,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.get(
     `${P}/scolarite`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const f = valider(z.object({ site: z.coerce.number().int().positive().optional(), classe: z.coerce.number().int().positive().optional() }), req.query);
@@ -582,7 +584,7 @@ export function enregistrerScolarite(app: Express) {
 
   app.get(
     `${P}/versements/export`,
-    EQUIPE,
+    ARGENT,
     route(async (req, res) => {
       const u = moi(req);
       const f = valider(

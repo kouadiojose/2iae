@@ -4,6 +4,7 @@
 // drizzle.config.ts) : le campus peut partager la base du site sans
 // collision, ou disposer de sa propre base.
 import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, json, varchar, index, type AnyPgColumn } from "drizzle-orm/pg-core";
+import type { ProfilEquipe } from "./ext-profils";
 
 export const campusSchema = pgSchema("campus");
 
@@ -102,6 +103,12 @@ export const utilisateurs = campusSchema.table(
     motDePasseExpireLe: timestamp("mot_de_passe_expire_le", { withTimezone: true }),
     siteId: integer("site_id").references(() => sites.id),
     classeId: integer("classe_id").references(() => classes.id),
+    /**
+     * Profil d'un membre de l'équipe (rôle vie_scolaire) : scolarite, vie_scolaire,
+     * secretariat ou pedagogie, choisi par la direction. Ce qu'il permet :
+     * ext-profils.ts (DROITS_PROFILS). Nul : vie scolaire (comptes d'avant les profils).
+     */
+    profil: text("profil").$type<ProfilEquipe>(),
     photoUrl: text("photo_url"),
     // Profil public des formateurs (repris sur le site vitrine)
     slug: text("slug").unique(),

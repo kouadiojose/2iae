@@ -1,16 +1,19 @@
 // Pilotage · Comptes (direction) : le lien d'inscription de l'équipe
 // administrative et les demandes d'accès à valider. La personne choisit son
-// mot de passe en faisant sa demande ; la direction décide de son accès.
+// mot de passe en faisant sa demande ; la direction décide de son accès :
+// un profil de l'équipe (ext-profils.ts) pour un campus ou pour tous, ou la
+// direction.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Link2, MessageCircle, Plus, ShieldCheck, Trash2, UserRoundPlus, X } from "lucide-react";
 import { post, suppr } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { dateEtHeure } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { Bouton } from "@/components/ui/bouton";
 import { Badge } from "@/components/ui/divers";
 import { toast, toastErreur } from "@/components/ui/toast";
-import type { DemandeAccesDto, EquipeInscriptionDto } from "@shared/schema";
+import { PROFILS_EQUIPE, DROITS_PROFILS, LIBELLES_PROFILS, profilSuggere, type DemandeAccesDto, type EquipeInscriptionDto, type ProfilEquipe } from "@shared/schema";
 
 const CLE = ["/api/pilotage/equipe"];
 
@@ -54,7 +57,8 @@ export function PanneauEquipe({ sites }: { sites: { id: number; nomCourt: string
           </h2>
           <p className="text-[14px] leading-relaxed text-texte-doux">
             Partagez ce lien aux membres de l'administration : chacun crée son accès (nom, e-mail, fonction, mot de passe). Rien n'est ouvert avant votre validation, où vous
-            choisissez l'accès : vie scolaire d'un campus, de tous les campus, ou direction.
+            choisissez son profil (scolarité, vie scolaire, secrétariat / accueil ou responsable pédagogique) et son campus, ou la direction. Le profil se change ensuite
+            depuis la fiche du compte.
           </p>
         </div>
       </div>
@@ -130,6 +134,9 @@ export function PanneauEquipe({ sites }: { sites: { id: number; nomCourt: string
                   </span>
                   <span className="text-texte-gris">{d.fonction}</span>
                   <Badge ton={d.statut === "acceptee" ? "succes" : "gris"}>{d.statut === "acceptee" ? "Accès validé" : "Refusée"}</Badge>
+                  {d.statut === "acceptee" && (d.role === "admin" || d.profil) && (
+                    <span className="text-texte-doux">{d.role === "admin" ? "Direction" : LIBELLES_PROFILS[d.profil!]}</span>
+                  )}
                   <span className="ml-auto font-mono text-[12px] text-texte-gris">
                     {d.traitePar ? `${d.traitePar} · ` : ""}
                     {d.traiteLe ? dateEtHeure(d.traiteLe) : ""}
@@ -144,12 +151,20 @@ export function PanneauEquipe({ sites }: { sites: { id: number; nomCourt: string
   );
 }
 
-type Acces = string; // "vs:" (tous les campus) · "vs:<siteId>" · "admin"
+/** Accès choisi à la validation : un profil de l'équipe (ext-profils.ts) ou la direction. */
+type ChoixAcces = "" | ProfilEquipe | "admin";
 
 function Demande({ d, sites, onAgir, occupe }: { d: DemandeAccesDto; sites: { id: number; nomCourt: string }[]; onAgir: (fn: () => Promise<EquipeInscriptionDto>, message?: string) => Promise<void>; occupe: boolean }) {
-  const [acces, setAcces] = useState<Acces>(d.siteId ? `vs:${d.siteId}` : "vs:");
+  // Profil proposé d'après la fonction saisie (« Secrétaire » : secrétariat / accueil) ; la direction décide.
+  const propose = profilSuggere(d.fonction);
+  const [acces, setAcces] = useState<ChoixAcces>(propose ?? "");
+  // Campus de la personne : celui de sa demande ; vide = tous les campus.
+  const [siteId, setSiteId] = useState(d.siteId ? String(d.siteId) : "");
+  const nomSite = siteId ? sites.find((s) => String(s.id) === siteId)?.nomCourt : null;
+
   const valider = () => {
-    const corps = acces === "admin" ? { role: "admin", siteId: null } : { role: "vie_scolaire", siteId: acces.slice(3) ? Number(acces.slice(3)) : null };
+    if (!acces) return;
+    const corps = acces === "admin" ? { role: "admin", siteId: null } : { role: "vie_scolaire", profil: acces, siteId: siteId ? Number(siteId) : null };
     return onAgir(async () => {
       const r = await post<EquipeInscriptionDto & { emailEnvoye: boolean; acces: string }>(`/api/pilotage/equipe/demandes/${d.id}/accepter`, corps);
       toast(r.emailEnvoye ? `Accès validé (${r.acces}). ${d.prenom} est prévenu par e-mail.` : `Accès validé (${r.acces}). Prévenez ${d.prenom} : il peut se connecter avec ${d.email}.`);
@@ -160,9 +175,15 @@ function Demande({ d, sites, onAgir, occupe }: { d: DemandeAccesDto; sites: { id
     if (!window.confirm(`Refuser la demande de ${d.prenom} ${d.nom} ?`)) return;
     void onAgir(() => post<EquipeInscriptionDto>(`/api/pilotage/equipe/demandes/${d.id}/refuser`, {}), "Demande refusée.");
   };
+  const libelleValider = !acces
+    ? "Choisissez un profil"
+    : acces === "admin"
+      ? "Valider comme direction"
+      : `Valider : ${DROITS_PROFILS[acces].libelle}, ${nomSite ? `campus ${nomSite}` : "tous les campus"}`;
+
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-ligne p-4 md:flex-row md:items-center">
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-col gap-4 rounded-xl border border-ligne p-4">
+      <div className="min-w-0">
         <p className="text-[16px] font-extrabold">
           {d.prenom} {d.nom} <span className="font-semibold text-texte-doux">· {d.fonction}</span>
         </p>
@@ -172,34 +193,72 @@ function Demande({ d, sites, onAgir, occupe }: { d: DemandeAccesDto; sites: { id
         </p>
         <p className="font-mono text-[12px] text-texte-gris">Demande du {dateEtHeure(d.creeLe)}</p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={acces}
-          onChange={(e) => setAcces(e.target.value)}
-          className="min-h-10 rounded-lg border border-ligne bg-white px-2 text-[14px] font-semibold"
-          aria-label={`Accès de ${d.prenom} ${d.nom}`}
-        >
-          <option value="vs:">Vie scolaire · tous les campus</option>
-          {sites.map((s) => (
-            <option key={s.id} value={`vs:${s.id}`}>
-              Vie scolaire · {s.nomCourt}
-            </option>
+
+      <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+        <legend className="mb-1.5 text-sm font-bold text-encre">
+          Profil : ce que {d.prenom} pourra voir et faire
+          {propose && <span className="ml-1 font-semibold text-texte-gris">(proposé d'après sa fonction : {DROITS_PROFILS[propose].libelle})</span>}
+        </legend>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {PROFILS_EQUIPE.map((p) => (
+            <ChoixProfil key={p} nom={`acces-${d.id}`} choisi={acces === p} onChoisir={() => setAcces(p)} titre={DROITS_PROFILS[p].libelle} texte={DROITS_PROFILS[p].description} />
           ))}
-          <option value="admin">Direction (tous les droits)</option>
-        </select>
+          <ChoixProfil
+            nom={`acces-${d.id}`}
+            choisi={acces === "admin"}
+            onChoisir={() => setAcces("admin")}
+            titre="Direction"
+            texte="Tous les droits sur tous les campus, y compris valider les accès de l'équipe et changer les profils."
+          />
+        </div>
+      </fieldset>
+
+      {acces !== "admin" && (
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-bold text-encre">Campus</span>
+          <select
+            value={siteId}
+            onChange={(e) => setSiteId(e.target.value)}
+            className="min-h-11 rounded-lg border border-ligne bg-white px-3 text-[14px] font-semibold md:max-w-sm"
+            aria-label={`Campus de ${d.prenom} ${d.nom}`}
+          >
+            <option value="">Tous les campus (tout le groupe)</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nomCourt} seulement
+              </option>
+            ))}
+          </select>
+          <span className="text-[13px] text-texte-gris">Avec un campus, la personne ne voit que les étudiants, les classes et les présences de ce campus.</span>
+        </label>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
         <Bouton
           taille="sm"
           variante={acces === "admin" ? "encre" : "principal"}
           icone={acces === "admin" ? <ShieldCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-          disabled={occupe}
+          disabled={occupe || !acces}
           onClick={() => void valider()}
         >
-          {acces === "admin" ? "Valider comme direction" : "Valider l'accès"}
+          {libelleValider}
         </Bouton>
         <Bouton taille="sm" variante="fantome" icone={<X className="h-4 w-4" />} disabled={occupe} onClick={refuser}>
           Refuser
         </Bouton>
       </div>
     </div>
+  );
+}
+
+function ChoixProfil({ nom, choisi, onChoisir, titre, texte }: { nom: string; choisi: boolean; onChoisir: () => void; titre: string; texte: string }) {
+  return (
+    <label className={cn("flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors", choisi ? "border-orange bg-orange-pale" : "border-ligne bg-white hover:border-orange")}>
+      <input type="radio" name={nom} className="mt-1 h-4 w-4 shrink-0 accent-[#E4793A]" checked={choisi} onChange={onChoisir} />
+      <span className="min-w-0">
+        <span className="block font-bold text-encre">{titre}</span>
+        <span className="block text-[13px] leading-snug text-texte-pale">{texte}</span>
+      </span>
+    </label>
   );
 }

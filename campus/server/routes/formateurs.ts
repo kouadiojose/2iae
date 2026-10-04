@@ -26,6 +26,7 @@ import { db } from "../db";
 import { config } from "../config";
 import {
   exigerRole,
+  exigerDroit,
   moi,
   perimetreSites,
   hacher,
@@ -59,7 +60,8 @@ import {
 } from "@shared/schema";
 
 const P = "/api/pilotage/formateurs/liens";
-const EQUIPE = exigerRole("admin", "vie_scolaire");
+// Créer des comptes de formateurs : profils avec « comptes du personnel » (ext-profils.ts).
+const EQUIPE = exigerDroit("comptes_personnel");
 const JOUR_MS = 24 * 60 * 60 * 1000;
 /** Liens déjà servis, expirés ou désactivés : gardés en vue trois mois. */
 const HISTORIQUE_MS = 90 * JOUR_MS;

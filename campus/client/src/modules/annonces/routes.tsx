@@ -10,7 +10,7 @@ const PageAnnonces = lazy(() => import("./PageAnnonces"));
 const LECTEURS: DefRoute["acces"] = ["etudiant", "formateur", "vie_scolaire", "admin"];
 
 export const routes: DefRoute[] = [
-  { chemin: "/pilotage/annonces", page: PagePilotageAnnonces, acces: ["admin", "vie_scolaire"] },
+  { chemin: "/pilotage/annonces", page: PagePilotageAnnonces, acces: ["admin", "vie_scolaire"], droit: "annonces" },
   { chemin: "/annonces/:id", page: PageAnnonce, acces: LECTEURS },
   { chemin: "/annonces", page: PageAnnonces, acces: LECTEURS },
 ];

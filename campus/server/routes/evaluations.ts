@@ -13,7 +13,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
-import { estEquipe, exigerConnexion, exigerRole, moi, perimetreSites } from "../auth";
+import { estEquipe, exigerConnexion, exigerRole, exigerDroit, exigerDroitDe, droitSiEquipe, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, coursVisible, devoirVisible, enseigneCours, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, peutVoirCours } from "../acces";
 import { enregistrerGardienFichier, lireContenuFichier, remettreFichier, urlFichier } from "../fichiers";
@@ -1082,6 +1082,7 @@ export function enregistrerEvaluations(app: Express) {
   app.get(
     "/api/evaluations/cours",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       // La vie scolaire d'un campus ne donne de devoir que dans les cours propres à son campus.
@@ -1104,6 +1105,7 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       if (u.role === "salle") throw interdit("Cette page n'est pas accessible avec ton compte.");
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "notes");
       const coursId = coursParam(req);
       let ids: number[];
       if (coursId) {
@@ -1119,6 +1121,7 @@ export function enregistrerEvaluations(app: Express) {
   app.post(
     "/api/devoirs",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const v = valider(schemaDevoir, req.body);
@@ -1152,6 +1155,7 @@ export function enregistrerEvaluations(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "notes");
       const d = await devoirVisible(u, idParam(req));
       const [c] = await db.select().from(cours).where(eq(cours.id, d.coursId));
       if (await suitCours(u, d.coursId)) return res.json(await detailEnseignant(u, d, c));
@@ -1164,6 +1168,7 @@ export function enregistrerEvaluations(app: Express) {
   app.patch(
     "/api/devoirs/:id",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d, c } = await devoirEnseigne(u, idParam(req));
@@ -1202,6 +1207,7 @@ export function enregistrerEvaluations(app: Express) {
   app.delete(
     "/api/devoirs/:id",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirEnseigne(u, idParam(req));
@@ -1276,7 +1282,7 @@ export function enregistrerEvaluations(app: Express) {
 
   app.post(
     "/api/devoirs/:id/rendre-pour/:etudiantId",
-    exigerRole("admin", "vie_scolaire"),
+    exigerDroit("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const [d] = await db.select().from(devoirs).where(eq(devoirs.id, idParam(req)));
@@ -1303,6 +1309,7 @@ export function enregistrerEvaluations(app: Express) {
   app.get(
     "/api/devoirs/:id/copies",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d, c } = await devoirSuivi(u, idParam(req));
@@ -1359,6 +1366,7 @@ export function enregistrerEvaluations(app: Express) {
   app.get(
     "/api/rendus/:id",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { r, d, e } = await renduEnseigne(u, idParam(req), true);
@@ -1396,6 +1404,7 @@ export function enregistrerEvaluations(app: Express) {
   app.patch(
     "/api/rendus/:id/correction",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { r, d, e } = await renduEnseigne(u, idParam(req));
@@ -1453,6 +1462,7 @@ export function enregistrerEvaluations(app: Express) {
   app.post(
     "/api/rendus/:id/proposition-ia",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { r, d, e } = await renduEnseigne(u, idParam(req));
@@ -1524,6 +1534,7 @@ export function enregistrerEvaluations(app: Express) {
   app.post(
     "/api/devoirs/:id/publier-notes",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d, c } = await devoirEnseigne(u, idParam(req));
@@ -1573,6 +1584,7 @@ export function enregistrerEvaluations(app: Express) {
   app.get(
     "/api/devoirs/:id/questions",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirSuivi(u, idParam(req));
@@ -1584,6 +1596,7 @@ export function enregistrerEvaluations(app: Express) {
   app.post(
     "/api/devoirs/:id/questions",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
@@ -1610,6 +1623,7 @@ export function enregistrerEvaluations(app: Express) {
   app.patch(
     "/api/devoirs/:id/questions/:questionId",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
@@ -1634,6 +1648,7 @@ export function enregistrerEvaluations(app: Express) {
   app.delete(
     "/api/devoirs/:id/questions/:questionId",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
@@ -1649,6 +1664,7 @@ export function enregistrerEvaluations(app: Express) {
   app.put(
     "/api/devoirs/:id/questions/ordre",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
@@ -1665,6 +1681,7 @@ export function enregistrerEvaluations(app: Express) {
   app.post(
     "/api/devoirs/:id/questions/generer",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const { d, c } = await devoirQuizEnseigne(u, idParam(req));
@@ -1928,6 +1945,7 @@ export function enregistrerEvaluations(app: Express) {
   app.get(
     "/api/notes/cours/:id",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await coursSuivi(u, idParam(req));
@@ -1938,6 +1956,7 @@ export function enregistrerEvaluations(app: Express) {
   app.get(
     "/api/notes/cours/:id/export",
     exigerRole(...ENSEIGNANTS),
+    droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await coursSuivi(u, idParam(req));

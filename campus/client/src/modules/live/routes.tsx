@@ -16,12 +16,12 @@ export const routes: DefRoute[] = [
   { chemin: "/direct", page: PageDirect, acces: "connecte" },
   // Lien invité d'une séance : sans compte ni identifiant (routes/live-invite.ts).
   { chemin: "/invite/:jeton", page: PageInvite, acces: "public", coquille: "aucune" },
-  { chemin: "/live/:id/presentateur", page: PagePresentateur, acces: ["formateur", "admin", "vie_scolaire"], coquille: "aucune" },
+  { chemin: "/live/:id/presentateur", page: PagePresentateur, acces: ["formateur", "admin", "vie_scolaire"], coquille: "aucune", droit: "programme" },
   { chemin: "/live/:id", page: PageLive, acces: "connecte", coquille: "plein-ecran" },
-  { chemin: "/salle", page: PageSalle, acces: ["salle", "admin", "vie_scolaire"], coquille: "aucune" },
+  { chemin: "/salle", page: PageSalle, acces: ["salle", "admin", "vie_scolaire"], coquille: "aucune", droit: "presences" },
   { chemin: "/emargement/:code", page: PageEmargement, acces: ["etudiant"], coquille: "aucune" },
-  { chemin: "/enseigner/seances/nouvelle", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"] },
-  { chemin: "/enseigner/seances/:id", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"] },
+  { chemin: "/enseigner/seances/nouvelle", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
+  { chemin: "/enseigner/seances/:id", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
   { chemin: "/replays", page: PageEnregistrements, acces: ["formateur", "admin", "vie_scolaire"] },
   { chemin: "/replays/:id", page: PageReplay, acces: "connecte" },
 ];

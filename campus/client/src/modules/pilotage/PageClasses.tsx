@@ -16,6 +16,7 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { get, post, patch, suppr, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { pluriel } from "@/lib/utils";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreEcran } from "./composants/FenetreEcran";
 import { useReferences, telephoneLisible, lienFiches, pourcent } from "./outils";
@@ -30,6 +31,10 @@ function anneeCourante() {
 
 export default function PageClasses() {
   const refs = useReferences();
+  // Ce que le profil permet (ext-profils.ts) : les autres profils consultent les classes.
+  const moi = useMoiConnecte();
+  const peutClasses = profilPermet(moi, "classes");
+  const peutEcran = profilPermet(moi, "outils_campus");
   const { data, isLoading, error, refetch } = useQuery<ClasseLigne[]>({ queryKey: ["/api/pilotage/classes"] });
   const [edition, setEdition] = useState<ClasseLigne | "nouvelle" | null>(null);
   const [site, setSite] = useState<SiteLigne | null>(null);
@@ -67,9 +72,11 @@ export default function PageClasses() {
         sousTitre="Une classe regroupe les étudiants d'un campus, d'une filière et d'un niveau. Les cours sont suivis par des classes."
         actions={
           <>
-            <Bouton taille="lg" icone={<Plus className="h-5 w-5" />} onClick={() => setEdition("nouvelle")} className="min-h-[52px]">
-              Nouvelle classe
-            </Bouton>
+            {peutClasses && (
+              <Bouton taille="lg" icone={<Plus className="h-5 w-5" />} onClick={() => setEdition("nouvelle")} className="min-h-[52px]">
+                Nouvelle classe
+              </Bouton>
+            )}
             {refs.data?.estDirection && (
               <Bouton taille="lg" variante="contour" icone={<Layers className="h-5 w-5" />} onClick={() => void creerFilieres()} chargement={filieresEnCours} className="min-h-[52px]">
                 Classes des filières
@@ -88,7 +95,7 @@ export default function PageClasses() {
           icone={<School className="h-6 w-6" />}
           titre="Aucune classe pour l'instant."
           texte="Créez les classes de la rentrée (ex. « BTS 1re année · tronc commun »), puis importez les étudiants depuis Excel."
-          action={<Bouton onClick={() => setEdition("nouvelle")}>Créer une classe</Bouton>}
+          action={peutClasses ? <Bouton onClick={() => setEdition("nouvelle")}>Créer une classe</Bouton> : undefined}
         />
       ) : (
         sites.map((s) => {
@@ -131,9 +138,11 @@ export default function PageClasses() {
                 )}
               </div>
               <div className="mt-1 flex flex-wrap gap-2">
-                <Bouton variante="encre" taille="sm" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => setEcran({ id: s.id, nom: s.nomCourt })} className="min-h-[48px]">
-                  Installer l'écran de la salle
-                </Bouton>
+                {peutEcran && (
+                  <Bouton variante="encre" taille="sm" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => setEcran({ id: s.id, nom: s.nomCourt })} className="min-h-[48px]">
+                    Installer l'écran de la salle
+                  </Bouton>
+                )}
                 {refs.data?.estDirection && (
                   <Bouton variante="contour" taille="sm" icone={<Pencil className="h-4 w-4" />} onClick={() => setSite(s)} className="min-h-[48px]">
                     Modifier
@@ -153,6 +162,10 @@ export default function PageClasses() {
 }
 
 function CarteClasse({ c, onModifier }: { c: ClasseLigne; onModifier: () => void }) {
+  const moi = useMoiConnecte();
+  const peutClasses = profilPermet(moi, "classes");
+  const peutFiches = profilPermet(moi, "nouveau_code");
+  const voitComptes = profilPermet(moi, "comptes_voir");
   const [, naviguer] = useLocation();
   const [envoi, setEnvoi] = useState(false);
   const nonActives = c.etudiants - c.actives;
@@ -203,18 +216,22 @@ function CarteClasse({ c, onModifier }: { c: ClasseLigne; onModifier: () => void
       )}
       <div className="text-sm text-texte-pale">{c.cours ? `Suit ${pluriel(c.cours, "cours", "cours")}` : "Ne suit encore aucun cours"}</div>
       <div className="mt-auto flex flex-wrap gap-2 border-t border-ligne-douce pt-3">
-        <Link href={`/pilotage/comptes?classe=${c.id}`} className="inline-flex min-h-[48px] items-center gap-1.5 rounded-xl bg-creme px-3 text-sm font-bold text-encre no-underline hover:bg-orange-clair hover:text-encre">
-          <Users className="h-4 w-4" /> Étudiants
-        </Link>
-        {nonActives > 0 && (
+        {voitComptes && (
+          <Link href={`/pilotage/comptes?classe=${c.id}`} className="inline-flex min-h-[48px] items-center gap-1.5 rounded-xl bg-creme px-3 text-sm font-bold text-encre no-underline hover:bg-orange-clair hover:text-encre">
+            <Users className="h-4 w-4" /> Étudiants
+          </Link>
+        )}
+        {peutFiches && nonActives > 0 && (
           <Bouton variante="doux" taille="sm" className="min-h-[48px]" icone={<Printer className="h-4 w-4" />} onClick={fichesNonActives} chargement={envoi}>
             {nonActives} fiche{nonActives > 1 ? "s" : ""} à remettre
           </Bouton>
         )}
-        <Bouton variante="fantome" taille="sm" className="min-h-[48px]" icone={<Pencil className="h-4 w-4" />} onClick={onModifier} aria-label={`Modifier ${c.nom}`}>
-          Modifier
-        </Bouton>
-        {c.etudiants === 0 && (
+        {peutClasses && (
+          <Bouton variante="fantome" taille="sm" className="min-h-[48px]" icone={<Pencil className="h-4 w-4" />} onClick={onModifier} aria-label={`Modifier ${c.nom}`}>
+            Modifier
+          </Bouton>
+        )}
+        {peutClasses && c.etudiants === 0 && (
           <Bouton variante="fantome" taille="sm" className="min-h-[48px] text-danger" icone={<Trash2 className="h-4 w-4" />} onClick={supprimer} aria-label={`Supprimer ${c.nom}`}>
             Supprimer
           </Bouton>

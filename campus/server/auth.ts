@@ -8,11 +8,25 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { eq, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db, pool } from "./db";
 import { config, estProduction } from "./config";
 import { ErreurHttp } from "./http";
-import { utilisateurs, sites, classes, LIBELLES_ROLES, type Utilisateur, type Role, type Moi, type Casquette } from "@shared/schema";
+import {
+  utilisateurs,
+  sites,
+  classes,
+  LIBELLES_ROLES,
+  PROFIL_PAR_DEFAUT,
+  peut,
+  libelleProfil,
+  profilsAvec,
+  type Utilisateur,
+  type Role,
+  type Moi,
+  type Casquette,
+  type Droit,
+} from "@shared/schema";
 
 declare module "express-session" {
   interface SessionData {
@@ -248,6 +262,58 @@ export function perimetreSites(u: Pick<Utilisateur, "role" | "siteId">): number[
   return null;
 }
 export const estFormateur = (u: Pick<Utilisateur, "role">) => u.role === "formateur";
+
+// ── Profils de l'équipe (shared/schema/ext-profils.ts : DROITS_PROFILS) ──────
+// La direction a tous les droits ; un membre de l'équipe, ceux de son profil
+// (profil NULL : vie scolaire, comme avant les profils). Le périmètre (son
+// campus ou tout le groupe) s'applique en plus, partout (perimetreSites).
+
+export { peut };
+
+/** « Votre profil (Secrétariat / accueil) ne permet pas cette action. » */
+export function messageProfil(u: Pick<Utilisateur, "role" | "profil">): string {
+  return `Votre profil (${libelleProfil(u)}) ne permet pas cette action.`;
+}
+
+/** Condition SQL sur utilisateurs : membres de l'équipe (rôle vie_scolaire) dont le profil a ce droit. */
+export function equipeAvecDroit(droit: Droit): SQL {
+  const profils = profilsAvec(droit);
+  return and(
+    eq(utilisateurs.role, "vie_scolaire"),
+    or(profils.includes(PROFIL_PAR_DEFAUT) ? isNull(utilisateurs.profil) : undefined, profils.length ? inArray(utilisateurs.profil, profils) : sql`false`),
+  )!;
+}
+
+/** Lève 403 si la personne n'a pas ce droit (dans une route déjà réservée à l'équipe). */
+export function exigerDroitDe(u: Pick<Utilisateur, "role" | "profil">, droit: Droit) {
+  if (!peut(u, droit)) throw new ErreurHttp(403, messageProfil(u));
+}
+
+/**
+ * Route réservée à l'équipe (direction ou vie scolaire) ET à l'un de ces
+ * droits. Remplace la garde EQUIPE des routes du pilotage.
+ */
+export function exigerDroit(...droits: Droit[]): RequestHandler {
+  return (req, res, next) => {
+    const u = req.utilisateur;
+    if (!u) return res.status(401).json({ message: "Connectez-vous pour continuer." });
+    if (u.role !== "admin" && u.role !== "vie_scolaire") return res.status(403).json({ message: "Cette page n'est pas accessible avec ton compte." });
+    if (!droits.some((d) => peut(u, d))) return res.status(403).json({ message: messageProfil(u) });
+    next();
+  };
+}
+
+/**
+ * Route ouverte aussi à d'autres rôles (formateurs…) : la condition du droit
+ * ne s'applique qu'à la vie scolaire. À placer APRÈS exigerRole.
+ */
+export function droitSiEquipe(...droits: Droit[]): RequestHandler {
+  return (req, res, next) => {
+    const u = req.utilisateur;
+    if (u?.role === "vie_scolaire" && !droits.some((d) => peut(u, d))) return res.status(403).json({ message: messageProfil(u) });
+    next();
+  };
+}
 
 /** Représentation envoyée au client : jamais de hash ni de jeton. */
 export async function versMoi(u: Utilisateur): Promise<Moi> {

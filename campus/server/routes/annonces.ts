@@ -16,7 +16,7 @@ import { z } from "zod";
 import { and, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../db";
-import { exigerConnexion, exigerRole, moi, perimetreSites } from "../auth";
+import { exigerConnexion, exigerRole, droitSiEquipe, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { idsCoursAccessibles, enseigneCours, etudiantsDuCours, formateursDuCours } from "../acces";
 import { notifier, compterNonLues } from "../notifications";
@@ -500,6 +500,7 @@ export function enregistrerAnnonces(app: Express) {
   app.get(
     "/api/annonces/cibles",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const reponse: CiblesAnnonce = { tous: false, sites: [], classes: [], cours: [], publieSurSite: u.role === "admin" };
@@ -534,6 +535,7 @@ export function enregistrerAnnonces(app: Express) {
   app.get(
     "/api/annonces/destinataires",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const nombre = (v: unknown) => (v === undefined || v === "" ? undefined : Number(v));
@@ -555,6 +557,7 @@ export function enregistrerAnnonces(app: Express) {
   app.get(
     "/api/annonces/gestion",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       let condition: SQL | undefined;
@@ -635,6 +638,7 @@ export function enregistrerAnnonces(app: Express) {
   app.get(
     "/api/annonces/:id/lectures",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const { annonce, gerable } = await annonceLisible(u, idParam(req));
@@ -646,6 +650,7 @@ export function enregistrerAnnonces(app: Express) {
   app.post(
     "/api/annonces",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaAnnonce, req.body);
@@ -673,6 +678,7 @@ export function enregistrerAnnonces(app: Express) {
   app.patch(
     "/api/annonces/:id",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const [a] = await db.select().from(annonces).where(eq(annonces.id, idParam(req)));
@@ -705,6 +711,7 @@ export function enregistrerAnnonces(app: Express) {
   app.delete(
     "/api/annonces/:id",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const [a] = await db.select().from(annonces).where(eq(annonces.id, idParam(req)));
@@ -729,6 +736,7 @@ export function enregistrerAnnonces(app: Express) {
   app.post(
     "/api/annonces/:id/relancer",
     exigerRole("admin", "vie_scolaire", "formateur"),
+    droitSiEquipe("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const [a] = await db.select().from(annonces).where(eq(annonces.id, idParam(req)));

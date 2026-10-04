@@ -6,7 +6,7 @@ import { Bouton } from "@/components/ui/bouton";
 import { Avatar } from "@/components/ui/divers";
 import { toast } from "@/components/ui/toast";
 import { nomComplet } from "@/lib/utils";
-import { LIBELLES_ROLES, type Moi } from "@shared/schema";
+import { LIBELLES_ROLES, libelleProfil, type Moi } from "@shared/schema";
 import { majMoi, tuOuVous } from "../../outils";
 import { Ligne } from "./Section";
 
@@ -61,7 +61,7 @@ export function CartePhoto({ moi }: { moi: Moi }) {
         <div className="min-w-0">
           <p className="text-[22px] font-black leading-tight tracking-serre">{nomComplet(moi)}</p>
           <p className="font-mono text-xs text-texte-gris">
-            {LIBELLES_ROLES[moi.role]}
+            {moi.role === "vie_scolaire" ? libelleProfil(moi) : LIBELLES_ROLES[moi.role]}
             {moi.site ? ` · ${moi.site.nomCourt}` : ""}
           </p>
         </div>

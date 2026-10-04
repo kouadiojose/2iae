@@ -3,7 +3,8 @@
 // lives, présences, site 2iae.com, dossier étudiant, relevé parent, budget IA.
 //
 // Règles du module :
-// - toutes les routes /api/pilotage exigent la direction ou la vie scolaire ;
+// - toutes les routes /api/pilotage exigent la direction ou la vie scolaire,
+//   et le droit voulu du profil de la personne (exigerDroit, ext-profils.ts) ;
 // - perimetreSites(u) s'applique PARTOUT : la vie scolaire d'un campus ne voit
 //   et ne modifie que son campus (les formateurs, sans campus, sont communs au
 //   groupe ; les comptes de la direction ne sont gérés que par la direction) ;
@@ -33,6 +34,9 @@ import {
   normaliserTelephone,
   fermerAutresSessions,
   oublierUtilisateur,
+  exigerDroit,
+  exigerDroitDe,
+  peut,
 } from "../auth";
 import { creerJeton, lienActivation, reinitialiserCode } from "../activation";
 import { urlFichier } from "../fichiers";
@@ -45,6 +49,7 @@ import { adresseDeDemonstration, ADRESSE_DEMO_REFUSEE, DOMAINE_DEMO } from "../d
 import { lireVitrine, oublierVitrine } from "./public";
 import {
   ROLES,
+  PROFILS_EQUIPE,
   utilisateurs,
   fichiers,
   sites,
@@ -206,6 +211,9 @@ function lundiDe(brut: unknown): Date {
 function peutGerer(u: Utilisateur, cible: Pick<Utilisateur, "role" | "siteId">): boolean {
   if (u.role === "admin") return true;
   if (cible.role === "admin") return false;
+  // Profils sans « comptes du personnel » (scolarité, secrétariat, pédagogie) : les étudiants seulement.
+  // Sinon un nouveau code donné à un collègue ouvrirait son compte, et ses droits.
+  if (cible.role !== "etudiant" && !peut(u, "comptes_personnel")) return false;
   const p = perimetreSites(u);
   if (!p) return true;
   // Les formateurs enseignent à tous les campus : les gérer (nouveau code,
@@ -755,6 +763,7 @@ const colonnesCompte = {
   site: sites.nomCourt,
   classeId: utilisateurs.classeId,
   classe: classes.nom,
+  profil: utilisateurs.profil,
   actif: utilisateurs.actif,
   doitChanger: utilisateurs.doitChangerMotDePasse,
   codeExpireLe: utilisateurs.motDePasseExpireLe,
@@ -801,6 +810,8 @@ export async function compteParId(id: number): Promise<CompteLigne> {
 function comptesVisibles(u: Utilisateur): SQL | undefined {
   if (u.role === "admin") return undefined;
   const p = perimetreSites(u);
+  // Profils sans « comptes du personnel » : les étudiants (de son campus) seulement, comme peutGerer.
+  if (!peut(u, "comptes_personnel")) return and(eq(utilisateurs.role, "etudiant"), p ? inArray(utilisateurs.siteId, p) : undefined);
   if (!p) return ne(utilisateurs.role, "admin");
   return and(ne(utilisateurs.role, "admin"), or(inArray(utilisateurs.siteId, p), eq(utilisateurs.role, "formateur")));
 }
@@ -864,10 +875,14 @@ const schemaCreationCompte = z.object({
   classeId: z.number().int().positive().nullable().optional(),
   titre: optionnel(z.string().trim().max(120)),
   localisation: optionnel(z.string().trim().max(120)),
+  /** Équipe (rôle vie_scolaire) : profil choisi par la direction (ext-profils.ts). */
+  profil: z.enum(PROFILS_EQUIPE).nullable().optional(),
 });
 
 const schemaModificationCompte = z.object({
   role: z.enum(ROLES).optional(),
+  /** Équipe (rôle vie_scolaire) : profil, changé par la direction seulement ; null = vie scolaire. */
+  profil: z.enum(PROFILS_EQUIPE).nullable().optional(),
   prenom: texteCourt(80).optional(),
   nom: texteCourt(80).optional(),
   matricule: optionnel(schemaMatricule),
@@ -1544,7 +1559,7 @@ export function enregistrerAdmin(app: Express) {
   // Filtré et paginé ici : avec 1 000 étudiants, la liste entière pèse près d'1 Mo.
   app.get(
     `${P}/a-contacter`,
-    EQUIPE,
+    exigerDroit("suivi"),
     route(async (req, res) => {
       const f = valider(
         z.object({
@@ -1639,7 +1654,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/comptes`,
-    EQUIPE,
+    exigerDroit("comptes_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const f = valider(
@@ -1693,7 +1708,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/comptes/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("comptes_voir"),
     route(async (req, res) => {
       const c = await compteGere(moi(req), idParam(req));
       res.json(await compteParId(c.id));
@@ -1702,16 +1717,19 @@ export function enregistrerAdmin(app: Express) {
 
   app.post(
     `${P}/comptes`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaCreationCompte, req.body);
       const p = perimetreSites(u);
 
       if (d.role === "admin" && u.role !== "admin") throw interdit("Seule la direction crée les comptes de la direction.");
+      if (d.role !== "etudiant") exigerDroitDe(u, "comptes_personnel");
       if (d.role === "formateur" && perimetreSites(u)) {
         throw interdit("Les comptes des formateurs sont créés par la direction : ils enseignent à tous les campus.");
       }
+      if (d.profil && u.role !== "admin") throw interdit("Seule la direction choisit le profil d'un membre de l'équipe.");
+      const profil = d.role === "vie_scolaire" ? (d.profil ?? null) : null;
       let siteId: number | null = null;
       let classeId: number | null = null;
       if (d.role === "etudiant") {
@@ -1724,7 +1742,10 @@ export function enregistrerAdmin(app: Express) {
         // Formateur ou écran de salle sans e-mail : le formateur choisira son identifiant en ouvrant son
         // lien d'invitation, l'écran s'installe par un lien ou un code (module lancement).
         if (!d.email && d.role !== "formateur" && d.role !== "salle") throw invalide("L'adresse e-mail est obligatoire pour le personnel (elle sert d'identifiant).");
-        if (d.role === "vie_scolaire" || d.role === "salle") {
+        if (d.role === "vie_scolaire" && u.role === "admin" && d.siteId === null) {
+          // La direction crée un membre de l'équipe pour tout le groupe (aucun campus).
+          siteId = null;
+        } else if (d.role === "vie_scolaire" || d.role === "salle") {
           const voulu = d.siteId ?? (p?.length === 1 ? p[0] : null);
           if (!voulu) throw invalide(d.role === "salle" ? "Choisissez le campus de cette salle." : "Choisissez le campus de ce compte vie scolaire.");
           siteId = (await siteGere(u, voulu)).id;
@@ -1755,13 +1776,14 @@ export function enregistrerAdmin(app: Express) {
           motDePasseExpireLe: expireLe,
           siteId,
           classeId,
+          profil,
           titre: d.role === "formateur" ? (d.titre ?? null) : null,
           localisation: d.role === "formateur" ? (d.localisation ?? null) : null,
         })
         .returning();
       const jeton = await creerJeton(cree.id, "activation");
       const lien = lienActivation(jeton);
-      await journaliser(u, "compte_cree", { compteId: cree.id, role: cree.role, siteId });
+      await journaliser(u, "compte_cree", { compteId: cree.id, role: cree.role, siteId, ...(profil ? { profil } : {}) });
       const reponse: CompteCree = {
         compte: await compteParId(cree.id),
         code,
@@ -1775,7 +1797,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.patch(
     `${P}/comptes/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const avant = await compteGere(u, idParam(req));
@@ -1824,6 +1846,10 @@ export function enregistrerAdmin(app: Express) {
           maj.classeId = classe.id;
           maj.siteId = classe.siteId;
         }
+      } else if (role === "vie_scolaire" && u.role === "admin" && d.siteId === null) {
+        // La direction ouvre tout le groupe à ce membre de l'équipe (aucun campus).
+        if (avant.siteId !== null) maj.siteId = null;
+        if (avant.classeId) maj.classeId = null;
       } else if (role === "vie_scolaire" || role === "salle") {
         if (d.siteId !== undefined || maj.role) {
           const voulu = d.siteId ?? avant.siteId;
@@ -1837,6 +1863,17 @@ export function enregistrerAdmin(app: Express) {
       }
       // Un compte qu'on déplace doit rester dans le périmètre de la vie scolaire.
       if (p && maj.siteId !== undefined && maj.siteId !== null && !p.includes(maj.siteId)) throw interdit("Ce campus n'est pas dans votre périmètre.");
+
+      // Profil de l'équipe : choisi par la direction seulement ; un compte qui quitte l'équipe le perd.
+      if (role === "vie_scolaire") {
+        if (d.profil !== undefined && d.profil !== avant.profil) {
+          if (u.role !== "admin") throw interdit("Seule la direction peut changer le profil d'un membre de l'équipe.");
+          maj.profil = d.profil;
+        }
+      } else {
+        if (d.profil) throw invalide("Le profil concerne les membres de l'équipe administrative.");
+        if (avant.profil !== null) maj.profil = null;
+      }
 
       if (d.actif !== undefined && d.actif !== avant.actif) {
         if (avant.id === u.id) throw interdit("Vous ne pouvez pas désactiver votre propre compte.");
@@ -1866,15 +1903,21 @@ export function enregistrerAdmin(app: Express) {
         // Double casquette : l'autre compte ne s'ouvre que depuis celui-ci, il se ferme avec lui.
         if (avant.compteLieId) await fermerAutresSessions(avant.compteLieId);
       }
-      const action = maj.actif === false ? "compte_desactive" : maj.actif === true ? "compte_reactive" : maj.role ? "role_change" : "compte_modifie";
-      await journaliser(u, action, { compteId: avant.id, champs: Object.keys(maj), ...(maj.role ? { de: avant.role, vers: maj.role } : {}) });
+      const action =
+        maj.actif === false ? "compte_desactive" : maj.actif === true ? "compte_reactive" : maj.role ? "role_change" : maj.profil !== undefined ? "profil_change" : "compte_modifie";
+      await journaliser(u, action, {
+        compteId: avant.id,
+        champs: Object.keys(maj),
+        ...(maj.role ? { de: avant.role, vers: maj.role } : {}),
+        ...(maj.profil !== undefined ? { profilAvant: avant.profil, profil: maj.profil } : {}),
+      });
       res.json(await compteParId(avant.id));
     }),
   );
 
   app.post(
     `${P}/comptes/:id(\\d+)/nouveau-code`,
-    EQUIPE,
+    exigerDroit("nouveau_code"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await compteGere(u, idParam(req));
@@ -1903,8 +1946,12 @@ export function enregistrerAdmin(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const f = await compteGere(u, idParam(req));
-      const { role, siteId } = valider(
-        z.object({ role: z.enum(["admin", "vie_scolaire"]), siteId: z.number().int().positive().nullable().optional() }),
+      const { role, siteId, profil } = valider(
+        z.object({
+          role: z.enum(["admin", "vie_scolaire"]),
+          siteId: z.number().int().positive().nullable().optional(),
+          profil: z.enum(PROFILS_EQUIPE).nullable().optional(),
+        }),
         req.body,
       );
       if (f.role !== "formateur") throw invalide("La double casquette se donne à un compte formateur.");
@@ -1927,6 +1974,7 @@ export function enregistrerAdmin(app: Express) {
             motDePasseHash: hash,
             doitChangerMotDePasse: false,
             siteId: site,
+            profil: role === "vie_scolaire" ? (profil ?? null) : null,
             photoUrl: f.photoUrl,
             fuseau: f.fuseau,
             localisation: f.localisation,
@@ -1972,7 +2020,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.post(
     `${P}/import/apercu`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const { texte, classeId: classeParDefaut, lotId } = valider(
@@ -2098,7 +2146,7 @@ export function enregistrerAdmin(app: Express) {
   // renvoie les mêmes fiches (15 min) ou refait celles des comptes déjà créés, jamais « matricule déjà inscrit ».
   app.post(
     `${P}/import/valider`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const { lignes: recues, lotId: lotDemande } = valider(
@@ -2119,7 +2167,7 @@ export function enregistrerAdmin(app: Express) {
   // Progression d'un import ou d'une préparation de fiches (identifiant choisi par le navigateur).
   app.get(
     `${P}/progression/:id([A-Za-z0-9_-]{8,64})`,
-    EQUIPE,
+    exigerDroit("comptes_gerer", "nouveau_code"),
     route(async (req, res) => {
       const t = travaux.get(String(req.params.id));
       if (!t || t.auteurId !== moi(req).id) throw introuvable("Travail");
@@ -2131,7 +2179,7 @@ export function enregistrerAdmin(app: Express) {
   // Imports de la personne dont les fiches ne sont jamais arrivées au navigateur (réponse perdue, page fermée).
   app.get(
     `${P}/import/lots`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const r = await db.execute<{ id: string; cree_le: Date; comptes: number; non_actives: number }>(sql`
@@ -2156,7 +2204,7 @@ export function enregistrerAdmin(app: Express) {
   // comptes pas encore activés (les fiches perdues n'ont été vues par personne).
   app.post(
     `${P}/import/lots/:lot([A-Za-z0-9_-]{8,64})/fiches`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const lotId = String(req.params.lot);
@@ -2181,7 +2229,7 @@ export function enregistrerAdmin(app: Express) {
   // Les fiches du lot sont bien arrivées : il ne figure plus parmi les imports à reprendre.
   app.post(
     `${P}/import/lots/:lot([A-Za-z0-9_-]{8,64})/remis`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       await db
@@ -2196,7 +2244,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.post(
     `${P}/fiches`,
-    EQUIPE,
+    exigerDroit("nouveau_code"),
     route(async (req, res) => {
       const u = moi(req);
       const { utilisateurIds, suivi } = valider(
@@ -2250,7 +2298,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.post(
     `${P}/classes`,
-    EQUIPE,
+    exigerDroit("classes"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaClasse, req.body);
@@ -2273,7 +2321,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.patch(
     `${P}/classes/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("classes"),
     route(async (req, res) => {
       const u = moi(req);
       const avant = await classeGeree(u, idParam(req));
@@ -2298,7 +2346,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.delete(
     `${P}/classes/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("classes"),
     route(async (req, res) => {
       const u = moi(req);
       const c = await classeGeree(u, idParam(req));
@@ -2458,7 +2506,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/presences`,
-    EQUIPE,
+    exigerDroit("presences_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const p = perimetreSites(u);
@@ -2509,7 +2557,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/presences/seance/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("presences_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const { s, code, coursTitre, formateurPrenom, formateurNom } = await seanceGeree(u, idParam(req));
@@ -2582,7 +2630,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/presences/seance/:id(\\d+)/export`,
-    EQUIPE,
+    exigerDroit("presences_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const { s, code } = await seanceGeree(u, idParam(req));
@@ -2626,7 +2674,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/presences/etudiant/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("presences_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -2659,7 +2707,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.post(
     `${P}/presences/justifier`,
-    EQUIPE,
+    exigerDroit("presences"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(
@@ -2883,7 +2931,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/etudiants/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("comptes_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -2954,13 +3002,17 @@ export function enregistrerAdmin(app: Express) {
         releve,
         whatsapp: numeroWhatsApp(e.telephone) ? lienWhatsApp(e.telephone, entreeMessage(e.prenom, info?.site ?? null)) : null,
       };
+      // Ce que le profil ne permet pas de voir est retiré (le client masque aussi ces parties).
+      if (!peut(u, "presences_voir")) dossier.presences = { resume: resumeDe([]), seances: [] };
+      if (!peut(u, "notes")) Object.assign(dossier, { devoirs: [], notes: { cours: [], generale: null }, releve: null });
+      if (!peut(u, "suivi") && !peut(u, "crm")) dossier.suivis = [];
       res.json(dossier);
     }),
   );
 
   app.post(
     `${P}/etudiants/:id(\\d+)/suivis`,
-    EQUIPE,
+    exigerDroit("suivi", "crm"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -2978,7 +3030,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.post(
     `${P}/etudiants/:id(\\d+)/releve`,
-    EQUIPE,
+    exigerDroit("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -3002,7 +3054,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.delete(
     `${P}/etudiants/:id(\\d+)/releve`,
-    EQUIPE,
+    exigerDroit("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -3066,7 +3118,7 @@ export function enregistrerAdmin(app: Express) {
 
   app.get(
     `${P}/ia`,
-    EQUIPE,
+    exigerDroit("outils_campus"),
     route(async (req, res) => {
       const u = moi(req);
       const p = perimetreSites(u);

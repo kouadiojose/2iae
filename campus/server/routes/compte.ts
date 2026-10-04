@@ -29,6 +29,7 @@ import {
   verifierTentatives,
   noterEchec,
   effacerTentatives,
+  equipeAvecDroit,
 } from "../auth";
 import { consommerJeton, creerJeton, hacherJeton } from "../activation";
 import { route, valider, ErreurHttp, interdit, invalide } from "../http";
@@ -163,14 +164,14 @@ setInterval(() => {
   for (const [id, t] of demandesRecentes) if (t < limite) demandesRecentes.delete(id);
 }, DELAI_ENTRE_DEMANDES).unref();
 
-/** Prévient la vie scolaire du site de la personne (à défaut, la direction). */
+/** Prévient l'équipe du site de la personne qui peut donner un nouveau code (à défaut, la direction). */
 async function prevenirVieScolaire(u: Utilisateur) {
   let ids: number[] = [];
   if (u.siteId) {
     const vs = await db
       .select({ id: utilisateurs.id })
       .from(utilisateurs)
-      .where(and(eq(utilisateurs.role, "vie_scolaire"), eq(utilisateurs.siteId, u.siteId), eq(utilisateurs.actif, true)));
+      .where(and(equipeAvecDroit("nouveau_code"), eq(utilisateurs.siteId, u.siteId), eq(utilisateurs.actif, true)));
     ids = vs.map((l) => l.id);
   }
   if (!ids.length) {

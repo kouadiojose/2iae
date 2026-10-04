@@ -8,7 +8,7 @@ import { z } from "zod";
 import { and, asc, eq, gte, inArray, lt, lte, or, isNull, sql, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import { config, estProduction } from "../config";
-import { exigerConnexion, exigerRole, moi, estEquipe, perimetreSites, jetonAleatoire, oublierUtilisateur } from "../auth";
+import { exigerConnexion, exigerRole, exigerDroit, peut, moi, estEquipe, perimetreSites, jetonAleatoire, oublierUtilisateur } from "../auth";
 import { route, valider, idParam, introuvable, invalide } from "../http";
 import { idsCoursAccessibles, seanceVisible } from "../acces";
 import { notifier } from "../notifications";
@@ -213,7 +213,7 @@ export async function elementsAgenda(u: Utilisateur, debut: Date, fin: Date): Pr
 
 /** Seule l'équipe gère les événements, dans son périmètre (la vie scolaire d'un site : son site). */
 async function peutGererEvenement(u: Utilisateur, e: Evenement): Promise<boolean> {
-  if (!estEquipe(u)) return false;
+  if (!estEquipe(u) || !peut(u, "annonces")) return false;
   return cibleDansPerimetre(u, e);
 }
 
@@ -411,7 +411,7 @@ export function enregistrerAgenda(app: Express) {
         debut: debut.toISOString(),
         fin: fin.toISOString(),
         elements: await elementsAgenda(u, debut, fin),
-        peutAjouter: estEquipe(u),
+        peutAjouter: estEquipe(u) && peut(u, "annonces"),
       };
       res.json(reponse);
     }),
@@ -420,7 +420,7 @@ export function enregistrerAgenda(app: Express) {
   // ── Événements de la vie scolaire (équipe, dans son périmètre) ───────────
   app.post(
     "/api/agenda/evenements",
-    exigerRole("admin", "vie_scolaire"),
+    exigerDroit("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaEvenement, req.body);
@@ -447,7 +447,7 @@ export function enregistrerAgenda(app: Express) {
 
   app.patch(
     "/api/agenda/evenements/:id",
-    exigerRole("admin", "vie_scolaire"),
+    exigerDroit("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const [e] = await db.select().from(evenements).where(eq(evenements.id, idParam(req)));
@@ -479,7 +479,7 @@ export function enregistrerAgenda(app: Express) {
 
   app.delete(
     "/api/agenda/evenements/:id",
-    exigerRole("admin", "vie_scolaire"),
+    exigerDroit("annonces"),
     route(async (req, res) => {
       const u = moi(req);
       const [e] = await db.select().from(evenements).where(eq(evenements.id, idParam(req)));

@@ -8,7 +8,7 @@ export const routes: DefRoute[] = [
   // Répétition dans la vraie salle Daily d'une séance (formateur, direction ; salles 90 min avant).
   { chemin: "/visio/repetition/:seanceId", page: lazy(() => import("./PageRepetition")), acces: "connecte" },
   // Coût et réglages de la visio (équipe ; la direction seule modifie).
-  { chemin: "/pilotage/visio", page: lazy(() => import("./PagePilotageVisio")), acces: ["admin", "vie_scolaire"] },
+  { chemin: "/pilotage/visio", page: lazy(() => import("./PagePilotageVisio")), acces: ["admin", "vie_scolaire"], droit: "outils_campus" },
   // Banc d'essai d'une séance : ouvert à tous en développement (tests
   // automatisés formateur / salle / étudiant), réservé à l'équipe en production.
   {

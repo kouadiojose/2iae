@@ -9,7 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ArrowLeft, MoreVertical, Bell, BellOff, BookOpen, FolderOpen, UsersRound, ArrowDown, Loader2, WifiOff, X, Download, ShieldCheck } from "lucide-react";
+import { ArrowLeft, MoreVertical, Bell, BellOff, BookOpen, FolderOpen, UsersRound, ArrowDown, Loader2, WifiOff, X, Download, ShieldCheck, Ban } from "lucide-react";
 import { get, post, suppr, ErreurApi } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { useCanal } from "@/lib/flux";
@@ -139,6 +139,12 @@ function suggestions(d: ConversationDetail): string[] {
   if (d.interlocuteur.role === "vie_scolaire") {
     return ["Bonjour, j'ai oublié mon code secret.", "Je voudrais justifier une absence.", "J'ai un problème avec mon compte."];
   }
+  if (d.interlocuteur.role === "admin") {
+    return ["Bonjour, j'ai une question sur ma formation.", "Bonjour, je voudrais prendre rendez-vous."];
+  }
+  if (d.interlocuteur.role === "etudiant") {
+    return ["Salut ! Tu as compris le dernier cours ?", "Salut, on révise ensemble ?"];
+  }
   return [];
 }
 
@@ -182,12 +188,16 @@ function EnTeteFil({
   saisie,
   estEquipe,
   enErreur = false,
+  onBloquer,
+  onDebloquer,
 }: {
   d: ConversationDetail | undefined;
   mobile: boolean;
   saisie: string | null;
   estEquipe: boolean;
   enErreur?: boolean;
+  onBloquer?: () => void;
+  onDebloquer?: () => void;
 }) {
   const [, naviguer] = useLocation();
   const [sourdine, setSourdine] = useState<boolean | null>(null);
@@ -264,6 +274,17 @@ function EnTeteFil({
                     <FolderOpen className="h-4 w-4" /> Dossier de l'étudiant
                   </DropdownMenu.Item>
                 )}
+                {d.peutBloquer && d.interlocuteur && (
+                  <DropdownMenu.Item
+                    onSelect={() => (d.blocage === "par_moi" ? onDebloquer?.() : onBloquer?.())}
+                    className={cn(
+                      "flex min-h-[48px] cursor-pointer items-center gap-3 rounded-xl px-3 text-[15px] font-semibold outline-none data-[highlighted]:bg-creme",
+                      d.blocage !== "par_moi" && "text-direct",
+                    )}
+                  >
+                    <Ban className="h-4 w-4" /> {d.blocage === "par_moi" ? `Débloquer ${d.interlocuteur.prenom}` : `Bloquer ${d.interlocuteur.prenom}`}
+                  </DropdownMenu.Item>
+                )}
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
@@ -315,6 +336,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
   const [saisie, setSaisie] = useState<string | null>(null);
   const [aSupprimer, setASupprimer] = useState<MessageDto | null>(null);
   const [aSignaler, setASignaler] = useState<MessageDto | null>(null);
+  const [aBloquer, setABloquer] = useState(false);
   const [motif, setMotif] = useState("");
   const [action, setAction] = useState(false);
   const [photo, setPhoto] = useState<{ url: string; nom: string } | null>(null);
@@ -623,6 +645,22 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
     }
   }
 
+  // ── Blocage (entre étudiants) ────────────────────────────────────────────
+  const nomAutre = d?.interlocuteur ? `${d.interlocuteur.prenom} ${d.interlocuteur.nom}` : d?.titre ?? "";
+  async function changerBlocage(bloque: boolean) {
+    setAction(true);
+    try {
+      await post(`/api/conversations/${id}/bloquer`, { bloque });
+      await queryClient.invalidateQueries({ queryKey: [`/api/conversations/${id}`], exact: true });
+      toast(bloque ? `Tu as bloqué ${nomAutre}.` : `Tu as débloqué ${nomAutre}.`);
+      setABloquer(false);
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setAction(false);
+    }
+  }
+
   // ── Rendu ────────────────────────────────────────────────────────────────
   const vide = !etat.messages.length && !enAttente.length;
   const phrases = d && etudiant ? suggestions(d) : [];
@@ -714,7 +752,7 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
 
   return (
     <div className={conteneur} style={style}>
-      <EnTeteFil d={d} mobile={mobile} saisie={saisie} estEquipe={estEquipe} />
+      <EnTeteFil d={d} mobile={mobile} saisie={saisie} estEquipe={estEquipe} onBloquer={() => setABloquer(true)} onDebloquer={() => void changerBlocage(false)} />
       {!enLigne && (
         <div className="flex shrink-0 items-center justify-center gap-2 bg-encre px-4 py-2 text-center text-[13px] font-semibold text-white" role="status">
           <WifiOff className="h-4 w-4 shrink-0 text-orange" aria-hidden="true" />
@@ -842,8 +880,22 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
       </div>
 
       {d && !d.peutEcrire ? (
-        <div className="shrink-0 border-t border-ligne-douce bg-creme px-4 py-4 text-center text-[15px] text-texte-pale" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}>
-          Ce compte n'est plus actif : la conversation reste lisible mais ne reçoit plus de messages.
+        <div
+          className="flex shrink-0 flex-col items-center gap-2 border-t border-ligne-douce bg-creme px-4 py-4 text-center text-[15px] text-texte-pale"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}
+        >
+          {d.blocage === "par_moi" ? (
+            <>
+              <p>Tu as bloqué {nomAutre} : vous ne pouvez plus vous écrire.</p>
+              <Bouton taille="sm" variante="contour" chargement={action} onClick={() => void changerBlocage(false)}>
+                Débloquer
+              </Bouton>
+            </>
+          ) : d.blocage === "par_autre" ? (
+            <p>Tu ne peux plus écrire à cette personne. La conversation reste lisible.</p>
+          ) : (
+            <p>Ce compte n'est plus actif : la conversation reste lisible mais ne reçoit plus de messages.</p>
+          )}
         </div>
       ) : (
         <Composeur
@@ -927,6 +979,27 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
             className="w-full resize-none rounded-xl border border-ligne bg-white px-4 py-3 text-base outline-none focus:border-orange focus:ring-2 focus:ring-orange/20"
           />
         </div>
+      </Fenetre>
+
+      <Fenetre
+        ouverte={aBloquer}
+        onFermer={() => setABloquer(false)}
+        titre={`Bloquer ${nomAutre} ?`}
+        description={`${d?.interlocuteur?.prenom ?? "Cette personne"} ne pourra plus t'écrire, et tu ne pourras plus lui écrire. Personne n'est prévenu. Tu pourras débloquer quand tu veux, depuis ce même menu.`}
+        pied={
+          <>
+            <Bouton variante="fantome" onClick={() => setABloquer(false)}>
+              Annuler
+            </Bouton>
+            <Bouton variante="danger" chargement={action} onClick={() => void changerBlocage(true)}>
+              Bloquer
+            </Bouton>
+          </>
+        }
+      >
+        <p className="pb-2 text-[15px] leading-relaxed text-texte-pale">
+          Un message te blesse, te menace ou te harcèle ? Signale-le aussi (appui long sur le message, puis « Signaler ») : la vie scolaire de ton campus sera prévenue et pourra t'aider.
+        </p>
       </Fenetre>
 
       <Visionneuse photo={photo} onFermer={() => setPhoto(null)} />

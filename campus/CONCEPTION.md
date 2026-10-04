@@ -219,7 +219,7 @@ Chaque module possède ses fichiers ; il ne modifie pas ceux des autres.
 
 ### Messages
 - Comme WhatsApp : liste des conversations, bulles, ✓ envoyé / ✓✓ lu, photos, fichiers, **notes vocales**, temps réel, file d'envoi hors ligne.
-- Conversations directes (étudiant ↔ formateurs de ses cours, ↔ vie scolaire de son site), **salon de chaque cours**, salon de classe. Contexte automatique quand on écrit depuis un devoir ou une leçon.
+- Conversations directes (étudiant ↔ formateurs de ses cours, ↔ vie scolaire de son site, ↔ direction, ↔ tout autre étudiant), **salon de chaque cours**, salon de classe. Contexte automatique quand on écrit depuis un devoir ou une leçon.
 
 ### Pilotage (vie scolaire et direction)
 - Tableau de bord multi-campus : comptes activés, présence aux lives, devoirs rendus, **« Qui décroche ? »** (aucune connexion depuis 7 jours, absences répétées, devoirs non rendus) avec actions (WhatsApp, dossier, note de suivi).
@@ -274,7 +274,7 @@ Chaque module possède ses fichiers ; il ne modifie pas ceux des autres.
 8. **Étudiant en ligne** : peut recevoir la parole en **audio seulement** ; pas de caméra étudiante en v1.
 9. **Planification** : la vie scolaire réserve les salles ; le formateur est autonome sur le contenu et le live et peut créer/proposer un créneau ; les conflits de salle sont signalés.
 10. **Publication sur le site** : ce que coche un formateur passe en **« proposé »** (`proposeSurSite`) ; la direction valide en un clic (`publierSurSite`) ; la fiche d'un formateur n'est publiée qu'avec son **consentement** (`consentementSite`, révocable) ; les lives passés disparaissent seuls.
-11. **Messagerie** : pas de discussion libre ni de messages privés entre étudiants en v1. Conversations directes étudiant ↔ formateurs de ses cours et ↔ vie scolaire de son site ; **« Questions du cours »** (salon modéré par le formateur, bouton « Signaler », masquage) ; annonces.
+11. **Messagerie** : conversations directes étudiant ↔ formateurs de ses cours, ↔ vie scolaire de son site, ↔ direction, et **étudiant ↔ étudiant** (tous les étudiants actifs, tous campus : décision de la direction, octobre 2026 ; recherche par nom à partir de deux lettres, qui n'affiche que le nom, la photo, le campus et la classe, jamais le matricule, l'e-mail ni le téléphone). Garde-fous : « Bloquer » entre étudiants (plus aucun message dans un sens ni dans l'autre, l'autre n'est pas prévenu), « Signaler » un message (vie scolaire du campus prévenue), 20 nouvelles conversations entre étudiants par heure au plus. Jamais d'écriture vers un écran de salle ni un compte désactivé. **« Questions du cours »** (salon modéré par le formateur, bouton « Signaler », masquage) ; annonces.
 12. **Retards** : l'heure de réception par le serveur fait foi ; l'heure « préparé hors ligne » est affichée à titre indicatif ; le formateur décide (retard accepté ou non par devoir). Chrono des interrogations tenu par le serveur.
 13. **Horloge** : toute logique horaire côté client utilise l'heure du serveur (`maintenantServeur()` dans `lib/horloge.ts`, déjà branché dans `useMaintenant`).
 14. **Consommation affichée honnêtement** : mode compagnon (en salle) < 5 Mo/h ; son + diapos (radio du cours, §10) ≈ 12 à 15 Mo/h ; vidéo 150 à 250 Mo/h. Afficher la consommation **mesurée** quand c'est possible (`getNetworkStats()` de Daily), jamais une promesse.

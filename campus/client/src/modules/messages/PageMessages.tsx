@@ -64,7 +64,7 @@ export default function PageMessages({ id }: { id?: string }) {
                   titre={selonRole(moi.role, "Choisis une conversation", "Choisissez une conversation")}
                   texte={
                     etudiant
-                      ? "Écris à tes formateurs, à la vie scolaire de ton campus, ou pose ta question à toute la classe dans le salon d'un cours."
+                      ? "Écris à tes formateurs, à l'administration, à un autre étudiant, ou pose ta question à toute la classe dans le salon d'un cours."
                       : "Répondez à vos étudiants, à l'équipe, ou aux questions posées dans les salons de vos cours."
                   }
                   action={
@@ -96,7 +96,7 @@ export default function PageMessages({ id }: { id?: string }) {
       <EnTetePage
         etiquette="Comme sur WhatsApp"
         titre="Messages"
-        sousTitre={etudiant ? "Tes formateurs, la vie scolaire de ton campus et les questions de tes cours." : "Vos étudiants, l'équipe et les questions de vos cours."}
+        sousTitre={etudiant ? "Tes formateurs, l'administration, les autres étudiants et les questions de tes cours." : "Vos étudiants, l'équipe et les questions de vos cours."}
       />
       <ListeConversations onNouveau={() => setChoix(true)} className="-mx-2" />
       {/* Bouton principal de l'écran, au pouce, au-dessus de la barre d'onglets. */}

@@ -1,9 +1,10 @@
 // Tables et types propres au module « messages ».
 //
 // Les conversations, participants et messages vivent dans ./echanges ; ici :
-// les signalements (bouton « Signaler ») et les contrats d'API échangés entre
-// le serveur (server/routes/messages.ts) et le client (modules/messages).
-import { serial, text, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+// les signalements (bouton « Signaler »), les blocages entre étudiants
+// (bouton « Bloquer ») et les contrats d'API échangés entre le serveur
+// (server/routes/messages.ts) et le client (modules/messages).
+import { serial, text, integer, timestamp, index, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, type Role } from "./base";
 import { messages } from "./echanges";
 
@@ -25,6 +26,21 @@ export const signalementsMessages = campusSchema.table(
 
 export type SignalementMessage = typeof signalementsMessages.$inferSelect;
 
+/**
+ * « Bloquer » : un étudiant empêche un autre étudiant de lui écrire (et ne
+ * peut plus lui écrire tant qu'il ne l'a pas débloqué). La conversation reste
+ * lisible des deux côtés. L'autre n'est pas prévenu.
+ */
+export const blocages = campusSchema.table(
+  "blocages",
+  {
+    auteurId: integer("auteur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    bloqueId: integer("bloque_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.auteurId, t.bloqueId] }), index("blocages_bloque_idx").on(t.bloqueId)],
+);
+
 // ── Contrats d'API (dates en chaînes ISO) ──────────────────────────────────
 
 /** Ce que contient un message, pour les aperçus (« 📷 Photo », « 🎤 Note vocale »). */
@@ -40,7 +56,11 @@ export type ContactMessages = {
   nom: string;
   role: Role;
   photoUrl: string | null;
-  /** « Formateur · Lyon, France », « Vie scolaire · Yopougon », « Yopougon · 24GC0001 ». */
+  /**
+   * « Formateur · Lyon, France », « Vie scolaire · Yopougon » ; pour un
+   * étudiant : « Yopougon · 24GC0001 » vu par le personnel, « Yopougon ·
+   * Tronc commun 1BTS » vu par un autre étudiant (jamais son matricule).
+   */
   detail: string;
 };
 
@@ -87,6 +107,10 @@ export type ConversationDetail = ConversationResume & {
   luJusquAAutre: string | null;
   /** Salon : nombre de campus qui suivent le cours. */
   nbCampus: number | null;
+  /** Conversation entre deux étudiants : « Bloquer » est proposé. */
+  peutBloquer: boolean;
+  /** par_moi : j'ai bloqué l'autre · par_autre : l'autre m'a bloqué · null : aucun blocage. */
+  blocage: "par_moi" | "par_autre" | null;
 };
 
 export type AuteurMessage = {

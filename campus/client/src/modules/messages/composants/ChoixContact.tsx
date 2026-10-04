@@ -1,10 +1,12 @@
-// « Nouveau message » : à qui écrire, par groupes (mes formateurs, vie
-// scolaire de mon campus, mes étudiants…), et les salons des cours pour une
-// question à toute la classe.
+// « Nouveau message » : à qui écrire, par groupes (mes formateurs,
+// administration de mon campus, direction, mes étudiants…), et les salons des
+// cours pour une question à toute la classe. Un étudiant trouve aussi
+// n'importe quel autre étudiant en tapant au moins deux lettres de son nom
+// (recherche faite par le serveur, tous campus).
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Search, ChevronRight, Loader2, UsersRound } from "lucide-react";
+import { Search, ChevronRight, Loader2, UsersRound, UserSearch } from "lucide-react";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Avatar, Chargement, Erreur } from "@/components/ui/divers";
 import { toastErreur } from "@/components/ui/toast";
@@ -56,6 +58,10 @@ export function ChoixContact({ ouverte, onFermer }: { ouverte: boolean; onFermer
 
   const personnes = data?.groupes.reduce((n, g) => n + g.personnes.length, 0) ?? 0;
   const salons = (data?.salons ?? []).filter((s) => !q || `${s.code} ${s.titre}`.toLowerCase().includes(q.toLowerCase()));
+  // Les groupes vides s'effacent (un seul message si une recherche ne trouve rien) ;
+  // seul « Mes formateurs » reste, pour expliquer qu'il viendra avec les cours.
+  const groupes = (data?.groupes ?? []).filter((g) => g.personnes.length > 0 || (!q && etudiant && g.cle === "formateurs"));
+  const chercheEtudiant = etudiant && q.length < 2;
 
   return (
     <Fenetre
@@ -64,7 +70,7 @@ export function ChoixContact({ ouverte, onFermer }: { ouverte: boolean; onFermer
       titre="Nouveau message"
       description={
         etudiant
-          ? "Tu peux écrire aux formateurs de tes cours et à la vie scolaire de ton campus."
+          ? "Écris à tes formateurs, à l'administration ou à n'importe quel étudiant du campus."
           : "Choisissez la personne à qui écrire."
       }
     >
@@ -77,11 +83,18 @@ export function ChoixContact({ ouverte, onFermer }: { ouverte: boolean; onFermer
             autoFocus={false}
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
-            placeholder={etudiant ? "Chercher un nom" : "Nom, prénom ou matricule"}
+            placeholder={etudiant ? "Nom ou prénom" : "Nom, prénom ou matricule"}
             className="h-12 w-full rounded-2xl border border-ligne bg-creme pl-12 pr-10 text-base outline-none placeholder:text-texte-gris focus:border-orange focus:bg-white focus:ring-2 focus:ring-orange/20"
           />
           {isFetching && !isLoading && <Loader2 className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-texte-gris" aria-hidden="true" />}
         </label>
+
+        {chercheEtudiant && (
+          <p className="flex items-start gap-2 rounded-2xl bg-orange-clair px-4 py-3 text-[15px] leading-snug text-encre">
+            <UserSearch className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" aria-hidden="true" />
+            <span>Pour écrire à un autre étudiant, de ta classe ou d'un autre campus, tape au moins deux lettres de son nom ou de son prénom.</span>
+          </p>
+        )}
 
         {isLoading && <Chargement lignes={4} />}
         {error && <Erreur message={(error as Error).message} reessayer={() => void refetch()} />}
@@ -110,12 +123,12 @@ export function ChoixContact({ ouverte, onFermer }: { ouverte: boolean; onFermer
           </section>
         )}
 
-        {data?.groupes.map((g) => (
+        {groupes.map((g) => (
           <section key={g.cle} className="flex flex-col gap-1">
             <h3 className="etiquette px-1">{g.titre}</h3>
             {g.personnes.length === 0 ? (
               <p className="px-1 py-2 text-[15px] text-texte-pale">
-                {q ? "Personne ne correspond à cette recherche." : g.cle === "formateurs" && etudiant ? "Tes cours n'ont pas encore de formateur." : "Personne pour le moment."}
+                {g.cle === "formateurs" && etudiant ? "Tes cours n'ont pas encore de formateur." : "Personne pour le moment."}
               </p>
             ) : (
               g.personnes.map((p) => (
@@ -143,11 +156,19 @@ export function ChoixContact({ ouverte, onFermer }: { ouverte: boolean; onFermer
             )}
             {g.tronque && (
               <p className="px-1 pt-1 text-sm text-texte-gris">
-                {selonRole(moi.role, "Liste coupée : tape un nom pour trouver la bonne personne.", "Liste coupée : tapez un nom ou un matricule pour affiner.")}
+                {g.cle === "etudiants"
+                  ? "Beaucoup d'étudiants portent ce nom : ajoute le prénom pour trouver la bonne personne."
+                  : selonRole(moi.role, "Liste coupée : tape un nom pour trouver la bonne personne.", "Liste coupée : tapez un nom ou un matricule pour affiner.")}
               </p>
             )}
           </section>
         ))}
+
+        {data && q && !chercheEtudiant && personnes === 0 && salons.length === 0 && (
+          <p className="px-1 py-2 text-[15px] text-texte-pale">
+            {etudiant ? "Personne ne correspond. Vérifie l'orthographe, ou essaie seulement le nom ou le prénom." : "Personne ne correspond à cette recherche."}
+          </p>
+        )}
 
         {data && personnes === 0 && salons.length === 0 && !q && (
           <div className="flex flex-col items-center gap-2 rounded-2xl bg-creme px-5 py-6 text-center">

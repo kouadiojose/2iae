@@ -40,7 +40,7 @@ import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } 
 import { creerClassesFilieres } from "../classes-filieres";
 import { prevenirSite } from "../site";
 import { fuseauValide } from "../visio-daily";
-import { iaDisponible } from "../ia";
+import { iaDisponible, reglagesIaActuels, budgetDuMois, oublierReglagesIa } from "../ia";
 import { adresseDeDemonstration, ADRESSE_DEMO_REFUSEE, DOMAINE_DEMO } from "../demo-constantes";
 import { lireVitrine, oublierVitrine } from "./public";
 import {
@@ -59,9 +59,11 @@ import {
   annonces,
   evenements,
   usageIa,
+  reglagesIa,
+  prixDuModele,
+  type ReglagesIaDto,
   SEUIL_PRESENCE_EN_LIGNE,
   RETARD_MINUTES,
-  PRIX_IA,
   STATUTS_PRESENCE_PILOTAGE,
   LIBELLES_PRESENCE_PILOTAGE,
   comptePresent,
@@ -1465,10 +1467,6 @@ setInterval(() => {
   const limite = Date.now() - 3_600_000;
   for (const [cle, t] of consultationsNotees) if (t < limite) consultationsNotees.delete(cle);
 }, 3_600_000).unref();
-
-// ── IA ─────────────────────────────────────────────────────────────────────
-
-const cout = (entree: number, sortie: number) => Math.round(((entree / 1e6) * PRIX_IA.entree + (sortie / 1e6) * PRIX_IA.sortie) * 100) / 100;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Routes
@@ -3079,10 +3077,12 @@ export function enregistrerAdmin(app: Express) {
         requetes: sql<number>`COALESCE(sum(${usageIa.requetes}), 0)::int`,
         jetonsEntree: sql<number>`COALESCE(sum(${usageIa.jetonsEntree}), 0)::float8`,
         jetonsSortie: sql<number>`COALESCE(sum(${usageIa.jetonsSortie}), 0)::float8`,
+        coutMicro: sql<number>`COALESCE(sum(${usageIa.coutMicro}), 0)::float8`,
       };
-      const avecCout = <T extends { jetonsEntree: number; jetonsSortie: number }>(l: T): T & { cout: number } => ({
+      // Coût réel enregistré à chaque réponse, au prix du modèle qui a répondu.
+      const avecCout = <T extends { jetonsEntree: number; jetonsSortie: number; coutMicro: number }>({ coutMicro, ...l }: T): Omit<T, "coutMicro"> & { cout: number } => ({
         ...l,
-        cout: cout(l.jetonsEntree, l.jetonsSortie),
+        cout: Math.round(coutMicro / 1e4) / 100,
       });
 
       const jours = await db
@@ -3095,7 +3095,7 @@ export function enregistrerAdmin(app: Express) {
       const parJour = Array.from({ length: 30 }, (_, i) => {
         const j = new Date(debut.getTime() + i * JOUR_MS).toISOString().slice(0, 10);
         const l = parJourMap.get(j);
-        return avecCout({ jour: j, requetes: l?.requetes ?? 0, jetonsEntree: l?.jetonsEntree ?? 0, jetonsSortie: l?.jetonsSortie ?? 0 });
+        return avecCout({ jour: j, requetes: l?.requetes ?? 0, jetonsEntree: l?.jetonsEntree ?? 0, jetonsSortie: l?.jetonsSortie ?? 0, coutMicro: l?.coutMicro ?? 0 });
       });
 
       const personnes = await db
@@ -3105,7 +3105,7 @@ export function enregistrerAdmin(app: Express) {
         .leftJoin(sites, eq(sites.id, utilisateurs.siteId))
         .where(filtre)
         .groupBy(utilisateurs.id, sites.nomCourt)
-        .orderBy(desc(sql`sum(${usageIa.jetonsEntree}) * ${PRIX_IA.entree} + sum(${usageIa.jetonsSortie}) * ${PRIX_IA.sortie}`))
+        .orderBy(desc(sql`sum(${usageIa.coutMicro})`))
         .limit(10);
       const roles = await db
         .select({ role: utilisateurs.role, ...somme })
@@ -3114,22 +3114,58 @@ export function enregistrerAdmin(app: Express) {
         .where(filtre)
         .groupBy(utilisateurs.role);
 
-      const total: ConsommationIa = avecCout({
+      const total: ConsommationIa = {
         requetes: parJour.reduce((s, j) => s + j.requetes, 0),
         jetonsEntree: parJour.reduce((s, j) => s + j.jetonsEntree, 0),
         jetonsSortie: parJour.reduce((s, j) => s + j.jetonsSortie, 0),
-      });
+        cout: Math.round(parJour.reduce((s, j) => s + j.cout, 0) * 100) / 100,
+      };
+      const [reglages, mois] = await Promise.all([reglagesIaActuels(), budgetDuMois()]);
+      const modele = (usage: string, id: string) => {
+        const p = prixDuModele(id);
+        return { usage, modele: id, nom: p.nom, entree: p.entree, sortie: p.sortie };
+      };
       const budget: BudgetIa = {
         iaDisponible: iaDisponible(),
         modele: config.ia.modele,
-        quotaJour: config.ia.quotaJour,
-        prix: PRIX_IA,
+        quotaJour: reglages.quotaEtudiant,
+        reglages: { budgetMensuelUsd: reglages.budgetMensuelUsd, quotaEtudiant: reglages.quotaEtudiant, quotaPersonnel: reglages.quotaPersonnel },
+        mois,
+        modeles: [
+          modele("Questions des étudiants sur leurs cours", config.ia.modeleEtudiant),
+          modele("Bibliothèque : livres, fiches, exposés", config.ia.modeleBibliotheque),
+          modele("Outils des formateurs et de la direction", config.ia.modele),
+        ],
+        modifiable: u.role === "admin",
         total,
         parJour,
         parPersonne: personnes.map(avecCout),
         parRole: roles.map(avecCout).sort((a, b) => b.cout - a.cout),
       };
       res.json(budget);
+    }),
+  );
+
+  /** Budget du mois et questions par jour : la direction seule. */
+  app.patch(
+    `${P}/ia/reglages`,
+    DIRECTION,
+    route(async (req, res) => {
+      const u = moi(req);
+      const d = valider(
+        z.object({
+          budgetMensuelUsd: z.number({ invalid_type_error: "budget invalide" }).min(1, "1 $ au minimum").max(5000, "5 000 $ au maximum"),
+          quotaEtudiant: z.number({ invalid_type_error: "nombre invalide" }).int("nombre entier").min(0).max(500),
+          quotaPersonnel: z.number({ invalid_type_error: "nombre invalide" }).int("nombre entier").min(0).max(1000),
+        }),
+        req.body,
+      );
+      await reglagesIaActuels();
+      await db.update(reglagesIa).set({ ...d, majLe: new Date(), majParId: u.id }).where(eq(reglagesIa.id, 1));
+      oublierReglagesIa();
+      await db.insert(journal).values({ utilisateurId: u.id, action: "ia.reglages", details: d });
+      const r: ReglagesIaDto = d;
+      res.json(r);
     }),
   );
 }

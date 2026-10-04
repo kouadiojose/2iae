@@ -3371,7 +3371,7 @@ export function enregistrerLive(app: Express) {
       if (!iaDisponible()) {
         throw new ErreurHttp(503, "L'assistant IA n'est pas configuré sur ce campus : saisissez votre question dans « Sondage éclair ».");
       }
-      await verifierQuota(u.id);
+      await verifierQuota(u);
       const recents = await db
         .select({ t: sousTitres.t, texte: sousTitres.texte })
         .from(sousTitres)
@@ -3444,7 +3444,7 @@ export function enregistrerLive(app: Express) {
       let contenu: string;
       let parIa = false;
       if (iaDisponible()) {
-        await verifierQuota(u.id);
+        await verifierQuota(u);
         const transcription = lignes.map((l) => `[${Math.floor(l.t / 60)}:${String(l.t % 60).padStart(2, "0")}] ${l.texte}`).join("\n");
         contenu = await demanderClaude({
           systeme:

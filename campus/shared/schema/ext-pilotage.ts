@@ -76,8 +76,27 @@ export const SEUIL_PRESENCE_EN_LIGNE = 0.7;
 /** Au-delà de 15 minutes après le début, l'arrivée en salle compte comme un retard. */
 export const RETARD_MINUTES = 15;
 
-/** Prix de claude-opus-5, en dollars par million de jetons. */
+/** Ancien prix unique (claude-opus-5), en dollars par million de jetons : estimation des journées sans coût enregistré. */
 export const PRIX_IA = { entree: 5, sortie: 25 } as const;
+
+/**
+ * Prix des modèles, en dollars par million de jetons : entrée, sortie et
+ * lecture du cache (l'écriture du cache coûte 1,25 fois l'entrée). Le premier
+ * motif qui correspond au modèle qui a répondu s'applique.
+ */
+export const PRIX_MODELES_IA: { motif: string; nom: string; entree: number; sortie: number; lectureCache: number }[] = [
+  { motif: "haiku-4-5", nom: "Claude Haiku 4.5", entree: 1, sortie: 5, lectureCache: 0.1 },
+  { motif: "sonnet-5", nom: "Claude Sonnet 5.5", entree: 2, sortie: 10, lectureCache: 0.2 },
+  { motif: "opus-5-5", nom: "Claude Opus 5.5", entree: 4, sortie: 20, lectureCache: 0.2 },
+  { motif: "opus-5", nom: "Claude Opus 5", entree: 5, sortie: 25, lectureCache: 0.5 },
+  { motif: "fable-5-1", nom: "Claude Fable 5.1", entree: 10, sortie: 50, lectureCache: 0.25 },
+  { motif: "fable-5", nom: "Claude Fable 5", entree: 10, sortie: 50, lectureCache: 1 },
+];
+
+/** Prix appliqué à un modèle inconnu : le plus prudent des courants. */
+export const PRIX_MODELE_INCONNU = { motif: "", nom: "modèle inconnu", entree: 5, sortie: 25, lectureCache: 0.5 };
+
+export const prixDuModele = (modele: string) => PRIX_MODELES_IA.find((p) => modele.includes(p.motif)) ?? PRIX_MODELE_INCONNU;
 
 /** Un franc CFA vaut environ 1/600 de dollar : sert seulement à donner un ordre de grandeur. */
 export const FCFA_PAR_DOLLAR = 600;
@@ -558,12 +577,35 @@ export type ReleveParent = {
 
 export type ConsommationIa = { requetes: number; jetonsEntree: number; jetonsSortie: number; cout: number };
 
+/** Modèle utilisé pour chaque usage, avec son prix. */
+export type ModeleIaUtilise = { usage: string; modele: string; nom: string; entree: number; sortie: number };
+
+/** Le mois en cours face au budget fixé par la direction. */
+export type BudgetMoisIa = {
+  mois: string;
+  budgetUsd: number;
+  depenseUsd: number;
+  /** 0 → 1 (et au-delà si dépassé). */
+  part: number;
+  /** Budget atteint : assistant et bibliothèque en pause jusqu'au 1er du mois suivant. */
+  atteint: boolean;
+  /** Projection sur le mois au rythme actuel. */
+  projectionUsd: number;
+};
+
+/** PATCH /api/pilotage/ia/reglages (direction) */
+export type ReglagesIaDto = { budgetMensuelUsd: number; quotaEtudiant: number; quotaPersonnel: number };
+
 /** GET /api/pilotage/ia */
 export type BudgetIa = {
   iaDisponible: boolean;
   modele: string;
   quotaJour: number;
-  prix: typeof PRIX_IA;
+  reglages: ReglagesIaDto;
+  mois: BudgetMoisIa;
+  modeles: ModeleIaUtilise[];
+  /** La personne peut changer les réglages (direction). */
+  modifiable: boolean;
   total: ConsommationIa;
   parJour: (ConsommationIa & { jour: string })[];
   parPersonne: (ConsommationIa & { id: number; prenom: string; nom: string; role: Role; site: string | null })[];

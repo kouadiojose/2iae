@@ -30,10 +30,15 @@ import {
   demanderJson,
   requetesDuJour,
   verifierQuota,
+  quotaDe,
+  reglagesIaActuels,
+  budgetDuMois,
   ErreurIa,
   type OptionsClaude,
+  type Gamme,
 } from "../ia";
 import { interrogationEnCours, finDe } from "../evaluations-outils";
+import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse } from "../bibliotheque-outils";
 import {
   conversationsIa,
   messagesIa,
@@ -66,6 +71,11 @@ import {
   type RevisionLecon,
   type PreparationSeance,
   type AccrocheSite,
+  estPauseSansFin,
+  PAUSE_IA_SANS_FIN,
+  livres,
+  type PauseIaCours,
+  type DemandePauseIa,
 } from "@shared/schema";
 
 // ═══ Qui, combien, quand ═══════════════════════════════════════════════════
@@ -76,8 +86,8 @@ const ROLES_OUTILS = ["formateur", "vie_scolaire", "admin"] as const;
 
 const estEtudiant = (u: Utilisateur) => u.role === "etudiant";
 
-/** Questions par jour : le quota réglé pour les étudiants, trois fois plus pour le personnel (préparations longues). */
-const quotaDe = (u: Utilisateur) => (estEtudiant(u) ? config.ia.quotaJour : config.ia.quotaJour * 3);
+/** Les étudiants interrogent un modèle rapide et économique ; le personnel, le plus capable. */
+const gammeDe = (u: Utilisateur): Gamme => (estEtudiant(u) ? "etudiant" : "personnel");
 
 const TITRE_PAR_DEFAUT = "Nouvelle conversation";
 
@@ -105,8 +115,34 @@ async function finInterrogation(etudiantId: number, devoirId: number): Promise<D
   }
 }
 
-async function pauseDe(u: Utilisateur): Promise<EtatIa["pause"]> {
+/**
+ * Un formateur a mis l'IA en pause sur l'un des cours de l'étudiant (devoir,
+ * examen) : tout l'assistant se tait pour lui, bibliothèque comprise, sinon il
+ * suffirait de poser la question depuis un autre cours.
+ */
+export async function pauseCoursDe(u: Utilisateur): Promise<EtatIa["pause"]> {
   if (!estEtudiant(u)) return undefined;
+  const ids = await idsCoursAccessibles(u);
+  if (!ids.length) return undefined;
+  const [c] = await db
+    .select({ id: cours.id, code: cours.code, jusqua: cours.iaPauseJusqua, motif: cours.iaPauseMotif })
+    .from(cours)
+    .where(and(inArray(cours.id, ids), sql`${cours.iaPauseJusqua} > now()`))
+    .orderBy(desc(cours.iaPauseJusqua))
+    .limit(1);
+  if (!c?.jusqua) return undefined;
+  const quand = estPauseSansFin(c.jusqua) ? "jusqu'à ce que ton formateur la lève" : `jusqu'à ${formatHeure.format(c.jusqua).replace(":", "h")}`;
+  return {
+    raison: `L'IA est en pause pour le cours ${c.code}${c.motif ? ` (${c.motif})` : ""}, ${quand}. Travaille avec tes notes et ton cours : c'est le moment de montrer ce que tu sais !`,
+    devoirId: 0,
+    coursId: c.id,
+  };
+}
+
+export async function pauseDe(u: Utilisateur): Promise<EtatIa["pause"]> {
+  if (!estEtudiant(u)) return undefined;
+  const parCours = await pauseCoursDe(u);
+  if (parCours) return parCours;
   const interrogation = await interrogationEnCours(u.id);
   if (!interrogation) return undefined;
   const fin = await finInterrogation(u.id, interrogation.devoirId);
@@ -117,13 +153,13 @@ async function pauseDe(u: Utilisateur): Promise<EtatIa["pause"]> {
   };
 }
 
-/** L'assistant se tait pendant une interrogation (contrôle serveur, pas seulement dans l'interface). */
-async function verifierPause(u: Utilisateur) {
+/** L'assistant se tait pendant une interrogation ou une pause du formateur (contrôle serveur, pas seulement dans l'interface). */
+export async function verifierPause(u: Utilisateur) {
   const pause = await pauseDe(u);
   if (pause) throw new ErreurHttp(423, pause.raison);
 }
 
-function verifierDisponible(u: Utilisateur) {
+export function verifierDisponible(u: Utilisateur) {
   if (iaDisponible()) return;
   throw new ErreurHttp(
     503,
@@ -135,22 +171,15 @@ function verifierDisponible(u: Utilisateur) {
   );
 }
 
-async function verifierQuotaDe(u: Utilisateur) {
-  if (estEtudiant(u)) return verifierQuota(u.id, quotaDe(u));
-  if ((await requetesDuJour(u.id)) >= quotaDe(u)) {
-    throw new ErreurIa(`Vous avez atteint la limite de ${quotaDe(u)} demandes à l'assistant pour aujourd'hui. Elle se renouvelle demain matin.`, 429);
-  }
-}
-
-/** Toutes les vérifications avant un appel à Claude, dans l'ordre où l'interface les explique. */
-async function avantAppel(u: Utilisateur) {
+/** Toutes les vérifications avant un appel à Claude, dans l'ordre où l'interface les explique : pause, service, budget du mois, quota du jour. */
+export async function avantAppel(u: Utilisateur) {
   await verifierPause(u);
   verifierDisponible(u);
-  await verifierQuotaDe(u);
+  await verifierQuota(u);
 }
 
 async function restantesDe(u: Utilisateur) {
-  return Math.max(0, quotaDe(u) - (await requetesDuJour(u.id)));
+  return Math.max(0, (await quotaDe(u)) - (await requetesDuJour(u.id)));
 }
 
 /** Erreurs de l'API Anthropic traduites en messages lisibles (jamais le message brut, en anglais). */
@@ -172,7 +201,7 @@ function traduireErreur(e: unknown): ErreurIa | ErreurHttp {
   return new ErreurIa("L'assistant n'a pas pu répondre. Nouvel essai possible dans un instant.", 502);
 }
 
-async function appelIa<T>(fn: () => Promise<T>): Promise<T> {
+export async function appelIa<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -210,7 +239,7 @@ async function programmePublie(coursId: number): Promise<LeconNumerotee[]> {
 }
 
 /** Retire les balises qui encadrent les données : un support ne peut pas « sortir » de son bloc. */
-function neutraliser(texte: string): string {
+export function neutraliser(texte: string): string {
   return texte.replace(/<\/?\s*(contenu_du_cours|cours|lecon|fiche|seance|devoir_en_cours|contexte_de_la_question|passage)\b[^>]*>/gi, "");
 }
 
@@ -477,7 +506,7 @@ const SCHEMA_QCM_ITEM = {
   additionalProperties: false,
 } as const;
 
-const SCHEMA_REVISION = {
+export const SCHEMA_REVISION = {
   type: "object",
   properties: { questions: { type: "array", items: SCHEMA_QCM_ITEM } },
   required: ["questions"],
@@ -525,7 +554,7 @@ const qcmBrut = z.object({
 });
 
 /** Garde les questions bien formées (2 à 6 options, bonne réponse existante). */
-function questionsValides(brutes: unknown[], max: number): QuestionRevision[] {
+export function questionsValides(brutes: unknown[], max: number): QuestionRevision[] {
   const retenues: QuestionRevision[] = [];
   for (const b of brutes) {
     const r = qcmBrut.safeParse(b);
@@ -563,17 +592,68 @@ export function enregistrerIa(app: Express) {
     assistant,
     route(async (req, res) => {
       const u = moi(req);
-      const [utilisees, pause] = await Promise.all([requetesDuJour(u.id), pauseDe(u)]);
-      const quotaJour = quotaDe(u);
+      const [utilisees, pause, quotaJour, reglages, budget] = await Promise.all([requetesDuJour(u.id), pauseDe(u), quotaDe(u), reglagesIaActuels(), budgetDuMois()]);
       const etat: EtatIa = {
-        disponible: iaDisponible(),
+        disponible: iaDisponible() && !budget.atteint,
         quotaJour,
         utilisees,
         restantes: Math.max(0, quotaJour - utilisees),
-        quotaEtudiants: config.ia.quotaJour,
+        quotaEtudiants: reglages.quotaEtudiant,
       };
+      if (budget.atteint) etat.budgetAtteint = true;
       if (pause) etat.pause = pause;
       res.json(etat);
+    }),
+  );
+
+  // ── IA en pause sur un cours (devoir, examen), décidée par le formateur ──
+  const versPause = (c: { iaPauseJusqua: Date | null; iaPauseMotif: string | null }): PauseIaCours => {
+    const active = Boolean(c.iaPauseJusqua && c.iaPauseJusqua.getTime() > Date.now());
+    return {
+      active,
+      jusqua: active ? c.iaPauseJusqua!.toISOString() : null,
+      motif: active ? c.iaPauseMotif : null,
+      sansFin: active && estPauseSansFin(c.iaPauseJusqua!),
+    };
+  };
+
+  app.get(
+    "/api/cours/:id(\\d+)/ia-pause",
+    exigerRole(...ROLES_OUTILS),
+    route(async (req, res) => {
+      const c = await coursEnseigne(moi(req), idParam(req));
+      res.json(versPause(c));
+    }),
+  );
+
+  app.put(
+    "/api/cours/:id(\\d+)/ia-pause",
+    exigerRole(...ROLES_OUTILS),
+    route(async (req, res) => {
+      const u = moi(req);
+      const c = await coursEnseigne(u, idParam(req));
+      const d = valider(
+        z.object({
+          duree: z.union([z.number().int().min(15).max(24 * 60), z.enum(["soir", "sans_fin", "fin"])]),
+          motif: z.string().trim().max(80, "80 caractères au maximum").optional(),
+        }),
+        req.body,
+      ) as DemandePauseIa;
+      let jusqua: Date | null;
+      if (d.duree === "fin") jusqua = null;
+      else if (d.duree === "sans_fin") jusqua = new Date(PAUSE_IA_SANS_FIN);
+      else if (d.duree === "soir") {
+        // 23 h 59 à Abidjan (GMT, sans heure d'été).
+        jusqua = new Date();
+        jusqua.setUTCHours(23, 59, 0, 0);
+      } else jusqua = new Date(Date.now() + d.duree * 60_000);
+      const [maj] = await db
+        .update(cours)
+        .set({ iaPauseJusqua: jusqua, iaPauseMotif: jusqua ? d.motif || null : null })
+        .where(eq(cours.id, c.id))
+        .returning();
+      await db.insert(journal).values({ utilisateurId: u.id, action: jusqua ? "ia.pause_cours" : "ia.reprise_cours", details: { coursId: c.id, jusqua: jusqua?.toISOString() ?? null, motif: d.motif ?? null } });
+      res.json(versPause(maj));
     }),
   );
 
@@ -642,7 +722,8 @@ export function enregistrerIa(app: Express) {
         })
         .from(conversationsIa)
         .leftJoin(cours, eq(cours.id, conversationsIa.coursId))
-        .where(eq(conversationsIa.utilisateurId, u.id))
+        // Les conversations sur un livre vivent dans la bibliothèque.
+        .where(and(eq(conversationsIa.utilisateurId, u.id), isNull(conversationsIa.livreId)))
         .orderBy(desc(conversationsIa.majLe))
         .limit(60);
       const liste: ConversationIaResume[] = lignes
@@ -779,8 +860,10 @@ export function enregistrerIa(app: Express) {
       // Contexte stable (cours) et consignes préparés AVANT d'enregistrer la
       // question : une erreur ici ne laisse pas de question orpheline.
       const programme = c ? await programmePublie(c.id) : [];
-      const contexte = c ? await contexteDuCours(c, lecon?.id) : undefined;
-      const systeme = estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
+      // « Interroger le livre » (bibliothèque) : la notice du livre remplace le cours.
+      const [livre] = conv.livreId ? await db.select().from(livres).where(eq(livres.id, conv.livreId)) : [];
+      const contexte = livre ? contexteLivre(livre) : c ? await contexteDuCours(c, lecon?.id) : undefined;
+      const systeme = livre ? SYSTEME_BIBLIOTHEQUE : estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
 
       const [question] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "user", contenu: corps.contenu }).returning();
       const premiere = conv.titre === TITRE_PAR_DEFAUT;
@@ -799,6 +882,7 @@ export function enregistrerIa(app: Express) {
       // Le contexte propre à CETTE question est joint à la dernière question
       // (les consignes et le cours, eux, restent stables pour le cache).
       const precisions: string[] = [];
+      if (livre) precisions.push(`${adresse(u)} La question porte sur le livre « ${livre.titre} ». Si elle dépasse ce que tu sais du livre, dis-le et propose ce que l'étudiant peut vérifier lui-même.`);
       if (lecon) {
         const n = programme.find((l) => l.id === lecon!.id);
         precisions.push(`<contexte_de_la_question>La personne lit en ce moment : ${n ? refLecon(n) : lecon.titre}.</contexte_de_la_question>`);
@@ -838,7 +922,9 @@ export function enregistrerIa(app: Express) {
       try {
         try {
           const reponse = await fluxClaude(
-            { systeme, contexte, messages, effort: "medium", maxTokens: 6000, utilisateurId: u.id },
+            livre
+              ? { systeme, contexte, messages, effort: "low", maxTokens: 6000, utilisateurId: u.id, gamme: "bibliotheque" }
+              : { systeme, contexte, messages, effort: "medium", maxTokens: 6000, utilisateurId: u.id, gamme: gammeDe(u) },
             (morceau) => {
               const propre = morceau.replaceAll(SEPARATEUR_FIN_FLUX, "");
               diffuse += propre;
@@ -918,6 +1004,7 @@ export function enregistrerIa(app: Express) {
               effort: "medium",
               maxTokens: 4000,
               utilisateurId: u.id,
+              gamme: gammeDe(u),
             }),
           );
           if (!contenu.trim()) throw new ErreurIa("L'assistant n'a pas su résumer cette leçon. Nouvel essai possible dans un instant.", 502);
@@ -973,6 +1060,7 @@ export function enregistrerIa(app: Express) {
           effort: "low",
           maxTokens: 3000,
           utilisateurId: u.id,
+          gamme: gammeDe(u),
         }),
       );
       const resultat: ExplicationAutrement = { angle: corps.angle, texte: texte.trim(), proposeParIa: true };
@@ -1005,6 +1093,7 @@ export function enregistrerIa(app: Express) {
           effort: "low",
           maxTokens: 6000,
           utilisateurId: u.id,
+          gamme: gammeDe(u),
         }),
       );
       const questions = questionsValides(Array.isArray(brut?.questions) ? brut.questions : [], 5);

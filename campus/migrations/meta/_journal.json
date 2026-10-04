@@ -99,6 +99,13 @@
       "when": 1790755428973,
       "tag": "0013_etudiants_inscription",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791148512952,
+      "tag": "0014_ia_budget_bibliotheque",
+      "breakpoints": true
     }
   ]
 }

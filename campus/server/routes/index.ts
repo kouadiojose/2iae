@@ -11,6 +11,7 @@ import { enregistrerAnnonces } from "./annonces";
 import { enregistrerAgenda } from "./agenda";
 import { enregistrerAdmin } from "./admin";
 import { enregistrerIa } from "./ia";
+import { enregistrerBibliotheque } from "./bibliotheque";
 import { enregistrerPublic } from "./public";
 import { enregistrerPush } from "./push";
 import { enregistrerProgramme } from "./programme";
@@ -42,6 +43,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerCrm(app);
   enregistrerScolarite(app);
   enregistrerIa(app);
+  enregistrerBibliotheque(app);
   enregistrerPush(app);
   enregistrerProgramme(app);
   enregistrerLancement(app);

@@ -852,7 +852,7 @@ export function enregistrerShowreel(app: Express) {
       if (iaDisponible() && !aucuneSource) {
         try {
           try {
-            await verifierQuota(c.u.id);
+            await verifierQuota(c.u);
           } catch (e) {
             if (e instanceof ErreurIa && e.statut === 429) throw new ErreurHttp(429, "La limite quotidienne de l'assistant IA est atteinte pour ce compte. Réessayez demain.");
             throw e;

@@ -14,8 +14,10 @@ export type EtatIa = {
   restantes: number;
   /** Quota quotidien d'un étudiant (affiché dans la charte, y compris au personnel). */
   quotaEtudiants: number;
-  /** Présent pendant une interrogation : l'assistant se tait jusqu'à la fin. */
+  /** Présent pendant une interrogation ou une pause décidée par un formateur (devoirId 0) : l'assistant se tait jusqu'à la fin. */
   pause?: { raison: string; devoirId: number; coursId: number };
+  /** Budget d'IA du mois atteint (tout le campus) : pause jusqu'au 1er du mois suivant. */
+  budgetAtteint?: boolean;
 };
 
 /** GET /api/ia/cours — les cours sur lesquels la personne peut interroger l'assistant. */
@@ -132,3 +134,13 @@ export type PreparationSeance = {
 
 /** POST /api/ia/accroche-site — brouillon pour 2iae.com, à valider par un humain. */
 export type AccrocheSite = { accroche: string; proposeParIa: true };
+
+/** Pause de l'IA « jusqu'à ce que je la rouvre » : enregistrée comme une échéance très lointaine. */
+export const PAUSE_IA_SANS_FIN = "2099-12-31T23:59:00.000Z";
+export const estPauseSansFin = (iso: string | Date) => new Date(iso).getUTCFullYear() >= 2099;
+
+/** GET /api/cours/:id/ia-pause, et réponse du PUT. */
+export type PauseIaCours = { active: boolean; jusqua: string | null; motif: string | null; sansFin: boolean };
+
+/** PUT /api/cours/:id/ia-pause : minutes (60, 120…), « soir » (23 h 59 à Abidjan), « sans_fin », ou « fin » pour rouvrir. */
+export type DemandePauseIa = { duree: number | "soir" | "sans_fin" | "fin"; motif?: string };

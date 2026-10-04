@@ -949,7 +949,7 @@ export function enregistrerCours(app: Express) {
       const u = moi(req);
       const c = await coursModifiable(u, idParam(req));
       if (!iaDisponible()) throw new ErreurHttp(503, "L'assistant IA n'est pas disponible pour le moment. Rédigez l'accroche vous-même.");
-      await verifierQuota(u.id);
+      await verifierQuota(u);
       // Le contenu du cours est une donnée, jamais une consigne (injection de prompt).
       const texte = await demanderClaude({
         systeme:

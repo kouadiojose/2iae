@@ -20,3 +20,4 @@ export * from "./ext-showreel";
 export * from "./ext-equipe";
 export * from "./ext-crm";
 export * from "./ext-formateurs";
+export * from "./ext-bibliotheque";

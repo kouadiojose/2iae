@@ -3,10 +3,11 @@
 // correction. Le client est créé à la demande : sans clé, les fonctions IA
 // se mettent en veille et le reste du campus fonctionne normalement.
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { config } from "./config";
 import { db } from "./db";
-import { usageIa } from "@shared/schema";
+import { notifier } from "./notifications";
+import { usageIa, reglagesIa, utilisateurs, prixDuModele, type ReglagesIa, type BudgetMoisIa } from "@shared/schema";
 
 let client: Anthropic | null = null;
 
@@ -53,6 +54,17 @@ export class ErreurIa extends Error {
 
 export type Effort = "low" | "medium" | "high" | "xhigh";
 
+/**
+ * Pour qui et pour quoi l'IA travaille, ce qui choisit le modèle (et donc le prix) :
+ * - « etudiant » : questions sur le cours, outils de leçon (rapide et économique) ;
+ * - « bibliotheque » : recherche de livres, fiches, exposés (plus de culture générale) ;
+ * - « personnel » : outils des formateurs et de la direction (le modèle le plus capable).
+ */
+export type Gamme = "etudiant" | "bibliotheque" | "personnel";
+
+export const modeleDe = (g: Gamme = "personnel") =>
+  g === "etudiant" ? config.ia.modeleEtudiant : g === "bibliotheque" ? config.ia.modeleBibliotheque : config.ia.modele;
+
 export type OptionsClaude = {
   /** Consignes stables (mises en cache côté API). */
   systeme: string;
@@ -63,21 +75,26 @@ export type OptionsClaude = {
   maxTokens?: number;
   /** Pour la comptabilité et le quota quotidien. */
   utilisateurId?: number;
+  /** Modèle selon l'usage (par défaut : outils du personnel). */
+  gamme?: Gamme;
 };
+
+/** Haiku 4.5 ne connaît ni le réglage d'effort ni le repli automatique côté serveur. */
+const estHaiku = (modele: string) => modele.includes("haiku");
 
 function construireRequete(o: OptionsClaude): Anthropic.Beta.MessageCreateParamsNonStreaming {
   const system: Anthropic.Beta.BetaTextBlockParam[] = [{ type: "text", text: o.systeme }];
   if (o.contexte) system.push({ type: "text", text: o.contexte });
   // Le dernier bloc stable porte le point de cache : consignes + contexte du cours.
   system[system.length - 1] = { ...system[system.length - 1], cache_control: { type: "ephemeral" } };
+  const model = modeleDe(o.gamme);
+  const base = { model, max_tokens: o.maxTokens ?? 8000, system, messages: o.messages };
+  if (estHaiku(model)) return base;
   return {
-    model: config.ia.modele,
-    max_tokens: o.maxTokens ?? 8000,
+    ...base,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    system,
     output_config: { effort: o.effort ?? "medium" },
-    messages: o.messages,
   };
 }
 
@@ -89,7 +106,20 @@ function texteDe(message: Anthropic.Beta.BetaMessage): string {
     .trim();
 }
 
-async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.BetaUsage | undefined) {
+/** Coût d'une réponse en millionièmes de dollar, au prix du modèle qui a réellement répondu. */
+export function coutMicroDe(modele: string, usage: Anthropic.Beta.BetaUsage | undefined): number {
+  const p = prixDuModele(modele);
+  return Math.round(
+    (usage?.input_tokens ?? 0) * p.entree +
+      (usage?.cache_read_input_tokens ?? 0) * p.lectureCache +
+      (usage?.cache_creation_input_tokens ?? 0) * p.entree * 1.25 +
+      (usage?.output_tokens ?? 0) * p.sortie,
+  );
+}
+
+async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.BetaUsage | undefined, modele: string) {
+  const cout = coutMicroDe(modele, usage);
+  if (budgetEnCache) budgetEnCache.depenseMicro += cout;
   if (!utilisateurId) return;
   liberer(utilisateurId);
   const jour = new Date().toISOString().slice(0, 10);
@@ -97,16 +127,114 @@ async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.
   const sortie = usage?.output_tokens ?? 0;
   await db
     .insert(usageIa)
-    .values({ utilisateurId, jour, requetes: 1, jetonsEntree: entree, jetonsSortie: sortie })
+    .values({ utilisateurId, jour, requetes: 1, jetonsEntree: entree, jetonsSortie: sortie, coutMicro: cout })
     .onConflictDoUpdate({
       target: [usageIa.utilisateurId, usageIa.jour],
       set: {
         requetes: sql`${usageIa.requetes} + 1`,
         jetonsEntree: sql`${usageIa.jetonsEntree} + ${entree}`,
         jetonsSortie: sql`${usageIa.jetonsSortie} + ${sortie}`,
+        coutMicro: sql`${usageIa.coutMicro} + ${cout}`,
       },
     })
     .catch((e) => console.error("[ia] comptabilité :", e.message));
+  void alerterSiSeuil().catch((e) => console.error("[ia] alerte budget :", (e as Error).message));
+}
+
+// ═══ Budget du mois et réglages ════════════════════════════════════════════
+
+const REGLAGES_DEFAUT = { budgetMensuelUsd: 100, quotaEtudiant: 20, quotaPersonnel: 60 };
+let reglagesEnCache: { le: number; r: ReglagesIa } | null = null;
+
+/** Réglages de l'IA (relus toutes les 30 s ; la ligne est créée par la migration). */
+export async function reglagesIaActuels(): Promise<ReglagesIa> {
+  if (reglagesEnCache && Date.now() - reglagesEnCache.le < 30_000) return reglagesEnCache.r;
+  let [r] = await db.select().from(reglagesIa).where(eq(reglagesIa.id, 1));
+  if (!r) [r] = await db.insert(reglagesIa).values({ id: 1, ...REGLAGES_DEFAUT }).onConflictDoNothing().returning();
+  if (!r) [r] = await db.select().from(reglagesIa).where(eq(reglagesIa.id, 1));
+  reglagesEnCache = { le: Date.now(), r };
+  return r;
+}
+
+export function oublierReglagesIa() {
+  reglagesEnCache = null;
+  budgetEnCache = null;
+}
+
+/** Premier jour du mois en cours (UTC), « 2026-10-01 ». */
+const debutDuMois = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
+
+let budgetEnCache: { le: number; mois: string; depenseMicro: number } | null = null;
+
+/** Dépense du mois (tout le campus), en millionièmes de dollar. Relue en base toutes les minutes. */
+async function depenseDuMoisMicro(): Promise<number> {
+  const mois = debutDuMois();
+  if (budgetEnCache && budgetEnCache.mois === mois && Date.now() - budgetEnCache.le < 60_000) return budgetEnCache.depenseMicro;
+  const [l] = await db
+    .select({ n: sql<number>`COALESCE(sum(${usageIa.coutMicro}), 0)::float8` })
+    .from(usageIa)
+    .where(gte(usageIa.jour, mois));
+  budgetEnCache = { le: Date.now(), mois, depenseMicro: Number(l?.n ?? 0) };
+  return budgetEnCache.depenseMicro;
+}
+
+export async function budgetDuMois(): Promise<BudgetMoisIa> {
+  const [r, micro] = await Promise.all([reglagesIaActuels(), depenseDuMoisMicro()]);
+  const maintenant = new Date();
+  const depenseUsd = micro / 1e6;
+  const budgetUsd = r.budgetMensuelUsd;
+  const jourDuMois = maintenant.getUTCDate() - 1 + maintenant.getUTCHours() / 24;
+  const joursDuMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth() + 1, 0)).getUTCDate();
+  return {
+    mois: debutDuMois().slice(0, 7),
+    budgetUsd,
+    depenseUsd: Math.round(depenseUsd * 100) / 100,
+    part: budgetUsd > 0 ? depenseUsd / budgetUsd : 1,
+    atteint: depenseUsd >= budgetUsd,
+    projectionUsd: Math.round((jourDuMois >= 1 ? (depenseUsd / jourDuMois) * joursDuMois : depenseUsd) * 100) / 100,
+  };
+}
+
+const SEUILS_ALERTE = [50, 80, 100];
+
+/** Prévient la direction une fois par seuil et par mois (50 %, 80 %, budget atteint). */
+async function alerterSiSeuil() {
+  const b = await budgetDuMois();
+  const pourcent = b.part * 100;
+  const seuil = [...SEUILS_ALERTE].reverse().find((s) => pourcent >= s);
+  if (!seuil) return;
+  const r = await reglagesIaActuels();
+  const deja = r.alertes[b.mois] ?? [];
+  if (deja.includes(seuil)) return;
+  const alertes = { [b.mois]: [...deja, ...SEUILS_ALERTE.filter((s) => s <= seuil && !deja.includes(s))] };
+  // Une seule alerte même si plusieurs réponses franchissent le seuil en même temps.
+  const maj = await db
+    .update(reglagesIa)
+    .set({ alertes })
+    .where(and(eq(reglagesIa.id, 1), sql`NOT (COALESCE(${reglagesIa.alertes} -> ${b.mois}, '[]'::jsonb) @> ${JSON.stringify([seuil])}::jsonb)`))
+    .returning({ id: reglagesIa.id });
+  reglagesEnCache = null;
+  if (!maj.length) return;
+  const direction = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));
+  const montant = (n: number) => `${n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+  await notifier(
+    direction.map((d) => d.id),
+    seuil >= 100
+      ? {
+          type: "systeme",
+          titre: "Budget IA du mois atteint : assistant en pause",
+          corps: `${montant(b.depenseUsd)} dépensés sur ${montant(b.budgetUsd)}. L'assistant et la bibliothèque sont en pause jusqu'au 1er du mois. Vous pouvez relever le budget dans Pilotage, Budget IA.`,
+          lien: "/pilotage/ia",
+          push: true,
+        }
+      : {
+          type: "systeme",
+          titre: `Budget IA : ${seuil} % du mois consommés`,
+          corps: `${montant(b.depenseUsd)} dépensés sur ${montant(b.budgetUsd)} (projection sur le mois : ${montant(b.projectionUsd)}).`,
+          lien: "/pilotage/ia",
+          push: true,
+        },
+  );
 }
 
 /** Requêtes déjà consommées aujourd'hui par cette personne. */
@@ -138,13 +266,43 @@ function liberer(utilisateurId: number, jeton?: symbol) {
   else reservations.delete(utilisateurId);
 }
 
-/** Lève une ErreurIa 429 si le quota quotidien est atteint (requêtes en cours comprises), sinon réserve une place. */
-export async function verifierQuota(utilisateurId: number, quota = config.ia.quotaJour): Promise<void> {
-  const enCours = reservations.get(utilisateurId)?.length ?? 0;
-  if ((await requetesDuJour(utilisateurId)) + enCours >= quota) {
-    throw new ErreurIa(`Tu as atteint ta limite de ${quota} questions à l'assistant pour aujourd'hui. Elle se renouvelle demain matin.`, 429);
+type Demandeur = { id: number; role: string };
+
+/** Questions par jour : réglées par la direction, différentes pour les étudiants et le personnel. */
+export async function quotaDe(u: Demandeur): Promise<number> {
+  const r = await reglagesIaActuels();
+  return u.role === "etudiant" ? r.quotaEtudiant : r.quotaPersonnel;
+}
+
+/** Budget du mois atteint : plus aucun appel (ErreurIa 503). */
+export async function verifierBudget(u: Demandeur): Promise<void> {
+  const b = await budgetDuMois();
+  if (!b.atteint) return;
+  throw new ErreurIa(
+    u.role === "etudiant"
+      ? "L'assistant est en pause jusqu'au début du mois prochain : le budget d'IA de l'école pour ce mois est atteint. Tes conversations et tes fiches restent consultables."
+      : "L'assistant est en pause : le budget d'IA du mois est atteint. La direction peut le relever dans Pilotage, Budget IA.",
+    503,
+  );
+}
+
+/**
+ * Lève une ErreurIa si le budget du mois ou le quota quotidien est atteint
+ * (requêtes en cours comprises), sinon réserve une place.
+ */
+export async function verifierQuota(u: Demandeur, quota?: number): Promise<void> {
+  await verifierBudget(u);
+  const limite = quota ?? (await quotaDe(u));
+  const enCours = reservations.get(u.id)?.length ?? 0;
+  if ((await requetesDuJour(u.id)) + enCours >= limite) {
+    throw new ErreurIa(
+      u.role === "etudiant"
+        ? `Tu as atteint ta limite de ${limite} questions à l'assistant pour aujourd'hui. Elle se renouvelle demain matin.`
+        : `Vous avez atteint la limite de ${limite} demandes à l'assistant pour aujourd'hui. Elle se renouvelle demain matin.`,
+      429,
+    );
   }
-  reserver(utilisateurId);
+  reserver(u.id);
 }
 
 const MESSAGE_REFUS =
@@ -153,7 +311,7 @@ const MESSAGE_REFUS =
 /** Appel simple : renvoie le texte complet. */
 export async function demanderClaude(o: OptionsClaude): Promise<string> {
   const reponse = await getClient().beta.messages.create(construireRequete(o));
-  await compter(o.utilisateurId, reponse.usage);
+  await compter(o.utilisateurId, reponse.usage, reponse.model);
   if (reponse.stop_reason === "refusal") return MESSAGE_REFUS;
   return texteDe(reponse);
 }
@@ -166,7 +324,7 @@ export async function fluxClaude(o: OptionsClaude, surTexte: (morceau: string) =
   const flux = getClient().beta.messages.stream({ ...construireRequete(o), max_tokens: o.maxTokens ?? 16000 });
   flux.on("text", (morceau) => surTexte(morceau));
   const final = await flux.finalMessage();
-  await compter(o.utilisateurId, final.usage);
+  await compter(o.utilisateurId, final.usage, final.model);
   if (final.stop_reason === "refusal") return MESSAGE_REFUS;
   return texteDe(final);
 }
@@ -181,7 +339,7 @@ export async function demanderJson<T>(o: OptionsClaude & { schema: Record<string
     ...requete,
     output_config: { ...requete.output_config, format: { type: "json_schema", schema: o.schema } },
   });
-  await compter(o.utilisateurId, reponse.usage);
+  await compter(o.utilisateurId, reponse.usage, reponse.model);
   if (reponse.stop_reason === "refusal") throw new ErreurIa("L'assistant a refusé cette demande.", 422);
   const texte = texteDe(reponse);
   try {

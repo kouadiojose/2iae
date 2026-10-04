@@ -17,6 +17,7 @@ import { dateComplete } from "@/lib/dates";
 import { pluriel } from "@/lib/utils";
 import { SeancesDuCours } from "@/modules/live/SeancesDuCours";
 import { DevoirsDuCours } from "@/modules/evaluations/DevoirsDuCours";
+import { PauseIaCours } from "@/modules/ia/PauseIaCours";
 import { EnTeteCours } from "./composants/EnTeteCours";
 import { ProgrammeLecons } from "./composants/ProgrammeLecons";
 import { classeSansSite, listeObjectifs, texteSur, typographie } from "./outils";
@@ -130,6 +131,8 @@ export default function PageCours({ id }: { id: string }) {
       </LienBouton>
 
       <EnTeteCours cours={cours} action={action} etudiant={etudiant} />
+
+      {cours.enseignant && <PauseIaCours coursId={cours.id} />}
 
       {/* Sur téléphone, les onglets défilent : un fondu à droite l'indique. */}
       <div ref={bandeOnglets} className="relative after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-10 after:bg-gradient-to-l after:from-creme after:to-transparent sm:after:hidden -mx-4 sm:mx-0">

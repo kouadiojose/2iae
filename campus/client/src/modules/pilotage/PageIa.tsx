@@ -1,15 +1,20 @@
-// /pilotage/ia : ce que coûte l'assistant IA. Consommation par jour sur
-// 30 jours et par personne (les 10 plus gros consommateurs), au prix de
-// claude-opus-5 (5 $ par million de jetons en entrée, 25 $ en sortie).
+// /pilotage/ia : ce que coûte l'IA. Le mois en cours face au budget fixé par
+// la direction (l'IA se met en pause une fois le budget atteint), les réglages
+// (budget, questions par jour), les modèles utilisés, puis la consommation par
+// jour sur 30 jours et par personne. Coût réel enregistré à chaque réponse.
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles, CircleOff, Table2, BarChart3 } from "lucide-react";
-import type { BudgetIa, ConsommationIa } from "@shared/schema";
+import { Sparkles, CircleOff, Table2, BarChart3, Wallet } from "lucide-react";
+import type { BudgetIa, ConsommationIa, ReglagesIaDto } from "@shared/schema";
 import { FCFA_PAR_DOLLAR, LIBELLES_ROLES } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
-import { Chiffre, Chargement, Erreur, EtatVide, Badge } from "@/components/ui/divers";
+import { Chiffre, Chargement, Erreur, EtatVide, BarreProgression } from "@/components/ui/divers";
 import { Bouton } from "@/components/ui/bouton";
+import { Champ } from "@/components/ui/champs";
+import { patch } from "@/lib/api";
+import { rafraichir } from "@/lib/queryClient";
+import { toast, toastErreur } from "@/components/ui/toast";
 import { Carte, TitreSection } from "@/components/ui/carte";
 import { cn } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
@@ -30,7 +35,7 @@ export default function PageIa() {
       <EnTetePage
         etiquette="Pilotage · Budget IA"
         titre="Budget de l'assistant IA"
-        sousTitre={data ? `30 derniers jours, au prix de ${data.modele} : ${data.prix.entree}\u00a0$ par million de jetons lus, ${data.prix.sortie}\u00a0$ par million de jetons écrits.` : "Consommation des 30 derniers jours."}
+        sousTitre="Le budget du mois, les réglages et la consommation des 30 derniers jours, au prix réel de chaque réponse."
       />
       {data && !data.iaDisponible && (
         <div className="flex items-start gap-3 rounded-2xl bg-alerte-clair p-4 text-[15px] text-alerte">
@@ -46,10 +51,12 @@ export default function PageIa() {
         <Erreur message={(error as Error).message} reessayer={() => refetch()} />
       ) : data ? (
         <>
+          <BudgetDuMois data={data} />
+
           <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Chiffres clés">
-            <Chiffre libelle="Coût estimé" valeur={dollars(data.total.cout)} detail={`sur 30 jours, ${fcfa(data.total.cout)}`} ton="orange" />
+            <Chiffre libelle="Coût sur 30 jours" valeur={dollars(data.total.cout)} detail={fcfa(data.total.cout)} ton="orange" />
             <Chiffre libelle="Moyenne par jour" valeur={dollars(data.total.cout / 30)} detail={fcfa(data.total.cout / 30)} />
-            <Chiffre libelle="Questions posées" valeur={nombre.format(data.total.requetes)} detail={`quota : ${data.quotaJour} par étudiant et par jour`} />
+            <Chiffre libelle="Questions posées" valeur={nombre.format(data.total.requetes)} detail={`limite : ${data.reglages.quotaEtudiant} par étudiant et par jour`} />
             <Chiffre libelle="Jetons" valeur={compact(data.total.jetonsEntree + data.total.jetonsSortie)} detail={`${compact(data.total.jetonsEntree)} lus · ${compact(data.total.jetonsSortie)} écrits`} />
           </section>
 
@@ -118,7 +125,7 @@ export default function PageIa() {
                   data.parRole.map((r) => <LigneRole key={r.role} libelle={LIBELLES_ROLES[r.role]} c={r} total={data.total.cout} />)
                 )}
                 <p className="border-t border-ligne-douce pt-3 text-sm text-texte-pale">
-                  Coût estimé à partir des jetons comptés à chaque réponse. La facture réelle peut différer légèrement (mise en cache des cours, arrondis).
+                  Coût calculé à chaque réponse, au prix du modèle qui a répondu (lecture du cache comprise). Les journées d'avant le 5 octobre 2026 sont estimées à l'ancien prix unique. La facture d'Anthropic peut différer de quelques centimes.
                 </p>
               </Carte>
             </section>
@@ -126,6 +133,91 @@ export default function PageIa() {
         </>
       ) : null}
     </Page>
+  );
+}
+
+function BudgetDuMois({ data }: { data: BudgetIa }) {
+  const m = data.mois;
+  const pourcent = Math.round(m.part * 100);
+  const nomMois = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${m.mois}-15T12:00:00Z`));
+  return (
+    <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" aria-label="Budget du mois">
+      <Carte className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.12em] text-texte-gris">
+          <Wallet className="h-4 w-4" aria-hidden /> Budget de {nomMois}
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-3xl font-black tabular-nums">{dollars(m.depenseUsd)}</span>
+          <span className="text-texte-pale">sur {dollars(m.budgetUsd)} · {pourcent} %</span>
+        </div>
+        <BarreProgression valeur={pourcent} className="h-2.5" />
+        {m.atteint ? (
+          <p className="rounded-xl bg-alerte-clair p-3 text-[15px] text-alerte">
+            <strong>Budget atteint : l'assistant et la bibliothèque sont en pause</strong> jusqu'au 1er du mois prochain. Relevez le budget ci-contre pour les rouvrir tout de suite.
+          </p>
+        ) : (
+          <p className="text-[15px] text-texte-pale">
+            Au rythme actuel, environ <strong className="text-encre">{dollars(m.projectionUsd)}</strong> sur le mois ({fcfa(m.projectionUsd)}). La direction reçoit une alerte à 50 %, 80 % et 100 %. Une fois le budget atteint, l'IA se met en pause jusqu'au 1er du mois suivant.
+          </p>
+        )}
+        <ul className="flex flex-col gap-1.5 border-t border-ligne-douce pt-3 text-sm">
+          {data.modeles.map((mo) => (
+            <li key={mo.usage} className="flex flex-wrap justify-between gap-x-3">
+              <span className="text-texte-pale">{mo.usage}</span>
+              <span className="font-semibold">
+                {mo.nom} <span className="font-mono text-xs font-normal text-texte-gris">{mo.entree} $ / {mo.sortie} $ par M jetons</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Carte>
+      <ReglagesIa reglages={data.reglages} modifiable={data.modifiable} />
+    </section>
+  );
+}
+
+function ReglagesIa({ reglages, modifiable }: { reglages: ReglagesIaDto; modifiable: boolean }) {
+  const [budget, setBudget] = useState(String(reglages.budgetMensuelUsd));
+  const [etudiant, setEtudiant] = useState(String(reglages.quotaEtudiant));
+  const [personnel, setPersonnel] = useState(String(reglages.quotaPersonnel));
+  const [envoi, setEnvoi] = useState(false);
+  useEffect(() => {
+    setBudget(String(reglages.budgetMensuelUsd));
+    setEtudiant(String(reglages.quotaEtudiant));
+    setPersonnel(String(reglages.quotaPersonnel));
+  }, [reglages]);
+  const nombreDe = (v: string) => Number(v.replace(",", ".").replace(/\s/g, ""));
+  const enregistrer = async () => {
+    setEnvoi(true);
+    try {
+      await patch<ReglagesIaDto>("/api/pilotage/ia/reglages", { budgetMensuelUsd: nombreDe(budget), quotaEtudiant: Math.round(nombreDe(etudiant)), quotaPersonnel: Math.round(nombreDe(personnel)) });
+      toast("Réglages de l'IA enregistrés.");
+      await rafraichir("/api/pilotage/ia", "/api/ia/etat");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  return (
+    <Carte className="flex flex-col gap-3">
+      <h2 className="font-mono text-xs uppercase tracking-[0.12em] text-texte-gris">Réglages</h2>
+      <Champ libelle="Budget du mois (dollars)" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} disabled={!modifiable} aide={fcfa(nombreDe(budget) || 0)} />
+      <div className="grid grid-cols-2 gap-3">
+        <Champ libelle="Questions par étudiant et par jour" inputMode="numeric" value={etudiant} onChange={(e) => setEtudiant(e.target.value)} disabled={!modifiable} />
+        <Champ libelle="Demandes du personnel par jour" inputMode="numeric" value={personnel} onChange={(e) => setPersonnel(e.target.value)} disabled={!modifiable} />
+      </div>
+      {modifiable ? (
+        <Bouton onClick={() => void enregistrer()} chargement={envoi} className="self-start">
+          Enregistrer
+        </Bouton>
+      ) : (
+        <p className="text-sm text-texte-gris">Seule la direction peut modifier ces réglages.</p>
+      )}
+      <p className="text-sm text-texte-pale">
+        Pensez aussi à fixer une limite de dépense dans la console d'Anthropic : c'est le filet de sécurité de la facture, même si le campus se trompait.
+      </p>
+    </Carte>
   );
 }
 
@@ -282,9 +374,6 @@ function TableauJours({ jours }: { jours: BudgetIa["parJour"] }) {
         </tbody>
       </table>
       {actifs.length < jours.length && <p className="mt-2 text-sm text-texte-gris">Les jours sans aucune question sont omis.</p>}
-      <Badge ton="gris" className="mt-2">
-        Prix appliqués : 5 $ / M jetons lus, 25 $ / M jetons écrits
-      </Badge>
     </div>
   );
 }

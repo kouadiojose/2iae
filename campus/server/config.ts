@@ -92,10 +92,12 @@ export const config = {
 
   ia: {
     cle: env("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", "ANTHROPIC_KEY", "CLAUDE_KEY"),
-    /** Modèle de l'assistant ; l'effort (low → high) règle la dépense selon la tâche. */
+    /** Modèle des outils du personnel ; l'effort (low → high) règle la dépense selon la tâche. */
     modele: env("CAMPUS_IA_MODELE") || "claude-opus-5",
-    /** Requêtes d'assistant par étudiant et par jour. */
-    quotaJour: Number(env("CAMPUS_IA_QUOTA_JOUR")) || 40,
+    /** Modèle des questions des étudiants sur leurs cours : rapide et économique. */
+    modeleEtudiant: env("CAMPUS_IA_MODELE_ETUDIANT") || "claude-haiku-4-5",
+    /** Modèle de la bibliothèque (livres, fiches, exposés) : plus de culture générale. */
+    modeleBibliotheque: env("CAMPUS_IA_MODELE_BIBLIOTHEQUE") || "claude-sonnet-5-5",
   },
 
   mail: {

@@ -28,6 +28,12 @@ export const cours = campusSchema.table(
     publierSurSite: boolean("publier_sur_site").notNull().default(false),
     /** Phrase d'accroche pour le site (sinon : début de la description). */
     accrocheSite: text("accroche_site"),
+    /**
+     * IA en pause pour les étudiants du cours (devoir, examen) jusqu'à cette
+     * heure : assistant et bibliothèque refusent leurs questions. Voir PAUSE_IA_SANS_FIN.
+     */
+    iaPauseJusqua: timestamp("ia_pause_jusqua", { withTimezone: true }),
+    iaPauseMotif: text("ia_pause_motif"),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
   },

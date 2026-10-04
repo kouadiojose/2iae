@@ -1461,7 +1461,7 @@ export function enregistrerEvaluations(app: Express) {
       if (!iaDisponible()) {
         throw new ErreurHttp(503, "L'aide à la correction par l'IA n'est pas disponible pour le moment. Vous pouvez corriger la copie vous-même avec la grille.");
       }
-      await verifierQuota(u.id);
+      await verifierQuota(u);
       const grille: CritereGrille[] = d.grille.length ? d.grille : [{ critere: "Note globale", points: d.bareme }];
       const listeFichiers = r.fichierIds.length ? await db.select().from(fichiers).where(inArray(fichiers.id, r.fichierIds)) : [];
       const ordre = new Map(r.fichierIds.map((id, i) => [id, i]));
@@ -1679,7 +1679,7 @@ export function enregistrerEvaluations(app: Express) {
       if (!iaDisponible()) {
         throw new ErreurHttp(503, "La proposition de questions par l'IA n'est pas disponible pour le moment. Vous pouvez écrire vos questions vous-même.");
       }
-      await verifierQuota(u.id);
+      await verifierQuota(u);
       const liste = await db
         .select({ titre: lecons.titre, contenu: lecons.contenu, module: modules.titre })
         .from(lecons)

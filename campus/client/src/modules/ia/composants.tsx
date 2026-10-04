@@ -60,7 +60,7 @@ export function BandeauBlocage({ etat, enseignant, coursId, className }: { etat:
       <div className={cn("flex items-start gap-3 rounded-2xl bg-encre p-4 text-white", className)} role="status">
         <PauseCircle className="mt-0.5 h-6 w-6 shrink-0 text-orange" aria-hidden />
         <div className="flex flex-col gap-1">
-          <p className="text-base font-extrabold">Interrogation en cours</p>
+          <p className="text-base font-extrabold">{etat.pause?.devoirId ? "Interrogation en cours" : "IA en pause pour l'épreuve"}</p>
           <p className="text-[15px] leading-relaxed text-nuit-doux">{sansPrefixe(etat.pause?.raison ?? "")}</p>
         </div>
       </div>
@@ -71,9 +71,13 @@ export function BandeauBlocage({ etat, enseignant, coursId, className }: { etat:
       ? {
           icone: <MoonStar className="mt-0.5 h-6 w-6 shrink-0 text-orange-fonce" aria-hidden />,
           titre: "L'assistant est en pause pour le moment",
-          texte: enseignant
-            ? "Le service d'IA n'est pas encore branché sur ce campus. Vos cours, vos lives et vos corrections fonctionnent normalement."
-            : "Tu peux poser ta question à ton formateur dans la messagerie du cours : il te répondra.",
+          texte: etat.budgetAtteint
+            ? enseignant
+              ? "Le budget d'IA du mois est atteint : l'assistant reprend le 1er du mois prochain. La direction peut relever le budget dans Pilotage, Budget IA."
+              : "Le budget d'IA de l'école pour ce mois est atteint : l'assistant reprend le 1er du mois prochain. D'ici là, pose ta question à ton formateur dans la messagerie du cours."
+            : enseignant
+              ? "Le service d'IA n'est pas encore branché sur ce campus. Vos cours, vos lives et vos corrections fonctionnent normalement."
+              : "Tu peux poser ta question à ton formateur dans la messagerie du cours : il te répondra.",
           action: enseignant ? null : (
             <Link href={coursId ? `/messages/cours/${coursId}` : "/messages"} className="inline-flex min-h-11 items-center text-[15px] font-bold">
               {coursId ? "Écrire dans le salon du cours" : "Ouvrir mes messages"}

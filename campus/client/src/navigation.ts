@@ -23,6 +23,7 @@ import {
   Wallet,
   FolderOpen,
   PlayCircle,
+  Library,
 } from "lucide-react";
 import type { Role } from "@shared/schema";
 
@@ -46,6 +47,7 @@ const ETUDIANT: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   // « On apprend avec l'IA » : l'assistant reste visible dans l'en-tête.
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
+  { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
@@ -62,6 +64,7 @@ const FORMATEUR: ElementNav[] = [
   // Les replays de tous les cours, les siens et ceux des collègues.
   { href: "/replays", libelle: "Enregistrements", icone: PlayCircle, prefixes: ["/replays"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
+  { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
@@ -81,6 +84,7 @@ const EQUIPE: ElementNav[] = [
   { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"] },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"] },
+  { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
 ];
 
 export function navigationDuRole(role: Role): ElementNav[] {

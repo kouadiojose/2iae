@@ -56,7 +56,7 @@ export function PauseIaCours({ coursId, className }: { coursId: number; classNam
       <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", data.active ? "bg-alerte text-white" : "bg-creme text-orange-fonce")}>
         {data.active ? <PauseCircle className="h-5 w-5" aria-hidden /> : <Sparkles className="h-5 w-5" aria-hidden />}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[200px] flex-1">
         <p className="font-bold">{data.active ? "IA en pause pour vos étudiants" : "IA ouverte pour vos étudiants"}</p>
         <p className="text-sm text-texte-pale">
           {data.active
@@ -65,11 +65,11 @@ export function PauseIaCours({ coursId, className }: { coursId: number; classNam
         </p>
       </div>
       {data.active ? (
-        <Bouton variante="contour" icone={<PlayCircle className="h-4 w-4" />} chargement={envoi} onClick={() => void envoyer({ duree: "fin" })}>
+        <Bouton variante="contour" icone={<PlayCircle className="h-4 w-4" />} chargement={envoi} onClick={() => void envoyer({ duree: "fin" })} className="w-full sm:w-auto">
           Rouvrir l'IA
         </Bouton>
       ) : (
-        <Bouton variante="contour" icone={<PauseCircle className="h-4 w-4" />} onClick={() => setOuverte(true)}>
+        <Bouton variante="contour" icone={<PauseCircle className="h-4 w-4" />} onClick={() => setOuverte(true)} className="w-full sm:w-auto">
           Mettre l'IA en pause
         </Bouton>
       )}

@@ -7,7 +7,7 @@
 // et respirer sur un téléphone de 390 px.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardList, Megaphone, MessageCircle, Radio, BookOpen } from "lucide-react";
+import { ArrowRight, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardList, Megaphone, MessageCircle, Radio, BookOpen, Library } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
@@ -83,12 +83,29 @@ export default function PageAccueil() {
         <div className="flex min-w-0 flex-col gap-7">
           {data.annonceImportante && <AnnonceImportante annonce={data.annonceImportante} />}
           <LienAnnonces nonLues={data.annoncesNonLues} serre={Boolean(data.annonceImportante)} />
+          <LienBibliotheque />
           <MesCours cours={data.cours} />
         </div>
       </div>
 
       <InviteInstallation />
     </Page>
+  );
+}
+
+/** La bibliothèque virtuelle : trouver des livres pour un sujet et les explorer avec l'IA. */
+function LienBibliotheque() {
+  return (
+    <CarteLien href="/bibliotheque" className="flex items-center gap-3.5 bg-encre px-4 py-4 text-white hover:text-white">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange text-encre">
+        <Library className="h-5 w-5" aria-hidden />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-extrabold">Bibliothèque virtuelle</span>
+        <span className="text-sm text-nuit-doux">Un sujet, les meilleurs livres, une fiche, tes questions et ton exposé.</span>
+      </span>
+      <ChevronRight className="h-5 w-5 shrink-0 text-orange" aria-hidden />
+    </CarteLien>
   );
 }
 

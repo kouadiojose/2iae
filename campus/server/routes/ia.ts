@@ -38,7 +38,8 @@ import {
   type Gamme,
 } from "../ia";
 import { interrogationEnCours, finDe } from "../evaluations-outils";
-import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse } from "../bibliotheque-outils";
+import { SYSTEME_BIBLIOTHEQUE, SYSTEME_BIBLIOTHECAIRE, contexteLivre, adresse, neutraliserBiblio, livresParId, livreVise, verifierLivresCites, versLivreDto } from "../bibliotheque-outils";
+import { texteIntegral, passagesPour } from "../lecture";
 import {
   conversationsIa,
   messagesIa,
@@ -441,6 +442,17 @@ async function resumeConversation(c: ConversationIa): Promise<ConversationIaResu
   };
 }
 
+/** Réponses du bibliothécaire : les cartes des livres recommandés, dans l'ordre de la réponse. */
+async function avecLivres(dtos: MessageIaDto[], lignes: (typeof messagesIa.$inferSelect)[]): Promise<MessageIaDto[]> {
+  const parId = await livresParId(lignes.flatMap((m) => (m.livres ?? []).map((x) => x.livreId)));
+  if (!parId.size) return dtos;
+  return dtos.map((d, i) => {
+    const cites = lignes[i].livres ?? [];
+    const cartes = cites.flatMap((x) => (parId.get(x.livreId) ? [{ ...versLivreDto(parId.get(x.livreId)!), verifie: x.verifie }] : []));
+    return cartes.length ? { ...d, livres: cartes } : d;
+  });
+}
+
 const versMessageDto = (m: typeof messagesIa.$inferSelect): MessageIaDto => ({
   id: m.id,
   role: m.role,
@@ -723,7 +735,7 @@ export function enregistrerIa(app: Express) {
         .from(conversationsIa)
         .leftJoin(cours, eq(cours.id, conversationsIa.coursId))
         // Les conversations sur un livre vivent dans la bibliothèque.
-        .where(and(eq(conversationsIa.utilisateurId, u.id), isNull(conversationsIa.livreId)))
+        .where(and(eq(conversationsIa.utilisateurId, u.id), isNull(conversationsIa.livreId), eq(conversationsIa.bibliotheque, false)))
         .orderBy(desc(conversationsIa.majLe))
         .limit(60);
       const liste: ConversationIaResume[] = lignes
@@ -803,7 +815,7 @@ export function enregistrerIa(app: Express) {
           lecon: lecon ?? null,
           devoir: devoir ? { ...devoir, dateLimite: devoir.dateLimite.toISOString() } : null,
         },
-        messages: messages.map(versMessageDto),
+        messages: await avecLivres(messages.map(versMessageDto), messages),
         lecons: programme.map((l) => ({ id: l.id, numero: l.numero, titre: l.titre })),
       };
       res.json(detail);
@@ -862,8 +874,10 @@ export function enregistrerIa(app: Express) {
       const programme = c ? await programmePublie(c.id) : [];
       // « Interroger le livre » (bibliothèque) : la notice du livre remplace le cours.
       const [livre] = conv.livreId ? await db.select().from(livres).where(eq(livres.id, conv.livreId)) : [];
-      const contexte = livre ? contexteLivre(livre) : c ? await contexteDuCours(c, lecon?.id) : undefined;
-      const systeme = livre ? SYSTEME_BIBLIOTHEQUE : estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
+      // Le bibliothécaire de la bibliothèque mondiale : conversation libre sur les livres.
+      const bibliothecaire = conv.bibliotheque && !livre;
+      const contexte = livre ? contexteLivre(livre) : bibliothecaire ? undefined : c ? await contexteDuCours(c, lecon?.id) : undefined;
+      const systeme = livre ? SYSTEME_BIBLIOTHEQUE : bibliothecaire ? SYSTEME_BIBLIOTHECAIRE : estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
 
       const [question] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "user", contenu: corps.contenu }).returning();
       const premiere = conv.titre === TITRE_PAR_DEFAUT;
@@ -882,7 +896,28 @@ export function enregistrerIa(app: Express) {
       // Le contexte propre à CETTE question est joint à la dernière question
       // (les consignes et le cours, eux, restent stables pour le cache).
       const precisions: string[] = [];
-      if (livre) precisions.push(`${adresse(u)} La question porte sur le livre « ${livre.titre} ». Si elle dépasse ce que tu sais du livre, dis-le et propose ce que l'étudiant peut vérifier lui-même.`);
+      if (livre) {
+        precisions.push(`${adresse(u)} La question porte sur le livre « ${livre.titre} ». Si elle dépasse ce que tu sais du livre, dis-le et propose ce que l'étudiant peut vérifier lui-même.`);
+        // Livre en lecture libre : l'IA lit les vrais passages utiles plutôt que de répondre de mémoire.
+        const texte = await texteIntegral(livre.lecture);
+        if (texte) precisions.push(`<texte_du_livre titre="${attribut(livre.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
+      }
+      if (bibliothecaire) {
+        precisions.push(adresse(u));
+        // Livres déjà recommandés dans cette conversation (avec ce qu'on sait d'eux), et celui dont parle la question.
+        const ids = historique.flatMap((m) => (m.livres ?? []).map((x) => x.livreId));
+        const connus = [...(await livresParId(ids)).values()];
+        if (connus.length) {
+          precisions.push(
+            `Livres déjà recommandés dans cette conversation :\n${connus
+              .map((l) => `- « ${l.titre} », ${l.auteurs || "auteur inconnu"}${l.annee ? ` (${l.annee})` : ""}${l.source ? "" : " [non retrouvé dans les catalogues]"}${l.lecture ? (l.lecture.libre ? " [lisible gratuitement dans la bibliothèque du campus]" : " [empruntable gratuitement en ligne]") : ""}`)
+              .join("\n")}`,
+          );
+          const vise = livreVise(corps.contenu, connus);
+          const texte = vise ? await texteIntegral(vise.lecture) : null;
+          if (vise && texte) precisions.push(`<texte_du_livre titre="${attribut(vise.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
+        }
+      }
       if (lecon) {
         const n = programme.find((l) => l.id === lecon!.id);
         precisions.push(`<contexte_de_la_question>La personne lit en ce moment : ${n ? refLecon(n) : lecon.titre}.</contexte_de_la_question>`);
@@ -922,7 +957,7 @@ export function enregistrerIa(app: Express) {
       try {
         try {
           const reponse = await fluxClaude(
-            livre
+            livre || bibliothecaire
               ? { systeme, contexte, messages, effort: "low", maxTokens: 6000, utilisateurId: u.id, gamme: "bibliotheque" }
               : { systeme, contexte, messages, effort: "medium", maxTokens: 6000, utilisateurId: u.id, gamme: gammeDe(u) },
             (morceau) => {
@@ -933,7 +968,12 @@ export function enregistrerIa(app: Express) {
           );
           const definitif = reponse.trim() || "Je n'ai pas su répondre à cette question. Peux-tu la reformuler autrement ?";
           if (definitif !== diffuse.trim()) fin.remplacer = definitif;
-          const [enregistre] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "assistant", contenu: definitif }).returning();
+          // Bibliothécaire : chaque livre recommandé est vérifié dans les catalogues avant d'apparaître en carte.
+          const livresCitesMsg = bibliothecaire ? await verifierLivresCites(definitif) : null;
+          const [enregistre] = await db
+            .insert(messagesIa)
+            .values({ conversationId: conv.id, role: "assistant", contenu: definitif, livres: livresCitesMsg?.length ? livresCitesMsg : null })
+            .returning();
           fin.messageId = enregistre.id;
         } catch (e) {
           fin.erreur = traduireErreur(e).message;

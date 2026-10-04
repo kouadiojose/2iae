@@ -1,12 +1,12 @@
-// /bibliotheque — la bibliothèque virtuelle : un sujet, et l'IA propose les
-// meilleurs livres (vérifiés dans les catalogues publics), puis aide à les
-// explorer : fiche de lecture, questions, quiz, notes, exposé.
+// /bibliotheque — la bibliothèque mondiale : l'étudiant parle au
+// bibliothécaire (ce qu'il étudie, ce qu'il veut apprendre), qui recommande
+// les meilleurs livres du monde entier, vérifiés dans les catalogues, à lire
+// en ligne quand ils sont libres, puis aide à les explorer.
 import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Library, Search, Sparkles, Presentation, History, BookMarked, Users } from "lucide-react";
+import { Library, Sparkles, Presentation, History, BookMarked, Users, MessagesSquare } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
-import { post } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { dateCourte } from "@/lib/dates";
 import { Page } from "@/components/layout/coquille";
@@ -17,15 +17,16 @@ import { toastErreur } from "@/components/ui/toast";
 import { useEtatIa, blocageDe } from "@/modules/ia/api-ia";
 import { BandeauBlocage } from "@/modules/ia/composants";
 import { CarteLivreCompacte } from "./composants";
-import type { MaBibliothequeDto, RechercheBiblioDto } from "@shared/schema/ext-bibliotheque";
+import { demarrerConversation } from "./PageBibliothecaire";
+import type { MaBibliothequeDto } from "@shared/schema/ext-bibliotheque";
 
 const EXEMPLES = [
-  "Calcul des structures en béton armé",
-  "Créer et financer une petite entreprise en Côte d'Ivoire",
-  "Marketing digital pour une PME",
-  "Gestion de projet de construction",
-  "Bases de données et SQL",
-  "Comptabilité générale SYSCOHADA",
+  "Je fais un BTS agriculture : comment cultiver la tomate en climat tropical ?",
+  "Je suis en BTS bâtiment : les meilleurs livres sur le béton armé",
+  "Je veux créer et financer mon entreprise en Côte d'Ivoire",
+  "Je débute en programmation : par quel livre commencer ?",
+  "Les saisons et le calendrier agricole en Afrique de l'Ouest",
+  "Comptabilité SYSCOHADA pour débutant",
 ];
 
 export default function PageBibliotheque() {
@@ -44,9 +45,7 @@ export default function PageBibliotheque() {
     if (s.length < 3 || enCours) return;
     setEnCours(true);
     try {
-      const r = await post<RechercheBiblioDto>("/api/bibliotheque/recherches", { sujet: s });
-      void rafraichir("/api/bibliotheque", "/api/ia/etat");
-      naviguer(`/bibliotheque/recherches/${r.id}`);
+      await demarrerConversation(s, naviguer);
     } catch (err) {
       toastErreur(err);
       void rafraichir("/api/ia/etat");
@@ -59,44 +58,44 @@ export default function PageBibliotheque() {
     <Page className="max-w-4xl gap-7">
       <section className="flex flex-col gap-4 rounded-[24px] bg-encre p-5 text-white sm:p-7">
         <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.12em] text-orange">
-          <Library className="h-4 w-4" aria-hidden /> Bibliothèque virtuelle
+          <Library className="h-4 w-4" aria-hidden /> Bibliothèque mondiale
         </div>
-        <h1 className="text-[28px] font-black leading-tight sm:text-4xl">{etudiant ? "Quel sujet veux-tu explorer ?" : "Quel sujet voulez-vous explorer ?"}</h1>
+        <h1 className="text-[28px] font-black leading-tight sm:text-4xl">{etudiant ? "Que veux-tu apprendre ?" : "Que voulez-vous apprendre ?"}</h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-nuit-doux">
           {etudiant
-            ? "Donne un sujet de cours ou d'exposé : l'IA te propose les meilleurs livres, vérifiés dans les catalogues des bibliothèques. Ouvre ensuite un livre pour lire sa fiche, lui poser tes questions, te tester et préparer ton exposé."
-            : "Un sujet de cours ou d'exposé : l'IA propose les meilleurs livres, vérifiés dans les catalogues des bibliothèques, puis aide à les explorer (fiche, questions, quiz, exposé)."}
+            ? "Parle au bibliothécaire comme à une personne : ce que tu étudies, ce que tu cherches. Il te recommande les meilleurs livres du monde entier, te les résume, répond à tes questions, et tu peux lire en ligne ceux qui sont libres."
+            : "Parlez au bibliothécaire comme à une personne : il recommande les meilleurs livres du monde entier, les résume, répond aux questions, et ouvre en lecture ceux qui sont libres."}
         </p>
-        <form onSubmit={chercher} className="flex flex-col gap-2 sm:flex-row">
-          <label className="relative flex-1">
-            <span className="sr-only">Sujet de recherche</span>
-            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-texte-gris" aria-hidden />
-            <input
+        <form onSubmit={chercher} className="flex flex-col gap-2">
+          <label className="relative">
+            <span className="sr-only">{etudiant ? "Ton message au bibliothécaire" : "Votre message au bibliothécaire"}</span>
+            <textarea
               value={sujet}
               onChange={(e) => setSujet(e.target.value)}
-              maxLength={300}
-              placeholder="Ex. : les fondations d'un bâtiment"
-              className="min-h-14 w-full rounded-2xl border-0 bg-white pl-12 pr-4 text-base text-encre outline-none ring-orange focus:ring-2"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !window.matchMedia("(pointer: coarse)").matches) {
+                  e.preventDefault();
+                  void chercher();
+                }
+              }}
+              maxLength={1500}
+              rows={3}
+              placeholder={etudiant ? "Ex. : Je fais un BTS agriculture. Comment planter des tomates en climat tropical, et quelles sont les saisons ?" : "Ex. : les meilleurs livres pour enseigner la gestion de projet"}
+              className="w-full resize-none rounded-2xl border-0 bg-white px-4 py-3.5 text-base text-encre outline-none ring-orange focus:ring-2"
               disabled={enCours}
             />
           </label>
-          <Bouton type="submit" taille="lg" chargement={enCours} disabled={sujet.trim().length < 3 || Boolean(blocage)} icone={<Sparkles className="h-5 w-5" />} className="min-h-14">
-            Trouver des livres
+          <Bouton type="submit" taille="lg" chargement={enCours} disabled={sujet.trim().length < 3 || Boolean(blocage)} icone={<Sparkles className="h-5 w-5" />} className="min-h-14 sm:self-end">
+            Parler au bibliothécaire
           </Bouton>
         </form>
-        {enCours ? (
-          <p className="text-sm text-nuit-doux" role="status">
-            L'IA choisit les livres, puis chacun est vérifié dans les catalogues de la BnF et d'Open Library. Compte une trentaine de secondes.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {EXEMPLES.map((ex) => (
-              <button key={ex} type="button" onClick={() => setSujet(ex)} className="min-h-9 rounded-full border border-nuit-ligne px-3 text-sm text-nuit-doux hover:border-orange hover:text-white">
-                {ex}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {EXEMPLES.map((ex) => (
+            <button key={ex} type="button" onClick={() => setSujet(ex)} className="min-h-9 rounded-full border border-nuit-ligne px-3 py-1.5 text-left text-sm text-nuit-doux hover:border-orange hover:text-white">
+              {ex}
+            </button>
+          ))}
+        </div>
       </section>
 
       <BandeauBlocage etat={etat} enseignant={!etudiant} />
@@ -117,6 +116,26 @@ export default function PageBibliotheque() {
         <Erreur message={(error as Error)?.message ?? "Bibliothèque indisponible."} reessayer={() => void refetch()} />
       ) : (
         <div className="grid grid-cols-1 gap-7 lg:grid-cols-2">
+          <Section titre={etudiant ? "Mes conversations" : "Vos conversations"} icone={<MessagesSquare className="h-4 w-4" />}>
+            {data.conversations.length ? (
+              <ul className="flex flex-col gap-2">
+                {data.conversations.map((c) => (
+                  <li key={c.id}>
+                    <CarteLien href={`/bibliotheque/conversations/${c.id}`} className="flex flex-col px-4 py-3">
+                      <span className="line-clamp-2 font-bold">{c.titre}</span>
+                      <span className="text-sm text-texte-pale">
+                        {c.nbMessages} message{c.nbMessages > 1 ? "s" : ""} · {dateCourte(c.majLe)}
+                      </span>
+                    </CarteLien>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Vide texte={etudiant ? "Tes conversations avec le bibliothécaire apparaîtront ici." : "Vos conversations avec le bibliothécaire apparaîtront ici."} />
+            )}
+          </Section>
+
+          {data.recherches.length > 0 && (
           <Section titre={etudiant ? "Mes recherches" : "Vos recherches"} icone={<History className="h-4 w-4" />}>
             {data.recherches.length ? (
               <ul className="flex flex-col gap-2">
@@ -135,6 +154,7 @@ export default function PageBibliotheque() {
               <Vide texte={etudiant ? "Tes recherches apparaîtront ici. Commence par un sujet ci-dessus." : "Vos recherches apparaîtront ici."} />
             )}
           </Section>
+          )}
 
           <Section titre={etudiant ? "Mes exposés" : "Vos exposés"} icone={<Presentation className="h-4 w-4" />}>
             {data.exposes.length ? (

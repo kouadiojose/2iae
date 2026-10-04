@@ -2,6 +2,7 @@
 // client). Aucune table ici : les conversations, les messages, la
 // consommation et les fiches de révision vivent dans « ./ia ».
 // Les dates voyagent en chaînes ISO.
+import type { LivreDto } from "./ext-bibliotheque";
 
 /** GET /api/ia/etat — ce que l'interface doit savoir avant d'afficher l'assistant. */
 export type EtatIa = {
@@ -53,6 +54,8 @@ export type MessageIaDto = {
   role: "user" | "assistant";
   contenu: string;
   creeLe: string;
+  /** Réponse du bibliothécaire : les livres recommandés, vérifiés dans les catalogues. */
+  livres?: (LivreDto & { verifie: boolean })[];
 };
 
 /** GET /api/ia/conversations/:id */

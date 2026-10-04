@@ -13,10 +13,12 @@ import { db } from "../db";
 import { exigerRole, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable } from "../http";
 import { demanderJson, ErreurIa } from "../ia";
-import { verifierLivre, normaliser } from "../catalogues";
-import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse, neutraliserBiblio } from "../bibliotheque-outils";
+import { identifierLivre, trouverLecture } from "../catalogues";
+import { texteIntegral, pageDuTexte, echantillonDuLivre } from "../lecture";
+import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse, neutraliserBiblio, versLivreDto, livresParId, enregistrerLivre } from "../bibliotheque-outils";
 import { idsCoursAccessibles, etudiantsDuCours } from "../acces";
-import { avantAppel, appelIa, SCHEMA_REVISION, questionsValides } from "./ia";
+import { avantAppel, appelIa, verifierPause, SCHEMA_REVISION, questionsValides } from "./ia";
+import { ErreurHttp } from "../http";
 import {
   livres,
   recherchesBiblio,
@@ -39,7 +41,8 @@ import {
   type ExposeDto,
   type QuizLivreDto,
   type ActiviteBiblioDto,
-  type SourceLivre,
+  type ConversationBiblioDto,
+  type PageTexteDto,
 } from "@shared/schema";
 
 const ROLES_BIBLIOTHEQUE = ["etudiant", "formateur", "vie_scolaire", "admin"] as const;
@@ -49,27 +52,6 @@ const ROLES_SUIVI = ["formateur", "vie_scolaire", "admin"] as const;
 const LIVRES_MAX = 8;
 
 // ── Conversions ────────────────────────────────────────────────────────────
-
-const versLivreDto = (l: Livre): LivreDto => ({
-  id: l.id,
-  titre: l.titre,
-  auteurs: l.auteurs,
-  annee: l.annee,
-  editeur: l.editeur,
-  isbn: l.isbn,
-  langue: l.langue,
-  pages: l.pages,
-  couvertureUrl: l.couvertureUrl,
-  lienCatalogue: l.lienCatalogue,
-  source: (l.source as SourceLivre | null) ?? null,
-  ficheDisponible: Boolean(l.fiche),
-});
-
-async function livresParId(ids: number[]): Promise<Map<number, Livre>> {
-  if (!ids.length) return new Map();
-  const lignes = await db.select().from(livres).where(inArray(livres.id, [...new Set(ids)]));
-  return new Map(lignes.map((l) => [l.id, l]));
-}
 
 async function versRechercheDto(r: typeof recherchesBiblio.$inferSelect): Promise<RechercheBiblioDto> {
   const parId = await livresParId(r.resultats.map((x) => x.livreId));
@@ -247,11 +229,29 @@ function exposeEnMarkdown(e: ExposeIa, bibliographie: string[]): string {
     .join("\n\n");
 }
 
+/** Livres dont on a déjà cherché un exemplaire à lire depuis le démarrage du serveur. */
+const lecturesCherchees = new Set<number>();
+
+/** Conversations de la personne avec le bibliothécaire (celles qui ont au moins un message). */
+async function conversationsDe(utilisateurId: number, limite: number): Promise<ConversationBiblioDto[]> {
+  const lignes = await db
+    .select({
+      id: conversationsIa.id,
+      titre: conversationsIa.titre,
+      majLe: conversationsIa.majLe,
+      // Colonnes qualifiées : sans jointure, Drizzle les écrirait sans nom de table (ambiguës dans la sous-requête).
+      nb: sql<number>`(select count(*)::int from "campus"."messages_ia" m where m."conversation_id" = "conversations_ia"."id")`,
+    })
+    .from(conversationsIa)
+    .where(and(eq(conversationsIa.utilisateurId, utilisateurId), eq(conversationsIa.bibliotheque, true)))
+    .orderBy(desc(conversationsIa.majLe))
+    .limit(limite);
+  return lignes.filter((l) => l.nb > 0).map((l) => ({ id: l.id, titre: l.titre, nbMessages: l.nb, majLe: l.majLe.toISOString() }));
+}
+
 /** Fiches en cours de rédaction : deux étudiants qui ouvrent le même livre ne déclenchent qu'un appel. */
 const fichesEnCours = new Map<number, Promise<FicheLivre>>();
 
-/** Clé d'un livre non retrouvé dans les catalogues : titre et nom d'auteur normalisés. */
-const cleNonVerifiee = (titre: string, auteurs: string) => `ia:${normaliser(titre).slice(0, 120)}|${normaliser(auteurs.split(",")[0] ?? "").slice(0, 60)}`;
 
 // ═══ Routes ════════════════════════════════════════════════════════════════
 
@@ -264,7 +264,7 @@ export function enregistrerBibliotheque(app: Express) {
     lecteur,
     route(async (req, res) => {
       const u = moi(req);
-      const [recherches, exposes, convs, notes, populaires] = await Promise.all([
+      const [recherches, exposes, convs, notes, populaires, conversations] = await Promise.all([
         db.select().from(recherchesBiblio).where(eq(recherchesBiblio.utilisateurId, u.id)).orderBy(desc(recherchesBiblio.id)).limit(20),
         db
           .select({ e: exposesBiblio, titre: livres.titre })
@@ -281,15 +281,55 @@ export function enregistrerBibliotheque(app: Express) {
           .limit(12),
         db.select({ livreId: notesBiblio.livreId }).from(notesBiblio).where(eq(notesBiblio.utilisateurId, u.id)).orderBy(desc(notesBiblio.id)).limit(12),
         db.select().from(livres).where(isNotNull(livres.fiche)).orderBy(desc(livres.ficheLe)).limit(8),
+        conversationsDe(u.id, 10),
       ]);
       const recents = [...new Set([...convs.map((c) => c.livreId!), ...notes.map((n) => n.livreId)])].slice(0, 8);
       const parId = await livresParId(recents);
       const dto: MaBibliothequeDto = {
+        conversations,
         recherches: recherches.map((r) => ({ id: r.id, sujet: r.sujet, nbLivres: r.resultats.length, creeLe: r.creeLe.toISOString() })),
         exposes: exposes.map(({ e, titre }) => ({ id: e.id, livreId: e.livreId, livreTitre: titre, sujet: e.sujet, creeLe: e.creeLe.toISOString() })),
         livres: recents.flatMap((id) => (parId.get(id) ? [versLivreDto(parId.get(id)!)] : [])),
         populaires: populaires.map(versLivreDto),
       };
+      res.json(dto);
+    }),
+  );
+
+  // ── Le bibliothécaire : conversations libres sur les livres ──────────────
+  app.post(
+    "/api/bibliotheque/conversations",
+    lecteur,
+    route(async (req, res) => {
+      const u = moi(req);
+      await verifierPause(u);
+      const [c] = await db
+        .insert(conversationsIa)
+        .values({ utilisateurId: u.id, bibliotheque: true, titre: "Nouvelle conversation" })
+        .returning({ id: conversationsIa.id });
+      res.status(201).json({ id: c.id });
+    }),
+  );
+
+  app.get(
+    "/api/bibliotheque/conversations",
+    lecteur,
+    route(async (req, res) => {
+      res.json(await conversationsDe(moi(req).id, 30));
+    }),
+  );
+
+  // ── Version texte d'un livre en lecture libre (légère sur un petit forfait) ──
+  app.get(
+    "/api/bibliotheque/livres/:id(\\d+)/texte",
+    lecteur,
+    route(async (req, res) => {
+      const l = await livreDe(idParam(req));
+      if (!l.lecture?.libre) throw introuvable("Texte du livre");
+      const texte = await texteIntegral(l.lecture);
+      if (!texte) throw new ErreurHttp(404, "Le texte de ce livre n'est pas disponible pour le moment. Utilise la liseuse.");
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const dto: PageTexteDto = pageDuTexte(texte, page);
       res.json(dto);
     }),
   );
@@ -329,54 +369,20 @@ export function enregistrerBibliotheque(app: Express) {
       );
       const propositions = (Array.isArray(brut?.livres) ? brut.livres : []).filter((p) => p?.titre?.trim() && p?.auteurs?.trim()).slice(0, 10);
 
-      // Vérification dans les catalogues, en parallèle (7 s au plus par catalogue).
+      // Vérification dans les catalogues (et exemplaire à lire), en parallèle.
       const verifies = await Promise.all(
-        propositions.map(async (p) => ({ p, notice: await verifierLivre(p.titre, p.auteurs, p.langue === "en" ? "en" : "fr").catch(() => null) })),
+        propositions.map(async (p) => ({ p, ...(await identifierLivre(p.titre, p.auteurs, p.langue === "en" ? "en" : "fr")) })),
       );
       // Retrouvés d'abord ; un livre introuvable n'est gardé que si l'IA en est certaine (signalé « à vérifier »).
       const retenus = [...verifies.filter((v) => v.notice), ...verifies.filter((v) => !v.notice && v.p.certitude === "certaine")];
-
       const resultats: LivrePropose[] = [];
       const vus = new Set<number>();
-      for (const { p, notice } of retenus) {
+      for (const { p, notice, lecture } of retenus) {
         if (resultats.length >= LIVRES_MAX) break;
-        const valeurs = notice
-          ? {
-              cle: notice.cle,
-              titre: notice.titre,
-              auteurs: notice.auteurs,
-              annee: notice.annee,
-              editeur: notice.editeur,
-              isbn: notice.isbn,
-              langue: notice.langue,
-              pages: notice.pages,
-              couvertureUrl: notice.couvertureUrl,
-              lienCatalogue: notice.lienCatalogue,
-              description: notice.description,
-              source: notice.source,
-            }
-          : {
-              cle: cleNonVerifiee(p.titre, p.auteurs),
-              titre: p.titre.trim().slice(0, 300),
-              auteurs: p.auteurs.trim().slice(0, 300),
-              annee: p.annee > 1500 && p.annee <= new Date().getFullYear() + 1 ? p.annee : null,
-              editeur: p.editeur?.trim().slice(0, 120) || null,
-              isbn: null,
-              langue: p.langue === "autre" ? null : p.langue,
-              pages: null,
-              couvertureUrl: null,
-              lienCatalogue: null,
-              description: null,
-              source: null,
-            };
-        const [l] = await db
-          .insert(livres)
-          .values(valeurs)
-          .onConflictDoUpdate({ target: livres.cle, set: { cle: sql`excluded.cle` } })
-          .returning({ id: livres.id });
-        if (vus.has(l.id)) continue;
-        vus.add(l.id);
-        resultats.push({ livreId: l.id, pourquoi: p.pourquoi.trim().slice(0, 600), niveau: p.niveau, verifie: Boolean(notice) });
+        const { id } = await enregistrerLivre({ titre: p.titre.trim(), auteurs: p.auteurs.trim(), annee: p.annee, editeur: p.editeur, langue: p.langue }, notice, lecture);
+        if (vus.has(id)) continue;
+        vus.add(id);
+        resultats.push({ livreId: id, pourquoi: p.pourquoi.trim().slice(0, 600), niveau: p.niveau, verifie: Boolean(notice) });
       }
       const [r] = await db
         .insert(recherchesBiblio)
@@ -403,7 +409,19 @@ export function enregistrerBibliotheque(app: Express) {
     lecteur,
     route(async (req, res) => {
       const u = moi(req);
-      const l = await livreDe(idParam(req));
+      let l = await livreDe(idParam(req));
+      // Livre connu d'avant la lecture en ligne : on cherche une fois un exemplaire à lire (6 s au plus).
+      if (!l.lecture && !lecturesCherchees.has(l.id)) {
+        lecturesCherchees.add(l.id);
+        const trouvee = await Promise.race([trouverLecture(l.titre, l.auteurs).catch(() => null), new Promise<null>((ok) => setTimeout(() => ok(null), 6000))]);
+        if (trouvee) {
+          [l] = await db
+            .update(livres)
+            .set({ lecture: { source: "archive", id: trouvee.id, libre: trouvee.libre, titre: trouvee.titre, annee: trouvee.annee } })
+            .where(eq(livres.id, l.id))
+            .returning();
+        }
+      }
       const [notes, [conv], exposes] = await Promise.all([
         db.select().from(notesBiblio).where(and(eq(notesBiblio.utilisateurId, u.id), eq(notesBiblio.livreId, l.id))).orderBy(desc(notesBiblio.id)),
         db
@@ -437,15 +455,18 @@ export function enregistrerBibliotheque(app: Express) {
       if (!enCours) {
         await avantAppel(u);
         enCours = (async () => {
+          // Livre en lecture libre : la fiche est rédigée d'après un échantillon du vrai texte.
+          const texte = await texteIntegral(l.lecture);
           const brut = await appelIa(() =>
             demanderJson<unknown>({
               systeme: SYSTEME_BIBLIOTHEQUE,
-              contexte: contexteLivre(l),
+              contexte: texte ? `${contexteLivre(l)}\n\n<texte_du_livre>\n${neutraliserBiblio(echantillonDuLivre(texte))}\n</texte_du_livre>` : contexteLivre(l),
               messages: [
                 {
                   role: "user",
-                  content:
-                    "Rédige la fiche de lecture de ce livre pour des étudiants qui veulent en saisir l'essentiel sans tout lire. Tutoie le lecteur. Reste fidèle à ce que tu sais réellement du livre : si tu le connais mal, dis-le dans « connaissance », reste général et prudent, et n'invente ni chapitres ni chiffres. Donne des exemples concrets, ivoiriens quand c'est pertinent.",
+                  content: texte
+                    ? "Rédige la fiche de lecture de ce livre d'après les extraits de son vrai texte fournis (un échantillon régulier de tout le livre, début compris), pour des étudiants qui veulent en saisir l'essentiel sans tout lire. Tutoie le lecteur. Le plan suit les parties réelles que tu repères dans le texte. « connaissance » vaut « bonne » si les extraits suffisent. Relie aux réalités ivoiriennes quand c'est pertinent, en distinguant clairement ce qui vient du livre et ce que tu ajoutes."
+                    : "Rédige la fiche de lecture de ce livre pour des étudiants qui veulent en saisir l'essentiel sans tout lire. Tutoie le lecteur. Reste fidèle à ce que tu sais réellement du livre : si tu le connais mal, dis-le dans « connaissance », reste général et prudent, et n'invente ni chapitres ni chiffres. Donne des exemples concrets, ivoiriens quand c'est pertinent.",
                 },
               ],
               schema: SCHEMA_FICHE,
@@ -455,8 +476,9 @@ export function enregistrerBibliotheque(app: Express) {
               utilisateurId: u.id,
             }),
           );
-          const fiche = ficheValide(brut);
-          if (!fiche) throw new ErreurIa("La fiche n'a pas pu être rédigée. Nouvel essai possible dans un instant.", 502);
+          const valide = ficheValide(brut);
+          if (!valide) throw new ErreurIa("La fiche n'a pas pu être rédigée. Nouvel essai possible dans un instant.", 502);
+          const fiche: FicheLivre = { ...valide, depuisTexte: Boolean(texte) };
           await db.update(livres).set({ fiche, ficheLe: new Date() }).where(eq(livres.id, l.id));
           return fiche;
         })().finally(() => fichesEnCours.delete(l.id));

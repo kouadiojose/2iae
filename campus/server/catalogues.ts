@@ -17,7 +17,7 @@ export type Notice = {
   couvertureUrl: string | null;
   lienCatalogue: string;
   description: string | null;
-  source: "bnf" | "open_library";
+  source: "bnf" | "open_library" | "archive";
 };
 
 const DELAI_MS = 7000;
@@ -201,6 +201,139 @@ async function chercherOpenLibrary(titre: string, auteurs: string): Promise<Noti
   };
 }
 
+// ── Internet Archive : exemplaires lisibles en ligne ───────────────────────
+//
+// Internet Archive est la bibliothèque numérique d'Open Library. On n'y
+// retient en lecture libre que ce qui est sûr du point de vue du droit
+// d'auteur : domaine public (avant 1930), licence libre (Creative Commons),
+// ou collections de bibliothèques et d'institutions (publications publiques,
+// bibliothèques universitaires). Les livres récents des collections de prêt
+// s'empruntent gratuitement avec un compte Internet Archive. Les dépôts
+// d'internautes de livres récents (collection « opensource ») sont ignorés.
+
+type DocArchive = {
+  identifier: string;
+  title?: string | string[];
+  creator?: string | string[];
+  year?: string | number;
+  language?: string | string[];
+  publisher?: string | string[];
+  isbn?: string | string[];
+  collection?: string | string[];
+  licenseurl?: string;
+  downloads?: number;
+  "access-restricted-item"?: string | boolean;
+};
+
+const COLLECTIONS_FIABLES = new Set([
+  "governmentpublications",
+  "toronto",
+  "americana",
+  "canadiana",
+  "canadianagriculturallibrary",
+  "biodiversity",
+  "gutenberg",
+  "europeanlibraries",
+  "library_of_congress",
+  "usda-nationalagriculturallibrary",
+  "fedlink",
+  "university_of_illinois_urbana-champaign",
+  "cornell",
+  "mbl",
+  "fao",
+]);
+
+const liste = (v: string | string[] | undefined): string[] => (Array.isArray(v) ? v : v ? [v] : []);
+
+export type LectureTrouvee = {
+  id: string;
+  /** Lisible par tous (et texte intégral disponible) ; sinon emprunt gratuit avec un compte. */
+  libre: boolean;
+  titre: string;
+  auteurs: string;
+  annee: number | null;
+  editeur: string | null;
+  isbn: string | null;
+  langue: string | null;
+};
+
+function classerArchive(d: DocArchive): "libre" | "emprunt" | null {
+  const restreint = d["access-restricted-item"] === true || d["access-restricted-item"] === "true";
+  const collections = liste(d.collection);
+  if (restreint) return collections.some((c) => c === "inlibrary" || c === "printdisabled" || c.startsWith("internetarchivebooks")) ? "emprunt" : null;
+  const annee = Number(String(d.year ?? "").match(/\d{4}/)?.[0]) || null;
+  if (annee && annee < 1930) return "libre";
+  if (d.licenseurl && /creativecommons\.org|publicdomain/i.test(d.licenseurl)) return "libre";
+  if (collections.some((c) => COLLECTIONS_FIABLES.has(c))) return "libre";
+  return null;
+}
+
+async function chercherArchive(titre: string, auteurs: string): Promise<LectureTrouvee | null> {
+  const mots = motsDuTitre(titre);
+  if (!mots.length) return null;
+  const nom = nomPremierAuteur(auteurs);
+  const requete = `title:(${mots.join(" ")})${nom ? ` AND creator:(${nom})` : ""} AND mediatype:texts`;
+  const params = new URLSearchParams({ q: requete, rows: "20", output: "json" });
+  for (const f of ["identifier", "title", "creator", "year", "language", "publisher", "isbn", "collection", "licenseurl", "downloads", "access-restricted-item"]) params.append("fl[]", f);
+  const json = await lire(`https://archive.org/advancedsearch.php?${params}`);
+  if (!json) return null;
+  let docs: DocArchive[] = [];
+  try {
+    docs = (JSON.parse(json) as { response?: { docs?: DocArchive[] } }).response?.docs ?? [];
+  } catch {
+    return null;
+  }
+  const candidats = docs
+    .map((d) => ({ d, classe: classerArchive(d), titreTrouve: liste(d.title)[0] ?? "" }))
+    .filter((c) => c.classe && c.titreTrouve && titreCorrespond(titre, c.titreTrouve));
+  if (!candidats.length) return null;
+  // Lecture libre d'abord, puis l'exemplaire le plus consulté.
+  candidats.sort((a, b) => Number(b.classe === "libre") - Number(a.classe === "libre") || (b.d.downloads ?? 0) - (a.d.downloads ?? 0));
+  const { d, classe, titreTrouve } = candidats[0];
+  const isbn = liste(d.isbn).find((i) => /^\d{13}$/.test(i)) ?? liste(d.isbn)[0] ?? null;
+  return {
+    id: d.identifier,
+    libre: classe === "libre",
+    titre: titreTrouve.slice(0, 300),
+    auteurs: liste(d.creator).slice(0, 4).join(", ") || auteurs,
+    annee: Number(String(d.year ?? "").match(/\d{4}/)?.[0]) || null,
+    editeur: liste(d.publisher)[0] ?? null,
+    isbn,
+    langue: liste(d.language)[0] ?? null,
+  };
+}
+
+const memoireLecture = new Map<string, { lecture: LectureTrouvee | null; le: number }>();
+
+/** Un exemplaire lisible (ou empruntable) sur Internet Archive, s'il existe. */
+export async function trouverLecture(titre: string, auteurs: string): Promise<LectureTrouvee | null> {
+  const cle = `${motsDuTitre(titre).join(" ")}|${nomPremierAuteur(auteurs)}`;
+  const connu = memoireLecture.get(cle);
+  if (connu && Date.now() - connu.le < (connu.lecture ? DUREE_TROUVE_MS : DUREE_INTROUVABLE_MS)) return connu.lecture;
+  const lecture = await chercherArchive(titre, auteurs);
+  if (memoireLecture.size > 5000) memoireLecture.clear();
+  memoireLecture.set(cle, { lecture, le: Date.now() });
+  return lecture;
+}
+
+/** Notice tirée d'un exemplaire d'Internet Archive, quand les catalogues n'ont rien trouvé. */
+export function noticeDepuisArchive(l: LectureTrouvee): Notice {
+  return {
+    cle: `ia:${l.id}`,
+    titre: l.titre,
+    auteurs: l.auteurs,
+    annee: l.annee,
+    editeur: l.editeur,
+    isbn: l.isbn,
+    langue: l.langue,
+    pages: null,
+    couvertureUrl: `https://archive.org/services/img/${l.id}`,
+    lienCatalogue: `https://archive.org/details/${l.id}`,
+    description: null,
+    source: "archive",
+  };
+}
+
 /**
  * Vérifications déjà faites (titre + auteur normalisés) : une classe entière
  * qui cherche des sujets voisins n'interroge les catalogues qu'une fois par
@@ -224,4 +357,15 @@ export async function verifierLivre(titre: string, auteurs: string, langue?: str
   if (memoire.size > 5000) memoire.clear();
   memoire.set(cle, { notice, le: Date.now() });
   return notice;
+}
+
+/**
+ * Tout ce qu'on sait d'un livre cité : sa notice (BnF, Open Library, ou à
+ * défaut Internet Archive) et l'exemplaire à lire, cherchés en parallèle,
+ * en 12 secondes au plus.
+ */
+export async function identifierLivre(titre: string, auteurs: string, langue?: string | null): Promise<{ notice: Notice | null; lecture: LectureTrouvee | null }> {
+  const delai = <T>(p: Promise<T>, ms: number, defaut: T) => Promise.race([p.catch(() => defaut), new Promise<T>((ok) => setTimeout(() => ok(defaut), ms))]);
+  const [notice, lecture] = await Promise.all([delai(verifierLivre(titre, auteurs, langue), 12_000, null), delai(trouverLecture(titre, auteurs), 12_000, null)]);
+  return { notice: notice ?? (lecture ? noticeDepuisArchive(lecture) : null), lecture };
 }

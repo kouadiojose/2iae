@@ -21,6 +21,8 @@ export const conversationsIa = campusSchema.table(
     devoirId: integer("devoir_id").references(() => devoirs.id, { onDelete: "set null" }),
     /** Livre de la bibliothèque interrogé (« Interroger le livre ») : la conversation reste dans la bibliothèque. */
     livreId: integer("livre_id").references((): AnyPgColumn => livres.id, { onDelete: "cascade" }),
+    /** Conversation avec le bibliothécaire (bibliothèque mondiale) : elle vit dans la bibliothèque. */
+    bibliotheque: boolean("bibliotheque").notNull().default(false),
     titre: text("titre").notNull().default("Nouvelle conversation"),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
@@ -35,6 +37,8 @@ export const messagesIa = campusSchema.table(
     conversationId: integer("conversation_id").notNull().references(() => conversationsIa.id, { onDelete: "cascade" }),
     role: text("role").$type<"user" | "assistant">().notNull(),
     contenu: text("contenu").notNull(),
+    /** Livres recommandés dans cette réponse du bibliothécaire, vérifiés dans les catalogues. */
+    livres: jsonb("livres").$type<LivreCite[]>(),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_ia_conversation_idx").on(t.conversationId)],
@@ -100,6 +104,16 @@ export type FicheRevision = typeof fichesRevision.$inferSelect;
 // catalogues publics (Open Library, Google Books) avant d'être montré. La fiche
 // d'un livre est rédigée une fois, puis partagée par tous les étudiants.
 
+/**
+ * Lecture en ligne : un exemplaire numérisé sur Internet Archive (la
+ * bibliothèque d'Open Library). « libre » : lisible par tous et texte intégral
+ * disponible ; sinon, emprunt gratuit avec un compte Internet Archive.
+ */
+export type LectureLivre = { source: "archive"; id: string; libre: boolean; titre: string; annee: number | null };
+
+/** Livre cité par le bibliothécaire dans une réponse (ligne « 📚 **Titre** — Auteur »). */
+export type LivreCite = { livreId: number; cite: string; verifie: boolean };
+
 /** Résumé structuré d'un livre (d'après les connaissances de l'IA et la description publique). */
 export type FicheLivre = {
   resume: string;
@@ -109,6 +123,8 @@ export type FicheLivre = {
   aRetenir: string;
   /** L'IA connaît-elle bien ce livre ? « faible » : fiche prudente, à vérifier dans le livre. */
   connaissance: "bonne" | "partielle" | "faible";
+  /** Rédigée d'après le vrai texte du livre (lecture libre), et non de mémoire. */
+  depuisTexte?: boolean;
 };
 
 export const livres = campusSchema.table(
@@ -132,6 +148,8 @@ export const livres = campusSchema.table(
     /** « open_library » | « google_books » | null : non retrouvé dans un catalogue. */
     source: text("source"),
     fiche: jsonb("fiche").$type<FicheLivre>(),
+    /** Où lire le livre gratuitement (Internet Archive), s'il y a lieu. */
+    lecture: jsonb("lecture").$type<LectureLivre>(),
     ficheLe: timestamp("fiche_le", { withTimezone: true }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },

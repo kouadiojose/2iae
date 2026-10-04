@@ -12,12 +12,16 @@ export const LIBELLES_NIVEAUX: Record<NiveauLivre, string> = {
 };
 
 /** Catalogues publics où un livre a été retrouvé. */
-export type SourceLivre = "bnf" | "open_library";
+export type SourceLivre = "bnf" | "open_library" | "archive";
 
 export const LIBELLES_SOURCES: Record<SourceLivre, string> = {
   bnf: "Bibliothèque nationale de France",
   open_library: "Open Library",
+  archive: "Internet Archive",
 };
+
+/** Lire en ligne : « libre » (liseuse du campus), « emprunt » (gratuit, compte Internet Archive). */
+export type AccesLecture = { mode: "libre" | "emprunt"; archiveId: string };
 
 export type LivreDto = {
   id: number;
@@ -33,6 +37,7 @@ export type LivreDto = {
   /** null : non retrouvé dans un catalogue public (à vérifier). */
   source: SourceLivre | null;
   ficheDisponible: boolean;
+  lecture: AccesLecture | null;
 };
 
 export type LivreProposeDto = LivreDto & { pourquoi: string; niveau: NiveauLivre; verifie: boolean };
@@ -70,6 +75,8 @@ export type LivreDetailDto = {
 
 /** GET /api/bibliotheque : l'espace de la personne. */
 export type MaBibliothequeDto = {
+  /** Conversations avec le bibliothécaire. */
+  conversations: ConversationBiblioDto[];
   recherches: { id: number; sujet: string; nbLivres: number; creeLe: string }[];
   exposes: ExposeResumeDto[];
   /** Livres consultés récemment (fiche ouverte, questions, notes). */
@@ -93,3 +100,9 @@ export type ActiviteBiblioDto = {
     livres: string[];
   }[];
 };
+
+/** Une conversation avec le bibliothécaire (liste de « Mes conversations »). */
+export type ConversationBiblioDto = { id: number; titre: string; nbMessages: number; majLe: string };
+
+/** GET /api/bibliotheque/livres/:id/texte?page=N : la version texte d'un livre en lecture libre. */
+export type PageTexteDto = { page: number; total: number; contenu: string };

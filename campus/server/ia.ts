@@ -79,6 +79,22 @@ export type OptionsClaude = {
   gamme?: Gamme;
 };
 
+/**
+ * Conversation longue : un point de cache sur la dernière réponse de
+ * l'historique. À la question suivante, tout ce qui précède est relu depuis
+ * le cache (dix fois moins cher) au lieu d'être facturé plein tarif. La
+ * question en cours n'en porte pas : ses précisions (passages du livre…)
+ * changent à chaque fois.
+ */
+function avecCacheHistorique(messages: Anthropic.Beta.BetaMessageParam[]): Anthropic.Beta.BetaMessageParam[] {
+  let i = messages.length - 2;
+  while (i >= 0 && messages[i].role !== "assistant") i--;
+  if (i < 1 || typeof messages[i].content !== "string") return messages;
+  const copie = [...messages];
+  copie[i] = { ...messages[i], content: [{ type: "text", text: messages[i].content as string, cache_control: { type: "ephemeral" } }] };
+  return copie;
+}
+
 /** Haiku 4.5 ne connaît ni le réglage d'effort ni le repli automatique côté serveur. */
 const estHaiku = (modele: string) => modele.includes("haiku");
 
@@ -88,7 +104,7 @@ function construireRequete(o: OptionsClaude): Anthropic.Beta.MessageCreateParams
   // Le dernier bloc stable porte le point de cache : consignes + contexte du cours.
   system[system.length - 1] = { ...system[system.length - 1], cache_control: { type: "ephemeral" } };
   const model = modeleDe(o.gamme);
-  const base = { model, max_tokens: o.maxTokens ?? 8000, system, messages: o.messages };
+  const base = { model, max_tokens: o.maxTokens ?? 8000, system, messages: avecCacheHistorique(o.messages) };
   if (estHaiku(model)) return base;
   return {
     ...base,

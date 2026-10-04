@@ -1,6 +1,7 @@
 // Pièces communes de la bibliothèque : couverture, carte d'un livre, notice.
 import { useState } from "react";
-import { BadgeCheck, BookOpen, ChevronRight, CircleAlert, ExternalLink } from "lucide-react";
+import { Link } from "wouter";
+import { BadgeCheck, BookOpen, BookOpenText, ChevronRight, CircleAlert, ExternalLink, Sparkles, Library } from "lucide-react";
 import { CarteLien } from "@/components/ui/carte";
 import { Badge } from "@/components/ui/divers";
 import { cn } from "@/lib/utils";
@@ -103,5 +104,80 @@ export function LigneCatalogue({ livre }: { livre: LivreDto }) {
         </a>
       )}
     </p>
+  );
+}
+
+/** « Lecture libre » (liseuse du campus) ou « Emprunt gratuit » (Internet Archive). */
+export function BadgeLecture({ livre }: { livre: Pick<LivreDto, "lecture"> }) {
+  if (!livre.lecture) return null;
+  return livre.lecture.mode === "libre" ? (
+    <Badge ton="orange">
+      <BookOpenText className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+      Lecture libre
+    </Badge>
+  ) : (
+    <Badge ton="gris">
+      <Library className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+      Emprunt gratuit
+    </Badge>
+  );
+}
+
+/**
+ * Livre recommandé par le bibliothécaire, sous sa réponse : couverture,
+ * notice, et deux gestes, « Résumé » (la conversation continue sur ce livre)
+ * et « Ouvrir » (la page du livre : lire, fiche, questions, exposé).
+ */
+export function CarteLivreCite({
+  livre,
+  onResume,
+  desactive,
+  etudiant,
+}: {
+  livre: LivreDto & { verifie: boolean };
+  onResume: () => void;
+  desactive?: boolean;
+  etudiant: boolean;
+}) {
+  return (
+    <div className="flex gap-3 rounded-2xl border border-ligne bg-white p-3">
+      <Link href={`/bibliotheque/livres/${livre.id}`} className="shrink-0" aria-label={`Ouvrir « ${livre.titre} »`}>
+        <Couverture livre={livre} className="w-16" />
+      </Link>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
+          {livre.verifie ? (
+            <BadgeVerification livre={livre} />
+          ) : (
+            <Badge ton="alerte">
+              <CircleAlert className="mr-1 inline h-3.5 w-3.5" aria-hidden />
+              Introuvable dans les catalogues
+            </Badge>
+          )}
+          <BadgeLecture livre={livre} />
+        </div>
+        <Link href={`/bibliotheque/livres/${livre.id}`} className="line-clamp-3 font-extrabold leading-snug text-encre no-underline hover:text-orange-fonce">
+          {livre.titre}
+        </Link>
+        <span className="text-sm text-texte-pale">{ligneAuteurs(livre)}</span>
+        <div className="mt-1 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onResume}
+            disabled={desactive}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-encre px-3 text-sm font-bold text-white hover:bg-orange-fonce disabled:opacity-50"
+          >
+            <Sparkles className="h-4 w-4" aria-hidden /> Résumé
+          </button>
+          <Link
+            href={`/bibliotheque/livres/${livre.id}${livre.lecture?.mode === "libre" ? "?onglet=lire" : ""}`}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-ligne px-3 text-sm font-bold text-encre no-underline hover:border-orange"
+          >
+            {livre.lecture?.mode === "libre" ? <BookOpenText className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
+            {livre.lecture?.mode === "libre" ? (etudiant ? "Lire le livre" : "Lire le livre") : "Ouvrir"}
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }

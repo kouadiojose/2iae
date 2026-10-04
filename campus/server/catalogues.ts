@@ -201,12 +201,27 @@ async function chercherOpenLibrary(titre: string, auteurs: string): Promise<Noti
   };
 }
 
+/**
+ * Vérifications déjà faites (titre + auteur normalisés) : une classe entière
+ * qui cherche des sujets voisins n'interroge les catalogues qu'une fois par
+ * livre. Un livre introuvable est retenté au bout d'une heure.
+ */
+const memoire = new Map<string, { notice: Notice | null; le: number }>();
+const DUREE_TROUVE_MS = 24 * 3_600_000;
+const DUREE_INTROUVABLE_MS = 3_600_000;
+
 /** Cherche le livre dans les catalogues publics (BnF d'abord pour le français, Open Library sinon). */
 export async function verifierLivre(titre: string, auteurs: string, langue?: string | null): Promise<Notice | null> {
+  const cle = `${motsDuTitre(titre).join(" ")}|${nomPremierAuteur(auteurs)}`;
+  const connu = memoire.get(cle);
+  if (connu && Date.now() - connu.le < (connu.notice ? DUREE_TROUVE_MS : DUREE_INTROUVABLE_MS)) return connu.notice;
   const ordre = langue && !/^fr/i.test(langue) ? [chercherOpenLibrary, chercherBnf] : [chercherBnf, chercherOpenLibrary];
+  let notice: Notice | null = null;
   for (const chercher of ordre) {
-    const n = await chercher(titre, auteurs);
-    if (n) return n;
+    notice = await chercher(titre, auteurs);
+    if (notice) break;
   }
-  return null;
+  if (memoire.size > 5000) memoire.clear();
+  memoire.set(cle, { notice, le: Date.now() });
+  return notice;
 }

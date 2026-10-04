@@ -1,6 +1,6 @@
 // Contrats de la bibliothèque virtuelle (client ↔ serveur). Fichier sans
 // tables Drizzle : le client peut l'importer sans alourdir le téléphone.
-import type { FicheLivre, LivrePropose } from "./ia";
+import type { FicheLivre, LivrePropose, DiapositiveExpose } from "./ia";
 import type { QuestionRevision } from "./ext-ia";
 
 export type NiveauLivre = LivrePropose["niveau"];
@@ -49,7 +49,14 @@ export type NoteBiblioDto = { id: number; contenu: string; creeLe: string };
 
 export type ExposeResumeDto = { id: number; livreId: number; livreTitre: string; sujet: string; creeLe: string };
 
-export type ExposeDto = ExposeResumeDto & { contenu: string };
+export type ExposeDto = ExposeResumeDto & {
+  contenu: string;
+  /** null pour un exposé ancien (sans PowerPoint). */
+  diapositives: DiapositiveExpose[] | null;
+  bibliographie: string[];
+  /** Auteur de l'exposé (page de titre du PowerPoint). */
+  auteur: string;
+};
 
 /** GET /api/bibliotheque/livres/:id */
 export type LivreDetailDto = {

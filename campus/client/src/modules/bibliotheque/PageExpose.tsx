@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Copy, Check, Printer, Trash2, BookOpen } from "lucide-react";
+import { ArrowLeft, Copy, Check, Printer, Trash2, BookOpen, Presentation } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { suppr } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
@@ -14,10 +14,11 @@ import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
 import { Chargement, Erreur } from "@/components/ui/divers";
 import { Markdown } from "@/components/ui/markdown";
-import { toastErreur } from "@/components/ui/toast";
+import { toast, toastErreur } from "@/components/ui/toast";
 import { copier } from "@/modules/ia/voix";
 import { EtiquetteIa } from "@/modules/ia/composants";
 import type { ExposeDto } from "@shared/schema/ext-bibliotheque";
+import { telechargerPowerPoint } from "./powerpoint";
 
 export default function PageExpose({ id }: { id: string }) {
   const moi = useMoiConnecte();
@@ -25,6 +26,7 @@ export default function PageExpose({ id }: { id: string }) {
   const [, naviguer] = useLocation();
   const { data, error, isLoading, refetch } = useQuery<ExposeDto>({ queryKey: [`/api/bibliotheque/exposes/${id}`] });
   const [copie, setCopie] = useState(false);
+  const [fabrication, setFabrication] = useState(false);
 
   if (isLoading) return <Page><Chargement lignes={5} /></Page>;
   if (error || !data) return <Page><Erreur message={(error as Error)?.message ?? "Exposé introuvable."} reessayer={() => void refetch()} /></Page>;
@@ -55,6 +57,25 @@ export default function PageExpose({ id }: { id: string }) {
         }
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
+            {data.diapositives?.length ? (
+              <Bouton
+                icone={<Presentation className="h-4 w-4" />}
+                chargement={fabrication}
+                onClick={async () => {
+                  setFabrication(true);
+                  try {
+                    await telechargerPowerPoint(data);
+                    toast(etudiant ? "PowerPoint téléchargé : ouvre-le pour le personnaliser." : "PowerPoint téléchargé.");
+                  } catch (e) {
+                    toastErreur(e);
+                  } finally {
+                    setFabrication(false);
+                  }
+                }}
+              >
+                Télécharger le PowerPoint
+              </Bouton>
+            ) : null}
             <Bouton
               variante="contour"
               icone={copie ? <Check className="h-4 w-4 text-succes" /> : <Copy className="h-4 w-4" />}

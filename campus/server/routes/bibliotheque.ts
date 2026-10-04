@@ -12,7 +12,7 @@ import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerRole, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable } from "../http";
-import { demanderJson, demanderClaude, ErreurIa } from "../ia";
+import { demanderJson, ErreurIa } from "../ia";
 import { verifierLivre, normaliser } from "../catalogues";
 import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse, neutraliserBiblio } from "../bibliotheque-outils";
 import { idsCoursAccessibles, etudiantsDuCours } from "../acces";
@@ -173,6 +173,79 @@ const ficheValide = (b: unknown): FicheLivre | null => {
     .safeParse(b);
   return r.success ? r.data : null;
 };
+
+const SCHEMA_EXPOSE = {
+  type: "object",
+  properties: {
+    problematique: { type: "string" },
+    plan: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { partie: { type: "string" }, minutes: { type: "integer" }, contenu: { type: "string" } },
+        required: ["partie", "minutes", "contenu"],
+        additionalProperties: false,
+      },
+    },
+    diapositives: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { titre: { type: "string" }, puces: { type: "array", items: { type: "string" } }, aDire: { type: "string" } },
+        required: ["titre", "puces", "aDire"],
+        additionalProperties: false,
+      },
+    },
+    questions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { question: { type: "string" }, piste: { type: "string" } },
+        required: ["question", "piste"],
+        additionalProperties: false,
+      },
+    },
+    espritCritique: { type: "array", items: { type: "string" } },
+    aVerifier: { type: "array", items: { type: "string" } },
+    autresReferences: { type: "array", items: { type: "string" }, description: "Au plus 2 références certaines, au format « Auteur (année). Titre. Éditeur. »" },
+  },
+  required: ["problematique", "plan", "diapositives", "questions", "espritCritique", "aVerifier", "autresReferences"],
+  additionalProperties: false,
+};
+
+const schemaExpose = z.object({
+  problematique: z.string(),
+  plan: z.array(z.object({ partie: z.string(), minutes: z.number(), contenu: z.string() })),
+  diapositives: z.array(z.object({ titre: z.string(), puces: z.array(z.string()), aDire: z.string() })).min(1),
+  questions: z.array(z.object({ question: z.string(), piste: z.string() })),
+  espritCritique: z.array(z.string()),
+  aVerifier: z.array(z.string()),
+  autresReferences: z.array(z.string()),
+});
+type ExposeIa = z.infer<typeof schemaExpose>;
+
+const exposeValide = (b: unknown): ExposeIa | null => {
+  const r = schemaExpose.safeParse(b);
+  return r.success ? r.data : null;
+};
+
+/** L'exposé complet, lisible à l'écran et à l'impression. */
+function exposeEnMarkdown(e: ExposeIa, bibliographie: string[]): string {
+  const liste = (xs: string[]) => xs.filter((x) => x.trim()).map((x) => `- ${x.trim()}`).join("\n");
+  return [
+    `## Problématique\n${e.problematique.trim()}`,
+    `## Plan\n${e.plan.map((p) => `- **${p.partie.trim()}** (${p.minutes} min) : ${p.contenu.trim()}`).join("\n")}`,
+    `## Diapositives\n${e.diapositives
+      .map((d, i) => `**${i + 1}. ${d.titre.trim()}**\n${liste(d.puces)}\n\n_À dire :_ ${d.aDire.trim()}`)
+      .join("\n\n")}`,
+    `## Questions du public\n${e.questions.map((q) => `- **${q.question.trim()}** ${q.piste.trim()}`).join("\n")}`,
+    `## Esprit critique\n${liste(e.espritCritique)}`,
+    e.aVerifier.length ? `## À vérifier dans le livre\n${liste(e.aVerifier)}` : "",
+    `## Bibliographie\n${liste(bibliographie)}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 /** Fiches en cours de rédaction : deux étudiants qui ouvrent le même livre ne déclenchent qu'un appel. */
 const fichesEnCours = new Map<number, Promise<FicheLivre>>();
@@ -502,27 +575,46 @@ export function enregistrerBibliotheque(app: Express) {
         .orderBy(notesBiblio.id)
         .limit(40);
       const minutes = d.minutes ?? 10;
-      const bibliographie = `${l.auteurs || "Auteur inconnu"}${l.annee ? ` (${l.annee})` : ""}. ${l.titre}.${l.editeur ? ` ${l.editeur}.` : ""}${l.isbn ? ` ISBN ${l.isbn}.` : ""}`;
-      const contenu = await appelIa(() =>
-        demanderClaude({
+      const reference = `${l.auteurs || "Auteur inconnu"}${l.annee ? ` (${l.annee})` : ""}. ${l.titre}.${l.editeur ? ` ${l.editeur}.` : ""}${l.isbn ? ` ISBN ${l.isbn}.` : ""}`;
+      const brut = await appelIa(() =>
+        demanderJson<unknown>({
           systeme: SYSTEME_BIBLIOTHEQUE,
           contexte: contexteLivre(l),
           messages: [
             {
               role: "user",
-              content: `${adresse(u)}\n\nAide à préparer un exposé oral de ${minutes} minutes à partir de ce livre.\n\nSujet de l'exposé :\n<sujet>\n${neutraliserBiblio(d.sujet)}\n</sujet>\n\nNotes de lecture personnelles (à intégrer en priorité, ce sont ses propres trouvailles) :\n<notes>\n${notes.map((n) => `- ${neutraliserBiblio(n.contenu)}`).join("\n").slice(0, 12_000) || "(aucune note pour l'instant)"}\n</notes>\n\nRédige en Markdown, dans cet ordre :\n## Problématique\nune question claire qui guide l'exposé.\n## Plan\nintroduction (accroche), 2 ou 3 parties, conclusion, avec la durée de chaque partie (total ${minutes} minutes).\n## Diapositives\n8 à 12 diapositives : pour chacune, un titre en gras, 3 puces courtes au plus, et une ligne « À dire : » pour l'orateur.\n## Questions du public\n4 questions probables avec une piste de réponse.\n## Esprit critique\nlimites du livre, ce qu'il faut vérifier ou compléter avec d'autres sources.\n## Bibliographie\ncommence par : ${bibliographie}\nAjoute au plus 2 autres références seulement si tu es certain qu'elles existent.\n\nNe prétends jamais citer le livre mot pour mot. Signale « (à vérifier dans le livre) » pour les points dont tu n'es pas sûr.`,
+              content: `${adresse(u)}
+
+Aide à préparer un exposé oral de ${minutes} minutes à partir de ce livre.
+
+Sujet de l'exposé :
+<sujet>
+${neutraliserBiblio(d.sujet)}
+</sujet>
+
+Notes de lecture personnelles (à intégrer en priorité, ce sont ses propres trouvailles) :
+<notes>
+${notes.map((n) => `- ${neutraliserBiblio(n.contenu)}`).join("\n").slice(0, 12_000) || "(aucune note pour l'instant)"}
+</notes>
+
+Prépare : une problématique claire ; un plan (introduction avec accroche, 2 ou 3 parties, conclusion) dont les durées font ${minutes} minutes au total ; 8 à 12 diapositives (titre court, 3 puces de 12 mots au plus, et ce que l'orateur dit, en 2 ou 3 phrases) ; 4 questions probables du public avec une piste de réponse ; l'esprit critique (limites du livre, ce qu'il faut compléter) ; les points à vérifier dans le livre ; au plus 2 autres références, seulement si tu es certain qu'elles existent. Ne prétends jamais citer le livre mot pour mot. Exemples concrets, ivoiriens quand c'est pertinent.`,
             },
           ],
+          schema: SCHEMA_EXPOSE,
           gamme: "bibliotheque",
           effort: "medium",
-          maxTokens: 9000,
+          maxTokens: 12000,
           utilisateurId: u.id,
         }),
       );
-      if (!contenu.trim()) throw new ErreurIa("L'exposé n'a pas pu être préparé. Nouvel essai possible dans un instant.", 502);
-      const [e] = await db.insert(exposesBiblio).values({ utilisateurId: u.id, livreId: l.id, sujet: d.sujet, contenu }).returning();
+      const ex = exposeValide(brut);
+      if (!ex) throw new ErreurIa("L'exposé n'a pas pu être préparé. Nouvel essai possible dans un instant.", 502);
+      const bibliographie = [reference, ...ex.autresReferences.map((r) => r.trim()).filter(Boolean).slice(0, 2)];
+      const contenu = exposeEnMarkdown(ex, bibliographie);
+      const diapositives = ex.diapositives.map((x) => ({ titre: x.titre.trim(), puces: x.puces.map((p) => p.trim()).filter(Boolean).slice(0, 5), aDire: x.aDire.trim() })).filter((x) => x.titre);
+      const [e] = await db.insert(exposesBiblio).values({ utilisateurId: u.id, livreId: l.id, sujet: d.sujet, contenu, diapositives, bibliographie }).returning();
       await db.insert(journal).values({ utilisateurId: u.id, action: "bibliotheque.expose", details: { livreId: l.id, exposeId: e.id } });
-      const dto: ExposeDto = { id: e.id, livreId: l.id, livreTitre: l.titre, sujet: e.sujet, creeLe: e.creeLe.toISOString(), contenu: e.contenu };
+      const dto: ExposeDto = { id: e.id, livreId: l.id, livreTitre: l.titre, sujet: e.sujet, creeLe: e.creeLe.toISOString(), contenu, diapositives, bibliographie, auteur: `${u.prenom} ${u.nom}` };
       res.status(201).json(dto);
     }),
   );
@@ -533,13 +625,24 @@ export function enregistrerBibliotheque(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const [ligne] = await db
-        .select({ e: exposesBiblio, titre: livres.titre })
+        .select({ e: exposesBiblio, titre: livres.titre, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
         .from(exposesBiblio)
         .innerJoin(livres, eq(livres.id, exposesBiblio.livreId))
+        .innerJoin(utilisateurs, eq(utilisateurs.id, exposesBiblio.utilisateurId))
         .where(eq(exposesBiblio.id, idParam(req)));
       if (!ligne || (ligne.e.utilisateurId !== u.id && !estPersonnel(u))) throw introuvable("Exposé");
       const { e, titre } = ligne;
-      const dto: ExposeDto = { id: e.id, livreId: e.livreId, livreTitre: titre, sujet: e.sujet, creeLe: e.creeLe.toISOString(), contenu: e.contenu };
+      const dto: ExposeDto = {
+        id: e.id,
+        livreId: e.livreId,
+        livreTitre: titre,
+        sujet: e.sujet,
+        creeLe: e.creeLe.toISOString(),
+        contenu: e.contenu,
+        diapositives: e.diapositives ?? null,
+        bibliographie: e.bibliographie ?? [],
+        auteur: `${ligne.prenom} ${ligne.nom}`,
+      };
       res.json(dto);
     }),
   );

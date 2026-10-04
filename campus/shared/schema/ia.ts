@@ -168,6 +168,9 @@ export const notesBiblio = campusSchema.table(
   (t) => [index("notes_biblio_utilisateur_idx").on(t.utilisateurId, t.livreId)],
 );
 
+/** Une diapositive de l'exposé (téléchargeable en PowerPoint). */
+export type DiapositiveExpose = { titre: string; puces: string[]; aDire: string };
+
 /** Exposés préparés avec l'IA à partir d'un livre (plan, diapositives, bibliographie). */
 export const exposesBiblio = campusSchema.table(
   "exposes_biblio",
@@ -176,7 +179,11 @@ export const exposesBiblio = campusSchema.table(
     utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
     livreId: integer("livre_id").notNull().references(() => livres.id, { onDelete: "cascade" }),
     sujet: text("sujet").notNull(),
+    /** L'exposé complet en Markdown. */
     contenu: text("contenu").notNull(),
+    /** Les diapositives seules, pour le PowerPoint ; bibliographie en dernière diapositive. */
+    diapositives: jsonb("diapositives").$type<DiapositiveExpose[]>(),
+    bibliographie: jsonb("bibliographie").$type<string[]>(),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("exposes_biblio_utilisateur_idx").on(t.utilisateurId)],

@@ -149,9 +149,9 @@ export function CarteLivreCite({
           {livre.verifie ? (
             <BadgeVerification livre={livre} />
           ) : (
-            <Badge ton="alerte">
+            <Badge ton="gris">
               <CircleAlert className="mr-1 inline h-3.5 w-3.5" aria-hidden />
-              Introuvable dans les catalogues
+              Non retrouvé dans nos catalogues
             </Badge>
           )}
           <BadgeLecture livre={livre} />

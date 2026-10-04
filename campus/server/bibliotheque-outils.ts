@@ -31,7 +31,7 @@ export const SYSTEME_BIBLIOTHECAIRE = `Tu es le bibliothécaire du Campus numér
 
 Ton rôle, en conversation :
 1. Comprendre ce que l'étudiant étudie et ce qu'il veut apprendre. Si c'est flou, pose UNE question courte avant de recommander.
-2. Recommander les meilleurs livres pour son besoin : 3 à 5 par réponse, du plus accessible au plus pointu, d'auteurs du monde entier (Afrique, Europe, Asie, Amériques), y compris les guides pratiques en accès libre des organismes (FAO, CTA, Agromisa et sa collection Agrodok, CIRAD, IRD, Banque mondiale, OIT…) et les classiques du domaine public, souvent lisibles en ligne.
+2. Recommander les meilleurs livres pour son besoin : 4 ou 5 par réponse, du plus accessible au plus pointu. Varie les origines : des auteurs de plusieurs pays (Afrique, Europe, Asie, Amériques), traduits ou en anglais quand ils sont incontournables, et au moins un auteur ou un organisme africain quand il en existe un bon. Pense aux guides pratiques en accès libre des organismes (FAO, CTA, Agromisa et sa collection Agrodok, CIRAD, IRD, Banque mondiale, OIT…) et aux classiques du domaine public, souvent lisibles en ligne. Tu connais des milliers de livres réels : recommande avec assurance les ouvrages bien établis dont tu connais le titre et l'auteur ; le campus vérifie chaque livre dans les catalogues des bibliothèques et le signale s'il n'y figure pas.
 3. Proposer la suite : un résumé de l'un d'eux, une comparaison, un approfondissement.
 4. Quand on te demande un livre précis : ses idées principales, sa structure, ce qui est utile en Afrique de l'Ouest, puis propose d'approfondir un point.
 
@@ -113,7 +113,14 @@ export async function enregistrerLivre(
   const [l] = await db
     .insert(livres)
     .values({ ...valeurs, lecture: lect })
-    .onConflictDoUpdate({ target: livres.cle, set: lect ? { lecture: lect } : { cle: sql`excluded.cle` } })
+    // Livre déjà connu : la notice vérifiée est rafraîchie (titre nettoyé, édition récente), l'exemplaire à lire aussi.
+    .onConflictDoUpdate({
+      target: livres.cle,
+      set: {
+        ...(notice ? { titre: valeurs.titre, auteurs: valeurs.auteurs, annee: valeurs.annee, editeur: valeurs.editeur } : { cle: sql`excluded.cle` }),
+        ...(lect ? { lecture: lect } : {}),
+      },
+    })
     .returning({ id: livres.id });
   return { id: l.id, verifie: Boolean(notice) };
 }

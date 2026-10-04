@@ -98,12 +98,24 @@ function nettoyerTitreBnf(brut: string): string {
   let t = brut.split(" / ")[0].replace(/\s+\[[^\]]*\]/g, "");
   const edition = t.match(/^(.*?\([^()]*(?:éd|ed)(?:ition)?\.?\))/i);
   if (edition) t = edition[1];
-  return t
+  t = t
     .replace(/\s+par\s+.*$/i, "")
     .replace(/\.{2,}/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  // Mention de responsabilité collée au titre (« … (Mise à jour 2023) Ministère des Affaires étrangères ; CIRAD… »).
+  if (t.length > 80) {
+    const avantResponsabilite = t.match(/^(.{10,}?\))\s+[A-ZÉÈÀ]/) ?? t.match(/^(.{10,}?)\s+;\s/);
+    if (avantResponsabilite) t = avantResponsabilite[1].trim();
+  }
+  return t.length > 160 ? `${t.slice(0, 157).trimEnd()}…` : t;
 }
+
+/** Au plus trois auteurs, 140 caractères : une notice d'institution peut en aligner une dizaine. */
+const auteursCourts = (liste: string[]) => {
+  const texte = liste.slice(0, 3).join(", ");
+  return texte.length > 140 ? `${texte.slice(0, 137).trimEnd()}…` : texte;
+};
 
 async function chercherBnf(titre: string, auteurs: string): Promise<Notice | null> {
   const mots = motsDuTitre(titre);
@@ -136,7 +148,7 @@ async function chercherBnf(titre: string, auteurs: string): Promise<Notice | nul
   return {
     cle: `bnf:${n.ark!.replace(/^https?:\/\/catalogue\.bnf\.fr\//, "")}`,
     titre: n.titreNet,
-    auteurs: n.auteursTrouves.join(", ") || auteurs,
+    auteurs: auteursCourts(n.auteursTrouves) || auteurs,
     annee: n.annee,
     editeur: n.editeur,
     isbn: n.isbn,

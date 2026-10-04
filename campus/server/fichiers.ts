@@ -14,12 +14,12 @@ import fs from "fs";
 import crypto from "crypto";
 import { db } from "./db";
 import { config } from "./config";
-import { exigerConnexion, moi, estEquipe, perimetreSites } from "./auth";
+import { exigerConnexion, moi, estEquipe, perimetreSites, peut } from "./auth";
 import { route, idParam, introuvable, interdit, invalide, ErreurHttp } from "./http";
 import { planifier } from "./taches";
 import { creerBucket } from "./stockage";
 import { and, eq, like, not } from "drizzle-orm";
-import { fichiers, utilisateurs, type Fichier, type Utilisateur } from "@shared/schema";
+import { fichiers, utilisateurs, type Fichier, type Utilisateur, type Droit } from "@shared/schema";
 
 /** Le bucket Railway des fichiers ; ses objets sont rangés sous « fichiers/<clé> ». */
 const bucket = creerBucket(config.fichiersBucket, "fichiers");
@@ -53,9 +53,13 @@ export function enregistrerGardienFichier(usage: UsageFichier, gardien: GardienF
   gardiens.set(usage, gardien);
 }
 
+/** Fichiers que l'équipe ne lit qu'avec ce droit de son profil (ext-profils.ts) : copies, pièces du dossier, imports. */
+const DROIT_FICHIER: Partial<Record<string, Droit>> = { rendu: "notes", piece: "crm", import: "comptes_gerer" };
+
 export async function peutLireFichier(u: Utilisateur, f: Fichier): Promise<boolean> {
   if (f.proprietaireId === u.id || f.usage === "avatar") return true;
-  if (estEquipe(u)) {
+  const droit = DROIT_FICHIER[f.usage];
+  if (estEquipe(u) && (!droit || peut(u, droit))) {
     const perimetre = perimetreSites(u);
     if (!perimetre) return true; // direction, ou vie scolaire du groupe
     // Vie scolaire d'un site : les fichiers des personnes de son site…

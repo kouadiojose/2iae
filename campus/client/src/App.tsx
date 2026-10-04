@@ -4,7 +4,8 @@ import { Suspense, useEffect } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { FournisseurAuth, useMoi, accueilDuRole } from "@/lib/auth";
+import { FournisseurAuth, useMoi, accueilDuRole, profilPermet } from "@/lib/auth";
+import { libelleProfil } from "@shared/schema";
 import { FournisseurFlux } from "@/lib/flux";
 import { Coquille } from "@/components/layout/coquille";
 import { Toasts } from "@/components/ui/toast";
@@ -26,7 +27,7 @@ function EcranChargement() {
   );
 }
 
-function PageInterdite() {
+function PageInterdite({ profil = false }: { profil?: boolean }) {
   const { moi } = useMoi();
   // Tutoiement pour les étudiants, vouvoiement pour les formateurs et l'équipe (CONCEPTION §1.6).
   const tu = !moi || moi.role === "etudiant";
@@ -35,7 +36,11 @@ function PageInterdite() {
       <span className="etiquette">Accès réservé</span>
       <h1 className="text-3xl font-black">{tu ? "Cette page n'est pas pour ton compte." : "Cette page n'est pas pour votre compte."}</h1>
       <p className="text-texte-pale">
-        {tu ? "Elle est réservée à un autre profil du campus. Tu peux revenir à ton accueil." : "Elle est réservée à un autre profil du campus. Vous pouvez revenir à votre accueil."}
+        {profil && moi
+          ? `Votre profil (${libelleProfil(moi)}) ne permet pas d'ouvrir cette page. Si vous en avez besoin, demandez à la direction de changer votre profil.`
+          : tu
+            ? "Elle est réservée à un autre profil du campus. Tu peux revenir à ton accueil."
+            : "Elle est réservée à un autre profil du campus. Vous pouvez revenir à votre accueil."}
       </p>
       <LienBouton href={moi ? accueilDuRole(moi.role) : "/"}>Revenir à mon accueil</LienBouton>
     </div>
@@ -83,13 +88,16 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
   if (moi.doitChangerMotDePasse && chemin !== "/bienvenue") return <Redirect to="/bienvenue" replace />;
 
   const autorise = def.acces === "connecte" || def.acces.includes(moi.role);
-  const contenu = autorise ? (
-    <Suspense fallback={<EcranChargement />}>
-      <Page {...params} />
-    </Suspense>
-  ) : (
-    <PageInterdite />
-  );
+  // Équipe : le profil doit aussi permettre la page (ext-profils.ts).
+  const profilOk = profilPermet(moi, def.droit);
+  const contenu =
+    autorise && profilOk ? (
+      <Suspense fallback={<EcranChargement />}>
+        <Page {...params} />
+      </Suspense>
+    ) : (
+      <PageInterdite profil={autorise} />
+    );
   if (def.coquille === "aucune") return contenu;
   return <Coquille pleinEcran={def.coquille === "plein-ecran"}>{contenu}</Coquille>;
 }

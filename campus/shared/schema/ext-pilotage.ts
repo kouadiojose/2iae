@@ -13,6 +13,7 @@
 import { serial, text, integer, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, classes, type Role } from "./base";
 import type { StatutSeance, FournisseurVisio } from "./live";
+import type { ProfilEquipe } from "./ext-profils";
 import type { Vitrine } from "../api";
 
 // ── Tables ─────────────────────────────────────────────────────────────────
@@ -233,6 +234,8 @@ export type CompteLigne = {
   site: string | null;
   classeId: number | null;
   classe: string | null;
+  /** Équipe (rôle vie_scolaire) : profil choisi par la direction ; null = vie scolaire (ext-profils.ts). */
+  profil: ProfilEquipe | null;
   actif: boolean;
   /** Code secret personnel choisi (le code provisoire de la fiche a été remplacé). */
   active: boolean;

@@ -20,7 +20,7 @@ import { ActiverNotifications } from "@/modules/pwa/ActiverNotifications";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { rafraichir } from "@/lib/queryClient";
 import { cn, nomComplet } from "@/lib/utils";
-import { LIBELLES_ROLES, type Moi, type ParcoursBienvenue } from "@shared/schema";
+import { LIBELLES_ROLES, libelleProfil, type Moi, type ParcoursBienvenue } from "@shared/schema";
 import { PiedAction, LienDiscret } from "./composants/PiedAction";
 import { PaveCode } from "./composants/PaveCode";
 import { FormulaireMotDePasse } from "./composants/FormulaireMotDePasse";
@@ -293,7 +293,7 @@ function EtapeMoi({ moi, onOui }: { moi: Moi; onOui: () => void }) {
   const t = tuOuVous(moi);
   const [pasMoi, setPasMoi] = useState(false);
   const lignes = [
-    moi.role === "etudiant" ? { l: "Classe", v: moi.classe?.nom } : { l: "Profil", v: LIBELLES_ROLES[moi.role] },
+    moi.role === "etudiant" ? { l: "Classe", v: moi.classe?.nom } : { l: "Profil", v: moi.role === "vie_scolaire" ? libelleProfil(moi) : LIBELLES_ROLES[moi.role] },
     { l: "Campus", v: moi.site?.nom },
     moi.matricule ? { l: "Matricule", v: moi.matricule } : { l: "E-mail", v: moi.email },
   ].filter((x): x is { l: string; v: string } => Boolean(x.v));
@@ -305,7 +305,7 @@ function EtapeMoi({ moi, onOui }: { moi: Moi; onOui: () => void }) {
           <Avatar prenom={moi.prenom} nom={moi.nom} photo={moi.photoUrl} taille={64} />
           <div className="min-w-0">
             <p className="text-[22px] font-black leading-tight tracking-serre">{nomComplet(moi)}</p>
-            <p className="font-mono text-xs text-texte-gris">{LIBELLES_ROLES[moi.role]}</p>
+            <p className="font-mono text-xs text-texte-gris">{moi.role === "vie_scolaire" ? libelleProfil(moi) : LIBELLES_ROLES[moi.role]}</p>
           </div>
         </div>
         <dl className="mt-5 flex flex-col divide-y divide-ligne-douce">

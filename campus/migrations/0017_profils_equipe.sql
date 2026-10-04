@@ -1,0 +1,1 @@
+ALTER TABLE "campus"."utilisateurs" ADD COLUMN "profil" text;

@@ -4,13 +4,13 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper } from "lucide-react";
-import type { TableauPilotage, ListeAContacter, IndicateursCampus } from "@shared/schema";
+import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus } from "lucide-react";
+import type { TableauPilotage, ListeAContacter, IndicateursCampus, Droit } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Chiffre, BarreProgression, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
 import { LienBouton } from "@/components/ui/bouton";
 import { CarteLien, TitreSection } from "@/components/ui/carte";
-import { useMoiConnecte } from "@/lib/auth";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { salutation } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 import { cn, pluriel } from "@/lib/utils";
@@ -22,12 +22,15 @@ import { pourcent } from "./outils";
 
 export default function PageTableau() {
   const moi = useMoiConnecte();
+  // Ce que le profil permet (ext-profils.ts) : le tableau ne montre que ce que la personne peut utiliser.
+  const peutSuivre = profilPermet(moi, "suivi");
   const tableau = useQuery<TableauPilotage>({ queryKey: ["/api/pilotage/tableau"] });
   // Les 4 premiers suffisent ici (la liste complète, paginée, est sur /pilotage/suivi).
-  const aContacter = useQuery<ListeAContacter>({ queryKey: ["/api/pilotage/a-contacter?parPage=4"] });
+  const aContacter = useQuery<ListeAContacter>({ queryKey: ["/api/pilotage/a-contacter?parPage=4"], enabled: peutSuivre });
   const [suivi, setSuivi] = useState<{ id: number; prenom: string; nom: string } | null>(null);
   const t = tableau.data;
-  const nb = aContacter.data?.total ?? t?.total.aContacter ?? 0;
+  const nb = peutSuivre ? (aContacter.data?.total ?? t?.total.aContacter ?? 0) : 0;
+  const raccourcis = RACCOURCIS.filter((r) => profilPermet(moi, r.droit));
 
   return (
     <Page>
@@ -45,7 +48,7 @@ export default function PageTableau() {
         }
       />
 
-      <CarteRentree />
+      {profilPermet(moi, "outils_campus") && <CarteRentree />}
 
       {tableau.isLoading && <Chargement lignes={2} />}
       {tableau.error && <Erreur message={(tableau.error as Error).message} reessayer={() => tableau.refetch()} />}
@@ -63,7 +66,7 @@ export default function PageTableau() {
             <Chiffre libelle="Vus cette semaine" valeur={t.total.actifs7j} detail="venus sur le campus en 7 jours" />
             <Chiffre libelle="Présence aux lives" valeur={pourcent(t.total.presence30j)} detail="en salle ou en ligne" />
             <Chiffre libelle="Devoirs rendus" valeur={pourcent(t.total.devoirsRendus)} detail="devoirs échus ce mois" />
-            <Chiffre libelle="À contacter" valeur={t.total.aContacter} ton={t.total.aContacter ? "danger" : "succes"} detail={t.total.aContacter ? "voir la liste ci-dessous" : "personne pour l'instant"} />
+            <Chiffre libelle="À contacter" valeur={t.total.aContacter} ton={t.total.aContacter ? "danger" : "succes"} detail={!t.total.aContacter ? "personne pour l'instant" : peutSuivre ? "voir la liste ci-dessous" : "suivis par la vie scolaire"} />
           </section>
 
           {t.campus.length > 1 && (
@@ -71,7 +74,7 @@ export default function PageTableau() {
               <TitreSection titre="Campus par campus" />
               <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {t.campus.map((c) => (
-                  <CarteCampus key={c.siteId} c={c} />
+                  <CarteCampus key={c.siteId} c={c} lienSuivi={peutSuivre} />
                 ))}
               </ul>
             </section>
@@ -79,7 +82,7 @@ export default function PageTableau() {
         </>
       )}
 
-      <section>
+      {peutSuivre && <section>
         <TitreSection
           titre="À contacter aujourd'hui"
           action={
@@ -107,19 +110,18 @@ export default function PageTableau() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
 
-      <section>
-        <TitreSection titre="Raccourcis" />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Raccourci href="/pilotage/comptes/import" icone={<FileSpreadsheet className="h-5 w-5" />} titre="Importer des étudiants" texte="Coller depuis Excel" />
-          <Raccourci href="/pilotage/comptes?etat=non_actives&role=etudiant" icone={<Printer className="h-5 w-5" />} titre="Fiches de connexion" texte="Pour les non-activés" />
-          <Raccourci href="/pilotage/planning" icone={<CalendarClock className="h-5 w-5" />} titre="Planning" texte="Lives de la semaine" />
-          <Raccourci href="/pilotage/presences" icone={<BarChart3 className="h-5 w-5" />} titre="Présences" texte="Par séance, export" />
-          <Raccourci href="/pilotage/site" icone={<Globe className="h-5 w-5" />} titre="Site public" texte="Pages et 2iae.com" />
-          <Raccourci href="/pilotage/ia" icone={<Sparkles className="h-5 w-5" />} titre="Budget IA" texte="Consommation 30 jours" />
-        </div>
-      </section>
+      {raccourcis.length > 0 && (
+        <section>
+          <TitreSection titre="Raccourcis" />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {raccourcis.map((r) => (
+              <Raccourci key={r.href} href={r.href} icone={r.icone} titre={r.titre} texte={r.texte} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <FenetreSuivi etudiant={suivi} onFermer={() => setSuivi(null)} />
     </Page>
@@ -138,7 +140,19 @@ function Indicateur({ libelle, valeur }: { libelle: string; valeur: number | nul
   );
 }
 
-function CarteCampus({ c }: { c: IndicateursCampus }) {
+/** Raccourcis du tableau, chacun avec le droit du profil qu'il demande (ext-profils.ts). */
+const RACCOURCIS: { href: string; icone: ReactNode; titre: string; texte: string; droit?: Droit }[] = [
+  { href: "/pilotage/comptes/import", icone: <FileSpreadsheet className="h-5 w-5" />, titre: "Importer des étudiants", texte: "Coller depuis Excel", droit: "comptes_gerer" },
+  { href: "/pilotage/comptes?etat=non_actives&role=etudiant", icone: <Printer className="h-5 w-5" />, titre: "Fiches de connexion", texte: "Pour les non-activés", droit: "nouveau_code" },
+  { href: "/pilotage/etudiants", icone: <GraduationCap className="h-5 w-5" />, titre: "Étudiants", texte: "Chercher un étudiant", droit: "comptes_voir" },
+  { href: "/pilotage/preinscrits", icone: <UserPlus className="h-5 w-5" />, titre: "Préinscrits", texte: "Demandes du site 2iae.com", droit: "crm" },
+  { href: "/pilotage/planning", icone: <CalendarClock className="h-5 w-5" />, titre: "Planning", texte: "Lives de la semaine" },
+  { href: "/pilotage/presences", icone: <BarChart3 className="h-5 w-5" />, titre: "Présences", texte: "Par séance, export", droit: "presences_voir" },
+  { href: "/pilotage/site", icone: <Globe className="h-5 w-5" />, titre: "Site public", texte: "Pages et 2iae.com", droit: "outils_campus" },
+  { href: "/pilotage/ia", icone: <Sparkles className="h-5 w-5" />, titre: "Budget IA", texte: "Consommation 30 jours", droit: "outils_campus" },
+];
+
+function CarteCampus({ c, lienSuivi }: { c: IndicateursCampus; lienSuivi: boolean }) {
   return (
     <li className="flex flex-col gap-3 rounded-2xl border border-ligne bg-white p-5">
       <div className="flex items-baseline justify-between gap-2">
@@ -154,9 +168,11 @@ function CarteCampus({ c }: { c: IndicateursCampus }) {
           <Indicateur libelle="Devoirs rendus" valeur={c.devoirsRendus} />
           <div className="flex items-center justify-between border-t border-ligne-douce pt-3 text-sm">
             <span className="text-texte-pale">Vus en 7 jours : <strong className="text-encre">{c.actifs7j}</strong></span>
-            <Link href={`/pilotage/suivi?site=${c.siteId}`} className={cn("font-bold no-underline", c.aContacter ? "text-danger" : "text-succes")}>
-              {c.aContacter ? `${c.aContacter} à contacter` : "Rien à signaler"}
-            </Link>
+            {lienSuivi && (
+              <Link href={`/pilotage/suivi?site=${c.siteId}`} className={cn("font-bold no-underline", c.aContacter ? "text-danger" : "text-succes")}>
+                {c.aContacter ? `${c.aContacter} à contacter` : "Rien à signaler"}
+              </Link>
+            )}
           </div>
         </>
       )}

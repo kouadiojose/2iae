@@ -22,6 +22,7 @@ import { bucketFichiersDisponible } from "../fichiers";
 import {
   exigerRole,
   exigerConnexion,
+  exigerDroit,
   moi,
   perimetreSites,
   hacher,
@@ -68,7 +69,6 @@ import type {
 } from "@shared/lancement";
 
 const P = "/api/pilotage";
-const EQUIPE = exigerRole("admin", "vie_scolaire");
 const JOUR_MS = 86_400_000;
 
 /** Première session réelle : lundi 28 septembre 2026 à 08:30, heure d'Abidjan (GMT). */
@@ -1049,7 +1049,7 @@ export function enregistrerLancement(app: Express) {
   // La liste de contrôle de la rentrée, recalculée à chaque visite.
   app.get(
     `${P}/rentree`,
-    EQUIPE,
+    exigerDroit("outils_campus"),
     route(async (req, res) => {
       res.setHeader("Cache-Control", "no-store");
       res.json(await calculerRentree(moi(req)));
@@ -1094,7 +1094,7 @@ export function enregistrerLancement(app: Express) {
   // Inviter un formateur (ou un membre de l'équipe) : lien d'activation à envoyer.
   app.post(
     `${P}/comptes/:id(\\d+)/invitation`,
-    EQUIPE,
+    exigerDroit("comptes_personnel"),
     route(async (req, res) => {
       const u = moi(req);
       const { envoyerEmail: parEmail } = valider(z.object({ envoyerEmail: z.boolean().optional() }), req.body ?? {});
@@ -1152,7 +1152,7 @@ export function enregistrerLancement(app: Express) {
   // Envoyer par e-mail le MÊME lien (celui que la fenêtre affiche), à l'adresse du compte ou à une autre.
   app.post(
     `${P}/comptes/:id(\\d+)/invitation/email`,
-    EQUIPE,
+    exigerDroit("comptes_personnel"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(
@@ -1183,7 +1183,7 @@ export function enregistrerLancement(app: Express) {
   // L'écran de la salle d'un campus : le lien et le code permanents en place (GET), ou de nouveaux (POST).
   app.get(
     `${P}/sites/:id(\\d+)/ecran`,
-    EQUIPE,
+    exigerDroit("outils_campus"),
     route(async (req, res) => {
       const s = await siteDuPerimetre(req);
       const compte = await compteEcran(s.id);
@@ -1198,7 +1198,7 @@ export function enregistrerLancement(app: Express) {
 
   app.post(
     `${P}/sites/:id(\\d+)/ecran`,
-    EQUIPE,
+    exigerDroit("outils_campus"),
     route(async (req, res) => {
       const u = moi(req);
       const s = await siteDuPerimetre(req);

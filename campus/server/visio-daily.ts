@@ -8,7 +8,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { exigerConnexion, exigerRole, moi, oublierUtilisateur, versMoi, estEquipe } from "./auth";
+import { exigerConnexion, exigerRole, exigerDroit, moi, oublierUtilisateur, versMoi, estEquipe } from "./auth";
 import { route, valider, idParam, interdit, ErreurHttp } from "./http";
 import { seanceVisible, enseigneCours, idsCoursAccessibles } from "./acces";
 import { planifier } from "./taches";
@@ -340,7 +340,7 @@ export function enregistrerVisioDaily(app: Express) {
   // ── Coût : minutes-participant du mois ──────────────────────────────────
   app.get(
     "/api/visio/usage",
-    exigerRole("admin", "vie_scolaire"),
+    exigerDroit("outils_campus"),
     route(async (req, res) => {
       const demande = String(req.query.mois ?? "");
       const mois = /^\d{4}-(0[1-9]|1[0-2])$/.test(demande) ? demande : new Date().toISOString().slice(0, 7);
@@ -351,7 +351,7 @@ export function enregistrerVisioDaily(app: Express) {
 
   app.get(
     "/api/visio/reglages",
-    exigerRole("admin", "vie_scolaire"),
+    exigerDroit("outils_campus"),
     route(async (_req, res) => {
       res.json(await versReglagesDto());
     }),

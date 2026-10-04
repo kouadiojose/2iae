@@ -24,7 +24,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
-import { exigerConnexion, exigerRole, moi, estEquipe, perimetreSites } from "../auth";
+import { exigerConnexion, exigerRole, exigerDroit, moi, estEquipe, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { idsCoursAccessibles } from "../acces";
 import { notifier } from "../notifications";
@@ -91,6 +91,8 @@ import {
 
 const P = "/api/pilotage/programme";
 const EQUIPE = exigerRole("admin", "vie_scolaire");
+/** Modifier le programme : profils avec le droit « programme » (ext-profils.ts) ; le lire reste ouvert à l'équipe. */
+const PROGRAMME = exigerDroit("programme");
 
 // ── Cache public (60 s, vidé à chaque changement publié) ───────────────────
 
@@ -805,7 +807,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.post(
     `${P}/sessions`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaSession, req.body);
@@ -846,7 +848,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.patch(
     `${P}/sessions/:id(\\d+)`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const avant = await sessionEquipe(u, idParam(req), true);
@@ -892,7 +894,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.delete(
     `${P}/sessions/:id(\\d+)`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -923,7 +925,7 @@ export function enregistrerProgramme(app: Express) {
   // « Dupliquer » : mêmes créneaux, mêmes classes, nouvelles dates.
   app.post(
     `${P}/sessions/:id(\\d+)/dupliquer`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const source = await sessionEquipe(u, idParam(req));
@@ -979,7 +981,7 @@ export function enregistrerProgramme(app: Express) {
   // « Publier » / « Mettre à jour les séances » : idempotent.
   app.post(
     `${P}/sessions/:id(\\d+)/publier`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -1051,7 +1053,7 @@ export function enregistrerProgramme(app: Express) {
   // Retirer de la publication : la session repasse en brouillon, ses séances restent prévues mais ne sont plus annoncées.
   app.post(
     `${P}/sessions/:id(\\d+)/retirer`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -1068,7 +1070,7 @@ export function enregistrerProgramme(app: Express) {
   // Archiver : la session disparaît de partout ; ses séances à venir sont annulées.
   app.post(
     `${P}/sessions/:id(\\d+)/archiver`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -1121,7 +1123,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.post(
     `${P}/sessions/:id(\\d+)/desarchiver`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -1136,7 +1138,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.post(
     `${P}/sessions/:id(\\d+)/creneaux`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -1153,7 +1155,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.patch(
     `${P}/creneaux/:id(\\d+)`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const { c, s } = await creneauEquipe(u, idParam(req));
@@ -1182,7 +1184,7 @@ export function enregistrerProgramme(app: Express) {
   // Retirer un créneau : ses séances encore à venir sont annulées tout de suite (la personne l'a confirmé).
   app.delete(
     `${P}/creneaux/:id(\\d+)`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const { c, s } = await creneauEquipe(u, idParam(req));
@@ -1250,7 +1252,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.post(
     `${P}/sessions/:id(\\d+)/exceptions`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const s = await sessionEquipe(u, idParam(req), true);
@@ -1288,7 +1290,7 @@ export function enregistrerProgramme(app: Express) {
 
   app.delete(
     `${P}/exceptions/:id(\\d+)`,
-    EQUIPE,
+    PROGRAMME,
     route(async (req, res) => {
       const u = moi(req);
       const [e] = await db.select().from(exceptionsProgramme).where(eq(exceptionsProgramme.id, idParam(req)));

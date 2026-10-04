@@ -12,7 +12,7 @@ import { fcfa, TONS_STATUT } from "../outils-crm";
 export const COLONNES_CRM = "lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1.1fr)_minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,1.2fr)]";
 
 /** En-tête du tableau (ordinateur seulement). */
-export function CrmEnTeteListe() {
+export function CrmEnTeteListe({ argent = true }: { argent?: boolean }) {
   return (
     <div
       aria-hidden="true"
@@ -20,7 +20,7 @@ export function CrmEnTeteListe() {
     >
       <span>Étudiant</span>
       <span>Pièces</span>
-      <span>Paiement</span>
+      <span>{argent ? "Paiement" : ""}</span>
       <span>Relances</span>
       <span>Compte</span>
     </div>
@@ -32,7 +32,8 @@ function classeEtCampus(e: Pick<EtudiantCrmLigne, "classe" | "site">): string {
   return [e.classe, e.site && !(e.classe ?? "").includes(e.site) ? `Campus ${e.site}` : null].filter(Boolean).join(" · ") || "Sans classe";
 }
 
-export function CrmLigneEtudiant({ e }: { e: EtudiantCrmLigne }) {
+/** argent : le profil voit les paiements (droit « argent », ext-profils.ts). */
+export function CrmLigneEtudiant({ e, argent = true }: { e: EtudiantCrmLigne; argent?: boolean }) {
   const complet = e.pieces.recues >= e.pieces.requises;
   const f = e.finances;
   return (
@@ -78,7 +79,11 @@ export function CrmLigneEtudiant({ e }: { e: EtudiantCrmLigne }) {
 
           {/* Paiement */}
           <span className="flex flex-col">
-            {!f ? (
+            {!argent ? (
+              <span className="hidden text-texte-gris lg:inline" aria-hidden="true">
+                –
+              </span>
+            ) : !f ? (
               <span className="text-texte-gris">Pas d'échéancier</span>
             ) : f.reste <= 0 ? (
               <span className="font-semibold text-succes">Soldé</span>

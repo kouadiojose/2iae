@@ -24,7 +24,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
-import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives } from "../auth";
+import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
@@ -262,6 +262,8 @@ async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance> {
 
 /** Séance que la personne anime (formateur du cours ou équipe). */
 async function seanceAnimee(u: Utilisateur, id: number): Promise<Seance> {
+  // Équipe : préparer ou animer une séance relève du profil « programme » (ext-profils.ts).
+  if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
   const s = await chargerSeance(id);
   await coursEnseigne(u, s.coursId);
   return s;
@@ -1436,6 +1438,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
       const d = valider(schemaCreation, req.body);
       const c = await coursEnseigne(u, d.coursId);
       const fournisseur = d.fournisseur ?? visio.fournisseurParDefaut();
@@ -2088,6 +2091,7 @@ export function enregistrerLive(app: Express) {
         return res.json({ id: m.id, retire: true });
       }
       if ((role !== "formateur" && role !== "equipe") || m.destinataireId) throw interdit("Seuls le formateur et l'équipe masquent les messages des autres.");
+      if (role === "equipe" && !peut(u, "programme")) throw interdit(messageProfil(u));
       await db.update(messagesLive).set({ masque: true, epingle: false }).where(eq(messagesLive.id, m.id));
       await db.insert(journal).values({ utilisateurId: u.id, action: "chat_masque", details: { seanceId: s.id, messageId: m.id } });
       diffuserMessage(m, "chat:masque", { id: m.id });
@@ -2126,6 +2130,7 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAccessible(u, idParam(req));
       const role = await roleDans(u, s);
       if (role !== "formateur" && role !== "equipe") throw interdit("Seuls le formateur et l'équipe épinglent un message.");
+      if (role === "equipe" && !peut(u, "programme")) throw interdit(messageProfil(u));
       const { epingle } = valider(z.object({ epingle: z.boolean() }), req.body);
       const [m] = await db.select().from(messagesLive).where(and(eq(messagesLive.id, idParam(req, "mid")), eq(messagesLive.seanceId, s.id)));
       if (!m || m.destinataireId || m.masque) throw introuvable("Message");
@@ -2832,6 +2837,7 @@ export function enregistrerLive(app: Express) {
       else if (u.role === "vie_scolaire" && u.siteId) siteId = u.siteId;
       else if (estEquipe(u)) siteId = req.query.site ? Number(req.query.site) : null;
       else throw interdit("Le code d'émargement s'affiche sur l'écran de la salle de conférence.");
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "presences");
       if (!siteId || !Number.isInteger(siteId)) throw invalide("Précisez la salle (paramètre site).");
       if (!agitSurSite(u, siteId)) throw interdit("Cette salle n'est pas dans votre périmètre.");
       const site = (await nomsSites()).get(siteId);
@@ -2927,6 +2933,7 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       if (!estEquipe(u)) throw interdit("Le pointage est fait par la vie scolaire du campus.");
+      exigerDroitDe(u, "presences");
       const s = await chargerSeance(idParam(req));
       if (seanceNonTenue(s)) throw new ErreurHttp(409, "Cette séance n'a pas eu lieu : il n'y a pas de présence à pointer.");
       const d = valider(
@@ -2979,6 +2986,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "presences_voir");
       const s = await seanceSuivie(u, idParam(req));
       res.json(await feuillePresence(u, s));
     }),
@@ -2992,6 +3000,7 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       const s = await seanceAccessible(u, idParam(req));
       const siteId = idParam(req, "siteId");
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "presences");
       if (!agitSurSite(u, siteId)) throw interdit("Seul le responsable de cette salle peut la déclarer.");
       const d = valider(
         z.object({ nombre: z.number().int().min(0).max(2000).optional(), prete: z.boolean().optional(), incident: z.string().trim().max(200).nullable().optional() }),
@@ -3043,6 +3052,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "presences_voir");
       const s = await seanceSuivie(u, idParam(req));
       const role = await roleDans(u, s);
       const sitesParId = await nomsSites();

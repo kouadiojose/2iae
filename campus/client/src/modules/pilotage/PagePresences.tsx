@@ -15,6 +15,7 @@ import { Carte } from "@/components/ui/carte";
 import { Onglets } from "@/components/ui/onglets";
 import { dateEtHeure, jourLong, heure } from "@/lib/dates";
 import { cn, pluriel } from "@/lib/utils";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreJustifier, type CibleJustification } from "./composants/FenetreJustifier";
 import { TON_PRESENCE, pourcent, lundiIso, decalerSemaine, libelleSemaine } from "./outils";
@@ -228,6 +229,8 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
 
 function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: StatutPresencePilotage) => boolean; onJustifier: (e: PresencesCampus["etudiants"][number]) => void }) {
   const visibles = c.etudiants.filter((e) => garde(e.statut));
+  // Justifier une absence : profils avec le droit « presences » (ext-profils.ts) ; les autres consultent.
+  const peutJustifier = profilPermet(useMoiConnecte(), "presences");
   return (
     <section className="rounded-2xl border border-ligne bg-white">
       <header className="flex flex-col gap-2 border-b border-ligne-douce p-5">
@@ -278,7 +281,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
                 </div>
               </div>
               <Badge ton={TON_PRESENCE[e.statut]}>{LIBELLES_PRESENCE_PILOTAGE[e.statut]}</Badge>
-              {(e.statut === "absent" || e.statut === "partiel" || e.statut === "justifie") && (
+              {peutJustifier && (e.statut === "absent" || e.statut === "partiel" || e.statut === "justifie") && (
                 <button type="button" onClick={() => onJustifier(e)} className="min-h-[48px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
                   {e.justification ? "Modifier" : "Justifier"}
                 </button>
@@ -294,6 +297,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
 // ── Par étudiant ───────────────────────────────────────────────────────────
 
 function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; onJustifier: (c: CibleJustification) => void }) {
+  const peutJustifier = profilPermet(useMoiConnecte(), "presences");
   const [, naviguer] = useLocation();
   const [q, setQ] = useState("");
   const [qDiffere, setQDiffere] = useState("");
@@ -382,7 +386,7 @@ function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; o
                     </div>
                   </div>
                   <Badge ton={TON_PRESENCE[s.statut]}>{LIBELLES_PRESENCE_PILOTAGE[s.statut]}</Badge>
-                  {(s.statut === "absent" || s.statut === "partiel" || s.statut === "justifie") && (
+                  {peutJustifier && (s.statut === "absent" || s.statut === "partiel" || s.statut === "justifie") && (
                     <button
                       type="button"
                       onClick={() => onJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: d.etudiant.id, nom: `${d.etudiant.prenom} ${d.etudiant.nom}`, justification: s.justification })}

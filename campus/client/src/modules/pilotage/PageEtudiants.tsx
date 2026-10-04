@@ -17,6 +17,7 @@ import { SousNav } from "./composants/SousNav";
 import { CrmLigneEtudiant, CrmEnTeteListe } from "./composants/CrmLigneEtudiant";
 import { FenetreLienEtudiants } from "./composants/FenetreLienEtudiants";
 import { useReferences } from "./outils";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { fcfa } from "./outils-crm";
 
 const PAR_PAGE = 25;
@@ -75,6 +76,11 @@ export default function PageEtudiants() {
   const search = useSearch();
   const [, naviguer] = useLocation();
   const refs = useReferences();
+  const moi = useMoiConnecte();
+  // Ce que le profil permet (ext-profils.ts) : la liste montre seulement ce que la personne peut utiliser.
+  const peutInscrire = profilPermet(moi, "comptes_gerer");
+  const peutCrm = profilPermet(moi, "crm");
+  const argent = profilPermet(moi, "argent");
   const [f, setF] = useState<Filtres>(() => lireFiltres(search));
   const [saisie, setSaisie] = useState(f.q);
   const [lienOuvert, setLienOuvert] = useState(false);
@@ -125,21 +131,33 @@ export default function PageEtudiants() {
       <EnTetePage
         etiquette="Pilotage · Étudiants"
         titre="Étudiants"
-        sousTitre="Dossiers, pièces, paiements et relances de chaque étudiant. Touchez une ligne pour ouvrir son dossier."
+        sousTitre={
+          argent
+            ? "Dossiers, pièces, paiements et relances de chaque étudiant. Touchez une ligne pour ouvrir son dossier."
+            : peutCrm
+              ? "Dossiers, pièces et relances de chaque étudiant. Touchez une ligne pour ouvrir son dossier."
+              : "Les étudiants de votre périmètre. Touchez une ligne pour ouvrir sa fiche."
+        }
         actions={
-          <>
-            <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px] w-full sm:w-auto">
-              Inscrire un étudiant
-            </LienBouton>
-            <Bouton variante="contour" icone={<Link2 className="h-4 w-4" />} onClick={() => setLienOuvert(true)} className="min-h-[48px] w-full sm:w-auto">
-              Lien d'inscription
-            </Bouton>
-            <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-              <ActionSecondaire href="/pilotage/comptes/import" Icone={FileSpreadsheet} court="Importer" long="Importer depuis Excel" />
-              <ActionSecondaire href="/pilotage/preinscrits" Icone={Globe} court="Préinscrits" long="Préinscrits du site" />
-              <ActionSecondaire href={urlExport} telecharger Icone={Download} court="Exporter" long="Exporter (Excel)" />
-            </div>
-          </>
+          peutInscrire || peutCrm ? (
+            <>
+              {peutInscrire && (
+                <>
+                  <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px] w-full sm:w-auto">
+                    Inscrire un étudiant
+                  </LienBouton>
+                  <Bouton variante="contour" icone={<Link2 className="h-4 w-4" />} onClick={() => setLienOuvert(true)} className="min-h-[48px] w-full sm:w-auto">
+                    Lien d'inscription
+                  </Bouton>
+                </>
+              )}
+              <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+                {peutInscrire && <ActionSecondaire href="/pilotage/comptes/import" Icone={FileSpreadsheet} court="Importer" long="Importer depuis Excel" />}
+                {peutCrm && <ActionSecondaire href="/pilotage/preinscrits" Icone={Globe} court="Préinscrits" long="Préinscrits du site" />}
+                {peutCrm && <ActionSecondaire href={urlExport} telecharger Icone={Download} court="Exporter" long="Exporter (Excel)" />}
+              </div>
+            </>
+          ) : undefined
         }
       />
 
@@ -180,23 +198,29 @@ export default function PageEtudiants() {
             actif={f.filtre === "a_verifier"}
             onClick={() => basculerFiltre("a_verifier")}
           />
-          <Tuile
-            libelle="En retard de paiement"
-            valeur={i.enRetard}
-            detail={i.enRetard ? fcfa(i.montantRetard) : "aucun retard"}
-            ton={i.enRetard ? "danger" : "succes"}
-            actif={f.filtre === "retard"}
-            onClick={() => basculerFiltre("retard")}
-          />
-          <Tuile libelle="Relances du jour" valeur={i.relancesDuJour} detail="voir les relances" ton={i.relancesDuJour ? "danger" : "encre"} href="/pilotage/relances" />
-          <Tuile
-            libelle="Sans échéancier"
-            valeur={i.sansFrais}
-            detail="frais pas appliqués"
-            ton={i.sansFrais ? "alerte" : "encre"}
-            actif={f.filtre === "sans_frais"}
-            onClick={() => basculerFiltre("sans_frais")}
-          />
+          {argent && (
+            <Tuile
+              libelle="En retard de paiement"
+              valeur={i.enRetard}
+              detail={i.enRetard ? fcfa(i.montantRetard) : "aucun retard"}
+              ton={i.enRetard ? "danger" : "succes"}
+              actif={f.filtre === "retard"}
+              onClick={() => basculerFiltre("retard")}
+            />
+          )}
+          {peutCrm && (
+            <Tuile libelle="Relances du jour" valeur={i.relancesDuJour} detail="voir les relances" ton={i.relancesDuJour ? "danger" : "encre"} href="/pilotage/relances" />
+          )}
+          {argent && (
+            <Tuile
+              libelle="Sans échéancier"
+              valeur={i.sansFrais}
+              detail="frais pas appliqués"
+              ton={i.sansFrais ? "alerte" : "encre"}
+              actif={f.filtre === "sans_frais"}
+              onClick={() => basculerFiltre("sans_frais")}
+            />
+          )}
         </section>
       )}
 
@@ -240,7 +264,7 @@ export default function PageEtudiants() {
             ))}
           </Selection>
           <Selection aria-label="Trier la liste" value={f.tri} onChange={(e) => changer({ tri: e.target.value as Tri })}>
-            {TRIS.map((t) => (
+            {TRIS.filter((t) => argent || t !== "retard").map((t) => (
               <option key={t} value={t}>
                 {LIBELLES_TRIS[t]}
               </option>
@@ -271,14 +295,16 @@ export default function PageEtudiants() {
             titre="Aucun étudiant pour l'instant."
             texte="Inscrivez un étudiant avec son dossier complet, ou importez la liste de la scolarité depuis Excel&nbsp;: les comptes et leurs fiches de connexion sont créés d'un coup."
             action={
-              <div className="flex flex-wrap justify-center gap-2">
-                <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px]">
-                  Inscrire un étudiant
-                </LienBouton>
-                <LienBouton href="/pilotage/comptes/import" variante="contour" icone={<FileSpreadsheet className="h-4 w-4" />} className="min-h-[48px]">
-                  Importer depuis Excel
-                </LienBouton>
-              </div>
+              peutInscrire ? (
+                <div className="flex flex-wrap justify-center gap-2">
+                  <LienBouton href="/pilotage/etudiants/nouveau" icone={<UserPlus className="h-4 w-4" />} className="min-h-[48px]">
+                    Inscrire un étudiant
+                  </LienBouton>
+                  <LienBouton href="/pilotage/comptes/import" variante="contour" icone={<FileSpreadsheet className="h-4 w-4" />} className="min-h-[48px]">
+                    Importer depuis Excel
+                  </LienBouton>
+                </div>
+              ) : undefined
             }
           />
         )
@@ -303,10 +329,10 @@ export default function PageEtudiants() {
             )}
           </div>
           <div className="overflow-hidden rounded-2xl border border-ligne bg-white">
-            <CrmEnTeteListe />
+            <CrmEnTeteListe argent={argent} />
             <ul className="flex flex-col divide-y divide-ligne-douce">
               {data.lignes.map((e) => (
-                <CrmLigneEtudiant key={e.id} e={e} />
+                <CrmLigneEtudiant key={e.id} e={e} argent={argent} />
               ))}
             </ul>
           </div>

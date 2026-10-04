@@ -24,12 +24,11 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
-import { moi, perimetreSites, hacher, codeProvisoire, DUREE_CODE_PROVISOIRE_MS } from "../auth";
+import { moi, perimetreSites, hacher, codeProvisoire, DUREE_CODE_PROVISOIRE_MS, exigerDroit, exigerDroitDe, peut, equipeAvecDroit } from "../auth";
 import { creerJeton, lienActivation } from "../activation";
 import { route, valider, idParam, ErreurHttp, introuvable, invalide } from "../http";
 import { lirePreinscritsSite, signalerInscritSite } from "../passerelle-site";
 import {
-  EQUIPE,
   journaliser,
   lienWhatsApp,
   numeroWhatsApp,
@@ -458,7 +457,7 @@ async function pieceGeree(u: Utilisateur, id: number) {
 /** Membre de l'équipe (actif) à qui confier une relance sur cet étudiant. */
 async function responsableValide(u: Utilisateur, id: number, etudiant: Utilisateur) {
   const [r] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, id));
-  const ok = r && r.actif && (r.role === "admin" || (r.role === "vie_scolaire" && (!r.siteId || r.siteId === etudiant.siteId)));
+  const ok = r && r.actif && (r.role === "admin" || (r.role === "vie_scolaire" && peut(r, "crm") && (!r.siteId || r.siteId === etudiant.siteId)));
   if (!ok) throw invalide("Cette personne ne peut pas recevoir cette relance (direction, ou vie scolaire du campus de l'étudiant).");
   return r;
 }
@@ -502,18 +501,23 @@ export function enregistrerCrm(app: Express) {
 
   app.get(
     `${P}/etudiants`,
-    EQUIPE,
+    exigerDroit("comptes_voir"),
     route(async (req, res) => {
       const u = moi(req);
       const f = valider(schemaListe, req.query);
+      const argent = peut(u, "argent");
+      // Sans le droit « argent », ni filtre ni tri sur les sommes dues.
+      if (!argent && (f.filtre === "retard" || f.filtre === "sans_frais")) f.filtre = undefined;
+      if (!argent && f.tri === "retard") f.tri = "nom";
       const tous = await lignesEtudiants(u, f);
       const retenus = trier(filtrer(tous, f), f.tri);
+      const indicateurs = indicateursDe(tous, peut(u, "crm") ? await relancesDuJour(u, f) : 0);
       const page: PageEtudiantsCrm = {
-        lignes: retenus.slice((f.page - 1) * f.parPage, f.page * f.parPage),
+        lignes: retenus.slice((f.page - 1) * f.parPage, f.page * f.parPage).map((l) => (argent ? l : { ...l, finances: null })),
         total: retenus.length,
         page: f.page,
         parPage: f.parPage,
-        indicateurs: indicateursDe(tous, await relancesDuJour(u, f)),
+        indicateurs: argent ? indicateurs : { ...indicateurs, enRetard: 0, montantRetard: 0, sansFrais: 0 },
       };
       res.json(page);
     }),
@@ -521,11 +525,15 @@ export function enregistrerCrm(app: Express) {
 
   app.get(
     `${P}/etudiants/export`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const f = valider(schemaListe, req.query);
-      const lignes = trier(filtrer(await lignesEtudiants(u, f), f), f.tri);
+      const argent = peut(u, "argent");
+      if (!argent && (f.filtre === "retard" || f.filtre === "sans_frais")) f.filtre = undefined;
+      if (!argent && f.tri === "retard") f.tri = "nom";
+      // Sans le droit « argent », les colonnes des sommes restent vides.
+      const lignes = trier(filtrer(await lignesEtudiants(u, f), f), f.tri).map((l) => (argent ? l : { ...l, finances: null }));
       const ids = lignes.map((l) => l.id);
       const dossiers = ids.length ? await db.select().from(dossiersEtudiants).where(inArray(dossiersEtudiants.etudiantId, ids)) : [];
       const parId = new Map(dossiers.map((d) => [d.etudiantId, d]));
@@ -588,7 +596,7 @@ export function enregistrerCrm(app: Express) {
 
   app.get(
     `${P}/etudiants/matricule`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const { classe } = valider(z.object({ classe: z.coerce.number().int().positive() }), req.query);
@@ -602,10 +610,11 @@ export function enregistrerCrm(app: Express) {
 
   app.post(
     `${P}/etudiants`,
-    EQUIPE,
+    exigerDroit("comptes_gerer"),
     route(async (req, res) => {
       const u = moi(req);
       const d = valider(schemaNouvelEtudiant, req.body);
+      if (d.premierVersement) exigerDroitDe(u, "argent");
       const classe = await classeGeree(u, d.classeId);
       const telephone = telephoneSaisi(d.telephone ?? null);
       const whatsapp = telephoneSaisi(d.whatsapp ?? null);
@@ -617,7 +626,8 @@ export function enregistrerCrm(app: Express) {
       const matriculeSaisi = d.matricule ?? null;
       await verifierUnicite({ matricule: matriculeSaisi, email: d.email ?? null });
       const [modele] = await db.select().from(fraisClasses).where(eq(fraisClasses.classeId, classe.id));
-      const appliquer = d.appliquerFrais ?? true;
+      // Les frais de la classe ne s'appliquent qu'avec le droit « argent » (la scolarité les ajoutera sinon).
+      const appliquer = (d.appliquerFrais ?? true) && peut(u, "argent");
       const code = codeProvisoire();
       const hash = await hacher(code);
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
@@ -723,7 +733,7 @@ export function enregistrerCrm(app: Express) {
 
   app.get(
     `${P}/etudiants/:id(\\d+)/crm`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -758,7 +768,7 @@ export function enregistrerCrm(app: Express) {
         .where(
           and(
             eq(utilisateurs.actif, true),
-            or(eq(utilisateurs.role, "admin"), and(eq(utilisateurs.role, "vie_scolaire"), or(isNull(utilisateurs.siteId), e.siteId ? eq(utilisateurs.siteId, e.siteId) : undefined))),
+            or(eq(utilisateurs.role, "admin"), and(equipeAvecDroit("crm"), or(isNull(utilisateurs.siteId), e.siteId ? eq(utilisateurs.siteId, e.siteId) : undefined))),
           ),
         )
         .orderBy(asc(utilisateurs.prenom));
@@ -779,7 +789,8 @@ export function enregistrerCrm(app: Express) {
         pieces: await piecesDe(e.id),
         suivis: listeSuivis.map((s) => ({ id: s.id, type: (TYPES_SUIVI as readonly string[]).includes(s.type) ? (s.type as TypeSuivi) : "note", texte: s.texte, auteur: `${s.prenom} ${s.nom}`, creeLe: s.creeLe.toISOString() })),
         taches: await tachesDe(sql`t.etudiant_id = ${e.id}`),
-        scolarite: await scolariteDe(e, classe?.anneeScolaire ?? null),
+        // Sans le droit « argent », pas de frais ni de versements dans le dossier.
+        scolarite: peut(u, "argent") ? await scolariteDe(e, classe?.anneeScolaire ?? null) : null,
         equipe: equipe.map((x) => ({ id: x.id, nom: `${x.prenom} ${x.nom}${x.role === "admin" ? " (direction)" : ""}` })),
         contacts,
       };
@@ -789,7 +800,7 @@ export function enregistrerCrm(app: Express) {
 
   app.patch(
     `${P}/etudiants/:id(\\d+)/crm`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -826,7 +837,7 @@ export function enregistrerCrm(app: Express) {
 
   app.post(
     `${P}/etudiants/:id(\\d+)/pieces`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -867,7 +878,7 @@ export function enregistrerCrm(app: Express) {
 
   app.patch(
     `${P}/pieces/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const p = await pieceGeree(u, idParam(req));
@@ -884,7 +895,7 @@ export function enregistrerCrm(app: Express) {
 
   app.delete(
     `${P}/pieces/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const p = await pieceGeree(u, idParam(req));
@@ -898,7 +909,7 @@ export function enregistrerCrm(app: Express) {
 
   app.post(
     `${P}/etudiants/:id(\\d+)/taches`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const e = await etudiantGere(u, idParam(req));
@@ -917,7 +928,7 @@ export function enregistrerCrm(app: Express) {
 
   app.patch(
     `${P}/taches/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const t = await tacheGeree(u, idParam(req));
@@ -946,7 +957,7 @@ export function enregistrerCrm(app: Express) {
 
   app.delete(
     `${P}/taches/:id(\\d+)`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const t = await tacheGeree(u, idParam(req));
@@ -957,7 +968,7 @@ export function enregistrerCrm(app: Express) {
 
   app.get(
     `${P}/relances`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (req, res) => {
       const u = moi(req);
       const { qui } = valider(z.object({ qui: z.enum(["moi", "tous"]).default("tous") }), req.query);
@@ -980,7 +991,7 @@ export function enregistrerCrm(app: Express) {
 
   app.get(
     `${P}/preinscrits`,
-    EQUIPE,
+    exigerDroit("crm"),
     route(async (_req, res) => {
       const lecture = await lirePreinscritsSite();
       const ids = lecture.preinscrits.map((l) => l.id);

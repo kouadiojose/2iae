@@ -18,6 +18,7 @@ import { Onglets } from "@/components/ui/onglets";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { get, post, suppr } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { dateCourte, jourLong, heure } from "@/lib/dates";
 import { cn, note, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
@@ -47,13 +48,25 @@ const ETATS_DEVOIR: Record<DevoirDossier["etat"], { texte: string; ton: Ton }> =
 
 export default function PageEtudiant({ id }: { id: string }) {
   const url = `/api/pilotage/etudiants/${id}`;
+  const moi = useMoiConnecte();
+  // Ce que le profil de la personne permet sur ce dossier (ext-profils.ts ; le serveur fait foi).
+  const droits = {
+    crm: profilPermet(moi, "crm"),
+    argent: profilPermet(moi, "argent"),
+    modifier: profilPermet(moi, "comptes_gerer"),
+    code: profilPermet(moi, "nouveau_code"),
+    presences: profilPermet(moi, "presences_voir"),
+    justifier: profilPermet(moi, "presences"),
+    notes: profilPermet(moi, "notes"),
+  };
   const { data: d, isLoading, error, refetch } = useQuery<DossierEtudiant>({ queryKey: [url] });
-  // Le dossier CRM (identité, pièces, scolarité, suivi) est lu en parallèle.
-  const crmQ = useQuery<DossierCrm>({ queryKey: [urlCrm(id)] });
+  // Le dossier CRM (identité, pièces, scolarité, suivi) est lu en parallèle, pour les profils qui y ont droit.
+  const crmQ = useQuery<DossierCrm>({ queryKey: [urlCrm(id)], enabled: droits.crm });
   const crm = crmQ.data;
   const [, naviguer] = useLocation();
   const demande = new URLSearchParams(useSearch()).get("onglet");
-  const onglet: Onglet = ONGLETS.includes(demande as Onglet) ? (demande as Onglet) : "apercu";
+  const ongletsPermis = ONGLETS.filter((o) => o === "apercu" || (droits.crm && (o !== "scolarite" || droits.argent)));
+  const onglet: Onglet = ongletsPermis.includes(demande as Onglet) ? (demande as Onglet) : "apercu";
   const [modifier, setModifier] = useState<CompteLigne | null>(null);
   const [code, setCode] = useState<CodeRemis | null>(null);
   const [justifier, setJustifier] = useState<CibleJustification | null>(null);
@@ -136,47 +149,67 @@ export default function PageEtudiant({ id }: { id: string }) {
                 Écrire sur le campus
               </LienBouton>
             )}
-            <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px] px-3">
-              Modifier
-            </Bouton>
-            <Bouton
-              variante="contour"
-              icone={<KeyRound className="h-4 w-4" />}
-              className="min-h-[48px] whitespace-nowrap px-3"
-              disabled={!e.actif}
-              onClick={async () => {
-                if (!window.confirm(`Créer un nouveau code pour ${e.prenom} ? L'ancien ne marchera plus.`)) return;
-                try {
-                  setCode(await post<CodeRemis>(`/api/pilotage/comptes/${e.id}/nouveau-code`));
-                  await rafraichir(url);
-                } catch (err) {
-                  toastErreur(err);
-                }
-              }}
-            >
-              Nouveau code
-            </Bouton>
+            {droits.modifier && (
+              <Bouton variante="contour" icone={<Pencil className="h-4 w-4" />} onClick={ouvrirModification} className="min-h-[48px] px-3">
+                Modifier
+              </Bouton>
+            )}
+            {droits.code && (
+              <Bouton
+                variante="contour"
+                icone={<KeyRound className="h-4 w-4" />}
+                className="min-h-[48px] whitespace-nowrap px-3"
+                disabled={!e.actif}
+                onClick={async () => {
+                  if (!window.confirm(`Créer un nouveau code pour ${e.prenom} ? L'ancien ne marchera plus.`)) return;
+                  try {
+                    setCode(await post<CodeRemis>(`/api/pilotage/comptes/${e.id}/nouveau-code`));
+                    await rafraichir(url);
+                  } catch (err) {
+                    toastErreur(err);
+                  }
+                }}
+              >
+                Nouveau code
+              </Bouton>
+            )}
           </div>
         </div>
         {crm && crm.contacts.length > 0 && <Contacts contacts={crm.contacts} />}
       </header>
 
-      <BarreOnglets onglet={onglet} onChange={changerOnglet} pieces={piecesATraiter} relances={relancesOuvertes} />
+      {ongletsPermis.length > 1 && <BarreOnglets onglets={ongletsPermis} onglet={onglet} onChange={changerOnglet} pieces={piecesATraiter} relances={relancesOuvertes} />}
 
       <div role="tabpanel" className="flex min-w-0 flex-col gap-6">
         {onglet === "apercu" ? (
           <>
-            <ResumeCrm crm={crm} chargement={crmQ.isLoading} onOnglet={changerOnglet} />
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-              <div className="flex min-w-0 flex-col gap-6">
-                <Assiduite d={d} onJustifier={(s) => setJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: e.id, nom: `${e.prenom} ${e.nom}`, justification: s.justification })} />
-                <Devoirs d={d} />
+            {droits.crm && <ResumeCrm crm={crm} chargement={crmQ.isLoading} onOnglet={changerOnglet} />}
+            {(droits.presences || droits.notes) && (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+                <div className="flex min-w-0 flex-col gap-6">
+                  {droits.presences && (
+                    <Assiduite
+                      d={d}
+                      onJustifier={
+                        droits.justifier
+                          ? (s) => setJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: e.id, nom: `${e.prenom} ${e.nom}`, justification: s.justification })
+                          : undefined
+                      }
+                    />
+                  )}
+                  {droits.notes && <Devoirs d={d} />}
+                </div>
+                {droits.notes && (
+                  <div className="flex min-w-0 flex-col gap-6">
+                    <Notes d={d} />
+                    <Releve d={d} />
+                  </div>
+                )}
               </div>
-              <div className="flex min-w-0 flex-col gap-6">
-                <Notes d={d} />
-                <Releve d={d} />
-              </div>
-            </div>
+            )}
+            {!droits.crm && !droits.presences && !droits.notes && (
+              <EtatVide titre="Fiche de l'étudiant" texte="Votre profil donne accès à l'identité et au compte de l'étudiant : nouveau code, messages. Les notes, les présences et le dossier restent à la scolarité et à la vie scolaire." />
+            )}
           </>
         ) : crmQ.isLoading ? (
           <Chargement lignes={3} />
@@ -186,7 +219,7 @@ export default function PageEtudiant({ id }: { id: string }) {
           <Suspense fallback={<Chargement lignes={3} />}>
             {onglet === "identite" && <DossierIdentite etudiantId={e.id} prenom={e.prenom} identite={crm.identite} onModifierCompte={ouvrirModification} />}
             {onglet === "pieces" && <DossierPieces etudiantId={e.id} pieces={crm.pieces} />}
-            {onglet === "scolarite" && <DossierScolarite etudiantId={e.id} prenom={e.prenom} scolarite={crm.scolarite} />}
+            {onglet === "scolarite" && crm.scolarite && <DossierScolarite etudiantId={e.id} prenom={e.prenom} scolarite={crm.scolarite} />}
             {onglet === "suivi" && <DossierSuivi etudiantId={e.id} crm={crm} />}
           </Suspense>
         )}
@@ -204,7 +237,19 @@ export default function PageEtudiant({ id }: { id: string }) {
 }
 
 /** Les onglets du dossier ; sur téléphone, l'onglet ouvert reste visible dans la barre qui défile. */
-function BarreOnglets({ onglet, onChange, pieces, relances }: { onglet: Onglet; onChange: (o: Onglet) => void; pieces: number; relances: number }) {
+function BarreOnglets({
+  onglets,
+  onglet,
+  onChange,
+  pieces,
+  relances,
+}: {
+  onglets: readonly Onglet[];
+  onglet: Onglet;
+  onChange: (o: Onglet) => void;
+  pieces: number;
+  relances: number;
+}) {
   const cadre = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const liste = cadre.current?.querySelector<HTMLElement>('[role="tablist"]');
@@ -219,13 +264,15 @@ function BarreOnglets({ onglet, onChange, pieces, relances }: { onglet: Onglet; 
         valeur={onglet}
         onChange={onChange}
         className="[&>button]:min-h-[44px]"
-        options={[
-          { valeur: "apercu", libelle: "Aperçu" },
-          { valeur: "identite", libelle: "Identité et famille" },
-          { valeur: "pieces", libelle: "Pièces", compteur: pieces },
-          { valeur: "scolarite", libelle: "Scolarité" },
-          { valeur: "suivi", libelle: "Suivi", compteur: relances },
-        ]}
+        options={(
+          [
+            { valeur: "apercu", libelle: "Aperçu" },
+            { valeur: "identite", libelle: "Identité et famille" },
+            { valeur: "pieces", libelle: "Pièces", compteur: pieces },
+            { valeur: "scolarite", libelle: "Scolarité" },
+            { valeur: "suivi", libelle: "Suivi", compteur: relances },
+          ] as { valeur: Onglet; libelle: string; compteur?: number }[]
+        ).filter((o) => onglets.includes(o.valeur))}
       />
     </div>
   );
@@ -284,12 +331,14 @@ function ResumeCrm({ crm, chargement, onOnglet }: { crm: DossierCrm | undefined;
   const requises = crm.pieces.filter((p) => p.requise);
   const recues = requises.filter((p) => p.statut === "recue").length;
   const aVerifier = crm.pieces.filter((p) => p.statut === "a_verifier").length;
-  const sit = crm.scolarite.situation;
+  // Sans le droit « argent », le serveur n'envoie pas la scolarité : pas de tuile.
+  const argent = crm.scolarite !== null;
+  const sit = crm.scolarite?.situation ?? null;
   const jour = aujourdhui();
   const ouvertes = crm.taches.filter((t) => !t.faiteLe).sort((a, b) => a.echeance.localeCompare(b.echeance));
   const enRetard = ouvertes.filter((t) => t.echeance < jour).length;
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div className={cn("grid grid-cols-1 gap-3", argent ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
       <TuileResume libelle="Pièces" onClick={() => onOnglet("pieces")} valeur={`${recues}/${requises.length} reçues`}>
         {aVerifier > 0 ? (
           <span className="font-semibold text-alerte">{aVerifier} à vérifier</span>
@@ -299,7 +348,7 @@ function ResumeCrm({ crm, chargement, onOnglet }: { crm: DossierCrm | undefined;
           <span className="font-semibold text-succes">Dossier complet</span>
         )}
       </TuileResume>
-      <TuileResume libelle="Scolarité" onClick={() => onOnglet("scolarite")} valeur={sit ? `Reste ${fcfa(sit.reste)}` : "Pas d'échéancier"}>
+      {argent && <TuileResume libelle="Scolarité" onClick={() => onOnglet("scolarite")} valeur={sit ? `Reste ${fcfa(sit.reste)}` : "Pas d'échéancier"}>
         {!sit ? (
           <span>Frais à mettre en place</span>
         ) : (
@@ -314,7 +363,7 @@ function ResumeCrm({ crm, chargement, onOnglet }: { crm: DossierCrm | undefined;
             )}
           </>
         )}
-      </TuileResume>
+      </TuileResume>}
       <TuileResume libelle="Relances" onClick={() => onOnglet("suivi")} valeur={ouvertes.length ? pluriel(ouvertes.length, "ouverte") : "Aucune ouverte"}>
         {enRetard > 0 ? (
           <span className="font-semibold text-danger">{enRetard} en retard</span>
@@ -347,7 +396,7 @@ function TuileResume({ libelle, valeur, onClick, children }: { libelle: string; 
   );
 }
 
-function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier: (s: LignePresenceEtudiant) => void }) {
+function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier?: (s: LignePresenceEtudiant) => void }) {
   const r = d.presences.resume;
   const frise = [...d.presences.seances].reverse();
   return (
@@ -406,7 +455,7 @@ function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier: (s: Li
                     {LIBELLES_PRESENCE_PILOTAGE[s.statut]}
                     {s.retard ? " · retard" : ""}
                   </Badge>
-                  {!comptePresent(s.statut) && s.statut !== "incident" && (
+                  {onJustifier && !comptePresent(s.statut) && s.statut !== "incident" && (
                     <button type="button" onClick={() => onJustifier(s)} className="min-h-[44px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
                       {s.justification ? "Modifier" : "Justifier"}
                     </button>

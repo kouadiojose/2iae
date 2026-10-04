@@ -1,9 +1,11 @@
 // Inscription de l'équipe administrative : la direction partage un lien, la
 // personne remplit sa demande (nom, e-mail, fonction, mot de passe), et la
-// direction la valide en choisissant son accès (vie scolaire d'un campus ou
-// de tous, ou direction). Rien n'est ouvert avant cette validation.
+// direction la valide en choisissant son accès (un profil de l'équipe pour
+// un campus ou pour tous, voir ext-profils.ts, ou la direction). Rien n'est
+// ouvert avant cette validation.
 import { serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, sites, type Role, type Moi } from "./base";
+import type { ProfilEquipe } from "./ext-profils";
 
 /**
  * equipe : demande validée par la direction (/rejoindre/<jeton>) ;
@@ -71,6 +73,8 @@ export type DemandeAccesDto = {
   traitePar: string | null;
   /** Accès donné à la validation. */
   role: Role | null;
+  /** Profil donné à la validation (équipe seulement). */
+  profil: ProfilEquipe | null;
   motif: string | null;
 };
 

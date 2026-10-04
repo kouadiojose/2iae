@@ -6,13 +6,13 @@ import { useLocation, useSearch } from "wouter";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Search, UserPlus, FileSpreadsheet, Printer, Users, ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { PageComptes as DonneesComptes, CompteLigne, CodeRemis, Role } from "@shared/schema";
-import { LIBELLES_ROLES, ROLES } from "@shared/schema";
+import { LIBELLES_ROLES, ROLES, libelleProfil } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Avatar, Badge, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Selection } from "@/components/ui/champs";
 import { cn, pluriel } from "@/lib/utils";
-import { useMoiConnecte } from "@/lib/auth";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreCompte } from "./composants/FenetreCompte";
 import { FenetreCode } from "./composants/FenetreCode";
@@ -74,7 +74,11 @@ export default function PageComptes() {
       else n.add(id);
       return n;
     });
-  const pageSelectionnable = (data?.lignes ?? []).filter((c) => c.actif && c.id !== moi.id);
+  // Ce que le profil permet (ext-profils.ts) : sans « comptes du personnel », la liste ne montre que les étudiants.
+  const peutCreer = profilPermet(moi, "comptes_gerer");
+  const peutFiches = profilPermet(moi, "nouveau_code");
+  const personnel = profilPermet(moi, "comptes_personnel");
+  const pageSelectionnable = peutFiches ? (data?.lignes ?? []).filter((c) => c.actif && c.id !== moi.id) : [];
   const toutePage = pageSelectionnable.length > 0 && pageSelectionnable.every((c) => selection.has(c.id));
 
   return (
@@ -83,16 +87,24 @@ export default function PageComptes() {
       <EnTetePage
         etiquette="Pilotage · Comptes"
         titre="Comptes"
-        sousTitre="Étudiants, formateurs, vie scolaire et salles de conférence. Touchez un compte pour le modifier ou lui donner un nouveau code."
+        sousTitre={
+          personnel
+            ? "Étudiants, formateurs, équipe et salles de conférence. Touchez un compte pour le modifier ou lui donner un nouveau code."
+            : peutFiches
+              ? "Les comptes des étudiants de votre périmètre. Touchez un compte pour voir sa fiche ou lui donner un nouveau code."
+              : "Les comptes des étudiants de votre périmètre. Touchez un compte pour voir sa fiche."
+        }
         actions={
-          <>
-            <Bouton variante="contour" icone={<UserPlus className="h-4 w-4" />} onClick={() => setOuvert("nouveau")}>
-              Nouveau compte
-            </Bouton>
-            <LienBouton href="/pilotage/comptes/import" icone={<FileSpreadsheet className="h-4 w-4" />}>
-              Importer depuis Excel
-            </LienBouton>
-          </>
+          peutCreer ? (
+            <>
+              <Bouton variante="contour" icone={<UserPlus className="h-4 w-4" />} onClick={() => setOuvert("nouveau")}>
+                Nouveau compte
+              </Bouton>
+              <LienBouton href="/pilotage/comptes/import" icone={<FileSpreadsheet className="h-4 w-4" />}>
+                Importer depuis Excel
+              </LienBouton>
+            </>
+          ) : undefined
         }
       />
 
@@ -111,14 +123,16 @@ export default function PageComptes() {
           />
         </div>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-          <Selection aria-label="Rôle" value={role} onChange={(e) => setRole(e.target.value as Role | "")}>
-            <option value="">Tous les rôles</option>
-            {ROLES.filter((r) => r !== "admin" || refs.data?.estDirection).map((r) => (
-              <option key={r} value={r}>
-                {LIBELLES_ROLES[r]}
-              </option>
-            ))}
-          </Selection>
+          {personnel && (
+            <Selection aria-label="Rôle" value={role} onChange={(e) => setRole(e.target.value as Role | "")}>
+              <option value="">Tous les rôles</option>
+              {ROLES.filter((r) => r !== "admin" || refs.data?.estDirection).map((r) => (
+                <option key={r} value={r}>
+                  {LIBELLES_ROLES[r]}
+                </option>
+              ))}
+            </Selection>
+          )}
           <Selection aria-label="État" value={etat} onChange={(e) => setEtat(e.target.value as Etat)}>
             <option value="">Tous les états</option>
             <option value="non_actives">Pas encore activés</option>
@@ -160,9 +174,9 @@ export default function PageComptes() {
               <Bouton variante="contour" icone={<X className="h-4 w-4" />} onClick={() => (setQ(""), setRole(""), setSite(""), setClasse(""), setEtat(""))}>
                 Retirer les filtres
               </Bouton>
-            ) : (
+            ) : peutCreer ? (
               <LienBouton href="/pilotage/comptes/import">Importer des étudiants</LienBouton>
-            )
+            ) : undefined
           }
         />
       ) : (
@@ -173,25 +187,27 @@ export default function PageComptes() {
                 ? `${(data.page - 1) * PAR_PAGE + 1}–${Math.min(data.page * PAR_PAGE, data.total)} sur ${data.total} comptes`
                 : pluriel(data.total, "compte")}
             </span>
-            <label className="flex min-h-[48px] cursor-pointer items-center gap-2 font-semibold text-encre">
-              <input
-                type="checkbox"
-                className="h-5 w-5 accent-[#E4793A]"
-                checked={toutePage}
-                onChange={() =>
-                  setSelection((s) => {
-                    const n = new Set(s);
-                    for (const c of pageSelectionnable) toutePage ? n.delete(c.id) : n.add(c.id);
-                    return n;
-                  })
-                }
-              />
-              Tout cocher sur cette page
-            </label>
+            {peutFiches && (
+              <label className="flex min-h-[48px] cursor-pointer items-center gap-2 font-semibold text-encre">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-[#E4793A]"
+                  checked={toutePage}
+                  onChange={() =>
+                    setSelection((s) => {
+                      const n = new Set(s);
+                      for (const c of pageSelectionnable) toutePage ? n.delete(c.id) : n.add(c.id);
+                      return n;
+                    })
+                  }
+                />
+                Tout cocher sur cette page
+              </label>
+            )}
           </div>
           <ul className="flex flex-col divide-y divide-ligne-douce overflow-hidden rounded-2xl border border-ligne bg-white">
             {data.lignes.map((c) => (
-              <LigneCompte key={c.id} c={c} coche={selection.has(c.id)} onCocher={() => basculer(c.id)} onOuvrir={() => setOuvert(c)} />
+              <LigneCompte key={c.id} c={c} cochable={peutFiches} coche={selection.has(c.id)} onCocher={() => basculer(c.id)} onOuvrir={() => setOuvert(c)} />
             ))}
           </ul>
           {data.total > PAR_PAGE && (
@@ -263,16 +279,18 @@ export default function PageComptes() {
   );
 }
 
-function LigneCompte({ c, coche, onCocher, onOuvrir }: { c: CompteLigne; coche: boolean; onCocher: () => void; onOuvrir: () => void }) {
+function LigneCompte({ c, cochable: fiches, coche, onCocher, onOuvrir }: { c: CompteLigne; cochable: boolean; coche: boolean; onCocher: () => void; onOuvrir: () => void }) {
   const etat = etatCompte(c);
   const moi = useMoiConnecte();
   // Son propre code se change dans son profil, jamais par une fiche.
   const cochable = c.actif && c.id !== moi.id;
   return (
     <li className={cn("flex items-center gap-3 px-3 py-3 sm:px-4", coche && "bg-orange-pale", !c.actif && "opacity-70")}>
-      <label className="grid h-12 w-10 shrink-0 cursor-pointer place-items-center" aria-label={`Cocher ${c.prenom} ${c.nom} pour imprimer sa fiche`}>
-        <input type="checkbox" className="h-5 w-5 accent-[#E4793A]" checked={coche} onChange={onCocher} disabled={!cochable} />
-      </label>
+      {fiches && (
+        <label className="grid h-12 w-10 shrink-0 cursor-pointer place-items-center" aria-label={`Cocher ${c.prenom} ${c.nom} pour imprimer sa fiche`}>
+          <input type="checkbox" className="h-5 w-5 accent-[#E4793A]" checked={coche} onChange={onCocher} disabled={!cochable} />
+        </label>
+      )}
       <button type="button" onClick={onOuvrir} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <Avatar prenom={c.prenom} nom={c.nom} taille={40} className="hidden sm:grid" />
         <span className="min-w-0 flex-1">
@@ -280,7 +298,8 @@ function LigneCompte({ c, coche, onCocher, onOuvrir }: { c: CompteLigne; coche: 
             <span className="text-base font-bold text-encre">
               {c.prenom} {c.nom}
             </span>
-            {c.role !== "etudiant" && <Badge ton="encre">{LIBELLES_ROLES[c.role]}</Badge>}
+            {c.role !== "etudiant" && <Badge ton="encre">{c.role === "vie_scolaire" ? libelleProfil(c) : LIBELLES_ROLES[c.role]}</Badge>}
+            {c.role === "vie_scolaire" && !c.profil && <Badge ton="gris">Profil à choisir</Badge>}
             {c.casquette && <Badge ton="orange">Double casquette</Badge>}
           </span>
           <span className="mt-0.5 block truncate text-sm text-texte-pale">

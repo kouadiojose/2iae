@@ -5,7 +5,7 @@
 // suivis uniquement par son campus (CONCEPTION §9.5).
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { estEquipe, perimetreSites } from "./auth";
+import { estEquipe, perimetreSites, peut } from "./auth";
 import { ErreurHttp, introuvable } from "./http";
 import {
   cours,
@@ -99,10 +99,12 @@ export async function peutVoirCours(u: Utilisateur, coursId: number): Promise<bo
 /**
  * La personne enseigne-t-elle ce cours, ou peut-elle agir dessus comme
  * l'équipe (séances, devoirs, modération) ? La vie scolaire d'un campus ne le
- * peut que pour les cours suivis uniquement par son campus.
+ * peut que pour les cours suivis uniquement par son campus, et seulement si
+ * son profil touche à la pédagogie (programme ou notes : ext-profils.ts).
  */
 export async function enseigneCours(u: Utilisateur, coursId: number): Promise<boolean> {
   if (estEquipe(u)) {
+    if (!peut(u, "programme") && !peut(u, "notes")) return false;
     const perimetre = perimetreSites(u);
     if (!perimetre) return true;
     const sites = await sitesDuCours(coursId);

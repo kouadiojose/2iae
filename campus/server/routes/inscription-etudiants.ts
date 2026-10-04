@@ -16,7 +16,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { config } from "../config";
-import { exigerRole, moi, hacher, codeSecretAcceptable, longueurMinimale, perimetreSites, verifierTentatives, noterEchec, versMoi, oublierUtilisateur, dureeSession } from "../auth";
+import { exigerRole, exigerDroit, moi, hacher, codeSecretAcceptable, longueurMinimale, perimetreSites, verifierTentatives, noterEchec, versMoi, oublierUtilisateur, dureeSession } from "../auth";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { notifier } from "../notifications";
 import { emailDisponible, nomAffiche } from "../mail";
@@ -42,7 +42,8 @@ import {
   type LienEtudiantsDto,
 } from "@shared/schema";
 
-const EQUIPE = exigerRole("admin", "vie_scolaire");
+// Liens d'inscription des étudiants : profils qui créent les comptes des étudiants (ext-profils.ts).
+const EQUIPE = exigerDroit("comptes_gerer");
 const P = "/api/pilotage/inscription-etudiants";
 const JOUR_MS = 24 * 60 * 60 * 1000;
 

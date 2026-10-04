@@ -9,8 +9,8 @@ const PageProgrammePublic = lazy(() => import("./PageProgrammePublic"));
 export const routes: DefRoute[] = [
   // Back-office (motifs précis d'abord).
   { chemin: "/pilotage/programme/:id/imprimer", page: lazy(() => import("./PageImprimerPilotage")), acces: EQUIPE, coquille: "aucune" },
-  { chemin: "/pilotage/programme/:id", page: lazy(() => import("./PageEditeur")), acces: EQUIPE },
-  { chemin: "/pilotage/programme", page: lazy(() => import("./PageSessions")), acces: EQUIPE },
+  { chemin: "/pilotage/programme/:id", page: lazy(() => import("./PageEditeur")), acces: EQUIPE, droit: "programme" },
+  { chemin: "/pilotage/programme", page: lazy(() => import("./PageSessions")), acces: EQUIPE, droit: "programme" },
   // Espace connecté.
   { chemin: "/emploi-du-temps", page: lazy(() => import("./PageEmploiDuTemps")), acces: ["etudiant", "formateur", "admin", "vie_scolaire"] },
   // Public : consultable connecté ou non (pas de redirection).

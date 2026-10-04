@@ -7,7 +7,7 @@ import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuesti
 import { useMoiConnecte, seDeconnecter, basculerCasquette } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { queryClient, rafraichir } from "@/lib/queryClient";
-import { navigationDuRole, estActif } from "@/navigation";
+import { navigationDe, estActif } from "@/navigation";
 import { cn, nomComplet } from "@/lib/utils";
 import { Avatar } from "@/components/ui/divers";
 import { Menu, ElementMenu, SeparateurMenu } from "@/components/ui/menu";
@@ -251,7 +251,7 @@ const navVisibles = (role: string, enDirect: boolean) => (role === "admin" || ro
 export function Coquille({ children, pleinEcran = false }: { children: ReactNode; pleinEcran?: boolean }) {
   const moi = useMoiConnecte();
   const [chemin, naviguer] = useLocation();
-  const nav = navigationDuRole(moi.role);
+  const nav = navigationDe(moi);
   const { data: enCours } = useEnCours();
   const NAV_VISIBLES = navVisibles(moi.role, Boolean(enCours?.enDirect));
   const { data: compteur } = useCompteur();

@@ -120,6 +120,13 @@
       "when": 1791150296973,
       "tag": "0016_exposes_diapositives",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791150863937,
+      "tag": "0017_profils_equipe",
+      "breakpoints": true
     }
   ]
 }

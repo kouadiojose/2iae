@@ -5,16 +5,17 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { KeyRound, FolderOpen, Power, Send, MonitorSmartphone, Repeat } from "lucide-react";
-import type { CompteLigne, CompteCree, CodeRemis, Role } from "@shared/schema";
-import { LIBELLES_ROLES } from "@shared/schema";
+import type { CompteLigne, CompteCree, CodeRemis, Role, ProfilEquipe } from "@shared/schema";
+import { LIBELLES_ROLES, PROFILS_EQUIPE, DROITS_PROFILS, libelleProfil } from "@shared/schema";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Bouton } from "@/components/ui/bouton";
 import { Champ, Selection } from "@/components/ui/champs";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { post, patch, suppr, ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
-import { useMoiConnecte } from "@/lib/auth";
+import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { dateCourte } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { useReferences, telephoneLisible, etatCompte } from "../outils";
 import { Badge } from "@/components/ui/divers";
 
@@ -26,10 +27,15 @@ type Formulaire = {
   email: string;
   telephone: string;
   classeId: string;
+  /** Identifiant du campus, « tous » (équipe de tout le groupe, choix de la direction) ou vide. */
   siteId: string;
   titre: string;
   localisation: string;
+  /** Équipe : profil (ext-profils.ts) ; vide = vie scolaire par défaut (comptes d'avant les profils). */
+  profil: "" | ProfilEquipe;
 };
+
+const TOUS_LES_CAMPUS = "tous";
 
 const vide = (role: Role = "etudiant"): Formulaire => ({
   role,
@@ -42,6 +48,7 @@ const vide = (role: Role = "etudiant"): Formulaire => ({
   siteId: "",
   titre: "",
   localisation: "",
+  profil: "",
 });
 
 const depuisCompte = (c: CompteLigne): Formulaire => ({
@@ -52,9 +59,10 @@ const depuisCompte = (c: CompteLigne): Formulaire => ({
   email: c.email ?? "",
   telephone: telephoneLisible(c.telephone),
   classeId: c.classeId ? String(c.classeId) : "",
-  siteId: c.siteId ? String(c.siteId) : "",
+  siteId: c.siteId ? String(c.siteId) : c.role === "vie_scolaire" ? TOUS_LES_CAMPUS : "",
   titre: c.titre ?? "",
   localisation: c.localisation ?? "",
+  profil: c.profil ?? "",
 });
 
 /** « M. Konaté » → prénom « M. », nom « Konaté » ; « Claude Trépanier » → « Claude » / « Trépanier ». */
@@ -110,7 +118,14 @@ export function FenetreCompte({
   const avecSite = f.role === "vie_scolaire" || f.role === "salle";
   /** Formateur et écran de salle peuvent se passer d'e-mail (invitation par lien, installation par code). */
   const emailFacultatif = estEtudiant || f.role === "formateur" || f.role === "salle";
-  const invitable = compte && compte.actif && !compte.active && compte.id !== moi.id && (compte.role === "formateur" || compte.role === "vie_scolaire" || compte.role === "admin");
+  const invitable =
+    compte && compte.actif && !compte.active && compte.id !== moi.id && (compte.role === "formateur" || compte.role === "vie_scolaire" || compte.role === "admin") && profilPermet(moi, "comptes_personnel");
+  // Ce que le profil de la personne permet sur ce compte (ext-profils.ts ; le serveur fait foi).
+  const etudiantVise = (compte?.role ?? f.role) === "etudiant";
+  const peutModifier = profilPermet(moi, "comptes_gerer") && (etudiantVise || profilPermet(moi, "comptes_personnel"));
+  const peutDonnerCode = profilPermet(moi, "nouveau_code") && (etudiantVise || profilPermet(moi, "comptes_personnel"));
+  /** La direction choisit le profil et peut ouvrir tout le groupe à un membre de l'équipe. */
+  const choixProfil = direction && f.role === "vie_scolaire";
 
   const corps = () => {
     const base: Record<string, unknown> = {
@@ -124,7 +139,9 @@ export function FenetreCompte({
       base.matricule = f.matricule || null;
       base.classeId = f.classeId ? Number(f.classeId) : null;
     }
-    if (avecSite) base.siteId = f.siteId ? Number(f.siteId) : null;
+    // « Tous les campus » : null ; campus pas encore choisi : rien (le serveur le demande).
+    if (avecSite && f.siteId) base.siteId = f.siteId === TOUS_LES_CAMPUS ? null : Number(f.siteId);
+    if (choixProfil) base.profil = f.profil || null;
     if (f.role === "formateur") {
       base.titre = f.titre || null;
       base.localisation = f.localisation || null;
@@ -133,6 +150,10 @@ export function FenetreCompte({
   };
 
   const enregistrer = async () => {
+    if (choixProfil && creation && !f.profil) {
+      setErreur("Choisissez le profil de ce membre de l'équipe : ce qu'il pourra voir et faire.");
+      return;
+    }
     setEnvoi("enregistrer");
     setErreur(null);
     try {
@@ -201,19 +222,27 @@ export function FenetreCompte({
             : f.role === "salle"
               ? "Vous installerez ensuite l'écran avec un code à taper sur l'ordinateur de la salle."
               : "Un code provisoire à 6 chiffres (ou une phrase de passe pour le personnel) sera créé et montré une seule fois."
-          : `${LIBELLES_ROLES[compte.role]}${compte.site ? ` · Campus ${compte.site}` : ""} · créé le ${dateCourte(compte.creeLe)}`
+          : `${compte.role === "vie_scolaire" ? libelleProfil(compte) : LIBELLES_ROLES[compte.role]}${
+              compte.site ? ` · Campus ${compte.site}` : compte.role === "vie_scolaire" ? " · Tous les campus" : ""
+            } · créé le ${dateCourte(compte.creeLe)}`
       }
       pied={
-        <>
-          {!creation && compte.id !== moi.id && (
-            <Bouton variante="fantome" icone={<Power className="h-4 w-4" />} onClick={basculerActif} chargement={envoi === "actif"}>
-              {compte.actif ? "Désactiver" : "Réactiver"}
+        peutModifier ? (
+          <>
+            {!creation && compte.id !== moi.id && (
+              <Bouton variante="fantome" icone={<Power className="h-4 w-4" />} onClick={basculerActif} chargement={envoi === "actif"}>
+                {compte.actif ? "Désactiver" : "Réactiver"}
+              </Bouton>
+            )}
+            <Bouton onClick={enregistrer} chargement={envoi === "enregistrer"}>
+              {creation ? "Créer le compte" : "Enregistrer"}
             </Bouton>
-          )}
-          <Bouton onClick={enregistrer} chargement={envoi === "enregistrer"}>
-            {creation ? "Créer le compte" : "Enregistrer"}
+          </>
+        ) : (
+          <Bouton variante="contour" onClick={onFermer}>
+            Fermer
           </Bouton>
-        </>
+        )
       }
     >
       <div className="flex flex-col gap-4 pb-2">
@@ -242,7 +271,7 @@ export function FenetreCompte({
                   {compte.active ? "Réinstaller l'écran" : "Installer l'écran"}
                 </Bouton>
               )}
-              {compte.actif && compte.id !== moi.id && !confirmerCode && compte.role !== "salle" && (
+              {peutDonnerCode && compte.actif && compte.id !== moi.id && !confirmerCode && compte.role !== "salle" && (
                 <Bouton variante="encre" taille="sm" className="min-h-[48px]" icone={<KeyRound className="h-4 w-4" />} onClick={() => setConfirmerCode(true)}>
                   Nouveau code
                 </Bouton>
@@ -265,6 +294,15 @@ export function FenetreCompte({
           </div>
         )}
 
+        {!peutModifier && (
+          <p className="rounded-xl bg-creme px-4 py-3 text-sm text-texte-doux">
+            Fiche en lecture : votre profil ({libelleProfil(moi)}) ne permet pas de modifier ce compte.
+            {peutDonnerCode && compte?.role === "etudiant" ? " Vous pouvez lui donner un nouveau code." : ""}
+          </p>
+        )}
+
+        {/* Fiche en lecture seule quand le profil ne permet pas de la modifier : tous les champs sont désactivés. */}
+        <fieldset disabled={!peutModifier} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
         {(creation || direction) && (
           <Selection libelle="Rôle" value={f.role} onChange={maj("role")} disabled={!creation && compte?.id === moi.id}>
             {rolesPossibles.map((r) => (
@@ -273,6 +311,32 @@ export function FenetreCompte({
               </option>
             ))}
           </Selection>
+        )}
+
+        {choixProfil && (
+          <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+            <legend className="mb-1.5 text-sm font-bold text-encre">Profil : ce que cette personne peut voir et faire</legend>
+            {!f.profil && !creation && (
+              <p className="text-[13px] text-texte-gris">Aucun profil choisi pour l'instant : ce compte a les droits de la vie scolaire.</p>
+            )}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {PROFILS_EQUIPE.map((p) => (
+                <label
+                  key={p}
+                  className={cn(
+                    "flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors",
+                    f.profil === p ? "border-orange bg-orange-pale" : "border-ligne bg-white hover:border-orange",
+                  )}
+                >
+                  <input type="radio" name="profil" className="mt-1 h-4 w-4 shrink-0 accent-[#E4793A]" checked={f.profil === p} onChange={() => setF((x) => ({ ...x, profil: p }))} />
+                  <span className="min-w-0">
+                    <span className="block font-bold text-encre">{DROITS_PROFILS[p].libelle}</span>
+                    <span className="block text-[13px] leading-snug text-texte-pale">{DROITS_PROFILS[p].description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -301,8 +365,14 @@ export function FenetreCompte({
         )}
 
         {avecSite && (
-          <Selection libelle="Campus" value={f.siteId} onChange={maj("siteId")}>
+          <Selection
+            libelle="Campus"
+            value={f.siteId}
+            onChange={maj("siteId")}
+            aide={choixProfil ? "Un campus : la personne ne voit que ce campus. Tous les campus : tout le groupe." : undefined}
+          >
             <option value="">Choisir le campus…</option>
+            {choixProfil && <option value={TOUS_LES_CAMPUS}>Tous les campus (tout le groupe)</option>}
             {(refs.data?.sites ?? []).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.nomCourt}
@@ -338,6 +408,7 @@ export function FenetreCompte({
             <Champ libelle="Ville (facultatif)" value={f.localisation} onChange={maj("localisation")} placeholder="Montréal, Canada" />
           </div>
         )}
+        </fieldset>
 
         {!creation && direction && (compte.casquette || (compte.role === "formateur" && compte.actif)) && (
           <DoubleCasquette compte={compte} moiId={moi.id} sites={refs.data?.sites ?? []} onFait={onFermer} />
@@ -361,13 +432,18 @@ export function FenetreCompte({
 function DoubleCasquette({ compte, moiId, sites, onFait }: { compte: CompteLigne; moiId: number; sites: { id: number; nomCourt: string }[]; onFait: () => void }) {
   const [role, setRole] = useState<"admin" | "vie_scolaire">("admin");
   const [siteId, setSiteId] = useState("");
+  const [profil, setProfil] = useState<ProfilEquipe>("vie_scolaire");
   const [envoi, setEnvoi] = useState(false);
   const porteeParMoi = compte.id === moiId || compte.casquette?.id === moiId;
 
   const donner = async () => {
     setEnvoi(true);
     try {
-      await post(`/api/pilotage/comptes/${compte.id}/casquette`, { role, siteId: role === "vie_scolaire" && siteId ? Number(siteId) : null });
+      await post(`/api/pilotage/comptes/${compte.id}/casquette`, {
+        role,
+        siteId: role === "vie_scolaire" && siteId ? Number(siteId) : null,
+        profil: role === "vie_scolaire" ? profil : null,
+      });
       toast(`${compte.prenom} a maintenant la double casquette : « Passer en ${role === "admin" ? "Direction" : "Vie scolaire"} » dans son menu.`);
       await rafraichir("/api/pilotage/comptes");
       onFait();
@@ -424,6 +500,15 @@ function DoubleCasquette({ compte, moiId, sites, onFait }: { compte: CompteLigne
                 {sites.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nomCourt}
+                  </option>
+                ))}
+              </Selection>
+            )}
+            {role === "vie_scolaire" && (
+              <Selection libelle="Profil" value={profil} onChange={(e) => setProfil(e.target.value as ProfilEquipe)} className="sm:col-span-2" aide={DROITS_PROFILS[profil].description}>
+                {PROFILS_EQUIPE.map((p) => (
+                  <option key={p} value={p}>
+                    {DROITS_PROFILS[p].libelle}
                   </option>
                 ))}
               </Selection>

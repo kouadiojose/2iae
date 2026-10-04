@@ -58,12 +58,36 @@ function nomPremierAuteur(auteurs: string): string {
 }
 
 /** Le titre trouvé contient-il bien les mots du titre demandé (au moins les deux tiers) ? */
+/** Mots significatifs du sous-titre (après « : »), au plus 8. */
+function motsDuSousTitre(titre: string): string[] {
+  const reste = titre.split(/\s[:\-–]\s|:/).slice(1).join(" ");
+  return normaliser(reste)
+    .split(" ")
+    .filter((m) => m.length > 2 && !MOTS_VIDES.has(m))
+    .slice(0, 8);
+}
+
+/**
+ * Le titre trouvé est-il bien celui demandé ? Les deux tiers des mots du titre
+ * principal, et, quand le titre cité a un sous-titre, les deux tiers de ses mots :
+ * sinon « Agroecology: The Science of Sustainable Agriculture » prendrait
+ * n'importe quel livre intitulé « Agroecology… » du même auteur.
+ */
 function titreCorrespond(demande: string, trouve: string): boolean {
   const mots = motsDuTitre(demande);
   if (!mots.length) return false;
   const cible = ` ${normaliser(trouve)} `;
-  const presents = mots.filter((m) => cible.includes(` ${m} `)).length;
-  return presents / mots.length >= 0.67;
+  const present = (m: string) => cible.includes(` ${m} `);
+  if (mots.filter(present).length / mots.length < 0.67) return false;
+  const sousTitre = motsDuSousTitre(demande);
+  if (sousTitre.length >= 2 && sousTitre.filter(present).length / sousTitre.length < 0.67) return false;
+  // Titre principal très court (« Agroecology ») : le titre trouvé ne doit pas être un tout autre ouvrage plus long
+  // (les mentions d'édition entre parenthèses, « (Mise à jour 2023) », ne comptent pas).
+  if (mots.length <= 2 && !sousTitre.length) {
+    const principalTrouve = motsDuTitre(trouve.replace(/\([^)]*\)/g, " "));
+    if (principalTrouve.length > mots.length + 2) return false;
+  }
+  return true;
 }
 
 const couvertureIsbn = (isbn: string | null) => (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false` : null);
@@ -95,7 +119,10 @@ function auteurBnf(brut: string): string | null {
  * avec exercices corrigés (4ème ed.) Jean Perchat, Jean Roux » → jusqu'à « (4ème ed.) ».
  */
 function nettoyerTitreBnf(brut: string): string {
-  let t = brut.split(" / ")[0].replace(/\s+\[[^\]]*\]/g, "");
+  let t = brut
+    .split(" / ")[0]
+    .replace(/\s*\(\s*\[[^\]]*\]\s*\)/g, "")
+    .replace(/\s*\[[^\]]*\]/g, "");
   const edition = t.match(/^(.*?\([^()]*(?:éd|ed)(?:ition)?\.?\))/i);
   if (edition) t = edition[1];
   t = t
@@ -111,20 +138,33 @@ function nettoyerTitreBnf(brut: string): string {
   return t.length > 160 ? `${t.slice(0, 157).trimEnd()}…` : t;
 }
 
+function sansAuteurFinal(titre: string, auteurs: string[]): string {
+  let t = titre;
+  for (const a of auteurs) {
+    if (a && t.length > a.length + 3 && normaliser(t).endsWith(normaliser(a))) {
+      t = t.slice(0, t.length - a.length).replace(/[\s,;.:–-]+$/, "").trim();
+    }
+  }
+  return t;
+}
+
 /** Au plus trois auteurs, 140 caractères : une notice d'institution peut en aligner une dizaine. */
 const auteursCourts = (liste: string[]) => {
   const texte = liste.slice(0, 3).join(", ");
   return texte.length > 140 ? `${texte.slice(0, 137).trimEnd()}…` : texte;
 };
 
-async function chercherBnf(titre: string, auteurs: string): Promise<Notice | null> {
+/** null : le catalogue a répondu sans trouver ; undefined : catalogue injoignable (à ne pas mémoriser). */
+type Recherche = Notice | null | undefined;
+
+async function chercherBnf(titre: string, auteurs: string): Promise<Recherche> {
   const mots = motsDuTitre(titre);
   if (!mots.length) return null;
   const nom = nomPremierAuteur(auteurs);
   const requete = `bib.title all "${mots.join(" ")}"${nom ? ` and bib.author all "${nom}"` : ""}`;
   const url = `https://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve&recordSchema=dublincore&maximumRecords=8&query=${encodeURIComponent(requete)}`;
   const xml = await lire(url);
-  if (!xml) return null;
+  if (!xml) return undefined;
   const notices = [...xml.matchAll(/<oai_dc:dc[\s\S]*?<\/oai_dc:dc>/g)]
     .map((m) => {
       const b = m[0];
@@ -140,6 +180,8 @@ async function chercherBnf(titre: string, auteurs: string): Promise<Notice | nul
       const sujets = champs(b, "subject").slice(0, 6);
       return { titreNet, ark, isbn, annee, pages, editeur, auteursTrouves, sujets, langue: champs(b, "language")[0] ?? null };
     })
+    // Nom de l'auteur recopié à la fin du titre (« L'Afrique noire est mal partie René Dumont »).
+    .map((n) => ({ ...n, titreNet: sansAuteurFinal(n.titreNet, n.auteursTrouves) }))
     .filter((n) => n.ark && n.titreNet && titreCorrespond(titre, n.titreNet));
   if (!notices.length) return null;
   // L'édition la plus récente (avec ISBN de préférence) : celle qu'un étudiant trouvera.
@@ -176,7 +218,7 @@ type DocOpenLibrary = {
   subject?: string[];
 };
 
-async function chercherOpenLibrary(titre: string, auteurs: string): Promise<Notice | null> {
+async function chercherOpenLibrary(titre: string, auteurs: string): Promise<Recherche> {
   const mots = motsDuTitre(titre);
   if (!mots.length) return null;
   const nom = nomPremierAuteur(auteurs);
@@ -187,12 +229,12 @@ async function chercherOpenLibrary(titre: string, auteurs: string): Promise<Noti
   });
   if (nom) params.set("author", nom);
   const json = await lire(`https://openlibrary.org/search.json?${params}`);
-  if (!json) return null;
+  if (!json) return undefined;
   let docs: DocOpenLibrary[] = [];
   try {
     docs = (JSON.parse(json) as { docs?: DocOpenLibrary[] }).docs ?? [];
   } catch {
-    return null;
+    return undefined;
   }
   const d = docs.find((x) => x.key && x.title && titreCorrespond(titre, x.title));
   if (!d) return null;
@@ -280,7 +322,8 @@ function classerArchive(d: DocArchive): "libre" | "emprunt" | null {
   return null;
 }
 
-async function chercherArchive(titre: string, auteurs: string): Promise<LectureTrouvee | null> {
+/** null : rien de lisible trouvé ; undefined : Internet Archive injoignable (à ne pas mémoriser). */
+async function chercherArchive(titre: string, auteurs: string): Promise<LectureTrouvee | null | undefined> {
   const mots = motsDuTitre(titre);
   if (!mots.length) return null;
   const nom = nomPremierAuteur(auteurs);
@@ -288,12 +331,12 @@ async function chercherArchive(titre: string, auteurs: string): Promise<LectureT
   const params = new URLSearchParams({ q: requete, rows: "20", output: "json" });
   for (const f of ["identifier", "title", "creator", "year", "language", "publisher", "isbn", "collection", "licenseurl", "downloads", "access-restricted-item"]) params.append("fl[]", f);
   const json = await lire(`https://archive.org/advancedsearch.php?${params}`);
-  if (!json) return null;
+  if (!json) return undefined;
   let docs: DocArchive[] = [];
   try {
     docs = (JSON.parse(json) as { response?: { docs?: DocArchive[] } }).response?.docs ?? [];
   } catch {
-    return null;
+    return undefined;
   }
   const candidats = docs
     .map((d) => ({ d, classe: classerArchive(d), titreTrouve: liste(d.title)[0] ?? "" }))
@@ -323,6 +366,7 @@ export async function trouverLecture(titre: string, auteurs: string): Promise<Le
   const connu = memoireLecture.get(cle);
   if (connu && Date.now() - connu.le < (connu.lecture ? DUREE_TROUVE_MS : DUREE_INTROUVABLE_MS)) return connu.lecture;
   const lecture = await chercherArchive(titre, auteurs);
+  if (lecture === undefined) return null;
   if (memoireLecture.size > 5000) memoireLecture.clear();
   memoireLecture.set(cle, { lecture, le: Date.now() });
   return lecture;
@@ -362,12 +406,20 @@ export async function verifierLivre(titre: string, auteurs: string, langue?: str
   if (connu && Date.now() - connu.le < (connu.notice ? DUREE_TROUVE_MS : DUREE_INTROUVABLE_MS)) return connu.notice;
   const ordre = langue && !/^fr/i.test(langue) ? [chercherOpenLibrary, chercherBnf] : [chercherBnf, chercherOpenLibrary];
   let notice: Notice | null = null;
+  let panne = false;
   for (const chercher of ordre) {
-    notice = await chercher(titre, auteurs);
-    if (notice) break;
+    const r = await chercher(titre, auteurs);
+    if (r === undefined) panne = true;
+    if (r) {
+      notice = r;
+      break;
+    }
   }
-  if (memoire.size > 5000) memoire.clear();
-  memoire.set(cle, { notice, le: Date.now() });
+  // Un catalogue injoignable ne prouve pas que le livre n'existe pas : on ne mémorise que les vraies réponses.
+  if (notice || !panne) {
+    if (memoire.size > 5000) memoire.clear();
+    memoire.set(cle, { notice, le: Date.now() });
+  }
   return notice;
 }
 

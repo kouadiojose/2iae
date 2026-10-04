@@ -1,8 +1,11 @@
 // Messagerie « comme WhatsApp » (CONCEPTION §6 « Messages » et §9.11).
 //
-// Conversations directes : étudiant ↔ formateurs de SES cours et ↔ vie
-// scolaire de SON site ; formateur ↔ étudiants de ses cours et équipe ;
-// équipe ↔ tout le monde dans son périmètre. Jamais entre deux étudiants.
+// Conversations directes : étudiant ↔ formateurs de SES cours, ↔ vie
+// scolaire de SON site, ↔ direction, et ↔ n'importe quel autre étudiant actif
+// (recherche par nom, tous campus) ; formateur ↔ étudiants de ses cours et
+// équipe ; équipe ↔ tout le monde dans son périmètre. Entre deux étudiants,
+// chacun peut « Bloquer » l'autre (plus aucun message dans un sens ni dans
+// l'autre) et « Signaler » un message à la vie scolaire.
 // Salon « Questions du cours » (conversation de type « cours ») : tous les
 // inscrits et les formateurs du cours ; le formateur (et l'équipe) modère :
 // retirer un message, recevoir les signalements.
@@ -28,14 +31,17 @@ import {
   ROLES_MESSAGERIE,
   accesConversation,
   assurerParticipant,
+  blocageEntre,
   cleDirecte,
   cleSalon,
   conditionNonLu,
   coursPourSalons,
   lienConversation,
   perimetreConversations,
+  peutBloquer,
   peuventSEcrire,
   peutLireConversation,
+  tableBlocagesAbsente,
   vieScolaireCouvre,
 } from "../messages-outils";
 import {
@@ -52,6 +58,7 @@ import {
   notifications,
   journal,
   signalementsMessages,
+  blocages,
   LIBELLES_ROLES,
   type Conversation,
   type Utilisateur,
@@ -154,6 +161,101 @@ function correspond(p: { prenom: string; nom: string; matricule?: string | null 
     .every((mot) => cible.includes(mot));
 }
 
+// ── Étudiants vus par un autre étudiant ────────────────────────────────────
+// Seulement des champs publics : nom, prénom, photo, campus et classe. Jamais
+// l'e-mail, le téléphone ni le matricule (c'est l'identifiant de connexion).
+
+type ClassePublique = { nom: string; siteId: number };
+
+async function classesDe(ids: (number | null)[]): Promise<Map<number, ClassePublique>> {
+  const uniques = [...new Set(ids.filter((x): x is number => Boolean(x)))];
+  if (!uniques.length) return new Map();
+  const lignes = await db.select({ id: classes.id, nom: classes.nom, siteId: classes.siteId }).from(classes).where(inArray(classes.id, uniques));
+  return new Map(lignes.map((c) => [c.id, { nom: c.nom, siteId: c.siteId }]));
+}
+
+/** « Yopougon · Tronc commun 1BTS » : le campus, puis la classe (sans répéter le campus). */
+function detailEtudiantPublic(p: Pick<Utilisateur, "siteId" | "classeId">, carteSites: Map<number, string>, carteClasses: Map<number, ClassePublique>): string {
+  const classe = p.classeId ? carteClasses.get(p.classeId) : undefined;
+  const siteId = p.siteId ?? classe?.siteId ?? null;
+  const site = siteId ? carteSites.get(siteId) ?? null : null;
+  let nomClasse = classe?.nom ?? null;
+  if (nomClasse && site && nomClasse.endsWith(` · ${site}`)) nomClasse = nomClasse.slice(0, -` · ${site}`.length);
+  return [site, nomClasse].filter(Boolean).join(" · ") || LIBELLES_ROLES.etudiant;
+}
+
+// Recherche d'étudiants côté base, sans accents ni majuscules ni apostrophes
+// ou traits d'union (« nguessan » trouve « N'Guessan », « kone » trouve
+// « KONÉ »). translate() suffit : pas d'extension unaccent à installer. Les
+// caractères de AVEC_ACCENTS au-delà de la longueur de SANS_ACCENTS sont supprimés.
+const AVEC_ACCENTS = "ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖòóôõöÙÚÛÜùúûüÝýÿŸ'’-";
+const SANS_ACCENTS = "AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOoooooUUUUuuuuYyyY";
+const nomCherchable = sql`lower(translate(${utilisateurs.prenom} || ' ' || ${utilisateurs.nom}, ${AVEC_ACCENTS}, ${SANS_ACCENTS}))`;
+
+/** Mots de la recherche, normalisés comme nomCherchable et prêts pour LIKE. */
+function motsRecherche(q: string): string[] {
+  return normaliser(q)
+    .replace(/['’-]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((m) => m.replace(/[\\%_]/g, "\\$&"));
+}
+
+const MIN_RECHERCHE_ETUDIANTS = 2;
+const MAX_RECHERCHE_ETUDIANTS = 20;
+
+/**
+ * Un étudiant cherche un autre étudiant (tous campus) : au moins 2 lettres,
+ * 20 résultats au plus, ses camarades de classe puis de campus d'abord.
+ */
+async function rechercherEtudiants(u: Utilisateur, q: string, carteSites: Map<number, string>): Promise<GroupeContacts> {
+  const mots = motsRecherche(q);
+  const lignes = mots.length
+    ? await db
+        .select({
+          id: utilisateurs.id,
+          prenom: utilisateurs.prenom,
+          nom: utilisateurs.nom,
+          role: utilisateurs.role,
+          photoUrl: utilisateurs.photoUrl,
+          siteId: utilisateurs.siteId,
+          classeId: utilisateurs.classeId,
+        })
+        .from(utilisateurs)
+        .where(
+          and(
+            eq(utilisateurs.role, "etudiant"),
+            eq(utilisateurs.actif, true),
+            ne(utilisateurs.id, u.id),
+            // Les comptes de démonstration ne se mêlent pas aux vrais étudiants.
+            u.preferences?.demo ? undefined : sql`coalesce(${utilisateurs.preferences}->>'demo', 'false') <> 'true'`,
+            ...mots.map((m) => sql`${nomCherchable} like ${`%${m}%`}`),
+          ),
+        )
+        .orderBy(
+          sql`case when ${utilisateurs.classeId} = ${u.classeId ?? -1} then 0 when ${utilisateurs.siteId} = ${u.siteId ?? -1} then 1 else 2 end`,
+          asc(utilisateurs.nom),
+          asc(utilisateurs.prenom),
+        )
+        .limit(MAX_RECHERCHE_ETUDIANTS + 1)
+    : [];
+  const carteClasses = await classesDe(lignes.map((l) => l.classeId));
+  return {
+    cle: "etudiants",
+    titre: "Étudiants · tous les campus",
+    personnes: lignes.slice(0, MAX_RECHERCHE_ETUDIANTS).map((p) => ({
+      id: p.id,
+      prenom: p.prenom,
+      nom: p.nom,
+      role: p.role,
+      photoUrl: p.photoUrl,
+      detail: detailEtudiantPublic(p, carteSites, carteClasses),
+    })),
+    tronque: lignes.length > MAX_RECHERCHE_ETUDIANTS,
+  };
+}
+
 /** Anti-rafale : 30 messages par minute et par personne (large : une file d'envoi hors ligne se vide d'un coup). */
 const envoisRecents = new Map<number, number[]>();
 function verifierCadence(utilisateurId: number) {
@@ -163,9 +265,24 @@ function verifierCadence(utilisateurId: number) {
   liste.push(maintenant);
   envoisRecents.set(utilisateurId, liste);
 }
+
+/** Anti-démarchage : un étudiant ouvre au plus 20 nouvelles conversations avec d'autres étudiants par heure. */
+const MAX_NOUVELLES_CONVERSATIONS_HEURE = 20;
+const nouvellesRecentes = new Map<number, number[]>();
+function verifierNouvellesConversations(utilisateurId: number) {
+  const maintenant = Date.now();
+  const liste = (nouvellesRecentes.get(utilisateurId) ?? []).filter((t) => maintenant - t < 3_600_000);
+  if (liste.length >= MAX_NOUVELLES_CONVERSATIONS_HEURE) {
+    throw new ErreurHttp(429, "Tu as commencé beaucoup de nouvelles conversations : attends un peu avant d'en ouvrir d'autres.");
+  }
+  liste.push(maintenant);
+  nouvellesRecentes.set(utilisateurId, liste);
+}
+
 setInterval(() => {
   const maintenant = Date.now();
   for (const [id, liste] of envoisRecents) if (!liste.some((t) => maintenant - t < 60_000)) envoisRecents.delete(id);
+  for (const [id, liste] of nouvellesRecentes) if (!liste.some((t) => maintenant - t < 3_600_000)) nouvellesRecentes.delete(id);
 }, 5 * 60_000).unref();
 
 /**
@@ -354,6 +471,10 @@ async function resumer(u: Utilisateur, lignes: LigneConversation[]): Promise<Con
         .where(and(inArray(participants.conversationId, idsDirectes), ne(participants.utilisateurId, u.id)))
     : [];
   const autreDe = new Map(autres.map((a) => [a.conversationId, a]));
+  // Entre étudiants : campus et classe de l'autre, jamais son matricule.
+  const entreEtudiants = (a: Utilisateur) => u.role === "etudiant" && a.role === "etudiant";
+  const carteClasses = await classesDe(autres.filter((a) => entreEtudiants(a.u)).map((a) => a.u.classeId));
+  const detailAutre = (a: Utilisateur) => (entreEtudiants(a) ? detailEtudiantPublic(a, carteSites, carteClasses) : detailPersonne(a, carteSites));
 
   const idsCours = [...new Set(lignes.map((l) => l.c.coursId).filter((x): x is number => Boolean(x)))];
   const listeCours = idsCours.length
@@ -373,8 +494,8 @@ async function resumer(u: Utilisateur, lignes: LigneConversation[]): Promise<Con
       id: c.id,
       type: c.type === "cours" ? "cours" : "direct",
       titre: autre ? `${autre.u.prenom} ${autre.u.nom}` : coursSalon!.titre,
-      sousTitre: autre ? detailPersonne(autre.u, carteSites) : `${coursSalon!.code} · Questions du cours`,
-      interlocuteur: autre ? versContact(autre.u, carteSites) : null,
+      sousTitre: autre ? detailAutre(autre.u) : `${coursSalon!.code} · Questions du cours`,
+      interlocuteur: autre ? { ...versContact(autre.u, carteSites), detail: detailAutre(autre.u) } : null,
       cours: coursSalon,
       dernierMessage: d
         ? {
@@ -505,11 +626,25 @@ async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> 
     groupes.push(
       groupe(
         "vie-scolaire",
-        u.siteId ? `Vie scolaire · ${carteSites.get(u.siteId) ?? "mon campus"}` : "Vie scolaire",
+        u.siteId ? `Administration · ${carteSites.get(u.siteId) ?? "mon campus"}` : "Administration",
         vs.filter((p) => correspond(p, q)).map((p) => versContact(p, carteSites)),
         q,
       ),
     );
+    const direction = await db
+      .select()
+      .from(utilisateurs)
+      .where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));
+    groupes.push(
+      groupe(
+        "direction",
+        "Direction",
+        direction.filter((p) => correspond(p, q)).map((p) => versContact(p, carteSites)),
+        q,
+      ),
+    );
+    // Les autres étudiants (tous campus) : seulement sur recherche, jamais en liste complète.
+    if (q.trim().length >= MIN_RECHERCHE_ETUDIANTS) groupes.push(await rechercherEtudiants(u, q, carteSites));
     return { groupes, salons: await coursSalons(ids) };
   }
 
@@ -604,6 +739,7 @@ const schemaMessage = z.object({
 const schemaLu = z.object({ messageId: z.number().int().positive().nullish() });
 const schemaSourdine = z.object({ sourdine: z.boolean() });
 const schemaSignaler = z.object({ motif: z.string().trim().max(300).nullish() });
+const schemaBloquer = z.object({ bloque: z.boolean() });
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 
@@ -655,14 +791,19 @@ export function enregistrerMessages(app: Express) {
       if (!autre || !autre.actif) throw introuvable("Destinataire");
       if (!(await peuventSEcrire(u, autre))) {
         throw interdit(
-          u.role === "etudiant" && autre.role === "etudiant"
-            ? "Les messages privés entre étudiants ne sont pas possibles. Pose ta question dans le salon du cours."
-            : u.role === "etudiant"
-              ? "Tu peux écrire aux formateurs de tes cours et à la vie scolaire de ton campus."
-              : "Vous ne pouvez pas écrire à cette personne depuis le campus.",
+          u.role === "etudiant"
+            ? "Tu peux écrire aux autres étudiants, aux formateurs de tes cours, à l'administration de ton campus et à la direction."
+            : "Vous ne pouvez pas écrire à cette personne depuis le campus.",
         );
       }
+      // Bloqué par l'autre : pas de nouvelle conversation. (Si c'est moi qui ai
+      // bloqué, la conversation s'ouvre, avec « Débloquer » à la place de la saisie.)
+      if (peutBloquer(u, autre) && (await blocageEntre(u.id, autre.id)) === "par_autre") throw interdit("Tu ne peux pas écrire à cette personne.");
       const cle = cleDirecte(u.id, autre.id);
+      if (u.role === "etudiant" && autre.role === "etudiant") {
+        const [existante] = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.cleUnique, cle));
+        if (!existante) verifierNouvellesConversations(u.id);
+      }
       await db.insert(conversations).values({ type: "direct", cleUnique: cle }).onConflictDoNothing({ target: conversations.cleUnique });
       const [c] = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.cleUnique, cle));
       await db
@@ -708,9 +849,13 @@ export function enregistrerMessages(app: Express) {
       let luJusquAAutre: string | null = null;
       let peutEcrire = true;
       let nbCampus: number | null = null;
+      let bloquable = false;
+      let blocage: ConversationDetail["blocage"] = null;
       if (c.type === "direct") {
         const autre = await autreParticipant(c.id, u.id);
-        peutEcrire = Boolean(autre?.u.actif);
+        bloquable = Boolean(autre && peutBloquer(u, autre.u));
+        if (autre && bloquable) blocage = await blocageEntre(u.id, autre.u.id);
+        peutEcrire = Boolean(autre?.u.actif) && !blocage;
         const [curseur] = autre
           ? await db
               .select({ lu: participants.luJusquA })
@@ -726,7 +871,7 @@ export function enregistrerMessages(app: Express) {
           .where(eq(coursClasses.coursId, c.coursId));
         nbCampus = r?.n ?? 0;
       }
-      const detail: ConversationDetail = { ...resume, peutModerer: acces.moderateur, peutEcrire, luJusquAAutre, nbCampus };
+      const detail: ConversationDetail = { ...resume, peutModerer: acces.moderateur, peutEcrire, luJusquAAutre, nbCampus, peutBloquer: bloquable, blocage };
       res.json(detail);
     }),
   );
@@ -784,6 +929,11 @@ export function enregistrerMessages(app: Express) {
 
       const autre = c.type === "direct" ? await autreParticipant(id, u.id) : null;
       if (c.type === "direct" && !autre?.u.actif) throw interdit("Ce compte n'est plus actif : le message ne peut pas partir.");
+      if (autre && peutBloquer(u, autre.u)) {
+        const blocage = await blocageEntre(u.id, autre.u.id);
+        if (blocage === "par_moi") throw interdit("Tu as bloqué cette personne : débloque-la pour lui écrire.");
+        if (blocage === "par_autre") throw interdit("Tu ne peux plus écrire à cette personne.");
+      }
 
       const texte = corps.texte.trim();
       if (!texte && !corps.fichierId) throw invalide(selon(u, "Écris un message ou joins un fichier.", "Écrivez un message ou joignez un fichier."));
@@ -892,8 +1042,45 @@ export function enregistrerMessages(app: Express) {
       const u = moi(req);
       const id = idParam(req);
       const { conversation: c } = await accesConversation(u, id);
-      if (c.type === "direct") publier(`conv:${id}`, "saisie", { utilisateurId: u.id, prenom: u.prenom });
+      if (c.type === "direct") {
+        // Entre étudiants, un blocage coupe aussi « … écrit ».
+        const autre = u.role === "etudiant" ? await autreParticipant(id, u.id) : null;
+        const bloque = autre && peutBloquer(u, autre.u) ? Boolean(await blocageEntre(u.id, autre.u.id)) : false;
+        if (!bloque) publier(`conv:${id}`, "saisie", { utilisateurId: u.id, prenom: u.prenom });
+      }
       res.json({ ok: true });
+    }),
+  );
+
+  // Bloquer / débloquer l'autre étudiant d'une conversation privée. Il n'est
+  // pas prévenu ; ni lui ni moi ne pouvons plus écrire tant que le blocage dure.
+  app.post(
+    "/api/conversations/:id/bloquer",
+    autorise,
+    route(async (req, res) => {
+      const u = moi(req);
+      const id = idParam(req);
+      const { bloque } = valider(schemaBloquer, req.body);
+      const { conversation: c } = await accesConversation(u, id);
+      const autre = c.type === "direct" ? await autreParticipant(id, u.id) : null;
+      if (!autre || !peutBloquer(u, autre.u)) {
+        throw interdit(selon(u, "Tu peux bloquer un autre étudiant, pas un formateur ni l'administration.", "Le blocage est réservé aux conversations entre étudiants."));
+      }
+      try {
+        if (bloque) await db.insert(blocages).values({ auteurId: u.id, bloqueId: autre.u.id }).onConflictDoNothing();
+        else await db.delete(blocages).where(and(eq(blocages.auteurId, u.id), eq(blocages.bloqueId, autre.u.id)));
+      } catch (e) {
+        if (tableBlocagesAbsente(e)) throw new ErreurHttp(503, "Le blocage n'est pas encore disponible. En attendant, signale ses messages à la vie scolaire.");
+        throw e;
+      }
+      await db.insert(journal).values({
+        utilisateurId: u.id,
+        action: bloque ? "message.bloque" : "message.debloque",
+        details: { bloqueId: autre.u.id, conversationId: id },
+      });
+      // Mes autres onglets remettent l'en-tête et la liste à jour.
+      publierUtilisateur(u.id, "message", { conversationId: id });
+      res.json({ ok: true, blocage: await blocageEntre(u.id, autre.u.id) });
     }),
   );
 

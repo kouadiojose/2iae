@@ -1,6 +1,6 @@
 // Outils du module messages, utilisés par ses routes et par d'autres modules
 // (compteur de la coquille, accueil) :
-//   - qui peut écrire à qui (CONCEPTION §9.11) ;
+//   - qui peut écrire à qui (CONCEPTION §9.11), blocages entre étudiants ;
 //   - accès à une conversation (directe : participants ; salon : inscrits) ;
 //   - nombre de messages non lus.
 //
@@ -21,6 +21,7 @@ import {
   coursFormateurs,
   coursClasses,
   classes,
+  blocages,
   type Utilisateur,
   type Conversation,
   type Role,
@@ -87,7 +88,9 @@ export function vieScolaireCouvre(vs: Pick<Utilisateur, "role" | "siteId">, etud
 /**
  * Deux personnes peuvent-elles avoir une conversation directe ? La relation
  * est symétrique (qui peut écrire peut recevoir une réponse) :
- *   - jamais entre deux étudiants, jamais avec un écran de salle ;
+ *   - jamais avec un écran de salle ni avec un compte désactivé ;
+ *   - étudiant ↔ étudiant : tous les étudiants actifs, tous campus (décision
+ *     de la direction, octobre 2026), sauf blocage (voir blocageEntre) ;
  *   - étudiant ↔ formateur d'un de ses cours publiés ;
  *   - étudiant ↔ vie scolaire de son site (ou vie scolaire du groupe) ;
  *   - étudiant ↔ direction ;
@@ -96,7 +99,7 @@ export function vieScolaireCouvre(vs: Pick<Utilisateur, "role" | "siteId">, etud
  */
 export async function peuventSEcrire(a: Utilisateur, b: Utilisateur): Promise<boolean> {
   if (a.id === b.id || !a.actif || !b.actif || !aMessagerie(a) || !aMessagerie(b)) return false;
-  if (a.role === "etudiant" && b.role === "etudiant") return false;
+  if (a.role === "etudiant" && b.role === "etudiant") return true;
   if (a.role === "etudiant" || b.role === "etudiant") {
     const etudiant = a.role === "etudiant" ? a : b;
     const autre = etudiant === a ? b : a;
@@ -112,6 +115,45 @@ export async function peuventSEcrire(a: Utilisateur, b: Utilisateur): Promise<bo
   // Deux formateurs : co-enseignants d'un même cours.
   const [x, y] = await Promise.all([coursPubliesDuFormateur(a.id), coursPubliesDuFormateur(b.id)]);
   return x.some((id) => y.includes(id));
+}
+
+// ── Blocages entre étudiants ───────────────────────────────────────────────
+
+/** Le bouton « Bloquer » n'existe qu'entre deux étudiants (on ne bloque ni un formateur ni l'administration). */
+export const peutBloquer = (moi: Pick<Utilisateur, "role">, autre: Pick<Utilisateur, "role">) => moi.role === "etudiant" && autre.role === "etudiant";
+
+let avertiTableBlocages = false;
+/**
+ * Table des blocages absente (migration pas encore passée) : la messagerie
+ * continue de fonctionner, simplement sans blocage. Toute autre erreur remonte.
+ */
+export function tableBlocagesAbsente(e: unknown): boolean {
+  const err = e as { code?: string; cause?: { code?: string } } | null;
+  const absente = err?.code === "42P01" || err?.cause?.code === "42P01";
+  if (absente && !avertiTableBlocages) {
+    avertiTableBlocages = true;
+    console.warn("[messages] table campus.blocages absente : le blocage entre étudiants reste inactif jusqu'à la migration.");
+  }
+  return absente;
+}
+
+/**
+ * Blocage entre deux personnes, vu de « moi » : par_moi (j'ai bloqué
+ * l'autre), par_autre (l'autre m'a bloqué), ou null. Un blocage coupe
+ * l'écriture dans les deux sens ; la conversation reste lisible.
+ */
+export async function blocageEntre(moiId: number, autreId: number): Promise<"par_moi" | "par_autre" | null> {
+  try {
+    const lignes = await db
+      .select({ auteurId: blocages.auteurId })
+      .from(blocages)
+      .where(or(and(eq(blocages.auteurId, moiId), eq(blocages.bloqueId, autreId)), and(eq(blocages.auteurId, autreId), eq(blocages.bloqueId, moiId))));
+    if (lignes.some((l) => l.auteurId === moiId)) return "par_moi";
+    return lignes.length ? "par_autre" : null;
+  } catch (e) {
+    if (tableBlocagesAbsente(e)) return null;
+    throw e;
+  }
 }
 
 // ── Accès à une conversation ───────────────────────────────────────────────

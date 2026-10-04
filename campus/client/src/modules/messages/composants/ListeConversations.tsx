@@ -150,15 +150,15 @@ export function ListeConversations({ actifId, onNouveau, className }: { actifId?
       {data && data.length === 0 && (
         <EtatVide
           icone={<MessageCircle className="h-6 w-6" />}
-          titre={etudiant ? "Écris à tes formateurs, comme sur WhatsApp" : "Échangez avec vos étudiants et l'équipe"}
+          titre={etudiant ? "Écris à qui tu veux, comme sur WhatsApp" : "Échangez avec vos étudiants et l'équipe"}
           texte={
             etudiant
-              ? "Ici, tu écris à tes formateurs et à la vie scolaire de ton campus. Tes conversations et les questions de tes cours apparaîtront ici."
+              ? "Ici, tu écris à tes formateurs, à l'administration et aux autres étudiants, de ton campus ou d'ailleurs. Tes conversations et les questions de tes cours apparaîtront ici."
               : "Vos conversations avec les étudiants de vos cours et avec l'équipe apparaîtront ici, avec les questions posées dans les salons de vos cours."
           }
           action={
             <button onClick={onNouveau} className="mt-1 rounded-xl bg-orange px-5 py-3 text-[15px] font-bold text-encre hover:bg-encre hover:text-white">
-              {etudiant ? "Écrire à un formateur" : "Écrire un message"}
+              Écrire un message
             </button>
           }
         />

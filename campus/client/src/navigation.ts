@@ -23,6 +23,7 @@ import {
   Wallet,
   FolderOpen,
   PlayCircle,
+  MonitorPlay,
   Library,
 } from "lucide-react";
 import type { Droit, Moi, Role } from "@shared/schema";
@@ -56,6 +57,8 @@ const ETUDIANT: ElementNav[] = [
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
   { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
+  // Enregistrements et PDF de ses cours, et des cours ouverts à tous.
+  { href: "/mediatheque", libelle: "Médiathèque", icone: MonitorPlay, prefixes: ["/mediatheque"] },
   { href: "/agenda", libelle: "Agenda", icone: CalendarDays },
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
@@ -70,6 +73,7 @@ const FORMATEUR: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   // Les replays de tous les cours, les siens et ceux des collègues.
   { href: "/replays", libelle: "Enregistrements", icone: PlayCircle, prefixes: ["/replays"] },
+  { href: "/mediatheque", libelle: "Médiathèque", icone: MonitorPlay, prefixes: ["/mediatheque"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
   { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
@@ -101,6 +105,7 @@ const EQUIPE: ElementNav[] = [
   { href: "/pilotage/formateurs", libelle: "Présentations", icone: Clapperboard, prefixes: ["/pilotage/formateurs"], direction: true },
   { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"], droit: "outils_campus" },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
+  { href: "/mediatheque", libelle: "Médiathèque", icone: MonitorPlay, prefixes: ["/mediatheque"] },
   { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"], droit: ["programme", "presences", "presences_voir"] },
   { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
 ];

@@ -20,7 +20,7 @@ import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerConnexion, exigerRole, droitSiEquipe, moi, estEquipe, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { idsCoursAccessibles, coursVisible, coursEnseigne, enseigneCours, peutVoirCours, etudiantsDuCours } from "../acces";
+import { idsCoursAccessibles, coursVisible, coursEnseigne, enseigneCours, peutVoirCours, etudiantsDuCours, peutVoirMediatheque, peutReglerMediatheque } from "../acces";
 import { enregistrerGardienFichier, urlFichier } from "../fichiers";
 import { intervenantsDesSeances } from "../programme-outils";
 import { notifier } from "../notifications";
@@ -43,6 +43,7 @@ import {
   journal,
   STATUTS_COURS,
   TYPES_LECON,
+  TYPES_LECON_MEDIATHEQUE,
   type Cours,
   type Utilisateur,
   type FormateurDuCours,
@@ -365,6 +366,8 @@ async function detailCours(u: Utilisateur, c: Cours): Promise<CoursDetail> {
     reprendre,
     prochaineSeance: seance,
     nbEtudiants,
+    mediatheque: c.mediatheque,
+    peutReglerMediatheque: await peutReglerMediatheque(u, c.id),
   };
 }
 
@@ -522,6 +525,14 @@ export function enregistrerCours(app: Express) {
     for (const r of references) {
       if (!(await peutVoirCours(u, r.coursId))) continue;
       if (r.publiee || (await enseigneCours(u, r.coursId))) return true;
+    }
+    // Médiathèque : le fichier joint (PDF, document) d'une leçon publiée d'un cours ouvert à l'étudiant.
+    if (u.role === "etudiant") {
+      const joints = await db
+        .select({ coursId: lecons.coursId })
+        .from(lecons)
+        .where(and(eq(lecons.fichierId, f.id), eq(lecons.publiee, true), inArray(lecons.type, [...TYPES_LECON_MEDIATHEQUE])));
+      for (const j of joints) if (await peutVoirMediatheque(u, j.coursId)) return true;
     }
     return false;
   });

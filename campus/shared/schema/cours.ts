@@ -5,6 +5,14 @@ import { campusSchema, utilisateurs, classes, fichiers } from "./base";
 export const STATUTS_COURS = ["brouillon", "publie", "archive"] as const;
 export type StatutCours = (typeof STATUTS_COURS)[number];
 
+/**
+ * Médiathèque du cours (enregistrements des séances terminées, documents des
+ * leçons publiées) : « tous » = tout étudiant du campus quand le cours est
+ * publié ; « classes » = seulement les étudiants qui suivent le cours.
+ */
+export const ACCES_MEDIATHEQUE = ["tous", "classes"] as const;
+export type AccesMediatheque = (typeof ACCES_MEDIATHEQUE)[number];
+
 export const cours = campusSchema.table(
   "cours",
   {
@@ -34,6 +42,8 @@ export const cours = campusSchema.table(
      */
     iaPauseJusqua: timestamp("ia_pause_jusqua", { withTimezone: true }),
     iaPauseMotif: text("ia_pause_motif"),
+    /** Qui voit les enregistrements et les documents du cours dans la médiathèque (ACCES_MEDIATHEQUE). */
+    mediatheque: text("mediatheque").$type<AccesMediatheque>().notNull().default("tous"),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -20,6 +20,7 @@ import { Badge, BadgeDirect, BarreProgression, EtatVide, Erreur, PastilleDate, S
 import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { BandeauProchainLive } from "@/modules/live/BandeauProchainLive";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
+import { LienMediatheque } from "@/modules/mediatheque/LienMediatheque";
 import type { AccueilEtudiant, AnnonceResume, CoursAccueil, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
 import type { EnCours } from "@shared/api";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
@@ -85,6 +86,7 @@ export default function PageAccueil() {
           <LienAnnonces nonLues={data.annoncesNonLues} serre={Boolean(data.annonceImportante)} />
           <LienBibliotheque />
           <MesCours cours={data.cours} />
+          <LienMediatheque />
         </div>
       </div>
 

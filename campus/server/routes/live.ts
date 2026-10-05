@@ -26,7 +26,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours } from "../acces";
+import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
@@ -256,6 +256,11 @@ async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance> {
   if (u.role === "formateur") {
     const s = await chargerSeance(id);
     if (replayDisponible(s)) return s;
+  }
+  // Médiathèque : un étudiant revoit les séances terminées (jamais un essai de visio) des cours ouverts à tous.
+  if (u.role === "etudiant") {
+    const s = await chargerSeance(id);
+    if (replayDisponible(s) && (await peutVoirMediatheque(u, s.coursId)) && !(await essaisParmi([s.id])).size) return s;
   }
   return seanceAccessible(u, id);
 }
@@ -3211,7 +3216,11 @@ export function enregistrerLive(app: Express) {
         .from(sousTitres)
         .where(eq(sousTitres.seanceId, s.id))
         .orderBy(asc(sousTitres.t), asc(sousTitres.id));
-      const questions = (await questionsPour(u, role, s.id)).filter((q) => !q.masquee);
+      // Étudiant venu par la médiathèque (pas son cours) : les questions posées, sans le nom de leurs auteurs.
+      const parMediatheque = role === "etudiant" && !(await peutVoirCours(u, s.coursId));
+      const questions = (await questionsPour(u, role, s.id))
+        .filter((q) => !q.masquee)
+        .map((q) => (parMediatheque ? { ...q, auteur: null, anonyme: true } : q));
       // Enregistrement Daily : lu dans le bucket des replays une fois copié, chez Daily sinon.
       const stockes = s.enregistrementId && !s.replayUrl ? await db.select().from(replaysStockes).where(eq(replaysStockes.seanceId, s.id)) : [];
       const lisible = Boolean(s.enregistrementId) && (visio.dailyDisponible() || (stockes.length > 0 && stockageReplaysDisponible()));

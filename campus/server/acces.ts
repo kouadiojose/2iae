@@ -96,6 +96,47 @@ export async function peutVoirCours(u: Utilisateur, coursId: number): Promise<bo
   return ids.includes(coursId);
 }
 
+// ── Médiathèque des cours ──────────────────────────────────────────────────
+// Enregistrements des séances terminées et documents des leçons publiées,
+// RIEN d'autre (ni devoirs, ni notes, ni direct, ni discussion, ni la page du
+// cours). Équipe et formateurs : comme pour les cours (les formateurs voient
+// en plus les replays de tous les cours, routes/live.ts). Étudiants : leurs
+// cours, plus les cours publiés dont la médiathèque est ouverte à tous.
+
+/** Identifiants des cours dont la personne peut consulter la médiathèque. */
+export async function idsCoursMediatheque(u: Utilisateur): Promise<number[]> {
+  const siens = await idsCoursAccessibles(u);
+  if (u.role !== "etudiant") return siens;
+  const ouverts = await db
+    .select({ id: cours.id })
+    .from(cours)
+    .where(and(eq(cours.statut, "publie"), eq(cours.mediatheque, "tous")));
+  return [...new Set([...siens, ...ouverts.map((l) => l.id)])];
+}
+
+/** La personne peut-elle consulter la médiathèque de ce cours (replays terminés, documents publiés) ? */
+export async function peutVoirMediatheque(u: Utilisateur, coursId: number): Promise<boolean> {
+  if (u.role === "etudiant") {
+    const [c] = await db.select({ statut: cours.statut, mediatheque: cours.mediatheque }).from(cours).where(eq(cours.id, coursId));
+    if (!c) return false;
+    if (c.statut === "publie" && c.mediatheque === "tous") return true;
+  }
+  return peutVoirCours(u, coursId);
+}
+
+/**
+ * Qui règle la médiathèque d'un cours : la direction, et l'équipe qui gère le
+ * programme (la vie scolaire d'un campus : seulement les cours que son campus
+ * est seul à suivre, comme pour modifier un cours).
+ */
+export async function peutReglerMediatheque(u: Utilisateur, coursId: number): Promise<boolean> {
+  if (!estEquipe(u) || !peut(u, "programme")) return false;
+  const perimetre = perimetreSites(u);
+  if (!perimetre) return true;
+  const sites = await sitesDuCours(coursId);
+  return sites.every((s) => perimetre.includes(s));
+}
+
 /**
  * La personne enseigne-t-elle ce cours, ou peut-elle agir dessus comme
  * l'équipe (séances, devoirs, modération) ? La vie scolaire d'un campus ne le

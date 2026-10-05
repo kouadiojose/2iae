@@ -3,7 +3,7 @@
 // étudiante, édition formateur). Les dates voyagent en chaînes ISO.
 import { integer, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { cours, lecons, type StatutCours, type TypeLecon } from "./cours";
+import { cours, lecons, type AccesMediatheque, type StatutCours, type TypeLecon } from "./cours";
 import type { StatutSeance } from "./live";
 
 /**
@@ -143,6 +143,10 @@ export type CoursDetail = {
   prochaineSeance: SeanceDuCours | null;
   /** Enseignant : nombre d'étudiants inscrits. */
   nbEtudiants: number | null;
+  /** Médiathèque du cours : ouverte à tous les étudiants ou réservée aux classes du cours. */
+  mediatheque: AccesMediatheque;
+  /** La direction ou le responsable du programme peut changer ce réglage (PATCH /api/cours/:id/mediatheque). */
+  peutReglerMediatheque: boolean;
 };
 
 export type FichierDeLecon = { id: number; nom: string; mime: string; taille: number; url: string };

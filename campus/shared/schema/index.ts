@@ -9,6 +9,7 @@ export * from "./ia";
 export * from "./ext-compte";
 export * from "./ext-accueil";
 export * from "./ext-cours";
+export * from "./ext-mediatheque";
 export * from "./ext-live";
 export * from "./ext-evaluations";
 export * from "./ext-messages";

@@ -4,6 +4,7 @@ import { enregistrerAuth } from "./auth";
 import { enregistrerCompte } from "./compte";
 import { enregistrerAccueil } from "./accueil";
 import { enregistrerCours } from "./cours";
+import { enregistrerMediatheque } from "./mediatheque";
 import { enregistrerLive } from "./live";
 import { enregistrerEvaluations } from "./evaluations";
 import { enregistrerMessages } from "./messages";
@@ -34,6 +35,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerCompte(app);
   enregistrerAccueil(app);
   enregistrerCours(app);
+  enregistrerMediatheque(app);
   enregistrerLive(app);
   enregistrerInvite(app);
   enregistrerEvaluations(app);

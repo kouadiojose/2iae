@@ -16,7 +16,13 @@ import { lireTexte, texteArchive, texteEnCache, texteIntegral } from "../lecture
 import { normaliserIndex, texteSimple } from "./domaines";
 
 const MOTS_VIDES = new Set(
-  "le la les l de des du d un une et en a au aux pour par sur dans avec ou que qui est the of and to in on an for with by from is are livre livres book books je veux voudrais cherche besoin sur comment".split(" "),
+  (
+    "le la les l de des du d un une et en a au aux pour par sur dans avec ou que qui quoi est sont the of and to in on an for with by from is are " +
+    "livre livres book books ouvrage ouvrages je j me moi tu te on nous vous il elle ils elles mon ma mes ton ta tes son sa ses notre votre leur leurs ce cet cette ces " +
+    "veux voudrais aimerais souhaite cherche chercher trouver besoin fais faire fait creer cree comment pourquoi quand quel quelle quels quelles commencer debute debuter debutant " +
+    "apprendre comprendre savoir etudie etudier etudiant suis etre avoir ai as bts licence master annee premiere deuxieme troisieme meilleur meilleurs meilleures bon bons bonne " +
+    "conseil conseils conseiller recommande recommander propose proposer peux peut pouvez donne donner merci bonjour stp svp plus tres bien aussi mais donc alors"
+  ).split(" "),
 );
 
 /** Mots de la recherche, en minuscules sans accents (pas d'opérateur possible : lettres et chiffres seulement). */
@@ -27,8 +33,94 @@ function motsRecherche(q: string, max = 8): string[] {
 /** « tomates » cherche aussi « tomate », « tomato »… : on cherche le début du mot. */
 const racine = (m: string) => (m.length > 5 ? m.replace(/(s|x|es)$/, "") : m);
 
+/**
+ * Équivalents anglais (et français) des mots des études : beaucoup de livres
+ * libres sont en anglais, et l'étudiant cherche en français.
+ */
+const EQUIVALENTS: Record<string, string[]> = {
+  entrepreneuriat: ["entrepreneurship", "entrepreneur"],
+  entrepreneur: ["entrepreneurship"],
+  entreprise: ["business", "enterprise"],
+  entreprises: ["business", "enterprise"],
+  comptabilite: ["accounting", "bookkeeping"],
+  comptable: ["accounting"],
+  gestion: ["management"],
+  management: ["gestion"],
+  economie: ["economics", "economy"],
+  economique: ["economics", "economic"],
+  finance: ["financial"],
+  finances: ["finance", "financial"],
+  banque: ["banking", "bank"],
+  droit: ["law"],
+  juridique: ["legal", "law"],
+  commerce: ["trade", "business"],
+  vente: ["selling", "sales"],
+  publicite: ["advertising"],
+  informatique: ["computer", "computing"],
+  ordinateur: ["computer"],
+  programmation: ["programming"],
+  statistique: ["statistics"],
+  statistiques: ["statistics"],
+  mathematiques: ["mathematics"],
+  physique: ["physics"],
+  chimie: ["chemistry"],
+  biologie: ["biology"],
+  psychologie: ["psychology"],
+  sociologie: ["sociology"],
+  philosophie: ["philosophy"],
+  histoire: ["history"],
+  sante: ["health"],
+  infirmier: ["nursing"],
+  infirmiere: ["nursing"],
+  medecine: ["medicine"],
+  agriculture: ["farming", "agricultural"],
+  agricole: ["agriculture", "agricultural"],
+  elevage: ["livestock"],
+  tomate: ["tomato"],
+  tomates: ["tomato"],
+  cacao: ["cocoa"],
+  cafe: ["coffee"],
+  sol: ["soil"],
+  sols: ["soils"],
+  batiment: ["building", "construction"],
+  construction: ["building"],
+  architecture: ["building"],
+  logistique: ["logistics"],
+  communication: ["communications"],
+  marketing: ["mercatique"],
+  afrique: ["africa", "african"],
+  africain: ["africa", "african"],
+  ivoire: ["ivory"],
+  ressources: ["resources"],
+  humaines: ["human"],
+  strategie: ["strategy"],
+  developpement: ["development"],
+  pauvrete: ["poverty"],
+  energie: ["energy"],
+  environnement: ["environment"],
+  climat: ["climate"],
+  eau: ["water"],
+  education: ["teaching"],
+};
+
 function requeteTs(mots: string[], ou: boolean): string {
-  return mots.map((m) => `${racine(m)}:*`).join(ou ? " | " : " & ");
+  return mots
+    .map((m) => {
+      const variantes = [...new Set([racine(m), ...(EQUIVALENTS[m] ?? []).map(racine)])].map((v) => `${v}:*`);
+      return variantes.length > 1 ? `(${variantes.join(" | ")})` : variantes[0];
+    })
+    .join(ou ? " | " : " & ");
+}
+
+/** Une seule ligne par livre : les tomes ou numéros d'une même revue, les doublons d'une source à l'autre. */
+function sansDoublons(livres: LivreLibre[]): LivreLibre[] {
+  const vus = new Set<string>();
+  return livres.filter((l) => {
+    const cle = `${normaliserIndex(l.titre).slice(0, 80)}|${normaliserIndex(l.auteurs).split(" ")[0] ?? ""}|${l.langue ?? ""}`;
+    if (vus.has(cle)) return false;
+    vus.add(cle);
+    return true;
+  });
 }
 
 /** Le livre se lit-il sur le campus même ? (OAPEN : sur son site, qui filtre les robots.) */
@@ -50,7 +142,16 @@ export function versLivreLibreDto(l: LivreLibre): LivreLibreDto {
   };
 }
 
-export type FiltresLibres = { q?: string; domaine?: DomaineLibre; langue?: string; source?: SourceLibre; page?: number; parPage?: number };
+export type FiltresLibres = {
+  q?: string;
+  domaine?: DomaineLibre;
+  langue?: string;
+  source?: SourceLibre;
+  page?: number;
+  parPage?: number;
+  /** false : tous les mots, sans retirer les plus courants quand rien ne répond. */
+  relacher?: boolean;
+};
 
 /** Préférence de langue et de lisibilité dans le classement (le français d'abord). */
 const BONUS = sql`(case when ${catalogueLibre.langue} = 'fr' then 1.6 when ${catalogueLibre.langue} = 'en' then 1.1 else 0.8 end)
@@ -68,47 +169,137 @@ export async function chercherLibres(f: FiltresLibres): Promise<{ resultats: Liv
 
   if (!mots.length) {
     const ou = conditions.length ? and(...conditions) : undefined;
-    const [resultats, [{ n }]] = await Promise.all([
+    const [lignes, [{ n }]] = await Promise.all([
       db
         .select()
         .from(catalogueLibre)
         .where(ou)
         .orderBy(desc(BONUS), desc(catalogueLibre.id))
-        .limit(parPage)
+        .limit(parPage * 2)
         .offset((page - 1) * parPage),
       db.select({ n: sql<number>`count(*)::int` }).from(catalogueLibre).where(ou),
     ]);
-    return { resultats, total: n };
+    return { resultats: sansDoublons(lignes).slice(0, parPage), total: n };
   }
 
   const vecteur = sql`to_tsvector('simple', ${catalogueLibre.recherche})`;
-  // Tous les mots d'abord ; si rien ne correspond, n'importe lequel (les plus proches en tête).
-  for (const ou of [false, true]) {
-    if (ou && mots.length < 2) break;
-    const requete = sql`to_tsquery('simple', ${requeteTs(mots, ou)})`;
-    const where = and(sql`${vecteur} @@ ${requete}`, ...conditions);
-    const [resultats, [{ n }]] = await Promise.all([
+  const correspond = (texteRequete: string) => and(sql`${vecteur} @@ to_tsquery('simple', ${texteRequete})`, ...conditions);
+  const compter = async (texteRequete: string, plafond = 5000) =>
+    (await db.select({ n: sql<number>`count(*)::int` }).from(sql`(select 1 from ${catalogueLibre} where ${correspond(texteRequete)} limit ${plafond}) as t`))[0].n;
+  const executer = async (texteRequete: string) => {
+    const requete = sql`to_tsquery('simple', ${texteRequete})`;
+    const [lignes, total] = await Promise.all([
       db
         .select()
         .from(catalogueLibre)
-        .where(where)
-        .orderBy(desc(sql`ts_rank(${vecteur}, ${requete}) * ${BONUS}`), desc(catalogueLibre.id))
-        .limit(parPage)
+        .where(correspond(texteRequete))
+        .orderBy(desc(sql`ts_rank(${vecteur}, ${requete}, 1) * ${BONUS}`), desc(catalogueLibre.id))
+        .limit(parPage * 2)
         .offset((page - 1) * parPage),
-      db.select({ n: sql<number>`count(*)::int` }).from(sql`(select 1 from ${catalogueLibre} where ${where} limit 5000) as t`),
+      compter(texteRequete),
     ]);
-    if (resultats.length || page > 1) return { resultats, total: n };
+    return { resultats: sansDoublons(lignes).slice(0, parPage), total };
+  };
+
+  // Tous les mots d'abord.
+  const complet = await executer(requeteTs(mots, false));
+  if (complet.total > 0 || mots.length < 2 || f.relacher === false) return complet;
+  // Sinon, on garde les mots les plus parlants : ceux que l'index connaît, les plus rares d'abord
+  // (« tomates » compte plus que « agriculture »), en retirant le plus courant tant que rien ne répond.
+  const frequences = await Promise.all(mots.map(async (m) => ({ m, n: await compter(requeteTs([m], false), 20_000) })));
+  const connus = frequences.filter((f) => f.n > 0).sort((x, y) => x.n - y.n);
+  for (let k = connus.length; k >= 1; k--) {
+    const r = await executer(
+      requeteTs(
+        connus.slice(0, k).map((f) => f.m),
+        false,
+      ),
+    );
+    if (r.total > 0) return r;
   }
   return { resultats: [], total: 0 };
 }
 
-/** Livres libres qui pourraient répondre à une demande (pour le bibliothécaire). */
-export async function libresPourQuestion(question: string, n = 8): Promise<LivreLibre[]> {
+const RAYONS_ETUDES: DomaineLibre[] = ["gestion", "compta_finance", "economie", "marketing", "droit", "informatique", "agriculture", "afrique"];
+
+/**
+ * « À lire en premier » : les livres les plus ouverts au campus, complétés par
+ * une sélection pour les études (livres en français les plus lus, manuels OpenStax).
+ */
+/** Sélection du campus : classiques et manuels utiles aux filières (résolus dans l'index s'ils y sont). */
+const SELECTION_CAMPUS: [titre: string, auteur: string][] = [
+  ["Introduction to Business", "Lawrence J. Gitman"],
+  ["Principles of Accounting, Volume 1: Financial Accounting", "Mitchell Franklin"],
+  ["Entrepreneurship", "Michael Laverty"],
+  ["Principles of Management", "David S. Bright"],
+  ["Principles of Marketing", "Maria Gomez Albrecht"],
+  ["Principles of Economics", "Steven A. Greenlaw"],
+  ["Recherches sur la nature et les causes de la richesse des nations", "Adam Smith"],
+  ["Traité d'économie politique", "Jean-Baptiste Say"],
+  ["De l'esprit des lois", "Montesquieu"],
+  ["Du contrat social", "Jean-Jacques Rousseau"],
+  ["Discours de la méthode", "René Descartes"],
+  ["Introductory Business Statistics", "Alexander Holmes"],
+];
+
+let selection: { le: number; ids: number[] } | null = null;
+
+async function selectionCampus(): Promise<LivreLibre[]> {
+  if (!selection || Date.now() - selection.le > 30 * 60_000 || !selection.ids.length) {
+    const trouves = await Promise.all(SELECTION_CAMPUS.map(([t, a]) => trouverDansIndex(t, a)));
+    selection = { le: Date.now(), ids: trouves.filter((x): x is LivreLibre => Boolean(x)).map((x) => x.id) };
+  }
+  const parId = await libresParId(selection.ids);
+  return selection.ids.map((id) => parId.get(id)).filter((x): x is LivreLibre => Boolean(x));
+}
+
+export async function selectionAccueil(n = 12): Promise<LivreLibre[]> {
+  const choisis = await selectionCampus();
+  const rayons = sql`${catalogueLibre.domaines} && array[${sql.join(
+    RAYONS_ETUDES.map((d) => sql`${d}`),
+    sql`, `,
+  )}]::text[]`;
+  const [lus, francais, manuels] = await Promise.all([
+    db.select().from(catalogueLibre).where(sql`${catalogueLibre.lectures} > 0`).orderBy(desc(catalogueLibre.lectures)).limit(n),
+    db
+      .select()
+      .from(catalogueLibre)
+      .where(and(eq(catalogueLibre.langue, "fr"), eq(catalogueLibre.source, "gutenberg"), rayons))
+      .orderBy(desc(BONUS), catalogueLibre.id)
+      .limit(n),
+    db
+      .select()
+      .from(catalogueLibre)
+      .where(and(eq(catalogueLibre.source, "openstax"), rayons))
+      .orderBy(desc(catalogueLibre.annee))
+      .limit(n),
+  ]);
+  const melange: LivreLibre[] = [];
+  for (let i = 0; i < n; i++) {
+    if (francais[i]) melange.push(francais[i]);
+    if (i % 2 === 0 && manuels[i / 2]) melange.push(manuels[i / 2]);
+  }
+  return sansDoublons([...lus, ...choisis, ...melange]).slice(0, n);
+}
+
+/**
+ * Livres libres qui pourraient répondre à une demande (pour le bibliothécaire) :
+ * ceux qui répondent à toute la demande, puis quelques-uns pour chacun de ses
+ * mots importants (« tomates », « tropical », « agriculture »), le bibliothécaire
+ * choisissant ensuite ceux qui conviennent vraiment.
+ */
+export async function libresPourQuestion(question: string, n = 10): Promise<LivreLibre[]> {
   const mots = motsRecherche(question, 6);
   if (!mots.length) return [];
   try {
-    const { resultats } = await chercherLibres({ q: mots.join(" "), parPage: n });
-    return resultats;
+    const [ensemble, ...parMot] = await Promise.all([
+      chercherLibres({ q: mots.join(" "), parPage: 4, relacher: false }),
+      ...(mots.length > 1 ? mots.slice(0, 5).map((m) => chercherLibres({ q: m, parPage: 3 })) : []),
+    ]);
+    // Un livre de chaque mot à tour de rôle, pour couvrir toute la demande.
+    const tour: LivreLibre[] = [];
+    for (let i = 0; i < 3; i++) for (const r of parMot) if (r.resultats[i]) tour.push(r.resultats[i]);
+    return sansDoublons([...ensemble.resultats, ...tour]).slice(0, n);
   } catch {
     return [];
   }
@@ -147,28 +338,47 @@ export async function livreLibre(id: number): Promise<LivreLibre | null> {
   return l ?? null;
 }
 
+/** Mots du nom du premier auteur (« Hugo, Victor, 1802-1885 » → hugo, victor), sans les dates. */
+function motsPremierAuteur(auteurs: string): string[] {
+  const premier = auteurs.split(/;| et | and |, (?=[A-ZÀ-Ý][a-zà-ÿ]+ [A-ZÀ-Ý])/)[0] ?? "";
+  return [...new Set(normaliserIndex(premier).split(" "))].filter((m) => m.length > 2 && !/^\d+$/.test(m)).slice(0, 3);
+}
+
+/** Même auteur : tous les mots de son nom (« Victor Hugo » ne ramène pas « Hugo Riemann »). */
+const memePersonne = (mots: string[], auteurs: string) => {
+  const cible = ` ${normaliserIndex(auteurs)} `;
+  return mots.every((m) => cible.includes(` ${m} `));
+};
+
 export async function voisins(l: LivreLibre): Promise<{ memeAuteur: LivreLibre[]; memeDomaine: LivreLibre[] }> {
-  const nom = nomPremierAuteur(l.auteurs);
+  const mots = motsPremierAuteur(l.auteurs);
+  const collectif = /anonym|inconnu|unknown|various|world bank|banque mondiale|openstax/.test(normaliserIndex(l.auteurs));
+  const rayon = l.domaines[0];
   const [memeAuteur, memeDomaine] = await Promise.all([
-    nom && nom.length > 2 && !/anonym|inconnu|unknown|various|world bank|openstax/.test(normaliserIndex(l.auteurs))
+    mots.length >= 2 && !collectif
       ? db
           .select()
           .from(catalogueLibre)
-          .where(and(ne(catalogueLibre.id, l.id), sql`to_tsvector('simple', ${catalogueLibre.recherche}) @@ to_tsquery('simple', ${`${nom}:*`})`))
+          .where(and(ne(catalogueLibre.id, l.id), sql`to_tsvector('simple', ${catalogueLibre.recherche}) @@ to_tsquery('simple', ${mots.map((m) => `${m}:*`).join(" & ")})`))
           .orderBy(desc(BONUS))
-          .limit(40)
-          .then((r) => r.filter((x) => normaliserIndex(x.auteurs).includes(nom)).slice(0, 8))
+          .limit(60)
+          .then((r) => sansDoublons(r.filter((x) => memePersonne(mots, x.auteurs))).slice(0, 8))
       : Promise.resolve([]),
-    l.domaines.length
+    rayon
       ? db
           .select()
           .from(catalogueLibre)
-          .where(and(ne(catalogueLibre.id, l.id), sql`${catalogueLibre.domaines} && array[${sql.join(
-                l.domaines.map((d) => sql`${d}`),
-                sql`, `,
-              )}]::text[]`, l.langue ? eq(catalogueLibre.langue, l.langue) : undefined))
+          .where(
+            and(
+              ne(catalogueLibre.id, l.id),
+              sql`${catalogueLibre.domaines} @> array[${rayon}]::text[]`,
+              l.langue ? eq(catalogueLibre.langue, l.langue) : undefined,
+              eq(catalogueLibre.source, l.source),
+            ),
+          )
           .orderBy(desc(BONUS))
-          .limit(8)
+          .limit(16)
+          .then((r) => sansDoublons(r).slice(0, 8))
       : Promise.resolve([]),
   ]);
   return { memeAuteur, memeDomaine };
@@ -200,7 +410,9 @@ type BundlesDspace = {
  */
 export async function completerLiens(l: LivreLibre): Promise<LivreLibre> {
   if (l.source === "banque_mondiale" && (!l.pdf || !l.couverture)) {
-    const b = await json<BundlesDspace>(`https://openknowledge.worldbank.org/server/api/core/items/${encodeURIComponent(l.ident)}/bundles?embed=bitstreams`);
+    // L'index connaît le « handle » du document (10986/…) ; le dépôt range ses fichiers sous l'identifiant interne.
+    const item = /^\d+\/\d+$/.test(l.ident) ? await json<{ uuid?: string }>(`https://openknowledge.worldbank.org/server/api/pid/find?id=${encodeURIComponent(l.ident)}`) : { uuid: l.ident };
+    const b = item?.uuid ? await json<BundlesDspace>(`https://openknowledge.worldbank.org/server/api/core/items/${encodeURIComponent(item.uuid)}/bundles?embed=bitstreams`) : null;
     const fichiers = (nom: string) => b?._embedded?.bundles?.find((x) => x.name === nom)?._embedded?.bitstreams?._embedded?.bitstreams ?? [];
     const originaux = fichiers("ORIGINAL");
     const pdfs = originaux.filter((f) => /\.pdf$/i.test(f.name));

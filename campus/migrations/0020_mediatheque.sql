@@ -1,0 +1,1 @@
+ALTER TABLE "campus"."cours" ADD COLUMN "mediatheque" text DEFAULT 'tous' NOT NULL;

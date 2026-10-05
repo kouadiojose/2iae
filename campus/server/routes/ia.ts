@@ -906,7 +906,7 @@ export function enregistrerIa(app: Express) {
       if (bibliothecaire) {
         precisions.push(adresse(u));
         // Livres de l'index des bibliothèques libres proches de la demande (et du sujet de la conversation).
-        const libres = await libresPourQuestion(`${corps.contenu} ${premiere ? "" : conv.titre}`, 8);
+        const libres = await libresPourQuestion(`${corps.contenu} ${premiere ? "" : conv.titre}`, 10);
         if (libres.length) {
           precisions.push(
             `<livres_libres>\n${libres

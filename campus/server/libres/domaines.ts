@@ -106,9 +106,9 @@ export function codeLangue(v: string | null | undefined): string | null {
   return m ? m[1] : null;
 }
 
-/** Texte de recherche : le titre compte double. */
+/** Texte de recherche : le titre et les auteurs comptent double (« Molière » trouve d'abord les pièces de Molière). */
 export function texteRecherche(o: { titre: string; autresTitres?: string[]; auteurs: string; sujets: string }): string {
-  return normaliserIndex([o.titre, o.titre, ...(o.autresTitres ?? []), o.auteurs, o.sujets].join(" ")).slice(0, 4000);
+  return normaliserIndex([o.titre, o.titre, ...(o.autresTitres ?? []), o.auteurs, o.auteurs, o.sujets].join(" ")).slice(0, 4000);
 }
 
 /** Texte sans balises HTML ni blancs en rafale, coupé proprement. */

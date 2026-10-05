@@ -3,7 +3,8 @@
 // moteur de recherche, OAI-PMH) ; on n'en garde que ce qui se lit gratuitement
 // et légalement, avec de quoi chercher et ranger. Rien n'est demandé à l'IA.
 //
-// Une moisson par bibliothèque, l'une après l'autre, puis une fois par mois.
+// Une moisson par bibliothèque, l'une après l'autre, puis une fois par mois,
+// la nuit (heure d'Abidjan).
 // Les livres disparus de la source sont retirés à la fin d'une moisson
 // complète (jamais après une moisson interrompue).
 import zlib from "zlib";
@@ -11,7 +12,7 @@ import { and, eq, lt, sql } from "drizzle-orm";
 import { db } from "../db";
 import { catalogueLibre, moissonsLibres, SOURCES_LIBRES, type DomaineLibre, type NouveauLivreLibre, type SourceLibre } from "@shared/schema";
 import { classerArchive, COLLECTIONS_FIABLES, type DocArchive } from "../catalogues";
-import { codeLangue, domainesDe, texteRecherche, texteSimple } from "./domaines";
+import { codeLangue, domainesDe, normaliserIndex, texteRecherche, texteSimple } from "./domaines";
 import { planifier } from "../taches";
 
 const AGENT = "Campus2IAE/1.0 (campus.2iae.com; bibliotheque des etudiants)";
@@ -214,6 +215,8 @@ async function moissonnerArchive(lot: Lot) {
   // (mais jamais les dépôts d'internautes de livres récents).
   const libre = `(year:[1400 TO 1929] OR (licenseurl:(*creativecommons* OR *publicdomain*) AND NOT collection:opensource) OR collection:(${fiables}))`;
   const vus = new Set<string>();
+  // Un même livre numérisé par plusieurs bibliothèques (ou les numéros d'une revue) : on garde le plus lu.
+  const titresVus = new Set<string>();
   for (const rayon of RAYONS_ARCHIVE) {
     for (const langue of LANGUES_ARCHIVE) {
       const q = `mediatype:texts AND language:${langue.requete} AND subject:(${rayon.sujets}) AND ${libre} AND NOT collection:(inlibrary OR printdisabled OR lendinglibrary)`;
@@ -230,6 +233,9 @@ async function moissonnerArchive(lot: Lot) {
           const titre = liste(d.title)[0]?.trim();
           if (!titre) continue;
           const auteurs = liste(d.creator).slice(0, 4).join(", ");
+          const cleTitre = `${normaliserIndex(titre).slice(0, 80)}|${normaliserIndex(auteurs).split(" ")[0] ?? ""}`;
+          if (titresVus.has(cleTitre)) continue;
+          titresVus.add(cleTitre);
           const sujets = liste(d.subject).join("; ").slice(0, 1000);
           const annee = Number(String(d.year ?? "").match(/\d{4}/)?.[0]) || null;
           await lot.ajouter({
@@ -320,61 +326,7 @@ async function moissonnerOpenstax(lot: Lot) {
   }
 }
 
-// ── Banque mondiale : dépôt en libre accès (DSpace) ────────────────────────
-
-type ObjetDspace = {
-  _embedded: { indexableObject: { uuid: string; handle?: string; metadata: Record<string, { value: string }[]> } };
-};
-
-async function moissonnerBanqueMondiale(lot: Lot) {
-  const base = "https://openknowledge.worldbank.org/server/api/discover/search/objects";
-  const parPage = 100;
-  for (let page = 0; ; page++) {
-    const params = new URLSearchParams({ dsoType: "ITEM", size: String(parPage), page: String(page), sort: "dc.date.issued,DESC" });
-    const json = await lireJson<{ _embedded: { searchResult: { page: { totalPages: number }; _embedded: { objects: ObjetDspace[] } } } }>(`${base}?${params}`, 90_000);
-    const resultat = json._embedded.searchResult;
-    for (const o of resultat._embedded.objects ?? []) {
-      const it = o._embedded.indexableObject;
-      const md = it.metadata ?? {};
-      const v = (cle: string) => (md[cle] ?? []).map((x) => x.value).filter(Boolean);
-      const titres = v("dc.title");
-      if (!titres.length) continue;
-      const langue = codeLangue(v("dc.language.iso")[0]) ?? codeLangue(v("dc.language")[0]) ?? "en";
-      // Titre bilingue : celui de la langue du document d'abord.
-      const titre = (langue === "fr" ? titres.find((t) => /[éèàçù]|\b(le|la|les|des|du|et)\b/i.test(t)) : null) ?? titres[0];
-      const auteurs = v("dc.contributor.author").slice(0, 4).join(", ") || "Banque mondiale";
-      const lieux = Object.keys(md)
-        .filter((k) => /country|region|spatial/i.test(k))
-        .flatMap((k) => v(k));
-      const sujets = [...v("dc.subject"), ...lieux].join("; ").slice(0, 1000);
-      const type = v("dc.type")[0] ?? "";
-      const resume = v("dc.description.abstract");
-      const description = texteSimple((langue === "fr" ? resume.find((r) => /[éèà]/.test(r)) : null) ?? resume[0]);
-      const domaines = domainesDe({ sujets, titre });
-      await lot.ajouter({
-        source: "banque_mondiale",
-        ident: it.uuid,
-        titre,
-        auteurs,
-        annee: Number(v("dc.date.issued")[0]?.slice(0, 4)) || null,
-        langue,
-        sujets,
-        domaines: domaines.length ? domaines : ["economie"],
-        description,
-        couverture: null,
-        format: "pdf",
-        lien: `https://openknowledge.worldbank.org/entities/publication/${it.uuid}`,
-        licence: v("dc.rights")[0] ?? "Libre accès (Banque mondiale)",
-        popularite: /book/i.test(type) ? 5000 : /report/i.test(type) ? 2000 : 500,
-        recherche: texteRecherche({ titre, autresTitres: titres.filter((t) => t !== titre), auteurs, sujets }),
-      });
-    }
-    if (page + 1 >= resultat.page.totalPages) break;
-    await pause(400);
-  }
-}
-
-// ── OAPEN : livres universitaires en libre accès (OAI-PMH) ─────────────────
+// ── Moisson OAI-PMH (protocole commun des dépôts universitaires) ───────────
 
 const decoderXml = (t: string) =>
   t
@@ -392,58 +344,102 @@ function champsXml(bloc: string, balise: string): string[] {
   return [...bloc.matchAll(re)].map((m) => decoderXml(m[1])).filter(Boolean);
 }
 
-const LANGUES_OAPEN = new Set(["fr", "en", "es", "pt"]);
 
-async function moissonnerOapen(lot: Lot) {
-  const base = "https://library.oapen.org/oai/request";
+/** Les notices d'un dépôt OAI-PMH, page après page (jeton de reprise). */
+async function* noticesOai(base: string): AsyncGenerator<string> {
   let url = `${base}?verb=ListRecords&metadataPrefix=oai_dc`;
-  for (let tour = 0; tour < 2000; tour++) {
+  for (let tour = 0; tour < 3000; tour++) {
     const xml = await lireTexte(url, 120_000);
-    for (const rec of xml.split("<record>").slice(1)) {
-      if (/<header[^>]*status="deleted"/.test(rec)) continue;
-      const type = champsXml(rec, "oaire:resourceType")[0] ?? "";
-      if (type && type !== "book") continue;
-      const langue = codeLangue(champsXml(rec, "dc:language")[0]);
-      if (!langue || !LANGUES_OAPEN.has(langue)) continue;
-      const lien = champsXml(rec, "dc:identifier").find((i) => i.startsWith("https://library.oapen.org/handle/"));
-      const titre = champsXml(rec, "dc:title")[0];
-      if (!lien || !titre) continue;
-      const ident = lien.replace("https://library.oapen.org/handle/", "");
-      const auteurs = champsXml(rec, "dc:creator")
-        .slice(0, 4)
-        .map((a) => {
-          const [nom, prenom] = a.split(",").map((x) => x.trim());
-          return prenom ? `${prenom} ${nom}` : nom;
-        })
-        .join(", ");
-      const sujets = champsXml(rec, "dc:subject")
-        .map((s) => s.replace(/^.*::/, ""))
-        .join("; ")
-        .slice(0, 1000);
-      const licence = rec.match(/<oaire:licenseCondition[^>]*>([\s\S]*?)<\/oaire:licenseCondition>/)?.[1];
-      const annee = Number(champsXml(rec, "dc:date").find((d) => /^\d{4}$/.test(d))) || null;
-      await lot.ajouter({
-        source: "oapen",
-        ident,
-        titre: titre.replace(/^Chapter\s+/, ""),
-        auteurs,
-        annee,
-        langue,
-        sujets,
-        domaines: domainesDe({ sujets, titre }),
-        description: texteSimple(champsXml(rec, "dc:description")[0]),
-        couverture: null,
-        format: "pdf",
-        lien,
-        licence: licence ? decoderXml(licence) : "Creative Commons",
-        popularite: 300,
-        recherche: texteRecherche({ titre, auteurs, sujets }),
-      });
-    }
+    for (const rec of xml.split("<record>").slice(1)) if (!/<header[^>]*status="deleted"/.test(rec)) yield rec;
     const jeton = xml.match(/<resumptionToken[^>]*>([^<]+)<\/resumptionToken>/)?.[1];
     if (!jeton) break;
     url = `${base}?verb=ListRecords&resumptionToken=${encodeURIComponent(decoderXml(jeton))}`;
     await pause(300);
+  }
+}
+
+// ── Banque mondiale : dépôt en libre accès (OAI-PMH) ───────────────────────
+
+async function moissonnerBanqueMondiale(lot: Lot) {
+  for await (const rec of noticesOai("https://openknowledge.worldbank.org/server/oai/request")) {
+    const handle = rec.match(/<identifier>oai:openknowledge\.worldbank\.org:([^<]+)<\/identifier>/)?.[1];
+    const titres = champsXml(rec, "dc:title");
+    if (!handle || !titres.length) continue;
+    const langues = champsXml(rec, "dc:language");
+    const langue = langues.map(codeLangue).find(Boolean) ?? "en";
+    // Titre bilingue : celui de la langue du document d'abord.
+    const titre = (langue === "fr" ? titres.find((t) => /[éèàçù]|\b(le|la|les|des|du|et)\b/i.test(t)) : null) ?? titres[0];
+    const auteurs = champsXml(rec, "dc:creator").slice(0, 4).join(", ") || "Banque mondiale";
+    const sujets = champsXml(rec, "dc:subject").join("; ").slice(0, 1000);
+    const type = champsXml(rec, "dc:type")[0] ?? "";
+    const resumes = champsXml(rec, "dc:description");
+    const description = texteSimple((langue === "fr" ? resumes.find((r) => /[éèà]/.test(r)) : null) ?? resumes[0]);
+    const annee = Number(champsXml(rec, "dc:date").map((d) => d.match(/^(\d{4})/)?.[1]).filter(Boolean).sort()[0]) || null;
+    const domaines = domainesDe({ sujets, titre });
+    await lot.ajouter({
+      source: "banque_mondiale",
+      ident: handle,
+      titre,
+      auteurs,
+      annee,
+      langue,
+      sujets,
+      domaines: domaines.length ? domaines : ["economie"],
+      description,
+      couverture: null,
+      format: "pdf",
+      lien: `https://openknowledge.worldbank.org/handle/${handle}`,
+      licence: champsXml(rec, "dc:rights").find((r) => !r.startsWith("http")) ?? "Libre accès (Banque mondiale)",
+      popularite: /book/i.test(type) ? 5000 : /report/i.test(type) ? 2000 : 500,
+      recherche: texteRecherche({ titre, autresTitres: titres.filter((t) => t !== titre), auteurs, sujets }),
+    });
+  }
+}
+
+// ── OAPEN : livres universitaires en libre accès (OAI-PMH) ─────────────────
+
+const LANGUES_OAPEN = new Set(["fr", "en", "es", "pt"]);
+
+async function moissonnerOapen(lot: Lot) {
+  for await (const rec of noticesOai("https://library.oapen.org/oai/request")) {
+    const type = champsXml(rec, "oaire:resourceType")[0] ?? "";
+    if (type && type !== "book") continue;
+    const langue = codeLangue(champsXml(rec, "dc:language")[0]);
+    if (!langue || !LANGUES_OAPEN.has(langue)) continue;
+    const lien = champsXml(rec, "dc:identifier").find((i) => i.startsWith("https://library.oapen.org/handle/"));
+    const titre = champsXml(rec, "dc:title")[0];
+    if (!lien || !titre) continue;
+    const ident = lien.replace("https://library.oapen.org/handle/", "");
+    const auteurs = champsXml(rec, "dc:creator")
+      .slice(0, 4)
+      .map((a) => {
+        const [nom, prenom] = a.split(",").map((x) => x.trim());
+        return prenom ? `${prenom} ${nom}` : nom;
+      })
+      .join(", ");
+    const sujets = champsXml(rec, "dc:subject")
+      .map((x) => x.replace(/^.*::/, ""))
+      .join("; ")
+      .slice(0, 1000);
+    const licence = rec.match(/<oaire:licenseCondition[^>]*>([\s\S]*?)<\/oaire:licenseCondition>/)?.[1];
+    const annee = Number(champsXml(rec, "dc:date").find((d) => /^\d{4}$/.test(d))) || null;
+    await lot.ajouter({
+      source: "oapen",
+      ident,
+      titre,
+      auteurs,
+      annee,
+      langue,
+      sujets,
+      domaines: domainesDe({ sujets, titre }),
+      description: texteSimple(champsXml(rec, "dc:description")[0]),
+      couverture: null,
+      format: "pdf",
+      lien,
+      licence: licence ? decoderXml(licence) : "Creative Commons",
+      popularite: 300,
+      recherche: texteRecherche({ titre, auteurs, sujets }),
+    });
   }
 }
 
@@ -521,15 +517,30 @@ export function lancerMoisson(sources: SourceLibre[]) {
   }
 }
 
-/** Bibliothèques jamais moissonnées, trop anciennes, ou dont la moisson a été coupée. */
+/**
+ * Bibliothèques à moissonner : jamais moissonnées (ou vides) tout de suite ;
+ * mises à jour mensuelles, erreurs et moissons coupées par un redémarrage
+ * seulement la nuit (heure d'Abidjan), loin des cours.
+ */
 export async function sourcesAMoissonner(): Promise<SourceLibre[]> {
-  const etats = await db.select().from(moissonsLibres);
+  const [etats, comptes] = await Promise.all([
+    db.select().from(moissonsLibres),
+    db
+      .select({ source: catalogueLibre.source, n: sql<number>`count(*)::int` })
+      .from(catalogueLibre)
+      .groupBy(catalogueLibre.source),
+  ]);
   const parSource = new Map(etats.map((e) => [e.source, e]));
+  const remplies = new Set(comptes.filter((c) => c.n > 0).map((c) => c.source));
   const maintenant = Date.now();
+  const nuit = new Date().getUTCHours() < 5;
   return ORDRE.filter((s) => {
+    if (enCours === s || demandees.has(s)) return false;
     const e = parSource.get(s);
-    if (!e) return true;
-    if (e.statut === "en_cours") return enCours !== s && !demandees.has(s) && maintenant - e.debut.getTime() > MOISSON_PERDUE;
+    // Premier remplissage (ou source restée vide) : tout de suite, même après un redémarrage en pleine moisson.
+    if (!e || !remplies.has(s)) return true;
+    if (!nuit) return false;
+    if (e.statut === "en_cours") return maintenant - e.debut.getTime() > MOISSON_PERDUE;
     if (e.statut === "erreur") return maintenant - (e.fin ?? e.debut).getTime() > 6 * 60 * 60_000;
     return maintenant - (e.fin ?? e.debut).getTime() > VALIDITE;
   });

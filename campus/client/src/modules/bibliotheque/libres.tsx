@@ -132,7 +132,18 @@ export function LecteurLibre({ livre, etudiant }: { livre: LivreLecteur; etudian
           </p>
         </>
       )}
-      {mode === "web" && livre.web && <Cadre src={livre.web} titre={`Lire « ${livre.titre} »`} />}
+      {mode === "web" && livre.web && (
+        <>
+          <Cadre src={livre.web} titre={`Lire « ${livre.titre} »`} />
+          <p className="text-sm text-texte-gris">
+            {etudiant ? "La page ne s'affiche pas ? " : "La page ne s'affiche pas ? "}
+            <a href={livre.web} target="_blank" rel="noreferrer">
+              {etudiant ? "Ouvre-la dans un nouvel onglet" : "L'ouvrir dans un nouvel onglet"}
+            </a>
+            .
+          </p>
+        </>
+      )}
       <p className="text-sm text-texte-gris">
         {mode === "pages" && "Les pages scannées gardent la mise en page d'origine ; la version texte est plus légère (texte reconnu automatiquement, quelques erreurs possibles). "}
         {mode === "texte" && livre.source === "gutenberg" && "Texte intégral du Project Gutenberg, relu par des bénévoles. "}

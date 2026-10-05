@@ -24,7 +24,7 @@ import {
   type SourceLibre,
   type Utilisateur,
 } from "@shared/schema";
-import { chercherLibres, completerLiens, compterLecture, lectureDepuisIndex, livreLibre, texteDuLibre, versLivreLibreDto, voisins } from "../libres/index-libre";
+import { chercherLibres, selectionAccueil, completerLiens, compterLecture, lectureDepuisIndex, livreLibre, texteDuLibre, versLivreLibreDto, voisins } from "../libres/index-libre";
 import { lancerMoisson, moissonEnCours, toutesLesSources } from "../libres/moisson";
 
 const ROLES = ["etudiant", "formateur", "vie_scolaire", "admin"] as const;
@@ -59,13 +59,13 @@ async function chiffresAccueil(): Promise<Omit<AccueilLibresDto, "moissons">> {
       .select({ source: catalogueLibre.source, nombre: sql<number>`count(*)::int` })
       .from(catalogueLibre)
       .groupBy(catalogueLibre.source),
-    chercherLibres({ parPage: 12 }),
+    selectionAccueil(12),
   ]);
   const valeur = {
     total,
     parDomaine: DOMAINES_LIBRES.map((d) => ({ domaine: d, nombre: domaines.rows.find((x) => x.domaine === d)?.nombre ?? 0 })).filter((d) => d.nombre > 0),
     parSource: SOURCES_LIBRES.map((s) => ({ source: s, nombre: sources.find((x) => x.source === s)?.nombre ?? 0 })).filter((s) => s.nombre > 0),
-    plusLus: plusLus.resultats.map(versLivreLibreDto),
+    plusLus: plusLus.map(versLivreLibreDto),
   };
   chiffres = { le: Date.now(), valeur };
   return valeur;

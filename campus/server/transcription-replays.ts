@@ -4,7 +4,7 @@
 // par morceau, puis range le texte minuté dans les sous-titres de la séance.
 // La transcription sert au replay (texte à lire et à chercher) et au cours
 // complet préparé ensuite (etude-cours.ts).
-import { and, asc, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "./db";
 import * as visio from "./visio";
 import { lienReplayBucket, stockageReplaysDisponible } from "./stockage-replays";
@@ -43,9 +43,33 @@ async function sourceDe(enregistrementId: string, forcerBucket = false): Promise
   return { recordingId: enregistrementId };
 }
 
+/** Transcriptions en échec depuis plus de 24 h : nouvel essai (quatre au plus), avec la copie du bucket si elle existe. */
+async function reessayerEchecs(): Promise<void> {
+  const echecs = await db
+    .select()
+    .from(transcriptionsReplays)
+    .where(and(eq(transcriptionsReplays.statut, "erreur"), lt(transcriptionsReplays.essais, 4), lt(transcriptionsReplays.fin, new Date(Date.now() - 24 * 3600_000))))
+    .limit(3);
+  for (const tr of echecs) {
+    try {
+      const travailId = await visio.soumettreTranscriptionDaily(await sourceDe(tr.enregistrementId, true));
+      await db
+        .update(transcriptionsReplays)
+        .set({ travailId, statut: "soumise", essais: tr.essais + 1, debut: new Date(), fin: null })
+        .where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
+    } catch (e) {
+      await db
+        .update(transcriptionsReplays)
+        .set({ essais: tr.essais + 1, fin: new Date(), message: (e as Error).message.slice(0, 300) })
+        .where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
+    }
+  }
+}
+
 /** Demande la transcription des enregistrements qui n'en ont pas (deux séances à la fois au plus). */
 export async function soumettreTranscriptions(): Promise<void> {
   if (!visio.dailyDisponible()) return;
+  await reessayerEchecs();
   for (const s of await seancesATranscrire(2)) {
     const morceaux = await db.select().from(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id)).orderBy(asc(morceauxReplay.numero));
     const pieces = morceaux.length

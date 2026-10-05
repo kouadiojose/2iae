@@ -16,6 +16,7 @@
 //
 // Réglage : la direction et l'équipe qui gère le programme
 // (PATCH /api/cours/:id/mediatheque).
+import { statutsCoursComplets } from "../etude-cours";
 import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
@@ -86,6 +87,7 @@ async function enregistrementsDes(u: { id: number }, coursIds: number[] | "tous"
       : Promise.resolve([]),
   ]);
   const dejaVus = new Set(vus.map((v) => v.seanceId));
+  const complets = await statutsCoursComplets(ids);
   const nomDe = new Map(noms.map((n) => [n.id, `${n.prenom} ${n.nom}`]));
   const recent = Date.now() - NOUVEAU_MS;
   for (const l of lignes) {
@@ -100,6 +102,7 @@ async function enregistrementsDes(u: { id: number }, coursIds: number[] | "tous"
       nouveau: !vu && (l.termineeLe ?? l.debut).getTime() > recent,
       lien: `/replays/${l.id}`,
       diapos: l.diapos ?? 0,
+      coursComplet: complets.get(l.id) === "prete" ? "pret" : complets.get(l.id) === "en_cours" ? "en_preparation" : null,
     };
     resultat.set(l.coursId, [...(resultat.get(l.coursId) ?? []), e]);
   }

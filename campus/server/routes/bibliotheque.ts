@@ -16,6 +16,7 @@ import { demanderJson, ErreurIa } from "../ia";
 import { identifierLivre, trouverLecture } from "../catalogues";
 import { pageDuTexte, echantillonDuLivre } from "../lecture";
 import { texteDuLivre, trouverDansIndex, lectureDepuisIndex } from "../libres/index-libre";
+import { etatEtudeLivre, lancerEtudeLivre, livreEtudiable, contexteCompletLivre } from "../etude-livre";
 import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse, neutraliserBiblio, versLivreDto, livresParId, enregistrerLivre } from "../bibliotheque-outils";
 import { idsCoursAccessibles, etudiantsDuCours } from "../acces";
 import { avantAppel, appelIa, verifierPause, SCHEMA_REVISION, questionsValides } from "./ia";
@@ -439,7 +440,10 @@ export function enregistrerBibliotheque(app: Express) {
           .limit(1),
         db.select().from(exposesBiblio).where(and(eq(exposesBiblio.utilisateurId, u.id), eq(exposesBiblio.livreId, l.id))).orderBy(desc(exposesBiblio.id)),
       ]);
+      const [etudiable, etude] = await Promise.all([livreEtudiable(l), etatEtudeLivre(l.id)]);
       const dto: LivreDetailDto = {
+        etudiable,
+        etude,
         livre: versLivreDto(l),
         fiche: l.fiche ?? null,
         notes: notes.map((n) => ({ id: n.id, contenu: n.contenu, creeLe: n.creeLe.toISOString() })),
@@ -447,6 +451,29 @@ export function enregistrerBibliotheque(app: Express) {
         exposes: exposes.map((e) => ({ id: e.id, livreId: l.id, livreTitre: l.titre, sujet: e.sujet, creeLe: e.creeLe.toISOString() })),
       };
       res.json(dto);
+    }),
+  );
+
+  // ── Dossier d'étude : le livre lu en entier par le campus, une fois pour tous ──
+  app.get(
+    "/api/bibliotheque/livres/:id(\\d+)/etude",
+    lecteur,
+    route(async (req, res) => {
+      const l = await livreDe(idParam(req));
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ etude: await etatEtudeLivre(l.id), etudiable: await livreEtudiable(l) });
+    }),
+  );
+
+  app.post(
+    "/api/bibliotheque/livres/:id(\\d+)/etude",
+    lecteur,
+    route(async (req, res) => {
+      const u = moi(req);
+      const l = await livreDe(idParam(req));
+      // Pendant un devoir ou un examen (IA en pause par le formateur), pas de dossier non plus.
+      await verifierPause(u);
+      res.json({ etude: await lancerEtudeLivre(l, u), etudiable: true });
     }),
   );
 
@@ -464,16 +491,17 @@ export function enregistrerBibliotheque(app: Express) {
         enCours = (async () => {
           // Livre en lecture libre : la fiche est rédigée d'après un échantillon du vrai texte.
           const texte = await texteDuLivre(l.lecture);
+          const contexteL = await contexteCompletLivre(l, contexteLivre(l));
           const brut = await appelIa(() =>
             demanderJson<unknown>({
               systeme: SYSTEME_BIBLIOTHEQUE,
-              contexte: texte ? `${contexteLivre(l)}\n\n<texte_du_livre>\n${neutraliserBiblio(echantillonDuLivre(texte))}\n</texte_du_livre>` : contexteLivre(l),
+              contexte: texte ? `${contexteLivre(l)}\n\n<texte_du_livre>\n${neutraliserBiblio(echantillonDuLivre(texte))}\n</texte_du_livre>` : contexteL,
               messages: [
                 {
                   role: "user",
                   content: texte
                     ? "Rédige la fiche de lecture de ce livre d'après les extraits de son vrai texte fournis (un échantillon régulier de tout le livre, début compris), pour des étudiants qui veulent en saisir l'essentiel sans tout lire. Tutoie le lecteur. Le plan suit les parties réelles que tu repères dans le texte. « connaissance » vaut « bonne » si les extraits suffisent. Relie aux réalités ivoiriennes quand c'est pertinent, en distinguant clairement ce qui vient du livre et ce que tu ajoutes."
-                    : "Rédige la fiche de lecture de ce livre pour des étudiants qui veulent en saisir l'essentiel sans tout lire. Tutoie le lecteur. Reste fidèle à ce que tu sais réellement du livre : si tu le connais mal, dis-le dans « connaissance », reste général et prudent, et n'invente ni chapitres ni chiffres. Donne des exemples concrets, ivoiriens quand c'est pertinent.",
+                    : "Rédige la fiche de lecture de ce livre pour des étudiants qui veulent en saisir l'essentiel sans tout lire. Tutoie le lecteur. Écris avec assurance, d'après ta connaissance du livre, de son auteur et de son domaine : ses idées, sa démarche, ce qu'il apporte. N'invente ni chapitres précis ni chiffres. « connaissance » indique, pour le campus seulement, ta familiarité avec ce livre. Donne des exemples concrets, ivoiriens quand c'est pertinent.",
                 },
               ],
               schema: SCHEMA_FICHE,
@@ -528,10 +556,11 @@ export function enregistrerBibliotheque(app: Express) {
       const u = moi(req);
       const l = await livreDe(idParam(req));
       await avantAppel(u);
+      const contexteL = await contexteCompletLivre(l, contexteLivre(l));
       const brut = await appelIa(() =>
         demanderJson<{ questions: unknown[] }>({
           systeme: SYSTEME_BIBLIOTHEQUE,
-          contexte: contexteLivre(l),
+          contexte: contexteL,
           messages: [
             {
               role: "user",
@@ -605,10 +634,11 @@ export function enregistrerBibliotheque(app: Express) {
         .limit(40);
       const minutes = d.minutes ?? 10;
       const reference = `${l.auteurs || "Auteur inconnu"}${l.annee ? ` (${l.annee})` : ""}. ${l.titre}.${l.editeur ? ` ${l.editeur}.` : ""}${l.isbn ? ` ISBN ${l.isbn}.` : ""}`;
+      const contexteL = await contexteCompletLivre(l, contexteLivre(l));
       const brut = await appelIa(() =>
         demanderJson<unknown>({
           systeme: SYSTEME_BIBLIOTHEQUE,
-          contexte: contexteLivre(l),
+          contexte: contexteL,
           messages: [
             {
               role: "user",

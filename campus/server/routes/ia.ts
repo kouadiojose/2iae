@@ -41,6 +41,7 @@ import { interrogationEnCours, finDe } from "../evaluations-outils";
 import { SYSTEME_BIBLIOTHEQUE, SYSTEME_BIBLIOTHECAIRE, contexteLivre, adresse, neutraliserBiblio, livresParId, livreVise, verifierLivresCites, versLivreDto } from "../bibliotheque-outils";
 import { passagesPour } from "../lecture";
 import { texteDuLivre, libresPourQuestion } from "../libres/index-libre";
+import { contexteCompletLivre, dossierDuLivre, dossierEnTexte, garderReponse, reponseGardee } from "../etude-livre";
 import {
   conversationsIa,
   messagesIa,
@@ -868,6 +869,26 @@ export function enregistrerIa(app: Express) {
         devoir = await devoirVisible(u, devoirId);
         if (devoir.coursId !== conv.coursId) throw invalide("Ce devoir n'appartient pas au cours de la conversation.");
       }
+
+      // Livre lu par le campus : la même première question a déjà reçu sa réponse, qui est redonnée
+      // tout de suite, sans rappeler l'IA ni compter dans les questions du jour.
+      if (conv.livreId) {
+        const [{ n: dejaPosees }] = await db.select({ n: sql<number>`count(*)::int` }).from(messagesIa).where(eq(messagesIa.conversationId, conv.id));
+        const gardee = dejaPosees === 0 ? await reponseGardee(conv.livreId, corps.contenu) : null;
+        if (gardee) {
+          await verifierPause(u);
+          await db.insert(messagesIa).values({ conversationId: conv.id, role: "user", contenu: corps.contenu });
+          const [enregistre] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "assistant", contenu: gardee }).returning();
+          const titre = conv.titre === TITRE_PAR_DEFAUT ? titreDepuis(corps.contenu) : conv.titre;
+          await db.update(conversationsIa).set({ titre, majLe: new Date() }).where(eq(conversationsIa.id, conv.id));
+          const fin: FinFluxIa = { titre, messageId: enregistre.id, restantes: await restantesDe(u) };
+          res.status(200);
+          res.setHeader("Content-Type", "text/plain; charset=utf-8");
+          res.setHeader("Cache-Control", "no-cache, no-transform");
+          res.end(`${gardee}${SEPARATEUR_FIN_FLUX}${JSON.stringify(fin)}`);
+          return;
+        }
+      }
       await avantAppel(u);
 
       // Contexte stable (cours) et consignes préparés AVANT d'enregistrer la
@@ -877,7 +898,14 @@ export function enregistrerIa(app: Express) {
       const [livre] = conv.livreId ? await db.select().from(livres).where(eq(livres.id, conv.livreId)) : [];
       // Le bibliothécaire de la bibliothèque mondiale : conversation libre sur les livres.
       const bibliothecaire = conv.bibliotheque && !livre;
-      const contexte = livre ? contexteLivre(livre) : bibliothecaire ? undefined : c ? await contexteDuCours(c, lecon?.id) : undefined;
+      const dossier = livre ? await dossierDuLivre(livre.id) : null;
+      const contexte = livre
+        ? await contexteCompletLivre(livre, contexteLivre(livre))
+        : bibliothecaire
+          ? undefined
+          : c
+            ? await contexteDuCours(c, lecon?.id)
+            : undefined;
       const systeme = livre ? SYSTEME_BIBLIOTHEQUE : bibliothecaire ? SYSTEME_BIBLIOTHECAIRE : estEtudiant(u) ? SYSTEME_ETUDIANT : SYSTEME_ENSEIGNANT;
 
       const [question] = await db.insert(messagesIa).values({ conversationId: conv.id, role: "user", contenu: corps.contenu }).returning();
@@ -901,7 +929,7 @@ export function enregistrerIa(app: Express) {
         precisions.push(`${adresse(u)} La question porte sur le livre « ${livre.titre} ». Si elle dépasse ce que tu sais du livre, dis-le et propose ce que l'étudiant peut vérifier lui-même.`);
         // Livre en lecture libre : l'IA lit les vrais passages utiles plutôt que de répondre de mémoire.
         const texte = await texteDuLivre(livre.lecture);
-        if (texte) precisions.push(`<texte_du_livre titre="${attribut(livre.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
+        if (texte) precisions.push(`<texte_du_livre titre="${attribut(livre.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu, dossier ? 10_000 : 18_000))}\n</texte_du_livre>`);
       }
       if (bibliothecaire) {
         precisions.push(adresse(u));
@@ -927,8 +955,13 @@ export function enregistrerIa(app: Express) {
               .join("\n")}`,
           );
           const vise = livreVise(corps.contenu, connus);
-          const texte = vise ? await texteDuLivre(vise.lecture) : null;
-          if (vise && texte) precisions.push(`<texte_du_livre titre="${attribut(vise.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
+          const dossierVise = vise ? await dossierDuLivre(vise.id) : null;
+          if (vise && dossierVise) {
+            precisions.push(`<dossier_du_livre titre="${attribut(vise.titre)}">\nLe campus a lu ce livre en entier. Son dossier d'étude :\n\n${neutraliserBiblio(dossierEnTexte(dossierVise))}\n</dossier_du_livre>`);
+          } else {
+            const texte = vise ? await texteDuLivre(vise.lecture) : null;
+            if (vise && texte) precisions.push(`<texte_du_livre titre="${attribut(vise.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
+          }
         }
       }
       if (lecon) {
@@ -983,6 +1016,7 @@ export function enregistrerIa(app: Express) {
           if (definitif !== diffuse.trim()) fin.remplacer = definitif;
           // Bibliothécaire : chaque livre recommandé est vérifié dans les catalogues avant d'apparaître en carte.
           const livresCitesMsg = bibliothecaire ? await verifierLivresCites(definitif) : null;
+          if (livre && dossier && historique.length === 1 && reponse.trim()) void garderReponse(livre.id, corps.contenu, definitif).catch(() => {});
           const [enregistre] = await db
             .insert(messagesIa)
             .values({ conversationId: conv.id, role: "assistant", contenu: definitif, livres: livresCitesMsg?.length ? livresCitesMsg : null })

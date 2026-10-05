@@ -2,6 +2,7 @@
 // tables Drizzle : le client peut l'importer sans alourdir le téléphone.
 import type { FicheLivre, LivrePropose, DiapositiveExpose } from "./ia";
 import type { QuestionRevision } from "./ext-ia";
+import type { EtudeLivreDto } from "./ext-etudes";
 
 export type NiveauLivre = LivrePropose["niveau"];
 
@@ -72,6 +73,10 @@ export type LivreDetailDto = {
   /** Conversation « Interroger le livre » de la personne (la plus récente). */
   conversationId: number | null;
   exposes: ExposeResumeDto[];
+  /** Le campus a le texte intégral : il peut lire le livre en entier et en rédiger le dossier d'étude. */
+  etudiable: boolean;
+  /** Dossier d'étude (lecture intégrale), quand il existe ou se prépare. */
+  etude: EtudeLivreDto | null;
 };
 
 /** GET /api/bibliotheque : l'espace de la personne. */

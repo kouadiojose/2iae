@@ -4,7 +4,8 @@
 // questions posées, et la vidéo seulement si on la demande (poids affiché).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PlayCircle, Search, FileText, MessageSquare, Presentation, ExternalLink } from "lucide-react";
+import { PlayCircle, Search, FileText, MessageSquare, Presentation, ExternalLink, GraduationCap } from "lucide-react";
+import { Link } from "wouter";
 import { get, post } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { rafraichir } from "@/lib/queryClient";
@@ -18,7 +19,7 @@ import { Onglets } from "@/components/ui/onglets";
 import { TitreSection } from "@/components/ui/carte";
 import { toastErreur } from "@/components/ui/toast";
 import { minutage, sansAccents } from "./outils";
-import type { ReplayDto } from "@shared/schema";
+import type { ReplayDto, CoursCompletDto } from "@shared/schema";
 
 type Onglet = "fiche" | "transcription" | "questions" | "diapos";
 
@@ -161,6 +162,8 @@ export default function PageReplay({ id }: { id: string }) {
         )}
       </div>
 
+      <BandeauCoursComplet seanceId={seanceId} />
+
       <Onglets
         valeur={onglet}
         onChange={setOnglet}
@@ -291,4 +294,22 @@ function surligner(texte: string, recherche: string) {
     i = trouve.pos + trouve.m.length;
   }
   return morceaux.map((m, k) => (m.fort ? <mark key={k} className="rounded bg-orange-peche px-0.5 text-encre">{m.t}</mark> : <span key={k}>{m.t}</span>));
+}
+
+/** Le cours complet tiré de cet enregistrement (notions, quiz, exercices) : lien quand il est prêt. */
+function BandeauCoursComplet({ seanceId }: { seanceId: number }) {
+  const { data } = useQuery<CoursCompletDto>({ queryKey: [`/api/seances/${seanceId}/cours-complet`], staleTime: 60_000 });
+  if (!data || (data.statut !== "prete" && data.statut !== "en_cours")) return null;
+  return (
+    <Link
+      href={`/mediatheque/cours/${seanceId}`}
+      className="flex items-center gap-3 rounded-2xl border-2 border-orange bg-orange-pale px-4 py-3.5 text-encre no-underline hover:bg-orange-clair"
+    >
+      <GraduationCap className="h-6 w-6 shrink-0 text-orange-fonce" aria-hidden />
+      <span className="flex-1">
+        <span className="block font-extrabold">{data.statut === "prete" ? "Le cours complet est prêt" : "Le cours complet se prépare"}</span>
+        <span className="text-sm text-texte-pale">Notions expliquées, quiz corrigé, exercices pratiques avec corrigés, étude de cas et fiches mémo.</span>
+      </span>
+    </Link>
+  );
 }

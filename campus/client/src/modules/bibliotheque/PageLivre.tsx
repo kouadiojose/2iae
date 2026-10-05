@@ -21,6 +21,7 @@ import { useEtatIa, blocageDe, mettreEnAttente, prendreEnAttente } from "@/modul
 import { useConversationIa } from "@/modules/ia/useConversationIa";
 import { BandeauBlocage, LigneQuota, ZoneQuestion, PucesSuggestions, FilConversation, BulleQuestion, ReponseAssistant, QuizRevision, EtiquetteIa } from "@/modules/ia/composants";
 import { Couverture, BadgeVerification, LigneCatalogue, ligneAuteurs } from "./composants";
+import { AvancementEtude, LancerEtude, VueDossier, useEtudeLivre } from "./DossierLivre";
 import { LecteurDepuisIndex } from "./libres";
 import type { LivreDetailDto, QuizLivreDto, ExposeDto, NoteBiblioDto, PageTexteDto } from "@shared/schema/ext-bibliotheque";
 import type { FicheLivre } from "@shared/schema/ia";
@@ -68,7 +69,7 @@ export default function PageLivre({ id }: { id: string }) {
           valeur={onglet}
           onChange={changer}
           options={[
-            { valeur: "fiche", libelle: "Fiche" },
+            { valeur: "fiche", libelle: data.etudiable ? "Dossier" : "Fiche" },
             { valeur: "lire", libelle: "Lire" },
             { valeur: "questions", libelle: "Questions" },
             { valeur: "test", libelle: "Quiz" },
@@ -82,7 +83,12 @@ export default function PageLivre({ id }: { id: string }) {
 
       {onglet === "lire" && <OngletLire detail={data} etudiant={etudiant} />}
 
-      {onglet === "fiche" && <OngletFiche detail={data} cle={cle} etudiant={etudiant} bloque={Boolean(blocageDe(etat))} onQuestions={() => changer("questions")} />}
+      {onglet === "fiche" &&
+        (data.etudiable ? (
+          <OngletDossier detail={data} cle={cle} etudiant={etudiant} bloque={Boolean(blocageDe(etat))} onQuestions={() => changer("questions")} onExpose={() => changer("expose")} />
+        ) : (
+          <OngletFiche detail={data} cle={cle} etudiant={etudiant} bloque={Boolean(blocageDe(etat))} onQuestions={() => changer("questions")} />
+        ))}
       {onglet === "questions" && <OngletQuestions detail={data} cle={cle} etudiant={etudiant} />}
       {onglet === "test" && <OngletTest livreId={l.id} etudiant={etudiant} bloque={Boolean(blocageDe(etat))} />}
       {onglet === "notes" && <OngletNotes detail={data} cle={cle} etudiant={etudiant} />}
@@ -275,19 +281,9 @@ function OngletFiche({ detail, cle, etudiant, bloque, onQuestions }: { detail: L
       <div className="flex flex-wrap items-center gap-2">
         <EtiquetteIa texte={f.depuisTexte ? "Fiche rédigée par l'IA d'après le texte du livre" : "Fiche rédigée par l'IA"} />
         <span className="text-sm text-texte-gris">
-          {f.depuisTexte ? "à partir d'extraits du vrai texte : ouvre l'onglet Lire pour vérifier." : "d'après ce qu'elle sait du livre : à vérifier dans le livre avant de citer."}
+          {f.depuisTexte ? "d'après le vrai texte du livre." : "d'après sa connaissance du livre et de son auteur."}
         </span>
       </div>
-      {f.connaissance !== "bonne" && !f.depuisTexte && (
-        <div className="flex items-start gap-3 rounded-2xl bg-alerte-clair p-4 text-[15px] text-alerte">
-          <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
-          <p>
-            {f.connaissance === "faible"
-              ? "L'IA connaît mal ce livre : la fiche reste générale et peut se tromper. Appuie-toi sur la table des matières et l'introduction du vrai livre."
-              : "L'IA connaît ce livre en partie : certains détails peuvent être imprécis. Vérifie les points importants dans le livre."}
-          </p>
-        </div>
-      )}
       <Carte className="flex flex-col gap-2">
         <h2 className="font-mono text-xs uppercase tracking-[0.12em] text-texte-gris">Résumé</h2>
         <p className="text-base leading-relaxed">{f.resume}</p>
@@ -336,14 +332,28 @@ function OngletFiche({ detail, cle, etudiant, bloque, onQuestions }: { detail: L
   );
 }
 
+// ── Dossier d'étude (livre dont le campus a le texte intégral) ──────────────
+
+function OngletDossier({ detail, cle, etudiant, bloque, onQuestions, onExpose }: { detail: LivreDetailDto; cle: string; etudiant: boolean; bloque: boolean; onQuestions: () => void; onExpose: () => void }) {
+  const { etude, lancer, lancement, pret, enCours } = useEtudeLivre(detail.livre.id, detail.etude, detail.etudiable);
+  if (pret && etude?.dossier) return <VueDossier dossier={etude.dossier} etudiant={etudiant} onQuestions={onQuestions} onExpose={onExpose} />;
+  return (
+    <div className="flex flex-col gap-5">
+      {enCours && etude ? <AvancementEtude etude={etude} etudiant={etudiant} /> : <LancerEtude etude={etude} etudiant={etudiant} onLancer={() => void lancer()} lancement={lancement} desactive={bloque} />}
+      {detail.fiche && !enCours && <OngletFiche detail={detail} cle={cle} etudiant={etudiant} bloque={bloque} onQuestions={onQuestions} />}
+    </div>
+  );
+}
+
 // ── Interroger le livre ──────────────────────────────────────────────────────
 
 const SUGGESTIONS = [
   "Quelles sont les idées principales de ce livre ?",
+  "Aide-moi à préparer un exposé de 10 minutes sur ce livre",
+  "Propose un travail de groupe à partir de ce livre",
   "Explique-moi la partie la plus importante avec un exemple ivoirien",
   "Quelles critiques peut-on faire à ce livre ?",
   "Challenge-moi : pose-moi une question difficile sur ce livre",
-  "Quels autres livres lire pour compléter celui-ci ?",
 ];
 
 function OngletQuestions({ detail, cle, etudiant }: { detail: LivreDetailDto; cle: string; etudiant: boolean }) {
@@ -352,6 +362,30 @@ function OngletQuestions({ detail, cle, etudiant }: { detail: LivreDetailDto; cl
   const [creation, setCreation] = useState(false);
   const { data: etat } = useEtatIa();
   const blocage = blocageDe(etat);
+  const { etude, lancer, pret, enCours } = useEtudeLivre(detail.livre.id, detail.etude, detail.etudiable);
+  const [enAttenteLecture, setEnAttenteLecture] = useState<string | null>(null);
+
+  // Livre lisible en entier mais pas encore étudié : le campus le lit d'abord (une fois pour tous),
+  // puis la question part toute seule.
+  const demander = async (texte: string) => {
+    if (!texte.trim() || blocage || creation) return;
+    if (detail.etudiable && !pret) {
+      setEnAttenteLecture(texte.trim());
+      setQuestion("");
+      if (!enCours) await lancer();
+      return;
+    }
+    await commencer(texte);
+  };
+  useEffect(() => {
+    if (!enAttenteLecture) return;
+    if (pret || etude?.statut === "erreur") {
+      const texte = enAttenteLecture;
+      setEnAttenteLecture(null);
+      void commencer(texte);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pret, etude?.statut, enAttenteLecture]);
 
   const commencer = async (texte: string) => {
     if (!texte.trim() || blocage || creation) return;
@@ -370,20 +404,28 @@ function OngletQuestions({ detail, cle, etudiant }: { detail: LivreDetailDto; cl
   };
 
   if (id !== null) return <ConversationLivre key={id} id={id} cle={cle} livreTitre={detail.livre.titre} etudiant={etudiant} />;
+  if (enAttenteLecture && etude) {
+    return (
+      <div className="flex flex-col gap-4">
+        <BulleQuestion texte={enAttenteLecture} />
+        <AvancementEtude etude={etude} etudiant={etudiant} pourQuestion />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[15px] text-texte-pale">
         {etudiant
-          ? detail.livre.lecture?.mode === "libre"
-            ? "Pose tes questions sur le livre : l'IA lit les passages du vrai texte pour te répondre et te dit où les retrouver. Garde les meilleures réponses dans tes notes pour ton exposé."
-            : "Pose tes questions sur le livre : ses idées, ses exemples, ses limites. L'IA te dit quand elle n'est pas sûre de ce que contient le livre. Garde les meilleures réponses dans tes notes pour ton exposé."
-          : "Posez vos questions sur le livre : idées, exemples, limites. L'IA signale quand elle n'est pas sûre du contenu."}
+          ? detail.etudiable
+            ? "Pose tes questions sur le livre : le campus l'a lu (ou le lit) en entier et te répond d'après son texte, en te disant où retrouver les passages. Garde les meilleures réponses dans tes notes pour ton exposé ou ton travail de groupe."
+            : "Pose tes questions sur le livre : ses idées, ses exemples, ses limites, comment l'utiliser dans un exposé. Garde les meilleures réponses dans tes notes."
+          : "Posez vos questions sur le livre : idées, exemples, limites, utilisation en cours ou en exposé."}
       </p>
-      <PucesSuggestions suggestions={SUGGESTIONS} onChoisir={(s) => void commencer(s)} desactive={Boolean(blocage) || creation} />
+      <PucesSuggestions suggestions={SUGGESTIONS} onChoisir={(s) => void demander(s)} desactive={Boolean(blocage) || creation} />
       <ZoneQuestion
         valeur={question}
         onChange={setQuestion}
-        onEnvoyer={() => void commencer(question)}
+        onEnvoyer={() => void demander(question)}
         desactive={Boolean(blocage)}
         occupe={creation}
         enseignant={!etudiant}

@@ -28,6 +28,8 @@ export type EnregistrementMediathequeDto = {
   lien: string;
   /** Nombre de diapositives projetées pendant la séance (support du cours, à feuilleter ou enregistrer en PDF). */
   diapos: number;
+  /** Cours complet tiré de l'enregistrement (notions, quiz, exercices) : prêt, en préparation, ou rien encore. */
+  coursComplet: "pret" | "en_preparation" | null;
 };
 
 /** Un document : le fichier joint à une leçon publiée (PDF ou autre fichier). */

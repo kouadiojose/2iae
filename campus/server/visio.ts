@@ -624,6 +624,39 @@ export async function supprimerEnregistrementDaily(id: string): Promise<void> {
   if (r.statut !== 200 && r.statut !== 404) throw erreurDaily(r.statut, r.donnees);
 }
 
+// ── Transcription des enregistrements (Batch Processor de Daily) ──────────
+
+/** Erreur du service de transcription (sans alerte « compte » : la visio, elle, peut très bien marcher). */
+function erreurTranscription(statut: number, donnees: unknown): Error {
+  const d = donnees as { info?: string; error?: string } | null;
+  return new Error(`Daily ${statut} : ${`${d?.error ?? ""} ${d?.info ?? ""}`.trim() || "réponse inattendue"}`.slice(0, 300));
+}
+
+/** Demande la transcription d'un enregistrement (par son identifiant Daily, ou un lien direct vers la vidéo). */
+export async function soumettreTranscriptionDaily(source: { recordingId: string } | { uri: string }, langue = "fr"): Promise<string> {
+  const entree = "recordingId" in source ? { sourceType: "recordingId", recordingId: source.recordingId, language: langue } : { sourceType: "uri", uri: source.uri, language: langue };
+  const r = await appelDaily<{ id?: string }>("/batch-processor", {
+    methode: "POST",
+    corps: { preset: "transcript", inParams: entree, transformParams: { transcript: { language: langue, punctuate: true } }, outParams: { s3Config: { s3KeyTemplate: "transcription" } } },
+  });
+  if (r.statut !== 200 || !r.donnees?.id) throw erreurTranscription(r.statut, r.donnees);
+  return r.donnees.id;
+}
+
+/** État d'une transcription demandée : « submitted », « processing », « finished » ou « error ». */
+export async function etatTranscriptionDaily(id: string): Promise<{ statut: string; erreur: string | null }> {
+  const r = await appelDaily<{ status?: string; error?: string }>(`/batch-processor/${encodeURIComponent(id)}`);
+  if (r.statut !== 200 || !r.donnees?.status) throw erreurTranscription(r.statut, r.donnees);
+  return { statut: r.donnees.status, erreur: r.donnees.error ?? null };
+}
+
+/** Liens de téléchargement de la transcription terminée (formats txt, vtt, srt, json). */
+export async function liensTranscriptionDaily(id: string): Promise<{ format: string; link: string }[]> {
+  const r = await appelDaily<{ transcription?: { format: string; link: string }[] }>(`/batch-processor/${encodeURIComponent(id)}/access-link`);
+  if (r.statut !== 200) throw erreurTranscription(r.statut, r.donnees);
+  return r.donnees?.transcription ?? [];
+}
+
 /** Supprime une salle Daily (nettoyage ; une séance supprimée n'a plus besoin de sa salle). */
 export async function supprimerSalleDaily(salle: string): Promise<void> {
   sallesVerifiees.delete(salle);

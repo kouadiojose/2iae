@@ -77,6 +77,12 @@ export type OptionsClaude = {
   utilisateurId?: number;
   /** Modèle selon l'usage (par défaut : outils du personnel). */
   gamme?: Gamme;
+  /**
+   * Travail de fond payé par l'école (étude d'un livre, cours complet tiré d'un
+   * enregistrement) : compté dans le budget du mois, jamais dans les questions
+   * du jour de la personne.
+   */
+  sansQuota?: boolean;
 };
 
 /**
@@ -133,21 +139,22 @@ export function coutMicroDe(modele: string, usage: Anthropic.Beta.BetaUsage | un
   );
 }
 
-async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.BetaUsage | undefined, modele: string) {
+async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.BetaUsage | undefined, modele: string, sansQuota = false): Promise<number> {
   const cout = coutMicroDe(modele, usage);
   if (budgetEnCache) budgetEnCache.depenseMicro += cout;
-  if (!utilisateurId) return;
-  liberer(utilisateurId);
+  if (!utilisateurId) return cout;
+  if (!sansQuota) liberer(utilisateurId);
+  const requetes = sansQuota ? 0 : 1;
   const jour = new Date().toISOString().slice(0, 10);
   const entree = (usage?.input_tokens ?? 0) + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0);
   const sortie = usage?.output_tokens ?? 0;
   await db
     .insert(usageIa)
-    .values({ utilisateurId, jour, requetes: 1, jetonsEntree: entree, jetonsSortie: sortie, coutMicro: cout })
+    .values({ utilisateurId, jour, requetes, jetonsEntree: entree, jetonsSortie: sortie, coutMicro: cout })
     .onConflictDoUpdate({
       target: [usageIa.utilisateurId, usageIa.jour],
       set: {
-        requetes: sql`${usageIa.requetes} + 1`,
+        requetes: sql`${usageIa.requetes} + ${requetes}`,
         jetonsEntree: sql`${usageIa.jetonsEntree} + ${entree}`,
         jetonsSortie: sql`${usageIa.jetonsSortie} + ${sortie}`,
         coutMicro: sql`${usageIa.coutMicro} + ${cout}`,
@@ -155,6 +162,7 @@ async function compter(utilisateurId: number | undefined, usage: Anthropic.Beta.
     })
     .catch((e) => console.error("[ia] comptabilité :", e.message));
   void alerterSiSeuil().catch((e) => console.error("[ia] alerte budget :", (e as Error).message));
+  return cout;
 }
 
 // ═══ Budget du mois et réglages ════════════════════════════════════════════
@@ -327,7 +335,7 @@ const MESSAGE_REFUS =
 /** Appel simple : renvoie le texte complet. */
 export async function demanderClaude(o: OptionsClaude): Promise<string> {
   const reponse = await getClient().beta.messages.create(construireRequete(o));
-  await compter(o.utilisateurId, reponse.usage, reponse.model);
+  await compter(o.utilisateurId, reponse.usage, reponse.model, o.sansQuota);
   if (reponse.stop_reason === "refusal") return MESSAGE_REFUS;
   return texteDe(reponse);
 }
@@ -340,7 +348,7 @@ export async function fluxClaude(o: OptionsClaude, surTexte: (morceau: string) =
   const flux = getClient().beta.messages.stream({ ...construireRequete(o), max_tokens: o.maxTokens ?? 16000 });
   flux.on("text", (morceau) => surTexte(morceau));
   const final = await flux.finalMessage();
-  await compter(o.utilisateurId, final.usage, final.model);
+  await compter(o.utilisateurId, final.usage, final.model, o.sansQuota);
   if (final.stop_reason === "refusal") return MESSAGE_REFUS;
   return texteDe(final);
 }
@@ -350,17 +358,22 @@ export async function fluxClaude(o: OptionsClaude, surTexte: (morceau: string) =
  * Le schéma JSON est imposé par l'API (structured outputs).
  */
 export async function demanderJson<T>(o: OptionsClaude & { schema: Record<string, unknown> }): Promise<T> {
+  return (await demanderJsonCout<T>(o)).resultat;
+}
+
+/** Comme demanderJson, avec le coût de l'appel (études : on le garde avec le dossier). */
+export async function demanderJsonCout<T>(o: OptionsClaude & { schema: Record<string, unknown> }): Promise<{ resultat: T; coutMicro: number }> {
   const requete = construireRequete(o);
   const reponse = await getClient().beta.messages.create({
     ...requete,
     output_config: { ...requete.output_config, format: { type: "json_schema", schema: o.schema } },
   });
-  await compter(o.utilisateurId, reponse.usage, reponse.model);
+  const coutMicro = await compter(o.utilisateurId, reponse.usage, reponse.model, o.sansQuota);
   if (reponse.stop_reason === "refusal") throw new ErreurIa("L'assistant a refusé cette demande.", 422);
   const texte = texteDe(reponse);
   try {
-    return JSON.parse(texte) as T;
+    return { resultat: JSON.parse(texte) as T, coutMicro };
   } catch {
-    throw new ErreurIa("Réponse de l'assistant illisible, réessaie.", 502);
+    throw new ErreurIa(reponse.stop_reason === "max_tokens" ? "Réponse de l'assistant trop longue, coupée." : "Réponse de l'assistant illisible, réessaie.", 502);
   }
 }

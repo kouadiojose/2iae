@@ -5,7 +5,8 @@
 // ou « En attente de réseau, partira tout seul » — le brouillon n'est effacé
 // qu'une fois le reçu arrivé.
 import { useEffect, useRef, useState } from "react";
-import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check } from "lucide-react";
+import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check, Video } from "lucide-react";
+import { EnregistreurVideo, enregistreurDisponible } from "./EnregistreurVideo";
 import { Bouton } from "@/components/ui/bouton";
 import { ZoneTexte } from "@/components/ui/champs";
 import { Fenetre } from "@/components/ui/fenetre";
@@ -38,9 +39,10 @@ function ApercuPage({ page, className }: { page: PageBrouillon; className?: stri
     return () => URL.revokeObjectURL(u);
   }, [page.blob]);
   if (!page.type.startsWith("image/")) {
+    const Icone = page.type.startsWith("video/") ? Video : FileText;
     return (
       <span className={cn("grid place-items-center bg-creme p-2 text-center", className)}>
-        <FileText className="h-7 w-7 text-orange-fonce" />
+        <Icone className="h-7 w-7 text-orange-fonce" />
         <span className="line-clamp-2 break-all text-[11px] text-texte-pale">{page.nom}</span>
       </span>
     );
@@ -81,6 +83,8 @@ export function ZoneRendu({
   const [garde, setGarde] = useState(false);
   const photo = useRef<HTMLInputElement>(null);
   const fichier = useRef<HTMLInputElement>(null);
+  const filmer = useRef<HTMLInputElement>(null);
+  const [enregistreur, setEnregistreur] = useState(false);
 
   // Pages gardées lors d'une visite précédente (ou avant que l'appareil photo ne recharge la page).
   useEffect(() => {
@@ -110,6 +114,11 @@ export function ZoneRendu({
     try {
       const nouvelles: PageBrouillon[] = [];
       for (const f of Array.from(liste)) {
+        // Vidéo de la galerie trop lourde pour le campus (25 Mo) : la version légère se filme ici.
+        if ((f.type.startsWith("video/") || f.type.startsWith("audio/")) && f.size > 24 * 1024 * 1024) {
+          toastErreur(new Error(`« ${f.name} » est trop lourde (${taille(f.size)}). Filme ta vidéo avec le bouton « Filmer une vidéo » : elle sera légère.`));
+          continue;
+        }
         // Photo allégée tout de suite (~250 Ko au lieu de 4 Mo) : le poids affiché est celui qui partira.
         const leger = await alleger(f);
         nouvelles.push({ id: idPage(), nom: leger.name || f.name, type: leger.type || f.type || "application/octet-stream", blob: leger });
@@ -119,6 +128,7 @@ export function ZoneRendu({
       setTraitement(false);
       if (photo.current) photo.current.value = "";
       if (fichier.current) fichier.current.value = "";
+      if (filmer.current) filmer.current.value = "";
     }
   }
 
@@ -174,15 +184,25 @@ export function ZoneRendu({
         <h2 id="titre-rendre" className="text-[22px] font-black tracking-serre">
           {remplacement ? "Remplacer ma copie" : "Rendre mon devoir"}
         </h2>
-        <p className="text-[15px] text-texte-pale">Photographie ton cahier page par page, ajoute un fichier ou écris ta réponse. Tu peux mélanger.</p>
+        <p className="text-[15px] text-texte-pale">Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger.</p>
       </div>
 
       <input ref={photo} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void ajouter(e.target.files)} />
+      <input ref={filmer} type="file" accept="video/*" capture="environment" className="hidden" onChange={(e) => void ajouter(e.target.files)} />
+      {enregistreur && (
+        <EnregistreurVideo
+          onFermer={() => setEnregistreur(false)}
+          onTermine={(f) => {
+            setEnregistreur(false);
+            setPages((p) => [...p, { id: idPage(), nom: f.name, type: f.type, blob: f }].slice(0, 30));
+          }}
+        />
+      )}
       <input
         ref={fichier}
         type="file"
         multiple
-        accept="image/*,application/pdf,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx,.txt"
+        accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx,.txt"
         className="hidden"
         onChange={(e) => void ajouter(e.target.files)}
       />
@@ -193,6 +213,16 @@ export function ZoneRendu({
         </Bouton>
         <Bouton variante="contour" pleineLargeur className="min-h-[52px]" icone={<Paperclip className="h-5 w-5" />} onClick={() => fichier.current?.click()} disabled={traitement}>
           Ajouter un fichier
+        </Bouton>
+        <Bouton
+          variante="contour"
+          pleineLargeur
+          className="min-h-[52px]"
+          icone={<Video className="h-5 w-5" />}
+          onClick={() => (enregistreurDisponible() ? setEnregistreur(true) : filmer.current?.click())}
+          disabled={traitement}
+        >
+          Filmer une vidéo (3 min au plus)
         </Bouton>
       </div>
 

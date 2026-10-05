@@ -161,14 +161,24 @@ export function CarteLivreCite({
         </Link>
         <span className="text-sm text-texte-pale">{ligneAuteurs(livre)}</span>
         <div className="mt-1 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onResume}
-            disabled={desactive}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-encre px-3 text-sm font-bold text-white hover:bg-orange-fonce disabled:opacity-50"
-          >
-            <Sparkles className="h-4 w-4" aria-hidden /> Résumé
-          </button>
+          {livre.lecture?.mode === "libre" ? (
+            // Livre lisible en entier : son dossier d'étude (lu une fois par le campus) plutôt qu'un résumé de mémoire.
+            <Link
+              href={`/bibliotheque/livres/${livre.id}`}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-encre px-3 text-sm font-bold text-white no-underline hover:bg-orange-fonce"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden /> Dossier d'étude
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={onResume}
+              disabled={desactive}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-encre px-3 text-sm font-bold text-white hover:bg-orange-fonce disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden /> Résumé
+            </button>
+          )}
           <Link
             href={livre.lecture?.libreId ? `/bibliotheque/libres/${livre.lecture.libreId}` : `/bibliotheque/livres/${livre.id}${livre.lecture?.mode === "libre" ? "?onglet=lire" : ""}`}
             className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-ligne px-3 text-sm font-bold text-encre no-underline hover:border-orange"

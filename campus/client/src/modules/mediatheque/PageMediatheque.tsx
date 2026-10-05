@@ -5,7 +5,7 @@
 // page du replay, un PDF seulement quand on l'ouvre ou qu'on demande l'aperçu.
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MonitorPlay, PlayCircle, FileText, Paperclip, Search, ExternalLink, Eye, EyeOff, Lock, Users, ArrowRight } from "lucide-react";
+import { MonitorPlay, PlayCircle, FileText, Paperclip, Search, ExternalLink, Eye, EyeOff, Lock, Users, ArrowRight, GraduationCap } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn, pluriel, taille } from "@/lib/utils";
 import { dateCourte } from "@/lib/dates";
@@ -231,6 +231,7 @@ function ListeEnregistrements({ elements, etudiant }: { elements: Enregistrement
                     <span className="min-w-0 font-bold leading-snug">{e.titre}</span>
                     {e.nouveau && <Badge ton="orange">Nouveau</Badge>}
                     {e.vu && <Badge ton="gris">Vu</Badge>}
+                    {e.coursComplet === "en_preparation" && <Badge ton="gris">Cours complet en préparation</Badge>}
                   </span>
                   <span className="font-mono text-xs text-texte-gris">
                     {dateCourte(e.debut)}
@@ -242,6 +243,11 @@ function ListeEnregistrements({ elements, etudiant }: { elements: Enregistrement
                   <LienBouton href={e.lien} taille="sm" variante="encre" icone={<PlayCircle className="h-4 w-4" />} className="min-h-10">
                     Regarder
                   </LienBouton>
+                  {e.coursComplet === "pret" && (
+                    <LienBouton href={`/mediatheque/cours/${e.seanceId}`} taille="sm" icone={<GraduationCap className="h-4 w-4" />} className="min-h-10">
+                      Cours complet
+                    </LienBouton>
+                  )}
                   {e.diapos > 0 && (
                     <LienBouton href={`/mediatheque/diapos/${e.seanceId}`} taille="sm" variante="contour" icone={<FileText className="h-4 w-4" />} className="min-h-10">
                       Diapos ({e.diapos})

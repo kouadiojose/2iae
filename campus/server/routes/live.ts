@@ -252,7 +252,7 @@ async function seanceAccessible(u: Utilisateur, id: number): Promise<Seance> {
  * cours (voir comment enseigne un collègue, reprendre un cours au pied levé). En lecture seule : bilan,
  * fiche et présences restent au formateur du cours.
  */
-async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance> {
+export async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance> {
   if (u.role === "formateur") {
     const s = await chargerSeance(id);
     if (replayDisponible(s)) return s;

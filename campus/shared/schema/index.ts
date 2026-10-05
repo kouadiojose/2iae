@@ -25,3 +25,5 @@ export * from "./ext-formateurs";
 export * from "./ext-bibliotheque";
 export * from "./libres";
 export * from "./ext-libres";
+export * from "./etudes";
+export * from "./ext-etudes";

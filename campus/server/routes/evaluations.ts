@@ -8,6 +8,7 @@
 //   - la vie scolaire n'agit que sur les étudiants de son campus ;
 //   - l'IA propose (questions, correction), le formateur décide : rien de ce
 //     qu'elle produit n'est enregistré comme note sans un clic humain.
+import { corrigeDuDevoir } from "../devoirs-auto";
 import type { Express, Request } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -356,7 +357,7 @@ async function listeEnseignant(u: Utilisateur, coursIds: number[]): Promise<Devo
 // ── Notifications de devoirs ───────────────────────────────────────────────
 
 /** « Nouveau devoir » aux inscrits, une seule fois, dès que le devoir est publié et ouvert. */
-async function annoncerSiOuvert(d: Devoir, c: Pick<Cours, "code">) {
+export async function annoncerSiOuvert(d: Devoir, c: Pick<Cours, "code">) {
   const maintenant = new Date();
   if (!d.publie || !ouvert(d, maintenant) || echeance(d).getTime() <= maintenant.getTime()) return;
   const [reserve] = await db
@@ -1479,13 +1480,17 @@ export function enregistrerEvaluations(app: Express) {
       const { blocs, ignores } = await blocsFichiers(listeFichiers);
       if (!blocs.length && !r.texte.trim()) throw invalide("Cette copie ne contient rien que l'IA puisse lire (ni texte, ni photo, ni PDF).");
       const [c] = await db.select().from(cours).where(eq(cours.id, d.coursId));
+      const corrige = await corrigeDuDevoir(d.id);
       const consignes = [
         `Cours : ${c.code} · ${c.titre}`,
         `Devoir : ${d.titre}`,
         `Barème : ${d.bareme} points`,
         `Consigne du formateur :\n${d.consigne || "(pas de consigne écrite)"}`,
         `Grille de correction :\n${grille.map((g) => `- ${g.critere} (${g.points} points)${g.description ? ` : ${g.description}` : ""}`).join("\n")}`,
-      ].join("\n\n");
+        corrige ? `Corrigé de référence (réservé au formateur) :\n${corrige}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       const contenu: Anthropic.Beta.BetaContentBlockParam[] = [
         {
           type: "text",

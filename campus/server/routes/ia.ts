@@ -910,7 +910,10 @@ export function enregistrerIa(app: Express) {
         if (libres.length) {
           precisions.push(
             `<livres_libres>\n${libres
-              .map((l) => `- « ${neutraliserBiblio(l.titre)} », ${neutraliserBiblio(l.auteurs) || "auteur inconnu"}${l.annee ? ` (${l.annee})` : ""} [${l.langue ?? "langue ?"}, ${l.source}]`)
+              .map((l) => {
+                const sujet = neutraliserBiblio((l.description ?? l.sujets ?? "").replace(/\s+/g, " ").trim()).slice(0, 160);
+                return `- « ${neutraliserBiblio(l.titre)} », ${neutraliserBiblio(l.auteurs) || "auteur inconnu"}${l.annee ? ` (${l.annee})` : ""} [${l.langue ?? "langue ?"}, ${l.source}]${sujet ? ` : ${sujet}` : ""}`;
+              })
               .join("\n")}\n</livres_libres>`,
           );
         }

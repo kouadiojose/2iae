@@ -11,7 +11,7 @@ import {
   type LivreLibreDto,
   type SourceLibre,
 } from "@shared/schema";
-import { titreCorrespond, nomPremierAuteur } from "../catalogues";
+import { titreCorrespond, nomPremierAuteur, type Notice } from "../catalogues";
 import { lireTexte, texteArchive, texteEnCache, texteIntegral } from "../lecture";
 import { normaliserIndex, texteSimple } from "./domaines";
 
@@ -329,6 +329,22 @@ export async function trouverDansIndex(titre: string, auteurs: string): Promise<
     return null;
   }
 }
+
+/** Notice d'un livre de l'index (le livre existe : il est vérifié par sa bibliothèque). */
+export const noticeDepuisIndex = (l: LivreLibre): Notice => ({
+  cle: `libre:${l.source}:${l.ident}`,
+  titre: l.titre,
+  auteurs: l.auteurs,
+  annee: l.annee,
+  editeur: null,
+  isbn: null,
+  langue: l.langue,
+  pages: null,
+  couvertureUrl: l.couverture,
+  lienCatalogue: l.lien,
+  description: l.description,
+  source: l.source === "archive" ? "archive" : "index",
+});
 
 /** Ce qu'on range dans livres.lecture pour une copie libre de l'index. */
 export const lectureDepuisIndex = (l: LivreLibre): LectureLivre => ({ source: "index", id: l.ident, libre: true, titre: l.titre, annee: l.annee, libreId: l.id });

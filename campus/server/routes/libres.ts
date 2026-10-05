@@ -24,7 +24,7 @@ import {
   type SourceLibre,
   type Utilisateur,
 } from "@shared/schema";
-import { chercherLibres, selectionAccueil, completerLiens, compterLecture, lectureDepuisIndex, livreLibre, texteDuLibre, versLivreLibreDto, voisins } from "../libres/index-libre";
+import { chercherLibres, selectionAccueil, noticeDepuisIndex, completerLiens, compterLecture, lectureDepuisIndex, livreLibre, texteDuLibre, versLivreLibreDto, voisins } from "../libres/index-libre";
 import { lancerMoisson, moissonEnCours, toutesLesSources } from "../libres/moisson";
 
 const ROLES = ["etudiant", "formateur", "vie_scolaire", "admin"] as const;
@@ -189,25 +189,7 @@ export function enregistrerLibres(app: Express) {
     route(async (req, res) => {
       const l = await livreLibre(idParam(req));
       if (!l) throw introuvable("Livre");
-      const { id } = await enregistrerLivre(
-        { titre: l.titre, auteurs: l.auteurs, annee: l.annee, editeur: null, langue: l.langue },
-        {
-          cle: `libre:${l.source}:${l.ident}`,
-          titre: l.titre,
-          auteurs: l.auteurs,
-          annee: l.annee,
-          editeur: null,
-          isbn: null,
-          langue: l.langue,
-          pages: null,
-          couvertureUrl: l.couverture,
-          lienCatalogue: l.lien,
-          description: l.description,
-          source: l.source === "archive" ? "archive" : "index",
-        },
-        null,
-        lectureDepuisIndex(l),
-      );
+      const { id } = await enregistrerLivre({ titre: l.titre, auteurs: l.auteurs, annee: l.annee, editeur: null, langue: l.langue }, noticeDepuisIndex(l), null, lectureDepuisIndex(l));
       res.json({ livreId: id });
     }),
   );

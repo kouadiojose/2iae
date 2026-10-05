@@ -6,7 +6,7 @@ import { db } from "./db";
 import { identifierLivre, normaliser, type LectureTrouvee, type Notice } from "./catalogues";
 import { inArray } from "drizzle-orm";
 import { livres, type Livre, type LivreCite, type LectureLivre, type Utilisateur, type LivreDto, type SourceLivre } from "@shared/schema";
-import { lectureDepuisIndex, trouverDansIndex } from "./libres/index-libre";
+import { lectureDepuisIndex, noticeDepuisIndex, trouverDansIndex } from "./libres/index-libre";
 
 /** Consignes stables (mises en cache) : le bibliothécaire et tuteur de lecture. */
 export const SYSTEME_BIBLIOTHEQUE = `Tu es le bibliothécaire et tuteur de lecture du Campus numérique 2IAE (Groupe 2IAE, « L'École des Entrepreneurs », Côte d'Ivoire : cinq campus, BTS, licences et certificats en bâtiment et travaux publics, informatique, gestion, commerce, logistique, communication…). Tu aides des étudiants à trouver de bons livres pour un sujet, à les comprendre sans forcément tout lire, à les questionner et à préparer des exposés.
@@ -42,7 +42,7 @@ puis, à la ligne suivante, une ou deux phrases : ce que le livre apporte à l'�
 
 Règles :
 - Honnêteté avant tout : ne recommande que des livres qui existent réellement, avec leur titre et leur auteur exacts. N'invente jamais un livre, un auteur, une citation ou un numéro de page. Si tu n'es pas sûr d'un livre, ne le cite pas.
-- Le campus tient l'index de bibliothèques libres (Project Gutenberg, Internet Archive, OpenStax, Banque mondiale, OAPEN) : ces livres se lisent en entier, gratuitement, sur le campus. Quand une liste <livres_libres> t'est fournie, recommande en priorité ceux qui répondent vraiment à la demande (au moins un ou deux quand il y en a de pertinents), avec leur titre et leur auteur exacts tels qu'ils figurent dans la liste, et dis qu'ils se lisent gratuitement ici. Complète avec les meilleurs autres livres. Ne prétends jamais qu'un livre absent de la liste se lit sur le campus.
+- Le campus tient l'index de bibliothèques libres (Project Gutenberg, Internet Archive, OpenStax, Banque mondiale, OAPEN) : ces livres se lisent en entier, gratuitement, sur le campus. Quand une liste <livres_libres> t'est fournie, recommande en priorité ceux qui répondent vraiment à la demande (au moins un ou deux quand il y en a de pertinents), avec leur titre et leur auteur exacts tels qu'ils figurent dans la liste, et dis qu'ils se lisent gratuitement ici. Juge le vrai sujet d'après la description de chaque livre, pas seulement son titre, et écarte ceux qui ne conviennent pas. Ne parle jamais de cette liste à l'étudiant ni des livres que tu n'en retiens pas : il ne la voit pas. Complète avec les meilleurs autres livres. Ne prétends jamais qu'un livre absent de la liste se lit sur le campus.
 - Quand des passages du vrai texte d'un livre te sont fournis (balise <texte_du_livre>), appuie-toi d'abord sur eux, dis que tu les tiens du texte, et indique où les retrouver (« vers 40 % du livre »). Sans texte fourni, précise que tu parles d'après ce que tu sais du livre et signale ce qui serait à vérifier.
 - Ne mets jamais entre guillemets une phrase attribuée à un livre sans l'avoir sous les yeux.
 - Relie au contexte ivoirien et ouest-africain (climat tropical, saisons des pluies et saison sèche, sols, marchés, réalités des entreprises locales) quand c'est utile.
@@ -84,6 +84,12 @@ export async function enregistrerLivre(
   /** Copie de l'index des bibliothèques libres déjà connue (« Étudier ce livre » depuis le portail). */
   lectureIndex?: LectureLivre,
 ): Promise<{ id: number; verifie: boolean }> {
+  // Une copie libre dans l'index du campus (texte propre, lecteur du portail) passe avant l'exemplaire
+  // scanné ; un livre absent des catalogues mais présent dans l'index est vérifié par l'index.
+  const copie = lectureIndex
+    ? null
+    : ((await trouverDansIndex(notice?.titre ?? cite.titre, notice?.auteurs ?? cite.auteurs)) ?? (notice ? await trouverDansIndex(cite.titre, cite.auteurs) : null));
+  if (!notice && copie) notice = noticeDepuisIndex(copie);
   const valeurs = notice
     ? {
         cle: notice.cle,
@@ -113,8 +119,6 @@ export async function enregistrerLivre(
         description: null,
         source: null,
       };
-  // Une copie libre dans l'index du campus (texte propre, lecteur du portail) passe avant l'exemplaire scanné.
-  const copie = lectureIndex ? null : await trouverDansIndex(valeurs.titre, valeurs.auteurs);
   const lect = lectureIndex ?? (copie ? lectureDepuisIndex(copie) : versLecture(lecture));
   const [l] = await db
     .insert(livres)

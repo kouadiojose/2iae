@@ -874,7 +874,7 @@ export function enregistrerIa(app: Express) {
       // tout de suite, sans rappeler l'IA ni compter dans les questions du jour.
       if (conv.livreId) {
         const [{ n: dejaPosees }] = await db.select({ n: sql<number>`count(*)::int` }).from(messagesIa).where(eq(messagesIa.conversationId, conv.id));
-        const gardee = dejaPosees === 0 ? await reponseGardee(conv.livreId, corps.contenu) : null;
+        const gardee = dejaPosees === 0 ? await reponseGardee(conv.livreId, corps.contenu, u.role) : null;
         if (gardee) {
           await verifierPause(u);
           await db.insert(messagesIa).values({ conversationId: conv.id, role: "user", contenu: corps.contenu });
@@ -1016,7 +1016,7 @@ export function enregistrerIa(app: Express) {
           if (definitif !== diffuse.trim()) fin.remplacer = definitif;
           // Bibliothécaire : chaque livre recommandé est vérifié dans les catalogues avant d'apparaître en carte.
           const livresCitesMsg = bibliothecaire ? await verifierLivresCites(definitif) : null;
-          if (livre && dossier && historique.length === 1 && reponse.trim()) void garderReponse(livre.id, corps.contenu, definitif).catch(() => {});
+          if (livre && dossier && historique.length === 1 && reponse.trim()) void garderReponse(livre.id, corps.contenu, definitif, u.role).catch(() => {});
           const [enregistre] = await db
             .insert(messagesIa)
             .values({ conversationId: conv.id, role: "assistant", contenu: definitif, livres: livresCitesMsg?.length ? livresCitesMsg : null })

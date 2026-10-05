@@ -247,12 +247,15 @@ export function dossierEnTexte(d: DossierLivre): string {
 
 // ── Réponses gardées ───────────────────────────────────────────────────────
 
-const cleQuestion = (q: string) => normaliserIndex(q).slice(0, 300);
+/** Étudiants (tutoyés) et personnel (vouvoyé) ont chacun leurs réponses gardées. */
+type Public = "etudiant" | "personnel";
+const publicDe = (role: string): Public => (role === "etudiant" ? "etudiant" : "personnel");
+const cleQuestion = (q: string, pour: Public) => `${pour === "etudiant" ? "e" : "p"}:${normaliserIndex(q).slice(0, 300)}`;
 
-/** Réponse déjà donnée à cette même première question sur ce livre, s'il y en a une. */
-export async function reponseGardee(livreId: number, question: string): Promise<string | null> {
-  const cle = cleQuestion(question);
-  if (cle.length < 8) return null;
+/** Réponse déjà donnée à cette même première question sur ce livre (au même public), s'il y en a une. */
+export async function reponseGardee(livreId: number, question: string, role: string): Promise<string | null> {
+  const cle = cleQuestion(question, publicDe(role));
+  if (cle.length < 10) return null;
   const [r] = await db
     .update(reponsesLivres)
     .set({ utilisations: sql`${reponsesLivres.utilisations} + 1` })
@@ -261,9 +264,9 @@ export async function reponseGardee(livreId: number, question: string): Promise<
   return r?.reponse ?? null;
 }
 
-export async function garderReponse(livreId: number, question: string, reponse: string): Promise<void> {
-  const cle = cleQuestion(question);
-  if (cle.length < 8 || reponse.length < 80) return;
+export async function garderReponse(livreId: number, question: string, reponse: string, role: string): Promise<void> {
+  const cle = cleQuestion(question, publicDe(role));
+  if (cle.length < 10 || reponse.length < 80) return;
   await db.insert(reponsesLivres).values({ livreId, cle, question: question.slice(0, 1000), reponse }).onConflictDoNothing();
 }
 

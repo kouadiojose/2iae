@@ -26,6 +26,8 @@ export type EnregistrementMediathequeDto = {
   nouveau: boolean;
   /** Lien de la page du replay. */
   lien: string;
+  /** Nombre de diapositives projetées pendant la séance (support du cours, à feuilleter ou enregistrer en PDF). */
+  diapos: number;
 };
 
 /** Un document : le fichier joint à une leçon publiée (PDF ou autre fichier). */

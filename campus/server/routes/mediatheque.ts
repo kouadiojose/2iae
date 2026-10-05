@@ -60,6 +60,7 @@ async function enregistrementsDes(u: { id: number }, coursIds: number[] | "tous"
       termineeLe: seances.termineeLe,
       dureeSecondes: seances.replayDureeSecondes,
       formateurId: cours.formateurId,
+      diapos: sql<number>`jsonb_array_length(${seances.diapos})::int`,
     })
     .from(seances)
     .innerJoin(cours, eq(cours.id, seances.coursId))
@@ -98,6 +99,7 @@ async function enregistrementsDes(u: { id: number }, coursIds: number[] | "tous"
       vu,
       nouveau: !vu && (l.termineeLe ?? l.debut).getTime() > recent,
       lien: `/replays/${l.id}`,
+      diapos: l.diapos ?? 0,
     };
     resultat.set(l.coursId, [...(resultat.get(l.coursId) ?? []), e]);
   }

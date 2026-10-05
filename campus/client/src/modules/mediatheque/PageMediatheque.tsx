@@ -238,9 +238,16 @@ function ListeEnregistrements({ elements, etudiant }: { elements: Enregistrement
                     {e.formateur ? ` · ${e.formateur}` : ""}
                   </span>
                 </span>
-                <LienBouton href={e.lien} taille="sm" variante="encre" icone={<PlayCircle className="h-4 w-4" />} className="min-h-10 shrink-0 max-sm:ml-[52px]">
-                  Regarder
-                </LienBouton>
+                <span className="flex shrink-0 flex-wrap gap-2 max-sm:w-full max-sm:pl-[52px]">
+                  <LienBouton href={e.lien} taille="sm" variante="encre" icone={<PlayCircle className="h-4 w-4" />} className="min-h-10">
+                    Regarder
+                  </LienBouton>
+                  {e.diapos > 0 && (
+                    <LienBouton href={`/mediatheque/diapos/${e.seanceId}`} taille="sm" variante="contour" icone={<FileText className="h-4 w-4" />} className="min-h-10">
+                      Diapos ({e.diapos})
+                    </LienBouton>
+                  )}
+                </span>
               </li>
             );
           })}

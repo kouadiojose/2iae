@@ -19,8 +19,6 @@ const AGENT = "Campus2IAE/1.0 (campus.2iae.com; bibliotheque des etudiants)";
 const JOUR = 24 * 60 * 60_000;
 /** Une bibliothèque est remoissonnée au bout de 30 jours. */
 const VALIDITE = 30 * JOUR;
-/** Une moisson « en cours » depuis plus longtemps a été coupée (redémarrage) : on la relance. */
-const MOISSON_PERDUE = 4 * 60 * 60_000;
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -540,7 +538,8 @@ export async function sourcesAMoissonner(): Promise<SourceLibre[]> {
     // Premier remplissage (ou source restée vide) : tout de suite, même après un redémarrage en pleine moisson.
     if (!e || !remplies.has(s)) return true;
     if (!nuit) return false;
-    if (e.statut === "en_cours") return maintenant - e.debut.getTime() > MOISSON_PERDUE;
+    // « En cours » sans moisson dans ce serveur : coupée par un redémarrage (une seule instance du campus).
+    if (e.statut === "en_cours") return true;
     if (e.statut === "erreur") return maintenant - (e.fin ?? e.debut).getTime() > 6 * 60 * 60_000;
     return maintenant - (e.fin ?? e.debut).getTime() > VALIDITE;
   });

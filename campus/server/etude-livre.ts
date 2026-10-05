@@ -132,6 +132,7 @@ async function etudier(l: Livre, utilisateurId: number): Promise<void> {
       schema: NOTES,
       utilisateurId,
       compteur,
+      maxTokens: 10000,
       surAvancement: (faits, total) => majEtude(l.id, { progression: 5 + Math.round((faits / total) * 75) }).then(() => undefined),
     });
     await majEtude(l.id, { etape: "Rédaction du dossier", progression: 82 });

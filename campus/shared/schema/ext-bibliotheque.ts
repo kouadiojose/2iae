@@ -12,16 +12,17 @@ export const LIBELLES_NIVEAUX: Record<NiveauLivre, string> = {
 };
 
 /** Catalogues publics où un livre a été retrouvé. */
-export type SourceLivre = "bnf" | "open_library" | "archive";
+export type SourceLivre = "bnf" | "open_library" | "archive" | "index";
 
 export const LIBELLES_SOURCES: Record<SourceLivre, string> = {
   bnf: "Bibliothèque nationale de France",
   open_library: "Open Library",
   archive: "Internet Archive",
+  index: "Bibliothèques libres du campus",
 };
 
-/** Lire en ligne : « libre » (liseuse du campus), « emprunt » (gratuit, compte Internet Archive). */
-export type AccesLecture = { mode: "libre" | "emprunt"; archiveId: string };
+/** Lire en ligne : « libre » (liseuse du campus), « emprunt » (gratuit, compte Internet Archive). « libreId » : lecteur du portail des bibliothèques libres. */
+export type AccesLecture = { mode: "libre" | "emprunt"; archiveId: string; libreId?: number };
 
 export type LivreDto = {
   id: number;

@@ -39,7 +39,8 @@ import {
 } from "../ia";
 import { interrogationEnCours, finDe } from "../evaluations-outils";
 import { SYSTEME_BIBLIOTHEQUE, SYSTEME_BIBLIOTHECAIRE, contexteLivre, adresse, neutraliserBiblio, livresParId, livreVise, verifierLivresCites, versLivreDto } from "../bibliotheque-outils";
-import { texteIntegral, passagesPour } from "../lecture";
+import { passagesPour } from "../lecture";
+import { texteDuLivre, libresPourQuestion } from "../libres/index-libre";
 import {
   conversationsIa,
   messagesIa,
@@ -899,11 +900,20 @@ export function enregistrerIa(app: Express) {
       if (livre) {
         precisions.push(`${adresse(u)} La question porte sur le livre « ${livre.titre} ». Si elle dépasse ce que tu sais du livre, dis-le et propose ce que l'étudiant peut vérifier lui-même.`);
         // Livre en lecture libre : l'IA lit les vrais passages utiles plutôt que de répondre de mémoire.
-        const texte = await texteIntegral(livre.lecture);
+        const texte = await texteDuLivre(livre.lecture);
         if (texte) precisions.push(`<texte_du_livre titre="${attribut(livre.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
       }
       if (bibliothecaire) {
         precisions.push(adresse(u));
+        // Livres de l'index des bibliothèques libres proches de la demande (et du sujet de la conversation).
+        const libres = await libresPourQuestion(`${corps.contenu} ${premiere ? "" : conv.titre}`, 8);
+        if (libres.length) {
+          precisions.push(
+            `<livres_libres>\n${libres
+              .map((l) => `- « ${neutraliserBiblio(l.titre)} », ${neutraliserBiblio(l.auteurs) || "auteur inconnu"}${l.annee ? ` (${l.annee})` : ""} [${l.langue ?? "langue ?"}, ${l.source}]`)
+              .join("\n")}\n</livres_libres>`,
+          );
+        }
         // Livres déjà recommandés dans cette conversation (avec ce qu'on sait d'eux), et celui dont parle la question.
         const ids = historique.flatMap((m) => (m.livres ?? []).map((x) => x.livreId));
         const connus = [...(await livresParId(ids)).values()];
@@ -914,7 +924,7 @@ export function enregistrerIa(app: Express) {
               .join("\n")}`,
           );
           const vise = livreVise(corps.contenu, connus);
-          const texte = vise ? await texteIntegral(vise.lecture) : null;
+          const texte = vise ? await texteDuLivre(vise.lecture) : null;
           if (vise && texte) precisions.push(`<texte_du_livre titre="${attribut(vise.titre)}">\n${neutraliserBiblio(passagesPour(texte, corps.contenu))}\n</texte_du_livre>`);
         }
       }

@@ -17,7 +17,8 @@ export type Notice = {
   couvertureUrl: string | null;
   lienCatalogue: string;
   description: string | null;
-  source: "bnf" | "open_library" | "archive";
+  /** « index » : copie libre de l'index des bibliothèques libres du campus. */
+  source: "bnf" | "open_library" | "archive" | "index";
 };
 
 const DELAI_MS = 7000;
@@ -43,7 +44,7 @@ export const normaliser = (t: string) =>
 const MOTS_VIDES = new Set(["le", "la", "les", "l", "de", "des", "du", "d", "un", "une", "et", "en", "a", "au", "aux", "pour", "the", "of", "and", "to", "in", "on", "a", "an"]);
 
 /** Mots significatifs du titre principal (avant « : »), au plus 6. */
-function motsDuTitre(titre: string): string[] {
+export function motsDuTitre(titre: string): string[] {
   return normaliser(titre.split(/\s[:\-–]\s|:/)[0])
     .split(" ")
     .filter((m) => m.length > 1 && !MOTS_VIDES.has(m))
@@ -51,7 +52,7 @@ function motsDuTitre(titre: string): string[] {
 }
 
 /** Nom de famille du premier auteur (« Jean Perchat » → « Perchat »). */
-function nomPremierAuteur(auteurs: string): string {
+export function nomPremierAuteur(auteurs: string): string {
   const premier = auteurs.split(/[,;&]| et | and /)[0].trim();
   const mots = normaliser(premier).split(" ").filter((m) => m.length > 1);
   return mots[mots.length - 1] ?? "";
@@ -73,7 +74,7 @@ function motsDuSousTitre(titre: string): string[] {
  * sinon « Agroecology: The Science of Sustainable Agriculture » prendrait
  * n'importe quel livre intitulé « Agroecology… » du même auteur.
  */
-function titreCorrespond(demande: string, trouve: string): boolean {
+export function titreCorrespond(demande: string, trouve: string): boolean {
   const mots = motsDuTitre(demande);
   if (!mots.length) return false;
   const cible = ` ${normaliser(trouve)} `;
@@ -265,7 +266,7 @@ async function chercherOpenLibrary(titre: string, auteurs: string): Promise<Rech
 // s'empruntent gratuitement avec un compte Internet Archive. Les dépôts
 // d'internautes de livres récents (collection « opensource ») sont ignorés.
 
-type DocArchive = {
+export type DocArchive = {
   identifier: string;
   title?: string | string[];
   creator?: string | string[];
@@ -279,7 +280,7 @@ type DocArchive = {
   "access-restricted-item"?: string | boolean;
 };
 
-const COLLECTIONS_FIABLES = new Set([
+export const COLLECTIONS_FIABLES = new Set([
   "governmentpublications",
   "toronto",
   "americana",
@@ -311,7 +312,7 @@ export type LectureTrouvee = {
   langue: string | null;
 };
 
-function classerArchive(d: DocArchive): "libre" | "emprunt" | null {
+export function classerArchive(d: DocArchive): "libre" | "emprunt" | null {
   const restreint = d["access-restricted-item"] === true || d["access-restricted-item"] === "true";
   const collections = liste(d.collection);
   if (restreint) return collections.some((c) => c === "inlibrary" || c === "printdisabled" || c.startsWith("internetarchivebooks")) ? "emprunt" : null;

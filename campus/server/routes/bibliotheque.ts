@@ -14,7 +14,8 @@ import { exigerRole, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable } from "../http";
 import { demanderJson, ErreurIa } from "../ia";
 import { identifierLivre, trouverLecture } from "../catalogues";
-import { texteIntegral, pageDuTexte, echantillonDuLivre } from "../lecture";
+import { pageDuTexte, echantillonDuLivre } from "../lecture";
+import { texteDuLivre, trouverDansIndex, lectureDepuisIndex } from "../libres/index-libre";
 import { SYSTEME_BIBLIOTHEQUE, contexteLivre, adresse, neutraliserBiblio, versLivreDto, livresParId, enregistrerLivre } from "../bibliotheque-outils";
 import { idsCoursAccessibles, etudiantsDuCours } from "../acces";
 import { avantAppel, appelIa, verifierPause, SCHEMA_REVISION, questionsValides } from "./ia";
@@ -326,7 +327,7 @@ export function enregistrerBibliotheque(app: Express) {
     route(async (req, res) => {
       const l = await livreDe(idParam(req));
       if (!l.lecture?.libre) throw introuvable("Texte du livre");
-      const texte = await texteIntegral(l.lecture);
+      const texte = await texteDuLivre(l.lecture);
       if (!texte) throw new ErreurHttp(404, "Le texte de ce livre n'est pas disponible pour le moment. Utilise la liseuse.");
       const page = Math.max(1, Number(req.query.page) || 1);
       const dto: PageTexteDto = pageDuTexte(texte, page);
@@ -410,9 +411,15 @@ export function enregistrerBibliotheque(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       let l = await livreDe(idParam(req));
-      // Livre connu d'avant la lecture en ligne : on cherche une fois un exemplaire à lire (6 s au plus).
-      if (!l.lecture && !lecturesCherchees.has(l.id)) {
+      // Livre connu d'avant la lecture en ligne : on cherche une fois une copie libre dans l'index du
+      // campus, sinon un exemplaire à lire sur Internet Archive (6 s au plus).
+      if (!l.lecture?.libreId && !lecturesCherchees.has(l.id)) {
         lecturesCherchees.add(l.id);
+        const copie = await trouverDansIndex(l.titre, l.auteurs);
+        if (copie) [l] = await db.update(livres).set({ lecture: lectureDepuisIndex(copie) }).where(eq(livres.id, l.id)).returning();
+      }
+      if (!l.lecture && !lecturesCherchees.has(-l.id)) {
+        lecturesCherchees.add(-l.id);
         const trouvee = await Promise.race([trouverLecture(l.titre, l.auteurs).catch(() => null), new Promise<null>((ok) => setTimeout(() => ok(null), 6000))]);
         if (trouvee) {
           [l] = await db
@@ -456,7 +463,7 @@ export function enregistrerBibliotheque(app: Express) {
         await avantAppel(u);
         enCours = (async () => {
           // Livre en lecture libre : la fiche est rédigée d'après un échantillon du vrai texte.
-          const texte = await texteIntegral(l.lecture);
+          const texte = await texteDuLivre(l.lecture);
           const brut = await appelIa(() =>
             demanderJson<unknown>({
               systeme: SYSTEME_BIBLIOTHEQUE,

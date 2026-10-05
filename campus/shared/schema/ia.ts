@@ -109,7 +109,12 @@ export type FicheRevision = typeof fichesRevision.$inferSelect;
  * bibliothèque d'Open Library). « libre » : lisible par tous et texte intégral
  * disponible ; sinon, emprunt gratuit avec un compte Internet Archive.
  */
-export type LectureLivre = { source: "archive"; id: string; libre: boolean; titre: string; annee: number | null };
+/**
+ * Où lire le livre gratuitement. « archive » : exemplaire d'Internet Archive
+ * (libre, ou empruntable). « libreId » : le livre est dans l'index des
+ * bibliothèques libres du campus (catalogue_libre) et se lit dans son lecteur.
+ */
+export type LectureLivre = { source: "archive" | "index"; id: string; libre: boolean; titre: string; annee: number | null; libreId?: number };
 
 /** Livre cité par le bibliothécaire dans une réponse (ligne « 📚 **Titre** — Auteur »). */
 export type LivreCite = { livreId: number; cite: string; verifie: boolean };

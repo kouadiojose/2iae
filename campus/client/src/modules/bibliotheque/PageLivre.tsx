@@ -21,6 +21,7 @@ import { useEtatIa, blocageDe, mettreEnAttente, prendreEnAttente } from "@/modul
 import { useConversationIa } from "@/modules/ia/useConversationIa";
 import { BandeauBlocage, LigneQuota, ZoneQuestion, PucesSuggestions, FilConversation, BulleQuestion, ReponseAssistant, QuizRevision, EtiquetteIa } from "@/modules/ia/composants";
 import { Couverture, BadgeVerification, LigneCatalogue, ligneAuteurs } from "./composants";
+import { LecteurDepuisIndex } from "./libres";
 import type { LivreDetailDto, QuizLivreDto, ExposeDto, NoteBiblioDto, PageTexteDto } from "@shared/schema/ext-bibliotheque";
 import type { FicheLivre } from "@shared/schema/ia";
 
@@ -106,7 +107,9 @@ function OngletLire({ detail, etudiant }: { detail: LivreDetailDto; etudiant: bo
 
   return (
     <div className="flex flex-col gap-4">
-      {l.lecture?.mode === "libre" && (
+      {l.lecture?.libreId ? <LecteurDepuisIndex libreId={l.lecture.libreId} etudiant={etudiant} /> : null}
+
+      {l.lecture?.mode === "libre" && !l.lecture.libreId && (
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[15px] text-texte-pale">

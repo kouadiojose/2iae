@@ -170,7 +170,7 @@ export function CarteLivreCite({
             <Sparkles className="h-4 w-4" aria-hidden /> Résumé
           </button>
           <Link
-            href={`/bibliotheque/livres/${livre.id}${livre.lecture?.mode === "libre" ? "?onglet=lire" : ""}`}
+            href={livre.lecture?.libreId ? `/bibliotheque/libres/${livre.lecture.libreId}` : `/bibliotheque/livres/${livre.id}${livre.lecture?.mode === "libre" ? "?onglet=lire" : ""}`}
             className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-ligne px-3 text-sm font-bold text-encre no-underline hover:border-orange"
           >
             {livre.lecture?.mode === "libre" ? <BookOpenText className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}

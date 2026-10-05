@@ -12,7 +12,7 @@ const EN_MEMOIRE = 12;
 const textes = new Map<string, string | null>();
 const enCours = new Map<string, Promise<string | null>>();
 
-async function lireTexte(url: string): Promise<string | null> {
+export async function lireTexte(url: string): Promise<string | null> {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(DELAI_MS), redirect: "follow", headers: { "User-Agent": "Campus2IAE/1.0 (campus.2iae.com)" } });
     if (!r.ok) return null;
@@ -47,19 +47,30 @@ async function chargerTexte(id: string): Promise<string | null> {
   return propre.length > 500 ? propre : null;
 }
 
-/** Texte intégral d'un livre en lecture libre (mis en mémoire pour les questions suivantes), ou null. */
-export async function texteIntegral(lecture: LectureLivre | null | undefined): Promise<string | null> {
-  if (!lecture?.libre) return null;
-  if (textes.has(lecture.id)) return textes.get(lecture.id) ?? null;
-  let p = enCours.get(lecture.id);
+/**
+ * Texte mis en mémoire sous une clé (les questions suivantes sur le même livre
+ * ne le retéléchargent pas) ; un seul téléchargement à la fois par clé.
+ */
+export async function texteEnCache(cle: string, charger: () => Promise<string | null>): Promise<string | null> {
+  if (textes.has(cle)) return textes.get(cle) ?? null;
+  let p = enCours.get(cle);
   if (!p) {
-    p = chargerTexte(lecture.id).finally(() => enCours.delete(lecture.id));
-    enCours.set(lecture.id, p);
+    p = charger().finally(() => enCours.delete(cle));
+    enCours.set(cle, p);
   }
   const texte = await p;
   if (textes.size >= EN_MEMOIRE) textes.delete(textes.keys().next().value!);
-  textes.set(lecture.id, texte);
+  textes.set(cle, texte);
   return texte;
+}
+
+/** Texte OCR d'un exemplaire d'Internet Archive (mis en mémoire), ou null. */
+export const texteArchive = (id: string) => texteEnCache(id, () => chargerTexte(id));
+
+/** Texte intégral d'un livre en lecture libre sur Internet Archive, ou null. */
+export async function texteIntegral(lecture: LectureLivre | null | undefined): Promise<string | null> {
+  if (!lecture?.libre || lecture.source !== "archive") return null;
+  return texteArchive(lecture.id);
 }
 
 // ── Pages de la version texte ──────────────────────────────────────────────

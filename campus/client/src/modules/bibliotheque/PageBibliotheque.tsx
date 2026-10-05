@@ -5,7 +5,7 @@
 import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Library, Sparkles, Presentation, History, BookMarked, Users, MessagesSquare } from "lucide-react";
+import { Library, Sparkles, Presentation, History, BookMarked, Users, MessagesSquare, Search, BookOpenText } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { rafraichir } from "@/lib/queryClient";
 import { dateCourte } from "@/lib/dates";
@@ -19,6 +19,7 @@ import { BandeauBlocage } from "@/modules/ia/composants";
 import { CarteLivreCompacte } from "./composants";
 import { demarrerConversation } from "./PageBibliothecaire";
 import type { MaBibliothequeDto } from "@shared/schema/ext-bibliotheque";
+import { LIBELLES_DOMAINES_LIBRES, type AccueilLibresDto } from "@shared/schema/ext-libres";
 
 const EXEMPLES = [
   "Je fais un BTS agriculture : comment cultiver la tomate en climat tropical ?",
@@ -97,6 +98,8 @@ export default function PageBibliotheque() {
           ))}
         </div>
       </section>
+
+      <PortailLibres etudiant={etudiant} />
 
       <BandeauBlocage etat={etat} enseignant={!etudiant} />
 
@@ -225,4 +228,63 @@ function Section({ titre, icone, children }: { titre: string; icone: React.React
 
 function Vide({ texte }: { texte: string }) {
   return <p className="rounded-2xl bg-creme p-4 text-[15px] text-texte-pale">{texte}</p>;
+}
+
+/** Entrée du portail des bibliothèques libres : chercher et lire sans IA (rien n'est décompté). */
+function PortailLibres({ etudiant }: { etudiant: boolean }) {
+  const [, naviguer] = useLocation();
+  const [q, setQ] = useState("");
+  const { data } = useQuery<AccueilLibresDto>({ queryKey: ["/api/libres/accueil"], staleTime: 5 * 60_000 });
+  const ouvrir = (e: FormEvent) => {
+    e.preventDefault();
+    naviguer(q.trim() ? `/bibliotheque/libres?q=${encodeURIComponent(q.trim())}` : "/bibliotheque/libres");
+  };
+  return (
+    <section className="flex flex-col gap-3 rounded-[24px] border-2 border-orange bg-orange-pale p-5 sm:p-6">
+      <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.12em] text-orange-profond">
+        <BookOpenText className="h-4 w-4" aria-hidden /> Bibliothèques libres
+      </div>
+      <h2 className="text-[22px] font-black leading-tight sm:text-2xl">
+        {data?.total ? `${data.total.toLocaleString("fr-FR")} livres` : "Des milliers de livres"} {etudiant ? "à lire gratuitement, ici, en entier" : "à lire gratuitement, ici, en entier"}
+      </h2>
+      <p className="text-[15px] text-texte-doux">
+        Project Gutenberg, Internet Archive, manuels OpenStax, Banque mondiale, OAPEN.{" "}
+        {etudiant ? "Cherche un titre, un auteur ou un sujet : la recherche ne consomme aucune question." : "La recherche ne consomme aucune question de l'IA."}
+      </p>
+      <form onSubmit={ouvrir} className="flex flex-col gap-2 sm:flex-row">
+        <label className="relative flex-1">
+          <span className="sr-only">Titre, auteur ou sujet</span>
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-texte-gris" aria-hidden />
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            maxLength={200}
+            placeholder="Ex. : comptabilité, agriculture, Molière…"
+            className="min-h-12 w-full rounded-2xl border border-ligne bg-white py-3 pl-12 pr-4 text-base text-encre outline-none ring-orange focus:ring-2"
+          />
+        </label>
+        <Bouton type="submit" variante="encre" icone={<Search className="h-4 w-4" />} className="min-h-12">
+          Chercher un livre
+        </Bouton>
+      </form>
+      {data && data.parDomaine.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {data.parDomaine.slice(0, 8).map((d) => (
+            <button
+              key={d.domaine}
+              type="button"
+              onClick={() => naviguer(`/bibliotheque/libres?domaine=${d.domaine}`)}
+              className="min-h-9 rounded-full border border-ligne bg-white px-3 py-1.5 text-sm font-bold text-encre hover:border-orange"
+            >
+              {LIBELLES_DOMAINES_LIBRES[d.domaine]}
+            </button>
+          ))}
+          <button type="button" onClick={() => naviguer("/bibliotheque/libres")} className="min-h-9 rounded-full px-3 py-1.5 text-sm font-bold text-orange-profond underline">
+            Tous les rayons
+          </button>
+        </div>
+      )}
+    </section>
+  );
 }

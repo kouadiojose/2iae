@@ -6,7 +6,7 @@
 // glossaire, quiz corrigé, exercices pratiques avec corrigés, étude de cas,
 // travail de groupe, fiches mémo. Tout se fait tout seul, une fois par séance,
 // aux frais de l'école (budget du mois), jamais sur le quota des étudiants.
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import type Anthropic from "@anthropic-ai/sdk";
 import { db } from "./db";
 import {
@@ -22,7 +22,7 @@ import {
   type DossierCours,
   type Seance,
 } from "@shared/schema";
-import { budgetDuMois, iaDisponible } from "./ia";
+import { iaDisponible, travailDeFondPermis } from "./ia";
 import { lireContenuFichier } from "./fichiers";
 import { etudiantsDuCours, formateursDuCours } from "./acces";
 import { notifier } from "./notifications";
@@ -180,11 +180,12 @@ export async function etudierSeance(seanceId: number): Promise<void> {
   if (!payeur) return;
   enCours = seanceId;
   const compteur: Compteur = { coutMicro: 0 };
-  await db
-    .insert(etudesSeances)
-    .values({ seanceId, statut: "en_cours", etape: "Lecture de la transcription", progression: 3, debut: new Date(), fin: null, message: null })
-    .onConflictDoUpdate({ target: etudesSeances.seanceId, set: { statut: "en_cours", etape: "Lecture de la transcription", progression: 3, debut: new Date(), fin: null, message: null } });
   try {
+    const depart = { statut: "en_cours" as const, etape: "Lecture de la transcription", progression: 3, debut: new Date(), fin: null, message: null };
+    await db
+      .insert(etudesSeances)
+      .values({ seanceId, ...depart, essais: 1 })
+      .onConflictDoUpdate({ target: etudesSeances.seanceId, set: { ...depart, essais: sql`${etudesSeances.essais} + 1` } });
     const transcription = await transcriptionDe(seanceId);
     if (transcription.length < TRANSCRIPTION_MIN) throw new Error("La transcription de cette séance est trop courte pour en faire un cours.");
     const entete = `Cours : ${c?.code ?? ""} « ${c?.titre ?? ""} », séance « ${s.titre} »${s.description ? ` (${s.description.slice(0, 300)})` : ""}.`;
@@ -242,8 +243,9 @@ export async function etudierSeance(seanceId: number): Promise<void> {
     });
     const propre = nettoyerDossier(dossier);
     await majEtude(seanceId, { statut: "prete", etape: null, progression: 100, dossier: propre, coutMicro: compteur.coutMicro, fin: new Date(), message: null });
-    // Devoirs de la séance (une seule fois, même si le cours complet est refait).
-    if (!(await devoirsDejaCrees(seanceId))) {
+    // Devoirs de la séance (une seule fois, même si le cours complet est refait) ; annonce la première fois seulement.
+    const premiere = !(await devoirsDejaCrees(seanceId));
+    if (premiere) {
       const crees = await creerDevoirsDuCours(s, propre).catch((e) => {
         console.warn(`[cours complet] devoirs de la séance ${seanceId} :`, (e as Error).message);
         return { devoirIds: [] as number[], corriges: {} as Record<string, string> };
@@ -251,7 +253,7 @@ export async function etudierSeance(seanceId: number): Promise<void> {
       if (crees.devoirIds.length) await db.insert(devoirsSeances).values({ seanceId, ...crees }).onConflictDoNothing();
     }
     console.log(`[cours complet] séance ${seanceId} : prêt (${morceaux.length} extraits, ${lots.length} lots de diapos, ${(compteur.coutMicro / 1e6).toFixed(2)} $)`);
-    await annoncer(s, c?.code ?? "").catch((e) => console.warn("[cours complet] annonce :", (e as Error).message));
+    if (premiere) await annoncer(s, c?.code ?? "").catch((e) => console.warn("[cours complet] annonce :", (e as Error).message));
   } catch (e) {
     console.error(`[cours complet] séance ${seanceId} :`, (e as Error).message);
     await majEtude(seanceId, {
@@ -260,7 +262,7 @@ export async function etudierSeance(seanceId: number): Promise<void> {
       coutMicro: compteur.coutMicro,
       fin: new Date(),
       message: (e as Error).message.startsWith("La transcription") ? (e as Error).message : "La préparation du cours complet n'a pas abouti. Elle sera retentée.",
-    });
+    }).catch((err) => console.error(`[cours complet] séance ${seanceId}, état :`, (err as Error).message));
   } finally {
     enCours = null;
   }
@@ -284,7 +286,16 @@ async function annoncer(s: Seance, code: string) {
   });
 }
 
-/** Prochaine séance à préparer : transcription complète, pas encore de cours (ou échec ancien de plus de 6 h). */
+/** Séances plus anciennes : pas de cours complet préparé tout seul (« Refaire » reste possible). */
+const FENETRE_JOURS = 30;
+/** Au-delà de trois préparations manquées, la tâche n'y revient plus. */
+const ESSAIS_MAX = 3;
+
+/**
+ * Prochaine séance à préparer (du dernier mois) : transcription complète, pas
+ * encore de cours, ou un essai à reprendre (échec de plus de 6 h, préparation
+ * coupée par un redémarrage), trois essais au plus.
+ */
 async function prochaineSeance(): Promise<number | null> {
   const lignes = await db
     .select({ id: seances.id })
@@ -292,10 +303,12 @@ async function prochaineSeance(): Promise<number | null> {
     .where(
       and(
         eq(seances.statut, "terminee"),
+        gte(seances.debut, new Date(Date.now() - FENETRE_JOURS * 24 * 3600_000)),
         sql`(SELECT count(*) FROM ${sousTitres} st WHERE st.seance_id = ${seances.id}) >= 20`,
         sql`NOT EXISTS (SELECT 1 FROM campus.transcriptions_replays tr WHERE tr.seance_id = ${seances.id} AND tr.statut = 'soumise')`,
         sql`NOT EXISTS (SELECT 1 FROM ${directsImmediats} di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)`,
-        sql`NOT EXISTS (SELECT 1 FROM ${etudesSeances} e WHERE e.seance_id = ${seances.id} AND (e.statut <> 'erreur' OR e.fin > now() - interval '6 hours'))`,
+        // Appelée seulement quand aucune préparation ne tourne : une ligne « en_cours » a été coupée et se reprend.
+        sql`NOT EXISTS (SELECT 1 FROM ${etudesSeances} e WHERE e.seance_id = ${seances.id} AND (e.statut = 'prete' OR e.essais >= ${ESSAIS_MAX} OR (e.statut = 'erreur' AND e.fin > now() - interval '6 hours')))`,
       ),
     )
     .orderBy(sql`${seances.debut} DESC`)
@@ -309,7 +322,7 @@ if (process.env.COURS_COMPLETS !== "non") {
     await suivreTranscriptions();
     await soumettreTranscriptions();
     if (enCours || !iaDisponible()) return;
-    if ((await budgetDuMois()).atteint) return;
+    if (!(await travailDeFondPermis())) return;
     const prochaine = await prochaineSeance();
     if (prochaine) void etudierSeance(prochaine);
   });
@@ -321,6 +334,7 @@ export async function etatCoursComplet(s: Seance): Promise<Pick<CoursCompletDto,
   const [e] = await db.select().from(etudesSeances).where(eq(etudesSeances.seanceId, s.id));
   if (e) {
     const coupee = e.statut === "en_cours" && enCours !== s.id;
+    if (coupee && e.essais >= ESSAIS_MAX) return { statut: "erreur", etape: null, progression: 0, dossier: null, message: "La préparation du cours complet n'a pas abouti." };
     if (coupee) return { statut: "a_venir", etape: "Préparation reprise sous peu", progression: 0, dossier: null, message: null };
     return { statut: e.statut, etape: e.etape, progression: e.progression, dossier: e.statut === "prete" ? (e.dossier ?? null) : null, message: e.message };
   }

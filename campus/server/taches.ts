@@ -9,8 +9,15 @@ export function planifier(nom: string, toutesLesMs: number, fn: () => Promise<vo
 
 export function demarrerTaches() {
   for (const t of taches) {
-    const lancer = () =>
-      t.fn().catch((e) => console.error(`[tâche ${t.nom}]`, (e as Error).message));
+    // Un passage plus long que l'intervalle n'en lance pas un second en même temps.
+    let enCours = false;
+    const lancer = () => {
+      if (enCours) return;
+      enCours = true;
+      t.fn()
+        .catch((e) => console.error(`[tâche ${t.nom}]`, (e as Error).message))
+        .finally(() => (enCours = false));
+    };
     setTimeout(lancer, 5_000).unref();
     setInterval(lancer, t.toutesLesMs).unref();
   }

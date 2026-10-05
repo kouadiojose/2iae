@@ -10,8 +10,8 @@ import * as visio from "./visio";
 import { lienReplayBucket, stockageReplaysDisponible } from "./stockage-replays";
 import { directsImmediats, morceauxReplay, replaysStockes, seances, sousTitres, transcriptionsReplays } from "@shared/schema";
 
-/** On ne transcrit que les séances des 90 derniers jours. */
-const FENETRE_JOURS = 90;
+/** On ne transcrit que les séances des 30 derniers jours. */
+const FENETRE_JOURS = 30;
 /** Une transcription qui n'aboutit pas en 12 h est abandonnée. */
 const DELAI_MAX_MS = 12 * 3600_000;
 
@@ -147,12 +147,23 @@ export async function suivreTranscriptions(): Promise<void> {
         const liens = await visio.liensTranscriptionDaily(tr.travailId);
         const vtt = liens.find((l) => l.format === "vtt");
         const txt = liens.find((l) => l.format === "txt");
-        let lignes = vtt ? lireVtt((await lireTexteDistant(vtt.link)) ?? "") : [];
+        const brutVtt = vtt ? await lireTexteDistant(vtt.link) : null;
+        let lignes = brutVtt ? lireVtt(brutVtt) : [];
+        let brutTxt: string | null = null;
         if (!lignes.length && txt) {
           // Sans minutage : le texte est réparti régulièrement sur la durée du morceau.
-          const brut = (await lireTexteDistant(txt.link)) ?? "";
-          const phrases = brut.split(/(?<=[.!?])\s+/).filter(Boolean);
+          brutTxt = await lireTexteDistant(txt.link);
+          const phrases = (brutTxt ?? "").split(/(?<=[.!?])\s+/).filter(Boolean);
           lignes = phrases.map((p, i) => ({ t: Math.round((i / Math.max(1, phrases.length)) * 3600), texte: p }));
+        }
+        if (brutVtt === null && brutTxt === null && (vtt || txt)) {
+          // Téléchargement manqué : nouvel essai au passage suivant, abandon (puis nouvelle demande) après 12 h.
+          if (Date.now() - new Date(tr.debut).getTime() < DELAI_MAX_MS) continue;
+          await db
+            .update(transcriptionsReplays)
+            .set({ statut: "erreur", fin: new Date(), message: "Transcription terminée chez Daily mais impossible à récupérer." })
+            .where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
+          continue;
         }
         if (lignes.length) {
           await db.insert(sousTitres).values(lignes.map((l) => ({ seanceId: tr.seanceId, t: Math.round(l.t + tr.decalageSecondes), texte: l.texte.slice(0, 2000) })));

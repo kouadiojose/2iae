@@ -28,13 +28,16 @@ export function useEtudeLivre(livreId: number, initiale: EtudeLivreDto | null, e
   });
   const etude = data?.etude ?? null;
   const [lancement, setLancement] = useState(false);
-  const lancer = async () => {
+  /** Renvoie faux si la lecture n'a pas pu être lancée (le message est déjà affiché). */
+  const lancer = async (): Promise<boolean> => {
     setLancement(true);
     try {
       const r = await post<EtatEtude>(cle);
       queryClient.setQueryData<EtatEtude>([cle], r);
+      return true;
     } catch (e) {
       toastErreur(e);
+      return false;
     } finally {
       setLancement(false);
     }

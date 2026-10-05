@@ -8,7 +8,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { etudesLivres, livres, reponsesLivres, type DossierLivre, type EtudeLivreDto, type FicheLivre, type Livre } from "@shared/schema";
-import { verifierBudget } from "./ia";
+import { travailDeFondPermis, verifierBudget } from "./ia";
 import { ErreurHttp } from "./http";
 import { livreLibre, texteDuLivre } from "./libres/index-libre";
 import { normaliserIndex } from "./libres/domaines";
@@ -19,6 +19,11 @@ const TAILLE_MAX = 1_600_000;
 const MORCEAU = 80_000;
 /** Études menées en même temps (les autres attendent leur tour). */
 const SIMULTANEES = 2;
+/** Après un échec, nouvelle lecture possible 6 h plus tard, trois lectures en tout (la direction peut toujours relancer). */
+const DELAI_RELANCE_MS = 6 * 3600_000;
+const ESSAIS_MAX = 3;
+/** Lectures qu'un étudiant peut lancer par 24 h. */
+const LANCEMENTS_PAR_JOUR = 5;
 
 // ── Le livre se lit-il en entier ? ─────────────────────────────────────────
 
@@ -110,6 +115,8 @@ function citationsVerifiees(citations: DossierLivre["citations"], texte: string)
 async function etudier(l: Livre, utilisateurId: number): Promise<void> {
   const compteur: Compteur = { coutMicro: 0 };
   try {
+    // Le budget a pu s'épuiser pendant l'attente dans la file.
+    if (!(await travailDeFondPermis())) throw new Error("Le budget d'IA du mois est presque épuisé : la lecture des livres reprendra le mois prochain.");
     await majEtude(l.id, { etape: "Récupération du texte", progression: 2 });
     const complet = await texteDuLivre(l.lecture);
     if (!complet || complet.length < 2000) throw new Error("Le texte de ce livre n'est pas disponible pour le moment.");
@@ -177,7 +184,7 @@ async function etudier(l: Livre, utilisateurId: number): Promise<void> {
       etape: null,
       coutMicro: compteur.coutMicro,
       fin: new Date(),
-      message: (e as Error).message.startsWith("Le texte") ? (e as Error).message : "La lecture du livre n'a pas pu aboutir. Nouvel essai possible dans un instant.",
+      message: /^(Le texte|Le budget)/.test((e as Error).message) ? (e as Error).message : "La lecture du livre n'a pas pu aboutir. Un nouvel essai sera possible dans quelques heures.",
     });
   }
 }
@@ -209,22 +216,48 @@ export async function dossierDuLivre(livreId: number): Promise<DossierLivre | nu
   return e?.dossier ?? null;
 }
 
+const EN_ATTENTE: EtudeLivreDto = { statut: "en_cours", progression: 1, etape: "En attente de lecture", dossier: null, message: null, fin: null };
+const heure = (d: Date) => d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+
 /** Lance la lecture du livre (une seule à la fois par livre) et renvoie l'état. */
 export async function lancerEtudeLivre(l: Livre, u: { id: number; role: string }): Promise<EtudeLivreDto> {
-  const actuel = await etatEtudeLivre(l.id);
-  if (actuel && (actuel.statut === "prete" || (actuel.statut === "en_cours" && enCours.has(l.id)))) return actuel;
-  if (!(await livreEtudiable(l))) throw new ErreurHttp(409, "Le texte intégral de ce livre n'est pas disponible sur le campus.");
-  await verifierBudget(u);
-  await db
-    .insert(etudesLivres)
-    .values({ livreId: l.id, statut: "en_cours", etape: "En attente de lecture", progression: 1, demandePar: u.id, debut: new Date(), fin: null, message: null })
-    .onConflictDoUpdate({
-      target: etudesLivres.livreId,
-      set: { statut: "en_cours", etape: "En attente de lecture", progression: 1, demandePar: u.id, debut: new Date(), fin: null, message: null },
+  if (enCours.has(l.id)) return (await etatEtudeLivre(l.id)) ?? EN_ATTENTE;
+  // Place réservée avant le premier await : deux clics simultanés ne lancent qu'une lecture.
+  let liberer = () => {};
+  const reservation = new Promise<void>((ok) => (liberer = ok));
+  enCours.set(l.id, reservation);
+  try {
+    const [ligne] = await db.select().from(etudesLivres).where(eq(etudesLivres.livreId, l.id));
+    if (ligne?.statut === "prete") return versDto(ligne);
+    if (u.role !== "admin" && ligne?.statut === "erreur") {
+      if (ligne.essais >= ESSAIS_MAX) throw new ErreurHttp(429, "Ce livre n'a pas pu être lu malgré plusieurs essais. Pose plutôt ta question au bibliothécaire.");
+      const relance = ligne.fin ? ligne.fin.getTime() + DELAI_RELANCE_MS : 0;
+      if (relance > Date.now()) throw new ErreurHttp(429, `La dernière lecture de ce livre n'a pas abouti. Nouvel essai possible à partir de ${heure(new Date(relance))} (heure d'Abidjan).`);
+    }
+    if (u.role === "etudiant") {
+      const [{ n }] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(etudesLivres)
+        .where(and(eq(etudesLivres.demandePar, u.id), sql`${etudesLivres.debut} > now() - interval '24 hours'`));
+      if (n >= LANCEMENTS_PAR_JOUR) throw new ErreurHttp(429, `Tu as déjà fait lire ${LANCEMENTS_PAR_JOUR} livres aujourd'hui. Reviens demain, ou choisis un livre déjà étudié.`);
+    }
+    if (!(await livreEtudiable(l))) throw new ErreurHttp(409, "Le texte intégral de ce livre n'est pas disponible sur le campus.");
+    await verifierBudget(u);
+    if (!(await travailDeFondPermis())) throw new ErreurHttp(503, "La lecture des livres est en pause jusqu'au mois prochain : le budget d'IA est réservé aux questions des étudiants.");
+    const depart = { statut: "en_cours" as const, etape: "En attente de lecture", progression: 1, demandePar: u.id, debut: new Date(), fin: null, message: null };
+    await db
+      .insert(etudesLivres)
+      .values({ livreId: l.id, ...depart, essais: 1 })
+      .onConflictDoUpdate({ target: etudesLivres.livreId, set: { ...depart, essais: sql`${etudesLivres.essais} + 1` } });
+    const p: Promise<void> = tour(() => etudier(l, u.id)).finally(() => {
+      if (enCours.get(l.id) === p) enCours.delete(l.id);
     });
-  const p = tour(() => etudier(l, u.id)).finally(() => enCours.delete(l.id));
-  enCours.set(l.id, p);
-  return (await etatEtudeLivre(l.id))!;
+    enCours.set(l.id, p);
+    return (await etatEtudeLivre(l.id)) ?? EN_ATTENTE;
+  } finally {
+    if (enCours.get(l.id) === reservation) enCours.delete(l.id);
+    liberer();
+  }
 }
 
 /** Le dossier en texte, pour que l'IA réponde aux questions d'après lui. */

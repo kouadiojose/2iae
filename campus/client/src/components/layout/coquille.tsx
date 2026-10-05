@@ -3,11 +3,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown, Repeat } from "lucide-react";
+import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown, Repeat, LayoutGrid } from "lucide-react";
 import { useMoiConnecte, seDeconnecter, basculerCasquette } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { queryClient, rafraichir } from "@/lib/queryClient";
-import { navigationDe, estActif } from "@/navigation";
+import { navigationDe, estActif, type ElementNav } from "@/navigation";
 import { cn, nomComplet } from "@/lib/utils";
 import { Avatar } from "@/components/ui/divers";
 import { Menu, ElementMenu, SeparateurMenu } from "@/components/ui/menu";
@@ -18,12 +18,13 @@ import { InstallationMobile } from "@/modules/pwa/InstallationMobile";
 import { LIBELLES_ROLES } from "@shared/schema";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
-export function Marque({ sousTitre = true, sombre = false }: { sousTitre?: boolean; sombre?: boolean }) {
+/** `compacte` : sur téléphone, le logo seul (l'en-tête du campus garde la place des boutons Plus, Live, cloche). */
+export function Marque({ sousTitre = true, sombre = false, compacte = false }: { sousTitre?: boolean; sombre?: boolean; compacte?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-3 no-underline" aria-label="Campus numérique 2IAE, accueil">
       {/* Sur fond sombre : l'ovale détouré (sans rectangle blanc autour). */}
       <img src={sombre ? "/marque-2iae-detouree.png" : "/marque-2iae.png"} alt="" className="h-9 w-auto sm:h-10" />
-      <span className={cn("flex flex-col border-l pl-3", sombre ? "border-nuit-ligne" : "border-ligne-forte")}>
+      <span className={cn("flex flex-col border-l pl-3", sombre ? "border-nuit-ligne" : "border-ligne-forte", compacte && "hidden sm:flex")}>
         <span className={cn("whitespace-nowrap text-[15px] font-extrabold leading-tight tracking-[-0.01em]", sombre ? "text-white" : "text-encre")}>Campus numérique</span>
         {sousTitre && <span className={cn("font-mono text-[11px]", sombre ? "text-nuit-gris" : "text-texte-gris")}>Groupe 2IAE International</span>}
       </span>
@@ -110,6 +111,39 @@ export function lienAide(moi: { prenom: string; nom: string; matricule: string |
   const numero = moi.site?.whatsappVieScolaire?.replace(/\D/g, "");
   const texte = `Bonjour, je suis ${moi.prenom} ${moi.nom}${moi.matricule ? ` (matricule ${moi.matricule})` : ""}. J'ai besoin d'aide sur le campus numérique, page : ${window.location.pathname}`;
   return numero ? `https://wa.me/${numero}?text=${encodeURIComponent(texte)}` : null;
+}
+
+/** Téléphone : les pages hors de la barre du bas (assistant, bibliothèque, médiathèque, notes…). */
+function MenuPlusTelephone({ elements, chemin }: { elements: ElementNav[]; chemin: string }) {
+  const [, naviguer] = useLocation();
+  if (!elements.length) return null;
+  const actif = elements.some((el) => estActif(el, chemin));
+  return (
+    <Menu
+      align="end"
+      declencheur={
+        <button
+          className={cn(
+            "flex flex-col items-center rounded-xl px-2 py-1 text-texte-doux hover:bg-creme hover:text-encre",
+            actif && "text-orange-fonce",
+          )}
+          aria-label="Plus : assistant, bibliothèque, médiathèque, notes…"
+        >
+          <LayoutGrid className="h-[22px] w-[22px]" />
+          <span className="text-[11px] font-semibold leading-tight">Plus</span>
+        </button>
+      }
+    >
+      {elements.map((el) => {
+        const Icone = el.icone;
+        return (
+          <ElementMenu key={el.href} icone={<Icone className="h-4 w-4" />} onSelect={() => naviguer(el.href)}>
+            <span className={cn(estActif(el, chemin) && "text-orange-fonce")}>{el.libelle}</span>
+          </ElementMenu>
+        );
+      })}
+    </Menu>
+  );
 }
 
 function MenuProfil() {
@@ -269,7 +303,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
       <BandeauEnvois />
       <header className="sticky top-0 z-30 border-b border-ligne-douce bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-4 py-2.5 sm:px-7 sm:py-3">
-          <Marque sousTitre={false} />
+          <Marque sousTitre={false} compacte />
           <nav className="hidden flex-1 justify-center gap-1 lg:flex" aria-label="Navigation principale">
             {nav.slice(0, NAV_VISIBLES).map((el) => {
               const actif = estActif(el, chemin);
@@ -325,6 +359,9 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
               <BoutonDirect compact />
             </div>
             <BoutonCasquette />
+            <div className="lg:hidden">
+              <MenuPlusTelephone elements={nav.filter((el) => !el.mobile)} chemin={chemin} />
+            </div>
             <Cloche />
             <MenuProfil />
           </div>

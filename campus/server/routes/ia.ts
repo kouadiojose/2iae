@@ -1002,6 +1002,7 @@ export function enregistrerIa(app: Express) {
       // ouverte : le « finally » écrit toujours la fin du flux.
       try {
         try {
+          const etatFlux: { complet?: boolean } = {};
           const reponse = await fluxClaude(
             livre || bibliothecaire
               ? { systeme, contexte, messages, effort: "low", maxTokens: 6000, utilisateurId: u.id, gamme: "bibliotheque" }
@@ -1011,12 +1012,13 @@ export function enregistrerIa(app: Express) {
               diffuse += propre;
               ecrire(propre);
             },
+            etatFlux,
           );
           const definitif = reponse.trim() || "Je n'ai pas su répondre à cette question. Peux-tu la reformuler autrement ?";
           if (definitif !== diffuse.trim()) fin.remplacer = definitif;
           // Bibliothécaire : chaque livre recommandé est vérifié dans les catalogues avant d'apparaître en carte.
           const livresCitesMsg = bibliothecaire ? await verifierLivresCites(definitif) : null;
-          if (livre && dossier && historique.length === 1 && reponse.trim()) void garderReponse(livre.id, corps.contenu, definitif, u.role).catch(() => {});
+          if (livre && dossier && historique.length === 1 && etatFlux.complet && reponse.trim()) void garderReponse(livre.id, corps.contenu, definitif, u.role).catch(() => {});
           const [enregistre] = await db
             .insert(messagesIa)
             .values({ conversationId: conv.id, role: "assistant", contenu: definitif, livres: livresCitesMsg?.length ? livresCitesMsg : null })

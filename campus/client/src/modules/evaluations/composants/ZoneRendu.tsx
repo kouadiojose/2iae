@@ -116,7 +116,13 @@ export function ZoneRendu({
       for (const f of Array.from(liste)) {
         // Vidéo de la galerie trop lourde pour le campus (25 Mo) : la version légère se filme ici.
         if ((f.type.startsWith("video/") || f.type.startsWith("audio/")) && f.size > 24 * 1024 * 1024) {
-          toastErreur(new Error(`« ${f.name} » est trop lourde (${taille(f.size)}). Filme ta vidéo avec le bouton « Filmer une vidéo » : elle sera légère.`));
+          toastErreur(
+            new Error(
+              enregistreurDisponible()
+                ? `« ${f.name} » est trop lourde (${taille(f.size)}). Filme ta vidéo avec le bouton « Filmer une vidéo » : elle sera légère.`
+                : `« ${f.name} » est trop lourde (${taille(f.size)}). Filme une vidéo plus courte (moins d'une minute), ou envoie plutôt des photos.`,
+            ),
+          );
           continue;
         }
         // Photo allégée tout de suite (~250 Ko au lieu de 4 Mo) : le poids affiché est celui qui partira.
@@ -194,6 +200,11 @@ export function ZoneRendu({
           onFermer={() => setEnregistreur(false)}
           onTermine={(f) => {
             setEnregistreur(false);
+            // Débit demandé ignoré par certains navigateurs : même limite que pour les vidéos de la galerie.
+            if (f.size > 24 * 1024 * 1024) {
+              toastErreur(new Error(`Ta vidéo est trop lourde (${taille(f.size)}). Refais-la plus courte.`));
+              return;
+            }
             setPages((p) => [...p, { id: idPage(), nom: f.name, type: f.type, blob: f }].slice(0, 30));
           }}
         />

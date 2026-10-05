@@ -369,10 +369,15 @@ function OngletQuestions({ detail, cle, etudiant }: { detail: LivreDetailDto; cl
   // puis la question part toute seule.
   const demander = async (texte: string) => {
     if (!texte.trim() || blocage || creation) return;
-    if (detail.etudiable && !pret) {
+    // Après une lecture manquée, la question part tout de suite (d'après les extraits) : la relance se fait dans l'onglet Dossier.
+    if (detail.etudiable && !pret && etude?.statut !== "erreur") {
       setEnAttenteLecture(texte.trim());
       setQuestion("");
-      if (!enCours) await lancer();
+      if (!enCours && !(await lancer())) {
+        // Lecture refusée (budget, limite du jour) : la question n'est pas perdue, elle part sans le dossier.
+        setEnAttenteLecture(null);
+        await commencer(texte);
+      }
       return;
     }
     await commencer(texte);

@@ -19,6 +19,8 @@ export const etudesLivres = campusSchema.table("etudes_livres", {
   caracteres: integer("caracteres"),
   coutMicro: integer("cout_micro").notNull().default(0),
   demandePar: integer("demande_par").references(() => utilisateurs.id, { onDelete: "set null" }),
+  /** Lectures lancées (relances comprises) : au-delà de trois échecs, plus de relance. */
+  essais: integer("essais").notNull().default(0),
   message: text("message"),
   debut: timestamp("debut", { withTimezone: true }).notNull().defaultNow(),
   fin: timestamp("fin", { withTimezone: true }),
@@ -33,6 +35,8 @@ export const etudesSeances = campusSchema.table("etudes_seances", {
   progression: integer("progression").notNull().default(0),
   dossier: jsonb("dossier").$type<DossierCours>(),
   coutMicro: integer("cout_micro").notNull().default(0),
+  /** Préparations lancées : après trois échecs, la tâche n'y revient plus (« Refaire » remet à zéro). */
+  essais: integer("essais").notNull().default(0),
   message: text("message"),
   debut: timestamp("debut", { withTimezone: true }).notNull().defaultNow(),
   fin: timestamp("fin", { withTimezone: true }),

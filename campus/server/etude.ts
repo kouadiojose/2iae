@@ -105,7 +105,8 @@ export async function lireMorceaux<T>(o: {
     }
   };
   await Promise.all(Array.from({ length: Math.min(o.parallele ?? 4, o.morceaux.length) }, ouvrier));
-  if (echecs > Math.max(1, Math.floor(o.morceaux.length / 4))) throw new Error(`${echecs} morceaux sur ${o.morceaux.length} n'ont pas pu être lus.`);
+  // Un quart des morceaux perdus au plus (aucun quand il y en a moins de quatre) : sinon la synthèse inventerait.
+  if (echecs > Math.floor(o.morceaux.length / 4)) throw new Error(`${echecs} morceaux sur ${o.morceaux.length} n'ont pas pu être lus.`);
   return resultats;
 }
 

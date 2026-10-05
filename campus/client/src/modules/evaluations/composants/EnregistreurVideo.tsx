@@ -20,6 +20,13 @@ export function EnregistreurVideo({ onTermine, onFermer }: { onTermine: (fichier
   const enregistreur = useRef<MediaRecorder | null>(null);
   const morceaux = useRef<Blob[]>([]);
   const [face, setFace] = useState<"environment" | "user">("environment");
+  // Change à chaque « Refaire » : la caméra, éteinte pendant la relecture, se rallume.
+  const [prise, setPrise] = useState(0);
+  const demonte = useRef(false);
+  useEffect(() => {
+    demonte.current = false;
+    return () => void (demonte.current = true);
+  }, []);
   const [etat, setEtat] = useState<"pret" | "enregistre" | "fini">("pret");
   const [secondes, setSecondes] = useState(0);
   const [video, setVideo] = useState<{ url: string; blob: Blob } | null>(null);
@@ -44,7 +51,7 @@ export function EnregistreurVideo({ onTermine, onFermer }: { onTermine: (fichier
       flux.current?.getTracks().forEach((t) => t.stop());
       flux.current = null;
     };
-  }, [face]);
+  }, [face, prise]);
 
   useEffect(() => {
     if (etat !== "enregistre") return;
@@ -71,6 +78,11 @@ export function EnregistreurVideo({ onTermine, onFermer }: { onTermine: (fichier
     morceaux.current = [];
     r.ondataavailable = (e) => e.data.size && morceaux.current.push(e.data);
     r.onstop = () => {
+      // Fermé pendant l'enregistrement : rien à garder.
+      if (demonte.current) return;
+      // Caméra et micro éteints pendant la relecture.
+      flux.current?.getTracks().forEach((t) => t.stop());
+      flux.current = null;
       const blob = new Blob(morceaux.current, { type: (r.mimeType || type || "video/webm").split(";")[0] });
       setVideo({ url: URL.createObjectURL(blob), blob });
       setEtat("fini");
@@ -128,7 +140,14 @@ export function EnregistreurVideo({ onTermine, onFermer }: { onTermine: (fichier
         )}
         {etat === "fini" && (
           <>
-            <Bouton variante="contour" icone={<RotateCcw className="h-4 w-4" />} onClick={() => setEtat("pret")}>
+            <Bouton
+              variante="contour"
+              icone={<RotateCcw className="h-4 w-4" />}
+              onClick={() => {
+                setEtat("pret");
+                setPrise((n) => n + 1);
+              }}
+            >
               Refaire
             </Bouton>
             <Bouton icone={<Video className="h-4 w-4" />} onClick={garder}>

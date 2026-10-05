@@ -299,6 +299,14 @@ export async function quotaDe(u: Demandeur): Promise<number> {
 }
 
 /** Budget du mois atteint : plus aucun appel (ErreurIa 503). */
+/**
+ * Travail de fond (cours complets, études de livres) : il s'arrête à 70 % du
+ * budget du mois, pour laisser le reste aux questions des étudiants.
+ */
+export async function travailDeFondPermis(): Promise<boolean> {
+  return (await budgetDuMois()).part < 0.7;
+}
+
 export async function verifierBudget(u: Demandeur): Promise<void> {
   const b = await budgetDuMois();
   if (!b.atteint) return;
@@ -344,11 +352,13 @@ export async function demanderClaude(o: OptionsClaude): Promise<string> {
  * Appel en flux : `surTexte` reçoit chaque morceau au fil de l'eau (pour
  * l'afficher pendant que Claude écrit, comme dans une conversation).
  */
-export async function fluxClaude(o: OptionsClaude, surTexte: (morceau: string) => void): Promise<string> {
+export async function fluxClaude(o: OptionsClaude, surTexte: (morceau: string) => void, etat?: { complet?: boolean }): Promise<string> {
   const flux = getClient().beta.messages.stream({ ...construireRequete(o), max_tokens: o.maxTokens ?? 16000 });
   flux.on("text", (morceau) => surTexte(morceau));
   const final = await flux.finalMessage();
   await compter(o.utilisateurId, final.usage, final.model, o.sansQuota);
+  // Réponse menée à son terme (ni coupée par la limite, ni refusée) : elle peut être gardée.
+  if (etat) etat.complet = final.stop_reason === "end_turn";
   if (final.stop_reason === "refusal") return MESSAGE_REFUS;
   return texteDe(final);
 }

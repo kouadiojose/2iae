@@ -988,6 +988,24 @@ const lienPerimeInvitation = () =>
   );
 
 /** Le compte que ce lien d'invitation permet de créer, sans consommer le lien. */
+/** Nom d'un compte de formateur préparé sans le connaître : la personne le saisit en ouvrant son invitation. */
+const NOM_A_FOURNIR = "À compléter";
+
+/** Cours dont la personne est le formateur principal, et sa salle : la prochaine séance, sinon le cours s'il est seul. */
+async function coursEtSalle(id: number): Promise<{ cours: string[]; destination: string | null }> {
+  const liste = (
+    await pool.query<{ id: number; titre: string }>(`SELECT id, titre FROM campus.cours WHERE formateur_id = $1 AND statut <> 'archive' ORDER BY id`, [id])
+  ).rows;
+  if (!liste.length) return { cours: [], destination: null };
+  const seance = (
+    await pool.query<{ id: number }>(
+      `SELECT id FROM campus.seances WHERE cours_id = ANY($1::int[]) AND statut IN ('planifiee', 'en_direct') AND debut + (duree_minutes || ' minutes')::interval > now() ORDER BY debut LIMIT 1`,
+      [liste.map((c) => c.id)],
+    )
+  ).rows[0];
+  return { cours: liste.map((c) => c.titre), destination: seance ? `/enseigner/seances/${seance.id}` : liste.length === 1 ? `/cours/${liste[0].id}` : null };
+}
+
 async function lireInvitation(jeton: string): Promise<{ ligneId: number; expireLe: Date; compte: Utilisateur } | null> {
   if (!/^[A-Za-z0-9_-]{20,80}$/.test(jeton)) return null;
   const [ligne] = await db
@@ -1331,6 +1349,8 @@ export function enregistrerLancement(app: Express) {
         expireLe: inv.expireLe.toISOString(),
         longueurMinimale: longueurMinimale(c.role),
         emailDisponible: emailDisponible(),
+        nomAFournir: c.nom === NOM_A_FOURNIR,
+        cours: (await coursEtSalle(c.id)).cours,
       };
       res.json(r);
     }),
@@ -1410,7 +1430,7 @@ export function enregistrerLancement(app: Express) {
 
       const envoye = await envoyerGuideFormateur(apres);
       void prevenirCompteCree(apres, envoye).catch((e) => console.error("[invitation] notification :", (e as Error).message));
-      const r: InvitationAcceptee = { moi: await versMoi(apres), guide: { adresse: d.email, envoye } };
+      const r: InvitationAcceptee = { moi: await versMoi(apres), guide: { adresse: d.email, envoye }, destination: (await coursEtSalle(apres.id)).destination };
       res.status(201).json(r);
     }),
   );

@@ -10,6 +10,15 @@ import type { Moi } from "@shared/schema";
 export function retourSur(brut: string | null | undefined): string | null {
   if (!brut) return null;
   if (!brut.startsWith("/") || brut.startsWith("//") || brut.startsWith("/\\")) return null;
+  // « /bienvenue?retour=/cours/8 » (passage par la connexion juste après l'activation) : on garde l'adresse finale.
+  const interne = /^\/bienvenue\?(?:[^#]*&)?retour=([^&#]+)/.exec(brut);
+  if (interne) {
+    try {
+      return retourSur(decodeURIComponent(interne[1]));
+    } catch {
+      return null;
+    }
+  }
   if (/^\/(connexion|activer|invitation|inscription|rejoindre|ecran|bienvenue|mot-de-passe-oublie|reinitialiser)(\/|\?|$)/.test(brut)) return null;
   return brut;
 }

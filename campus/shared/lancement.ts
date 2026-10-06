@@ -100,12 +100,18 @@ export type InfoInvitation = {
   longueurMinimale: number;
   /** Le campus envoie des e-mails : le guide partira dès la création du compte. */
   emailDisponible: boolean;
+  /** Compte préparé sans le nom (« À compléter ») : la personne saisit elle-même son prénom et son nom. */
+  nomAFournir: boolean;
+  /** Cours que la personne enseignera (formateur principal), déjà choisis par la direction. */
+  cours: string[];
 };
 
 /** POST /api/invitation/:jeton : compte créé, session ouverte, guide envoyé (ou non). */
 export type InvitationAcceptee = {
   moi: Moi;
   guide: { adresse: string; envoye: boolean };
+  /** Où entrer après la visite de bienvenue : la prochaine séance, sinon le cours (s'il n'y en a qu'un). */
+  destination: string | null;
 };
 
 // ── Écran de la salle de conférence ────────────────────────────────────────

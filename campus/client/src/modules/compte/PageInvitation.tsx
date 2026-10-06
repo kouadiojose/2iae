@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { CalendarClock, CheckCircle2, Eye, EyeOff, FileDown, Link2Off, MailCheck, MailWarning } from "lucide-react";
+import { BookOpen, CalendarClock, CheckCircle2, Eye, EyeOff, FileDown, Link2Off, MailCheck, MailWarning } from "lucide-react";
 import { post } from "@/lib/api";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Champ } from "@/components/ui/champs";
@@ -50,8 +50,8 @@ export default function PageInvitation({ jeton }: { jeton: string }) {
 function Formulaire({ jeton, info, onCree }: { jeton: string; info: InfoInvitation; onCree: (r: InvitationAcceptee) => void }) {
   const formateur = info.role === "formateur";
   const [f, setF] = useState({
-    prenom: prenomInconnu(info.prenom) ? "" : info.prenom,
-    nom: info.nom,
+    prenom: info.nomAFournir || prenomInconnu(info.prenom) ? "" : info.prenom,
+    nom: info.nomAFournir ? "" : info.nom,
     email: info.email ?? "",
     telephone: info.telephone ?? "",
     titre: info.titre ?? "",
@@ -64,7 +64,7 @@ function Formulaire({ jeton, info, onCree }: { jeton: string; info: InfoInvitati
   const maj = (cle: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [cle]: e.target.value }));
   const differents = f.confirmation.length > 0 && f.confirmation !== f.motDePasse;
   const tropCourt = f.motDePasse.length > 0 && f.motDePasse.length < info.longueurMinimale;
-  const appel = prenomInconnu(info.prenom) ? `${info.prenom} ${info.nom}` : info.prenom;
+  const appel = info.nomAFournir ? null : prenomInconnu(info.prenom) ? `${info.prenom} ${info.nom}` : info.prenom;
 
   const envoyer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +93,7 @@ function Formulaire({ jeton, info, onCree }: { jeton: string; info: InfoInvitati
     <form onSubmit={envoyer} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.14em] text-orange-fonce">{formateur ? "Invitation · Formateur" : "Invitation · Équipe"}</span>
-        <h1 className="text-[34px] font-black leading-[1.02] tracking-tres-serre">Bienvenue, {appel}.</h1>
+        <h1 className="text-[34px] font-black leading-[1.02] tracking-tres-serre">{appel ? `Bienvenue, ${appel}.` : "Bienvenue."}</h1>
         <p className="text-[15px] leading-relaxed text-texte-pale">
           {formateur
             ? "Le Groupe Écoles 2IAE International vous ouvre son campus numérique : c'est de là que vous donnerez vos cours en direct aux cinq campus. "
@@ -101,6 +101,15 @@ function Formulaire({ jeton, info, onCree }: { jeton: string; info: InfoInvitati
           Créez votre compte en une minute{info.emailDisponible ? " : le guide pas à pas part aussitôt à votre adresse e-mail." : "."}
         </p>
       </div>
+      {info.cours.length > 0 && (
+        <p className="flex items-start gap-2 rounded-xl bg-creme px-4 py-3 text-[15px]">
+          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-orange-fonce" />
+          <span>
+            {info.cours.length === 1 ? "Votre cours : " : "Vos cours : "}
+            <strong>{info.cours.map((c) => `« ${c} »`).join(", ")}</strong>
+          </span>
+        </p>
+      )}
       {info.premierCours && (
         <p className="flex items-start gap-2 rounded-xl bg-creme px-4 py-3 text-[15px]">
           <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-orange-fonce" />
@@ -197,7 +206,8 @@ function CompteCree({ resultat, role }: { resultat: InvitationAcceptee; role: In
   const appel = prenomInconnu(moi.prenom) ? `${moi.prenom} ${moi.nom}` : moi.prenom;
   const entrer = () => {
     installerMoi(moi, true);
-    naviguer("/bienvenue", { replace: true });
+    // Après la courte visite de bienvenue : directement dans sa salle (prochaine séance, sinon son cours).
+    naviguer(resultat.destination ? `/bienvenue?retour=${encodeURIComponent(resultat.destination)}` : "/bienvenue", { replace: true });
   };
   return (
     <CadrePublic>
@@ -227,7 +237,7 @@ function CompteCree({ resultat, role }: { resultat: InvitationAcceptee; role: In
           </p>
         </div>
         <Bouton taille="lg" pleineLargeur onClick={entrer} className="mt-1 min-h-[56px] text-[17px]">
-          Entrer dans mon campus
+          {resultat.destination ? "Entrer dans mon cours" : "Entrer dans mon campus"}
         </Bouton>
         <a
           href={guidePdf(role)}

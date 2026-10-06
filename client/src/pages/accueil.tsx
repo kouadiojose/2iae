@@ -15,6 +15,7 @@ import { ReportageRtiBts } from "@/components/reportage-rti";
 import { RencontreParentsYopougon } from "@/components/rencontre-parents-yopougon";
 import { RencontreParentsAzaguie } from "@/components/rencontre-parents-azaguie";
 import { RentreeEffective } from "@/components/rentree-effective";
+import { TemoignagesRentree } from "@/components/temoignages-rentree";
 import { SectionCampusAccueil } from "@/components/campus-numerique";
 
 interface News {
@@ -380,6 +381,9 @@ export default function AccueilPage() {
 
       {/* La rentrée a eu lieu — appel aux retardataires (auto-expirant) */}
       <RentreeEffective />
+
+      {/* Les étudiants racontent leurs premiers jours, et le prochain cours en direct */}
+      <TemoignagesRentree />
 
       {/* Les deux rendements — la réponse chiffrée, et vérifiable par des
           tiers, à qui met en doute la valeur de l'école. Placée juste sous le

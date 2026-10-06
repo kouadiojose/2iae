@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, BookOpen, ExternalLink, Search, GraduationCap } from "lucide-react";
+import { ChoixClasses } from "@/modules/cours/composants/ChoixClasses";
 import type { CoursResume, CoursDetail, OptionsEditionCours, FormateurOption, StatutCours } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Badge, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
@@ -263,40 +264,7 @@ function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
           </div>
           <div>
             <h3 className="mb-2 text-base font-extrabold">Classes qui suivent ce cours</h3>
-            <div className="flex flex-col gap-3">
-              {(options.data?.sites ?? []).map((s) =>
-                s.classes.length ? (
-                  <fieldset key={s.id} className={cn("rounded-2xl border border-ligne p-4", !s.modifiable && "bg-creme")}>
-                    <legend className="px-1 text-sm font-bold">
-                      {s.nomCourt}
-                      {!s.modifiable && <span className="ml-2 font-normal text-texte-gris">(géré par ce campus)</span>}
-                    </legend>
-                    <div className="flex flex-col gap-1">
-                      {s.classes.map((cl) => (
-                        <label key={cl.id} className={cn("flex min-h-[48px] items-center gap-3", s.modifiable ? "cursor-pointer" : "cursor-not-allowed opacity-70")}>
-                          <input
-                            type="checkbox"
-                            className="h-5 w-5 accent-[#E4793A]"
-                            checked={selection.has(cl.id)}
-                            disabled={!s.modifiable}
-                            onChange={() =>
-                              setCoches(() => {
-                                const n = new Set(selection);
-                                if (n.has(cl.id)) n.delete(cl.id);
-                                else n.add(cl.id);
-                                return n;
-                              })
-                            }
-                          />
-                          <span className="flex-1 text-[15px]">{cl.nom}</span>
-                          <span className="font-mono text-xs text-texte-gris">{pluriel(cl.effectif, "étudiant")}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                ) : null,
-              )}
-            </div>
+            <ChoixClasses sites={options.data?.sites ?? []} classeIds={selection} onChange={(ids) => setCoches(new Set(ids))} />
           </div>
         </div>
       )}

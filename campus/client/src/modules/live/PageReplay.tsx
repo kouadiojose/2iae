@@ -19,9 +19,10 @@ import { Onglets } from "@/components/ui/onglets";
 import { TitreSection } from "@/components/ui/carte";
 import { toastErreur } from "@/components/ui/toast";
 import { minutage, sansAccents } from "./outils";
+import { ListeRessources } from "./ressources";
 import type { ReplayDto, CoursCompletDto } from "@shared/schema";
 
-type Onglet = "fiche" | "transcription" | "questions" | "diapos";
+type Onglet = "fiche" | "transcription" | "questions" | "diapos" | "documents";
 
 export default function PageReplay({ id }: { id: string }) {
   const moi = useMoiConnecte();
@@ -172,6 +173,7 @@ export default function PageReplay({ id }: { id: string }) {
           { valeur: "transcription", libelle: "Transcription", compteur: r.transcription.length || undefined },
           { valeur: "questions", libelle: "Questions", compteur: r.questions.length || undefined },
           ...(r.diapos.length ? [{ valeur: "diapos" as const, libelle: "Diapos", compteur: r.diapos.length }] : []),
+          ...(r.ressources.length ? [{ valeur: "documents" as const, libelle: "Vidéos et documents", compteur: r.ressources.length }] : []),
         ]}
       />
 
@@ -270,6 +272,13 @@ export default function PageReplay({ id }: { id: string }) {
               </a>
             ))}
           </div>
+        </section>
+      )}
+
+      {onglet === "documents" && (
+        <section className="flex flex-col gap-3">
+          <TitreSection titre="Vidéos et documents de la séance" />
+          <ListeRessources ressources={r.ressources} />
         </section>
       )}
     </Page>

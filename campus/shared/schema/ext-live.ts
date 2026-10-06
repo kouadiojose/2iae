@@ -4,7 +4,7 @@
 // contrat.
 import { serial, text, integer, bigint, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat } from "./live";
+import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource } from "./live";
 import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
@@ -117,6 +117,23 @@ export type SiteLive = { id: number; nom: string; nomCourt: string; salleConfere
 
 export type DiapoDto = { index: number; fichierId: number; url: string };
 
+/** Ressource d'une séance : lien (YouTube ou autre) ou fichier déposé (vidéo, PDF, document). */
+export type RessourceSeanceDto = {
+  id: number;
+  type: TypeRessource;
+  titre: string;
+  /** youtube et lien : l'adresse ; video et fichier : /api/fichiers/:id. */
+  url: string;
+  youtubeId: string | null;
+  /** Fichier déposé : nom d'origine, type et poids (octets). */
+  nom: string | null;
+  mime: string | null;
+  taille: number | null;
+};
+
+/** Vidéo projetée dans les salles (position à l'instant horodatage, horloge du serveur), avec sa ressource. */
+export type ProjectionDto = ProjectionVideo & { ressource: RessourceSeanceDto };
+
 export type SeanceDetailDto = {
   id: number;
   coursId: number;
@@ -141,6 +158,8 @@ export type SeanceDetailDto = {
   motifAnnulation: string | null;
   diapos: DiapoDto[];
   diapoCourante: number;
+  /** Liens et fichiers déposés par le formateur, dans son ordre. */
+  ressources: RessourceSeanceDto[];
   proposeSurSite: boolean;
   publierSurSite: boolean;
   replayDisponible: boolean;
@@ -335,6 +354,8 @@ export type EtatDirectDto = {
    * disposition : diapo en grand, côte à côte ou caméras en grand, quand la diapo est montrée.
    */
   diapo: { index: number; total: number; url: string | null; masquee?: boolean; disposition?: DispositionScene };
+  /** Vidéo projetée à la place de la diapo, pilotée par le formateur. */
+  projection: ProjectionDto | null;
   questions: QuestionDirectDto[];
   sondage: SondageDto | null;
   resultats: ResultatsSondageDto | null;
@@ -354,7 +375,7 @@ export type EtatDirectDto = {
  * GET /api/seances/:id/diapo — relecture légère (toutes les 2 s) quand le temps réel est coupé
  * ou retenu en route : la diapo et le statut suivent sans relire tout l'état du direct.
  */
-export type DiapoDirectDto = { statut: StatutSeance; planB: string | null; diapo: EtatDirectDto["diapo"] };
+export type DiapoDirectDto = { statut: StatutSeance; planB: string | null; diapo: EtatDirectDto["diapo"]; projection: ProjectionDto | null };
 
 export type RejoindreDto = {
   fournisseur: FournisseurVisio;
@@ -484,6 +505,7 @@ export type ReplayDto = {
   transcription: SousTitreDto[];
   questions: QuestionDirectDto[];
   diapos: DiapoDto[];
+  ressources: RessourceSeanceDto[];
   /** La personne anime ce cours (ou fait partie de l'équipe) : bilan et fiche à portée de clic. Faux pour un collègue formateur. */
   anime: boolean;
 };

@@ -6,6 +6,7 @@ import { enregistrerAccueil } from "./accueil";
 import { enregistrerCours } from "./cours";
 import { enregistrerMediatheque } from "./mediatheque";
 import { enregistrerLive } from "./live";
+import { enregistrerRessourcesSeance } from "./ressources-seance";
 import { enregistrerEvaluations } from "./evaluations";
 import { enregistrerMessages } from "./messages";
 import { enregistrerAnnonces } from "./annonces";
@@ -38,6 +39,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerCours(app);
   enregistrerMediatheque(app);
   enregistrerLive(app);
+  enregistrerRessourcesSeance(app);
   enregistrerInvite(app);
   enregistrerEvaluations(app);
   enregistrerMessages(app);

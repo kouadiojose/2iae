@@ -48,6 +48,8 @@ export const config = {
   /** Stockage des fichiers déposés : monter un volume Railway ici. */
   dossierFichiers: path.resolve(env("UPLOADS_DIR") || path.join(process.cwd(), "uploads")),
   tailleMaxFichierMo: Number(env("UPLOAD_MAX_MB")) || 25,
+  /** Ressources d'une séance (vidéos de l'ordinateur du formateur, documents) : plus lourdes que les autres fichiers. */
+  tailleMaxRessourceMo: Number(env("RESSOURCE_MAX_MB")) || 300,
 
   visio: {
     dailyCle: env("DAILY_API_KEY"),

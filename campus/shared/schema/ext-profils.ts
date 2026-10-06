@@ -65,8 +65,8 @@ export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
   scolarite: {
     libelle: "Scolarité",
     description:
-      "Comptes et inscriptions des étudiants, nouveau code, dossiers et pièces, classes, notes et relevés, frais de scolarité ; présences en lecture.",
-    droits: ["comptes_voir", "comptes_gerer", "nouveau_code", "crm", "argent", "classes", "suivi", "presences_voir", "notes", "annonces"],
+      "Comptes et inscriptions des étudiants, nouveau code, dossiers et pièces, classes, notes et relevés, frais de scolarité ; cours, séances, horaires et ressources (pour aider les formateurs) ; présences en lecture.",
+    droits: ["comptes_voir", "comptes_gerer", "nouveau_code", "crm", "argent", "classes", "suivi", "presences_voir", "notes", "programme", "annonces"],
   },
   vie_scolaire: {
     libelle: "Vie scolaire",

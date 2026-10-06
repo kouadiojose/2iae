@@ -392,7 +392,7 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
   const [visioDemandee, setVisioDemandee] = useState(false);
   const visioOuverte = visioPossible && (visioDemandee || avantDebutMin <= VISIO_AUTO_MIN);
   // Sans la diapo : la vidéo en grand, et la salle se voit elle-même pour régler sa caméra.
-  const etatReglages = useMemo(() => ({ ...etat, diapo: { ...etat.diapo, url: null } }), [etat]);
+  const etatReglages = useMemo(() => ({ ...etat, diapo: { ...etat.diapo, url: null }, projection: null }), [etat]);
   return (
     <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">

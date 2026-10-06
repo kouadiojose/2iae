@@ -30,6 +30,7 @@ import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
+import { copierRessources, projectionDe, ressourcesDe } from "./ressources-seance";
 import { notifier } from "../notifications";
 import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia";
 import { prevenirSite } from "../site";
@@ -228,7 +229,7 @@ setInterval(() => {
   for (const [cle, t] of dernieresActions) if (t < limite) dernieresActions.delete(cle);
 }, 10 * MINUTE).unref();
 
-const canal = (seanceId: number) => `seance:${seanceId}`;
+export const canal = (seanceId: number) => `seance:${seanceId}`;
 
 async function consigner(seanceId: number, type: TypeEvenementSeance, donnees: Record<string, unknown> = {}) {
   await db.insert(evenementsSeances).values({ seanceId, type, donnees });
@@ -266,7 +267,7 @@ export async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance
 }
 
 /** Séance que la personne anime (formateur du cours ou équipe). */
-async function seanceAnimee(u: Utilisateur, id: number): Promise<Seance> {
+export async function seanceAnimee(u: Utilisateur, id: number): Promise<Seance> {
   // Équipe : préparer ou animer une séance relève du profil « programme » (ext-profils.ts).
   if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
   const s = await chargerSeance(id);
@@ -1221,6 +1222,7 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     motifAnnulation: s.motifAnnulation,
     diapos: versDiapos(s),
     diapoCourante: diapoCourante(s).index,
+    ressources: await ressourcesDe(s.id),
     proposeSurSite: s.proposeSurSite,
     publierSurSite: s.publierSurSite,
     replayDisponible: replayDisponible(s),
@@ -1606,6 +1608,7 @@ export function enregistrerLive(app: Express) {
           })),
         );
       }
+      await copierRessources(s.id, copie.id, u.id);
       res.status(201).json(await detailSeance(u, copie));
     }),
   );
@@ -1627,7 +1630,7 @@ export function enregistrerLive(app: Express) {
       const reprise = Boolean(s.demarreeLe);
       const [maj] = await db
         .update(seances)
-        .set({ statut: "en_direct", demarreeLe: s.demarreeLe ?? new Date(), termineeLe: null })
+        .set({ statut: "en_direct", demarreeLe: s.demarreeLe ?? new Date(), termineeLe: null, ...(reprise ? {} : { projection: null }) })
         .where(and(eq(seances.id, s.id), inArray(seances.statut, ["planifiee", "terminee"])))
         .returning();
       if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
@@ -1730,6 +1733,7 @@ export function enregistrerLive(app: Express) {
             resumeParIa: false,
             diapoCourante: 0,
             disposition: "diapo",
+            projection: null,
             lienSecours: null,
             planBLe: null,
             motifAnnulation: null,
@@ -2171,7 +2175,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const s = await seanceAccessible(moi(req), idParam(req));
-      const r: DiapoDirectDto = { statut: s.statut, planB: s.planBLe ? s.lienSecours : null, diapo: diapoCourante(s) };
+      const r: DiapoDirectDto = { statut: s.statut, planB: s.planBLe ? s.lienSecours : null, diapo: diapoCourante(s), projection: await projectionDe(s) };
       res.setHeader("Cache-Control", "no-store");
       res.json(r);
     }),
@@ -2204,6 +2208,7 @@ export function enregistrerLive(app: Express) {
         motifAnnulation: s.motifAnnulation,
         chatMode: s.chatMode,
         diapo: diapoCourante(s),
+        projection: await projectionDe(s),
         questions,
         sondage: sondage ? versSondage(sondage, privilegie, choix) : null,
         resultats: sondage && voirResultats ? await resultatsSondage(sondage) : null,
@@ -3264,6 +3269,7 @@ export function enregistrerLive(app: Express) {
         transcription,
         questions,
         diapos: versDiapos(s),
+        ressources: await ressourcesDe(s.id),
         anime: privilegie,
       };
       res.json(dto);

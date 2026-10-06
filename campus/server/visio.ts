@@ -191,13 +191,16 @@ const FONCTIONS_MEDIAS = ["camera", "microphone", "display-capture", "fullscreen
  * En-tête Permissions-Policy : caméra, micro, partage d'écran, plein écran et
  * lecture automatique pour le campus et pour l'iframe Daily, nommée
  * explicitement (https://<domaine>.daily.co) en plus du joker, que les
- * navigateurs anciens ne comprennent pas.
+ * navigateurs anciens ne comprennent pas ; plein écran et lecture automatique
+ * aussi pour le lecteur YouTube (vidéos projetées).
  */
 export function politiquePermissions(): string {
   const origines = ['"https://*.daily.co"'];
   if (domaineDaily) origines.unshift(`"https://${domaineDaily}.daily.co"`);
   const liste = `self ${origines.join(" ")}`;
-  return FONCTIONS_MEDIAS.map((f) => `${f}=(${liste})`).join(", ");
+  // Vidéos YouTube projetées dans les salles : lecture automatique et plein écran, rien d'autre.
+  const youtube = '"https://www.youtube-nocookie.com" "https://www.youtube.com"';
+  return FONCTIONS_MEDIAS.map((f) => `${f}=(${f === "autoplay" || f === "fullscreen" ? `${liste} ${youtube}` : liste})`).join(", ");
 }
 
 // ── Daily.co : appels à l'API ──────────────────────────────────────────────

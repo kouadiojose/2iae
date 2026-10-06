@@ -15,6 +15,7 @@ import { dateEtHeure, depuisChampDate, heureDouble, versChampDate } from "@/lib/
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
+import { GestionRessources, ListeRessources } from "./ressources";
 import { BoutonLienInvite } from "./LienInvite";
 import { Champ, ZoneTexte, Selection, CaseACocher } from "@/components/ui/champs";
 import { Badge, BadgeDirect, Chargement, EtatVide, Erreur, Chiffre } from "@/components/ui/divers";
@@ -184,6 +185,10 @@ function SeanceExistante({ id }: { id: number }) {
           </div>
           <div className="flex min-w-0 flex-col gap-8">
             <SectionDiapos seance={seance} />
+            <section className="flex flex-col gap-3">
+              <TitreSection titre={`Vidéos et documents${seance.ressources.length ? ` · ${seance.ressources.length}` : ""}`} />
+              {seance.peutModifier ? <GestionRessources seance={seance} /> : <ListeRessources ressources={seance.ressources} vide={<p className="text-[14px] text-texte-gris">Aucune vidéo ni aucun document pour cette séance.</p>} />}
+            </section>
             <SectionSondages seance={seance} />
           </div>
         </div>

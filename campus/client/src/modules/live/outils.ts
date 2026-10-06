@@ -178,6 +178,8 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
       return etat.sousTitres.some((s) => s.id === d.id) ? etat : { ...etat, sousTitres: [...etat.sousTitres, d].slice(-60) };
     case "diapo":
       return { ...etat, diapo: d };
+    case "projection":
+      return { ...etat, projection: d ?? null };
     case "planb":
       return { ...etat, planB: d.lien };
     case "chat:mode":
@@ -215,9 +217,10 @@ export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenemen
           const a = etat.diapo;
           const b = d.diapo;
           const pareil = a.index === b.index && a.url === b.url && a.total === b.total && Boolean(a.masquee) === Boolean(b.masquee) && a.disposition === b.disposition;
+          const memeProjection = JSON.stringify(etat.projection ?? null) === JSON.stringify(d.projection ?? null);
           statutChange = etat.statut !== d.statut;
-          if (pareil && !statutChange && etat.planB === d.planB) return etat;
-          return { ...etat, diapo: d.diapo, statut: d.statut, planB: d.planB };
+          if (pareil && memeProjection && !statutChange && etat.planB === d.planB) return etat;
+          return { ...etat, diapo: d.diapo, projection: d.projection ?? null, statut: d.statut, planB: d.planB };
         });
         if (statutChange) void rafraichir(`/api/seances/${seanceId}`);
       } catch {

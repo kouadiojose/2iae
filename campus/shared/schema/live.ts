@@ -39,6 +39,22 @@ export type FournisseurVisio = (typeof FOURNISSEURS_VISIO)[number];
 
 export type EtapePlan = { titre: string; minutes?: number };
 
+/**
+ * Ressources d'une séance, déposées par le formateur : vidéo YouTube, autre
+ * lien, vidéo de son ordinateur, document (PDF, Word, Excel…). Étudiants et
+ * salles les ouvrent ou les téléchargent ; les vidéos se projettent en grand
+ * dans les salles, comme les diapos.
+ */
+export const TYPES_RESSOURCE = ["youtube", "lien", "video", "fichier"] as const;
+export type TypeRessource = (typeof TYPES_RESSOURCE)[number];
+
+/**
+ * Vidéo projetée dans les salles, pilotée par le formateur. La position vaut
+ * à l'instant `horodatage` (millisecondes, horloge du serveur) ; en lecture,
+ * chacun avance depuis : position + (maintenant − horodatage).
+ */
+export type ProjectionVideo = { ressourceId: number; lecture: boolean; position: number; horodatage: number };
+
 export const seances = campusSchema.table(
   "seances",
   {
@@ -72,6 +88,8 @@ export const seances = campusSchema.table(
     diapos: jsonb("diapos").$type<number[]>().notNull().default([]),
     diapoCourante: integer("diapo_courante").notNull().default(0),
     disposition: text("disposition").$type<DispositionScene>().notNull().default("diapo"),
+    /** Vidéo projetée en ce moment à la place de la diapo (null : pas de projection). */
+    projection: jsonb("projection").$type<ProjectionVideo>(),
     chatMode: text("chat_mode").$type<ModeChat>().notNull().default("tous"),
     proposeSurSite: boolean("propose_sur_site").notNull().default(false),
     publierSurSite: boolean("publier_sur_site").notNull().default(false),
@@ -87,6 +105,25 @@ export const seances = campusSchema.table(
   },
   (t) => [index("seances_cours_idx").on(t.coursId), index("seances_debut_idx").on(t.debut)],
 );
+
+/** Ressources de la séance (liens et fichiers), dans l'ordre choisi par le formateur. */
+export const ressourcesSeances = campusSchema.table(
+  "ressources_seances",
+  {
+    id: serial("id").primaryKey(),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    type: text("type").$type<TypeRessource>().notNull(),
+    titre: text("titre").notNull().default(""),
+    /** Lien (YouTube ou autre) ; null pour un fichier déposé. */
+    url: text("url"),
+    fichierId: integer("fichier_id").references(() => fichiers.id, { onDelete: "set null" }),
+    ordre: integer("ordre").notNull().default(0),
+    creePar: integer("cree_par").references(() => utilisateurs.id, { onDelete: "set null" }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ressources_seances_seance_idx").on(t.seanceId)],
+);
+export type RessourceSeance = typeof ressourcesSeances.$inferSelect;
 
 /** Questions posées pendant le live, votées par les étudiants de tous les campus. */
 export const questionsLive = campusSchema.table(

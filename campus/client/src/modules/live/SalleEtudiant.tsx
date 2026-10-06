@@ -15,13 +15,14 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { TestMicroCamera, useOptionsVisio } from "@/modules/visio";
 import { Scene } from "./scene";
 import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, VignettesSalles, BoutonsRessentis, CarteRattrapage, OngletsPanneau } from "./panneaux";
+import { ListeRessources } from "./ressources";
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { CONSOMMATION, cleDirect, estimationMo, formatMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
 
-type Panneau = "questions" | "discussion" | "campus" | "assistant";
+type Panneau = "questions" | "discussion" | "campus" | "assistant" | "documents";
 
 const cleMode = (id: number) => `campus:live:mode:${id}`;
 
@@ -284,6 +285,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
             { valeur: "discussion", libelle: "Discussion", compteur: nonLus || undefined },
             { valeur: "campus", libelle: "Campus" },
             { valeur: "assistant", libelle: "Assistant" },
+            ...(seance.ressources.length ? [{ valeur: "documents" as const, libelle: "Documents", compteur: seance.ressources.length }] : []),
           ]}
       />
       {panneau === "questions" && <PanneauQuestions seanceId={seance.id} etat={etat} role="etudiant" enDirect={enDirect} />}
@@ -292,6 +294,12 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
       )}
       {panneau === "campus" && <PanneauCampus etat={etat} />}
       {panneau === "assistant" && <PanneauAssistant etat={etat} iaDisponible={seance.iaDisponible} />}
+      {panneau === "documents" && (
+        <div className="flex flex-col gap-3 overflow-y-auto p-3">
+          <p className="text-[13px] text-nuit-doux">Les vidéos et documents de ton formateur pour cette séance : ouvre-les ou télécharge-les (au Wi-Fi de préférence).</p>
+          <ListeRessources ressources={seance.ressources} nuit />
+        </div>
+      )}
     </aside>
   );
 

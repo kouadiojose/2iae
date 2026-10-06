@@ -162,6 +162,13 @@
       "when": 1791188350189,
       "tag": "0022_essais_etudes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791315389762,
+      "tag": "0023_ressources_seances",
+      "breakpoints": true
     }
   ]
 }

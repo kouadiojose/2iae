@@ -16,6 +16,7 @@ import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours"
 import { toast, toastErreur } from "@/components/ui/toast";
 import { EmetteurRadio, LieuDuCours, TestMicroCamera, useRadioClasse } from "@/modules/visio";
 import { Scene } from "./scene";
+import { PanneauRessourcesStudio } from "./ressources";
 import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, type ModeScene } from "./presentateur";
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance } from "./ui";
@@ -193,6 +194,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             </div>
             {/* La bande des diapos juste sous la scène (on s'en sert sans cesse), les salles plus bas. */}
             {!observation && <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onAller={(i) => void allerDiapo(i)} />}
+            {!observation && !(etat.planB ?? seance.planB) && <PanneauRessourcesStudio seance={seance} projection={etat.projection ?? null} />}
             {!observation && (seance.fournisseur === "daily" || seance.fournisseur === "campus" || etat.parole) && !etat.planB && (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {(seance.fournisseur === "daily" || seance.fournisseur === "campus") && (

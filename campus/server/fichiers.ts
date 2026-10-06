@@ -32,7 +32,8 @@ const cheminLocal = (cle: string) => {
 
 // « site » : photo d'un campus pour le site public (publique seulement une fois choisie par la direction, voir routes/public.ts).
 // « source-profil » : PDF du profil LinkedIn ou photo d'un formateur pour sa présentation (module showreel, routes/showreel.ts).
-export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site", "source-profil", "chat", "piece"] as const;
+// « ressource » : lien ou fichier déposé par le formateur pour une séance (routes/ressources-seance.ts).
+export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site", "source-profil", "chat", "piece", "ressource"] as const;
 export type UsageFichier = (typeof USAGES_FICHIER)[number];
 
 const MIMES_AUTORISES = [
@@ -103,6 +104,16 @@ export const televersement = multer({
   },
 });
 
+/** Ressources d'une séance : mêmes types, jusqu'à 300 Mo (une vidéo de l'ordinateur du formateur). */
+export const televersementRessource = multer({
+  storage: stockage,
+  limits: { fileSize: config.tailleMaxRessourceMo * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (MIMES_AUTORISES.some((re) => re.test(file.mimetype))) cb(null, true);
+    else cb(new ErreurHttp(415, "Ce type de fichier n'est pas accepté : vidéo MP4 ou WebM, PDF, document Office, image, audio ou ZIP."));
+  },
+});
+
 /**
  * Enregistre un fichier reçu (multer l'a posé sur le volume) : il part dans le
  * bucket, puis quitte le volume. Si le bucket ne répond pas, il reste sur le
@@ -160,9 +171,29 @@ export async function remettreFichier(res: Response, f: Fichier, o: { telecharge
   res.setHeader("Content-Disposition", `${o.telecharger ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(f.nomOriginal)}`);
   res.setHeader("Cache-Control", `${o.public ? "public" : "private"}, max-age=86400`);
   res.setHeader("X-Content-Type-Options", "nosniff");
+  // Lecture par morceaux (Range) : une vidéo se lit et s'avance sans tout télécharger, comme depuis le bucket.
+  const total = fs.statSync(chemin).size;
+  let debut = 0;
+  let fin = total - 1;
+  res.setHeader("Accept-Ranges", "bytes");
+  const plage = /^bytes=(\d*)-(\d*)$/.exec(String(res.req.headers.range ?? "").trim());
+  if (plage && (plage[1] || plage[2])) {
+    if (plage[1]) {
+      debut = Number(plage[1]);
+      fin = plage[2] ? Math.min(Number(plage[2]), total - 1) : total - 1;
+    } else debut = Math.max(0, total - Number(plage[2]));
+    if (debut > fin || debut >= total) {
+      res.setHeader("Content-Range", `bytes */${total}`);
+      res.status(416).end();
+      return;
+    }
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${debut}-${fin}/${total}`);
+  }
+  res.setHeader("Content-Length", String(Math.max(0, fin - debut + 1)));
   // Une erreur de lecture (fichier abîmé, volume indisponible) ne doit
   // jamais faire tomber le serveur : on répond ou on coupe proprement.
-  const flux = fs.createReadStream(chemin);
+  const flux = total > 0 ? fs.createReadStream(chemin, { start: debut, end: fin }) : fs.createReadStream(chemin);
   flux.on("error", (e) => {
     console.error(`[fichiers] lecture impossible (${f.id}) :`, e.message);
     if (res.headersSent) res.destroy();

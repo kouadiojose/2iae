@@ -12,6 +12,7 @@ import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { SceneVisioCampus, LecteurRadio, CadreDaily, type EtatVisio, type RoleCadre } from "@/modules/visio";
 import type { EtatDirectDto, SeanceDetailDto, RejoindreDto, RejoindreVisioDto, ModeSuivi, RoleSeance } from "@shared/schema";
+import { CarteVideoProjetee, VideoProjetee } from "./ressources";
 
 export type PropsScene = {
   seance: SeanceDetailDto;
@@ -91,7 +92,9 @@ export function Scene(p: PropsScene) {
   // en grand (diapo en vignette). Le Studio du formateur montre la même mise en page à sa façon. La visio
   // reste le MÊME élément dans toutes les mises en page : elle ne se recharge jamais.
   const visio = seance.fournisseur === "daily" || seance.fournisseur === "campus";
-  const avecDiapo = visio && !planB && !libre && role !== "formateur" && Boolean(etat.diapo.url) && !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio);
+  // Vidéo projetée par le formateur : elle prend la place de la diapo, dans la même mise en page.
+  const projection = etat.projection ?? null;
+  const avecDiapo = visio && !planB && !libre && role !== "formateur" && (Boolean(etat.diapo.url) || Boolean(projection)) && !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio);
   const disposition = etat.diapo.disposition ?? "diapo";
   const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
   // Téléphone en vidéo (écran de salle compris) : une vignette sur la diapo ne se voit pas. La vidéo passe
@@ -113,22 +116,18 @@ export function Scene(p: PropsScene) {
         p.className,
       )}
     >
-      {avecDiapo && (
-        <DiapoCourante
-          etat={etat}
-          discrete={disposition === "cameras" && !empile}
-          className={
-            empile
-              ? cn("relative order-2 aspect-video h-auto max-h-[80dvh] w-full", !diapoSeule && "border-t-2 border-nuit-ligne")
-              : cn(
-                  (disposition === "diapo" || diapoSeule) && "absolute inset-0",
-                  disposition === "cote" && !diapoSeule && "absolute inset-y-0 left-0 w-[58%]",
-                  // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
-                  disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
-                )
-          }
-        />
-      )}
+      {avecDiapo &&
+        (() => {
+          const classe = empile
+            ? cn("relative order-2 aspect-video h-auto max-h-[80dvh] w-full", !diapoSeule && "border-t-2 border-nuit-ligne")
+            : cn(
+                (disposition === "diapo" || diapoSeule) && "absolute inset-0",
+                disposition === "cote" && !diapoSeule && "absolute inset-y-0 left-0 w-[58%]",
+                // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
+                disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
+              );
+          return projection ? <VideoProjetee projection={projection} className={classe} /> : <DiapoCourante etat={etat} discrete={disposition === "cameras" && !empile} className={classe} />;
+        })()}
       {/* Même structure dans toutes les mises en page (cadre > contenu) : la visio ne se recharge jamais. */}
       <div
         className={
@@ -244,6 +243,9 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
         </div>
       )}
       <div className="relative aspect-video">
+        {etat.projection ? (
+          <CarteVideoProjetee projection={etat.projection} />
+        ) : (
         <DiapoCourante
           etat={etat}
           vide={
@@ -257,6 +259,7 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
             />
           }
         />
+        )}
       </div>
       {dernier && (
         <p className="border-t border-nuit-ligne px-4 py-3 text-center text-[15px] font-semibold leading-snug text-white" aria-live="polite">
@@ -281,7 +284,15 @@ function SceneCompagnon({ seance, etat }: PropsScene) {
         En salle{seance.monSite ? ` à ${seance.monSite.nomCourt}` : ""} · son coupé, suis sur l'écran de la salle
       </div>
       <div className="relative aspect-video">
-        <DiapoCourante etat={etat} vide={<PortraitFormateur seance={seance} />} />
+        {etat.projection ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-5 text-center text-white">
+            <Presentation className="h-9 w-9 text-orange" />
+            <p className="text-[15px] font-bold">Vidéo projetée sur l'écran de la salle</p>
+            <p className="text-sm text-nuit-doux">{etat.projection.ressource.titre}</p>
+          </div>
+        ) : (
+          <DiapoCourante etat={etat} vide={<PortraitFormateur seance={seance} />} />
+        )}
       </div>
     </div>
   );

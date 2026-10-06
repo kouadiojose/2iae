@@ -24,7 +24,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { ResultatsParCampus, Barometre } from "./panneaux";
-import { DESCRIPTION_FOURNISSEUR, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE, LIBELLES_STATUT_SEANCE, useSeance } from "./outils";
+import { DESCRIPTION_FOURNISSEUR, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE, LIBELLES_STATUT_SEANCE, useSeance, FORMATS_DIAPOS } from "./outils";
 import type { SeanceDetailDto, BilanDto, FournisseurVisio, EtapePlan, SondageDto, ResultatsSondageDto, LignePresenceDto, DiapoDto } from "@shared/schema";
 
 type Onglet = "preparer" | "bilan" | "fiche";
@@ -413,14 +413,6 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
 }
 
 // ── Diapos ─────────────────────────────────────────────────────────────────
-
-/** Formats proposés au sélecteur de fichiers (extensions et types : macOS, Windows et Android n'en lisent pas les mêmes). */
-const FORMATS_DIAPOS = [
-  "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp",
-  "application/pdf,.pdf",
-  ".pptx,.ppt,.ppsx,.pps,.odp",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.presentationml.slideshow,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.presentation",
-].join(",");
 
 function SectionDiapos({ seance }: { seance: SeanceDetailDto }) {
   const entree = useRef<HTMLInputElement>(null);

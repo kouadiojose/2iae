@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trainer quick start · Campus numérique 2IAE</title>
+<link rel="stylesheet" href="guides.css">
+<style>
+  /* Guide express : un lien, la connexion, un bouton. Les boutons à cliquer sont entourés sur les captures. */
+  .ecran { position: relative; }
+  .ecran img { display: block; width: 100%; }
+  .capture-nue.ecran { overflow: visible; border: 0; }
+  .capture-nue.ecran img { border-radius: 3mm; border: .35mm solid var(--ligne); }
+  .repere { position: absolute; border: .75mm solid var(--orange); border-radius: 2.2mm; box-shadow: 0 0 0 1.4mm rgba(228,121,58,.28); pointer-events: none; }
+  .repere b { position: absolute; top: -4.2mm; right: -4.2mm; width: 7mm; height: 7mm; border-radius: 50%; background: var(--orange); color: var(--encre); display: grid; place-items: center; font-weight: 800; font-size: 10pt; box-shadow: 0 .6mm 2mm rgba(0,0,0,.3); }
+  .n { display: inline-grid; place-items: center; width: 5.2mm; height: 5.2mm; border-radius: 50%; background: var(--orange); color: var(--encre); font-weight: 800; font-size: 8pt; vertical-align: .2mm; }
+  .bouton { display: inline-block; padding: .2mm 2.2mm; border-radius: 1.6mm; background: var(--orange); color: var(--encre); font-weight: 750; white-space: nowrap; }
+  .bouton.sombre { background: var(--nuit); color: #fff; }
+  .bouton.contour { background: #fff; border: .35mm solid var(--encre); color: var(--encre); }
+  .fr { font-style: italic; color: var(--gris); font-size: 9.4pt; }
+  .gros-num { display: grid; grid-template-columns: 13mm 1fr; gap: 4mm; align-items: start; margin-bottom: 4mm; }
+  .gros-num .num { width: 13mm; height: 13mm; border-radius: 50%; background: var(--orange); color: var(--encre); display: grid; place-items: center; font-weight: 800; font-size: 17pt; }
+  .gros-num h3 { font-size: 16pt; margin: 1.2mm 0 1mm; }
+  .gros-num p { margin: 0; color: var(--doux); font-size: 11pt; }
+  .liste { margin: 0; padding-left: 5mm; font-size: 11pt; }
+  .liste li { margin-bottom: 2.2mm; }
+  .texte { font-size: 11pt; color: var(--doux); }
+  .couverture .quatre { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .couverture .quatre li { background: rgba(255,255,255,.06); border: .3mm solid rgba(255,255,255,.16); border-radius: 3mm; padding: 3.4mm; }
+  .couverture .quatre b { display: grid; place-items: center; width: 7.5mm; height: 7.5mm; border-radius: 50%; background: var(--orange); color: var(--encre); font-weight: 800; margin-bottom: 2mm; }
+  .couverture .quatre span { display: block; font-size: 10.6pt; font-weight: 700; color: #fff; line-height: 1.3; }
+  .couverture .quatre small { display: block; font-size: 8.4pt; color: #C9BEB4; margin-top: .8mm; line-height: 1.35; }
+  .couverture .contenu { bottom: 40mm; }
+  .couverture .photo, .couverture .voile { height: 120mm; }
+  .votre-cours { display: none; background: var(--orange); color: var(--encre); border-radius: 3.5mm; padding: 4mm 5mm; margin-bottom: 6mm; }
+  .votre-cours span { display: block; font-family: "Plex Mono", monospace; font-size: 7.4pt; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 1mm; }
+  .votre-cours b { display: block; font-size: 14pt; font-weight: 800; letter-spacing: -.01em; }
+  .votre-cours small { display: block; font-size: 10.4pt; margin-top: .6mm; }
+  .votre-cours .lien-cours { display: inline-block; margin-top: 2mm; font-family: "Plex Mono", monospace; font-size: 10.5pt; background: var(--encre); color: #fff; padding: 1.2mm 3mm; border-radius: 1.6mm; }
+</style>
+</head>
+<body>
+
+<!-- 1. Couverture : les quatre étapes en un coup d'œil -->
+<section class="page couverture">
+  <div class="photo" style="background-image:url('../client/public/images/tp-topographie.jpg');background-position:center 35%"></div>
+  <div class="voile"></div>
+  <div class="ruban"></div>
+  <div class="haut">
+    <div class="logo"><img src="../client/public/marque-2iae-hd.png" alt="Groupe Écoles 2IAE International"></div>
+    <span class="pastille">Campus numérique · Quick start</span>
+  </div>
+  <div class="contenu">
+    <span class="public">For trainers</span>
+    <h1>One link, <em>one button.</em></h1>
+    <p class="sous">Click the link of your class, log in, and you are in the Studio. A big window asks you to start: click “Démarrer le direct”. Nothing to prepare beforehand: slides, videos and documents can be added during the class.</p>
+    <div class="votre-cours" id="votre-cours"><span>Your class</span><b id="vc-titre"></b><small id="vc-quand"></small><span class="lien-cours" id="vc-lien"></span></div>
+    <ul class="quatre">
+      <li><b>1</b><span>Click your link</span><small>The link of your class, sent by 2IAE</small></li>
+      <li><b>2</b><span>Log in</span><small>E-mail or phone, then your password</small></li>
+      <li><b>3</b><span>Start</span><small>“Démarrer le direct” in the big window</small></li>
+      <li><b>4</b><span>Allow camera and mic</span><small>Click “Allow” if the browser asks</small></li>
+    </ul>
+  </div>
+  <div class="credits">
+    <div><span>Conception et développement</span><b>José Kouadio</b><small>Concepteur et développeur du campus</small></div>
+    <div class="markel"><img src="markel-technology.png" alt="Markel Technology"><div><span>Réalisé par</span><b>Markel Technology</b><small>Agence Markel-Tech Inc.</small></div></div>
+    <div><span>Adresse</span><b>campus.2iae.com</b><small>Groupe Écoles 2IAE International</small></div>
+  </div>
+</section>
+
+<!-- 2. Le lien et la connexion -->
+<section class="page">
+  <p class="surtitre">Steps 1 and 2 · about one minute</p>
+  <h2>Click your link, <em>then log in.</em></h2>
+  <div class="barre"></div>
+  <div class="gros-num"><span class="num">1</span><div><h3>Click the link of your class</h3><p>Open it on a <strong>computer</strong>, in <strong>Google Chrome</strong> (or Edge). It looks like <span class="lien">campus.2iae.com/live/…</span> and takes you to the login page.</p></div></div>
+  <div class="duo-etroit mt">
+    <div>
+      <div class="gros-num"><span class="num">2</span><div><h3>Log in</h3></div></div>
+      <ol class="liste">
+        <li><span class="n">1</span> Type your <strong>e-mail</strong> or your <strong>phone number</strong> <span class="fr">(E-mail, téléphone ou matricule)</span>.</li>
+        <li><span class="n">2</span> Type the <strong>password</strong> you chose when you created your account.</li>
+        <li><span class="n">3</span> Click <span class="bouton">Entrer dans mon campus</span>.</li>
+      </ol>
+      <div class="encadre mt">
+        <p class="titre">Forgot your password?</p>
+        <p><span class="n">4</span> Click <strong>“Code oublié ?”</strong> under the button. You receive a link by e-mail to choose a new password, then you come back to your class.</p>
+      </div>
+      <p class="texte mt">That is all: after the login, you land <strong>directly in the Studio</strong> of your class.</p>
+    </div>
+    <figure style="margin:0"><div class="navigateur"><div class="barre-nav"><i></i><i></i><i></i><span>campus.2iae.com/connexion</span></div><div class="ecran" data-capture="1-connexion"><img src="captures/express-1-connexion.jpg" alt="Login page"></div></div></figure>
+  </div>
+  <div class="pied"><span>Campus numérique 2IAE · <b>campus.2iae.com</b></span><span>Trainer quick start · 2</span></div>
+</section>
+
+<!-- 3. La grande fenêtre : démarrer -->
+<section class="page">
+  <p class="surtitre">Steps 3 and 4 · when you are ready</p>
+  <h2>One button: <em>Démarrer le direct.</em></h2>
+  <div class="barre"></div>
+  <div class="duo">
+    <div class="gros-num"><span class="num">3</span><div><h3>Start the class</h3><p>When you arrive in the Studio, a big window opens. Click <span class="bouton">Démarrer le direct</span> <span class="n">1</span>: the five campus rooms and the students online see and hear you.</p></div></div>
+    <div class="gros-num"><span class="num">4</span><div><h3>Allow camera and mic</h3><p>If your browser asks to use your camera and microphone, click <strong>“Allow”</strong> <span class="fr">(Autoriser)</span>. It only asks the first time.</p></div></div>
+  </div>
+  <div class="navigateur mt"><div class="barre-nav"><i></i><i></i><i></i><span>campus.2iae.com/live/…</span></div><div class="ecran" data-capture="3-fenetre"><img src="captures/express-3-fenetre.jpg" alt="The start window in the Studio"></div></div>
+  <p class="legende">The window appears from 45 minutes before your class. “Pas encore : voir le studio d'abord” closes it: the same orange button stays at the top of the Studio.</p>
+
+  <div class="duo-large mt" style="align-items:center">
+    <div class="capture-nue ecran" data-capture="4-en-direct"><img src="captures/express-4-en-direct.jpg" alt="Studio during the class"></div>
+    <div>
+      <h3>You are live</h3>
+      <p class="texte">The red label <strong>“EN DIRECT”</strong> <span class="n">1</span> shows the time since the start. The red button becomes <strong>“Terminer”</strong> <span class="n">2</span>: use it only at the end. The class is recorded for the replay.</p>
+    </div>
+  </div>
+  <div class="pied"><span>Campus numérique 2IAE · <b>campus.2iae.com</b></span><span>Trainer quick start · 3</span></div>
+</section>
+
+<!-- 4. Pendant le cours (facultatif) -->
+<section class="page">
+  <p class="surtitre">Optional · during the class</p>
+  <h2>Slides, videos, documents: <em>add them live.</em></h2>
+  <div class="barre"></div>
+  <div class="duo-etroit">
+    <div>
+      <h3>Slides</h3>
+      <p class="texte">Click <span class="bouton">Ajouter des diapos</span> <span class="n">1</span> and choose your <strong>PowerPoint</strong>, a <strong>PDF</strong> or images. A PowerPoint takes about a minute to convert. The slides then appear on the room screens and on the students' phones.</p>
+      <p class="texte">Change slides with the keyboard arrows <span class="touche">←</span> <span class="touche">→</span> or the orange arrow <span class="n">3</span>. To add more slides later: <span class="bouton">Ajouter</span> <span class="n">2</span>.</p>
+    </div>
+    <div class="capture-nue ecran" data-capture="5a-ajouter-diapos"><img src="captures/express-5a-ajouter-diapos.jpg" alt="Add slides button"></div>
+  </div>
+  <div class="capture-nue ecran mt" data-capture="5b-diapos" data-numeros="2,3" style="width:72%;margin-left:auto;margin-right:auto"><img src="captures/express-5b-diapos.jpg" alt="Slides on screen"></div>
+
+  <div class="duo mt2">
+    <div>
+      <h3>Videos and documents</h3>
+      <p class="texte">Under the slides, in <strong>“Vidéos et documents”</strong>, click <span class="bouton contour">Ajouter ou modifier</span> <span class="n">4</span>. Paste a <strong>YouTube link</strong> <span class="n">5</span> and click <span class="bouton">Ajouter</span> <span class="n">6</span>, or click <strong>“Ajouter des fichiers”</strong> <span class="n">7</span> for a video, PDF or Word file from your computer.</p>
+      <p class="texte">Then click <strong>“Projeter”</strong> <span class="n">8</span> to play a video on the big screens of the five rooms. Students can download the documents.</p>
+    </div>
+    <div class="pile">
+      <div class="capture-nue ecran" data-capture="6a-fenetre" data-numeros="5,6,7"><img src="captures/express-6a-fenetre.jpg" alt="Add a video or document"></div>
+      <div class="capture-nue ecran" data-capture="6b-panneau" data-numeros="4,8"><img src="captures/express-6b-panneau.jpg" alt="Project a video"></div>
+    </div>
+  </div>
+  <div class="pied"><span>Campus numérique 2IAE · <b>campus.2iae.com</b></span><span>Trainer quick start · 4</span></div>
+</section>
+
+<!-- 5. Terminer, en cas de souci -->
+<section class="page">
+  <p class="surtitre">At the end</p>
+  <h2>End the class <em>in two clicks.</em></h2>
+  <div class="barre"></div>
+  <div class="duo-etroit">
+    <div>
+      <p class="texte">Click the red button <span class="bouton sombre">Terminer</span> at the top, then <strong>“Terminer le direct”</strong> <span class="n">1</span>. The rooms and the students are told the class is over. The replay and a revision sheet are prepared automatically.</p>
+      <p class="texte">Clicked by mistake? Choose <strong>“Continuer le cours”</strong>.</p>
+    </div>
+    <div class="capture-nue ecran" data-capture="7-terminer"><img src="captures/express-7-terminer.jpg" alt="End the class"></div>
+  </div>
+
+  <h3 class="mt2">If something goes wrong</h3>
+  <table class="tableau">
+    <tr><th style="width:38%">What happens</th><th>What to do</th></tr>
+    <tr><td>No camera image</td><td>Check that “Caméra activée” and “Micro activé” are orange, under the video. If the browser blocked them, click the camera icon in the address bar, choose “Allow”, then reload the page (F5).</td></tr>
+    <tr><td>The page freezes</td><td>Reload the page (F5). The class continues and the rooms stay connected.</td></tr>
+    <tr><td>You closed the window</td><td>Click your link again. You find your class where you left it.</td></tr>
+    <tr><td>The students cannot hear you</td><td>Check that “Micro activé” is orange. A headset with a microphone gives much better sound.</td></tr>
+    <tr><td>Your connection is very weak</td><td>Turn off your camera (“Caméra coupée”): your voice and your slides keep going.</td></tr>
+  </table>
+
+  <div class="encadre sombre mt2">
+    <p class="titre">Good to know</p>
+    <p>Use a <strong>computer</strong> (not a phone) with Chrome or Edge, plugged in, with a stable connection. Click your link <strong>10 minutes early</strong>: you can check your camera before the students arrive. Questions, raised hands and the class chat are in the tabs on the right of the Studio, if you want to use them.</p>
+  </div>
+  <div class="pied"><span>Campus numérique 2IAE · <b>campus.2iae.com</b></span><span>Trainer quick start · 5</span></div>
+</section>
+
+<script src="captures/express-reperes.js"></script>
+<script>
+  // Entoure les boutons sur les captures (positions relevées au moment des captures) ;
+  // data-numeros donne les numéros des cercles quand ils suivent le texte d'une autre capture.
+  for (const ecran of document.querySelectorAll(".ecran[data-capture]")) {
+    const infos = (window.REPERES || {})[ecran.dataset.capture];
+    if (!infos) continue;
+    const numeros = (ecran.dataset.numeros || "").split(",").filter(Boolean);
+    infos.cibles.forEach((c, i) => {
+      const r = document.createElement("div");
+      r.className = "repere";
+      const marge = 0.006;
+      Object.assign(r.style, { left: `${(c.x - marge) * 100}%`, top: `${(c.y - marge * infos.ratio) * 100}%`, width: `${(c.w + 2 * marge) * 100}%`, height: `${(c.h + 2 * marge * infos.ratio) * 100}%` });
+      r.innerHTML = `<b>${numeros[i] || i + 1}</b>`;
+      ecran.appendChild(r);
+    });
+  }
+  // Version nominative : guide-express-formateur.html#cours=…&quand=…&lien=…
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (p.get("cours")) {
+    document.getElementById("vc-titre").textContent = p.get("cours");
+    document.getElementById("vc-quand").textContent = p.get("quand") || "";
+    const lien = document.getElementById("vc-lien");
+    if (p.get("lien")) lien.textContent = p.get("lien");
+    else lien.remove();
+    document.getElementById("votre-cours").style.display = "block";
+  }
+</script>
+<script src="marque.js"></script>
+</body>
+</html>

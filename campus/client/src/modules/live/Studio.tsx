@@ -4,7 +4,7 @@
 // chrono et plan, diapos (← →), sous-titres du navigateur, radio, Plan B.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Hand, Mic, MicOff, Play, Square, LifeBuoy, Ban, Sparkles, Captions, Radio, Plus, Trash2, Clock, Video, VideoOff, Check, ExternalLink } from "lucide-react";
-import { post, suppr } from "@/lib/api";
+import { alleger, api, post, suppr } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,7 @@ import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentat
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance } from "./ui";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
-import { cleDirect, useEcranAllume, useEtatDirect } from "./outils";
+import { cleDirect, FORMATS_DIAPOS, useEcranAllume, useEtatDirect } from "./outils";
 import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroupes } from "./groupes";
 import { BoutonLienInvite } from "./LienInvite";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
@@ -264,6 +264,9 @@ export default function Studio({ seance, observation = false }: { seance: Seance
       {!observation && <CompositeurGroupes seance={seance} ouverte={composition} onFermer={() => setComposition(false)} />}
       {groupes && groupeVisite && (
         <VisiteGroupe seance={seance} groupes={groupes} groupe={groupeVisite} role={observation ? "equipe" : "formateur"} moiId={moi.id} onFermer={() => visiter(null)} />
+      )}
+      {!observation && statut === "planifiee" && (
+        <FenetreDemarrage seance={seance} prenom={moi.prenom} onDemarrer={() => agir("demarrer", {}, "Vous êtes en direct dans les cinq campus.")} />
       )}
       <ConfirmationTerminer ouverte={confirmation === "terminer"} onFermer={() => setConfirmation(null)} onConfirmer={() => agir("terminer", {}, "Séance terminée. Le bilan est prêt.")} />
       <FenetrePlanB seance={seance} ouverte={confirmation === "planb"} onFermer={() => setConfirmation(null)} onConfirmer={(lien) => agir("plan-b", { lien }, "Tout le monde bascule sur le lien de secours.")} />
@@ -637,16 +640,43 @@ function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirec
 
 // ── Diapos ─────────────────────────────────────────────────────────────────
 
+/** Ajouter des diapos sans quitter le Studio (pendant le cours aussi) : PowerPoint, PDF ou images. */
+function BoutonAjouterDiapos({ seance, libelle, taille = "sm" }: { seance: SeanceDetailDto; libelle: string; taille?: "sm" | "md" }) {
+  const entree = useRef<HTMLInputElement>(null);
+  const [envoi, setEnvoi] = useState<false | "fichiers" | "conversion">(false);
+  const deposer = async (liste: FileList | null) => {
+    if (!liste?.length) return;
+    setEnvoi(Array.from(liste).some((f) => /\.(pptx?|ppsx?|odp|pdf)$/i.test(f.name)) ? "conversion" : "fichiers");
+    try {
+      const donnees = new FormData();
+      for (const f of Array.from(liste).slice(0, 10)) donnees.append("fichiers", await alleger(f), f.name);
+      await api(`/api/seances/${seance.id}/diapos`, { methode: "POST", corps: donnees });
+      await rafraichir(`/api/seances/${seance.id}`);
+      toast("Diapos ajoutées : elles s'affichent dans les salles et chez les étudiants.");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+      if (entree.current) entree.current.value = "";
+    }
+  };
+  return (
+    <>
+      <input ref={entree} type="file" multiple accept={FORMATS_DIAPOS} className="hidden" onChange={(e) => void deposer(e.target.files)} />
+      <Bouton variante="nuit-actif" taille={taille} icone={<Plus className="h-4 w-4" />} onClick={() => entree.current?.click()} chargement={Boolean(envoi)} className="shrink-0 whitespace-nowrap">
+        {envoi === "conversion" ? "Conversion du PowerPoint…" : envoi ? "Envoi…" : libelle}
+      </Bouton>
+    </>
+  );
+}
+
 function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetailDto; etat: EtatDirectDto; onChanger: (delta: number) => void; onAller: (index: number) => void }) {
   if (!seance.diapos.length) {
     return (
-      <p className="rounded-[18px] bg-nuit-panneau p-4 text-center text-[14px] text-nuit-doux">
-        Pas de diapos pour cette séance.{" "}
-        <a href={`/enseigner/seances/${seance.id}`} className="font-bold text-orange-peche">
-          Déposer mes diapos
-        </a>{" "}
-        : elles s'affichent en image légère chez tous les étudiants.
-      </p>
+      <div className="flex flex-col items-center gap-3 rounded-[18px] bg-nuit-panneau p-4 text-center text-[14px] text-nuit-doux sm:flex-row sm:justify-between sm:text-left">
+        <span>Pas de diapos pour cette séance : ajoutez votre PowerPoint, un PDF ou des images, même pendant le cours.</span>
+        <BoutonAjouterDiapos seance={seance} libelle="Ajouter des diapos" />
+      </div>
     );
   }
   return (
@@ -657,6 +687,7 @@ function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetai
           <span className="font-mono text-[12px] text-orange-peche">
             Diapo {etat.diapo.index + 1} / {etat.diapo.total} · touches ← →
           </span>
+          <BoutonAjouterDiapos seance={seance} libelle="Ajouter" />
         </span>
         <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={etat.diapo.index >= etat.diapo.total - 1} icone={<ChevronRight className="h-5 w-5" />} aria-label="Diapo suivante" className="min-h-11 min-w-11" />
       </div>
@@ -865,6 +896,63 @@ function OutilsDiffusion({
 }
 
 // ── Fenêtres de confirmation ───────────────────────────────────────────────
+
+/**
+ * En ouvrant le Studio près de l'heure du cours (45 min avant jusqu'à la fin prévue), une seule grande
+ * action : « Démarrer le direct ». Refermée, elle ne revient pas dans cet onglet ; le bouton de l'en-tête reste.
+ */
+function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetailDto; prenom: string; onDemarrer: () => Promise<boolean> }) {
+  const maintenant = useMaintenant(15_000);
+  const cle = `studio-demarrage-${seance.id}`;
+  const [fermee, setFermee] = useState(() => {
+    try {
+      return sessionStorage.getItem(cle) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [envoi, setEnvoi] = useState(false);
+  const debut = new Date(seance.debut).getTime();
+  const proche = maintenant >= debut - 45 * 60_000 && maintenant <= debut + seance.dureeMinutes * 60_000;
+  const fermer = () => {
+    setFermee(true);
+    try {
+      sessionStorage.setItem(cle, "1");
+    } catch {
+      // Navigation privée : la fenêtre reviendra au prochain chargement, sans gêner.
+    }
+  };
+  return (
+    <Fenetre ouverte={proche && !fermee} onFermer={fermer} titre={`Bonjour ${prenom}, prêt pour votre cours ?`} description={`« ${seance.titre} » · ${heureDouble(seance.debut)}`}>
+      <div className="flex flex-col gap-4 pb-3">
+        <Bouton
+          taille="lg"
+          pleineLargeur
+          icone={<Play className="h-6 w-6" />}
+          chargement={envoi}
+          className="min-h-[72px] text-[20px]"
+          onClick={async () => {
+            setEnvoi(true);
+            const ok = await onDemarrer();
+            setEnvoi(false);
+            if (ok) fermer();
+          }}
+        >
+          Démarrer le direct
+        </Bouton>
+        <p className="text-[15px] text-texte-pale">
+          Les cinq salles et les étudiants en ligne vous voient et vous entendent dès que vous cliquez. Si le navigateur demande la caméra et le micro, cliquez sur « Autoriser ».
+        </p>
+        <p className="text-[14px] italic text-texte-gris" lang="en">
+          Click “Démarrer le direct” to start your class. If your browser asks for the camera and microphone, click “Allow”.
+        </p>
+        <button type="button" onClick={fermer} className="min-h-[44px] self-center text-[15px] font-semibold text-texte-pale underline-offset-2 hover:text-encre hover:underline">
+          Pas encore : voir le studio d'abord
+        </button>
+      </div>
+    </Fenetre>
+  );
+}
 
 function ConfirmationTerminer({ ouverte, onFermer, onConfirmer }: { ouverte: boolean; onFermer: () => void; onConfirmer: () => Promise<boolean> }) {
   const [envoi, setEnvoi] = useState(false);

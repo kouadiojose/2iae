@@ -301,3 +301,11 @@ export function useEcranAllume(actif = true) {
     };
   }, [actif]);
 }
+
+/** Formats proposés au sélecteur de fichiers (extensions et types : macOS, Windows et Android n'en lisent pas les mêmes). */
+export const FORMATS_DIAPOS = [
+  "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp",
+  "application/pdf,.pdf",
+  ".pptx,.ppt,.ppsx,.pps,.odp",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.presentationml.slideshow,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.presentation",
+].join(",");

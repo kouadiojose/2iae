@@ -56,7 +56,9 @@ l'offre gratuite d'un autre service (server/ia-gratuite.ts), sans carte bancaire
 
 - Railway, service `campus` : `IA_GRATUITE_CLE` (clé Google AI Studio, aistudio.google.com) ; facultatif :
   `IA_GRATUITE_MODELE` (par défaut `gemini-flash-latest`). Pour Mistral : `IA_GRATUITE_URL=https://api.mistral.ai/v1`
-  et `IA_GRATUITE_MODELE=mistral-small-latest`.
+  et `IA_GRATUITE_MODELE=mistral-small-latest`. Quand le modèle choisi est saturé (l'offre gratuite répond 429), le
+  campus essaie d'autres modèles du service (chez Mistral : `mistral-medium-latest`, `open-mistral-nemo`,
+  `ministral-8b-latest`) ; chaque refus est écrit dans les journaux Railway avec sa raison (`[ia gratuite]`).
 - Ne jamais ajouter de carte bancaire au compte du service : au-delà du quota gratuit du jour, il refuse
   simplement (l'assistant dit de réessayer plus tard), rien n'est facturé.
 - Sur l'offre gratuite, le service peut lire les échanges pour améliorer ses modèles : l'interface demande de

@@ -9,7 +9,9 @@
 // Format « compatible OpenAI » (chat/completions), que proposent Gemini et Mistral :
 //   IA_GRATUITE_URL     https://generativelanguage.googleapis.com/v1beta/openai (défaut, Gemini)
 //                       ou https://api.mistral.ai/v1 (Mistral)
-//   IA_GRATUITE_MODELE  gemini-flash-latest (défaut : le dernier Gemini Flash) ; mistral-small-latest pour Mistral
+//   IA_GRATUITE_MODELE  gemini-flash-latest (défaut : le dernier Gemini Flash) ; mistral-small-latest pour Mistral.
+//                       Une liste séparée par des virgules est permise : un modèle saturé (429) passe la main au
+//                       suivant ; chez Mistral, des modèles de secours suivent toujours la liste.
 //   IA_GRATUITE_CLE     la clé du service (Google AI Studio, ou console Mistral)
 import { config } from "./config";
 import { verifier } from "./ia-soir";
@@ -60,26 +62,65 @@ function convertir(o: Options): MessageOpenAi[] {
   return messages;
 }
 
+// Modèles de secours chez Mistral : sur l'offre gratuite, un modèle saturé répond 429 (« capacity exceeded »)
+// pendant que les autres répondent encore.
+const SECOURS_MISTRAL = ["mistral-medium-latest", "open-mistral-nemo", "ministral-8b-latest"];
+
+/** Le modèle de secours qui vient de répondre passe en tête quelques minutes, puis le modèle choisi reprend. */
+let prefere: { modele: string; jusqua: number } | null = null;
+
+/** Modèles essayés dans l'ordre : IA_GRATUITE_MODELE (une liste séparée par des virgules est permise), puis les secours. */
+function modeles(): string[] {
+  const { url, modele } = config.ia.gratuite;
+  const liste = modele.split(",").map((m) => m.trim()).filter(Boolean);
+  if (/mistral\.ai/.test(url)) for (const m of SECOURS_MISTRAL) if (!liste.includes(m)) liste.push(m);
+  if (prefere && prefere.jusqua > Date.now() && liste.includes(prefere.modele)) return [prefere.modele, ...liste.filter((m) => m !== prefere!.modele)];
+  return liste;
+}
+
+const attendre = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function appeler(corps: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  const { url, cle, modele } = config.ia.gratuite;
+  const { url, cle } = config.ia.gratuite;
   if (!cle) throw new ErreurGratuite("Aucun service d'IA gratuit n'est configuré (IA_GRATUITE_CLE).");
-  let r: Response;
-  try {
-    r = await fetch(`${url.replace(/\/+$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: modele, ...corps }),
-      signal,
-    });
-  } catch {
-    throw new ErreurGratuite("Le service d'IA ne répond pas. Réessaie dans un instant.");
+  const liste = modeles();
+  const principal = config.ia.gratuite.modele.split(",")[0].trim();
+  let quota = false;
+  let statut = 503;
+  for (const modele of liste) {
+    for (let essai = 0; essai < 2; essai++) {
+      let r: Response;
+      try {
+        r = await fetch(`${url.replace(/\/+$/, "")}/chat/completions`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: modele, ...corps }),
+          signal,
+        });
+      } catch {
+        throw new ErreurGratuite("Le service d'IA ne répond pas. Réessaie dans un instant.");
+      }
+      if (r.ok) {
+        if (modele === principal) prefere = null;
+        else if (!prefere || prefere.modele !== modele || prefere.jusqua <= Date.now()) prefere = { modele, jusqua: Date.now() + 10 * 60_000 };
+        return r;
+      }
+      const texte = await r.text().catch(() => "");
+      console.error(`[ia gratuite] ${modele} : ${r.status} : ${texte.slice(0, 300)}`);
+      if (r.status === 401 || r.status === 403) throw new ErreurGratuite("L'assistant est en pause : la clé du service d'IA gratuit est refusée (à vérifier par la direction).");
+      if (r.status === 429) {
+        quota = true;
+        // Limite par seconde : un nouvel essai un peu plus tard. Modèle saturé : le suivant.
+        if (essai === 0 && !/capacity/i.test(texte)) {
+          await attendre(1500);
+          continue;
+        }
+      } else if (r.status === 400 || r.status === 404 || r.status === 422) statut = 422;
+      break;
+    }
   }
-  if (r.ok) return r;
-  const texte = await r.text().catch(() => "");
-  if (r.status === 429) throw new ErreurGratuite("L'assistant reçoit beaucoup de questions en ce moment : réessaie dans une minute (ou demain si la journée est chargée).", 503, true);
-  console.error(`[ia gratuite] ${r.status} : ${texte.slice(0, 300)}`);
-  if (r.status === 401 || r.status === 403) throw new ErreurGratuite("L'assistant est en pause : la clé du service d'IA gratuit est refusée (à vérifier par la direction).");
-  throw new ErreurGratuite("L'assistant n'a pas pu répondre. Réessaie dans un instant.", r.status === 400 ? 422 : 503);
+  if (quota) throw new ErreurGratuite("L'assistant reçoit beaucoup de questions en ce moment : réessaie dans une minute (ou demain si la journée est chargée).", 503, true);
+  throw new ErreurGratuite("L'assistant n'a pas pu répondre. Réessaie dans un instant.", statut);
 }
 
 /** Réponse complète (texte). */

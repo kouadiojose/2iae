@@ -24,11 +24,10 @@ import { Markdown } from "@/components/ui/markdown";
 import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { ResultatsParCampus, Barometre } from "./panneaux";
-import { DESCRIPTION_FOURNISSEUR, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE, LIBELLES_STATUT_SEANCE, useSeance, FORMATS_DIAPOS } from "./outils";
-import type { SeanceDetailDto, BilanDto, FournisseurVisio, EtapePlan, SondageDto, ResultatsSondageDto, LignePresenceDto, DiapoDto } from "@shared/schema";
+import { LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE, LIBELLES_STATUT_SEANCE, useSeance, FORMATS_DIAPOS } from "./outils";
+import type { SeanceDetailDto, BilanDto, EtapePlan, SondageDto, ResultatsSondageDto, LignePresenceDto, DiapoDto } from "@shared/schema";
 
 type Onglet = "preparer" | "bilan" | "fiche";
-type OptionsLive = { fournisseurs: FournisseurVisio[]; fournisseurParDefaut: FournisseurVisio; iaDisponible: boolean; pdfAccepte: boolean };
 type Conflit = { id: number; titre: string; debut: string; coursCode: string };
 
 export default function PagePreparation({ id }: { id?: string }) {
@@ -211,22 +210,16 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
     d.setUTCHours(10, 0, 0, 0);
     return d.toISOString();
   }, []);
-  const { data: options } = useQuery<OptionsLive>({ queryKey: ["/api/live/options"], staleTime: 10 * 60_000 });
   const [titre, setTitre] = useState(seance?.titre ?? "");
   const [description, setDescription] = useState(seance?.description ?? "");
   const [debut, setDebut] = useState(versChampDate(seance?.debut ?? demain));
   const [duree, setDuree] = useState(seance?.dureeMinutes ?? 90);
-  const [fournisseur, setFournisseur] = useState<FournisseurVisio | "">(seance?.fournisseur ?? "");
-  const choisi: FournisseurVisio | "" = fournisseur || options?.fournisseurParDefaut || "";
-  const [lienExterne, setLienExterne] = useState(seance?.lienExterne ?? "");
   const [lienSecours, setLienSecours] = useState(seance?.lienSecours ?? "");
   const [plan, setPlan] = useState<EtapePlan[]>(seance?.plan ?? []);
   const [publier, setPublier] = useState(Boolean(seance?.proposeSurSite || seance?.publierSurSite));
   const [envoi, setEnvoi] = useState(false);
   const [conflits, setConflits] = useState<Conflit[]>([]);
 
-  // Fournisseurs proposés : ceux que ce serveur sait utiliser (Daily et Jitsi seulement s'ils sont configurés).
-  const disponibles: FournisseurVisio[] = options?.fournisseurs ?? seance?.fournisseursDisponibles ?? ["campus", "externe", "demo"];
   const iso = depuisChampDate(debut);
   const totalPlan = plan.reduce((a, e) => a + (e.minutes ?? 0), 0);
   const modifiable = !seance || seance.statut === "planifiee" || seance.statut === "en_direct";
@@ -239,8 +232,6 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
       description: description.trim(),
       debut: iso,
       dureeMinutes: duree,
-      ...(choisi ? { fournisseur: choisi } : {}),
-      lienExterne: choisi === "externe" ? lienExterne.trim() || null : null,
       lienSecours: lienSecours.trim() || null,
       plan: plan.filter((e) => e.titre.trim()).map((e) => ({ titre: e.titre.trim(), ...(e.minutes ? { minutes: e.minutes } : {}) })),
       ...(moi.role === "admin" ? { publierSurSite: publier } : { proposeSurSite: publier }),
@@ -290,22 +281,11 @@ function FormulaireSeance({ seance, coursId, onEnregistre }: { seance?: SeanceDe
       </div>
       {iso && <p className="-mt-3 rounded-xl bg-creme px-4 py-2.5 font-mono text-[13px] text-texte-doux">{heureDouble(iso)} · fin {heureDouble(new Date(new Date(iso).getTime() + duree * 60_000))}</p>}
 
-      <fieldset className="flex flex-col gap-2" disabled={!modifiable}>
-        <legend className="mb-1.5 text-sm font-bold">Visio</legend>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {(choisi ? [...new Set([...disponibles, choisi])] : disponibles).map((f) => (
-            <label key={f} className={cn("flex cursor-pointer gap-3 rounded-2xl border-[1.5px] p-3.5", choisi === f ? "border-orange bg-orange-pale" : "border-ligne hover:border-orange-peche")}>
-              <input type="radio" name="fournisseur" className="mt-1 h-4 w-4 accent-[#E4793A]" checked={choisi === f} onChange={() => setFournisseur(f)} />
-              <span className="flex flex-col">
-                <span className="text-[15px] font-bold">{LIBELLES_FOURNISSEUR[f]}</span>
-                <span className="text-[13px] text-texte-pale">{DESCRIPTION_FOURNISSEUR[f]}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        <p className="text-[13px] text-texte-gris">Quel que soit le choix, les étudiants en 3G/4G peuvent suivre en « son + diapos » (radio, ≈ 12 à 15 Mo/h).</p>
-      </fieldset>
-      {choisi === "externe" && <Champ libelle="Lien de la visio (Zoom, Meet, Teams)" value={lienExterne} onChange={(e) => setLienExterne(e.target.value)} placeholder="https://…" inputMode="url" required />}
+      <div className="flex flex-col gap-1 rounded-2xl border-[1.5px] border-ligne p-3.5">
+        <span className="text-sm font-bold">Visio</span>
+        <span className="text-[15px]">Daily, avec l'enregistrement du replay : la même pour tous les cours.</span>
+        <span className="text-[13px] text-texte-gris">Les étudiants en 3G/4G peuvent suivre en « son + diapos » (radio, ≈ 12 à 15 Mo/h).</span>
+      </div>
       <Champ
         libelle="Lien de secours (Plan B)"
         value={lienSecours}

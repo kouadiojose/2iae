@@ -1448,8 +1448,9 @@ export function enregistrerLive(app: Express) {
       if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
       const d = valider(schemaCreation, req.body);
       const c = await coursEnseigne(u, d.coursId);
-      const fournisseur = d.fournisseur ?? visio.fournisseurParDefaut();
-      verifierFournisseur(fournisseur, d.lienExterne);
+      // Daily pour tous (visio.fournisseurImpose) : le choix éventuel d'un ancien formulaire est ignoré.
+      const fournisseur = visio.fournisseurImpose();
+      verifierFournisseur(fournisseur, null);
       const debut = new Date(d.debut);
       const pub = publication(u, d);
       const [s] = await db
@@ -1461,7 +1462,7 @@ export function enregistrerLive(app: Express) {
           debut,
           dureeMinutes: d.dureeMinutes,
           fournisseur,
-          lienExterne: d.lienExterne ?? null,
+          lienExterne: null,
           lienSecours: d.lienSecours ?? null,
           plan: d.plan ?? [],
           ...pub,
@@ -1493,9 +1494,11 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       const s = await seanceAnimee(u, idParam(req));
       const d = valider(schemaModification, req.body);
-      const fournisseur = d.fournisseur ?? s.fournisseur;
-      const lienExterne = d.lienExterne === undefined ? s.lienExterne : d.lienExterne;
-      if (d.fournisseur !== undefined || d.lienExterne !== undefined) verifierFournisseur(fournisseur, lienExterne);
+      // Daily pour tous : seule la visio du campus reste permise, en secours quand Daily ne passe pas.
+      if (d.fournisseur !== undefined && d.fournisseur !== s.fournisseur && d.fournisseur !== visio.fournisseurImpose() && d.fournisseur !== "campus") {
+        throw invalide("La visio des séances est Daily pour tous les cours : elle ne se change plus.");
+      }
+      if (d.fournisseur !== undefined && d.fournisseur !== s.fournisseur) verifierFournisseur(d.fournisseur, null);
       const debut = d.debut ? new Date(d.debut) : undefined;
       const deplacee = debut && Math.abs(debut.getTime() - s.debut.getTime()) > 5 * MINUTE;
       if (deplacee && s.statut !== "planifiee") throw new ErreurHttp(409, "Une séance commencée ou terminée ne peut plus changer d'horaire.");
@@ -1507,8 +1510,7 @@ export function enregistrerLive(app: Express) {
           ...(d.description !== undefined && { description: d.description }),
           ...(debut && { debut }),
           ...(d.dureeMinutes !== undefined && { dureeMinutes: d.dureeMinutes }),
-          ...(d.fournisseur !== undefined && { fournisseur: d.fournisseur }),
-          ...(d.lienExterne !== undefined && { lienExterne: d.lienExterne }),
+          ...(d.fournisseur !== undefined && { fournisseur: d.fournisseur, lienExterne: null }),
           ...(d.lienSecours !== undefined && { lienSecours: d.lienSecours }),
           ...(d.plan !== undefined && { plan: d.plan }),
           ...(d.replayUrl !== undefined && { replayUrl: d.replayUrl }),
@@ -1956,7 +1958,7 @@ export function enregistrerLive(app: Express) {
         .where(and(eq(seances.coursId, c.id), eq(seances.statut, "en_direct")))
         .limit(1);
       if (ouvert) return res.json({ ...(await detailSeance(u, ouvert)), existant: true });
-      const fournisseur = visio.fournisseurParDefaut();
+      const fournisseur = visio.fournisseurImpose();
       verifierFournisseur(fournisseur, null);
       const maintenant = new Date();
       const [s] = await db

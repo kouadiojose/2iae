@@ -757,7 +757,8 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
       const nomIntervenant = c.intervenantNom.trim() || (p ? `${p.prenom} ${p.nom}` : "");
       const mention = c.mention.trim() || p?.titre?.trim() || "";
       const duree = dureeCreneau(c);
-      const fournisseurVoulu: FournisseurVisio | null = c.fournisseur === "daily" && !visio.dailyDisponible() ? visio.fournisseurParDefaut() : c.fournisseur;
+      // Daily pour tous (visio.fournisseurImpose) : la visio notée au programme n'est plus suivie.
+      const fournisseurVoulu: FournisseurVisio = visio.fournisseurImpose();
       const description = descriptionSeance(s, c, nomIntervenant, mention);
 
       // 1. Le cours du créneau a changé : les séances de l'ancien cours libèrent leur date (celles encore prévues sont annulées).
@@ -894,7 +895,7 @@ export async function synchroniserSession(sessionId: number, o: OptionsSynchro):
               description,
               debut: instant(date, c.heureDebut),
               dureeMinutes: duree,
-              fournisseur: fournisseurVoulu ?? visio.fournisseurParDefaut(),
+              fournisseur: fournisseurVoulu,
               publierSurSite: publique,
               proposeSurSite: publique,
             })

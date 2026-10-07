@@ -190,8 +190,6 @@ function FenetreCreation({ ouverte, onFermer, semaine, onCreee }: { ouverte: boo
   const [date, setDate] = useState(demain.toISOString().slice(0, 10));
   const [horaire, setHoraire] = useState("10:00");
   const [duree, setDuree] = useState("90");
-  const [externe, setExterne] = useState(false);
-  const [lien, setLien] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
 
@@ -220,7 +218,6 @@ function FenetreCreation({ ouverte, onFermer, semaine, onCreee }: { ouverte: boo
         titre,
         debut: debutIso,
         dureeMinutes: Number(duree),
-        ...(externe ? { fournisseur: "externe", lienExterne: lien } : {}),
       });
       if (r.conflits?.length) toast(`Live programmé, mais la salle est déjà prise par ${r.conflits.map((c) => c.coursCode).join(", ")}.`, "erreur");
       else toast("Live programmé : les étudiants seront prévenus la veille et 15 min avant.");
@@ -243,7 +240,7 @@ function FenetreCreation({ ouverte, onFermer, semaine, onCreee }: { ouverte: boo
       titre="Programmer un live"
       description="Heure d'Abidjan. Le formateur garde la main sur le contenu et peut préparer sa séance dès maintenant."
       pied={
-        <Bouton onClick={enregistrer} chargement={envoi} disabled={!coursId || titre.trim().length < 3 || !debutIso || (externe && !lien)}>
+        <Bouton onClick={enregistrer} chargement={envoi} disabled={!coursId || titre.trim().length < 3 || !debutIso}>
           Programmer
         </Bouton>
       }
@@ -276,11 +273,7 @@ function FenetreCreation({ ouverte, onFermer, semaine, onCreee }: { ouverte: boo
           </Selection>
         </div>
         {debutIso && <p className="-mt-2 text-sm text-texte-pale">{dateEtHeure(debutIso)}</p>}
-        <label className="flex min-h-[48px] cursor-pointer items-center gap-3">
-          <input type="checkbox" className="h-5 w-5 accent-[#E4793A]" checked={externe} onChange={(e) => setExterne(e.target.checked)} />
-          <span className="text-[15px] font-semibold">Le formateur utilise son propre lien (Zoom, Meet, Teams)</span>
-        </label>
-        {externe && <Champ libelle="Lien de la visio" value={lien} onChange={(e) => setLien(e.target.value)} placeholder="https://…" inputMode="url" />}
+        <p className="text-sm text-texte-pale">Visio Daily, avec l'enregistrement du replay : la même pour tous les cours.</p>
         {conflits.length > 0 && (
           <p role="alert" className="flex items-start gap-2 rounded-xl border-2 border-danger bg-danger-clair px-4 py-3 text-[15px] font-semibold text-danger">
             <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0" />

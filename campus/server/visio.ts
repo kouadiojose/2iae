@@ -148,6 +148,16 @@ export function fournisseurParDefaut(): FournisseurVisio {
   return dailyDisponible() ? "daily" : "campus";
 }
 
+/**
+ * Visio de toutes les séances : Daily, avec l'enregistrement du replay, pour que les contenus soient partagés
+ * (décision de la direction, octobre 2026). Le formateur ne choisit plus (ni lien externe, ni autre visio).
+ * Sans Daily configuré (campus d'essai) : la visio par défaut. Seul changement permis ensuite : la visio du
+ * campus, en secours, quand Daily ne passe pas.
+ */
+export function fournisseurImpose(): FournisseurVisio {
+  return dailyDisponible() ? "daily" : fournisseurParDefaut();
+}
+
 export const nomSalleVisio = (seanceId: number) => `${PREFIXE_SALLE}${seanceId}`;
 /** Salle d'un groupe de travail : « campus-2iae-17-g42 » (rattachée à la séance 17 dans le suivi de consommation). */
 export const nomSalleGroupe = (seanceId: number, groupeId: number) => `${PREFIXE_SALLE}${seanceId}-g${groupeId}`;

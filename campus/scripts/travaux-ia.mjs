@@ -49,7 +49,8 @@ async function appel(methode, chemin, corps) {
 /** Une demande en fichiers lisibles : les consignes et les messages en Markdown, les images à part, le schéma. */
 function ecrireDemande(d) {
   const dir = path.join(DOSSIER, String(d.id));
-  fs.rmSync(dir, { recursive: true, force: true });
+  // Un nouveau tour réécrit la demande sans effacer une réponse déjà écrite (reponse.json) mais pas encore envoyée.
+  fs.rmSync(path.join(dir, "images"), { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "images"), { recursive: true });
   const r = d.requete;
   const lignes = [

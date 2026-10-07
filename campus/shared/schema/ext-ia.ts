@@ -6,6 +6,8 @@ import type { LivreDto } from "./ext-bibliotheque";
 
 /** GET /api/ia/etat — ce que l'interface doit savoir avant d'afficher l'assistant. */
 export type EtatIa = {
+  /** IA gratuite (autre service, offre gratuite) : ne pas y écrire d'informations personnelles. */
+  gratuite?: boolean;
   /** Faux quand la clé Anthropic manque : l'assistant est « en pause pour le moment ». */
   disponible: boolean;
   /** Questions permises par jour pour cette personne. */

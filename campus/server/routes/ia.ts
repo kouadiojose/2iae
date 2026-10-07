@@ -24,6 +24,7 @@ import { route, valider, idParam, introuvable, invalide, ErreurHttp } from "../h
 import { coursVisible, coursEnseigne, enseigneCours, idsCoursAccessibles, devoirVisible } from "../acces";
 import {
   iaDisponible,
+  iaGratuite,
   raisonIndisponible,
   demanderClaude,
   fluxClaude,
@@ -169,7 +170,7 @@ export function verifierDisponible(u: Utilisateur) {
     estEtudiant(u)
       ? "L'assistant est en pause pour le moment. Réessaie plus tard, ou pose ta question à ton formateur dans la messagerie du cours."
       : config.ia.soir
-        ? "L'assistant est en pause : sur ce campus, le travail d'IA (cours complets, dossiers de lecture) se fait le soir."
+        ? "L'assistant est en pause : aucun service d'IA n'est branché pour les questions en direct (les cours complets et les dossiers de lecture se préparent le soir)."
         : raisonIndisponible() === "panne"
           ? "L'assistant est en pause : le service d'IA refuse les demandes (crédit ou clé à vérifier par la direction). Nouvel essai automatique dans quelques minutes."
         : "L'assistant est en pause pour le moment : le service d'IA n'est pas configuré sur ce campus.",
@@ -615,6 +616,8 @@ export function enregistrerIa(app: Express) {
         utilisees,
         restantes: Math.max(0, quotaJour - utilisees),
         quotaEtudiants: reglages.quotaEtudiant,
+        // IA gratuite : l'interface rappelle de ne pas écrire d'informations personnelles (le service peut les lire).
+        ...(iaGratuite() && { gratuite: true }),
       };
       if (budget.atteint) etat.budgetAtteint = true;
       if (pause) etat.pause = pause;

@@ -9,6 +9,7 @@ import { db } from "./db";
 import { notifier } from "./notifications";
 import { usageIa, reglagesIa, utilisateurs, prixDuModele, type ReglagesIa, type BudgetMoisIa } from "@shared/schema";
 import { demanderLeSoir, iaDuSoir } from "./ia-soir";
+import { demanderGratuit, demanderJsonGratuit, fluxGratuit, gratuiteConfiguree, ErreurGratuite } from "./ia-gratuite";
 
 let client: Anthropic | null = null;
 
@@ -20,9 +21,16 @@ let client: Anthropic | null = null;
 const DUREE_PANNE_MS = 15 * 60_000;
 let panneJusqua = 0;
 
-/** L'assistant interactif répond-il ? Pas en mode « IA du soir » (aucun appel à l'API, faute de crédit). */
+/**
+ * Questions en direct par l'IA gratuite (server/ia-gratuite.ts) : en mode « IA du soir » (pas de crédit d'API
+ * Anthropic), quand une clé de service gratuit est renseignée.
+ */
+export const iaGratuite = (): boolean => iaDuSoir() && gratuiteConfiguree();
+
+/** L'assistant interactif répond-il ? En mode « IA du soir », seulement par l'IA gratuite. */
 export function iaDisponible(): boolean {
-  return !iaDuSoir() && Boolean(config.ia.cle) && Date.now() >= panneJusqua;
+  if (iaDuSoir()) return gratuiteConfiguree();
+  return Boolean(config.ia.cle) && Date.now() >= panneJusqua;
 }
 
 /**
@@ -33,7 +41,7 @@ export const travailDeFondPossible = (): boolean => iaDuSoir() || iaDisponible()
 
 /** « configuration » : pas de clé ; « panne » : le compte d'IA refuse les appels (ou IA du soir, faute de crédit). */
 export const raisonIndisponible = (): "configuration" | "panne" | null =>
-  iaDuSoir() ? "panne" : !config.ia.cle ? "configuration" : Date.now() < panneJusqua ? "panne" : null;
+  iaDuSoir() ? (gratuiteConfiguree() ? null : "panne") : !config.ia.cle ? "configuration" : Date.now() < panneJusqua ? "panne" : null;
 
 /** Repère les refus qui viennent du compte (et non de la question) avant que le SDK ne lève l'erreur. */
 const fetchSurveille: typeof fetch = async (entree, init) => {
@@ -351,8 +359,21 @@ export async function verifierQuota(u: Demandeur, quota?: number): Promise<void>
 const MESSAGE_REFUS =
   "Je ne peux pas t'aider sur ce point. Pose plutôt la question à ton formateur dans la messagerie du cours.";
 
+/** IA gratuite : la question compte dans le quota du jour de la personne (le service gratuit a lui-même un quota). */
+async function viaGratuite<T>(o: OptionsClaude, f: () => Promise<T>): Promise<T> {
+  try {
+    const r = await f();
+    await compter(o.utilisateurId, undefined, "ia-gratuite", o.sansQuota);
+    return r;
+  } catch (e) {
+    if (e instanceof ErreurGratuite) throw new ErreurIa(e.message, e.statut);
+    throw e;
+  }
+}
+
 /** Appel simple : renvoie le texte complet. */
 export async function demanderClaude(o: OptionsClaude): Promise<string> {
+  if (iaGratuite() && !o.sansQuota) return viaGratuite(o, () => demanderGratuit(o));
   const reponse = await getClient().beta.messages.create(construireRequete(o));
   await compter(o.utilisateurId, reponse.usage, reponse.model, o.sansQuota);
   if (reponse.stop_reason === "refusal") return MESSAGE_REFUS;
@@ -364,6 +385,7 @@ export async function demanderClaude(o: OptionsClaude): Promise<string> {
  * l'afficher pendant que Claude écrit, comme dans une conversation).
  */
 export async function fluxClaude(o: OptionsClaude, surTexte: (morceau: string) => void, etat?: { complet?: boolean }): Promise<string> {
+  if (iaGratuite() && !o.sansQuota) return viaGratuite(o, () => fluxGratuit(o, surTexte, etat));
   const flux = getClient().beta.messages.stream({ ...construireRequete(o), max_tokens: o.maxTokens ?? 16000 });
   flux.on("text", (morceau) => surTexte(morceau));
   const final = await flux.finalMessage();
@@ -389,6 +411,8 @@ export async function demanderJsonCout<T>(o: OptionsClaude & { schema: Record<st
     const resultat = await demanderLeSoir<T>({ systeme: o.systeme, contexte: o.contexte, messages: o.messages, schema: o.schema, maxTokens: o.maxTokens, gamme: o.gamme });
     return { resultat, coutMicro: 0 };
   }
+  // Question en direct sans crédit d'API : l'IA gratuite.
+  if (iaGratuite()) return { resultat: await viaGratuite(o, () => demanderJsonGratuit<T>(o)), coutMicro: 0 };
   const requete = construireRequete(o);
   const reponse = await getClient().beta.messages.create({
     ...requete,

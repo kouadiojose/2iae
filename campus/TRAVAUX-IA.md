@@ -49,6 +49,19 @@ Depuis la racine du dépôt :
 - Si le `tour` est refusé (clé absente ou invalide, campus en panne), elle s'arrête et le dit dans son compte
   rendu, sans chercher à contourner.
 
+## Questions en direct : l'IA gratuite
+
+Le tuteur, le bibliothécaire, les outils des leçons et la recherche de livres répondent tout de suite grâce à
+l'offre gratuite d'un autre service (server/ia-gratuite.ts), sans carte bancaire, donc sans facture possible :
+
+- Railway, service `campus` : `IA_GRATUITE_CLE` (clé Google AI Studio, aistudio.google.com) ; facultatif :
+  `IA_GRATUITE_MODELE` (par défaut `gemini-flash-latest`). Pour Mistral : `IA_GRATUITE_URL=https://api.mistral.ai/v1`
+  et `IA_GRATUITE_MODELE=mistral-small-latest`.
+- Ne jamais ajouter de carte bancaire au compte du service : au-delà du quota gratuit du jour, il refuse
+  simplement (l'assistant dit de réessayer plus tard), rien n'est facturé.
+- Sur l'offre gratuite, le service peut lire les échanges pour améliorer ses modèles : l'interface demande de
+  ne pas y écrire d'informations personnelles.
+
 ## Mise en place (déjà faite)
 
 - Railway, service `campus` : `CAMPUS_IA_SOIR=oui` et `TRAVAUX_IA_JETON` (clé aléatoire, à ne jamais

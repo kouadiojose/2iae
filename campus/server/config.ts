@@ -107,6 +107,15 @@ export const config = {
     soir: env("CAMPUS_IA_SOIR") === "oui",
     /** Clé de la routine du soir pour /api/travaux-ia (elle ne permet que de répondre aux demandes gardées). */
     jetonSoir: env("TRAVAUX_IA_JETON"),
+    /**
+     * IA gratuite (server/ia-gratuite.ts) : en mode « IA du soir », l'assistant et le bibliothécaire répondent tout
+     * de suite par l'offre gratuite d'un service compatible OpenAI (Gemini par défaut, ou Mistral), sans carte.
+     */
+    gratuite: {
+      url: env("IA_GRATUITE_URL") || "https://generativelanguage.googleapis.com/v1beta/openai",
+      cle: env("IA_GRATUITE_CLE", "GEMINI_API_KEY"),
+      modele: env("IA_GRATUITE_MODELE") || "gemini-flash-latest",
+    },
   },
 
   mail: {

@@ -115,6 +115,14 @@ export function LigneQuota({ etat, enseignant, className }: { etat: EtatIa | und
     <div className={cn("flex flex-col gap-1.5", className)}>
       <span className="font-mono text-xs text-texte-gris">{texte}</span>
       <BarreProgression valeur={(n / Math.max(1, etat.quotaJour)) * 100} />
+      {/* IA gratuite : le service peut lire les échanges pour améliorer ses modèles. */}
+      {etat.gratuite && (
+        <span className="text-xs text-texte-gris">
+          {enseignant
+            ? "Service d'IA gratuit : n'y écrivez pas d'informations personnelles (noms, téléphones, notes)."
+            : "Service d'IA gratuit : n'y écris pas d'informations personnelles (nom, téléphone, notes)."}
+        </span>
+      )}
     </div>
   );
 }

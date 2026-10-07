@@ -120,6 +120,8 @@ export const ressourcesSeances = campusSchema.table(
     ordre: integer("ordre").notNull().default(0),
     creePar: integer("cree_par").references(() => utilisateurs.id, { onDelete: "set null" }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+    /** Annoncée aux étudiants (notification groupée par séance) ; null tant qu'elle attend son envoi. */
+    annonceeLe: timestamp("annoncee_le", { withTimezone: true }),
   },
   (t) => [index("ressources_seances_seance_idx").on(t.seanceId)],
 );

@@ -3677,7 +3677,8 @@ async function presenceRecente(seanceId: number, depuis: Date): Promise<boolean>
 /**
  * Rappels 24 h et 15 min avant, une seule fois par séance. Le rappel 15 min est
  * urgent (il passe les heures calmes et le plafond) ; celui de la veille suit
- * les règles normales. L'heure est toujours dite avec son fuseau : heure
+ * les règles normales. Séance créée ou déplacée trop tard pour le rappel de la
+ * veille : un rappel du jour part 2 h avant (règles normales, lui aussi). L'heure est toujours dite avec son fuseau : heure
  * d'Abidjan pour les étudiants ; Abidjan et l'heure de chez lui pour chaque
  * formateur (utilisateurs.fuseau).
  */
@@ -3690,7 +3691,15 @@ planifier("live-rappels", MINUTE, async () => {
     .where(and(eq(seances.statut, "planifiee"), gt(seances.debut, new Date(maintenant)), lte(seances.debut, new Date(maintenant + 24 * 3600_000))));
   for (const { s, code } of proches) {
     const dans = s.debut.getTime() - maintenant;
-    const type = dans <= 15 * MINUTE ? "15min" : dans > 20 * 3600_000 ? "24h" : null;
+    let type: "24h" | "jour" | "15min" | null = dans <= 15 * MINUTE ? "15min" : dans > 20 * 3600_000 ? "24h" : null;
+    if (!type && dans <= 2 * 3600_000) {
+      const [veille] = await db
+        .select({ envoyeLe: rappelsLive.envoyeLe })
+        .from(rappelsLive)
+        .where(and(eq(rappelsLive.seanceId, s.id), inArray(rappelsLive.type, ["24h", "jour"])))
+        .limit(1);
+      if (!veille) type = "jour";
+    }
     if (!type) continue;
     const inseres = await db.insert(rappelsLive).values({ seanceId: s.id, type }).onConflictDoNothing().returning();
     if (!inseres.length) continue;

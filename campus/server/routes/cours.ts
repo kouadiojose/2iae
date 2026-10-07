@@ -16,7 +16,7 @@
 // changement qui touche la carte du site prévient le site (prevenirSite).
 import type { Express } from "express";
 import { z } from "zod";
-import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerConnexion, exigerRole, droitSiEquipe, moi, estEquipe, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
@@ -41,6 +41,7 @@ import {
   seances,
   fichiers,
   journal,
+  notifications,
   STATUTS_COURS,
   TYPES_LECON,
   TYPES_LECON_MEDIATHEQUE,
@@ -403,13 +404,19 @@ async function prevenirNouvelleLecon(c: Cours, lecon: { id: number; titre: strin
   if (c.statut !== "publie") return;
   const ids = (await etudiantsDuCours(c.id)).map((e) => e.id);
   if (!ids.length) return;
-  // Une leçon n'est pas urgente : elle arrive dans la cloche, sans sonner.
+  // Une leçon sonne sur le téléphone (règles du téléphone : plafond du jour, rien la nuit), mais au plus
+  // une fois par heure et par cours : cinq leçons publiées d'affilée ne font sonner qu'une fois.
+  const [recente] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(and(like(notifications.lien, `/cours/${c.id}/lecons/%`), gt(notifications.creeLe, new Date(Date.now() - 3600_000))))
+    .limit(1);
   await notifier(ids, {
     type: "cours",
     titre: `Nouvelle leçon · ${c.code}`,
     corps: lecon.titre,
     lien: `/cours/${c.id}/lecons/${lecon.id}`,
-    push: false,
+    push: !recente,
   });
 }
 

@@ -9,14 +9,17 @@
 // et se recale quand l'écart dépasse quelques secondes.
 import type { Express, RequestHandler } from "express";
 import { z } from "zod";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerConnexion, moi } from "../auth";
 import { route, valider, idParam, introuvable, invalide } from "../http";
 import { publier } from "../temps-reel";
 import { enregistrerFichier, enregistrerGardienFichier, televersementRessource, urlFichier } from "../fichiers";
 import { canal, seanceAnimee, seanceDuReplay } from "./live";
-import { fichiers, ressourcesSeances, seances, type ProjectionDto, type ProjectionVideo, type RessourceSeance, type RessourceSeanceDto, type Seance } from "@shared/schema";
+import { etudiantsDuCours } from "../acces";
+import { notifier } from "../notifications";
+import { planifier } from "../taches";
+import { cours, fichiers, ressourcesSeances, seances, type ProjectionDto, type ProjectionVideo, type RessourceSeance, type RessourceSeanceDto, type Seance } from "@shared/schema";
 
 /** Au-delà, la liste ne se lit plus : 40 ressources par séance. */
 const RESSOURCES_MAX = 40;
@@ -92,11 +95,12 @@ export async function projectionDe(s: Pick<Seance, "id" | "projection">): Promis
   return r ? { ...p, ressource: r } : null;
 }
 
-/** Copie les ressources d'une séance dupliquée (mêmes liens, mêmes fichiers). */
+/** Copie les ressources d'une séance dupliquée (mêmes liens, mêmes fichiers ; déjà connues : pas d'annonce). */
 export async function copierRessources(deId: number, versId: number, parId: number): Promise<void> {
   const lignes = await db.select().from(ressourcesSeances).where(eq(ressourcesSeances.seanceId, deId)).orderBy(asc(ressourcesSeances.ordre), asc(ressourcesSeances.id));
   if (!lignes.length) return;
-  await db.insert(ressourcesSeances).values(lignes.map((r, i) => ({ seanceId: versId, type: r.type, titre: r.titre, url: r.url, fichierId: r.fichierId, ordre: i, creePar: parId })));
+  const annonceeLe = new Date();
+  await db.insert(ressourcesSeances).values(lignes.map((r, i) => ({ seanceId: versId, type: r.type, titre: r.titre, url: r.url, fichierId: r.fichierId, ordre: i, creePar: parId, annonceeLe })));
 }
 
 async function verifierPlace(seanceId: number, ajout: number) {
@@ -125,6 +129,60 @@ const animateurAvantDepot: RequestHandler = (req, _res, next) => {
     (e) => next(e),
   );
 };
+
+// ── Annonce aux étudiants ──────────────────────────────────────────────────
+
+/** Délai après le dernier ajout d'une séance : un dépôt de cinq fichiers part en un seul message. */
+const ATTENTE_ANNONCE = 2 * 60_000;
+
+/**
+ * Les vidéos et documents ajoutés à une séance partent aux étudiants du cours en une seule
+ * notification par séance, deux minutes après le dernier ajout. Avant ou après le cours, elle
+ * sonne sur le téléphone (règles du téléphone : plafond du jour, rien la nuit) ; pendant le
+ * direct, elle reste dans la cloche, la classe les voit déjà à l'écran.
+ */
+export async function annoncerRessources(maintenant = Date.now()): Promise<number> {
+  const enAttente = await db
+    .select({ id: ressourcesSeances.id, seanceId: ressourcesSeances.seanceId, creeLe: ressourcesSeances.creeLe })
+    .from(ressourcesSeances)
+    .where(isNull(ressourcesSeances.annonceeLe));
+  const parSeance = new Map<number, typeof enAttente>();
+  for (const r of enAttente) parSeance.set(r.seanceId, [...(parSeance.get(r.seanceId) ?? []), r]);
+  let annonces = 0;
+  for (const [seanceId, lignes] of parSeance) {
+    if (maintenant - Math.max(...lignes.map((l) => l.creeLe.getTime())) < ATTENTE_ANNONCE) continue;
+    // Marquées d'abord : deux passages simultanés n'envoient pas deux fois.
+    const marquees = await db
+      .update(ressourcesSeances)
+      .set({ annonceeLe: new Date(maintenant) })
+      .where(and(inArray(ressourcesSeances.id, lignes.map((l) => l.id)), isNull(ressourcesSeances.annonceeLe)))
+      .returning({ titre: ressourcesSeances.titre, ordre: ressourcesSeances.ordre });
+    if (!marquees.length) continue;
+    const [s] = await db
+      .select({ id: seances.id, titre: seances.titre, statut: seances.statut, coursId: seances.coursId, code: cours.code, statutCours: cours.statut })
+      .from(seances)
+      .innerJoin(cours, eq(cours.id, seances.coursId))
+      .where(eq(seances.id, seanceId));
+    if (!s || s.statut === "annulee" || s.statutCours !== "publie") continue;
+    const etudiants = (await etudiantsDuCours(s.coursId)).map((e) => e.id);
+    if (!etudiants.length) continue;
+    const titres = marquees.sort((a, b) => a.ordre - b.ordre).map((r) => `« ${r.titre} »`);
+    const liste = titres.join(", ");
+    await notifier(etudiants, {
+      type: "cours",
+      titre: marquees.length === 1 ? `Nouvelle ressource · ${s.code}` : `${marquees.length} nouvelles ressources · ${s.code}`,
+      corps: `${s.titre} : ${liste.length > 160 ? `${liste.slice(0, 157)}…` : liste}`,
+      lien: s.statut === "terminee" ? `/replays/${s.id}` : `/live/${s.id}`,
+      push: s.statut !== "en_direct",
+    });
+    annonces++;
+  }
+  return annonces;
+}
+
+planifier("ressources-seances-annonces", 60_000, async () => {
+  await annoncerRessources();
+});
 
 export function enregistrerRessourcesSeance(app: Express) {
   // Fichiers des ressources : lisibles par ceux qui voient la séance ou son replay (salles comprises).

@@ -12,7 +12,7 @@ export const rappelsLive = campusSchema.table(
   "rappels_live",
   {
     seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
-    type: text("type").$type<"24h" | "15min">().notNull(),
+    type: text("type").$type<"24h" | "jour" | "15min">().notNull(),
     envoyeLe: timestamp("envoye_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.seanceId, t.type] })],

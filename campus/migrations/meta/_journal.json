@@ -169,6 +169,13 @@
       "when": 1791315389762,
       "tag": "0023_ressources_seances",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791332528470,
+      "tag": "0024_annonce_ressources",
+      "breakpoints": true
     }
   ]
 }

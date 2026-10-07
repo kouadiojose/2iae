@@ -3779,7 +3779,8 @@ planifier("live-rappels", MINUTE, async () => {
  *    plein cours), et seulement si plus personne n'est là : formateur absent du
  *    canal de la séance et aucun battement de présence depuis 15 min. Filet :
  *    3 h plus tard sans formateur, elle est close même si des onglets restent
- *    ouverts.
+ *    ouverts. Une séance lancée bien avant son heure (celle d'une autre semaine,
+ *    ouverte par erreur) ne compte que la fin depuis son démarrage réel.
  * Au passage, la mémoire du direct des séances closes est purgée.
  */
 planifier("live-fin-auto", 5 * MINUTE, async () => {
@@ -3787,10 +3788,16 @@ planifier("live-fin-auto", 5 * MINUTE, async () => {
   const candidates = await db
     .select()
     .from(seances)
-    .where(and(inArray(seances.statut, ["planifiee", "en_direct"]), lt(seances.debut, new Date(maintenant - DELAI_FIN_AUTO_MS))));
+    .where(
+      or(
+        and(inArray(seances.statut, ["planifiee", "en_direct"]), lt(seances.debut, new Date(maintenant - DELAI_FIN_AUTO_MS))),
+        and(eq(seances.statut, "en_direct"), lt(seances.demarreeLe, new Date(maintenant - DELAI_FIN_AUTO_MS))),
+      ),
+    );
   for (const s of candidates) {
     const finReelle = s.demarreeLe ? s.demarreeLe.getTime() + s.dureeMinutes * MINUTE : 0;
-    const limite = Math.max(finPrevue(s), finReelle) + DELAI_FIN_AUTO_MS;
+    const enAvance = s.demarreeLe !== null && s.demarreeLe.getTime() < s.debut.getTime() - 60 * MINUTE;
+    const limite = (enAvance ? finReelle : Math.max(finPrevue(s), finReelle)) + DELAI_FIN_AUTO_MS;
     if (limite > maintenant) continue;
     if (await animateurConnecte(s)) continue;
     if (!s.demarreeLe) {

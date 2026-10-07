@@ -122,7 +122,7 @@ import {
   type RejoindreVisioDto,
   type AccesDaily,
 } from "@shared/schema";
-import type { SeanceResume, EnCours } from "@shared/api";
+import type { SeanceResume, EnCours, DirectDuCampus } from "@shared/api";
 
 const executer = promisify(execFile);
 
@@ -291,9 +291,12 @@ async function seanceSuivie(u: Utilisateur, id: number): Promise<Seance> {
 async function roleDans(u: Utilisateur, s: Seance): Promise<RoleSeance> {
   if (u.role === "salle") return "salle";
   if (u.role === "formateur" && (await enseigneCours(u, s.coursId))) return "formateur";
-  // La direction anime le direct qu'elle a lancé elle-même depuis le Studio (« Lancer un direct maintenant »),
-  // et la séance dont elle est l'intervenante dans l'emploi du temps (M. Kouadio saisi avec son compte direction).
-  if (u.role === "admin" && ((await visio.aLanceDirect(u.id, s.id)) || (await intervenantsDesSeances([s.id])).get(s.id)?.id === u.id)) return "formateur";
+  // La direction a la main sur tous les cours (Studio complet, visio comme le formateur) : elle démarre, présente
+  // ou reprend le cours d'un formateur en difficulté. De même la vie scolaire qui gère le programme de ce campus.
+  if (u.role === "admin") return "formateur";
+  if (u.role === "vie_scolaire" && peut(u, "programme") && (await enseigneCours(u, s.coursId))) return "formateur";
+  // Formateur d'un autre cours : il rejoint la classe en invité (micro et caméra, discussion), sans les commandes.
+  if (u.role === "formateur") return "equipe";
   if (estEquipe(u)) return "equipe";
   return "etudiant";
 }
@@ -1373,6 +1376,30 @@ export function enregistrerLive(app: Express) {
     }),
   );
 
+  // Classes en direct dans tout le campus, pour qu'un formateur rejoigne celle d'un collègue (en invité),
+  // et que la direction reprenne n'importe quel cours.
+  app.get(
+    "/api/live/tous-en-direct",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur" && !estEquipe(u)) return res.json([]);
+      const lignes = await db
+        .select({ id: seances.id, titre: seances.titre, demarreeLe: seances.demarreeLe, coursId: cours.id, coursCode: cours.code, coursTitre: cours.titre, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
+        .from(seances)
+        .innerJoin(cours, eq(cours.id, seances.coursId))
+        .leftJoin(utilisateurs, eq(utilisateurs.id, cours.formateurId))
+        .where(eq(seances.statut, "en_direct"))
+        .orderBy(desc(seances.demarreeLe));
+      const miens = u.role === "formateur" ? new Set(await idsCoursAccessibles(u)) : new Set<number>();
+      res.json(
+        lignes
+          .filter((l) => !miens.has(l.coursId))
+          .map((l): DirectDuCampus => ({ id: l.id, titre: l.titre, coursCode: l.coursCode, coursTitre: l.coursTitre, formateur: l.prenom ? `${l.prenom} ${l.nom}` : null, demarreeLe: iso(l.demarreeLe) })),
+      );
+    }),
+  );
+
   // Réglages utiles au formulaire de préparation (fournisseurs configurés, IA, PDF).
   app.get(
     "/api/live/options",
@@ -1840,7 +1867,7 @@ export function enregistrerLive(app: Express) {
           : role === "salle"
             ? `${site?.salleConference ?? "Salle"} · ${site?.nomCourt ?? ""}`
             : role === "equipe"
-              ? `${u.prenom} ${u.nom} · ${u.role === "admin" ? "direction" : "équipe 2IAE"}`
+              ? `${u.prenom} ${u.nom} · ${u.role === "formateur" ? "formateur invité" : "équipe 2IAE"}`
               : `${site?.nomCourt ?? "En ligne"} · ${nomCourt(u)}`;
       const reponse: RejoindreVisioDto = { fournisseur: s.fournisseur, url: null, nomAffiche, ...(enRepetition && { repetition: true }) };
       if (role === "etudiant" && mode && mode !== "video") {
@@ -1852,13 +1879,15 @@ export function enregistrerLive(app: Express) {
           const salle = await visio.obtenirSalleDaily(s);
           if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           // La direction qui répète (ou qui a lancé le direct) parle comme un formateur ; sinon elle observe.
+          // Le formateur d'un autre cours entre en invité : micro et caméra (comme un intervenant), sans être propriétaire.
+          const invite = role === "equipe" && u.role === "formateur";
           const profil: visio.ProfilJeton =
-            role === "formateur" || (u.role === "admin" && enRepetition) ? "formateur" : role === "salle" ? "salle" : role === "equipe" ? "observateur" : "etudiant";
+            role === "formateur" || (u.role === "admin" && enRepetition) ? "formateur" : role === "salle" ? "salle" : role === "equipe" && !invite ? "observateur" : "etudiant";
           // Places comptées : les étudiants en vidéo et l'équipe qui observe ; le formateur et les salles ont les leurs.
           // L'étudiant à qui le formateur donne la parole entre toujours (il prend une des places gardées).
           const parole = profil === "etudiant" ? await paroleCourante(s.id) : null;
           const aLaParole = parole?.type === "etudiant" && parole.utilisateurId === u.id;
-          await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole });
+          await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole || invite });
           // Replay : seulement une vraie séance (ni répétition, ni essai de direct sans étudiants).
           const enregistrement = profil === "formateur" && !enRepetition && visio.enregistrementAutomatique() && !(await visio.estEssaiDirect(s.id));
           reponse.url = salle.url;
@@ -1875,6 +1904,9 @@ export function enregistrerLive(app: Express) {
             enregistrementMaxS: visio.dureeMaxEnregistrement(s),
             ejecterApres: enRepetition ? visio.DUREE_MAX_REPETITION_S : undefined,
             enregistrementPermis: !enRepetition,
+            ...(invite && { envoi: ["audio", "video"] as ("audio" | "video")[] }),
+            // La direction ou un invité entrent micro et caméra coupés : personne ne parle aux cinq salles par surprise.
+            silencieux: u.role !== "formateur" || invite,
           });
           break;
         }

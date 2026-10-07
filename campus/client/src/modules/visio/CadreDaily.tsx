@@ -262,7 +262,8 @@ export function CadreDaily(p: PropsCadreDaily) {
     if (etat === "connecte" && p.micro !== undefined) appel.current?.setLocalAudio(p.micro);
   }, [p.micro, etat]);
   useEffect(() => {
-    if (etat === "connecte" && p.camera !== undefined && (role === "formateur" || role === "salle")) appel.current?.setLocalVideo(p.camera);
+    // L'observateur aussi : un formateur invité ouvre sa caméra (son jeton le lui permet ; l'équipe qui observe, non).
+    if (etat === "connecte" && p.camera !== undefined && (role === "formateur" || role === "salle" || role === "observateur")) appel.current?.setLocalVideo(p.camera);
   }, [p.camera, etat, role]);
 
   // Consommation mesurée par Daily (débit reçu), cumulée toutes les 5 s.

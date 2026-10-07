@@ -234,10 +234,14 @@ export async function formateursDuCours(coursId: number): Promise<Utilisateur[]>
   return db.select().from(utilisateurs).where(inArray(utilisateurs.id, ids));
 }
 
-/** Cours d'une séance live, avec contrôle d'accès. */
+/**
+ * Cours d'une séance live, avec contrôle d'accès. Un formateur peut aussi rejoindre la séance d'un autre cours
+ * (en invité : il voit, parle et échange, sans les commandes ni le reste du cours : leçons, devoirs, notes).
+ */
 export async function seanceVisible(u: Utilisateur, seanceId: number) {
   const [s] = await db.select().from(seances).where(eq(seances.id, seanceId));
   if (!s) throw introuvable("Séance");
+  if (u.role === "formateur") return s;
   await coursVisible(u, s.coursId);
   return s;
 }

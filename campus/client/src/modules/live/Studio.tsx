@@ -33,8 +33,11 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const { data: etat } = useEtatDirect(seance.id, true);
   const [onglet, setOnglet] = useState<OngletStudio>("mains");
   const nonLus = useNonLusDiscussion(seance.id, true, moi.id, onglet === "discussion");
-  const [micro, setMicro] = useState(true);
-  const [camera, setCamera] = useState(true);
+  // Formateur d'un autre cours : il entre en invité (micro et caméra, discussion), sans les commandes du Studio.
+  const invite = observation && moi.role === "formateur";
+  // Le formateur du cours arrive micro et caméra ouverts ; la direction (qui reprend un cours) et l'invité, coupés.
+  const [micro, setMicro] = useState(() => moi.role === "formateur" && !observation);
+  const [camera, setCamera] = useState(() => moi.role === "formateur" && !observation);
   const [radio, setRadio] = useState(true);
   const [fluxVisio, setFluxVisio] = useState<MediaStream | null>(null);
   const [confirmation, setConfirmation] = useState<"terminer" | "planb" | "empechement" | null>(null);
@@ -112,7 +115,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           etat={etat}
           actions={
             observation ? (
-              <span className="rounded-full bg-nuit-carte px-3 py-2 font-mono text-xs text-orange-peche">Vue d'observation</span>
+              <span className="rounded-full bg-nuit-carte px-3 py-2 font-mono text-xs text-orange-peche">{invite ? "Formateur invité · micro et caméra" : "Vue d'observation"}</span>
             ) : (
               <>
                 {statut === "planifiee" ? (
@@ -186,8 +189,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 seance={seance}
                 etat={etat}
                 role={observation ? "equipe" : "formateur"}
-                micro={!observation && micro}
-                camera={!observation && camera}
+                micro={(!observation || invite) && micro}
+                camera={(!observation || invite) && camera}
                 onFluxLocal={setFluxVisio}
                 onMicroDaily={observation ? undefined : setMicro}
               />
@@ -195,7 +198,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             {/* La bande des diapos juste sous la scène (on s'en sert sans cesse), les salles plus bas. */}
             {!observation && <BandeDiapos seance={seance} etat={etat} onChanger={changerDiapo} onAller={(i) => void allerDiapo(i)} />}
             {!observation && !(etat.planB ?? seance.planB) && <PanneauRessourcesStudio seance={seance} projection={etat.projection ?? null} />}
-            {!observation && (seance.fournisseur === "daily" || seance.fournisseur === "campus" || etat.parole) && !etat.planB && (
+            {(!observation || invite) && (seance.fournisseur === "daily" || seance.fournisseur === "campus" || etat.parole) && !etat.planB && (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {(seance.fournisseur === "daily" || seance.fournisseur === "campus") && (
                   <>
@@ -207,7 +210,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 </Bouton>
                   </>
                 )}
-                {etat.parole && (
+                {etat.parole && !observation && (
                   <Bouton variante="nuit" onClick={() => reprendreParole(seance.id)}>
                     Reprendre la parole
                   </Bouton>

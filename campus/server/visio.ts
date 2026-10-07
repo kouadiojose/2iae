@@ -477,6 +477,8 @@ export async function jetonDaily(o: {
   envoi?: ("audio" | "video")[] | false;
   /** Caméra ouverte dès l'entrée (un intervenant invité), quel que soit le profil. */
   cameraAuDepart?: boolean;
+  /** Micro et caméra coupés à l'entrée, même propriétaire (la direction qui reprend un cours, un formateur invité). */
+  silencieux?: boolean;
   /** Participant invisible (ni vu ni compté par les autres) : l'écoute de la classe pour la radio. */
   invisible?: boolean;
 }): Promise<string> {
@@ -488,8 +490,8 @@ export async function jetonDaily(o: {
     is_owner: proprietaire,
     exp: o.exp,
     lang: "fr",
-    start_audio_off: !proprietaire,
-    start_video_off: o.cameraAuDepart ? false : o.profil === "etudiant" || o.profil === "observateur",
+    start_audio_off: !proprietaire || Boolean(o.silencieux),
+    start_video_off: o.cameraAuDepart ? false : o.profil === "etudiant" || o.profil === "observateur" || Boolean(o.silencieux),
     enable_screenshare: proprietaire,
     enable_prejoin_ui: false,
   };

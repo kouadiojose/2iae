@@ -18,7 +18,7 @@ import { Selection } from "@/components/ui/champs";
 import { CompteARebours, DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { OutilsStudio } from "@/modules/visio";
 import { LigneSeance } from "./ui";
-import type { EnCours, SeanceResume } from "@shared/api";
+import type { DirectDuCampus, EnCours, SeanceResume } from "@shared/api";
 
 type CoursResume = { id: number; code: string; titre: string };
 
@@ -73,6 +73,9 @@ export default function PageDirect() {
           action={moi.role === "formateur" ? <Bouton onClick={() => setChoixCours(true)}>Préparer une séance</Bouton> : <LienBouton href="/cours" variante="contour">Voir mes cours</LienBouton>}
         />
       )}
+
+      {/* Classes en direct dans les autres cours : le formateur les rejoint en invité, la direction peut les reprendre. */}
+      {enseignant && <DirectsDuCampus equipe={estEquipe(moi.role)} />}
 
       {/* Salle d'essai et « Lancer un direct maintenant » (module visio). */}
       {enseignant && <OutilsStudio />}
@@ -236,5 +239,35 @@ function ChoixCoursNouvelleSeance({ ouverte, onFermer }: { ouverte: boolean; onF
         <Carte className="bg-creme text-[15px] text-texte-pale">Aucun cours à votre nom pour le moment. Demandez à la direction des études de vous rattacher à un cours.</Carte>
       )}
     </Fenetre>
+  );
+}
+
+/** Les autres classes en direct en ce moment (rien quand il n'y en a pas). */
+function DirectsDuCampus({ equipe }: { equipe: boolean }) {
+  const { data } = useQuery<DirectDuCampus[]>({ queryKey: ["/api/live/tous-en-direct"], refetchInterval: 30_000 });
+  if (!data?.length) return null;
+  return (
+    <section className="flex flex-col gap-3 rounded-[20px] bg-encre p-5 text-white">
+      <span className="font-mono text-xs uppercase tracking-wider text-orange-peche">{equipe ? "En direct en ce moment" : "En direct dans les autres cours"}</span>
+      <p className="text-[14px] text-nuit-doux">
+        {equipe
+          ? "Ouvrez une classe pour la suivre ou la reprendre : micro, caméra, diapos et vidéos, comme le formateur."
+          : "Rejoignez la classe d'un collègue : vous voyez, parlez et échangez avec la classe (micro et caméra coupés à l'entrée)."}
+      </p>
+      {data.map((d) => (
+        <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-nuit-carte px-4 py-3">
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-[15px] font-bold">{d.titre}</span>
+            <span className="truncate text-[13px] text-nuit-gris">
+              {d.coursCode} · {d.coursTitre}
+              {d.formateur ? ` · ${d.formateur}` : ""}
+            </span>
+          </span>
+          <LienBouton href={`/live/${d.id}`} taille="sm">
+            Rejoindre
+          </LienBouton>
+        </div>
+      ))}
+    </section>
   );
 }

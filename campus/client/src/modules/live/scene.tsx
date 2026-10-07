@@ -623,6 +623,9 @@ function SceneDaily({
       tu={tu}
       micro={micro}
       camera={camera}
+      // Entrée micro et caméra comme le studio les demande (la direction qui reprend un cours entre coupée).
+      microAuDepart={micro}
+      cameraAuDepart={camera}
       relanceAuto
       obtenirAcces={async () => {
         const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" });

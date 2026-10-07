@@ -35,6 +35,8 @@ export type EtudeLivreDto = {
   dossier: DossierLivre | null;
   message: string | null;
   fin: string | null;
+  /** IA du soir : la lecture attend la routine du soir (une notification prévient quand le dossier est prêt). */
+  soir?: boolean;
 };
 
 /** Cours complet tiré de l'enregistrement d'une séance (transcription et diapositives). */

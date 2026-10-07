@@ -9,3 +9,6 @@ uploads
 guides/apercus/
 guides/captures/
 guides/comptes.json
+
+# Routine du soir : demandes et réponses de travail (scripts/travaux-ia.mjs)
+.travaux-ia/

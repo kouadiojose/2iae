@@ -22,7 +22,8 @@ import {
   type DossierCours,
   type Seance,
 } from "@shared/schema";
-import { iaDisponible, travailDeFondPermis } from "./ia";
+import { travailDeFondPossible, travailDeFondPermis } from "./ia";
+import { avecOrigine, estIaDuSoir, iaDuSoir } from "./ia-soir";
 import { lireContenuFichier } from "./fichiers";
 import { etudiantsDuCours, formateursDuCours } from "./acces";
 import { notifier } from "./notifications";
@@ -181,12 +182,20 @@ const nettoyerDossier = (d: DossierCours): DossierCours => ({
   notions: (d.notions ?? []).map((n) => ({ ...n, debutSecondes: Math.max(0, Math.round(n.debutSecondes || 0)) })),
 });
 
-export async function etudierSeance(seanceId: number): Promise<void> {
+/** Où en est le cours complet après un passage : prêt, en attente de la routine du soir, ou en échec. */
+export type IssueEtude = "prete" | "soir" | "erreur" | "rien";
+
+export async function etudierSeance(seanceId: number): Promise<IssueEtude> {
+  // IA du soir : chaque demande gardée porte l'origine du travail (la routine sait pour quoi elle écrit).
+  return avecOrigine(`cours-complet:${seanceId}`, () => etudier(seanceId));
+}
+
+async function etudier(seanceId: number): Promise<IssueEtude> {
   const [s] = await db.select().from(seances).where(eq(seances.id, seanceId));
-  if (!s) return;
+  if (!s) return "rien";
   const [c] = await db.select({ code: cours.code, titre: cours.titre }).from(cours).where(eq(cours.id, s.coursId));
   const payeur = await payeurDe(s.coursId);
-  if (!payeur) return;
+  if (!payeur) return "rien";
   enCours = seanceId;
   const compteur: Compteur = { coutMicro: 0 };
   try {
@@ -218,7 +227,11 @@ export async function etudierSeance(seanceId: number): Promise<void> {
         surAvancement: avancer,
       }),
       lots.length
-        ? lireMorceaux<NotesDiapos>({ morceaux: lots.map((contenu) => ({ contenu })), systeme: SYSTEME_DIAPOS, schema: NOTES_DIAPOS, utilisateurId: payeur, compteur, parallele: 2, surAvancement: avancer }).catch(() => [])
+        ? lireMorceaux<NotesDiapos>({ morceaux: lots.map((contenu) => ({ contenu })), systeme: SYSTEME_DIAPOS, schema: NOTES_DIAPOS, utilisateurId: payeur, compteur, parallele: 2, surAvancement: avancer }).catch((e) => {
+            // IA du soir : les diapositives attendent la routine comme le reste (sinon le cours partirait sans elles).
+            if (estIaDuSoir(e)) throw e;
+            return [] as (NotesDiapos | null)[];
+          })
         : Promise.resolve([] as (NotesDiapos | null)[]),
     ]);
     await majEtude(seanceId, { etape: "Rédaction du cours complet", progression: 82 });
@@ -286,7 +299,17 @@ export async function etudierSeance(seanceId: number): Promise<void> {
     }
     console.log(`[cours complet] séance ${seanceId} : prêt (${morceaux.length} extraits, ${lots.length} lots de diapos, ${(compteur.coutMicro / 1e6).toFixed(2)} $)`);
     if (premiere) await annoncer(s, c?.code ?? "").catch((e) => console.warn("[cours complet] annonce :", (e as Error).message));
+    return "prete";
   } catch (e) {
+    if (estIaDuSoir(e)) {
+      // Pas un échec : la suite attend la routine du soir. Cet essai ne compte pas.
+      await db
+        .update(etudesSeances)
+        .set({ statut: "en_cours", etape: "Préparation ce soir", fin: null, message: null, essais: sql`greatest(${etudesSeances.essais} - 1, 0)` })
+        .where(eq(etudesSeances.seanceId, seanceId))
+        .catch(() => undefined);
+      return "soir";
+    }
     console.error(`[cours complet] séance ${seanceId} :`, (e as Error).message);
     await majEtude(seanceId, {
       statut: "erreur",
@@ -295,6 +318,7 @@ export async function etudierSeance(seanceId: number): Promise<void> {
       fin: new Date(),
       message: (e as Error).message.startsWith("La transcription") ? (e as Error).message : "La préparation du cours complet n'a pas abouti. Elle sera retentée.",
     }).catch((err) => console.error(`[cours complet] séance ${seanceId}, état :`, (err as Error).message));
+    return "erreur";
   } finally {
     enCours = null;
   }
@@ -329,6 +353,14 @@ const ESSAIS_MAX = 3;
  * coupée par un redémarrage), trois essais au plus.
  */
 async function prochaineSeance(): Promise<number | null> {
+  return (await seancesAPreparer(1))[0] ?? null;
+}
+
+/**
+ * Séances à préparer, de la plus récente à la plus ancienne. Pour la routine du soir, les essais manqués
+ * faute de crédit ne comptent pas (`sansLimiteEssais`) : un cours resté en échec à cause de l'API se refait.
+ */
+export async function seancesAPreparer(limite: number, sansLimiteEssais = false): Promise<number[]> {
   const lignes = await db
     .select({ id: seances.id })
     .from(seances)
@@ -340,12 +372,14 @@ async function prochaineSeance(): Promise<number | null> {
         sql`NOT EXISTS (SELECT 1 FROM campus.transcriptions_replays tr WHERE tr.seance_id = ${seances.id} AND tr.statut = 'soumise')`,
         sql`NOT EXISTS (SELECT 1 FROM ${directsImmediats} di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)`,
         // Appelée seulement quand aucune préparation ne tourne : une ligne « en_cours » a été coupée et se reprend.
-        sql`NOT EXISTS (SELECT 1 FROM ${etudesSeances} e WHERE e.seance_id = ${seances.id} AND (e.statut = 'prete' OR e.essais >= ${ESSAIS_MAX} OR (e.statut = 'erreur' AND e.fin > now() - interval '6 hours')))`,
+        sansLimiteEssais
+          ? sql`NOT EXISTS (SELECT 1 FROM ${etudesSeances} e WHERE e.seance_id = ${seances.id} AND (e.statut = 'prete' OR (e.statut = 'erreur' AND e.message LIKE 'La transcription%')))`
+          : sql`NOT EXISTS (SELECT 1 FROM ${etudesSeances} e WHERE e.seance_id = ${seances.id} AND (e.statut = 'prete' OR e.essais >= ${ESSAIS_MAX} OR (e.statut = 'erreur' AND e.fin > now() - interval '6 hours')))`,
       ),
     )
     .orderBy(sql`${seances.debut} DESC`)
-    .limit(1);
-  return lignes[0]?.id ?? null;
+    .limit(limite);
+  return lignes.map((l) => l.id);
 }
 
 // Toutes les 5 minutes : transcriptions à demander et à récupérer, puis un cours à préparer.
@@ -353,7 +387,8 @@ if (process.env.COURS_COMPLETS !== "non") {
   planifier("cours-complets", 5 * 60_000, async () => {
     await suivreTranscriptions();
     await soumettreTranscriptions();
-    if (enCours || !iaDisponible()) return;
+    // IA du soir : la routine du soir mène les préparations elle-même (/api/travaux-ia/tour).
+    if (enCours || iaDuSoir() || !travailDeFondPossible()) return;
     if (!(await travailDeFondPermis())) return;
     const prochaine = await prochaineSeance();
     if (prochaine) void etudierSeance(prochaine);
@@ -366,6 +401,7 @@ export async function etatCoursComplet(s: Seance): Promise<Pick<CoursCompletDto,
   const [e] = await db.select().from(etudesSeances).where(eq(etudesSeances.seanceId, s.id));
   if (e) {
     const coupee = e.statut === "en_cours" && enCours !== s.id;
+    if (coupee && iaDuSoir()) return { statut: "a_venir", etape: "Préparation ce soir", progression: 0, dossier: null, message: null };
     if (coupee && e.essais >= ESSAIS_MAX) return { statut: "erreur", etape: null, progression: 0, dossier: null, message: "La préparation du cours complet n'a pas abouti." };
     if (coupee) return { statut: "a_venir", etape: "Préparation reprise sous peu", progression: 0, dossier: null, message: null };
     return { statut: e.statut, etape: e.etape, progression: e.progression, dossier: e.statut === "prete" ? (e.dossier ?? null) : null, message: e.message };

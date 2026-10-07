@@ -168,8 +168,10 @@ export function verifierDisponible(u: Utilisateur) {
     503,
     estEtudiant(u)
       ? "L'assistant est en pause pour le moment. Réessaie plus tard, ou pose ta question à ton formateur dans la messagerie du cours."
-      : raisonIndisponible() === "panne"
-        ? "L'assistant est en pause : le service d'IA refuse les demandes (crédit ou clé à vérifier par la direction). Nouvel essai automatique dans quelques minutes."
+      : config.ia.soir
+        ? "L'assistant est en pause : sur ce campus, le travail d'IA (cours complets, dossiers de lecture) se fait le soir."
+        : raisonIndisponible() === "panne"
+          ? "L'assistant est en pause : le service d'IA refuse les demandes (crédit ou clé à vérifier par la direction). Nouvel essai automatique dans quelques minutes."
         : "L'assistant est en pause pour le moment : le service d'IA n'est pas configuré sur ce campus.",
   );
 }

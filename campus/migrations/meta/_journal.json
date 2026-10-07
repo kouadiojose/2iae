@@ -176,6 +176,13 @@
       "when": 1791332528470,
       "tag": "0024_annonce_ressources",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791363536876,
+      "tag": "0025_ia_du_soir",
+      "breakpoints": true
     }
   ]
 }

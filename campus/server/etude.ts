@@ -5,6 +5,7 @@
 // l'appelant : on n'étudie qu'une fois, tous les étudiants en profitent.
 import type Anthropic from "@anthropic-ai/sdk";
 import { demanderJsonCout } from "./ia";
+import { IaDuSoir, estIaDuSoir } from "./ia-soir";
 
 // ── Schémas JSON (sorties structurées) ─────────────────────────────────────
 
@@ -51,6 +52,8 @@ async function avecUnNouvelEssai<T>(f: () => Promise<T>): Promise<T> {
   try {
     return await f();
   } catch (e) {
+    // Demande gardée pour la routine du soir : un nouvel essai tout de suite n'y changerait rien.
+    if (estIaDuSoir(e)) throw e;
     await new Promise((r) => setTimeout(r, 4000));
     try {
       return await f();
@@ -79,6 +82,8 @@ export async function lireMorceaux<T>(o: {
   let suivant = 0;
   let faits = 0;
   let echecs = 0;
+  // IA du soir : chaque morceau garde sa demande (toutes partent ensemble ce soir), le travail s'arrête ensuite.
+  let auSoir = 0;
   const ouvrier = async () => {
     while (suivant < o.morceaux.length) {
       const i = suivant++;
@@ -97,14 +102,18 @@ export async function lireMorceaux<T>(o: {
         o.compteur.coutMicro += r.coutMicro;
         resultats[i] = r.resultat;
       } catch (e) {
-        echecs++;
-        console.warn(`[étude] morceau ${i + 1}/${o.morceaux.length} illisible :`, (e as Error).message);
+        if (estIaDuSoir(e)) auSoir++;
+        else {
+          echecs++;
+          console.warn(`[étude] morceau ${i + 1}/${o.morceaux.length} illisible :`, (e as Error).message);
+        }
       }
       faits++;
       await o.surAvancement?.(faits, o.morceaux.length);
     }
   };
   await Promise.all(Array.from({ length: Math.min(o.parallele ?? 4, o.morceaux.length) }, ouvrier));
+  if (auSoir) throw new IaDuSoir();
   // Un quart des morceaux perdus au plus (aucun quand il y en a moins de quatre) : sinon la synthèse inventerait.
   if (echecs > Math.floor(o.morceaux.length / 4)) throw new Error(`${echecs} morceaux sur ${o.morceaux.length} n'ont pas pu être lus.`);
   return resultats;

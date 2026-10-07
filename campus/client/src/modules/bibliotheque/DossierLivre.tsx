@@ -24,7 +24,8 @@ export function useEtudeLivre(livreId: number, initiale: EtudeLivreDto | null, e
     queryKey: [cle],
     initialData: { etude: initiale, etudiable },
     staleTime: 0,
-    refetchInterval: (q) => (q.state.data?.etude?.statut === "en_cours" ? 3000 : false),
+    // IA du soir : la lecture attend la routine du soir, inutile d'interroger le serveur toute la journée.
+    refetchInterval: (q) => (q.state.data?.etude?.statut === "en_cours" && !q.state.data.etude.soir ? 3000 : false),
   });
   const etude = data?.etude ?? null;
   const [lancement, setLancement] = useState(false);

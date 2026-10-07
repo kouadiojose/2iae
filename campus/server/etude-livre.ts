@@ -9,6 +9,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { etudesLivres, livres, reponsesLivres, type DossierLivre, type EtudeLivreDto, type FicheLivre, type Livre } from "@shared/schema";
 import { travailDeFondPermis, verifierBudget } from "./ia";
+import { avecOrigine, estIaDuSoir, iaDuSoir } from "./ia-soir";
+import { notifier } from "./notifications";
 import { ErreurHttp } from "./http";
 import { livreLibre, texteDuLivre } from "./libres/index-libre";
 import { normaliserIndex } from "./libres/domaines";
@@ -112,7 +114,14 @@ function citationsVerifiees(citations: DossierLivre["citations"], texte: string)
   });
 }
 
-async function etudier(l: Livre, utilisateurId: number): Promise<void> {
+/** Issue d'un passage : dossier prêt, lecture en attente de la routine du soir, ou échec. */
+export type IssueLecture = "prete" | "soir" | "erreur";
+
+function etudier(l: Livre, utilisateurId: number): Promise<IssueLecture> {
+  return avecOrigine(`livre:${l.id}`, () => lire(l, utilisateurId));
+}
+
+async function lire(l: Livre, utilisateurId: number): Promise<IssueLecture> {
   const compteur: Compteur = { coutMicro: 0 };
   try {
     // Le budget a pu s'épuiser pendant l'attente dans la file.
@@ -178,7 +187,29 @@ async function etudier(l: Livre, utilisateurId: number): Promise<void> {
       await db.update(livres).set({ fiche, ficheLe: new Date() }).where(eq(livres.id, l.id));
     }
     console.log(`[étude] livre ${l.id} étudié : ${morceaux.length} morceaux, ${(compteur.coutMicro / 1e6).toFixed(2)} $`);
+    // IA du soir : la personne qui a demandé la lecture n'attend plus devant l'écran, on la prévient.
+    if (iaDuSoir()) {
+      const [ligne] = await db.select({ demandePar: etudesLivres.demandePar }).from(etudesLivres).where(eq(etudesLivres.livreId, l.id));
+      if (ligne?.demandePar) {
+        await notifier([ligne.demandePar], {
+          type: "cours",
+          titre: `Dossier de lecture prêt : ${l.titre}`,
+          corps: "Résumé, plan, idées clés, notions et pistes d'exposé, tirés du livre entier.",
+          lien: `/bibliotheque/livres/${l.id}`,
+        }).catch(() => undefined);
+      }
+    }
+    return "prete";
   } catch (e) {
+    if (estIaDuSoir(e)) {
+      // Pas un échec : la lecture attend la routine du soir. Cet essai ne compte pas.
+      await db
+        .update(etudesLivres)
+        .set({ statut: "en_cours", etape: "Lecture prévue ce soir", fin: null, message: null, essais: sql`greatest(${etudesLivres.essais} - 1, 0)` })
+        .where(eq(etudesLivres.livreId, l.id))
+        .catch(() => undefined);
+      return "soir";
+    }
     console.error(`[étude] livre ${l.id} :`, (e as Error).message);
     await majEtude(l.id, {
       statut: "erreur",
@@ -187,12 +218,24 @@ async function etudier(l: Livre, utilisateurId: number): Promise<void> {
       fin: new Date(),
       message: /^(Le texte|Le budget)/.test((e as Error).message) ? (e as Error).message : "La lecture du livre n'a pas pu aboutir. Un nouvel essai sera possible dans quelques heures.",
     });
+    return "erreur";
   }
 }
 
 function versDto(e: typeof etudesLivres.$inferSelect): EtudeLivreDto {
-  // « En cours » sans lecture dans ce serveur : coupée par une mise à jour du campus.
+  // « En cours » sans lecture dans ce serveur : coupée par une mise à jour du campus, ou (IA du soir) en attente de la routine.
   const coupee = e.statut === "en_cours" && !enCours.has(e.livreId);
+  if (coupee && iaDuSoir()) {
+    return {
+      statut: "en_cours",
+      progression: e.progression,
+      etape: "Lecture prévue ce soir : tu recevras une notification quand le dossier sera prêt.",
+      dossier: null,
+      message: null,
+      fin: null,
+      soir: true,
+    };
+  }
   return {
     statut: coupee ? "erreur" : e.statut,
     progression: e.progression,
@@ -250,7 +293,7 @@ export async function lancerEtudeLivre(l: Livre, u: { id: number; role: string }
       .insert(etudesLivres)
       .values({ livreId: l.id, ...depart, essais: 1 })
       .onConflictDoUpdate({ target: etudesLivres.livreId, set: { ...depart, essais: sql`${etudesLivres.essais} + 1` } });
-    const p: Promise<void> = tour(() => etudier(l, u.id)).finally(() => {
+    const p: Promise<void> = tour(() => etudier(l, u.id).then(() => undefined)).finally(() => {
       if (enCours.get(l.id) === p) enCours.delete(l.id);
     });
     enCours.set(l.id, p);
@@ -322,3 +365,34 @@ ${neutraliserDossier(dossierEnTexte(d))}
 }
 
 const neutraliserDossier = (t: string) => t.replace(/<\/?\s*(dossier_du_livre|texte_du_livre|notice|question)\b[^>]*>/gi, "");
+
+// ── IA du soir ─────────────────────────────────────────────────────────────
+
+/** Lectures en attente de la routine du soir (livres dont l'étude s'est arrêtée sur une demande gardée). */
+export async function livresAEtudier(limite: number): Promise<number[]> {
+  const lignes = await db
+    .select({ id: etudesLivres.livreId })
+    .from(etudesLivres)
+    .where(eq(etudesLivres.statut, "en_cours"))
+    .orderBy(etudesLivres.debut)
+    .limit(limite);
+  return lignes.map((l) => l.id).filter((id) => !enCours.has(id));
+}
+
+/** Un passage de la routine du soir sur un livre : la lecture reprend avec les réponses déjà données. */
+export async function reprendreLecture(livreId: number): Promise<IssueLecture | "rien"> {
+  if (enCours.has(livreId)) return "rien";
+  const [[l], [e]] = await Promise.all([
+    db.select().from(livres).where(eq(livres.id, livreId)),
+    db.select({ demandePar: etudesLivres.demandePar }).from(etudesLivres).where(eq(etudesLivres.livreId, livreId)),
+  ]);
+  if (!l || !e?.demandePar) return "rien";
+  const p = etudier(l, e.demandePar);
+  enCours.set(livreId, p.then(() => undefined));
+  try {
+    return await p;
+  } finally {
+    enCours.delete(livreId);
+  }
+}
+

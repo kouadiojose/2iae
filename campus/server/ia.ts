@@ -8,6 +8,7 @@ import { config } from "./config";
 import { db } from "./db";
 import { notifier } from "./notifications";
 import { usageIa, reglagesIa, utilisateurs, prixDuModele, type ReglagesIa, type BudgetMoisIa } from "@shared/schema";
+import { demanderLeSoir, iaDuSoir } from "./ia-soir";
 
 let client: Anthropic | null = null;
 
@@ -19,13 +20,20 @@ let client: Anthropic | null = null;
 const DUREE_PANNE_MS = 15 * 60_000;
 let panneJusqua = 0;
 
+/** L'assistant interactif répond-il ? Pas en mode « IA du soir » (aucun appel à l'API, faute de crédit). */
 export function iaDisponible(): boolean {
-  return Boolean(config.ia.cle) && Date.now() >= panneJusqua;
+  return !iaDuSoir() && Boolean(config.ia.cle) && Date.now() >= panneJusqua;
 }
 
-/** « configuration » : pas de clé ; « panne » : le compte d'IA refuse les appels. */
+/**
+ * Le travail de fond (cours complets, dossiers de lecture) peut-il avancer ? Avec l'API, ou en mode « IA du
+ * soir », où ses demandes attendent la routine du soir.
+ */
+export const travailDeFondPossible = (): boolean => iaDuSoir() || iaDisponible();
+
+/** « configuration » : pas de clé ; « panne » : le compte d'IA refuse les appels (ou IA du soir, faute de crédit). */
 export const raisonIndisponible = (): "configuration" | "panne" | null =>
-  !config.ia.cle ? "configuration" : Date.now() < panneJusqua ? "panne" : null;
+  iaDuSoir() ? "panne" : !config.ia.cle ? "configuration" : Date.now() < panneJusqua ? "panne" : null;
 
 /** Repère les refus qui viennent du compte (et non de la question) avant que le SDK ne lève l'erreur. */
 const fetchSurveille: typeof fetch = async (entree, init) => {
@@ -304,10 +312,13 @@ export async function quotaDe(u: Demandeur): Promise<number> {
  * budget du mois, pour laisser le reste aux questions des étudiants.
  */
 export async function travailDeFondPermis(): Promise<boolean> {
+  // IA du soir : le travail ne coûte rien à l'école (la routine du soir le fait), le budget ne compte pas.
+  if (iaDuSoir()) return true;
   return (await budgetDuMois()).part < 0.7;
 }
 
 export async function verifierBudget(u: Demandeur): Promise<void> {
+  if (iaDuSoir()) return;
   const b = await budgetDuMois();
   if (!b.atteint) return;
   throw new ErreurIa(
@@ -373,6 +384,11 @@ export async function demanderJson<T>(o: OptionsClaude & { schema: Record<string
 
 /** Comme demanderJson, avec le coût de l'appel (études : on le garde avec le dossier). */
 export async function demanderJsonCout<T>(o: OptionsClaude & { schema: Record<string, unknown> }): Promise<{ resultat: T; coutMicro: number }> {
+  // IA du soir : le travail de fond garde sa demande pour la routine du soir (ou relit la réponse qu'elle a donnée).
+  if (o.sansQuota && iaDuSoir()) {
+    const resultat = await demanderLeSoir<T>({ systeme: o.systeme, contexte: o.contexte, messages: o.messages, schema: o.schema, maxTokens: o.maxTokens, gamme: o.gamme });
+    return { resultat, coutMicro: 0 };
+  }
   const requete = construireRequete(o);
   const reponse = await getClient().beta.messages.create({
     ...requete,

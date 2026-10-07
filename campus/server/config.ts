@@ -100,6 +100,13 @@ export const config = {
     modeleEtudiant: env("CAMPUS_IA_MODELE_ETUDIANT") || "claude-haiku-4-5",
     /** Modèle de la bibliothèque (livres, fiches, exposés) : plus de culture générale. */
     modeleBibliotheque: env("CAMPUS_IA_MODELE_BIBLIOTHEQUE") || "claude-sonnet-5-5",
+    /**
+     * IA du soir (CAMPUS_IA_SOIR=oui) : aucun appel à l'API. L'assistant interactif se met en pause et le
+     * travail de fond attend la routine du soir (server/ia-soir.ts, campus/TRAVAUX-IA.md).
+     */
+    soir: env("CAMPUS_IA_SOIR") === "oui",
+    /** Clé de la routine du soir pour /api/travaux-ia (elle ne permet que de répondre aux demandes gardées). */
+    jetonSoir: env("TRAVAUX_IA_JETON"),
   },
 
   mail: {

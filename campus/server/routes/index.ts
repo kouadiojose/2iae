@@ -29,11 +29,13 @@ import { enregistrerInvite } from "./live-invite";
 import { enregistrerCrm } from "./crm";
 import { enregistrerScolarite } from "./scolarite";
 import { enregistrerVisioCampus } from "../visio-campus";
+import { enregistrerTravauxIa } from "./travaux-ia";
 
 export function enregistrerRoutes(app: Express) {
   enregistrerPublic(app);
   enregistrerAndroid(app);
   enregistrerAuth(app);
+  enregistrerTravauxIa(app);
   enregistrerCompte(app);
   enregistrerAccueil(app);
   enregistrerCours(app);

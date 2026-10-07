@@ -216,3 +216,36 @@ export type Livre = typeof livres.$inferSelect;
 export type RechercheBiblio = typeof recherchesBiblio.$inferSelect;
 export type NoteBiblio = typeof notesBiblio.$inferSelect;
 export type ExposeBiblio = typeof exposesBiblio.$inferSelect;
+
+/**
+ * IA du soir : sans crédit d'API, le travail de fond (cours complets tirés des enregistrements, dossiers de
+ * lecture) n'appelle pas l'API. Chaque demande que le campus aurait envoyée est gardée ici, avec ses consignes
+ * et le schéma de la réponse attendue ; la routine du soir y répond (campus/TRAVAUX-IA.md), et le travail
+ * reprend à l'identique en relisant ces réponses.
+ */
+export type RequeteIaDuSoir = {
+  systeme: string;
+  contexte?: string;
+  /** Messages de l'API (texte, et images en base64 pour les diapositives). */
+  messages: unknown[];
+  schema: Record<string, unknown>;
+  maxTokens?: number;
+  gamme?: string;
+};
+
+export const demandesIa = campusSchema.table(
+  "demandes_ia",
+  {
+    id: serial("id").primaryKey(),
+    /** Empreinte de la requête : la même demande n'est gardée (et répondue) qu'une fois. */
+    cle: text("cle").notNull(),
+    /** Travail d'où elle vient : « cours-complet:17 », « livre:42 ». */
+    origine: text("origine").notNull(),
+    requete: jsonb("requete").$type<RequeteIaDuSoir>().notNull(),
+    reponse: jsonb("reponse").$type<unknown>(),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+    reponduLe: timestamp("repondu_le", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("demandes_ia_cle_idx").on(t.cle), index("demandes_ia_origine_idx").on(t.origine)],
+);
+

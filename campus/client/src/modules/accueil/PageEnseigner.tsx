@@ -1,58 +1,72 @@
-// /enseigner — « Aujourd'hui » du formateur (souvent à distance : Canada, Europe…).
+// /enseigner — « Aujourd'hui » du formateur, refait pour qui sait seulement se connecter (demande de José du
+// 8 octobre 2026 au soir : « Il arrive : qu'est-ce qu'il voit ? Ses séances. ») Trois blocs, dans cet ordre :
 //
-// En haut, la prochaine séance : double horloge Abidjan / chez vous, compte à
-// rebours, préparation, et UN bouton principal qui change avec l'heure
-// (« Préparer la séance » longtemps avant, « Ouvrir le studio » à 30 min).
-// Puis ce qui attend : la correction automatique (corrigés du jour à valider,
-// copies à revoir, relectures), « Après la séance » (chantier C7 : la suite de la
-// dernière séance et les copies à corriger),
-// questions restées sans réponse au dernier live, messages ; les
-// enregistrements de tous les cours (les siens et ceux des collègues) ; enfin
-// ses cours et sa semaine.
+// 1. « Ma prochaine classe » : le cours, le jour et l'heure en gros, et UN seul gros bouton qui change seul :
+//    « Préparer mon cours » longtemps avant (la préparation existante), puis « Entrer dans ma classe » à partir de
+//    45 minutes avant et pendant le direct (le Studio existant, /live/:id, comme l'ancien « Ouvrir le studio »).
+//    Visible sans défiler sur téléphone : le fuseau, le lieu et la préparation détaillée passent dessous, repliés.
+// 2. « À faire », seulement s'il y a quelque chose : corrigés à vérifier, copies à revoir ou à corriger,
+//    relectures, notes à envoyer, messages non lus. Une ligne et un gros bouton par chose.
+// 3. « Mes séances » : les 5 dernières séances tenues en cartes (CarteSeance : vidéo, cours résumé, QCM,
+//    exercice, présents), puis « Voir toutes mes séances » (/mes-seances).
+//
+// Le reste (écrire aux étudiants, mes cours, vidéos des cours, emploi du temps, annonces, questions en
+// suspens) n'est plus qu'une rangée de liens simples en bas : rien ne disparaît du campus, seulement de l'accueil.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   ArrowRight,
   BookOpen,
-  CalendarPlus,
-  CheckCircle2,
+  CalendarRange,
+  ChevronDown,
   ChevronRight,
-  CircleAlert,
+  ClipboardCheck,
+  ClipboardList,
   Megaphone,
   MessageCircle,
+  MessageSquareQuote,
   MessagesSquare,
-  Radio,
-  ThumbsUp,
-  CalendarDays,
-  ClipboardList,
+  PenLine,
   PlayCircle,
+  Radio,
+  Send,
+  TriangleAlert,
+  type LucideIcon,
 } from "lucide-react";
 import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
-import { heure, heureDouble, jourLong, relatif } from "@/lib/dates";
-import { cn, pluriel } from "@/lib/utils";
+import { heure, heureDouble, jourLong } from "@/lib/dates";
+import { useTextes } from "@/lib/textes";
+import { cn } from "@/lib/utils";
 import { Page } from "@/components/layout/coquille";
 import { LienBouton } from "@/components/ui/bouton";
-import { Carte, CarteLien, TitreSection } from "@/components/ui/carte";
-import { Badge, BadgeDirect, EtatVide, Erreur, Squelette } from "@/components/ui/divers";
-import { CompteARebours, useMaintenant } from "@/components/ui/compte-a-rebours";
-import type { AccueilFormateur, CoursFormateur, ElementAgenda, SeanceFormateur } from "@shared/schema";
+import { CarteLien } from "@/components/ui/carte";
+import { BadgeDirect, Erreur, Squelette } from "@/components/ui/divers";
+import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+import { CarteSeance } from "@/components/seances/CarteSeance";
+import { SquelettesSeances } from "@/components/seances/FilDesSeances";
+import { useDernieresSeances } from "@/components/seances/fil";
+import type { AccueilFormateur, SeanceFormateur } from "@shared/schema";
+import type { ResumeEnseigner } from "@shared/engagement/enseigner";
+import { selonNombre, t, type CleTravail } from "@shared/textes/travail";
+import type { Traducteur } from "@shared/textes";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
-import { LigneReplay, useReplays } from "@/modules/live/replays";
-import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
-// Emplacement du plan d'engagement (campus/ENGAGEMENT.md), vide tant que C7 n'est pas là.
-import { ApresSeance } from "@/modules/enseigner-suivi/ApresSeance";
-import { CartesCorrections } from "@/modules/enseigner-suivi/CartesCorrections";
+
+type Tx = Traducteur<CleTravail>;
 
 const MINUTE = 60_000;
+/** À 45 minutes du début, le geste utile devient « entrer dans ma classe » (la fenêtre de démarrage du Studio s'ouvre aussi à 45 minutes). */
+const AVANT_CLASSE = 45 * MINUTE;
 
 export default function PageEnseigner() {
+  const tx = useTextes(t);
   const { data, isLoading, error, refetch } = useQuery<AccueilFormateur>({ queryKey: ["/api/accueil/formateur"], refetchInterval: 60_000 });
   const maintenant = useMaintenant(30_000);
 
   useTousEvenements((e) => {
-    if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil/formateur", "/api/enseigner/apres-seance");
+    if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil/formateur", "/api/enseigner/apres-seance", "/api/fil");
   });
 
   if (error && !data) {
@@ -64,384 +78,271 @@ export default function PageEnseigner() {
   }
   if (isLoading || !data) {
     return (
-      <Page className="gap-7">
+      <Page className="gap-6">
         <div className="flex flex-col gap-2" aria-busy="true" aria-label="Chargement">
-          <Squelette className="h-4 w-64" />
-          <Squelette className="h-10 w-52" />
+          <Squelette className="h-4 w-40" />
+          <Squelette className="h-9 w-52" />
         </div>
         <Squelette className="h-80 rounded-[24px]" />
       </Page>
     );
   }
 
+  return <ContenuAccueil data={data} seance={data.enDirect ?? data.prochaineSeance} maintenant={maintenant} tx={tx} />;
+}
 
+function ContenuAccueil({ data, seance, maintenant, tx }: { data: AccueilFormateur; seance: SeanceFormateur | null; maintenant: number; tx: Tx }) {
+  const choses = useChosesAFaire(data.messagesNonLus, tx);
   return (
-    <Page className="gap-7">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="font-mono text-xs text-texte-gris">
-            {majuscule(jourLong(maintenant))} · {heureDouble(maintenant)}
-          </span>
-          <h1 className="titre-page">
-            {data.salutation} {data.prenom}.
-          </h1>
-        </div>
-        <LienBouton href="/annonces?nouvelle=1" variante="contour" icone={<Megaphone className="h-4 w-4" />}>
-          Écrire à mes étudiants
-        </LienBouton>
+    <Page className="gap-6 sm:gap-8">
+      <header className="flex flex-col gap-1">
+        <span className="text-[15px] font-semibold text-texte-pale">{majuscule(jourLong(maintenant))}</span>
+        <h1 className="text-[30px] font-black leading-[1.05] tracking-serre sm:text-[40px]">
+          {data.salutation} {data.prenom}.
+        </h1>
       </header>
 
-      {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois ; puis le lieu d'où il enseigne, en un clic. */}
-      <ConfirmationFuseau />
-      <LieuDuCours />
-
-      <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
-        <div className="flex min-w-0 flex-col gap-7">
-          {data.enDirect ? (
-            <CarteEnDirect seance={data.enDirect} />
-          ) : data.prochaineSeance ? (
-            <CarteProchaineSeance seance={data.prochaineSeance} maintenant={maintenant} />
-          ) : (
-            <EtatVide
-              icone={<Radio className="h-5 w-5" />}
-              titre="Aucune séance planifiée"
-              texte="Planifiez votre prochain live depuis la page de votre cours : les cinq salles de conférence et les étudiants connectés seront prévenus."
-              action={
-                <LienBouton href="/cours" variante="principal">
-                  Ouvrir mes cours
-                </LienBouton>
-              }
-            />
+      {/* Sur ordinateur, « À faire » se range à droite de la classe ; rien à faire : la classe seule. */}
+      <div className={cn("grid gap-6 lg:items-start lg:gap-8", choses.length ? "lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]" : "lg:max-w-[760px]")}>
+        <div className="flex min-w-0 flex-col gap-4">
+          <CarteMaClasse data={data} maintenant={maintenant} tx={tx} />
+          {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois (sous le bouton, jamais au-dessus). */}
+          <ConfirmationFuseau className="lg:flex-col lg:items-stretch" />
+          {seance && (
+            <details className="group rounded-2xl border border-ligne bg-white">
+              <summary className="flex min-h-[56px] cursor-pointer list-none items-center gap-3 px-4 py-3 text-[16px] font-bold text-encre [&::-webkit-details-marker]:hidden">
+                <Radio className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+                <span className="flex-1">{tx("classe.reglages")}</span>
+                <ChevronDown className="h-5 w-5 shrink-0 text-texte-gris transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="flex flex-col gap-4 border-t border-ligne-douce p-4">
+                {/* Module visio : le lieu d'où il enseigne, puis l'essai de la visio, le fuseau, les diapos, le plan. */}
+                <LieuDuCours />
+                {!data.enDirect && <CartePretClasse />}
+              </div>
+            </details>
           )}
-          {data.enDirect && data.prochaineSeance && <LigneSeanceSuivante seance={data.prochaineSeance} />}
-          {/* Correction automatique : corrigés à valider, copies à revoir, relectures demandées (sinon une ligne discrète). */}
-          <LimiteSilencieuse nom="CartesCorrections">
-            <CartesCorrections />
-          </LimiteSilencieuse>
-          {/* Module visio : essai de la visio, fuseau, diapos, plan minuté. */}
-          {!data.enDirect && data.prochaineSeance && <CartePretClasse />}
-          {/* « Après la séance » porte aussi les copies que le formateur corrige lui-même. */}
-          <LimiteSilencieuse nom="ApresSeance">
-            <ApresSeance />
-          </LimiteSilencieuse>
-          <QuestionsEnSuspens questions={data.questions} maintenant={maintenant} />
         </div>
-        <div className="flex min-w-0 flex-col gap-7">
-          <Messages nombre={data.messagesNonLus} />
-          <CarteLien href="/annonces" className="-mt-4 flex items-center gap-4 px-5 py-4">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-creme text-orange-fonce">
-              <Megaphone className="h-5 w-5" aria-hidden />
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-[17px] font-extrabold">Annonces</span>
-              <span className="text-sm text-texte-pale">
-                {data.annoncesNonLues
-                  ? `${pluriel(data.annoncesNonLues, "annonce")} du campus à lire · vos annonces et leurs lectures`
-                  : "Celles du campus, et les vôtres avec leurs lectures."}
-              </span>
-            </span>
-            <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
-          </CarteLien>
-          <Enregistrements />
-          <MesCours cours={data.cours} />
-          <MaSemaine elements={data.semaine} />
-        </div>
+
+        {choses.length > 0 && (
+          <LimiteSilencieuse nom="AFaire">
+            <AFaire choses={choses} tx={tx} />
+          </LimiteSilencieuse>
+        )}
       </div>
+
+      <LimiteSilencieuse nom="MesSeances">
+        <MesSeances tx={tx} />
+      </LimiteSilencieuse>
+
+      <LiensSimples data={data} tx={tx} />
     </Page>
   );
 }
 
-// ── Séance en direct / prochaine séance ────────────────────────────────────
+// ── Ma prochaine classe ────────────────────────────────────────────────────
 
-function CarteEnDirect({ seance }: { seance: SeanceFormateur }) {
+function CarteMaClasse({ data, maintenant, tx }: { data: AccueilFormateur; maintenant: number; tx: Tx }) {
+  if (data.enDirect) return <CarteClasse seance={data.enDirect} enDirect maintenant={maintenant} ensuite={data.prochaineSeance} tx={tx} />;
+  if (data.prochaineSeance) return <CarteClasse seance={data.prochaineSeance} maintenant={maintenant} tx={tx} />;
   return (
-    <section aria-labelledby="titre-seance" className="flex flex-col gap-5 rounded-[24px] bg-nuit p-5 text-white sm:p-7">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-peche">{seance.coursCode} · Vous êtes en direct</span>
-        <BadgeDirect />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <h2 id="titre-seance" className="text-[26px] font-black leading-[1.06] tracking-serre sm:text-[32px]">
-          {seance.titre}
-        </h2>
-        <p className="text-nuit-doux">Séance prévue à {heureDouble(seance.debut)}. Les campus et les étudiants vous suivent depuis le studio.</p>
-      </div>
-      <LienBouton href={seance.lienStudio} taille="lg" className="min-h-[56px] w-full sm:w-auto sm:self-start">
-        Retourner au studio <ArrowRight className="h-5 w-5" aria-hidden />
+    <section aria-labelledby="titre-classe" className="flex flex-col gap-4 rounded-[24px] bg-encre p-5 text-white sm:p-7">
+      <span className="font-mono text-[13px] uppercase tracking-[0.12em] text-orange-peche">{tx("classe.etiquette")}</span>
+      <h2 id="titre-classe" className="text-[28px] font-black leading-tight sm:text-[34px]">
+        {tx("classe.aucune.titre")}
+      </h2>
+      <p className="text-[16px] leading-relaxed text-nuit-doux">{tx("classe.aucune.texte")}</p>
+      <LienBouton href="/emploi-du-temps" variante="nuit" taille="lg" icone={<CalendarRange className="h-5 w-5" />} className="min-h-[56px] text-[17px] sm:self-start">
+        {tx("classe.aucune.emploi")}
       </LienBouton>
     </section>
   );
 }
 
-function CarteProchaineSeance({ seance, maintenant }: { seance: SeanceFormateur; maintenant: number }) {
+function CarteClasse({ seance, enDirect = false, maintenant, ensuite, tx }: { seance: SeanceFormateur; enDirect?: boolean; maintenant: number; ensuite?: SeanceFormateur | null; tx: Tx }) {
   const debut = new Date(seance.debut).getTime();
   const dans = debut - maintenant;
-  // À 30 minutes du début, le geste utile devient « ouvrir le studio » (tests son et image, accueil des salles).
-  const studioDabord = dans <= 30 * MINUTE;
-  const etapes = [
-    { ok: seance.preparation.plan > 0, texte: seance.preparation.plan ? `Plan : ${pluriel(seance.preparation.plan, "étape")}` : "Plan à écrire" },
-    { ok: seance.preparation.diapos > 0, texte: seance.preparation.diapos ? pluriel(seance.preparation.diapos, "diapo") : "Aucune diapo" },
-    { ok: seance.preparation.description, texte: seance.preparation.description ? "Description prête" : "Description à écrire" },
-  ];
+  // UN bouton qui change seul : préparer longtemps avant, entrer dans la classe à 45 minutes et pendant le direct.
+  const entrer = enDirect || dans <= AVANT_CLASSE;
+  const attendent = !enDirect && dans <= 0;
+  // « 08h30 » en gros ; dessous « heure d'Abidjan · 04h30 chez vous (Toronto) » pour un formateur à l'étranger.
+  const sousHeure = heureDouble(seance.debut).replace(/^\d{2}h\d{2} Abidjan/, tx("classe.abidjan"));
   return (
-    <section aria-labelledby="titre-seance" className="flex flex-col gap-5 rounded-[24px] bg-encre p-5 text-white sm:p-7">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-peche">Prochaine séance · {seance.coursCode}</span>
-        {dans <= 0 && <Badge ton="direct">Vos étudiants attendent</Badge>}
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <h2 id="titre-seance" className="text-[26px] font-black leading-[1.06] tracking-serre sm:text-[32px]">
-          {seance.titre}
-        </h2>
-        <p className="text-nuit-doux">{seance.coursTitre}</p>
-      </div>
-      <div className="flex flex-col gap-1 rounded-2xl bg-nuit-carte px-4 py-3">
-        <span className="text-[15px] font-bold">
-          {majuscule(jourRelatif(seance.debut, maintenant))} · {seance.dureeMinutes} min
+    <section aria-labelledby="titre-classe" className={cn("flex flex-col gap-4 rounded-[24px] p-5 text-white sm:p-7", enDirect ? "bg-nuit" : "bg-encre")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-[13px] uppercase tracking-[0.12em] text-orange-peche">
+          {enDirect ? tx("classe.etiquette.direct") : attendent ? tx("classe.etiquette.attente") : tx("classe.etiquette")} · {seance.coursCode}
         </span>
-        <span className="font-mono text-sm text-orange-peche">{heureDouble(seance.debut)}</span>
+        {enDirect && <BadgeDirect />}
       </div>
-      {dans > 0 && dans < 8 * 24 * 60 * MINUTE && <CompteARebours cible={seance.debut} />}
-      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="Préparation de la séance">
-        {etapes.map((e) => (
-          <li key={e.texte} className="flex items-center gap-2 rounded-xl bg-nuit-carte px-3 py-2.5 text-sm">
-            {e.ok ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#6FD3A0]" aria-label="Prêt" /> : <CircleAlert className="h-4 w-4 shrink-0 text-orange" aria-label="À faire" />}
-            <span className={e.ok ? "text-nuit-texte" : "text-white"}>{e.texte}</span>
+      <h2 id="titre-classe" className="text-[26px] font-black leading-[1.08] sm:text-[32px]">
+        {seance.coursTitre}
+      </h2>
+      {!enDirect && (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[28px] font-black leading-tight tabular-nums sm:text-[34px]">
+            {majuscule(jourRelatif(seance.debut, maintenant))} · {heure(seance.debut)}
+          </span>
+          <span className="text-[15px] text-nuit-doux">
+            {sousHeure}
+            {dans > 0 && dans < 24 * 60 * MINUTE && (
+              <>
+                {" · "}
+                <span className="font-bold text-orange-peche">
+                  {tx("classe.dans")} <DecompteCourt cible={seance.debut} />
+                </span>
+              </>
+            )}
+          </span>
+        </div>
+      )}
+      <p className="text-[16px] leading-snug text-nuit-texte">{seance.titre}</p>
+      {attendent && <p className="text-[16px] font-bold text-[#FF8A6B]">{tx("classe.attendent")}</p>}
+      <LienBouton
+        href={entrer ? seance.lienStudio : seance.lienPreparation}
+        taille="lg"
+        className="min-h-[64px] w-full px-5 text-[18px] sm:w-auto sm:self-start sm:px-8 sm:text-[19px]"
+      >
+        {entrer ? tx("classe.entrer") : tx("classe.preparer")} <ArrowRight className="h-6 w-6" aria-hidden />
+      </LienBouton>
+      {/* Un seul gros bouton ; l'autre geste reste à portée, en lien discret. */}
+      <Link href={entrer ? seance.lienPreparation : seance.lienStudio} className="-mt-1 inline-flex min-h-[44px] items-center gap-1 self-start text-[15px] font-semibold text-nuit-doux no-underline hover:text-white">
+        {entrer ? tx("classe.lien.preparer") : tx("classe.lien.entrer")} <ChevronRight className="h-4 w-4" aria-hidden />
+      </Link>
+      {enDirect && ensuite && (
+        <p className="border-t border-nuit-ligne pt-3 text-[15px] text-nuit-doux">
+          {tx("classe.ensuite", { v: { titre: ensuite.titre, quand: `${jourRelatif(ensuite.debut, maintenant)} à ${heure(ensuite.debut)}` } })}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ── À faire ────────────────────────────────────────────────────────────────
+
+type Chose = { cle: string; href: string; n: number; icone: LucideIcon; titre: string; texte: string; principale?: boolean };
+
+/** Ce qui attend le formateur, dans l'ordre d'importance ; vide quand il n'y a rien (le bloc ne s'affiche pas). */
+function useChosesAFaire(messagesNonLus: number, tx: Tx): Chose[] {
+  // Même requête que l'ancienne carte « Correction des copies » : un seul appel au serveur.
+  const { data } = useQuery<ResumeEnseigner>({ queryKey: ["/api/enseigner/apres-seance"], staleTime: 60_000 });
+  const c = data?.corriges;
+  return [
+    c?.aValider ? { cle: "corriges", href: "/enseigner/corriges", n: c.aValider, icone: ClipboardCheck, titre: selonNombre(tx, "afaire.corriges", c.aValider), texte: tx("afaire.corriges.texte"), principale: true } : null,
+    c?.relectures ? { cle: "relectures", href: "/enseigner/a-revoir#relectures", n: c.relectures, icone: MessageSquareQuote, titre: selonNombre(tx, "afaire.relectures", c.relectures), texte: tx("afaire.relectures.texte") } : null,
+    c?.aRevoir ? { cle: "a-revoir", href: "/enseigner/a-revoir#copies", n: c.aRevoir, icone: TriangleAlert, titre: selonNombre(tx, "afaire.aRevoir", c.aRevoir), texte: tx("afaire.aRevoir.texte") } : null,
+    data?.copies.aCorriger ? { cle: "copies", href: "/corriger", n: data.copies.aCorriger, icone: PenLine, titre: selonNombre(tx, "afaire.copies", data.copies.aCorriger), texte: tx("afaire.copies.texte") } : null,
+    data?.copies.aPublier ? { cle: "a-publier", href: "/corriger", n: data.copies.aPublier, icone: Send, titre: selonNombre(tx, "afaire.aPublier", data.copies.aPublier), texte: tx("afaire.aPublier.texte") } : null,
+    messagesNonLus ? { cle: "messages", href: "/messages", n: messagesNonLus, icone: MessageCircle, titre: selonNombre(tx, "afaire.messages", messagesNonLus), texte: tx("afaire.messages.texte") } : null,
+  ].filter((x): x is Chose => x !== null);
+}
+
+function AFaire({ choses, tx }: { choses: Chose[]; tx: Tx }) {
+  return (
+    <section aria-labelledby="titre-a-faire" className="flex flex-col gap-3">
+      <h2 id="titre-a-faire" className="text-[24px] font-extrabold leading-tight">
+        {tx("afaire.titre")}
+      </h2>
+      <ul className="flex flex-col gap-2.5">
+        {choses.map((x) => (
+          <li key={x.cle}>
+            <LigneAFaire chose={x} ouvrir={tx("afaire.ouvrir")} />
           </li>
         ))}
       </ul>
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        {studioDabord ? (
-          <>
-            <LienBouton href={seance.lienStudio} taille="lg" className="min-h-[56px]">
-              Ouvrir le studio <ArrowRight className="h-5 w-5" aria-hidden />
-            </LienBouton>
-            <LienBouton href={seance.lienPreparation} variante="nuit" taille="lg" className="min-h-[56px]">
-              Préparer
-            </LienBouton>
-          </>
-        ) : (
-          <>
-            <LienBouton href={seance.lienPreparation} taille="lg" className="min-h-[56px]">
-              Préparer la séance <ArrowRight className="h-5 w-5" aria-hidden />
-            </LienBouton>
-            <LienBouton href={seance.lienStudio} variante="nuit" taille="lg" className="min-h-[56px]">
-              Ouvrir le studio
-            </LienBouton>
-          </>
-        )}
-      </div>
-      <a href={seance.lienAgenda} className="flex min-h-[44px] items-center gap-2 self-start text-sm font-semibold text-nuit-doux hover:text-white" download>
-        <CalendarPlus className="h-4 w-4" aria-hidden /> Ajouter à mon agenda
-      </a>
     </section>
   );
 }
 
-function LigneSeanceSuivante({ seance }: { seance: SeanceFormateur }) {
+function LigneAFaire({ chose: { href, n, icone: Icone, titre, texte, principale }, ouvrir }: { chose: Chose; ouvrir: string }) {
   return (
-    <Link href={seance.lienPreparation} className="flex min-h-[56px] items-center gap-3 rounded-2xl border border-ligne px-4 py-3 text-encre no-underline hover:border-orange hover:text-encre">
-      <Radio className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="font-bold">Ensuite : {seance.titre}</span>
-        <span className="font-mono text-xs text-texte-gris">
-          {seance.coursCode} · {majuscule(jourRelatif(seance.debut))} · {heureDouble(seance.debut)}
-        </span>
+    <CarteLien href={href} className={cn("flex min-h-[76px] items-center gap-3.5 px-4 py-3.5", principale && "border-orange bg-orange-pale")}>
+      <span
+        className={cn("relative grid h-12 w-12 shrink-0 place-items-center rounded-xl text-[19px] font-black tabular-nums", principale ? "bg-orange text-encre" : "bg-creme text-encre")}
+        aria-hidden
+      >
+        {n}
+        <Icone className={cn("absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-white p-0.5", principale ? "text-orange-fonce" : "text-texte-pale")} />
       </span>
-      <ChevronRight className="h-5 w-5 text-texte-gris" aria-hidden />
-    </Link>
-  );
-}
-
-// ── Enregistrements : les derniers replays, tous cours confondus ───────────
-
-function Enregistrements() {
-  const { data } = useReplays();
-  if (!data) return null;
-  const derniers = data.replays.slice(0, 4);
-  return (
-    <section aria-labelledby="titre-enregistrements">
-      <TitreSection
-        titre={
-          <span id="titre-enregistrements" className="flex items-center gap-2">
-            Enregistrements {data.nouveaux > 0 && <Badge ton="orange">{pluriel(data.nouveaux, "nouveau", "nouveaux")}</Badge>}
-          </span>
-        }
-        action={
-          data.replays.length > 0 ? (
-            <Link href="/replays" className="-my-2.5 inline-flex items-center gap-1 py-2.5 text-[15px] font-bold">
-              Tout voir <ChevronRight className="h-4 w-4" aria-hidden />
-            </Link>
-          ) : undefined
-        }
-      />
-      {derniers.length ? (
-        <ul className="flex flex-col gap-2.5">
-          {derniers.map((r) => (
-            <li key={r.seanceId}>
-              <LigneReplay replay={r} compacte />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <Carte className="flex items-center gap-4 px-5 py-4">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-creme text-orange-fonce">
-            <PlayCircle className="h-5 w-5" aria-hidden />
-          </span>
-          <span className="text-sm text-texte-pale">Les replays de tous les cours, les vôtres et ceux de vos collègues, arrivent ici dès que la vidéo est prête. Vous recevrez une alerte.</span>
-        </Carte>
-      )}
-    </section>
-  );
-}
-
-// ── Questions du dernier live restées sans réponse ─────────────────────────
-
-function QuestionsEnSuspens({ questions, maintenant }: { questions: AccueilFormateur["questions"]; maintenant: number }) {
-  return (
-    <section aria-labelledby="titre-questions">
-      <TitreSection titre={<span id="titre-questions">Questions en suspens</span>} />
-      {!questions ? (
-        <EtatVide
-          icone={<MessagesSquare className="h-5 w-5" />}
-          titre="Pas encore de live terminé"
-          texte="Après chaque live, les questions votées par les campus et restées sans réponse s'affichent ici pour que vous puissiez y revenir."
-        />
-      ) : (
-        <Carte className="flex flex-col gap-4">
-          <p className="font-mono text-xs text-texte-gris">
-            Dernier live : {questions.coursCode} · {questions.seanceTitre}
-            {questions.termineeLe && ` · ${relatif(questions.termineeLe, maintenant)}`}
-          </p>
-          {questions.liste.length ? (
-            <ul className="flex flex-col divide-y divide-ligne">
-              {questions.liste.map((q) => (
-                <li key={q.id} className="flex items-start gap-3 py-3 first:pt-0">
-                  <span className="flex w-12 shrink-0 flex-col items-center rounded-xl bg-creme py-1.5" aria-label={pluriel(q.votes, "vote")}>
-                    <ThumbsUp className="h-3.5 w-3.5 text-orange-fonce" aria-hidden />
-                    <span className="font-mono text-sm font-bold tabular-nums">{q.votes}</span>
-                  </span>
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-[15px] font-semibold leading-snug">{q.texte}</span>
-                    {q.site && <span className="font-mono text-xs text-texte-gris">{q.site}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="flex items-center gap-2 text-[15px] text-succes">
-              <CheckCircle2 className="h-4 w-4" aria-hidden /> Toutes les questions ont reçu une réponse.
-            </p>
-          )}
-          {questions.total > questions.liste.length && <p className="text-sm text-texte-pale">Et {questions.total - questions.liste.length} autre(s) dans le bilan.</p>}
-          <LienBouton href={questions.lien} variante="contour" className="min-h-[48px] self-start">
-            Voir le bilan de la séance
-          </LienBouton>
-        </Carte>
-      )}
-    </section>
-  );
-}
-
-// ── Messages, cours, semaine ───────────────────────────────────────────────
-
-function Messages({ nombre }: { nombre: number }) {
-  return (
-    <CarteLien href="/messages" className={cn("flex items-center gap-4 px-5 py-4", nombre > 0 && "border-orange bg-orange-pale")}>
-      <span className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-full", nombre > 0 ? "bg-orange text-encre" : "bg-creme text-texte-pale")}>
-        <MessageCircle className="h-5 w-5" aria-hidden />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[17px] font-extrabold leading-snug">{titre}</span>
+        <span className="text-[14px] leading-snug text-texte-pale">{texte}</span>
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="text-[17px] font-extrabold">{nombre > 0 ? `${pluriel(nombre, "message")} non lu${nombre > 1 ? "s" : ""}` : "Aucun message en attente"}</span>
-        <span className="text-sm text-texte-pale">{nombre > 0 ? "Vos étudiants et la vie scolaire vous ont écrit." : "Vos étudiants vous écrivent ici, comme sur WhatsApp."}</span>
+      <span className="flex shrink-0 items-center gap-1 rounded-xl bg-encre px-3 py-2.5 text-[15px] font-bold text-white">
+        <span className="hidden min-[420px]:inline">{ouvrir}</span>
+        <ChevronRight className="h-5 w-5" aria-hidden />
       </span>
-      <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
     </CarteLien>
   );
 }
 
-function MesCours({ cours }: { cours: CoursFormateur[] }) {
+// ── Mes séances ────────────────────────────────────────────────────────────
+
+function MesSeances({ tx }: { tx: Tx }) {
+  const { data, isLoading, error } = useDernieresSeances(5);
+  const seances = data?.seances ?? [];
   return (
-    <section aria-labelledby="titre-cours">
-      <TitreSection titre={<span id="titre-cours">Mes cours</span>} />
-      {cours.length ? (
-        <div className="flex flex-col gap-3">
-          {cours.map((c) => (
-            <CarteLien key={c.id} href={`/enseigner/cours/${c.id}`} className="flex flex-col gap-1.5 px-5 py-4">
-              <span className="flex flex-wrap items-center gap-2 font-mono text-[11px] font-semibold text-orange-fonce">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.couleur }} aria-hidden />
-                {c.code}
-                {c.statut === "brouillon" && <Badge ton="gris">Brouillon</Badge>}
-                {c.statut === "archive" && <Badge ton="gris">Archivé</Badge>}
-              </span>
-              <span className="text-[17px] font-bold leading-snug">{c.titre}</span>
-              <span className="text-[13px] text-texte-gris">
-                {pluriel(c.etudiants, "étudiant")} · {pluriel(c.campus, "campus", "campus")}
-                {c.prochaineSeance &&
-                  (c.prochaineSeance.statut === "en_direct"
-                    ? " · En direct maintenant"
-                    : ` · Live ${jourRelatif(c.prochaineSeance.debut)} à ${heure(c.prochaineSeance.debut)} (Abidjan)`)}
-              </span>
-            </CarteLien>
-          ))}
+    <section aria-labelledby="titre-mes-seances" className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 id="titre-mes-seances" className="text-[28px] font-extrabold leading-tight">
+            {tx("seances.titre")}
+          </h2>
+          <p className="text-[16px] text-texte-pale">{tx("seances.sousTitre")}</p>
         </div>
+      </div>
+      {isLoading ? (
+        <SquelettesSeances />
+      ) : error && !data ? (
+        <p className="rounded-2xl bg-creme px-4 py-4 text-[16px] text-texte-pale">{tx("seances.erreur")}</p>
+      ) : !seances.length ? (
+        <p className="rounded-2xl bg-creme px-4 py-4 text-[16px] leading-relaxed text-texte-pale">{tx("seances.vide.texte")}</p>
       ) : (
-        <EtatVide
-          icone={<BookOpen className="h-5 w-5" />}
-          titre="Aucun cours pour l'instant"
-          texte="La direction des études vous attribue vos cours. Ils apparaîtront ici avec leurs classes et leurs campus."
-        />
+        <ul className="grid gap-4 lg:grid-cols-2">
+          {seances.map((s) => (
+            <li key={s.id} className="min-w-0">
+              <CarteSeance seance={s} className="h-full" />
+            </li>
+          ))}
+        </ul>
       )}
+      <LienBouton href="/mes-seances" variante="encre" taille="lg" className="min-h-[60px] w-full text-[18px] sm:w-auto sm:self-start sm:px-8">
+        {tx("seances.toutes")} <ArrowRight className="h-5 w-5" aria-hidden />
+      </LienBouton>
     </section>
   );
 }
 
-function MaSemaine({ elements }: { elements: ElementAgenda[] }) {
+// ── Liens simples ──────────────────────────────────────────────────────────
+
+function LiensSimples({ data, tx }: { data: AccueilFormateur; tx: Tx }) {
+  const enSuspens = data.questions?.total ?? 0;
+  const liens: { href: string; icone: LucideIcon; libelle: string; compteur?: number }[] = [
+    { href: "/annonces?nouvelle=1", icone: Megaphone, libelle: tx("liens.ecrire") },
+    // La page de lecture du cours (comme l'onglet « Mes cours »), pas l'éditeur.
+    { href: "/cours", icone: BookOpen, libelle: tx("liens.cours") },
+    { href: "/replays", icone: PlayCircle, libelle: tx("liens.videos") },
+    { href: "/emploi-du-temps", icone: CalendarRange, libelle: tx("liens.emploi") },
+    { href: "/annonces", icone: ClipboardList, libelle: tx("liens.annonces"), compteur: data.annoncesNonLues || undefined },
+    ...(data.questions && enSuspens > 0 ? [{ href: data.questions.lien, icone: MessagesSquare, libelle: tx("liens.questions"), compteur: enSuspens }] : []),
+  ];
   return (
-    <section aria-labelledby="titre-semaine">
-      <TitreSection
-        titre={<span id="titre-semaine">Mes 7 prochains jours</span>}
-        action={
-          <Link href="/agenda" className="-my-2.5 inline-flex items-center gap-1 py-2.5 text-[15px] font-bold">
-            Agenda <ChevronRight className="h-4 w-4" aria-hidden />
-          </Link>
-        }
-      />
-      {elements.length ? (
-        <ul className="flex flex-col divide-y divide-ligne border-y border-ligne">
-          {elements.map((e) => {
-            const Icone = e.type === "live" ? Radio : e.type === "devoir" ? ClipboardList : CalendarDays;
-            const contenu = (
-              <>
-                <Icone className="mt-0.5 h-4 w-4 shrink-0 text-orange-fonce" aria-hidden />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-[15px] font-bold leading-snug">
-                    {e.type === "devoir" ? "Échéance : " : ""}
-                    {e.titre}
-                  </span>
-                  <span className="font-mono text-xs text-texte-gris">
-                    {e.coursCode ? `${e.coursCode} · ` : ""}
-                    {majuscule(jourRelatif(e.debut))} · {heureDouble(e.debut)}
-                  </span>
-                </span>
-              </>
-            );
-            return (
-              <li key={e.cle}>
-                {e.lien ? (
-                  <Link href={e.lien} className="flex min-h-[56px] items-start gap-3 py-3 text-encre no-underline hover:text-orange-fonce">
-                    {contenu}
-                  </Link>
-                ) : (
-                  <div className="flex min-h-[56px] items-start gap-3 py-3">{contenu}</div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="rounded-2xl bg-creme px-4 py-4 text-[15px] text-texte-pale">Rien de prévu ces sept prochains jours.</p>
-      )}
-    </section>
+    <nav aria-labelledby="titre-liens" className="flex flex-col gap-3 border-t border-ligne-douce pt-6">
+      <h2 id="titre-liens" className="text-xl font-extrabold">
+        {tx("liens.titre")}
+      </h2>
+      <ul className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2 lg:grid-cols-3">
+        {liens.map((l) => (
+          <li key={l.href}>
+            <CarteLien href={l.href} className="flex min-h-[60px] items-center gap-3 px-4 py-3">
+              <l.icone className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+              <span className="flex-1 text-[16px] font-bold leading-snug">{l.libelle}</span>
+              {l.compteur ? <span className="rounded-full bg-orange px-2 py-0.5 font-mono text-[13px] font-bold text-encre">{l.compteur}</span> : null}
+              <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
+            </CarteLien>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }

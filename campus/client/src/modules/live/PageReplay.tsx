@@ -316,7 +316,7 @@ function BandeauCoursComplet({ seanceId }: { seanceId: number }) {
     >
       <GraduationCap className="h-6 w-6 shrink-0 text-orange-fonce" aria-hidden />
       <span className="flex-1">
-        <span className="block font-extrabold">{data.statut === "prete" ? "Le cours complet est prêt" : "Le cours complet se prépare"}</span>
+        <span className="block font-extrabold">{data.statut === "prete" ? "Le cours résumé est prêt" : "Le cours résumé se prépare"}</span>
         <span className="text-sm text-texte-pale">Notions expliquées, quiz corrigé, exercices pratiques avec corrigés, étude de cas et fiches mémo.</span>
       </span>
     </Link>

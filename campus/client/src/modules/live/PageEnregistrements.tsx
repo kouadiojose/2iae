@@ -58,8 +58,8 @@ export default function PageEnregistrements() {
   return (
     <Page className="max-w-4xl gap-6">
       <EnTetePage
-        etiquette="Replays des lives"
-        titre="Enregistrements"
+        etiquette="Enregistrements"
+        titre="Vidéos des cours"
         sousTitre={
           formateur
             ? "Les vidéos de tous les cours : les vôtres et celles de vos collègues. Vous êtes prévenu dès qu'un nouvel enregistrement est prêt."

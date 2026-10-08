@@ -25,8 +25,8 @@ export const t = creerTextes({
   "page.reessayer": "Réessayer",
   "vide.titre": "Pas encore de cartes à réviser",
   "vide.texte": {
-    tu: "Tes cartes viennent des cours complets de tes cours, préparés tout seuls après chaque séance. Reviens après ton prochain cours.",
-    vous: "Les cartes viennent des cours complets, préparés tout seuls après chaque séance.",
+    tu: "Tes cartes viennent des cours résumés de tes cours, préparés tout seuls après chaque séance. Reviens après ton prochain cours.",
+    vous: "Les cartes viennent des cours résumés, préparés tout seuls après chaque séance.",
   },
   "fini.titre": { tu: "Tout est révisé pour aujourd'hui ✓", vous: "Tout est révisé pour aujourd'hui ✓" },
   "fini.demain": "Prochaine révision demain.",
@@ -107,17 +107,17 @@ export const t = creerTextes({
   "cc.retour.replay": "L'enregistrement",
 
   // ── Onglet « Réviser » de la page d'un cours ──
-  "cours.onglet": "Réviser",
+  "cours.onglet": { tu: "Réviser", vous: "Cours résumés" },
   "cours.jour": { tu: "Ma révision du jour", vous: "Révision du jour" },
   "cours.vide": {
-    tu: "Pas encore de cours complet pour ce cours : il se prépare tout seul après chaque séance enregistrée.",
-    vous: "Pas encore de cours complet pour ce cours : il se prépare tout seul après chaque séance enregistrée.",
+    tu: "Pas encore de cours résumé pour ce cours : il se prépare tout seul après chaque séance enregistrée.",
+    vous: "Pas encore de cours résumé pour ce cours : il se prépare tout seul après chaque séance enregistrée.",
   },
   "cours.cartes": "{n} cartes",
   "cours.aRevoir": "{n} à revoir aujourd'hui",
   "cours.quiz": "Quiz : {meilleur}/{total}",
   "cours.nouveau": "Pas encore ouvert",
-  "cours.ouvrir": "Ouvrir le cours complet",
+  "cours.ouvrir": "Ouvrir le cours résumé",
 
   // ── Bloc du formateur et de la direction (vouvoyés) ──
   "classe.titre": "Révision de la classe",

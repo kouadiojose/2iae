@@ -7,7 +7,8 @@ import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuesti
 import { useMoiConnecte, seDeconnecter, basculerCasquette } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { queryClient, rafraichir } from "@/lib/queryClient";
-import { navigationDe, estActif, type ElementNav } from "@/navigation";
+import { navigationDe, estActif, ongletsTelephone, type ElementNav } from "@/navigation";
+import { maintenantServeur } from "@/lib/horloge";
 import { cn, nomComplet } from "@/lib/utils";
 import { Avatar } from "@/components/ui/divers";
 import { Menu, ElementMenu, SeparateurMenu } from "@/components/ui/menu";
@@ -113,11 +114,15 @@ export function lienAide(moi: { prenom: string; nom: string; matricule: string |
   return numero ? `https://wa.me/${numero}?text=${encodeURIComponent(texte)}` : null;
 }
 
-/** Téléphone : les pages hors de la barre du bas (assistant, bibliothèque, médiathèque, notes…). */
+/** Téléphone : les pages hors de la barre du bas (le libellé annoncé dit lesquelles, pour chaque rôle). */
 function MenuPlusTelephone({ elements, chemin }: { elements: ElementNav[]; chemin: string }) {
   const [, naviguer] = useLocation();
   if (!elements.length) return null;
   const actif = elements.some((el) => estActif(el, chemin));
+  const apercu = elements
+    .slice(0, 3)
+    .map((el) => el.libelle.toLowerCase())
+    .join(", ");
   return (
     <Menu
       align="end"
@@ -127,7 +132,7 @@ function MenuPlusTelephone({ elements, chemin }: { elements: ElementNav[]; chemi
             "flex flex-col items-center rounded-xl px-2 py-1 text-texte-doux hover:bg-creme hover:text-encre",
             actif && "text-orange-fonce",
           )}
-          aria-label="Plus : assistant, bibliothèque, médiathèque, notes…"
+          aria-label={`Plus : ${apercu}${elements.length > 3 ? "…" : ""}`}
         >
           <LayoutGrid className="h-[22px] w-[22px]" />
           <span className="text-[11px] font-semibold leading-tight">Plus</span>
@@ -278,14 +283,29 @@ function EcouteGlobale() {
   return null;
 }
 
-/** Entrées visibles dans l'en-tête sur ordinateur ; les suivantes vont dans « Plus ». */
-/** Entrées visibles dans l'en-tête (le reste va dans « Plus ») : l'équipe a des libellés plus longs. */
-const navVisibles = (role: string, enDirect: boolean) => (role === "admin" || role === "vie_scolaire" ? 6 : 7) - (enDirect ? 1 : 0);
+/** Entrées visibles dans l'en-tête (le reste va dans « Plus ») : l'équipe et le formateur ont des libellés plus longs. */
+const navVisibles = (role: string, enDirect: boolean) => (role === "admin" || role === "vie_scolaire" || role === "formateur" ? 6 : 7) - (enDirect ? 1 : 0);
+
+/** « Ma classe » du formateur s'ouvre directement sur la classe à 45 minutes du début, comme le bouton de l'accueil. */
+const AVANT_CLASSE_MS = 45 * 60_000;
+
+/**
+ * Adresse d'une entrée : l'onglet central (le direct) mène à la classe en direct ; pour le formateur, aussi à sa
+ * prochaine classe dès 45 minutes avant le début (sinon à la page de l'onglet).
+ */
+function lienEntree(el: ElementNav, role: string, enCours: EnCours | undefined): string {
+  if (!el.central) return el.href;
+  if (enCours?.enDirect) return `/live/${enCours.enDirect.id}`;
+  const p = enCours?.prochaine;
+  if (role === "formateur" && p && new Date(p.debut).getTime() - AVANT_CLASSE_MS <= maintenantServeur()) return `/live/${p.id}`;
+  return el.href;
+}
 
 export function Coquille({ children, pleinEcran = false }: { children: ReactNode; pleinEcran?: boolean }) {
   const moi = useMoiConnecte();
   const [chemin, naviguer] = useLocation();
   const nav = navigationDe(moi);
+  const { onglets, plus } = ongletsTelephone(nav);
   const { data: enCours } = useEnCours();
   const NAV_VISIBLES = navVisibles(moi.role, Boolean(enCours?.enDirect));
   const { data: compteur } = useCompteur();
@@ -310,7 +330,8 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
               return (
                 <Link
                   key={el.href}
-                  href={el.href}
+                  // Ordinateur : seul « Ma classe » du formateur change d'adresse (les autres ont « Rejoindre le live »).
+                  href={moi.role === "formateur" ? lienEntree(el, moi.role, enCours) : el.href}
                   className={cn(
                     "whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold no-underline transition-colors",
                     actif ? "bg-encre text-white hover:text-white" : "text-texte-doux hover:bg-creme hover:text-encre",
@@ -360,7 +381,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
             </div>
             <BoutonCasquette />
             <div className="lg:hidden">
-              <MenuPlusTelephone elements={nav.filter((el) => !el.mobile)} chemin={chemin} />
+              <MenuPlusTelephone elements={plus} chemin={chemin} />
             </div>
             <Cloche />
             <MenuProfil />
@@ -371,50 +392,48 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
       <main className={cn(!pleinEcran && "pb-28 lg:pb-16")}>{children}</main>
 
       {/* Barre d'onglets du téléphone (masquée en plein écran : salle live) */}
-      {!pleinEcran && nav.some((n) => n.mobile) && (
+      {!pleinEcran && onglets.length > 0 && (
         <nav className="bas-sur fixed inset-x-0 bottom-0 z-30 border-t border-ligne-douce bg-white/95 backdrop-blur-md lg:hidden" aria-label="Navigation">
           <div className="mx-auto flex max-w-lg items-end justify-around px-2 pt-1.5">
-            {nav
-              .filter((n) => n.mobile)
-              .map((el) => {
-                const actif = estActif(el, chemin);
-                const Icone = el.icone;
-                const direct = el.central && enCours?.enDirect;
-                if (el.central) {
-                  return (
-                    <Link key={el.href} href={direct ? `/live/${enCours!.enDirect!.id}` : el.href} className="-mt-5 flex flex-col items-center gap-1 no-underline" aria-current={actif ? "page" : undefined}>
-                      <span
-                        className={cn(
-                          "grid h-14 w-14 place-items-center rounded-full shadow-carte ring-4 ring-white",
-                          direct ? "bg-direct text-white" : actif ? "bg-orange text-encre" : "bg-encre text-white",
-                        )}
-                      >
-                        <Icone className="h-6 w-6" />
-                      </span>
-                      <span className={cn("pb-2 text-[11px] font-bold", direct ? "text-direct" : actif ? "text-orange-fonce" : "text-texte-gris")}>
-                        {direct ? "En direct" : el.libelle}
-                      </span>
-                    </Link>
-                  );
-                }
-                const badge = el.href === "/messages" ? compteur?.messagesNonLus : 0;
+            {onglets.map((el) => {
+              const actif = estActif(el, chemin);
+              const Icone = el.icone;
+              const direct = el.central && enCours?.enDirect;
+              if (el.central) {
                 return (
-                  <Link
-                    key={el.href}
-                    href={el.href}
-                    className={cn("relative flex min-w-[60px] flex-col items-center gap-1 px-2 pb-2 pt-1 no-underline", actif ? "text-orange-fonce" : "text-texte-gris")}
-                    aria-current={actif ? "page" : undefined}
-                  >
-                    <Icone className="h-[22px] w-[22px]" strokeWidth={actif ? 2.4 : 1.8} />
-                    <span className="text-[11px] font-bold">{el.libelle}</span>
-                    {badge ? (
-                      <span className="absolute right-2 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-orange px-1 font-mono text-[10px] font-bold text-encre">
-                        {badge}
-                      </span>
-                    ) : null}
+                  <Link key={el.href} href={lienEntree(el, moi.role, enCours)} className="-mt-5 flex flex-col items-center gap-1 no-underline" aria-current={actif ? "page" : undefined}>
+                    <span
+                      className={cn(
+                        "grid h-14 w-14 place-items-center rounded-full shadow-carte ring-4 ring-white",
+                        direct ? "bg-direct text-white" : actif ? "bg-orange text-encre" : "bg-encre text-white",
+                      )}
+                    >
+                      <Icone className="h-6 w-6" />
+                    </span>
+                    <span className={cn("whitespace-nowrap pb-2 text-[11px] font-bold", direct ? "text-direct" : actif ? "text-orange-fonce" : "text-texte-gris")}>
+                      {direct ? "En direct" : el.libelle}
+                    </span>
                   </Link>
                 );
-              })}
+              }
+              const badge = el.href === "/messages" ? compteur?.messagesNonLus : 0;
+              return (
+                <Link
+                  key={el.href}
+                  href={el.href}
+                  className={cn("relative flex min-w-[60px] flex-col items-center gap-1 px-2 pb-2 pt-1 no-underline", actif ? "text-orange-fonce" : "text-texte-gris")}
+                  aria-current={actif ? "page" : undefined}
+                >
+                  <Icone className="h-[22px] w-[22px]" strokeWidth={actif ? 2.4 : 1.8} />
+                  <span className="text-center text-[11px] font-bold leading-tight">{el.libelleCourt ?? el.libelle}</span>
+                  {badge ? (
+                    <span className="absolute right-2 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-orange px-1 font-mono text-[10px] font-bold text-encre">
+                      {badge}
+                    </span>
+                  ) : null}
+                </Link>
+              );
+            })}
           </div>
         </nav>
       )}

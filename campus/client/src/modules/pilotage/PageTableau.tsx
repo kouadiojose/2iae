@@ -8,6 +8,8 @@
 // en 7 jours », « ont suivi un direct » là où la présence est connue, et lien
 // vers le tableau « Engagement et participation ». La liste « à contacter »
 // arrive avec le tableau ; le serveur garde le calcul 2 minutes par périmètre.
+//
+// En tête (8 octobre 2026 au soir) : la grande carte « Voir tout le travail du campus » (/pilotage/travail).
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +30,8 @@ import { SousNav } from "./composants/SousNav";
 import { LigneAContacter } from "./composants/LigneAContacter";
 import { FenetreSuivi } from "./composants/FenetreSuivi";
 import { CarteRentree } from "./composants/CarteRentree";
+import { CarteTravail } from "./composants/CarteTravail";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 import { pourcent } from "./outils";
 
 export default function PageTableau() {
@@ -59,6 +63,13 @@ export default function PageTableau() {
           ) : undefined
         }
       />
+
+      {/* « Le travail du campus » d'abord : ce qui a été fait, avant les statistiques. */}
+      {profilPermet(moi, ["notes", "presences_voir"]) && (
+        <LimiteSilencieuse nom="CarteTravail">
+          <CarteTravail />
+        </LimiteSilencieuse>
+      )}
 
       {profilPermet(moi, "outils_campus") && <CarteRentree />}
 

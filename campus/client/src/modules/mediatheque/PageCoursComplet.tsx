@@ -112,7 +112,7 @@ export default function PageCoursComplet({ id }: { id: string }) {
     setRefaire(true);
     try {
       queryClient.setQueryData([cle], await post<CoursCompletRevision>(`${cle}/refaire`));
-      toast("Le cours complet sera refait dans les prochaines minutes.");
+      toast("Le cours résumé sera refait dans les prochaines minutes.");
     } catch (e) {
       toastErreur(e);
     } finally {
@@ -157,7 +157,7 @@ export default function PageCoursComplet({ id }: { id: string }) {
           )}
           {data.relancable && (data.statut === "prete" || data.statut === "erreur") && (
             <Bouton variante="fantome" taille="sm" icone={<RotateCcw className="h-4 w-4" />} chargement={refaire} onClick={() => void relancer()}>
-              Refaire le cours complet
+              Refaire le cours résumé
             </Bouton>
           )}
         </div>
@@ -173,13 +173,13 @@ export default function PageCoursComplet({ id }: { id: string }) {
         <Carte className="flex flex-col gap-3" role="status">
           <p className="flex items-center gap-2 text-[17px] font-extrabold">
             <BookOpenCheck className="h-5 w-5 text-orange-fonce" aria-hidden />
-            {data.statut === "erreur" ? "La préparation du cours complet n'a pas abouti" : "Le cours complet se prépare"}
+            {data.statut === "erreur" ? "La préparation du cours résumé n'a pas abouti" : "Le cours résumé se prépare"}
           </p>
           {data.statut === "en_cours" && <BarreProgression valeur={data.progression} />}
           <p className="text-[15px] text-texte-pale">
             {data.statut === "erreur"
               ? (data.message ?? "Elle sera retentée automatiquement.")
-              : `${data.etape ?? "En attente"}. Le campus transcrit l'enregistrement, lit tout le cours et ses diapositives, puis rédige le cours complet avec quiz et exercices. ${etudiant ? "Tu recevras une notification dès qu'il sera prêt." : "Une notification part dès qu'il est prêt."}`}
+              : `${data.etape ?? "En attente"}. Le campus transcrit l'enregistrement, lit tout le cours et ses diapositives, puis rédige le cours résumé avec quiz et exercices. ${etudiant ? "Tu recevras une notification dès qu'il sera prêt." : "Une notification part dès qu'il est prêt."}`}
           </p>
         </Carte>
       ) : (

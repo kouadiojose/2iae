@@ -32,18 +32,18 @@ export const t = creerTextes({
 
   "retenir.titre": "Lis « À retenir » {deCours}",
   "retenir.detail": "{min} min",
-  "retenir.tout": "Tout le cours complet",
+  "retenir.tout": "Tout le cours résumé",
 
   "devoir.quiz": "QCM {deCours}",
   "devoir.quizDetail": "{n} questions, {min} min · à faire {quand}",
   // Interrogation de la routine du soir : l'entraînement fait sur son cours complet.
   "devoir.sansEntrainement": {
-    tu: "Elle compte dans ta moyenne : entraîne-toi d'abord avec le quiz du cours complet.",
-    vous: "Elle compte dans la moyenne : entraînement conseillé avec le quiz du cours complet.",
+    tu: "Elle compte dans ta moyenne : entraîne-toi d'abord avec le quiz du cours résumé.",
+    vous: "Elle compte dans la moyenne : entraînement conseillé avec le quiz du cours résumé.",
   },
   "devoir.pret": { tu: "Entraînement : {score}/{total}. Tu es prêt (elle compte dans ta moyenne).", vous: "Entraînement : {score}/{total} (elle compte dans la moyenne)." },
   "devoir.revoir": {
-    tu: "Entraînement : {score}/{total}. Revois le cours complet avant (elle compte dans ta moyenne).",
+    tu: "Entraînement : {score}/{total}. Revois le cours résumé avant (elle compte dans ta moyenne).",
     vous: "Entraînement : {score}/{total} (elle compte dans la moyenne).",
   },
   "devoir.depot": "Exercice {deCours}",
@@ -59,11 +59,11 @@ export const t = creerTextes({
 
   // ── Carte « À jour » de l'accueil (repli de l'objectif du jour) ─────────
   "aJour.detail": {
-    tu: "Aucun devoir à rendre et aucun live en ce moment. Tes cours, leurs enregistrements et leurs cours complets t'attendent.",
+    tu: "Aucun devoir à rendre et aucun live en ce moment. Tes cours, leurs enregistrements et leurs cours résumés t'attendent.",
     vous: "Aucun devoir à rendre et aucun live en ce moment.",
   },
   "aJour.prochain": {
-    tu: "Prochain rendez-vous : {cours} en direct {quand} à {heure}. D'ici là, tes cours complets t'attendent.",
+    tu: "Prochain rendez-vous : {cours} en direct {quand} à {heure}. D'ici là, tes cours résumés t'attendent.",
     vous: "Prochain rendez-vous : {cours} en direct {quand} à {heure}.",
   },
   "aJour.bouton": { tu: "Voir mes cours", vous: "Voir les cours" },
@@ -74,12 +74,12 @@ export const t = creerTextes({
     vous: "Entraînement : {score}/{total} ({n} questions, elle compte dans la moyenne).",
   },
   "interrogation.revoir": {
-    tu: "Tu t'es entraîné : {score}/{total}. Revois le cours complet avant de commencer ({n} questions, elle compte dans ta moyenne).",
+    tu: "Tu t'es entraîné : {score}/{total}. Revois le cours résumé avant de commencer ({n} questions, elle compte dans ta moyenne).",
     vous: "Entraînement : {score}/{total} ({n} questions, elle compte dans la moyenne).",
   },
   "interrogation.sansEntrainement": {
-    tu: "Entraîne-toi d'abord avec le quiz du cours complet ({n} questions, elle compte dans ta moyenne).",
-    vous: "Entraînement conseillé avec le quiz du cours complet ({n} questions, elle compte dans la moyenne).",
+    tu: "Entraîne-toi d'abord avec le quiz du cours résumé ({n} questions, elle compte dans ta moyenne).",
+    vous: "Entraînement conseillé avec le quiz du cours résumé ({n} questions, elle compte dans la moyenne).",
   },
 
   // ── Progression honnête d'un cours ──────────────────────────────────────

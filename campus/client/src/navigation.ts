@@ -1,5 +1,9 @@
 // Navigation par rôle. Cinq onglets au maximum sur téléphone : un étudiant
 // qui n'a jamais utilisé de campus numérique doit tout trouver du pouce.
+//
+// Simplicité (8 octobre 2026 au soir) : le formateur a, dans cet ordre, Aujourd'hui · Mes séances · Ma classe
+// (au centre, l'ancien Studio) · Notes (l'ancien onglet Corrections, même page) · Messages ; le reste dans
+// « Plus ». La direction commence par « Le travail du campus », puis « Copies et notes » (/corrections).
 import type { LucideIcon } from "lucide-react";
 import {
   Home,
@@ -28,6 +32,8 @@ import {
   PlayCircle,
   MonitorPlay,
   Library,
+  CalendarCheck,
+  ClipboardCheck,
 } from "lucide-react";
 import type { Droit, Moi, Role } from "@shared/schema";
 import { profilPermet } from "@/lib/auth";
@@ -36,8 +42,13 @@ export type ElementNav = {
   href: string;
   libelle: string;
   icone: LucideIcon;
-  /** Présent dans la barre d'onglets du téléphone. */
-  mobile?: boolean;
+  /**
+   * Présent dans la barre d'onglets du téléphone. « si-place » : seulement s'il reste une des cinq places
+   * (sinon dans « Plus »).
+   */
+  mobile?: boolean | "si-place";
+  /** Libellé de l'onglet du téléphone quand le libellé complet est trop long pour la barre du bas. */
+  libelleCourt?: string;
   /** Onglet central mis en avant (le direct). */
   central?: boolean;
   /** Pages dont l'URL commence par ces préfixes activent l'onglet. */
@@ -72,19 +83,22 @@ const ETUDIANT: ElementNav[] = [
 
 const FORMATEUR: ElementNav[] = [
   { href: "/enseigner", libelle: "Aujourd'hui", icone: Home, mobile: true },
-  { href: "/cours", libelle: "Mes cours", icone: BookOpen, mobile: true, prefixes: ["/cours", "/enseigner/cours"] },
-  { href: "/direct", libelle: "Studio", icone: Radio, mobile: true, central: true, prefixes: ["/direct", "/live", "/enseigner/seances"] },
+  // Le fil de ses séances tenues : vidéo, cours résumé, QCM, exercice, présents.
+  { href: "/mes-seances", libelle: "Mes séances", icone: CalendarCheck, mobile: true, prefixes: ["/mes-seances"] },
+  // L'ancien « Studio » : à 45 minutes du cours et pendant le direct, l'onglet ouvre directement la classe (coquille).
+  { href: "/direct", libelle: "Ma classe", icone: Radio, mobile: true, central: true, prefixes: ["/direct", "/live", "/enseigner/seances"] },
   {
     href: "/corrections",
-    libelle: "Corrections",
-    icone: CheckSquare,
+    libelle: "Notes",
+    icone: GraduationCap,
     mobile: true,
-    // Correction rapide, corrigés du jour, copies à revoir et devoirs de l'IA : tout ce qui touche aux copies.
-    prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs", "/corriger", "/enseigner/corriges", "/enseigner/a-revoir", "/enseigner/relire"],
+    // Correction rapide, corrigés du jour, copies à revoir, devoirs de l'IA et carnets : tout ce qui touche aux copies et aux notes.
+    prefixes: ["/corrections", "/enseigner/devoirs", "/enseigner/notes", "/devoirs", "/corriger", "/enseigner/corriges", "/enseigner/a-revoir", "/enseigner/relire"],
   },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
+  { href: "/cours", libelle: "Mes cours", icone: BookOpen, prefixes: ["/cours", "/enseigner/cours"] },
   // Les replays de tous les cours, les siens et ceux des collègues.
-  { href: "/replays", libelle: "Enregistrements", icone: PlayCircle, prefixes: ["/replays"] },
+  { href: "/replays", libelle: "Vidéos des cours", icone: PlayCircle, prefixes: ["/replays"] },
   { href: "/mediatheque", libelle: "Médiathèque", icone: MonitorPlay, prefixes: ["/mediatheque"] },
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
   { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
@@ -96,7 +110,25 @@ const FORMATEUR: ElementNav[] = [
 // Chaque entrée de l'équipe porte le droit du profil qu'elle demande
 // (shared/schema/ext-profils.ts) : un profil ne voit que ce qu'il peut utiliser.
 const EQUIPE: ElementNav[] = [
+  // La première entrée : tout le travail fait (séances, cours résumés, QCM, exercices, notes), en grand.
+  {
+    href: "/pilotage/travail",
+    libelle: "Le travail du campus",
+    libelleCourt: "Le travail",
+    icone: ClipboardCheck,
+    mobile: true,
+    prefixes: ["/pilotage/travail"],
+    droit: ["notes", "presences_voir"],
+  },
   { href: "/pilotage", libelle: "Pilotage", icone: LayoutDashboard, mobile: true },
+  // Tous les devoirs, les copies, les notes à publier et les carnets de notes (page existante /corrections).
+  {
+    href: "/corrections",
+    libelle: "Copies et notes",
+    icone: CheckSquare,
+    prefixes: ["/corrections", "/enseigner/devoirs", "/enseigner/notes", "/corriger", "/enseigner/corriges", "/enseigner/a-revoir", "/enseigner/relire"],
+    droit: "notes",
+  },
   {
     href: "/pilotage/etudiants",
     libelle: "Étudiants",
@@ -113,7 +145,8 @@ const EQUIPE: ElementNav[] = [
   { href: "/pilotage/planning", libelle: "Planning", icone: CalendarClock, prefixes: ["/pilotage/planning", "/pilotage/cours"] },
   { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"], droit: "presences_voir" },
   { href: "/pilotage/engagement", libelle: "Engagement", icone: Activity, prefixes: ["/pilotage/engagement"], droit: "presences_voir" },
-  { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: true, droit: "annonces" },
+  // Dans la barre du bas s'il reste une place (sinon dans « Plus ») : « Le travail du campus » passe avant.
+  { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: "si-place", droit: "annonces" },
   { href: "/coupe", libelle: "Coupe", icone: Trophy, prefixes: ["/coupe"] },
   { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"], droit: "outils_campus" },
   { href: "/pilotage/formateurs", libelle: "Présentations", icone: Clapperboard, prefixes: ["/pilotage/formateurs"], direction: true },
@@ -144,6 +177,20 @@ export function navigationDe(moi: Pick<Moi, "role" | "profil">): ElementNav[] {
     default:
       return ETUDIANT;
   }
+}
+
+/** Places de la barre d'onglets du téléphone. */
+export const ONGLETS_TELEPHONE = 5;
+
+/**
+ * Barre du bas du téléphone (cinq onglets au plus, « si-place » seulement s'il en reste) et menu « Plus »
+ * (tout le reste, dans l'ordre de la navigation).
+ */
+export function ongletsTelephone(nav: ElementNav[]): { onglets: ElementNav[]; plus: ElementNav[] } {
+  const places = Math.max(0, ONGLETS_TELEPHONE - nav.filter((el) => el.mobile === true).length);
+  const siPlace = new Set(nav.filter((el) => el.mobile === "si-place").slice(0, places));
+  const onglets = nav.filter((el) => el.mobile === true || siPlace.has(el)).slice(0, ONGLETS_TELEPHONE);
+  return { onglets, plus: nav.filter((el) => !onglets.includes(el)) };
 }
 
 export function estActif(el: ElementNav, chemin: string): boolean {

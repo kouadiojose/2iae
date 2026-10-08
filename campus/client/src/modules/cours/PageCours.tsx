@@ -157,7 +157,8 @@ export default function PageCours({ id }: { id: string }) {
         onChange={changerOnglet}
         options={[
           { valeur: "lecons", libelle: "Leçons", compteur: nbLecons || undefined },
-          { valeur: "reviser", libelle: "Réviser", compteur: coursComplets?.length || undefined },
+          // L'étudiant y révise ; le formateur et l'équipe y retrouvent les cours résumés de chaque séance.
+          { valeur: "reviser", libelle: etudiant ? "Réviser" : "Cours résumés", compteur: coursComplets?.length || undefined },
           { valeur: "seances", libelle: "Séances" },
           { valeur: "devoirs", libelle: "Devoirs" },
           { valeur: "questions", libelle: "Questions du cours" },

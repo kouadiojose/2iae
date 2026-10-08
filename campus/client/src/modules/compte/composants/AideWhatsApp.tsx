@@ -33,7 +33,7 @@ export function ListeContactsSites({ identifiant, className }: { identifiant?: s
   if (isError || !data?.length) {
     return (
       <p className={cn("rounded-2xl bg-creme px-4 py-3 text-[15px] text-texte-doux", className)}>
-        Passe voir la vie scolaire de ton campus : elle peut te remettre un nouveau code tout de suite.
+        La vie scolaire de chaque campus peut remettre un nouveau code tout de suite.
       </p>
     );
   }
@@ -76,7 +76,7 @@ export function ListeContactsSites({ identifiant, className }: { identifiant?: s
 
 export function AideWhatsApp({ ouverte, onFermer, identifiant }: { ouverte: boolean; onFermer: () => void; identifiant?: string }) {
   return (
-    <Fenetre ouverte={ouverte} onFermer={onFermer} titre="Besoin d'aide ?" description="Choisis ton campus : la vie scolaire te répond sur WhatsApp.">
+    <Fenetre ouverte={ouverte} onFermer={onFermer} titre="Besoin d'aide ?" description="Choisir son campus : la vie scolaire répond sur WhatsApp.">
       <ListeContactsSites identifiant={identifiant} className="pb-3" />
     </Fenetre>
   );

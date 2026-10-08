@@ -25,7 +25,6 @@ import { maintenantServeur } from "@/lib/horloge";
 import { useTextes } from "@/lib/textes";
 import { cn, taille } from "@/lib/utils";
 import type { DevoirDetail, DevoirDetailEnseignant, PieceJointe, CritereGrille, TypeDevoir } from "@shared/schema";
-import type { SourceCorrige, StatutCorrige } from "@shared/engagement/corrections";
 import { t as tc } from "@shared/textes/corrections";
 import { texteEcheance } from "./composants/CorrectionCampus";
 import { EditeurGrille } from "./composants/EditeurGrille";
@@ -33,9 +32,8 @@ import { EditeurQuestions } from "./composants/EditeurQuestions";
 
 type CoursEnseigne = { id: number; code: string; titre: string; couleur: string };
 
-/** Corrigé du devoir, réservé aux formateurs (DevoirDetailEnseignant.corrige, champ facultatif du serveur). */
-type CorrigeDuDevoir = { contenu: string; statut: StatutCorrige; version: number; source: SourceCorrige; echeanceLe: string | null };
-type DetailAvecCorrige = DevoirDetailEnseignant & { corrige?: CorrigeDuDevoir | null };
+/** Corrigé du devoir, réservé aux formateurs. */
+type CorrigeDuDevoir = NonNullable<DevoirDetailEnseignant["corrige"]>;
 
 type Formulaire = {
   coursId: number | null;
@@ -132,7 +130,7 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
   const [confirmerSuppression, setConfirmerSuppression] = useState(false);
   const pieceRef = useRef<HTMLInputElement>(null);
 
-  const detail: DetailAvecCorrige | null = data?.vue === "enseignant" ? data : null;
+  const detail: DevoirDetailEnseignant | null = data?.vue === "enseignant" ? data : null;
   useEffect(() => {
     if (detail && !initialise.current) {
       initialise.current = true;
@@ -215,13 +213,13 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
     try {
       const c = { ...corps(), ...(publier ? { publie: true } : {}) };
       if (nouveau) {
-        const r = await post<DetailAvecCorrige>("/api/devoirs", { ...c, coursId: f.coursId });
+        const r = await post<DevoirDetailEnseignant>("/api/devoirs", { ...c, coursId: f.coursId });
         setCorrigeModifie(false);
         await rafraichir("/api/devoirs");
         toast(r.devoir.type === "quiz" ? "Interrogation créée en brouillon : ajoutez vos questions puis publiez-la." : r.devoir.publie ? "Devoir créé. Les étudiants sont prévenus." : "Devoir enregistré (non publié).");
         naviguer(`/enseigner/devoirs/${r.devoir.id}`, { replace: true });
       } else {
-        const r = await patch<DetailAvecCorrige>(`/api/devoirs/${devoirId}`, c);
+        const r = await patch<DevoirDetailEnseignant>(`/api/devoirs/${devoirId}`, c);
         setF(depuisDevoir(r.devoir, r.corrige?.contenu ?? f.corrige));
         const corrigeEnvoye = corrigeModifie && Boolean(f.corrige.trim());
         setCorrigeModifie(false);

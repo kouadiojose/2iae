@@ -69,7 +69,7 @@ const IA_FAIT = [
   "Prend ses exemples en Côte d'Ivoire.",
 ];
 const IA_NE_FAIT_PAS = [
-  "Il ne met jamais une note : le formateur décide.",
+  "Il ne note jamais sans le corrigé du formateur, et le formateur garde le dernier mot.",
   "Il se met en pause pendant les interrogations.",
   "Il ne reçoit jamais le nom de l'étudiant.",
   "Il ne remplace pas le formateur : il prépare, le formateur valide.",

@@ -30,13 +30,6 @@ import { depuis, nombreFr } from "./outils";
 
 type Tx = Traducteur<CleEnseigner>;
 
-/**
- * Exercice corrigé par le campus (chantier K1) : copies notées, en attente du campus, à revoir par le formateur.
- * Champ facultatif de DevoirAutoApres, et clés « apres.depot.campus.* » de shared/textes/enseigner.ts, apportés
- * par le serveur des corrigés ; absents, la ligne reste celle d'avant.
- */
-type CorrectionApres = { notees: number; enAttente: number; aRevoir: number };
-type DevoirApres = DevoirAutoApres & { correction?: CorrectionApres | null };
 
 export function ApresSeance() {
   const tx = useTextes(t);
@@ -165,7 +158,7 @@ function Suite({ apres, tx }: { apres: ApresSeanceDto; tx: Tx }) {
   );
 }
 
-function LigneDevoir({ d, tx }: { d: DevoirApres; tx: Tx }) {
+function LigneDevoir({ d, tx }: { d: DevoirAutoApres; tx: Tx }) {
   const quiz = d.type === "quiz";
   // Correction automatique : les copies de l'exercice sont notées par le campus, plus « facultatives ».
   const campus = quiz ? null : (d.correction ?? null);

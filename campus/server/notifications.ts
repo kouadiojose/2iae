@@ -18,7 +18,10 @@ import { db } from "./db";
 import { config } from "./config";
 import { publierUtilisateur } from "./temps-reel";
 import { planifier } from "./taches";
-import { notifications, abonnementsPush, compteursPush, pushDifferes } from "@shared/schema";
+import { sqlDevoirProposable } from "./engagement/proposables";
+import { notifications, abonnementsPush, compteursPush, pushDifferes, utilisateurs } from "@shared/schema";
+import { formaterDate, registreDe, type Registre } from "@shared/textes";
+import { t } from "@shared/textes/rappels";
 
 const pushActif = Boolean(config.push.publique && config.push.privee);
 if (pushActif) webpush.setVapidDetails(config.push.contact, config.push.publique!, config.push.privee!);
@@ -66,10 +69,17 @@ export function estHeureCalme(d = new Date()): boolean {
   return h >= HEURES_CALMES.debut || h < HEURES_CALMES.fin;
 }
 
-/** Ce qui s'affiche sur l'écran verrouillé du téléphone. */
-export function contenuPush(n: Pick<NouvelleNotification, "type" | "titre" | "corps" | "sensible">): { titre: string; corps: string } {
-  if (n.type === "note") return { titre: "Nouvelle note disponible", corps: "Ouvre le campus pour la découvrir." };
-  if (n.sensible) return { titre: "Nouveau sur le campus", corps: "Ouvre le campus pour voir." };
+/**
+ * Ce qui s'affiche sur l'écran verrouillé du téléphone. Un message n'apparaît
+ * jamais en clair : le drapeau « sensible » n'est pas gardé en base, il se
+ * déduit du type (le résumé du matin relit les notifications de la nuit).
+ */
+export function contenuPush(
+  n: Pick<NouvelleNotification, "type" | "titre" | "corps" | "sensible">,
+  registre: Registre = "tu",
+): { titre: string; corps: string } {
+  if (n.type === "note") return { titre: t("push.note.titre", { registre }), corps: t("push.note.corps", { registre }) };
+  if (n.sensible || n.type === "message") return { titre: t("push.masque.titre", { registre }), corps: t("push.masque.corps", { registre }) };
   return { titre: n.titre, corps: n.corps ?? "" };
 }
 
@@ -180,10 +190,79 @@ async function pousser(abonnements: (typeof abonnementsPush.$inferSelect)[], cha
 
 // ── Rappel groupé du matin ─────────────────────────────────────────────────
 
+type EcheanceDuJour = { id: number; titre: string; type: string; dateLimite: Date };
+
+/**
+ * Devoirs proposables dus aujourd'hui (jour d'Abidjan), ouverts et pas encore
+ * rendus, des étudiants donnés : l'échéance du jour passe en tête du résumé.
+ */
+async function echeancesDuJour(ids: number[], maintenant: Date): Promise<Map<number, EcheanceDuJour>> {
+  const resultat = new Map<number, EcheanceDuJour>();
+  if (!ids.length) return resultat;
+  const liste = sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const fin = new Date(maintenant.getTime() + 24 * 60 * 60_000);
+  const { rows } = await db.execute<{ utilisateurId: number; id: number; titre: string; type: string; dateLimite: string | Date }>(sql`
+    SELECT u.id AS "utilisateurId", d.id, d.titre, d.type, d.date_limite AS "dateLimite"
+    FROM campus.utilisateurs u
+    JOIN campus.devoirs d ON (
+      d.cours_id IN (SELECT cc.cours_id FROM campus.cours_classes cc WHERE cc.classe_id = u.classe_id)
+      OR d.cours_id IN (SELECT i.cours_id FROM campus.inscriptions i WHERE i.utilisateur_id = u.id)
+    )
+    WHERE u.id IN (${liste}) AND u.role = 'etudiant'
+      AND d.publie
+      AND (d.ouverture_le IS NULL OR d.ouverture_le <= ${maintenant.toISOString()}::timestamptz)
+      AND d.date_limite > ${maintenant.toISOString()}::timestamptz
+      AND d.date_limite <= ${fin.toISOString()}::timestamptz
+      AND ${sqlDevoirProposable("d")}
+      AND NOT EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.etudiant_id = u.id AND r.statut <> 'brouillon')
+    ORDER BY d.date_limite`);
+  for (const r of rows) {
+    const dateLimite = new Date(r.dateLimite);
+    if (!resultat.has(r.utilisateurId) && jourAbidjan(dateLimite) === jourAbidjan(maintenant)) {
+      resultat.set(r.utilisateurId, { id: r.id, titre: r.titre, type: r.type, dateLimite });
+    }
+  }
+  return resultat;
+}
+
+/**
+ * Compose le résumé : l'échéance du jour en tête s'il y en a une, sinon la
+ * seule nouveauté (un message toujours masqué), sinon leur nombre.
+ */
+function composerResume(
+  nonLues: { type: string; titre: string; corps: string | null; lien: string | null }[],
+  echeance: EcheanceDuJour | undefined,
+  registre: Registre,
+): ChargePush {
+  if (echeance) {
+    const quiz = echeance.type === "quiz";
+    const lien = quiz ? `/quiz/${echeance.id}` : `/devoirs/${echeance.id}`;
+    const reste = nonLues.filter((l) => l.lien !== lien).length;
+    return {
+      titre: t(quiz ? "resume.echeance.quiz" : "resume.echeance.depot", { registre, v: { titre: echeance.titre, heure: formaterDate(echeance.dateLimite, { style: "heure" }) } }),
+      corps: reste === 0 ? t("resume.echeance.corps", { registre }) : reste === 1 ? t("resume.plus.un", { registre }) : t("resume.plus.n", { registre, v: { n: reste } }),
+      lien,
+      type: "devoir",
+    };
+  }
+  if (nonLues.length === 1) {
+    const seule = nonLues[0];
+    return {
+      ...contenuPush({ type: seule.type as NouvelleNotification["type"], titre: seule.titre, corps: seule.corps ?? undefined }, registre),
+      lien: seule.lien ?? "/accueil",
+      type: seule.type,
+    };
+  }
+  return { titre: t("resume.titre", { registre, v: { n: nonLues.length } }), corps: t("resume.corps", { registre }), lien: "/accueil", type: "systeme" };
+}
+
 /**
  * Après les heures calmes : pour chaque personne, un seul envoi qui résume
- * ce qui est arrivé pendant la nuit et n'a pas encore été lu. Compte dans
- * le plafond du jour.
+ * ce qui est arrivé pendant la nuit et n'a pas encore été lu, l'échéance du
+ * jour en tête. Compte dans le plafond du jour.
  */
 export async function envoyerRappelsDuMatin(maintenant = new Date()): Promise<number> {
   if (estHeureCalme(maintenant)) return 0;
@@ -196,24 +275,23 @@ export async function envoyerRappelsDuMatin(maintenant = new Date()): Promise<nu
       corps: notifications.corps,
       lien: notifications.lien,
       luLe: notifications.luLe,
+      role: utilisateurs.role,
     })
     .from(pushDifferes)
-    .innerJoin(notifications, eq(notifications.id, pushDifferes.notificationId));
+    .innerJoin(notifications, eq(notifications.id, pushDifferes.notificationId))
+    .innerJoin(utilisateurs, eq(utilisateurs.id, pushDifferes.utilisateurId));
   if (!enAttente.length) return 0;
 
   const parPersonne = new Map<number, typeof enAttente>();
   for (const l of enAttente) parPersonne.set(l.utilisateurId, [...(parPersonne.get(l.utilisateurId) ?? []), l]);
+  const echeances = await echeancesDuJour([...parPersonne.keys()], maintenant);
 
   let envois = 0;
   for (const [utilisateurId, lignes] of parPersonne) {
     const nonLues = lignes.filter((l) => !l.luLe);
     if (nonLues.length && pushActif && (await reserverEnvois([utilisateurId], maintenant)).length) {
       const abonnements = await db.select().from(abonnementsPush).where(eq(abonnementsPush.utilisateurId, utilisateurId));
-      const seule = nonLues.length === 1 ? nonLues[0] : null;
-      const contenu = seule
-        ? contenuPush({ type: seule.type as NouvelleNotification["type"], titre: seule.titre, corps: seule.corps ?? undefined })
-        : { titre: `${nonLues.length} nouveautés sur le campus`, corps: "Arrivées pendant la nuit. Ouvre le campus pour les voir." };
-      await pousser(abonnements, { ...contenu, lien: seule?.lien ?? "/accueil", type: seule?.type ?? "systeme" });
+      await pousser(abonnements, composerResume(nonLues, echeances.get(utilisateurId), registreDe(lignes[0].role)));
       envois++;
     }
     await db.delete(pushDifferes).where(

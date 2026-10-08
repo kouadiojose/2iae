@@ -26,6 +26,7 @@ import { enregistrerProgression } from "./progression";
 import { enregistrerRelancesAuto } from "./relances-auto";
 import { enregistrerCorriges } from "./corriges";
 import { enregistrerCorrectionsCopies } from "./corrections-copies";
+import { enregistrerFil } from "./fil";
 import { enregistrerParticipationDirect } from "./participation-direct";
 import { enregistrerPublic } from "./public";
 import { enregistrerPush } from "./push";
@@ -75,6 +76,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerRelancesAuto(app); // C4
   enregistrerCorriges(app); // correction automatique : corrigés à valider (K1)
   enregistrerCorrectionsCopies(app); // correction automatique : copies, relectures, bilan (K2)
+  enregistrerFil(app); // le travail du campus : fil des séances (S1)
   enregistrerParticipationDirect(app); // C6
   enregistrerPush(app);
   enregistrerProgramme(app);

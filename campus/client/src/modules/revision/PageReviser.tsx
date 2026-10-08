@@ -217,7 +217,7 @@ export default function PageReviser() {
   const pied = (
     <footer className="flex flex-col gap-1 border-t border-ligne-douce pt-4 text-[13px] leading-relaxed text-texte-gris">
       <p>{tx("page.honnete")}</p>
-      <p className="font-mono text-[11px]">{tx("page.poids", { v: { ko: poidsKo(paquet) } })}</p>
+      {paquet.cartes.length + (paquet.defi?.cartes.length ?? 0) > 0 && <p className="font-mono text-[11px]">{tx("page.poids", { v: { ko: poidsKo(paquet) } })}</p>}
     </footer>
   );
 
@@ -303,13 +303,14 @@ export default function PageReviser() {
   const total = duJour + defiRestant;
   const avance = cartesDAvance(paquet).length;
   const ancien = paquet.jour !== jourDuTelephone(moi.fuseau);
-  // Aucune carte dans ses cours (pas encore de cours complet), plutôt que « tout est révisé ».
-  const vide = !paquet.cartes.length && !defi && !paquet.prochaine && !paquet.faitesAujourdhui;
+  // Aucune carte dans ses cours (pas encore de cours complet), plutôt que « tout est révisé » :
+  // une carte déjà vue a toujours un prochain retour.
+  const vide = !paquet.cartes.length && !defi && !paquet.prochaine && !Object.keys(paquet.repondues).length;
   const prochaine = Object.keys(paquet.repondues).length ? ajouterJours(paquet.jour, 1) : paquet.prochaine;
 
   return cadre(
     <>
-      <h1 className="text-[28px] font-black leading-tight tracking-serre">{tx("cartes.titre")}</h1>
+      <h1 className="text-[28px] font-black leading-tight tracking-serre">{tx("page.h1")}</h1>
       {ancien && <p className="text-sm text-texte-pale">{tx("page.ancien")}</p>}
 
       {vide ? (

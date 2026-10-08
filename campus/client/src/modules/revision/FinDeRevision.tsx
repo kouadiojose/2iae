@@ -69,7 +69,7 @@ export function FinDeRevision({
         {envoi === "en_file" || (envoi !== "envoye" && enAttente > 0) ? (
           <>
             <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
-            {tx("fin.attente", { v: { n: Math.max(enAttente, 1) } })}
+            {tx("fin.attente")}
           </>
         ) : envoi === "envoye" ? (
           <>

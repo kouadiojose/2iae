@@ -416,15 +416,20 @@ export async function deciderCarte(carte: CarteChargee, decision: "reactiver" | 
 
 // ── Chiffres de la classe (formateur du cours, direction) ──────────────────
 
+/** Racines des mots d'au moins 5 lettres (6 premières lettres) : « naturels » et « naturel » se rejoignent. */
+const racines = (texte: string) =>
+  normaliserTexte(texte)
+    .split(" ")
+    .filter((m) => m.length >= 5)
+    .map((m) => m.slice(0, 6));
+
 /** Notion du cours la plus proche d'une question (mots communs), pour renvoyer au bon passage de l'enregistrement. */
 function notionProche(texte: string, notions: DossierCours["notions"]): { titre: string; debutSecondes: number } | null {
-  const mots = new Set(normaliserTexte(texte).split(" ").filter((m) => m.length >= 6));
+  const mots = new Set(racines(texte));
   let meilleure: { titre: string; debutSecondes: number; score: number } | null = null;
   for (const n of notions ?? []) {
     if (!n?.titre || !(n.debutSecondes > 0)) continue;
-    const score = normaliserTexte(n.titre)
-      .split(" ")
-      .filter((m) => m.length >= 6 && mots.has(m)).length;
+    const score = racines(n.titre).filter((m) => mots.has(m)).length;
     if (score > 0 && (!meilleure || score > meilleure.score)) meilleure = { titre: n.titre, debutSecondes: n.debutSecondes, score };
   }
   return meilleure ? { titre: meilleure.titre, debutSecondes: meilleure.debutSecondes } : null;

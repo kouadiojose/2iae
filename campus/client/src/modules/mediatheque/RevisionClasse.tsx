@@ -97,7 +97,7 @@ export function RevisionClasse({ seanceId }: { seanceId: number }) {
                   {q.tauxErreur !== null && <Badge ton="danger">{tx("classe.ratee", { v: { taux: q.tauxErreur } })}</Badge>}
                   {q.decision === "retiree" && <Badge ton="gris">{tx("classe.gardee")}</Badge>}
                 </div>
-                {q.motifs.length > 0 && <p className="text-sm text-texte-pale">« {q.motifs.join(" » · « ")} »</p>}
+                {q.motifs.length > 0 && <p className="text-sm text-texte-pale">{q.motifs.map((m) => `« ${m} »`).join(" · ")}</p>}
                 <div className="flex flex-wrap gap-2">
                   <Bouton taille="sm" variante="contour" className="min-h-11" chargement={enCours === q.id} onClick={() => void decider(q.id, "reactiver")}>
                     {tx("classe.reactiver")}

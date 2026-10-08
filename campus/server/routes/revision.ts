@@ -11,7 +11,7 @@
 import type { Express, Request } from "express";
 import { z } from "zod";
 import { exigerConnexion, exigerRole, moi } from "../auth";
-import { route, idParam, interdit, introuvable, invalide, valider } from "../http";
+import { route, idParam, interdit, introuvable, invalide, valider, ErreurHttp } from "../http";
 import { coursVisible, enseigneCours, idsCoursMediatheque } from "../acces";
 import { seanceDuReplay } from "./live";
 import {
@@ -44,13 +44,33 @@ const schemaReponses = z.object({
     .max(REPONSES_PAR_LOT),
 });
 
-const schemaSuivi = z.discriminatedUnion("evenement", [
-  z.object({ evenement: z.literal("ouverture") }),
-  z.object({ evenement: z.literal("fiche"), index: z.number().int().min(0).max(200) }),
-  z.object({ evenement: z.literal("exercice"), index: z.number().int().min(0).max(50), etat: z.enum(["fait", "difficile"]) }),
-  z.object({ evenement: z.literal("corrige"), index: z.number().int().min(0).max(50) }),
-  z.object({ evenement: z.literal("quiz"), score: z.number().int().min(0).max(200), total: z.number().int().min(1).max(200) }),
-]);
+const schemaSuivi = z
+  .discriminatedUnion("evenement", [
+    z.object({ evenement: z.literal("ouverture") }),
+    z.object({ evenement: z.literal("fiche"), index: z.number().int().min(0).max(200) }),
+    z.object({ evenement: z.literal("exercice"), index: z.number().int().min(0).max(50), etat: z.enum(["fait", "difficile"]) }),
+    z.object({ evenement: z.literal("corrige"), index: z.number().int().min(0).max(50) }),
+    z.object({ evenement: z.literal("quiz"), score: z.number().int().min(0).max(200), total: z.number().int().min(1).max(200) }),
+  ])
+  .refine((e) => e.evenement !== "quiz" || e.score <= e.total, { message: "le score dépasse le nombre de questions", path: ["score"] });
+
+/** Lots de réponses acceptés par étudiant sur 10 minutes : bien au-delà d'une vraie révision (la file hors ligne réessaiera). */
+const LOTS_MAX = 30;
+const FENETRE_LOTS_MS = 10 * 60_000;
+const lotsRecents = new Map<number, number[]>();
+
+/** Limite de fréquence des envois de réponses, en mémoire (comme les tentatives de connexion). */
+function limiterLots(utilisateurId: number) {
+  const maintenant = Date.now();
+  const recents = (lotsRecents.get(utilisateurId) ?? []).filter((t) => maintenant - t < FENETRE_LOTS_MS);
+  if (recents.length >= LOTS_MAX) throw new ErreurHttp(429, "Trop d'envois de réponses : elles repartiront toutes seules dans quelques minutes.");
+  recents.push(maintenant);
+  lotsRecents.set(utilisateurId, recents);
+}
+setInterval(() => {
+  const maintenant = Date.now();
+  for (const [id, l] of lotsRecents) if (!l.some((t) => maintenant - t < FENETRE_LOTS_MS)) lotsRecents.delete(id);
+}, FENETRE_LOTS_MS).unref();
 
 /** Le formateur du cours et la direction (la vie scolaire ne voit pas ces chiffres pédagogiques). */
 async function formateurOuDirection(u: Utilisateur, coursId: number): Promise<boolean> {
@@ -91,17 +111,20 @@ export function enregistrerRevision(app: Express) {
     }),
   );
 
-  // Réponses envoyées en un lot (40 au plus), idempotent sur (étudiant, clé d'envoi).
+  // Réponses envoyées en un lot (40 au plus), idempotent sur (étudiant, clé d'envoi) ; 30 lots par 10 minutes au plus.
   app.post(
     "/api/revision/reponses",
     exigerRole("etudiant"),
     route(async (req, res) => {
+      const u = moi(req);
       const { reponses } = valider(schemaReponses, req.body);
-      res.json(await enregistrerReponses(moi(req), reponses));
+      limiterLots(u.id);
+      res.json(await enregistrerReponses(u, reponses));
     }),
   );
 
-  // « Signaler une erreur » : un signalement par étudiant ; au 3e, la carte est retirée et les formateurs prévenus.
+  // « Signaler une erreur » : un signalement par étudiant ; au 3e d'étudiants du cours (comptes de plus de 7 jours),
+  // la carte est retirée et les formateurs prévenus.
   app.post(
     "/api/revision/cartes/:id(\\d+)/signaler",
     exigerRole("etudiant"),

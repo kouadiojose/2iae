@@ -23,7 +23,10 @@ export const CARTES_D_AVANCE = 15;
 export const CARTES_PAR_SEANCE = 8;
 /** Questions du défi de la classe. */
 export const CARTES_DEFI = 3;
-/** Le défi porte sur la dernière séance qui a des cartes, tenue depuis au plus ce nombre de jours. */
+/**
+ * Le défi porte sur la dernière séance tenue avant ce jour (depuis au plus ce
+ * nombre de jours) qui avait des cartes à 0 h : il reste le même toute la journée.
+ */
 export const DEFI_JOURS_MAX = 14;
 /** « 14 sur 25 l'ont relevé » ne s'affiche qu'à partir de cette taille de classe (et les agrégats du formateur, à partir d'autant d'étudiants). */
 export const SEUIL_COLLECTIF = 5;
@@ -34,6 +37,13 @@ export const SIGNALEMENTS_RETRAIT = 3;
 /** Une question ratée par au moins 70 % d'au moins 10 étudiants est retirée et signalée au formateur. */
 export const ANOMALIE_MIN_ETUDIANTS = 10;
 export const ANOMALIE_TAUX_ERREUR = 0.7;
+/**
+ * Seuls les étudiants qui suivent le cours (classe ou inscription, pas la
+ * médiathèque ouverte à tous), au compte créé depuis au moins ce nombre de
+ * jours, comptent pour retirer une carte (signalements, taux d'erreur) : trois
+ * comptes créés dans la minute ne suffisent pas.
+ */
+export const ANCIENNETE_VOIX_JOURS = 7;
 /** Une réponse faite hors ligne compte pour son jour si elle arrive dans les 48 h. */
 export const DELAI_JOUR_REPONSE_MS = 48 * 3600_000;
 

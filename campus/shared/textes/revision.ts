@@ -9,8 +9,8 @@ export const t = creerTextes({
   "page.h1": { tu: "Ta révision du jour", vous: "Révision du jour" },
   "page.fermer": "Fermer",
   "page.honnete": {
-    tu: "Entraînement : pas de note. Tes réponses servent seulement à te reposer les questions au bon moment.",
-    vous: "Entraînement : pas de note. Les réponses servent seulement à reposer les questions au bon moment.",
+    tu: "Entraînement : pas de note. Chaque carte revue compte, juste ou non : réponds honnêtement, tes réponses servent à te reposer les questions au bon moment.",
+    vous: "Entraînement : pas de note. Chaque carte revue compte, juste ou non ; les réponses servent à reposer les questions au bon moment.",
   },
   "page.poids": { tu: "Paquet gardé sur ton téléphone · {ko} Ko", vous: "Paquet gardé sur le téléphone · {ko} Ko" },
   "page.horsLigne": {

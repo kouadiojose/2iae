@@ -5,7 +5,8 @@
 // - Cours pris en compte : idsCoursAccessibles(u), cours publiés de sa classe
 //   et inscriptions individuelles, jamais la médiathèque ouverte à tous.
 // - Défi de la classe : 3 QCM de la dernière séance (14 jours au plus) qui a des
-//   cartes, choisis par hachage (classe | jour) : les mêmes pour toute la classe.
+//   cartes, choisis par hachage (classe | jour) : les mêmes pour toute la classe,
+//   figés pour la journée (séance d'avant ce jour, cartes qui existaient à 0 h).
 // - Ensuite les cartes dues (boîte la plus basse d'abord), puis des nouvelles,
 //   jusqu'à 5, plus 15 d'avance pour réviser sans réseau. Même (étudiant, jour) :
 //   même sélection, mêmes options mélangées.
@@ -17,6 +18,7 @@ import { notifier } from "../notifications";
 import { extraireCartes } from "./cartes";
 import { ajouterJours, jourLocal, type Jour } from "@shared/engagement/calendrier";
 import {
+  ANCIENNETE_VOIX_JOURS,
   ANOMALIE_MIN_ETUDIANTS,
   ANOMALIE_TAUX_ERREUR,
   CARTES_D_AVANCE,
@@ -77,7 +79,22 @@ function versCarteDto(l: LigneCarte, utilisateurId: number, jour: Jour): CarteDt
 
 type Defi = { seanceId: number; seanceTitre: string; cours: string; lignes: LigneCarte[]; classeId: number | null };
 
-/** Le défi du jour : les mêmes questions pour toute la classe (sans classe : pour tous les inscrits du cours). */
+/**
+ * Début d'un jour pour le défi : minuit à Abidjan (GMT toute l'année), le même
+ * pour toute la classe quel que soit le fuseau de chacun.
+ */
+const debutDuJour = (jour: Jour) => new Date(`${jour}T00:00:00Z`).toISOString();
+
+/**
+ * Le défi du jour : les mêmes questions pour toute la classe (sans classe : pour
+ * tous les inscrits du cours), et toute la journée. Il ne dépend que de (classe,
+ * jour) : séance tenue avant ce jour, cartes qui existaient à 0 h. Les cartes du
+ * cours complet du soir et des sondages du jour n'y entrent que le lendemain.
+ * Une carte retirée dans la journée sort du défi sans être remplacée : le défi
+ * rétrécit au lieu de changer. La vérification des réponses « défi » (faites
+ * hors ligne, reçues le lendemain) rappelle cette fonction avec le jour de la
+ * réponse : elle retrouve le même défi.
+ */
 async function defiDe(u: Utilisateur, jour: Jour, ids: number[]): Promise<Defi | null> {
   if (!ids.length) return null;
   let coursDuDefi = ids;
@@ -87,22 +104,25 @@ async function defiDe(u: Utilisateur, jour: Jour, ids: number[]): Promise<Defi |
     coursDuDefi = ids.filter((id) => deLaClasse.has(id));
     if (!coursDuDefi.length) return null;
   }
+  const t0 = sql`${debutDuJour(jour)}::timestamptz`;
   const { rows: seances } = await db.execute<{ id: number; titre: string; cours_id: number; code: string }>(sql`
     SELECT s.id, s.titre, s.cours_id, c.code
     FROM campus.seances s JOIN campus.cours c ON c.id = s.cours_id
     WHERE s.cours_id = ANY(${entiers(coursDuDefi)})
-      AND s.debut <= now() AND s.debut >= now() - make_interval(days => ${DEFI_JOURS_MAX})
-      AND EXISTS (SELECT 1 FROM campus.cartes_revision k WHERE k.seance_id = s.id AND k.active AND k.genre = 'qcm')
-    ORDER BY s.debut DESC LIMIT 1`);
+      AND s.debut < ${t0} AND s.debut >= ${t0} - make_interval(days => ${DEFI_JOURS_MAX})
+      AND EXISTS (SELECT 1 FROM campus.cartes_revision k WHERE k.seance_id = s.id AND k.genre = 'qcm' AND k.cree_le < ${t0})
+    ORDER BY s.debut DESC, s.id DESC LIMIT 1`);
   const s = seances[0];
   if (!s) return null;
   const graine = u.classeId ? `defi|classe:${u.classeId}|${jour}` : `defi|cours:${s.cours_id}|${jour}`;
-  const { rows: lignes } = await db.execute<LigneCarte>(sql`
-    SELECT k.id, k.genre, k.contenu, k.seance_id, ${s.code}::text AS code, COALESCE(re.boite, 0) AS boite
+  // Tirage parmi les cartes de 0 h, actives ou non, puis on retire les cartes devenues inactives.
+  const { rows: tirees } = await db.execute<LigneCarte & { active: boolean }>(sql`
+    SELECT k.id, k.genre, k.contenu, k.seance_id, ${s.code}::text AS code, COALESCE(re.boite, 0) AS boite, k.active
     FROM campus.cartes_revision k
     LEFT JOIN campus.revisions_etudiants re ON re.carte_id = k.id AND re.utilisateur_id = ${u.id}
-    WHERE k.seance_id = ${s.id} AND k.active AND k.genre = 'qcm'
+    WHERE k.seance_id = ${s.id} AND k.genre = 'qcm' AND k.cree_le < ${t0}
     ORDER BY md5(${graine} || k.id::text) LIMIT ${CARTES_DEFI}`);
+  const lignes: LigneCarte[] = tirees.filter((l) => l.active).map(({ active: _a, ...l }) => l);
   if (!lignes.length) return null;
   return { seanceId: s.id, seanceTitre: s.titre, cours: s.code, lignes, classeId: u.classeId };
 }
@@ -340,9 +360,21 @@ export async function enregistrerReponses(u: Utilisateur, reponses: ReponseRevis
 }
 
 /**
+ * Cet étudiant peut-il contribuer à retirer une carte de ce cours ? Il suit le
+ * cours (classe ou inscription individuelle) et son compte a au moins
+ * ANCIENNETE_VOIX_JOURS jours.
+ */
+const sqlVoixFiable = (uid: SQL, coursId: SQL) => sql`EXISTS (
+  SELECT 1 FROM campus.utilisateurs v
+  WHERE v.id = ${uid} AND v.cree_le < now() - make_interval(days => ${ANCIENNETE_VOIX_JOURS})
+    AND (EXISTS (SELECT 1 FROM campus.cours_classes cc WHERE cc.classe_id = v.classe_id AND cc.cours_id = ${coursId})
+      OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.utilisateur_id = v.id AND i.cours_id = ${coursId})))`;
+
+/**
  * Question ratée par au moins 70 % d'au moins 10 étudiants (première réponse de
- * chacun, depuis la dernière décision du formateur) : la routine du soir a pu se
- * tromper. Elle sort de la révision et le formateur est prévenu.
+ * chacun, depuis la dernière décision du formateur ; étudiants qui suivent le
+ * cours, comptes de plus de 7 jours) : la routine du soir a pu se tromper. Elle
+ * sort de la révision et le formateur est prévenu.
  */
 async function verifierAnomalies(carteIds: number[]) {
   const { rows } = await db.execute<{ id: number; n: number; erreurs: number }>(sql`
@@ -351,6 +383,7 @@ async function verifierAnomalies(carteIds: number[]) {
       SELECT DISTINCT ON (r.utilisateur_id, r.carte_id) r.carte_id, r.juste
       FROM campus.reponses_revision r JOIN campus.cartes_revision k ON k.id = r.carte_id
       WHERE r.carte_id = ANY(${entiers(carteIds)}) AND k.genre = 'qcm' AND k.active AND (k.relue_le IS NULL OR r.repondu_le > k.relue_le)
+        AND ${sqlVoixFiable(sql`r.utilisateur_id`, sql`k.cours_id`)}
       ORDER BY r.utilisateur_id, r.carte_id, r.repondu_le
     ) p
     GROUP BY p.carte_id
@@ -388,7 +421,11 @@ export async function chargerCarte(id: number): Promise<CarteChargee | null> {
   return rows[0] ?? null;
 }
 
-/** « Signaler une erreur » : un signalement par étudiant ; au 3e, la carte est retirée et les formateurs prévenus. */
+/**
+ * « Signaler une erreur » : un signalement par étudiant (tous sont gardés et
+ * montrés au formateur) ; au 3e d'étudiants qui suivent le cours, au compte de
+ * plus de 7 jours, la carte est retirée et les formateurs prévenus.
+ */
 export async function signalerCarte(u: Utilisateur, carte: CarteChargee, motif: string): Promise<{ deja: boolean; retiree: boolean }> {
   const { rows } = await db.execute(sql`
     INSERT INTO campus.signalements_cartes (carte_id, utilisateur_id, motif) VALUES (${carte.id}, ${u.id}, ${motif.slice(0, 300)})
@@ -398,7 +435,11 @@ export async function signalerCarte(u: Utilisateur, carte: CarteChargee, motif: 
     sql`UPDATE campus.cartes_revision SET signalements = signalements + 1 WHERE id = ${carte.id} RETURNING signalements, a_relire`,
   );
   const n = maj[0]?.signalements ?? 0;
-  const retiree = n >= SIGNALEMENTS_RETRAIT && !maj[0]?.a_relire ? await retirerCarte(carte.id, { raison: "signalee", n }) : false;
+  if (n < SIGNALEMENTS_RETRAIT || maj[0]?.a_relire) return { deja: false, retiree: false };
+  const { rows: fiables } = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM campus.signalements_cartes sg
+    WHERE sg.carte_id = ${carte.id} AND ${sqlVoixFiable(sql`sg.utilisateur_id`, sql`${carte.cours_id}::int`)}`);
+  const retiree = (fiables[0]?.n ?? 0) >= SIGNALEMENTS_RETRAIT ? await retirerCarte(carte.id, { raison: "signalee", n }) : false;
   return { deja: false, retiree };
 }
 
@@ -574,7 +615,17 @@ export async function coursCompletsDuCours(u: Utilisateur, coursId: number): Pro
 }
 
 /** Suivi du cours complet : ouverture, fiche vue, exercice fait (ou difficile), corrigé vu, quiz terminé (meilleur score gardé). */
-export async function noterSuivi(u: Utilisateur, seanceId: number, e: EvenementSuivi): Promise<void> {
+export async function noterSuivi(u: Utilisateur, seanceId: number, evenement: EvenementSuivi): Promise<void> {
+  let e = evenement;
+  if (e.evenement === "quiz") {
+    // Le score vient du téléphone : borné au nombre réel de questions du quiz du cours complet.
+    const { rows } = await db.execute<{ n: number | null }>(sql`
+      SELECT CASE WHEN jsonb_typeof(dossier->'quiz') = 'array' THEN jsonb_array_length(dossier->'quiz') END AS n
+      FROM campus.etudes_seances WHERE seance_id = ${seanceId} AND statut = 'prete'`);
+    const total = Math.min(e.total, rows[0]?.n ?? 0);
+    // Pas de quiz prêt pour cette séance : on ne garde que la visite.
+    e = total >= 1 ? { evenement: "quiz", total, score: Math.min(e.score, total) } : { evenement: "ouverture" };
+  }
   let maj: SQL = sql``;
   switch (e.evenement) {
     case "ouverture":

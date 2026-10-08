@@ -11,6 +11,11 @@
 // révision (active = false). Une carte retirée (a_relire) reste retirée tant
 // que le formateur ne l'a pas réactivée. etude-cours.ts n'est pas modifié : la
 // banque ne fait que lire ce qu'il écrit.
+//
+// Un sondage qui reprend une question déjà en banque dans le même cours (les 3
+// questions de rappel du direct viennent du quiz du dernier cours complet) ne
+// crée pas de seconde carte : pas de doublon dans les « nouvelles », pas de
+// boîte séparée, et une question retirée ne revient jamais par ce détour.
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
@@ -26,6 +31,19 @@ export function cleCarte(seanceId: number, source: SourceCarte, texte: string): 
 }
 
 const texteValide = (t: unknown): t is string => typeof t === "string" && t.trim().length > 0;
+
+/**
+ * La question d'un sondage reprend-elle une question déjà en banque ? Même
+ * texte normalisé, ou même début quand la question a été coupée (« … ») pour
+ * tenir dans un sondage (300 caractères, route des questions de rappel).
+ */
+export function memeQuestion(sondage: string, enBanque: string): boolean {
+  const a = normaliserTexte(sondage);
+  const b = normaliserTexte(enBanque);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return sondage.trim().endsWith("…") && a.length >= 40 && b.startsWith(a);
+}
 
 /** Cartes d'un dossier de cours complet, dans l'ordre du dossier (une question en double n'en donne qu'une). */
 export function extraireCartes(seanceId: number, d: DossierCours): CarteExtraite[] {
@@ -133,9 +151,27 @@ export async function passerBanque(): Promise<BilanBanque & { dossiers: number; 
     FROM campus.sondages so JOIN campus.seances s ON s.id = so.seance_id
     WHERE so.id > ${dernierSondage} AND so.bonne_reponse IS NOT NULL AND so.ouvert_le IS NOT NULL AND NOT so.ouvert
     ORDER BY so.id LIMIT 500`);
-  const valables = sondages.filter(
+  let valables = sondages.filter(
     (so) => texteValide(so.question) && Array.isArray(so.options) && so.options.length >= 2 && so.bonne_reponse >= 0 && so.bonne_reponse < so.options.length,
   );
+  if (valables.length) {
+    // Questions déjà en banque dans ces cours : QCM du quiz ou d'un autre sondage, actives ou retirées
+    // (une carte a_relire compte aussi : elle ne doit pas revenir sous une autre clé). Les cartes des
+    // dossiers prêts viennent d'être écrites par la boucle ci-dessus.
+    const cours = [...new Set(valables.map((so) => so.cours_id))];
+    const { rows: connues } = await db.execute<{ cours_id: number; question: string | null }>(sql`
+      SELECT cours_id, contenu->>'question' AS question FROM campus.cartes_revision
+      WHERE genre = 'qcm' AND cours_id = ANY(ARRAY[${sql.join(cours.map((c) => sql`${c}`), sql`, `)}]::int[])`);
+    const parCours = new Map<number, string[]>();
+    const ajouter = (coursId: number, question: string) => parCours.set(coursId, [...(parCours.get(coursId) ?? []), question]);
+    for (const k of connues) if (k.question) ajouter(k.cours_id, k.question);
+    // Dans l'ordre des sondages : la même question lancée dans deux séances du cours ne donne qu'une carte.
+    valables = valables.filter((so) => {
+      if ((parCours.get(so.cours_id) ?? []).some((q) => memeQuestion(so.question, q))) return false;
+      ajouter(so.cours_id, so.question);
+      return true;
+    });
+  }
   if (valables.length) {
     const vues = new Set<string>();
     const valeurs = valables

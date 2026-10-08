@@ -14,15 +14,21 @@
 // dépassement.
 //
 // Passages :
-//   - toutes les 5 minutes, sur les 3 derniers jours ;
+//   - toutes les 5 minutes, sur les 3 derniers jours, source par source ;
 //   - au premier passage après le démarrage (2 minutes après), rattrapage
 //     depuis la rentrée du 28 septembre, source par source ;
 //   - à la demande pour une personne (sa page de progression), au plus une
 //     fois par minute.
-// Un verrou PostgreSQL (pg_advisory_xact_lock) sérialise les passages : deux
-// passages simultanés ne peuvent pas dépasser un plafond.
+// Verrous PostgreSQL (pg_advisory_xact_lock) : un passage général prend le
+// verrou du registre en exclusif ; un passage personnel le prend en partagé
+// (les personnes passent en même temps) avec un verrou à son nom, et n'attend
+// jamais : si un passage général est en cours, il est sauté (le passage des
+// 5 minutes rattrape) et ne garde aucune connexion en attente. Deux passages
+// qui écrivent pour la même personne ne tournent donc jamais ensemble : aucun
+// plafond ne peut être dépassé.
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
+import { ErreurHttp } from "../http";
 import { planifier } from "../taches";
 import { tableExiste } from "./tables";
 import { attribuerBadges } from "./badges";
@@ -35,6 +41,10 @@ import type { TypeActivite } from "@shared/engagement/progression";
 const JOUR_MS = 86_400_000;
 /** Clé du verrou PostgreSQL des passages du registre (nombre arbitraire, propre à C5). */
 const VERROU_REGISTRE = 51_031_001;
+/** Espace des verrous par personne : pg_advisory_xact_lock(VERROU_PERSONNE, id de l'étudiant). */
+const VERROU_PERSONNE = 51_031_002;
+/** Avant le rattrapage général, attente au plus (sans connexion) de sa fin pour une personne jamais rattrapée. */
+const ATTENTE_RATTRAPAGE_MS = 8_000;
 
 type Executeur = Pick<typeof db, "execute">;
 type Filtre = { depuis: Date; utilisateurId?: number };
@@ -57,8 +67,8 @@ const depuisDe = (f: Filtre) => sql`${f.depuis.toISOString()}::timestamptz`;
 const pourQui = (f: Filtre, colonne: SQL) => (f.utilisateurId ? sql`AND ${colonne} = ${f.utilisateurId}` : sql``);
 const pts = (t: TypeActivite) => sql`${POINTS[t]}::int`;
 
-/** Séance tenue d'un cours ouvert, hors essai de visio sans prévenir (comme sqlAttendus). */
-const SQL_SEANCE_COMPTEE = sql`s.demarree_le IS NOT NULL
+/** Séance tenue (et pas annulée ensuite) d'un cours ouvert, hors essai de visio sans prévenir (comme sqlAttendus). */
+const SQL_SEANCE_COMPTEE = sql`s.demarree_le IS NOT NULL AND s.statut <> 'annulee'
   AND NOT EXISTS (SELECT 1 FROM campus.cours c0 WHERE c0.id = s.cours_id AND c0.statut = 'brouillon')
   AND NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id AND NOT di.prevenir)`;
 
@@ -166,13 +176,17 @@ export const SOURCES: Source[] = [
       WHERE COALESCE(so.ouvert_le, s.demarree_le, s.debut) >= ${depuisDe(f)} ${pourQui(f, sql`rs.utilisateur_id`)}`,
   },
   {
-    // Un ressenti par séance, quel que soit le nombre de clics.
+    // Un ressenti par séance, quel que soit le nombre de clics, et seulement avec une vraie participation à
+    // cette séance déjà inscrite (présence, question ou sondage) : un emoji touché seul ne rapporte rien.
+    // Les sources de ces actes passent avant celle-ci.
     nom: "ressentis",
     candidats: (f) => sql`
       SELECT r.utilisateur_id AS uid, 'ressenti:' || r.seance_id || ':' || r.utilisateur_id AS cle, 'ressenti'::text AS type, ${pts("ressenti")} AS points,
         min(r.cree_le) AS fait_le, NULL::date AS jour, s.cours_id, s.id AS seance_id, s.id AS objet_id
       FROM campus.ressentis r JOIN campus.seances s ON s.id = r.seance_id
       WHERE r.cree_le >= ${depuisDe(f)} ${pourQui(f, sql`r.utilisateur_id`)}
+        AND EXISTS (SELECT 1 FROM campus.activites a WHERE a.utilisateur_id = r.utilisateur_id AND a.seance_id = r.seance_id
+          AND a.type IN ('presence', 'question', 'sondage'))
       GROUP BY r.utilisateur_id, r.seance_id, s.cours_id, s.id`,
   },
   {
@@ -190,15 +204,23 @@ export const SOURCES: Source[] = [
         AND ${sqlSuitLeCours(sql`v.utilisateur_id`, sql`s.cours_id`)}`,
   },
   {
-    // C1 (révision du jour) : bonnes réponses, au jour où elles ont été faites (même hors ligne).
+    // C1 (révision du jour) : chaque carte revue, juste ou non (décision D4 : les points paient l'effort, jamais
+    // la seule réponse « Je savais »), une fois par carte et par jour, au jour où elle a été revue (même hors
+    // ligne). Refaire le quiz du cours complet ne recompte pas une carte déjà revue ce jour-là.
+    // La condition sur rr.jour (redondante avec recu_le : une réponse compte au plus 48 h en arrière) sert l'index.
     nom: "révision",
-    requiert: { reponses_revision: ["id", "utilisateur_id", "carte_id", "juste", "jour", "repondu_le", "recu_le"], cartes_revision: ["id", "cours_id", "seance_id"] },
+    requiert: { reponses_revision: ["utilisateur_id", "carte_id", "jour", "repondu_le", "recu_le"], cartes_revision: ["id", "cours_id", "seance_id"] },
     plafond: { par: "jour", max: PLAFONDS.revisionsParJour, types: ["revision"] },
     candidats: (f) => sql`
-      SELECT rr.utilisateur_id AS uid, 'revision:' || rr.id AS cle, 'revision'::text AS type, ${pts("revision")} AS points,
-        rr.repondu_le AS fait_le, rr.jour::date AS jour, cr.cours_id, cr.seance_id, rr.carte_id AS objet_id
+      SELECT rr.utilisateur_id AS uid, 'revision:' || rr.utilisateur_id || ':' || rr.carte_id || ':' || rr.jour::text AS cle,
+        'revision'::text AS type, ${pts("revision")} AS points,
+        min(rr.repondu_le) AS fait_le, rr.jour::date AS jour, cr.cours_id, cr.seance_id, rr.carte_id AS objet_id
       FROM campus.reponses_revision rr LEFT JOIN campus.cartes_revision cr ON cr.id = rr.carte_id
-      WHERE rr.juste AND rr.recu_le >= ${depuisDe(f)} ${pourQui(f, sql`rr.utilisateur_id`)}`,
+      WHERE rr.recu_le >= ${depuisDe(f)} AND rr.jour >= (${depuisDe(f)} AT TIME ZONE 'UTC')::date - 4 ${pourQui(f, sql`rr.utilisateur_id`)}
+        -- Carte déjà payée ce jour-là sous une autre clé (lignes écrites avant la règle D4, une par réponse juste).
+        AND NOT EXISTS (SELECT 1 FROM campus.activites a WHERE a.utilisateur_id = rr.utilisateur_id AND a.jour = rr.jour
+          AND a.type = 'revision' AND a.objet_id = rr.carte_id)
+      GROUP BY rr.utilisateur_id, rr.carte_id, rr.jour, cr.cours_id, cr.seance_id`,
   },
   {
     // C1 (cours complet suivi) : quiz d'entraînement terminé, une fois par séance.
@@ -211,14 +233,19 @@ export const SOURCES: Source[] = [
       WHERE sc.quiz_total > 0 AND sc.quiz_meilleur IS NOT NULL AND COALESCE(sc.revu_le, sc.ouvert_le) >= ${depuisDe(f)} ${pourQui(f, sql`sc.utilisateur_id`)}`,
   },
   {
-    // C2 (objectif du jour) : jour validé.
+    // C2 (objectif du jour) : jour validé, s'il compte aussi un acte d'apprentissage déjà inscrit ce jour-là
+    // (révision, copie, interrogation, présence, replay…) : une ouverture ou un clic seuls ne valent pas de
+    // points. Sinon le jour validé attend : il est inscrit dès qu'un tel acte arrive (même hors ligne).
+    // Dernière source : les actes du jour sont déjà inscrits.
     nom: "objectif du jour",
     requiert: { objectifs_jours: ["utilisateur_id", "jour", "valide_le"] },
     candidats: (f) => sql`
       SELECT oj.utilisateur_id AS uid, 'objectif:' || oj.utilisateur_id || ':' || oj.jour::text AS cle, 'objectif'::text AS type, ${pts("objectif")} AS points,
         oj.valide_le AS fait_le, oj.jour::date AS jour, NULL::int AS cours_id, NULL::int AS seance_id, NULL::int AS objet_id
       FROM campus.objectifs_jours oj
-      WHERE oj.valide_le IS NOT NULL AND oj.valide_le >= ${depuisDe(f)} ${pourQui(f, sql`oj.utilisateur_id`)}`,
+      WHERE oj.valide_le IS NOT NULL AND oj.valide_le >= ${depuisDe(f)} ${pourQui(f, sql`oj.utilisateur_id`)}
+        AND EXISTS (SELECT 1 FROM campus.activites a WHERE a.utilisateur_id = oj.utilisateur_id AND a.jour = oj.jour::date
+          AND a.type NOT IN ('objectif', 'ressenti'))`,
   },
 ];
 
@@ -310,37 +337,87 @@ async function inscrire(ex: Executeur, source: Source, f: Filtre, fuseaux: strin
   return r.rows.map((l) => l.uid);
 }
 
-export type BilanRegistre = { inscrits: number; etudiants: number[]; parSource: Record<string, number> };
+export type BilanRegistre = {
+  inscrits: number;
+  etudiants: number[];
+  parSource: Record<string, number>;
+  /** Passage personnel sauté : un passage général tenait le verrou (rien n'a été inscrit). */
+  saute: boolean;
+  /** Actes retirés : présences et replays d'un direct annulé après son démarrage. */
+  retires: number;
+};
+
+/**
+ * Verrou d'une transaction du registre. Passage général : verrou exclusif (il
+ * n'attend que les passages personnels en cours, qui durent quelques dizaines
+ * de millisecondes). Passage personnel : verrou partagé et verrou à son nom,
+ * pris seulement s'ils sont libres ; sinon false, sans attendre.
+ */
+async function verrouiller(ex: Executeur, f: Filtre): Promise<boolean> {
+  if (!f.utilisateurId) {
+    await ex.execute(sql`SELECT pg_advisory_xact_lock(${VERROU_REGISTRE}::bigint)`);
+    return true;
+  }
+  const { rows } = await ex.execute<{ ok: boolean }>(sql`
+    SELECT (pg_try_advisory_xact_lock_shared(${VERROU_REGISTRE}::bigint)
+      AND pg_try_advisory_xact_lock(${VERROU_PERSONNE}::int, ${f.utilisateurId}::int)) AS ok`);
+  return rows[0]?.ok === true;
+}
+
+/**
+ * Présences et replays d'un direct annulé après son démarrage : la séance ne
+ * compte plus (SQL_SEANCE_COMPTEE), ses points sortent du registre. Passages
+ * généraux seulement ; rien à faire, et une seule petite requête, s'il n'y a
+ * aucune séance annulée ainsi dans la fenêtre.
+ */
+async function retirerSeancesAnnulees(ex: Executeur, f: Filtre): Promise<number> {
+  const { rows } = await ex.execute<{ id: number; debut: string }>(sql`
+    SELECT s.id, s.debut FROM campus.seances s
+    WHERE s.statut = 'annulee' AND s.demarree_le IS NOT NULL AND s.debut >= ${depuisDe(f)} - interval '1 day'`);
+  if (!rows.length) return 0;
+  const premier = rows.map((r) => new Date(r.debut).getTime()).reduce((a, b) => Math.min(a, b));
+  // La semaine (index) borne la recherche : une semaine avant la première séance annulée, pour les fuseaux en retard.
+  const r = await ex.execute(sql`
+    DELETE FROM campus.activites a
+    WHERE a.seance_id = ANY(ARRAY[${sql.join(rows.map((l) => sql`${l.id}`), sql`, `)}]::int[])
+      AND a.type IN ('presence', 'presence_seuil', 'replay')
+      AND a.semaine >= to_char((${new Date(premier).toISOString()}::timestamptz AT TIME ZONE 'UTC')::date - 7, 'IYYY"-W"IW')`);
+  return r.rowCount ?? 0;
+}
 
 /**
  * Un passage du registre sur une fenêtre (et éventuellement pour une seule
- * personne), dans une transaction verrouillée. « parSource » : une
- * transaction par source (rattrapage), pour ne pas bloquer longtemps.
+ * personne), dans une transaction verrouillée. « parSource » (passages
+ * généraux) : une transaction par source, pour ne tenir le verrou que le temps
+ * d'une source. Un passage personnel tient en une transaction ; s'il ne peut
+ * pas prendre ses verrous, il est sauté (bilan.saute).
  */
 export async function passerRegistre(f: Filtre, options: { parSource?: boolean } = {}): Promise<BilanRegistre> {
   const fuseaux = await fuseauxEtudiants();
   const disponibles: Source[] = [];
   for (const s of SOURCES) if (await sourceDisponible(s)) disponibles.push(s);
-  const bilan: BilanRegistre = { inscrits: 0, etudiants: [], parSource: {} };
+  const bilan: BilanRegistre = { inscrits: 0, etudiants: [], parSource: {}, saute: false, retires: 0 };
   const touches = new Set<number>();
-  const passer = async (ex: Executeur, s: Source) => {
+  type Etape = (ex: Executeur) => Promise<void>;
+  const etapes: Etape[] = disponibles.map((s) => async (ex) => {
     const uids = await inscrire(ex, s, f, fuseaux);
     bilan.parSource[s.nom] = uids.length;
     bilan.inscrits += uids.length;
     for (const u of uids) touches.add(u);
-  };
-  const verrouiller = (ex: Executeur) => ex.execute(sql`SELECT pg_advisory_xact_lock(${VERROU_REGISTRE})`);
-  if (options.parSource) {
-    for (const s of disponibles)
-      await db.transaction(async (tx) => {
-        await verrouiller(tx);
-        await passer(tx, s);
-      });
-  } else {
-    await db.transaction(async (tx) => {
-      await verrouiller(tx);
-      for (const s of disponibles) await passer(tx, s);
+  });
+  if (!f.utilisateurId) etapes.unshift(async (ex) => void (bilan.retires = await retirerSeancesAnnulees(ex, f)));
+  const enTransaction = (liste: Etape[]) =>
+    db.transaction(async (tx) => {
+      if (!(await verrouiller(tx, f))) {
+        bilan.saute = true;
+        return;
+      }
+      for (const e of liste) await e(tx);
     });
+  if (options.parSource && !f.utilisateurId) {
+    for (const e of etapes) await enTransaction([e]);
+  } else {
+    await enTransaction(etapes);
   }
   bilan.etudiants = [...touches];
   if (bilan.etudiants.length) await attribuerBadges(bilan.etudiants);
@@ -353,25 +430,61 @@ export function rattraperDepuisRentree(): Promise<BilanRegistre> {
 }
 
 const derniersPassagesPersonne = new Map<number, number>();
+/** Passage personnel en cours : une seconde demande de la même personne l'attend (sans connexion) au lieu d'en lancer un autre. */
+const passagesEnCours = new Map<number, Promise<{ saute: boolean }>>();
+/** Avant le rattrapage général : personnes dont un passage personnel a déjà rattrapé le registre depuis la rentrée. */
+const personnesRattrapees = new Set<number>();
 const DEMARRAGE = Date.now();
 let rattrapageFait = false;
+let rattrapageEnCours: Promise<unknown> | null = null;
+const pause = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 /**
  * Passage pour une personne (sa page « Ma progression », le gain du jour) :
  * au plus une fois par minute ; sinon rien. Les actes d'il y a quelques
  * secondes apparaissent ainsi sans attendre le passage des 5 minutes.
+ * Il n'attend jamais le verrou : pendant un passage général, il est sauté
+ * ({ saute: true }) et le prochain affichage réessaiera.
  */
-export async function rafraichirPersonne(utilisateurId: number): Promise<void> {
+export function rafraichirPersonne(utilisateurId: number): Promise<{ saute: boolean }> {
+  const enCours = passagesEnCours.get(utilisateurId);
+  if (enCours) return enCours;
   const maintenant = Date.now();
-  if (maintenant - (derniersPassagesPersonne.get(utilisateurId) ?? 0) < 60_000) return;
+  if (maintenant - (derniersPassagesPersonne.get(utilisateurId) ?? 0) < 60_000) return Promise.resolve({ saute: false });
   derniersPassagesPersonne.set(utilisateurId, maintenant);
   if (derniersPassagesPersonne.size > 5000) {
     for (const [id, le] of derniersPassagesPersonne) if (maintenant - le > 60_000) derniersPassagesPersonne.delete(id);
   }
+  const passage = rafraichir(utilisateurId, maintenant).finally(() => passagesEnCours.delete(utilisateurId));
+  passagesEnCours.set(utilisateurId, passage);
+  return passage;
+}
+
+async function rafraichir(utilisateurId: number, maintenant: number): Promise<{ saute: boolean }> {
   // Tant que le rattrapage général n'est pas fait (2 minutes après le démarrage), le sien part de la rentrée :
   // ses semaines ne seront jamais jugées sur un registre incomplet.
-  const depuis = rattrapageFait ? new Date(maintenant - FENETRE_JOURS * JOUR_MS) : new Date(`${RENTREE}T00:00:00Z`);
-  await passerRegistre({ depuis, utilisateurId });
+  const complet = rattrapageFait || personnesRattrapees.has(utilisateurId);
+  const depuis = complet ? new Date(maintenant - FENETRE_JOURS * JOUR_MS) : new Date(`${RENTREE}T00:00:00Z`);
+  let bilan: BilanRegistre;
+  try {
+    bilan = await passerRegistre({ depuis, utilisateurId });
+  } catch (e) {
+    derniersPassagesPersonne.delete(utilisateurId);
+    throw e;
+  }
+  if (!bilan.saute) {
+    if (!rattrapageFait) personnesRattrapees.add(utilisateurId);
+    return { saute: false };
+  }
+  // Un passage général tient le verrou : le prochain affichage réessaiera (et le passage des 5 minutes rattrape).
+  derniersPassagesPersonne.delete(utilisateurId);
+  if (complet) return { saute: true };
+  // Registre jamais rattrapé pour cette personne, pendant le rattrapage général : on attend un peu sa fin
+  // (sans tenir de connexion), sinon on demande de réessayer plutôt que de juger ses semaines dessus.
+  const attente = rattrapageEnCours;
+  if (attente) await Promise.race([attente.catch(() => undefined), pause(ATTENTE_RATTRAPAGE_MS)]);
+  if (rattrapageFait) return { saute: false };
+  throw new ErreurHttp(503, "Ta progression se met à jour : réessaie dans un instant.");
 }
 
 /** Le registre a-t-il été rattrapé depuis la rentrée depuis le démarrage ? La Coupe attend ce moment. */
@@ -385,12 +498,20 @@ export const rattrapageTermine = () => rattrapageFait;
 planifier("progression-rattrapage", 60_000, async () => {
   if (rattrapageFait || Date.now() - DEMARRAGE < 2 * 60_000) return;
   const debut = Date.now();
-  const bilan = await rattraperDepuisRentree();
-  rattrapageFait = true;
-  console.log(`[progression] rattrapage depuis la rentrée : ${bilan.inscrits} actes inscrits, ${bilan.etudiants.length} étudiants (${Date.now() - debut} ms).`);
+  const passage = rattraperDepuisRentree();
+  rattrapageEnCours = passage;
+  try {
+    const bilan = await passage;
+    rattrapageFait = true;
+    personnesRattrapees.clear();
+    console.log(`[progression] rattrapage depuis la rentrée : ${bilan.inscrits} actes inscrits, ${bilan.etudiants.length} étudiants (${Date.now() - debut} ms).`);
+  } finally {
+    rattrapageEnCours = null;
+  }
 });
 
+// Source par source : le verrou n'est tenu que le temps d'une source, les passages personnels passent entre deux.
 planifier("progression-registre", 5 * 60_000, async () => {
   if (!rattrapageFait) return;
-  await passerRegistre({ depuis: new Date(Date.now() - FENETRE_JOURS * JOUR_MS) });
+  await passerRegistre({ depuis: new Date(Date.now() - FENETRE_JOURS * JOUR_MS) }, { parSource: true });
 });

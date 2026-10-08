@@ -24,10 +24,11 @@ import { ResultatsParCampus } from "./panneaux";
 import { CarteCoteIvoire } from "./CarteCoteIvoire";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
 import { VueGroupeSalle, monGroupe, useGroupes } from "./groupes";
+import { EmargementPleinEcran, GuideChargeDeCours, cheminEmargement, useCodeSalle } from "./EmargementSalle";
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 // Emplacement du plan d'engagement (campus/ENGAGEMENT.md) : sans cours et avant le cours, jamais pendant.
 import { CoupeSalle } from "@/modules/progression/CoupeSalle";
-import type { CodeSalleDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
+import type { EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
 
 const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d'internet", "Salle bruyante"];
@@ -226,6 +227,8 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
         <PendantLeCours seance={seance} etat={etat} siteId={siteId} videoMasquee={videoMasquee} onVideoMasquee={setVideoMasquee} presentation={seule} onSortir={sortir} petit={petit} />
       )}
       {siteId && !seule && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} petit={petit} />}
+      {/* Émargement : le QR en grand au démarrage, à +15 et +45 min, ou à la demande du Studio (une minute). */}
+      {statut === "en_direct" && <EmargementPleinEcran seance={seance} etat={etat} siteId={siteId} enGroupe={Boolean(groupe)} />}
     </div>
   );
 }
@@ -244,36 +247,7 @@ function Message({ titre, texte, seance }: { titre: string; texte: string; seanc
   );
 }
 
-// ── Code d'émargement renouvelé chaque minute ──────────────────────────────
-
-function useCodeSalle(seanceId: number, siteId: number | null, actif: boolean) {
-  const [code, setCode] = useState<CodeSalleDto | null>(null);
-  const [erreur, setErreur] = useState<string | null>(null);
-  useEffect(() => {
-    if (!actif || !siteId) return;
-    let minuterie: ReturnType<typeof setTimeout>;
-    let fini = false;
-    const charger = async () => {
-      try {
-        const c = await get<CodeSalleDto>(`/api/seances/${seanceId}/code-salle?site=${siteId}`);
-        if (fini) return;
-        setCode(c);
-        setErreur(null);
-        minuterie = setTimeout(charger, c.expireDansMs + 400);
-      } catch (e) {
-        if (fini) return;
-        setErreur((e as Error).message);
-        minuterie = setTimeout(charger, 20_000);
-      }
-    };
-    void charger();
-    return () => {
-      fini = true;
-      clearTimeout(minuterie);
-    };
-  }, [seanceId, siteId, actif]);
-  return { code, erreur };
-}
+// ── Code d'émargement renouvelé chaque minute (useCodeSalle : EmargementSalle.tsx) ──
 
 function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; siteId: number | null; compact?: boolean; mini?: boolean }) {
   const ouvert = seance.statut === "en_direct" || new Date(seance.debut).getTime() - maintenantServeur() < 60 * 60_000;
@@ -300,7 +274,7 @@ function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; 
       </div>
     );
   }
-  const chemin = code.url.replace(/^https?:\/\//, "").replace(/\/emargement\/\d+$/, "/emargement");
+  const chemin = cheminEmargement(code.url);
   return (
     <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "flex-col p-6 sm:flex-row sm:items-center lg:p-7")}>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -316,7 +290,7 @@ function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; 
           <div className="h-full rounded-full bg-orange transition-[width] duration-1000 ease-linear" style={{ width: `${(restant / 60) * 100}%` }} />
         </div>
         <p className={cn("text-nuit-doux", compact ? "text-base" : "text-lg lg:text-xl")}>
-          Tape ce code dans le campus ou scanne le QR : il change chaque minute.
+          {compact ? "Tape ce code dans le campus : il change chaque minute." : "Tape ce code dans le campus ou scanne le QR : il change chaque minute."}
           {!compact && <span className="block font-mono text-base text-nuit-gris">{chemin}</span>}
         </p>
       </div>
@@ -449,6 +423,7 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
           <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
           <CompteursEmarges etat={etat} grand />
         </div>
+        <GuideChargeDeCours />
         <LimiteSilencieuse nom="CoupeSalle">
           <CoupeSalle siteId={siteId} />
         </LimiteSilencieuse>

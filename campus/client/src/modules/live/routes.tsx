@@ -20,6 +20,8 @@ export const routes: DefRoute[] = [
   { chemin: "/live/:id", page: PageLive, acces: "connecte", coquille: "plein-ecran" },
   { chemin: "/salle", page: PageSalle, acces: ["salle", "admin", "vie_scolaire"], coquille: "aucune", droit: "presences" },
   { chemin: "/emargement/:code", page: PageEmargement, acces: ["etudiant"], coquille: "aucune" },
+  // Ouverte par le rappel du démarrage du direct : scanner le QR de l'écran ou taper son code.
+  { chemin: "/emargement", page: PageEmargement, acces: ["etudiant"], coquille: "aucune" },
   { chemin: "/enseigner/seances/nouvelle", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
   { chemin: "/enseigner/seances/:id", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
   { chemin: "/replays", page: PageEnregistrements, acces: ["formateur", "admin", "vie_scolaire"] },

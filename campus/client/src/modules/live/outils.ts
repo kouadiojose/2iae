@@ -194,15 +194,17 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
  * « seance:<id> » le met à jour sans rien recharger. Au retour du réseau,
  * l'état complet est relu (rien n'est perdu pendant une coupure).
  */
-export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenement?: (e: EvenementFlux) => void) {
+export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenement?: (e: EvenementFlux) => void, options: { leger?: boolean } = {}) {
   const cle = cleDirect(seanceId);
   // Temps réel en direct : une relecture par minute suffit (filet de sécurité). Flux coupé ou retenu en
   // route (antivirus, réseau) : la diapo est relue toutes les 2 s par une requête légère (ci-dessous),
-  // et l'état complet (questions, sondage, salles) toutes les 8 s.
+  // et l'état complet (questions, sondage, salles) toutes les 8 s. Mode salle (leger) : le téléphone ne
+  // montre pas la diapo, il n'en relit rien, et l'état complet toutes les 30 s seulement.
   const sain = useFluxSain();
-  const requete = useQuery<EtatDirectDto>({ queryKey: cle, refetchInterval: sain ? 60_000 : 8_000, staleTime: 1_500 });
+  const leger = Boolean(options.leger);
+  const requete = useQuery<EtatDirectDto>({ queryKey: cle, refetchInterval: sain ? 60_000 : leger ? 30_000 : 8_000, staleTime: 1_500 });
   useEffect(() => {
-    if (sain) return;
+    if (sain || leger) return;
     let arret = false;
     let enCours = false;
     const id = setInterval(async () => {
@@ -233,7 +235,7 @@ export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenemen
       arret = true;
       clearInterval(id);
     };
-  }, [sain, seanceId]);
+  }, [sain, leger, seanceId]);
   const relire = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relireBientot = () => {
     if (relire.current) return;

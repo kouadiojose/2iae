@@ -14,14 +14,35 @@ export const emailDisponible = () => Boolean(config.mail.resendCle);
 /** Pièce jointe d'un e-mail (le guide PDF, par exemple). */
 export type PieceJointe = { nom: string; contenu: Buffer };
 
-export async function envoyerEmail(o: { a: string; sujet: string; texte: string; html?: string; pieces?: PieceJointe[] }): Promise<boolean> {
+/**
+ * Envoie un e-mail ; vrai s'il est parti. Faux sans clé Resend, sans adresse
+ * ou en cas de refus : l'appelant le note (relances : statut « echec »).
+ * « entetes » : en-têtes ajoutés au message, par exemple List-Unsubscribe et
+ * List-Unsubscribe-Post (désinscription en un geste depuis la messagerie, RFC 8058).
+ */
+export async function envoyerEmail(o: {
+  a: string;
+  sujet: string;
+  texte: string;
+  html?: string;
+  pieces?: PieceJointe[];
+  entetes?: Record<string, string>;
+}): Promise<boolean> {
   if (!config.mail.resendCle || !o.a) return false;
   try {
     const attachments = o.pieces?.map((p) => ({ filename: p.nom, content: p.contenu.toString("base64") }));
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${config.mail.resendCle}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: config.mail.expediteur, to: [o.a], subject: o.sujet, text: o.texte, html: o.html, ...(attachments?.length ? { attachments } : {}) }),
+      body: JSON.stringify({
+        from: config.mail.expediteur,
+        to: [o.a],
+        subject: o.sujet,
+        text: o.texte,
+        html: o.html,
+        ...(attachments?.length ? { attachments } : {}),
+        ...(o.entetes && Object.keys(o.entetes).length ? { headers: o.entetes } : {}),
+      }),
       // Une pièce jointe de quelques Mo met plus longtemps à partir.
       signal: AbortSignal.timeout(o.pieces?.length ? 45_000 : 15_000),
     });
@@ -67,6 +88,14 @@ export type ContenuEmail = {
   etapes?: { titre: string; texte: string; adresse?: string }[];
   /** Intertitre au-dessus des étapes (« Votre guide pas à pas »). */
   titreEtapes?: string;
+  /** Petite phrase d'aperçu, lue par la messagerie à côté du sujet (invisible dans le message). */
+  apercu?: string;
+  /** Rubriques courtes entre les paragraphes et le bouton (e-mail de la semaine) : un intertitre et des lignes. */
+  sections?: { titre: string; lignes: string[] }[];
+  /** Étudiant : le pied de page le tutoie (« Écris-nous »). */
+  tutoiement?: boolean;
+  /** E-mails d'engagement : pourquoi on le reçoit, et le lien signé « Ne plus recevoir ces e-mails » (sans connexion). */
+  desinscription?: { raison: string; libelle: string; lien: string };
 };
 
 /** Paragraphe : échappe puis met en gras ce qui est entre ** **. */
@@ -81,6 +110,7 @@ export function gabaritEmail(c: ContenuEmail): { html: string; texte: string } {
 <html lang="fr">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${echapper(c.titre)}</title></head>
 <body style="margin:0;padding:0;background:${CREME};${police};color:${ENCRE}">
+${c.apercu ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${CREME}">${echapper(c.apercu)}</div>` : ""}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${CREME};padding:24px 12px">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${LIGNE};border-radius:20px;overflow:hidden">
@@ -92,6 +122,15 @@ export function gabaritEmail(c: ContenuEmail): { html: string; texte: string } {
   <h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;font-weight:900;letter-spacing:-.02em;color:${ENCRE}">${echapper(c.titre)}</h1>
   ${c.paragraphes.map((p) => `<p style="margin:0 0 14px;font-size:16px;line-height:1.55;color:#3D3833">${enrichir(p)}</p>`).join("\n  ")}
 </td></tr>
+${(c.sections ?? [])
+  .filter((s) => s.lignes.length)
+  .map(
+    (s) => `<tr><td style="padding:6px 32px 8px">
+  <h2 style="margin:0 0 8px;font-size:17px;line-height:1.25;font-weight:900;color:${ENCRE}">${echapper(s.titre)}</h2>
+  ${s.lignes.map((l) => `<p style="margin:0;padding:7px 0;border-top:1px solid ${LIGNE};font-size:15px;line-height:1.45;color:#3D3833">${enrichir(l)}</p>`).join("\n  ")}
+</td></tr>`,
+  )
+  .join("\n")}
 ${
   c.bouton
     ? `<tr><td style="padding:10px 32px 6px">
@@ -145,12 +184,17 @@ ${
 }
 <tr><td style="padding:24px 32px 28px">
   <p style="margin:0;padding-top:18px;border-top:1px solid ${LIGNE};font-size:13px;line-height:1.55;color:${TEXTE_PALE}">
-    Une question ? Écrivez-nous sur WhatsApp au <a href="${CONTACTS_2IAE.lienWhatsapp}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.whatsapp}</a> ou à <a href="mailto:${CONTACTS_2IAE.email}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.email}</a>.
+    Une question ? ${c.tutoiement ? "Écris-nous" : "Écrivez-nous"} sur WhatsApp au <a href="${CONTACTS_2IAE.lienWhatsapp}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.whatsapp}</a> ou à <a href="mailto:${CONTACTS_2IAE.email}" style="color:${ORANGE_FONCE};font-weight:700;text-decoration:none">${CONTACTS_2IAE.email}</a>.
   </p>
   <p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#8A7F76">
     <strong style="color:${ENCRE}">Campus numérique · Groupe Écoles 2IAE International</strong><br>
     Institut International des Affaires en Entrepreneuriat · <a href="${CONTACTS_2IAE.site}" style="color:#8A7F76">www.2iae.com</a>
   </p>
+  ${
+    c.desinscription
+      ? `<p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#8A7F76">${echapper(c.desinscription.raison)} <a href="${echapper(c.desinscription.lien)}" style="color:#8A7F76;text-decoration:underline">${echapper(c.desinscription.libelle)}</a></p>`
+      : ""
+  }
 </td></tr>
 </table>
 </td></tr>
@@ -162,6 +206,7 @@ ${
     c.titre,
     "",
     ...c.paragraphes.map(enClair).flatMap((p) => [p, ""]),
+    ...(c.sections ?? []).filter((s) => s.lignes.length).flatMap((s) => [s.titre.toUpperCase(), ...s.lignes.map((l) => `- ${enClair(l)}`), ""]),
     ...(c.bouton ? [`${c.bouton.libelle} : ${c.bouton.lien}`, ""] : []),
     ...(c.apresBouton ?? []).map(enClair),
     ...(c.encadre?.length ? ["", ...c.encadre.map((l) => `${l.libelle} : ${l.valeur}`)] : []),
@@ -171,6 +216,7 @@ ${
     "",
     `Une question ? WhatsApp ${CONTACTS_2IAE.whatsapp} · ${CONTACTS_2IAE.email}`,
     "Campus numérique · Groupe Écoles 2IAE International · www.2iae.com",
+    ...(c.desinscription ? ["", c.desinscription.raison, `${c.desinscription.libelle} : ${c.desinscription.lien}`] : []),
   ].join("\n");
   return { html, texte };
 }
@@ -322,6 +368,7 @@ export function emailGuideEtudiant(o: {
   const hote = config.urlCampus.replace(/^https?:\/\//, "");
   const { html, texte } = gabaritEmail({
     etiquette: "Bienvenue · Ton campus numérique",
+    tutoiement: true,
     titre: `Bienvenue, ${o.prenom.trim()} !`,
     paragraphes: [
       `Ton compte étudiant est prêt${o.classe ? `, en classe **${o.classe}**` : ""}. Voici, pas à pas, comment suivre tes cours sur le campus numérique du Groupe Écoles 2IAE International. Garde cet e-mail : il te servira d'aide-mémoire.`,
@@ -380,6 +427,7 @@ export function emailReinitialisation(o: { prenom: string; etudiant: boolean; li
         ? "Tu as demandé un nouveau code secret pour le campus numérique 2IAE. Touche le bouton pour le choisir."
         : "Vous avez demandé un nouveau mot de passe pour le campus numérique 2IAE. Ouvrez le lien pour le choisir.",
     ],
+    tutoiement: tu,
     bouton: { libelle: tu ? "Choisir mon nouveau code" : "Choisir mon nouveau mot de passe", lien: o.lien },
     apresBouton: [
       tu ? "Le lien marche une seule fois, pendant 1 heure." : "Le lien est valable une seule fois, pendant 1 heure.",

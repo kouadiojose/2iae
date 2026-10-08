@@ -1,16 +1,30 @@
-// Un étudiant à contacter : les raisons, ce qu'il faut faire, et les trois
-// gestes (WhatsApp, dossier, suivi) à portée de pouce.
+// Un étudiant à contacter : les raisons, ce qu'il faut faire, l'état de ses
+// relances automatiques (chantier C4) et les trois gestes (WhatsApp, dossier,
+// suivi) à portée de pouce. Le lien WhatsApp reste là pour le geste humain.
 import { Link } from "wouter";
 import { MessageCircle, FolderOpen, NotebookPen, Clock } from "lucide-react";
 import type { AContacter } from "@shared/schema";
+import type { EtatRelanceEtudiant } from "@shared/engagement/relances";
 import { LIBELLES_RAISONS } from "@shared/schema";
 import { Badge, Avatar } from "@/components/ui/divers";
 import { cn } from "@/lib/utils";
 import { vuLe, telephoneLisible } from "../outils";
+import { EtatRelances } from "./EtatRelances";
 
 const TON_RAISON = { jamais_active: "alerte", inactif: "orange", lives_manques: "danger", devoir_non_rendu: "gris" } as const;
 
-export function LigneAContacter({ ligne, onSuivi, compacte }: { ligne: AContacter; onSuivi: (e: AContacter["etudiant"]) => void; compacte?: boolean }) {
+export function LigneAContacter({
+  ligne,
+  onSuivi,
+  compacte,
+  relance,
+}: {
+  ligne: AContacter;
+  onSuivi: (e: AContacter["etudiant"]) => void;
+  compacte?: boolean;
+  /** Relances automatiques de l'étudiant (rappel, e-mail, « à appeler »), quand elles sont connues. */
+  relance?: EtatRelanceEtudiant;
+}) {
   const e = ligne.etudiant;
   return (
     <li className="rounded-2xl border border-ligne bg-white p-4 sm:p-5">
@@ -42,6 +56,7 @@ export function LigneAContacter({ ligne, onSuivi, compacte }: { ligne: AContacte
           ))}
         </ul>
       )}
+      {relance && !compacte && <EtatRelances etat={relance} />}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-texte-gris">
         <span className="inline-flex items-center gap-1">
           <Clock className="h-3.5 w-3.5" /> Vu sur le campus : {vuLe(ligne.derniereActivite)}

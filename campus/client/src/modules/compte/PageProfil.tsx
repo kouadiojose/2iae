@@ -16,7 +16,8 @@ import { Agenda } from "./composants/profil/Agenda";
 import { Charte, Securite } from "./composants/profil/Securite";
 import { FicheSite } from "./composants/profil/FicheSite";
 import { Section } from "./composants/profil/Section";
-import { Film, Globe } from "lucide-react";
+import { BellRing, Film, Globe } from "lucide-react";
+import { t as texteRelances } from "@shared/textes/relances";
 import { ChoixFuseau } from "@/modules/visio";
 import { CreditMarkel } from "@/components/ui/credit";
 
@@ -76,6 +77,16 @@ export default function PageProfil() {
             <Section id="fuseau" titre="Fuseau horaire" icone={<Globe className="h-5 w-5" />} description="Les heures des cours vous sont données à l'heure d'Abidjan et à la vôtre, et vos rappels arrivent à votre heure.">
               <ChoixFuseau />
             </Section>
+          )}
+          {/* Module relances : l'heure du rappel d'entraînement, une pause, les e-mails (page « Mes rappels »). */}
+          {moi.role === "etudiant" && (
+            <Section
+              id="mes-rappels"
+              titre={texteRelances("page.profil.titre", { registre: "tu" })}
+              icone={<BellRing className="h-5 w-5" />}
+              description={texteRelances("page.profil.description", { registre: "tu" })}
+              action={<LienBouton href="/mes-rappels">{texteRelances("page.profil.ouvrir", { registre: "tu" })}</LienBouton>}
+            />
           )}
           {/* Rappels sur ce téléphone (module pwa) : carte masquée si le campus n'a pas de clé d'envoi. */}
           <div id="rappels" className="scroll-mt-24 empty:hidden">

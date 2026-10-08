@@ -13,7 +13,7 @@
 // Formateur : prochaine séance (studio, préparation), copies à corriger,
 // questions restées sans réponse au dernier live, ses cours, ses messages.
 import type { Express } from "express";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerRole, moi } from "../auth";
 import { route } from "../http";
@@ -22,10 +22,11 @@ import { intervenantsDesSeances } from "../programme-outils";
 import { compterMessagesNonLus } from "../messages-outils";
 import { annoncesPour, extrait } from "./annonces";
 import { elementsAgenda, debutSemaine, numeroSemaine, jourFr, heureFr } from "./agenda";
-import { lireOuTaire, progressionsCours, tableUtilisable } from "../engagement/progression-cours";
+import { progressionsCours } from "../engagement/progression-cours";
+import { entrainementsDesInterrogations, sqlDevoirFait, sqlEssaisEpuises } from "../engagement/objectif";
 import { t as textes } from "@shared/textes/objectif";
 import { registreDe } from "@shared/textes";
-import type { AccueilEtudiantSuivi, CoursAccueilSuivi } from "@shared/engagement/objectif";
+import { ENTRAINEMENT_PRET, type AccueilEtudiantSuivi, type CoursAccueilSuivi } from "@shared/engagement/objectif";
 import {
   cours,
   coursClasses,
@@ -33,7 +34,6 @@ import {
   seances,
   devoirs,
   rendus,
-  tentativesQuiz,
   messages,
   conversations,
   participants,
@@ -106,7 +106,12 @@ const A_JOUR: ElementAFaire = {
   urgence: "aucune",
 };
 
-/** Devoirs publiés et ouverts des cours de l'étudiant, avec ce qu'il en a fait (SES rendus seulement). */
+/**
+ * Devoirs publiés et ouverts des cours de l'étudiant, avec ce qu'il en a fait
+ * (SES rendus seulement). Même règle que l'objectif du jour : une interrogation
+ * est faite avec au moins une réponse, ou quand il ne lui reste plus d'essai ;
+ * terminée vide avec un essai restant, elle reste à faire.
+ */
 async function devoirsDeLEtudiant(u: Utilisateur, coursIds: number[], maintenant: Date) {
   if (!coursIds.length) return [];
   const liste = await db
@@ -124,47 +129,26 @@ async function devoirsDeLEtudiant(u: Utilisateur, coursIds: number[], maintenant
     .orderBy(asc(devoirs.dateLimite));
   if (!liste.length) return [];
   const ids = liste.map((l) => l.d.id);
-  const faits = new Set<number>();
-  const mesRendus = await db
-    .select({ devoirId: rendus.devoirId, statut: rendus.statut })
-    .from(rendus)
-    .where(and(eq(rendus.etudiantId, u.id), inArray(rendus.devoirId, ids)));
-  for (const r of mesRendus) if (r.statut !== "brouillon") faits.add(r.devoirId);
-  const mesQuiz = await db
-    .select({ devoirId: tentativesQuiz.devoirId })
-    .from(tentativesQuiz)
-    .where(and(eq(tentativesQuiz.etudiantId, u.id), inArray(tentativesQuiz.devoirId, ids), isNotNull(tentativesQuiz.finLe)));
-  for (const q of mesQuiz) faits.add(q.devoirId);
+  const etats = await db.execute<{ id: number; fait: boolean }>(sql`
+    SELECT d.id, (${sqlDevoirFait("d", u.id)} OR ${sqlEssaisEpuises("d", u.id)}) AS fait
+    FROM campus.devoirs d WHERE d.id = ANY(${`{${ids.join(",")}}`}::int[])`);
+  const faits = new Set(etats.rows.filter((l) => l.fait).map((l) => l.id));
   return liste.map((l) => ({ ...l, fait: faits.has(l.d.id) }));
 }
-
-/** Score d'entraînement à partir duquel l'étudiant est dit « prêt » pour l'interrogation (60 %). */
-const PRET_A_PARTIR_DE = 0.6;
 
 /**
  * Phrase d'entraînement des interrogations préparées par la routine du soir
  * (devoirs_seances) : « Tu t'es entraîné : 9/12. Tu es prêt (10 questions,
  * elle compte dans ta moyenne). » Le meilleur score du quiz d'entraînement du
- * cours complet de la séance est lu dans suivis_cours_complets (C1) ; sans
- * cette table, rien n'est ajouté.
+ * cours complet de la séance est lu dans suivis_cours_complets (C1), par le
+ * même calcul que l'objectif du jour ; sans cette table, rien n'est ajouté.
  */
-async function entrainementsDesInterrogations(u: Utilisateur, quizIds: number[]): Promise<Map<number, string>> {
+async function phrasesEntrainement(u: Utilisateur, quizIds: number[]): Promise<Map<number, string>> {
   const phrases = new Map<number, string>();
-  if (!quizIds.length || !(await tableUtilisable("suivis_cours_complets", ["utilisateur_id", "seance_id", "quiz_meilleur", "quiz_total"]))) return phrases;
-  const ids = `{${quizIds.join(",")}}`;
-  const r = await db.execute<{ devoir_id: number; questions: number; meilleur: number | null; total: number | null }>(sql`
-    SELECT d.id AS devoir_id,
-      (SELECT count(*) FROM campus.questions_quiz q WHERE q.devoir_id = d.id)::int AS questions,
-      sc.quiz_meilleur::float8 AS meilleur, sc.quiz_total::float8 AS total
-    FROM unnest(${ids}::int[]) AS d(id)
-    JOIN campus.devoirs_seances ds ON ds.devoir_ids @> jsonb_build_array(d.id)
-    LEFT JOIN campus.suivis_cours_complets sc ON sc.seance_id = ds.seance_id AND sc.utilisateur_id = ${u.id}`);
   const registre = registreDe(u.role);
-  for (const l of r.rows) {
-    if (!l.questions) continue;
-    const score = l.meilleur !== null && l.total ? { score: Math.round(l.meilleur), total: Math.round(l.total) } : null;
-    const cle = !score ? "interrogation.sansEntrainement" : score.score / score.total >= PRET_A_PARTIR_DE ? "interrogation.pret" : "interrogation.revoir";
-    phrases.set(l.devoir_id, textes(cle, { registre, v: { n: l.questions, ...(score ?? {}) } }));
+  for (const [id, { questions, entrainement: s }] of await entrainementsDesInterrogations(u.id, quizIds)) {
+    const cle = !s ? "interrogation.sansEntrainement" : s.score / s.total >= ENTRAINEMENT_PRET ? "interrogation.pret" : "interrogation.revoir";
+    phrases.set(id, textes(cle, { registre, v: { n: questions, ...(s ?? {}) } }));
   }
   return phrases;
 }
@@ -300,9 +284,9 @@ export function enregistrerAccueil(app: Express) {
       }
 
       // Interrogations à venir : l'entraînement fait sur le cours complet de leur séance.
-      const entrainements = await lireOuTaire(
-        () => entrainementsDesInterrogations(u, listeDevoirs.filter((l) => !l.fait && l.d.type === "quiz" && l.d.dateLimite.getTime() >= t0).map((l) => l.d.id)),
-        new Map<number, string>(),
+      const entrainements = await phrasesEntrainement(
+        u,
+        listeDevoirs.filter((l) => !l.fait && l.d.type === "quiz" && l.d.dateLimite.getTime() >= t0).map((l) => l.d.id),
       );
       for (const { d, code, couleur, fait } of listeDevoirs) {
         if (fait) continue;
@@ -463,7 +447,8 @@ export function enregistrerAccueil(app: Express) {
         semaine: {
           numero: numeroSemaine(maintenant),
           lives: livesSemaine[0]?.n ?? 0,
-          devoirs: listeDevoirs.filter((l) => !l.fait && dansLaSemaine(l.d.dateLimite)).length,
+          // À rendre : dû cette semaine, ou en retard et encore accepté (la carte « En retard » ne contredit plus « 0 devoir »).
+          devoirs: listeDevoirs.filter((l) => !l.fait && (dansLaSemaine(l.d.dateLimite) || (l.d.dateLimite.getTime() < t0 && l.d.accepteRetard))).length,
         },
       };
       res.json(reponse);

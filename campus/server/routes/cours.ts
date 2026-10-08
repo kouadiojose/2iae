@@ -27,7 +27,7 @@ import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
 import { demanderClaude, iaDisponible, verifierQuota } from "../ia";
 import { progressionsCours } from "../engagement/progression-cours";
-import type { CoursResumeSuivi } from "@shared/engagement/objectif";
+import type { CoursDetailSuivi, CoursResumeSuivi, ReponseTermineeSuivi } from "@shared/engagement/objectif";
 import {
   cours,
   coursClasses,
@@ -56,7 +56,6 @@ import {
   type ClasseDuCours,
   type LeconDetail,
   type LeconVoisine,
-  type ReponseTerminee,
   type OptionsEditionCours,
 } from "@shared/schema";
 
@@ -237,7 +236,11 @@ async function programme(coursId: number, avecBrouillons: boolean) {
   return avecBrouillons ? resultat : resultat.filter((ch) => ch.lecons.length > 0);
 }
 
-/** Progression d'un étudiant dans un cours (leçons publiées terminées). */
+/**
+ * Leçons publiées terminées par l'étudiant (champ d'origine « progression »,
+ * qui sert encore à choisir l'action « Reprendre » ou « Bravo »). Le pourcentage
+ * affiché est celui de progressionsCours (suivi), le même que sur la carte du cours.
+ */
 async function progressionDe(utilisateurId: number, coursId: number) {
   const [r] = await db
     .select({
@@ -271,7 +274,7 @@ async function classesDuCours(coursId: number): Promise<ClasseDuCours[]> {
 }
 
 /** Tout le détail d'un cours, tel que la personne a le droit de le voir. */
-async function detailCours(u: Utilisateur, c: Cours): Promise<CoursDetail> {
+async function detailCours(u: Utilisateur, c: Cours): Promise<CoursDetailSuivi> {
   const voitBrouillons = await enseigneCours(u, c.id);
   const enseignant = voitBrouillons && (await coursDansPerimetre(u, c.id));
   const etudiant = u.role === "etudiant";
@@ -365,6 +368,8 @@ async function detailCours(u: Utilisateur, c: Cours): Promise<CoursDetail> {
     chapitres: chapitresDto,
     enseignant,
     progression: etudiant ? await progressionDe(u.id, c.id) : null,
+    // Progression honnête (leçons et séances suivies ou rattrapées) : même calcul que la carte du cours et l'accueil.
+    suivi: etudiant ? ((await progressionsCours(u.id, [c.id])).get(c.id) ?? null) : null,
     reprendre,
     prochaineSeance: seance,
     nbEtudiants,
@@ -762,9 +767,10 @@ export function enregistrerCours(app: Express) {
       const u = moi(req);
       const l = await leconPourEtudiant(u, idParam(req));
       await db.insert(progressions).values({ utilisateurId: u.id, leconId: l.id }).onConflictDoNothing();
-      const reponse: ReponseTerminee = {
+      const reponse: ReponseTermineeSuivi = {
         terminee: true,
         progression: await progressionDe(u.id, l.coursId),
+        suivi: (await progressionsCours(u.id, [l.coursId])).get(l.coursId),
         suivante: await suivanteNonTerminee(u, l.coursId, l.id),
       };
       res.json(reponse);
@@ -778,9 +784,10 @@ export function enregistrerCours(app: Express) {
       const u = moi(req);
       const l = await leconPourEtudiant(u, idParam(req));
       await db.delete(progressions).where(and(eq(progressions.utilisateurId, u.id), eq(progressions.leconId, l.id)));
-      const reponse: ReponseTerminee = {
+      const reponse: ReponseTermineeSuivi = {
         terminee: false,
         progression: await progressionDe(u.id, l.coursId),
+        suivi: (await progressionsCours(u.id, [l.coursId])).get(l.coursId),
         suivante: await suivanteNonTerminee(u, l.coursId, l.id),
       };
       res.json(reponse);

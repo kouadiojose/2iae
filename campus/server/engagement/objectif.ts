@@ -3,25 +3,33 @@
 // Au premier passage de la journée (jour local de l'étudiant, minuit à
 // Abidjan par défaut), le serveur choisit trois lignes au plus et les fige
 // dans objectifs_jours.elements jusqu'au lendemain :
-//   (a) la révision du jour, si des cartes actives existent dans ses cours
-//       (tables de C1) ; faite à 5 réponses dans la journée, ou dès qu'il a
-//       répondu et qu'aucune carte n'est plus due ;
+//   (a) la révision du jour, s'il y a aujourd'hui des cartes à revoir ou à
+//       découvrir dans ses cours, ou s'il a déjà révisé aujourd'hui (tables de
+//       C1) ; faite à 5 réponses dans la journée, ou dès qu'il a répondu et
+//       qu'aucune carte n'est plus due ;
 //   (b) le rattrapage de la dernière séance tenue de ses cours depuis 7 jours,
 //       où il était attendu, à laquelle sa présence est « absent » (jamais
 //       « inconnu » : amendement de José) et qu'il n'a pas encore rattrapée,
-//       quand il y a de quoi rattraper (cours complet prêt, replay ou fiche) ;
+//       quand il y a de quoi rattraper (cours complet prêt ou vidéo) ; fait
+//       seulement après un vrai travail (sqlSeanceRattrapee : quiz, fiches,
+//       exercice, cartes ou replay regardé), jamais à l'ouverture ;
 //       sinon « À retenir » du dernier cours complet, à lire sur place ;
 //   (c) l'interrogation, sinon l'exercice à rendre, publié, ouvert, pas fait,
 //       dû sous 7 jours et proposable (sqlDevoirProposable : un devoir de la
 //       routine du soir attend le lendemain matin) ; à défaut « À retenir »,
-//       s'il n'est pas déjà proposé.
+//       s'il n'est pas déjà proposé. Une interrogation n'est faite qu'avec au
+//       moins une réponse (sqlTentativeRepondue, même règle que les points du
+//       registre de C5) : terminée vide, elle reste à faire tant qu'il lui
+//       reste un essai, puis sort de l'objectif.
+// Un objectif réduit à « À retenir » (une lecture qui se coche à l'ouverture)
+// n'est pas proposé : un jour ne se valide jamais d'un seul toucher.
 // Rien à proposer : aucune ligne n'est écrite (la table ne garde que des
 // objectifs réellement proposés) et le choix est retenté 10 minutes plus tard.
 //
 // L'état « fait » est recalculé à chaque passage et seulement ajouté à
 // objectifs_jours.faits. Le jour est validé une seule fois (UPDATE … WHERE
 // valide_le IS NULL), même si l'accueil est rechargé dix fois.
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { idsCoursAccessibles } from "../acces";
 import { sqlAttendus } from "../routes/admin";
@@ -37,6 +45,7 @@ import {
   MINUTES_REVISION,
   type ElementObjectif,
   type ElementObjectifDto,
+  type Entrainement,
   type ObjectifDuJourDto,
 } from "@shared/engagement/objectif";
 import type { Utilisateur } from "@shared/schema";
@@ -71,13 +80,98 @@ async function lireLigne(utilisateurId: number, jour: string): Promise<Ligne | n
   return r.rows[0] ?? null;
 }
 
+// ── Interrogations et devoirs : une seule règle pour « fait » ─────────────
+
+/**
+ * Tentative d'interrogation terminée avec au moins une réponse ; « alias »
+ * désigne campus.tentatives_quiz. Même règle que les points du registre (C5,
+ * registre.ts) : une tentative clôturée vide (« Terminer » sans répondre, ou
+ * temps écoulé) ne compte pas. À reprendre par le registre pour qu'il n'y ait
+ * qu'une écriture de la règle.
+ */
+export function sqlTentativeRepondue(alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlTentativeRepondue : alias SQL invalide « ${alias} »`);
+  const t = sql.raw(alias);
+  return sql`(${t}.fin_le IS NOT NULL AND EXISTS (SELECT 1 FROM jsonb_each(${t}.reponses) e
+    WHERE e.value NOT IN ('[]'::jsonb, 'null'::jsonb, '""'::jsonb, '{}'::jsonb)))`;
+}
+
+/**
+ * Devoir fait par l'étudiant (alias de campus.devoirs) : interrogation avec une
+ * tentative répondue ; exercice avec un rendu envoyé (hors brouillon). La copie
+ * « corrigée » qu'une tentative vide crée dans rendus ne compte pas pour une
+ * interrogation : elle n'y est dérivée que des tentatives.
+ */
+export function sqlDevoirFait(alias: string, etudiantId: number): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlDevoirFait : alias SQL invalide « ${alias} »`);
+  const d = sql.raw(alias);
+  return sql`(CASE WHEN ${d}.type = 'quiz'
+    THEN EXISTS (SELECT 1 FROM campus.tentatives_quiz tq WHERE tq.devoir_id = ${d}.id AND tq.etudiant_id = ${etudiantId} AND ${sqlTentativeRepondue("tq")})
+    ELSE EXISTS (SELECT 1 FROM campus.rendus rr WHERE rr.devoir_id = ${d}.id AND rr.etudiant_id = ${etudiantId} AND rr.statut <> 'brouillon') END)`;
+}
+
+/** Interrogation dont tous les essais permis sont terminés (le serveur refuserait d'en commencer un autre). */
+export function sqlEssaisEpuises(alias: string, etudiantId: number): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlEssaisEpuises : alias SQL invalide « ${alias} »`);
+  const d = sql.raw(alias);
+  return sql`(${d}.type = 'quiz' AND (SELECT count(*) FROM campus.tentatives_quiz te
+    WHERE te.devoir_id = ${d}.id AND te.etudiant_id = ${etudiantId} AND te.fin_le IS NOT NULL) >= ${d}.tentatives_max)`;
+}
+
+/**
+ * Entraînement des interrogations préparées par la routine du soir
+ * (devoirs_seances) : nombre de questions et meilleur score au quiz du cours
+ * complet de leur séance (suivis_cours_complets, C1), null s'il ne s'est pas
+ * encore entraîné. Une interrogation écrite par un formateur n'a pas d'entrée ;
+ * sans la table de C1, rien. Partagé par l'accueil et l'objectif du jour.
+ */
+export async function entrainementsDesInterrogations(
+  etudiantId: number,
+  quizIds: number[],
+): Promise<Map<number, { questions: number; entrainement: Entrainement }>> {
+  const resultat = new Map<number, { questions: number; entrainement: Entrainement }>();
+  if (!quizIds.length || !(await tableUtilisable("suivis_cours_complets", ["utilisateur_id", "seance_id", "quiz_meilleur", "quiz_total"]))) return resultat;
+  return lireOuTaire(async () => {
+    const r = await db.execute<{ devoir_id: number; questions: number; meilleur: number | null; total: number | null }>(sql`
+      SELECT d.id AS devoir_id,
+        (SELECT count(*) FROM campus.questions_quiz q WHERE q.devoir_id = d.id)::int AS questions,
+        sc.quiz_meilleur::float8 AS meilleur, sc.quiz_total::float8 AS total
+      FROM unnest(${`{${quizIds.join(",")}}`}::int[]) AS d(id)
+      JOIN campus.devoirs_seances ds ON ds.devoir_ids @> jsonb_build_array(d.id)
+      LEFT JOIN campus.suivis_cours_complets sc ON sc.seance_id = ds.seance_id AND sc.utilisateur_id = ${etudiantId}`);
+    for (const l of r.rows) {
+      if (!l.questions) continue;
+      // Score borné au total : un score envoyé par le téléphone n'est pas recontrôlé par C1.
+      const entrainement = l.meilleur !== null && l.total ? { score: Math.min(Math.round(l.meilleur), Math.round(l.total)), total: Math.round(l.total) } : null;
+      resultat.set(l.devoir_id, { questions: l.questions, entrainement });
+    }
+    return resultat;
+  }, resultat);
+}
+
 // ── Choix du jour ──────────────────────────────────────────────────────────
 
-async function choisirRevision(coursIds: number[]): Promise<ElementObjectif | null> {
-  if (!coursIds.length || !(await tableUtilisable("cartes_revision", ["cours_id", "active"]))) return null;
+/**
+ * Révision du jour, seulement si elle peut se cocher aujourd'hui : une carte à
+ * revoir ou jamais vue dans ses cours (même condition que revisionFaite), ou
+ * des réponses déjà données aujourd'hui. Sans le suivi de C1, des cartes
+ * actives suffisent.
+ */
+async function choisirRevision(u: Utilisateur, coursIds: number[], jour: string): Promise<ElementObjectif | null> {
+  if (!coursIds.length || !(await tableUtilisable("cartes_revision", ["id", "cours_id", "active"]))) return null;
+  const ids = `{${coursIds.join(",")}}`;
+  const suivi =
+    (await tableUtilisable("revisions_etudiants", ["utilisateur_id", "carte_id", "prochaine_le"])) &&
+    (await tableUtilisable("reponses_revision", ["utilisateur_id", "jour"]));
   const existe = await lireOuTaire(async () => {
     const r = await db.execute<{ existe: boolean }>(
-      sql`SELECT EXISTS (SELECT 1 FROM campus.cartes_revision WHERE cours_id = ANY(${`{${coursIds.join(",")}}`}::int[]) AND active) AS existe`,
+      suivi
+        ? sql`SELECT (EXISTS (
+              SELECT 1 FROM campus.cartes_revision c
+              LEFT JOIN campus.revisions_etudiants re ON re.carte_id = c.id AND re.utilisateur_id = ${u.id}
+              WHERE c.cours_id = ANY(${ids}::int[]) AND c.active AND (re.carte_id IS NULL OR re.prochaine_le <= ${jour}))
+            OR EXISTS (SELECT 1 FROM campus.reponses_revision rr WHERE rr.utilisateur_id = ${u.id} AND rr.jour = ${jour})) AS existe`
+        : sql`SELECT EXISTS (SELECT 1 FROM campus.cartes_revision WHERE cours_id = ANY(${ids}::int[]) AND active) AS existe`,
     );
     return Boolean(r.rows[0]?.existe);
   }, false);
@@ -97,8 +191,8 @@ async function choisirRattrapage(u: Utilisateur, coursIds: number[], maintenant:
     LEFT JOIN campus.etudes_seances es ON es.seance_id = a.seance_id
     WHERE a.cours_id = ANY(${`{${coursIds.join(",")}}`}::int[])
       AND se.statut = 'terminee'
-      AND ((es.statut = 'prete' AND es.dossier IS NOT NULL) OR se.replay_url IS NOT NULL OR se.enregistrement_id IS NOT NULL
-        OR (se.resume_valide AND se.resume_ia IS NOT NULL))
+      -- De quoi rattraper avec un vrai travail : un cours complet (quiz, fiches) ou la vidéo (une fiche seule ne se coche pas).
+      AND ((es.statut = 'prete' AND es.dossier IS NOT NULL) OR se.replay_url IS NOT NULL OR se.enregistrement_id IS NOT NULL)
       AND ${sqlEtatPresence(sql`a.seance_id`, sql`a.uid`)} = 'absent'
       AND NOT ${sqlSeanceRattrapee(sql`a.seance_id`, sql`a.uid`, traces)}
     ORDER BY a.debut DESC
@@ -141,8 +235,9 @@ async function choisirDevoir(u: Utilisateur, coursIds: number[], maintenant: Dat
       AND d.date_limite > ${maintenant.toISOString()}::timestamptz
       AND d.date_limite <= ${new Date(maintenant.getTime() + FENETRE_DEVOIR_JOURS * JOUR_MS).toISOString()}::timestamptz
       AND ${sqlDevoirProposable("d")}
-      AND NOT EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.etudiant_id = ${u.id} AND r.statut <> 'brouillon')
-      AND NOT EXISTS (SELECT 1 FROM campus.tentatives_quiz t WHERE t.devoir_id = d.id AND t.etudiant_id = ${u.id} AND t.fin_le IS NOT NULL)
+      -- Pas encore fait (une interrogation terminée vide reste à faire), et encore faisable (un essai restant).
+      AND NOT ${sqlDevoirFait("d", u.id)}
+      AND NOT ${sqlEssaisEpuises("d", u.id)}
       AND (d.type <> 'quiz' OR EXISTS (SELECT 1 FROM campus.questions_quiz q WHERE q.devoir_id = d.id))
     ORDER BY (d.type = 'quiz') DESC, d.date_limite ASC, d.id ASC
     LIMIT 1`);
@@ -198,10 +293,15 @@ async function choisirRetenir(u: Utilisateur, coursIds: number[], maintenant: Da
   };
 }
 
-/** Les lignes du jour, dans l'ordre : révision, rattrapage (ou « À retenir »), devoir (ou « À retenir »). */
+/**
+ * Les lignes du jour, dans l'ordre : révision, rattrapage (ou « À retenir »),
+ * devoir (ou « À retenir »). Aucune ligne s'il n'y a pas au moins un acte
+ * d'apprentissage à faire (révision, rattrapage ou devoir) : « À retenir » se
+ * coche à l'ouverture et ne fait pas, seul, un objectif du jour.
+ */
 export async function choisirElements(u: Utilisateur, coursIds: number[], maintenant: Date): Promise<ElementObjectif[]> {
   const [revision, rattrapage, devoir] = await Promise.all([
-    choisirRevision(coursIds),
+    choisirRevision(u, coursIds, jourLocal(maintenant, u.fuseau)),
     choisirRattrapage(u, coursIds, maintenant),
     choisirDevoir(u, coursIds, maintenant),
   ]);
@@ -214,12 +314,12 @@ export async function choisirElements(u: Utilisateur, coursIds: number[], mainte
   else if (retenir) elements.push(retenir);
   if (devoir) elements.push(devoir);
   else if (retenir && rattrapage) elements.push(retenir);
-  return elements;
+  return elements.some((e) => e.type !== "retenir") ? elements : [];
 }
 
 // ── État du jour ───────────────────────────────────────────────────────────
 
-type Etat = { fait: boolean; retire?: boolean; points?: string[] };
+type Etat = { fait: boolean; retire?: boolean; points?: string[]; entrainement?: Entrainement };
 
 /** Ce que l'étudiant a fait de chaque ligne, d'après les traces existantes (et les ouvertures notées). */
 async function etatsElements(u: Utilisateur, jour: string, elements: ElementObjectif[], faitsConnus: Set<string>): Promise<Map<string, Etat>> {
@@ -238,18 +338,23 @@ async function etatsElements(u: Utilisateur, jour: string, elements: ElementObje
   if (devoirs.length) {
     travaux.push(
       (async () => {
-        const r = await db.execute<{ id: number; publie: boolean; fait: boolean }>(sql`
-          SELECT d.id, d.publie,
-            (EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.etudiant_id = ${u.id} AND r.statut <> 'brouillon')
-              OR EXISTS (SELECT 1 FROM campus.tentatives_quiz t WHERE t.devoir_id = d.id AND t.etudiant_id = ${u.id} AND t.fin_le IS NOT NULL)) AS fait
+        const r = await db.execute<{ id: number; type: string; publie: boolean; fait: boolean; epuise: boolean }>(sql`
+          SELECT d.id, d.type, d.publie, ${sqlDevoirFait("d", u.id)} AS fait, ${sqlEssaisEpuises("d", u.id)} AS epuise
           FROM campus.devoirs d WHERE d.id = ANY(${`{${devoirs.join(",")}}`}::int[])`);
         const de = new Map(r.rows.map((l) => [l.id, l]));
+        // Interrogations de la routine du soir pas encore faites : l'entraînement sur leur cours complet.
+        const aFaire = r.rows.filter((l) => l.type === "quiz" && !l.fait && !faitsConnus.has(`devoir:${l.id}`)).map((l) => l.id);
+        const entrainements = await entrainementsDesInterrogations(u.id, aFaire);
         for (const id of devoirs) {
           const l = de.get(id);
           const cle = `devoir:${id}`;
-          // Fait reste fait ; un devoir supprimé ou dépublié depuis ce matin sort de l'objectif.
+          // Fait reste fait ; un devoir supprimé ou dépublié depuis ce matin sort de l'objectif, comme
+          // une interrogation terminée sans réponse à qui il ne reste plus d'essai (le jour reste validable).
           if (faitsConnus.has(cle) || l?.fait) etats.set(cle, { fait: true });
-          else etats.set(cle, { fait: false, retire: !l || !l.publie });
+          else {
+            const e = entrainements.get(id);
+            etats.set(cle, { fait: false, retire: !l || !l.publie || l.epuise, ...(e ? { entrainement: e.entrainement } : {}) });
+          }
         }
       })(),
     );
@@ -370,8 +475,15 @@ export async function objectifDuJour(u: Utilisateur, maintenant: Date = new Date
     .filter((e) => !etats.get(e.cle)?.retire)
     .map((e) => {
       const etat = etats.get(e.cle);
-      return { ...e, fait: Boolean(etat?.fait), ...(e.type === "retenir" ? { points: etat?.points ?? [] } : {}) };
+      return {
+        ...e,
+        fait: Boolean(etat?.fait),
+        ...(e.type === "retenir" ? { points: etat?.points ?? [] } : {}),
+        ...(etat?.entrainement !== undefined ? { entrainement: etat.entrainement } : {}),
+      };
     });
+  // Plus aucun acte d'apprentissage à faire ni fait (devoir retiré, essais épuisés…) : « À retenir » seul ne fait pas un objectif.
+  if (!ligne.valide_le && !visibles.some((e) => e.type !== "retenir")) return vide(jour);
   const faits = visibles.filter((e) => e.fait).length;
 
   let valideLe = ligne.valide_le;
@@ -389,8 +501,9 @@ export async function objectifDuJour(u: Utilisateur, maintenant: Date = new Date
 
 /**
  * Note l'ouverture d'une ligne qui n'a pas d'autre trace : « À retenir » lu
- * sur l'accueil, cours complet ouvert pour rattraper (tant que C1 ne le note
- * pas lui-même). Faux si la clé ne fait pas partie de l'objectif du jour.
+ * sur l'accueil (CLE_OUVERTURE). Un rattrapage ne se coche jamais ainsi : il
+ * faut un vrai travail (sqlSeanceRattrapee). Faux si la clé ne fait pas partie
+ * de l'objectif du jour.
  */
 export async function noterOuverture(u: Utilisateur, cle: string, maintenant: Date = new Date()): Promise<boolean> {
   if (!CLE_OUVERTURE.test(cle)) return false;

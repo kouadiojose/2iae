@@ -1,15 +1,18 @@
 // Objectif du jour de l'étudiant (chantier C2), dans l'emplacement posé par
 // le socle commun (C0) sur l'accueil, sous une LimiteSilencieuse :
-//   - variante « grande » : à la place de la carte « À jour » quand rien
-//     n'est urgent ; la carte « À jour » reste le repli (rien à proposer,
-//     erreur ou pas de réseau) ;
-//   - variante « ligne » : sous la carte « À faire maintenant ». Une ligne
-//     repliée quand cette carte est urgente (live, devoir sous 24 h, message,
-//     retard) ; la carte entière quand elle ne l'est pas (devoir à plus de
-//     24 h, le cas courant avec les devoirs de la routine du soir).
+//   - variante « grande » : la grande carte de l'accueil quand rien n'est
+//     urgent (« À jour », ou devoir dû dans plus de 24 h, le cas courant avec
+//     les devoirs de la routine du soir) ; la carte « À faire maintenant »
+//     reste le repli (rien à proposer, erreur ou pas de réseau) ;
+//   - variante « ligne » : une ligne repliée sous la carte urgente « À faire
+//     maintenant » (live, devoir sous 24 h, message, retard). Son aperçu ne
+//     répète pas l'action de cette carte : un même devoir n'apparaît qu'une
+//     fois sur l'accueil (les lignes « Ensuite » écartent aussi ceux de
+//     l'objectif, PageAccueil.tsx).
 // Trois lignes au plus, choisies par le serveur et figées pour la journée ;
-// chacune se coche toute seule (GET /api/objectif-du-jour, gardé 60 s).
-// « À retenir » se lit sur place, sans charger de page.
+// chacune se coche toute seule (GET /api/objectif-du-jour, gardé 60 s), après
+// un vrai travail : seule « À retenir », qui se lit sur place sans charger de
+// page, se coche à l'ouverture.
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -22,7 +25,14 @@ import { Squelette } from "@/components/ui/divers";
 import { formaterDate, type Traducteur } from "@shared/textes";
 import { t, type CleObjectif } from "@shared/textes/objectif";
 import { ecartJours, jourLocal } from "@shared/engagement/calendrier";
-import { deCours, type AccueilEtudiantSuivi, type ElementObjectifDto, type ObjectifDuJourDto } from "@shared/engagement/objectif";
+import {
+  ENTRAINEMENT_PRET,
+  deCours,
+  type AccueilEtudiantSuivi,
+  type ElementObjectifDto,
+  type Entrainement,
+  type ObjectifDuJourDto,
+} from "@shared/engagement/objectif";
 // Préchargement de la révision (C1) : seul import vers un autre chantier hors emplacements (ENGAGEMENT.md).
 import { prechargerRevision } from "@/modules/revision/prechargerRevision";
 import { JourValide } from "./JourValide";
@@ -32,7 +42,7 @@ const CLE = "/api/objectif-du-jour";
 /** La ligne touchée mène ailleurs : au retour sur l'accueil, l'objectif sera relu (sans requête tout de suite). */
 const marquerARelire = () => void queryClient.invalidateQueries({ queryKey: [CLE], refetchType: "none" });
 
-/** Note l'ouverture d'une ligne sans autre trace (« À retenir », cours complet) ; sans réseau, rien n'est perdu d'important. */
+/** Note la lecture de « À retenir » (seule ligne sans autre trace) ; sans réseau, rien n'est perdu d'important. */
 function noterOuverture(cle: string) {
   void post<ObjectifDuJourDto>(`${CLE}/ouvert`, { cle }).then(
     (d) => queryClient.setQueryData([CLE], d),
@@ -42,9 +52,8 @@ function noterOuverture(cle: string) {
 
 export function ObjectifDuJour({ variante, repli }: { variante: "grande" | "ligne"; repli?: ReactNode }) {
   const { data, isLoading } = useQuery<ObjectifDuJourDto>({ queryKey: [CLE], staleTime: 60_000, retry: 1 });
-  // Urgence de la carte « À faire maintenant », lue dans le cache de l'accueil (aucune requête de plus).
+  // Lien de la carte « À faire maintenant », lu dans le cache de l'accueil (aucune requête de plus).
   const { data: accueil } = useQuery<AccueilEtudiantSuivi>({ queryKey: ["/api/accueil"], enabled: false });
-  const carteUrgente = accueil ? accueil.aFaire.urgence === "haute" || accueil.aFaire.urgence === "moyenne" : true;
   const revisionAFaire = Boolean(data?.elements.some((e) => e.type === "revision" && !e.fait));
   useEffect(() => {
     if (revisionAFaire) prechargerRevision();
@@ -52,7 +61,7 @@ export function ObjectifDuJour({ variante, repli }: { variante: "grande" | "lign
 
   if (isLoading) return variante === "grande" ? <Squelette className="h-64 rounded-[24px]" /> : null;
   if (!data || !data.elements.length) return repli ? <>{repli}</> : null;
-  return variante === "grande" || !carteUrgente ? <CarteObjectif objectif={data} /> : <LigneObjectif objectif={data} />;
+  return variante === "grande" ? <CarteObjectif objectif={data} /> : <LigneObjectif objectif={data} lienCarte={accueil?.aFaire.lien ?? null} />;
 }
 
 // ── Variante « grande » ────────────────────────────────────────────────────
@@ -99,11 +108,14 @@ function Segments({ faits, total }: { faits: number; total: number }) {
 
 // ── Variante « ligne » ─────────────────────────────────────────────────────
 
-function LigneObjectif({ objectif }: { objectif: ObjectifDuJourDto }) {
+function LigneObjectif({ objectif, lienCarte }: { objectif: ObjectifDuJourDto; lienCarte: string | null }) {
   const tx = useTextes(t);
   const [ouvert, setOuvert] = useState(false);
   const valide = Boolean(objectif.valideLe);
-  const prochain = objectif.elements.find((e) => !e.fait);
+  // L'aperçu ne répète pas la carte du dessus : la prochaine ligne à faire qui n'est pas elle.
+  const restants = objectif.elements.filter((e) => !e.fait);
+  const prochain = restants.find((e) => e.lien !== lienCarte);
+  const apercu = prochain ? libelles(prochain, objectif.jour, tx).titre : restants.length ? tx("objectif.resteCarte") : null;
   return (
     <section className="-mt-3 rounded-2xl border border-ligne bg-white">
       <button
@@ -119,14 +131,14 @@ function LigneObjectif({ objectif }: { objectif: ObjectifDuJourDto }) {
           <span className="font-bold leading-snug">
             {valide ? tx("objectif.ligneValide") : tx("objectif.ligne", { v: { faits: objectif.faits, total: objectif.total } })}
           </span>
-          {prochain && !ouvert && <span className="truncate text-sm text-texte-pale">{libelles(prochain, objectif.jour, tx).titre}</span>}
+          {apercu && !ouvert && <span className="truncate text-sm text-texte-pale">{apercu}</span>}
         </span>
         <span className="sr-only">{ouvert ? tx("objectif.masquer") : tx("objectif.voir")}</span>
         <ChevronDown className={cn("h-5 w-5 shrink-0 text-texte-gris transition-transform", ouvert && "rotate-180")} aria-hidden />
       </button>
       {ouvert && (
         <div className="border-t border-ligne-douce px-4 pb-2">
-          <Lignes objectif={objectif} />
+          <Lignes objectif={objectif} lienCarte={lienCarte} />
         </div>
       )}
     </section>
@@ -135,12 +147,12 @@ function LigneObjectif({ objectif }: { objectif: ObjectifDuJourDto }) {
 
 // ── Les lignes ─────────────────────────────────────────────────────────────
 
-function Lignes({ objectif, sombre }: { objectif: ObjectifDuJourDto; sombre?: boolean }) {
+function Lignes({ objectif, sombre, lienCarte = null }: { objectif: ObjectifDuJourDto; sombre?: boolean; lienCarte?: string | null }) {
   return (
     <ul className={cn("flex flex-col divide-y", sombre ? "divide-nuit-ligne" : "divide-ligne-douce")}>
       {objectif.elements.map((e) => (
         <li key={e.cle}>
-          <LigneElement element={e} jour={objectif.jour} sombre={sombre} />
+          <LigneElement element={e} jour={objectif.jour} sombre={sombre} enCarte={!e.fait && e.lien === lienCarte} />
         </li>
       ))}
     </ul>
@@ -149,7 +161,7 @@ function Lignes({ objectif, sombre }: { objectif: ObjectifDuJourDto; sombre?: bo
 
 const ICONES = { revision: Layers, rattrapage: RotateCcw, retenir: Lightbulb } as const;
 
-function LigneElement({ element: e, jour, sombre }: { element: ElementObjectifDto; jour: string; sombre?: boolean }) {
+function LigneElement({ element: e, jour, sombre, enCarte }: { element: ElementObjectifDto; jour: string; sombre?: boolean; enCarte?: boolean }) {
   const tx = useTextes(t);
   const [deplie, setDeplie] = useState(false);
   const { titre, detail } = libelles(e, jour, tx);
@@ -207,21 +219,38 @@ function LigneElement({ element: e, jour, sombre }: { element: ElementObjectifDt
     );
   }
 
-  const toucher = () => {
-    // Le cours complet ouvert pour rattraper n'a pas encore d'autre trace : on la note.
-    if (e.type === "rattrapage" && !e.fait && e.ko !== null) noterOuverture(e.cle);
-    else marquerARelire();
-  };
+  // Déjà la grande carte « À faire maintenant » juste au-dessus : la ligne la désigne sans répéter son bouton.
+  if (enCarte) {
+    return (
+      <div className={classeLigne}>
+        {pastille}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="font-bold leading-snug">{titre}</span>
+          <span className="text-sm leading-snug text-texte-pale">{tx("objectif.dansCarte")}</span>
+        </span>
+      </div>
+    );
+  }
+
+  // Révision, rattrapage, devoir : la ligne se coche au retour, d'après le travail fait (jamais au toucher).
+  const note = !e.fait ? (e.type === "rattrapage" ? tx("rattrapage.emarger") : e.type === "devoir" ? phraseEntrainement(e.entrainement, tx) : null) : null;
   return (
     <>
-      <Link href={e.lien} onClick={toucher} className={classeLigne}>
+      <Link href={e.lien} onClick={marquerARelire} className={classeLigne}>
         {pastille}
         {textes}
         <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
       </Link>
-      {e.type === "rattrapage" && !e.fait && <p className={cn("-mt-1 pb-2.5 pl-14 text-[13px]", sombre ? "text-nuit-gris" : "text-texte-gris")}>{tx("rattrapage.emarger")}</p>}
+      {note && <p className={cn("-mt-1 pb-2.5 pl-14 text-[13px] leading-snug", sombre ? "text-nuit-gris" : "text-texte-gris")}>{note}</p>}
     </>
   );
+}
+
+/** Interrogation de la routine du soir : l'entraînement fait sur son cours complet (rien pour les autres devoirs). */
+function phraseEntrainement(s: Entrainement | undefined, tx: Traducteur<CleObjectif>): string | null {
+  if (s === undefined) return null;
+  if (!s) return tx("devoir.sansEntrainement");
+  return tx(s.score / s.total >= ENTRAINEMENT_PRET ? "devoir.pret" : "devoir.revoir", { v: { score: s.score, total: s.total } });
 }
 
 /** Titre et détail d'une ligne, composés avec le dictionnaire (shared/textes/objectif.ts). */
@@ -240,14 +269,14 @@ function libelles(e: ElementObjectifDto, jour: string, tx: Traducteur<CleObjecti
     case "retenir":
       return { titre: tx("retenir.titre", { v: { deCours: deCours(e.coursTitre) } }), detail: tx("retenir.detail", { v: { min: e.minutes } }) };
     case "devoir": {
+      const ecart = ecartJours(jour, jourLocal(e.dateLimite));
+      const quand = ecart <= 0 ? tx("devoir.aujourdhui") : ecart === 1 ? tx("devoir.demain") : jourDeLaSemaine(e.dateLimite);
       if (e.genre === "quiz") {
         return {
           titre: tx("devoir.quiz", { v: { deCours: deCours(e.coursTitre) } }),
-          detail: tx("devoir.quizDetail", { v: { n: e.questions ?? 0, min: e.minutes ?? 0 } }),
+          detail: tx("devoir.quizDetail", { v: { n: e.questions ?? 0, min: e.minutes ?? 0, quand } }),
         };
       }
-      const ecart = ecartJours(jour, jourLocal(e.dateLimite));
-      const quand = ecart <= 0 ? tx("devoir.aujourdhui") : ecart === 1 ? tx("devoir.demain") : jourDeLaSemaine(e.dateLimite);
       return { titre: tx("devoir.depot", { v: { deCours: deCours(e.coursTitre) } }), detail: tx("devoir.depotDetail", { v: { quand } }) };
     }
   }

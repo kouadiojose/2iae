@@ -1,19 +1,38 @@
 // En-tête coloré de la page d'un cours : code, titre, formateur « depuis
 // Lyon », progression de l'étudiant et UNE action (reprendre, ou modifier).
+// La progression est la même que sur la carte du cours et l'accueil (chantier
+// C2, un seul calcul côté serveur) : « 1 séance sur 1 suivie ou rattrapée ·
+// 0 leçon sur 2 terminée · 33 % », rien tant qu'il n'y a rien à compter.
 import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { Radio } from "lucide-react";
 import { Avatar } from "@/components/ui/divers";
 import { jourLong, heure, heureDouble } from "@/lib/dates";
+import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { texteSur } from "../outils";
-import type { CoursDetail, FormateurDuCours } from "@shared/schema";
+import type { FormateurDuCours } from "@shared/schema";
+import { libelleSuivi, type CoursDetailSuivi } from "@shared/engagement/objectif";
+import type { Traducteur } from "@shared/textes";
+import { t, type CleObjectif } from "@shared/textes/objectif";
 
-export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetail; action?: ReactNode; etudiant: boolean }) {
+/** Progression à afficher : celle de la carte du cours (suivi) ; à défaut (ancienne réponse), les leçons seules. */
+function progressionAffichee(cours: CoursDetailSuivi, tx: Traducteur<CleObjectif>) {
+  if (cours.suivi) {
+    const pct = cours.suivi.pourcentage;
+    return pct === null ? null : { libelle: libelleSuivi(cours.suivi, tx), pct };
+  }
+  const p = cours.progression;
+  if (!p || p.total <= 0) return null;
+  return { libelle: `${p.terminees} leçon${p.terminees > 1 ? "s" : ""} terminée${p.terminees > 1 ? "s" : ""} sur ${p.total}`, pct: p.pourcentage };
+}
+
+export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetailSuivi; action?: ReactNode; etudiant: boolean }) {
+  const tx = useTextes(t);
   const clair = texteSur(cours.couleur) === "encre";
   const f = cours.formateur;
   const s = cours.prochaineSeance;
-  const p = cours.progression;
+  const p = progressionAffichee(cours, tx);
   // Tous les formateurs du cours ; celui qui anime le prochain live d'abord (M. Konaté le vendredi en Initiation à l'IA).
   const vedette = s?.animateur?.id ?? f?.id ?? null;
   const formateurs = [f, ...cours.coFormateurs]
@@ -75,16 +94,21 @@ export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetail; a
           </p>
         )}
 
-        {p && p.total > 0 && (
+        {p && (
           <div className="flex max-w-md flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[15px] font-semibold">
-                {p.terminees} leçon{p.terminees > 1 ? "s" : ""} terminée{p.terminees > 1 ? "s" : ""} sur {p.total}
-              </span>
-              <span className="text-2xl font-extrabold tabular-nums">{p.pourcentage}%</span>
+              <span className="text-[15px] font-semibold leading-snug">{p.libelle}</span>
+              <span className="shrink-0 text-2xl font-extrabold tabular-nums">{p.pct}%</span>
             </div>
-            <div className={cn("h-2 overflow-hidden rounded-full", clair ? "bg-encre/15" : "bg-white/25")} role="progressbar" aria-valuenow={p.pourcentage} aria-valuemin={0} aria-valuemax={100}>
-              <div className={cn("h-full rounded-full", clair ? "bg-encre" : "bg-white")} style={{ width: `${p.pourcentage}%` }} />
+            <div
+              className={cn("h-2 overflow-hidden rounded-full", clair ? "bg-encre/15" : "bg-white/25")}
+              role="progressbar"
+              aria-label={tx("progression.aria", { v: { pct: p.pct } })}
+              aria-valuenow={p.pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div className={cn("h-full rounded-full", clair ? "bg-encre" : "bg-white")} style={{ width: `${p.pct}%` }} />
             </div>
           </div>
         )}

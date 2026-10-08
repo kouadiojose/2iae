@@ -25,6 +25,7 @@ import { EnTeteCours } from "./composants/EnTeteCours";
 import { ProgrammeLecons } from "./composants/ProgrammeLecons";
 import { classeSansSite, listeObjectifs, texteSur, typographie } from "./outils";
 import type { CoursDetail } from "@shared/schema";
+import type { CoursDetailSuivi } from "@shared/engagement/objectif";
 import type { CoursCompletARevise } from "@shared/engagement/revision";
 
 type Onglet = "lecons" | "reviser" | "seances" | "devoirs" | "questions" | "apropos";
@@ -34,7 +35,8 @@ export default function PageCours({ id }: { id: string }) {
   const moi = useMoiConnecte();
   const etudiant = moi.role === "etudiant";
   const coursId = Number(id);
-  const { data: cours, isLoading, error, refetch } = useQuery<CoursDetail>({ queryKey: ["/api/cours", coursId], enabled: Number.isInteger(coursId) });
+  // suivi : la progression de l'étudiant, même calcul que la carte du cours (EnTeteCours).
+  const { data: cours, isLoading, error, refetch } = useQuery<CoursDetailSuivi>({ queryKey: ["/api/cours", coursId], enabled: Number.isInteger(coursId) });
 
   const recherche = useSearch();
   const [chemin, naviguer] = useLocation();

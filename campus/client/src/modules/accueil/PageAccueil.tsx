@@ -4,10 +4,14 @@
 // sous 24 h → live dans moins de 2 h → message d'un formateur → devoir) ;
 // l'écran la montre en grand avec un seul bouton, puis trois lignes au plus,
 // les cours avec leur progression et l'annonce importante. Tout doit tenir
-// et respirer sur un téléphone de 360 px.
-// Quand rien n'est urgent, l'objectif du jour (chantier C2) prend la place de
-// la carte « À jour ». La progression des cours est honnête : séances suivies
-// ou rattrapées et leçons terminées, rien tant qu'il n'y a rien à compter.
+// et respirer sur un téléphone de 360 px : une seule grande carte.
+// Quand rien n'est urgent (à jour, ou devoir dû dans plus de 24 h), l'objectif
+// du jour (chantier C2) devient la grande carte ; le devoir qu'elle remplace
+// passe en tête de « Ensuite ». Un même devoir n'apparaît qu'une fois : les
+// lignes « Ensuite » écartent ceux de l'objectif, et l'objectif replié sous une
+// carte urgente ne la répète pas. La progression des cours est honnête :
+// séances suivies ou rattrapées et leçons terminées, rien tant qu'il n'y a
+// rien à compter.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowRight, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardList, Megaphone, MessageCircle, Radio, BookOpen, Library } from "lucide-react";
@@ -32,7 +36,7 @@ import { CarteRappels } from "@/modules/rappels/CarteRappels";
 import { BandeauCoupe } from "@/modules/progression/BandeauCoupe";
 import { PastilleSemaine } from "@/modules/progression/PastilleSemaine";
 import type { AnnonceResume, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
-import { libelleSuivi, type AccueilEtudiantSuivi, type CoursAccueilSuivi } from "@shared/engagement/objectif";
+import { libelleSuivi, type AccueilEtudiantSuivi, type CoursAccueilSuivi, type ObjectifDuJourDto } from "@shared/engagement/objectif";
 import { t as textesObjectif } from "@shared/textes/objectif";
 import type { EnCours } from "@shared/api";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
@@ -48,6 +52,8 @@ export default function PageAccueil() {
   const { data: enCours } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], staleTime: 20_000 });
   // Parcours de bienvenue (module compte) : le devoir d'essai est-il fait ?
   const { data: parcours } = useQuery<ParcoursBienvenue>({ queryKey: ["/api/compte/parcours"], staleTime: 5 * 60_000 });
+  // Même requête que l'emplacement ObjectifDuJour (servie par le même cache) : ses liens ne se répètent pas dans « Ensuite ».
+  const { data: objectif } = useQuery<ObjectifDuJourDto>({ queryKey: ["/api/objectif-du-jour"], staleTime: 60_000, retry: 1 });
 
   useTousEvenements((e) => {
     if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil");
@@ -66,7 +72,14 @@ export default function PageAccueil() {
   // les lignes « Ensuite » ne répètent pas le live que le bandeau affiche.
   const carteEstUnLive = data.aFaire.type === "live" || data.aFaire.type === "live_bientot";
   const liveDuBandeau = !carteEstUnLive && enCours ? (enCours.enDirect ?? enCours.prochaine) : null;
-  const ensuite = liveDuBandeau ? data.prochains.filter((e) => e.lien !== `/live/${liveDuBandeau.id}`) : data.prochains;
+  // Rien d'urgent (à jour, ou devoir dû dans plus de 24 h) : l'objectif du jour est la grande carte (repli : la carte « À faire »).
+  const objectifEnGrand = data.aFaire.type === "a_jour" || data.aFaire.type === "devoir";
+  const liensObjectif = new Set(objectif?.elements.map((e) => e.lien) ?? []);
+  // Le devoir que l'objectif remplace passe en tête de « Ensuite » (s'il n'est pas déjà une ligne de l'objectif).
+  const carteRemplacee = objectifEnGrand && data.aFaire.type === "devoir" && liensObjectif.size > 0 ? [data.aFaire] : [];
+  const ensuite = [...carteRemplacee, ...data.prochains]
+    .filter((e) => !liensObjectif.has(e.lien) && (!liveDuBandeau || e.lien !== `/live/${liveDuBandeau.id}`))
+    .slice(0, 3);
 
   return (
     <Page className="gap-7">
@@ -81,9 +94,10 @@ export default function PageAccueil() {
         <LimiteSilencieuse nom="PastilleSemaine">
           <PastilleSemaine />
         </LimiteSilencieuse>
-        <div className="flex max-w-full items-center gap-1 rounded-[14px] bg-creme p-1 sm:gap-2 sm:p-1.5" aria-label="Ma semaine">
-          <span className="shrink-0 rounded-[10px] bg-white px-3 py-1.5 text-[13px] font-bold sm:px-3.5 sm:py-2 sm:text-sm">Semaine {data.semaine.numero}</span>
-          <span className="min-w-0 px-2 py-1.5 text-[13px] text-texte-pale sm:px-3.5 sm:py-2 sm:text-sm">
+        {/* Sur téléphone, la pastille de la semaine et la grande carte suffisent : la puce reste sur ordinateur. */}
+        <div className="hidden max-w-full items-center gap-2 rounded-[14px] bg-creme p-1.5 sm:flex" aria-label="Ma semaine">
+          <span className="shrink-0 rounded-[10px] bg-white px-3.5 py-2 text-sm font-bold">Semaine {data.semaine.numero}</span>
+          <span className="min-w-0 px-3.5 py-2 text-sm text-texte-pale">
             {pluriel(data.semaine.lives, "live")} · {pluriel(data.semaine.devoirs, "devoir")} à rendre
           </span>
         </div>
@@ -91,7 +105,7 @@ export default function PageAccueil() {
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">
-          {data.aFaire.type === "a_jour" ? (
+          {objectifEnGrand ? (
             <LimiteSilencieuse nom="ObjectifDuJour" repli={<CarteAFaire element={data.aFaire} />}>
               <ObjectifDuJour variante="grande" repli={<CarteAFaire element={data.aFaire} />} />
             </LimiteSilencieuse>
@@ -113,8 +127,9 @@ export default function PageAccueil() {
           </LimiteSilencieuse>
           {data.annonceImportante && <AnnonceImportante annonce={data.annonceImportante} />}
           <LienAnnonces nonLues={data.annoncesNonLues} serre={Boolean(data.annonceImportante)} />
-          <LienBibliotheque />
+          {/* Ses cours d'abord, puis les deux bibliothèques (ressources à explorer quand on a le temps). */}
           <MesCours cours={data.cours} />
+          <LienBibliotheque />
           <LienMediatheque />
         </div>
       </div>
@@ -234,7 +249,7 @@ function InviteDevoirEssai() {
   return (
     <Link
       href="/bienvenue?essai=1"
-      className="-mt-3 flex min-h-[64px] items-center gap-3 rounded-2xl border border-dashed border-orange px-4 py-3 text-encre no-underline hover:bg-orange-pale hover:text-encre"
+      className="flex min-h-[64px] items-center gap-3 rounded-2xl border border-dashed border-orange px-4 py-3 text-encre no-underline hover:bg-orange-pale hover:text-encre"
     >
       <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange-clair text-orange-fonce">
         <Camera className="h-5 w-5" aria-hidden />

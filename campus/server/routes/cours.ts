@@ -26,6 +26,8 @@ import { intervenantsDesSeances } from "../programme-outils";
 import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
 import { demanderClaude, iaDisponible, verifierQuota } from "../ia";
+import { progressionsCours } from "../engagement/progression-cours";
+import type { CoursResumeSuivi } from "@shared/engagement/objectif";
 import {
   cours,
   coursClasses,
@@ -49,7 +51,6 @@ import {
   type Utilisateur,
   type FormateurDuCours,
   type SeanceDuCours,
-  type CoursResume,
   type CoursDetail,
   type ChapitreDuCours,
   type ClasseDuCours,
@@ -576,16 +577,8 @@ export function enregistrerCours(app: Express) {
       const statsDe = new Map(stats.map((s) => [s.coursId, s]));
 
       const etudiant = u.role === "etudiant";
-      const termineesDe = new Map<number, number>();
-      if (etudiant) {
-        const lignes = await db
-          .select({ coursId: lecons.coursId, n: sql<number>`count(*)::int` })
-          .from(progressions)
-          .innerJoin(lecons, eq(lecons.id, progressions.leconId))
-          .where(and(eq(progressions.utilisateurId, u.id), eq(lecons.publiee, true), inArray(lecons.coursId, ids)))
-          .groupBy(lecons.coursId);
-        for (const l of lignes) termineesDe.set(l.coursId, l.n);
-      }
+      // Étudiant : progression honnête (leçons et séances suivies ou rattrapées), même calcul que l'accueil.
+      const suivis = etudiant ? await progressionsCours(u.id, ids) : null;
 
       const nbClasses = await db
         .select({ coursId: coursClasses.coursId, n: sql<number>`count(*)::int` })
@@ -606,10 +599,11 @@ export function enregistrerCours(app: Express) {
         for (const id of ids) if (await enseigneCours(u, id)) modifiables.add(id);
       }
 
-      const resultat: CoursResume[] = liste.map((c) => {
+      const resultat: CoursResumeSuivi[] = liste.map((c) => {
         const s = statsDe.get(c.id);
         const nbLecons = s?.publiees ?? 0;
-        const faites = etudiant ? (termineesDe.get(c.id) ?? 0) : null;
+        const suivi = suivis?.get(c.id) ?? null;
+        const faites = etudiant ? (suivi?.leconsTerminees ?? 0) : null;
         return {
           id: c.id,
           code: c.code,
@@ -631,6 +625,7 @@ export function enregistrerCours(app: Express) {
           nbEtudiants: enseigne ? (effectifs.get(c.id) ?? 0) : null,
           proposeSurSite: c.proposeSurSite,
           publierSurSite: c.publierSurSite,
+          suivi,
         };
       });
       res.json(resultat);

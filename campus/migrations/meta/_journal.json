@@ -187,8 +187,15 @@
     {
       "idx": 26,
       "version": "7",
-      "when": 1791459536800,
+      "when": 1791463361164,
       "tag": "0026_envois_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791463361165,
+      "tag": "0029_objectif_du_jour",
       "breakpoints": true
     }
   ]

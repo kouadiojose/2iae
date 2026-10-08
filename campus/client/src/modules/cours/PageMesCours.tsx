@@ -9,16 +9,19 @@ import { LienBouton } from "@/components/ui/bouton";
 import { Champ } from "@/components/ui/champs";
 import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { useMoiConnecte } from "@/lib/auth";
+import { useTextes } from "@/lib/textes";
 import { pluriel } from "@/lib/utils";
 import { CarteCoursEtudiant, CarteCoursEnseignant } from "./composants/CarteCours";
 import { classeSansSite } from "./outils";
-import type { CoursResume } from "@shared/schema";
+import type { CoursResumeSuivi } from "@shared/engagement/objectif";
+import { t } from "@shared/textes/objectif";
 
 export default function PageMesCours() {
   const moi = useMoiConnecte();
   const etudiant = moi.role === "etudiant";
   const equipe = moi.role === "admin" || moi.role === "vie_scolaire";
-  const { data, isLoading, error, refetch } = useQuery<CoursResume[]>({ queryKey: ["/api/cours"] });
+  const { data, isLoading, error, refetch } = useQuery<CoursResumeSuivi[]>({ queryKey: ["/api/cours"] });
+  const tx = useTextes(t);
   const [recherche, setRecherche] = useState("");
 
   const liste = useMemo(() => {
@@ -36,7 +39,7 @@ export default function PageMesCours() {
 
   const sousTitre = etudiant
     ? data?.length
-      ? "Touche un cours pour reprendre là où tu t'es arrêté."
+      ? tx("mesCours.sousTitre")
       : undefined
     : data?.length
       ? `${pluriel(data.length, "cours", "cours")} · ${pluriel(

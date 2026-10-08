@@ -9,6 +9,8 @@
 //   - l'IA propose (questions, correction), le formateur décide : rien de ce
 //     qu'elle produit n'est enregistré comme note sans un clic humain.
 import { corrigeDuDevoir } from "../devoirs-auto";
+import { assurerCorrige, baremeDuDepotModifie, corrigeDuQcmModifie, corrigeEcritParLeFormateur, CORRIGE_MAX } from "../corriges";
+import { lireCorrige } from "../corrections-socle";
 import type { Express, Request } from "express";
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -38,6 +40,7 @@ import {
   terminerTentative,
   cloturerTentativesExpirees,
   meilleureNoteQuiz,
+  recalculerQuiz,
 } from "../evaluations-outils";
 import {
   cours,
@@ -584,6 +587,12 @@ const schemaDevoir = z.object({
   correctionVisible: z.boolean().default(true),
   grille: z.array(schemaCritere).max(30).default([]),
   publie: z.boolean().default(true),
+  /**
+   * Corrigé d'un dépôt, réservé aux formateurs (correction automatique, 8 octobre 2026) : le campus s'en sert de
+   * barème. Rempli : validé par le formateur (server/corriges.ts). Vide ou inchangé : rien ne change (le campus
+   * rédige le corrigé d'un dépôt publié qui n'en a pas, et l'envoie au formateur pour validation).
+   */
+  corrige: z.string().max(CORRIGE_MAX + 2000).optional(),
 });
 const schemaModifDevoir = schemaDevoir.omit({ coursId: true }).partial();
 
@@ -757,6 +766,7 @@ async function detailEnseignant(u: Utilisateur, d: Devoir, c: Cours): Promise<De
     .from(rendus)
     .where(and(eq(rendus.devoirId, d.id), ne(rendus.statut, "brouillon")));
   const [{ essais }] = await db.select({ essais: sql<number>`count(*)::int` }).from(tentativesQuiz).where(eq(tentativesQuiz.devoirId, d.id));
+  const corrige = await lireCorrige(d.id);
   return {
     vue: "enseignant",
     devoir: {
@@ -773,6 +783,9 @@ async function detailEnseignant(u: Utilisateur, d: Devoir, c: Cours): Promise<De
     aDesRendus: copies + essais > 0,
     iaDisponible: iaDisponible(),
     modifiable: await enseigneCours(u, d.coursId),
+    corrige: corrige
+      ? { contenu: d.type === "depot" ? corrige.contenu : "", statut: corrige.statut, version: corrige.version, source: corrige.source, echeanceLe: iso(corrige.echeanceLe) }
+      : null,
   };
 }
 
@@ -1228,7 +1241,7 @@ export function enregistrerEvaluations(app: Express) {
     droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
-      const v = valider(schemaDevoir, req.body);
+      const { corrige, ...v } = valider(schemaDevoir, req.body);
       const c = await coursEnseigne(u, v.coursId);
       const ouvertureLe = v.ouvertureLe ? new Date(v.ouvertureLe) : null;
       // « Avant 23h59 » : enregistrée à 23:59:59.999 (règle de finEcheance).
@@ -1249,6 +1262,9 @@ export function enregistrerEvaluations(app: Express) {
         })
         .returning();
       await tracer(u, "devoir_cree", { devoirId: d.id, coursId: c.id, titre: d.titre, type: d.type });
+      // Corrigé du dépôt : celui du formateur (validé par lui), sinon le campus le rédigera s'il est publié.
+      if (d.type === "depot" && corrige?.trim()) await corrigeEcritParLeFormateur(u, d.id, corrige);
+      else await assurerCorrige(d);
       await annoncerSiOuvert(d, c);
       res.status(201).json(await detailEnseignant(u, d, c));
     }),
@@ -1262,7 +1278,12 @@ export function enregistrerEvaluations(app: Express) {
       if (u.role === "vie_scolaire") exigerDroitDe(u, "notes");
       const d = await devoirVisible(u, idParam(req));
       const [c] = await db.select().from(cours).where(eq(cours.id, d.coursId));
-      if (await suitCours(u, d.coursId)) return res.json(await detailEnseignant(u, d, c));
+      // Vue du personnel : bonnes réponses et corrigé, jamais gardés par le service worker (poste partagé).
+      if (await suitCours(u, d.coursId)) {
+        const detail = await detailEnseignant(u, d, c);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.json(detail);
+      }
       if (u.role !== "etudiant") throw interdit("Seul le formateur du cours peut ouvrir ce devoir.");
       if (!ouvert(d)) throw new ErreurHttp(403, `Ce devoir ouvrira le ${dateFr(d.ouvertureLe!)}.`);
       res.json(await detailEtudiant(u, d, c));
@@ -1276,7 +1297,7 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { d, c } = await devoirEnseigne(u, idParam(req));
-      const v = valider(schemaModifDevoir, req.body);
+      const { corrige, ...v } = valider(schemaModifDevoir, req.body);
       const detail = await detailEnseignant(u, d, c);
       if (v.type && v.type !== d.type && detail.aDesRendus) throw new ErreurHttp(409, "Des copies existent déjà : on ne peut plus changer le type de ce devoir.");
       const type = v.type ?? d.type;
@@ -1302,7 +1323,16 @@ export function enregistrerEvaluations(app: Express) {
         })
         .where(eq(devoirs.id, d.id))
         .returning();
-      await tracer(u, "devoir_modifie", { devoirId: d.id, champs: Object.keys(v) });
+      await tracer(u, "devoir_modifie", { devoirId: d.id, champs: [...Object.keys(v), ...(corrige !== undefined ? ["corrige"] : [])] });
+      // Correction automatique : corrigé écrit ou modifié par le formateur, sinon rédigé par le campus (dépôt publié) ;
+      // barème ou grille changés : les notes du campus (dépôt) ou du QCM sont refaites.
+      const baremeChange = maj.bareme !== d.bareme;
+      const grilleChange = JSON.stringify(maj.grille) !== JSON.stringify(d.grille);
+      if (maj.type === "depot") {
+        const ecrit = corrige?.trim() ? await corrigeEcritParLeFormateur(u, maj.id, corrige) : { change: false };
+        if (!ecrit.change && (baremeChange || grilleChange)) await baremeDuDepotModifie(maj.id);
+        await assurerCorrige(maj);
+      } else if (baremeChange) await recalculerQuiz(maj.id);
       if (maj.type === "depot" || (await questionsDe(maj.id)).length) await annoncerSiOuvert(maj, c);
       res.json(await detailEnseignant(u, maj, c));
     }),
@@ -1689,6 +1719,17 @@ export function enregistrerEvaluations(app: Express) {
     return r;
   }
 
+  /**
+   * Une question de l'interrogation a changé (ajout, modification, retrait) : le formateur a revu son corrigé
+   * (validé, version + 1, si le QCM est passé par le circuit des corrigés), et les notes des tentatives déjà
+   * faites sont recalculées ; les étudiants dont la note publiée change en sont prévenus.
+   */
+  async function corrigeDuQuizChange(u: Utilisateur, devoirId: number) {
+    await corrigeDuQcmModifie(u, devoirId);
+    const { tentatives, etudiants } = await recalculerQuiz(devoirId);
+    if (tentatives || etudiants.length) await tracer(u, "quiz_recalcule", { devoirId, tentatives, notesChangees: etudiants.length });
+  }
+
   app.get(
     "/api/devoirs/:id/questions",
     exigerRole(...ENSEIGNANTS),
@@ -1724,6 +1765,7 @@ export function enregistrerEvaluations(app: Express) {
         .values(normalisees.map((q: ReturnType<typeof normaliserQuestion>, i: number) => ({ ...q, devoirId: d.id, ordre: max + i + 1 })))
         .returning();
       await tracer(u, "questions_ajoutees", { devoirId: d.id, nombre: creees.length });
+      await corrigeDuQuizChange(u, d.id);
       res.status(201).json(creees.map(versQuestionEnseignant));
     }),
   );
@@ -1749,7 +1791,13 @@ export function enregistrerEvaluations(app: Express) {
         }),
       );
       const [maj] = await db.update(questionsQuiz).set(fusion).where(eq(questionsQuiz.id, q.id)).returning();
-      res.json(versQuestionEnseignant(maj));
+      const avant = versQuestionEnseignant(q);
+      const apres = versQuestionEnseignant(maj);
+      if (JSON.stringify({ ...avant, ordre: 0 }) !== JSON.stringify({ ...apres, ordre: 0 })) {
+        await tracer(u, "question_modifiee", { devoirId: d.id, questionId: q.id, bonnesAvant: q.bonnesReponses, bonnesApres: maj.bonnesReponses, pointsAvant: q.points, pointsApres: maj.points });
+        await corrigeDuQuizChange(u, d.id);
+      }
+      res.json(apres);
     }),
   );
 
@@ -1765,6 +1813,8 @@ export function enregistrerEvaluations(app: Express) {
         .where(and(eq(questionsQuiz.id, idParam(req, "questionId")), eq(questionsQuiz.devoirId, d.id)))
         .returning({ id: questionsQuiz.id });
       if (!supprimee) throw introuvable("Question");
+      await tracer(u, "question_supprimee", { devoirId: d.id, questionId: supprimee.id });
+      await corrigeDuQuizChange(u, d.id);
       res.json({ ok: true });
     }),
   );

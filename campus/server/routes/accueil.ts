@@ -22,7 +22,7 @@ import { intervenantsDesSeances } from "../programme-outils";
 import { compterMessagesNonLus } from "../messages-outils";
 import { annoncesPour, extrait } from "./annonces";
 import { elementsAgenda, debutSemaine, numeroSemaine, jourFr, heureFr } from "./agenda";
-import { progressionsCours, tableUtilisable } from "../engagement/progression-cours";
+import { lireOuTaire, progressionsCours, tableUtilisable } from "../engagement/progression-cours";
 import { t as textes } from "@shared/textes/objectif";
 import { registreDe } from "@shared/textes";
 import type { AccueilEtudiantSuivi, CoursAccueilSuivi } from "@shared/engagement/objectif";
@@ -300,9 +300,9 @@ export function enregistrerAccueil(app: Express) {
       }
 
       // Interrogations à venir : l'entraînement fait sur le cours complet de leur séance.
-      const entrainements = await entrainementsDesInterrogations(
-        u,
-        listeDevoirs.filter((l) => !l.fait && l.d.type === "quiz" && l.d.dateLimite.getTime() >= t0).map((l) => l.d.id),
+      const entrainements = await lireOuTaire(
+        () => entrainementsDesInterrogations(u, listeDevoirs.filter((l) => !l.fait && l.d.type === "quiz" && l.d.dateLimite.getTime() >= t0).map((l) => l.d.id)),
+        new Map<number, string>(),
       );
       for (const { d, code, couleur, fait } of listeDevoirs) {
         if (fait) continue;

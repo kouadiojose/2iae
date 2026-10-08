@@ -48,6 +48,7 @@ export async function tableUtilisable(nom: string, colonnes: string[]): Promise<
 
 /** Traces de révision de C1 disponibles dans la base. */
 export type TracesRevision = { suivis: boolean; cartes: boolean };
+const SANS_TRACES: TracesRevision = { suivis: false, cartes: false };
 
 export async function tracesRevision(): Promise<TracesRevision> {
   const [suivis, cartes, reponses] = await Promise.all([
@@ -56,6 +57,39 @@ export async function tracesRevision(): Promise<TracesRevision> {
     tableUtilisable("reponses_revision", ["utilisateur_id", "carte_id"]),
   ]);
   return { suivis, cartes: cartes && reponses };
+}
+
+/** Table ou colonne absente (42P01, 42703) : une table d'un autre chantier a changé depuis la dernière vérification. */
+export const estAbsence = (e: unknown) => ["42P01", "42703"].includes((e as { code?: string } | null)?.code ?? "");
+
+/**
+ * Lecture d'une table d'un autre chantier qui ne doit jamais casser l'accueil :
+ * si la table ou une colonne manque, on oublie ce qu'on en savait et on rend
+ * le repli (le bloc se tait).
+ */
+export async function lireOuTaire<T>(lecture: () => Promise<T>, repli: T): Promise<T> {
+  try {
+    return await lecture();
+  } catch (e) {
+    if (!estAbsence(e)) throw e;
+    colonnesConnues.clear();
+    console.warn("[engagement C2] table d'un autre chantier illisible, bloc masqué :", (e as Error).message);
+    return repli;
+  }
+}
+
+/** Requête qui lit les traces de C1 si elles sont là : refaite sans elles si l'une a disparu. */
+export async function avecTraces<T>(lecture: (traces: TracesRevision) => Promise<T>): Promise<T> {
+  const traces = await tracesRevision();
+  if (!traces.suivis && !traces.cartes) return lecture(SANS_TRACES);
+  try {
+    return await lecture(traces);
+  } catch (e) {
+    if (!estAbsence(e)) throw e;
+    colonnesConnues.clear();
+    console.warn("[engagement C2] traces de révision illisibles, calcul sans elles :", (e as Error).message);
+    return lecture(SANS_TRACES);
+  }
 }
 
 /** Nombre de cartes différentes d'une séance auxquelles il faut avoir répondu pour l'avoir rattrapée. */
@@ -89,7 +123,6 @@ export async function progressionsCours(etudiantId: number, coursIds: number[]):
   const ids = [...new Set(coursIds.filter((id) => Number.isInteger(id) && id > 0))];
   if (!ids.length) return resultat;
   const tableau = `{${ids.join(",")}}`;
-  const traces = await tracesRevision();
 
   const [lecons, seances] = await Promise.all([
     db.execute<{ cours_id: number; total: number; terminees: number }>(sql`
@@ -98,7 +131,8 @@ export async function progressionsCours(etudiantId: number, coursIds: number[]):
       LEFT JOIN campus.progressions p ON p.lecon_id = l.id AND p.utilisateur_id = ${etudiantId}
       WHERE l.cours_id = ANY(${tableau}::int[]) AND l.publiee
       GROUP BY l.cours_id`),
-    db.execute<{ cours_id: number; suivies: number; comptees: number }>(sql`
+    avecTraces((traces) =>
+      db.execute<{ cours_id: number; suivies: number; comptees: number }>(sql`
       SELECT a.cours_id,
         count(*) FILTER (WHERE x.etat = 'present' OR x.rattrapee)::int AS suivies,
         count(*) FILTER (WHERE x.etat IN ('present', 'absent') OR x.rattrapee)::int AS comptees
@@ -111,6 +145,7 @@ export async function progressionsCours(etudiantId: number, coursIds: number[]):
       ) x
       WHERE a.cours_id = ANY(${tableau}::int[])
       GROUP BY a.cours_id`),
+    ),
   ]);
 
   const leconsDe = new Map(lecons.rows.map((l) => [l.cours_id, l]));

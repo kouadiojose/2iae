@@ -28,7 +28,7 @@ import { sqlAttendus } from "../routes/admin";
 import { planifier } from "../taches";
 import { sqlEtatPresence } from "./presence";
 import { sqlDevoirProposable } from "./proposables";
-import { sqlSeanceRattrapee, tableUtilisable, tracesRevision } from "./progression-cours";
+import { avecTraces, lireOuTaire, sqlSeanceRattrapee, tableUtilisable } from "./progression-cours";
 import { jourLocal } from "@shared/engagement/calendrier";
 import {
   CLE_OUVERTURE,
@@ -75,16 +75,19 @@ async function lireLigne(utilisateurId: number, jour: string): Promise<Ligne | n
 
 async function choisirRevision(coursIds: number[]): Promise<ElementObjectif | null> {
   if (!coursIds.length || !(await tableUtilisable("cartes_revision", ["cours_id", "active"]))) return null;
-  const r = await db.execute<{ existe: boolean }>(
-    sql`SELECT EXISTS (SELECT 1 FROM campus.cartes_revision WHERE cours_id = ANY(${`{${coursIds.join(",")}}`}::int[]) AND active) AS existe`,
-  );
-  return r.rows[0]?.existe ? { cle: "revision", type: "revision", lien: "/reviser", minutes: MINUTES_REVISION } : null;
+  const existe = await lireOuTaire(async () => {
+    const r = await db.execute<{ existe: boolean }>(
+      sql`SELECT EXISTS (SELECT 1 FROM campus.cartes_revision WHERE cours_id = ANY(${`{${coursIds.join(",")}}`}::int[]) AND active) AS existe`,
+    );
+    return Boolean(r.rows[0]?.existe);
+  }, false);
+  return existe ? { cle: "revision", type: "revision", lien: "/reviser", minutes: MINUTES_REVISION } : null;
 }
 
 async function choisirRattrapage(u: Utilisateur, coursIds: number[], maintenant: Date): Promise<ElementObjectif | null> {
   if (!coursIds.length) return null;
-  const traces = await tracesRevision();
-  const r = await db.execute<{ seance_id: number; debut: Date | string; code: string; titre: string; complet: boolean; taille: number | null }>(sql`
+  const r = await avecTraces((traces) =>
+    db.execute<{ seance_id: number; debut: Date | string; code: string; titre: string; complet: boolean; taille: number | null }>(sql`
     SELECT a.seance_id, a.debut, c.code, c.titre,
       COALESCE(es.statut = 'prete' AND es.dossier IS NOT NULL, false) AS complet,
       octet_length(es.dossier::text) AS taille
@@ -99,7 +102,8 @@ async function choisirRattrapage(u: Utilisateur, coursIds: number[], maintenant:
       AND ${sqlEtatPresence(sql`a.seance_id`, sql`a.uid`)} = 'absent'
       AND NOT ${sqlSeanceRattrapee(sql`a.seance_id`, sql`a.uid`, traces)}
     ORDER BY a.debut DESC
-    LIMIT 1`);
+    LIMIT 1`),
+  );
   const l = r.rows[0];
   if (!l) return null;
   return {
@@ -225,7 +229,7 @@ async function etatsElements(u: Utilisateur, jour: string, elements: ElementObje
   if (elements.some((e) => e.type === "revision")) {
     travaux.push(
       (async () => {
-        etats.set("revision", { fait: faitsConnus.has("revision") || (await revisionFaite(u, jour)) });
+        etats.set("revision", { fait: faitsConnus.has("revision") || (await lireOuTaire(() => revisionFaite(u, jour), false)) });
       })(),
     );
   }
@@ -255,10 +259,11 @@ async function etatsElements(u: Utilisateur, jour: string, elements: ElementObje
   if (rattrapages.length) {
     travaux.push(
       (async () => {
-        const traces = await tracesRevision();
-        const r = await db.execute<{ id: number; rattrapee: boolean }>(sql`
+        const r = await avecTraces((traces) =>
+          db.execute<{ id: number; rattrapee: boolean }>(sql`
           SELECT x.id, ${sqlSeanceRattrapee(sql`x.id`, sql`${u.id}::int`, traces)} AS rattrapee
-          FROM campus.seances x WHERE x.id = ANY(${`{${rattrapages.join(",")}}`}::int[])`);
+          FROM campus.seances x WHERE x.id = ANY(${`{${rattrapages.join(",")}}`}::int[])`),
+        );
         const de = new Map(r.rows.map((l) => [l.id, l.rattrapee]));
         for (const id of rattrapages) {
           const cle = `rattrapage:${id}`;

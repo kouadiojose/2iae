@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
 import { BoutonAssistant } from "@/modules/ia/BoutonAssistant";
 import { MediaLecon } from "./composants/MediasLecon";
 import { TYPES_LECON_INFOS, dureeLecon, typographie } from "./outils";
-import type { LeconDetail, ReponseTerminee } from "@shared/schema";
+import type { LeconDetail } from "@shared/schema";
+import type { ReponseTermineeSuivi } from "@shared/engagement/objectif";
 
 export default function PageLecon({ id, leconId }: { id: string; leconId: string }) {
   const moi = useMoiConnecte();
@@ -27,16 +28,18 @@ export default function PageLecon({ id, leconId }: { id: string; leconId: string
   const cle = ["/api/cours", coursId, "lecons", lId];
   const { data: lecon, isLoading, error, refetch } = useQuery<LeconDetail>({ queryKey: cle });
   const [envoi, setEnvoi] = useState(false);
-  const [progression, setProgression] = useState<ReponseTerminee["progression"] | null>(null);
+  // Pourcentage du cours : le même que sa carte et sa page (suivi : leçons et séances suivies ou rattrapées).
+  const [progression, setProgression] = useState<{ pourcentage: number } | null>(null);
 
   async function basculer(terminee: boolean) {
     if (!lecon) return;
     setEnvoi(true);
     try {
-      const r = terminee ? await post<ReponseTerminee>(`/api/lecons/${lecon.id}/terminee`) : await suppr<ReponseTerminee>(`/api/lecons/${lecon.id}/terminee`);
+      const r = terminee ? await post<ReponseTermineeSuivi>(`/api/lecons/${lecon.id}/terminee`) : await suppr<ReponseTermineeSuivi>(`/api/lecons/${lecon.id}/terminee`);
       queryClient.setQueryData<LeconDetail>(cle, (l) => (l ? { ...l, terminee: r.terminee } : l));
-      setProgression(r.progression);
-      if (terminee) toast(r.progression.pourcentage === 100 ? "Bravo, tu as terminé tout le cours !" : `Leçon terminée · ${r.progression.pourcentage} % du cours`);
+      const pourcentage = r.suivi ? r.suivi.pourcentage : r.progression.pourcentage;
+      setProgression(pourcentage === null ? null : { pourcentage });
+      if (terminee) toast(pourcentage === 100 ? "Bravo, tu as terminé tout le cours !" : pourcentage === null ? "Leçon terminée" : `Leçon terminée · ${pourcentage} % du cours`);
       // La liste des cours, la page du cours et l'accueil affichent la progression.
       void rafraichir("/api/cours", "/api/accueil");
     } catch (e) {

@@ -3,7 +3,8 @@
 // server/engagement/objectif.ts.
 //
 //   GET  /api/objectif-du-jour          l'objectif du jour (choisi et figé au premier passage)
-//   POST /api/objectif-du-jour/ouvert   { cle } : « À retenir » lu, cours complet ouvert pour rattraper
+//   POST /api/objectif-du-jour/ouvert   { cle } : « À retenir » lu sur l'accueil (seule ligne qui se coche
+//                                       à l'ouverture ; un rattrapage demande un vrai travail)
 import type { Express } from "express";
 import { z } from "zod";
 import { exigerRole, moi } from "../auth";

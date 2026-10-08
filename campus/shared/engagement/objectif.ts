@@ -9,7 +9,7 @@
 // proche. Chaque ligne se coche toute seule, d'après ce que l'étudiant a fait.
 import type { Jour } from "./calendrier";
 import type { AccueilEtudiant, CoursAccueil } from "../schema/ext-accueil";
-import type { CoursResume } from "../schema/ext-cours";
+import type { CoursDetail, CoursResume, ReponseTerminee } from "../schema/ext-cours";
 import type { Traducteur } from "../textes";
 import type { CleObjectif } from "../textes/objectif";
 
@@ -58,8 +58,21 @@ export type ElementObjectif =
       lien: string;
     };
 
-/** Une ligne telle que la renvoie le GET : son état du moment, et les points « À retenir » à lire sur place. */
-export type ElementObjectifDto = ElementObjectif & { fait: boolean; points?: string[] };
+/**
+ * Entraînement fait sur le cours complet de la séance d'une interrogation
+ * préparée par la routine du soir (meilleur score au quiz d'entraînement,
+ * tables de C1) ; null : pas encore entraîné.
+ */
+export type Entrainement = { score: number; total: number } | null;
+/** Score d'entraînement à partir duquel l'étudiant est dit « prêt » pour l'interrogation (60 %). */
+export const ENTRAINEMENT_PRET = 0.6;
+
+/**
+ * Une ligne telle que la renvoie le GET : son état du moment, les points
+ * « À retenir » à lire sur place et, pour une interrogation de la routine du
+ * soir, l'entraînement fait sur son cours complet (absent pour les autres).
+ */
+export type ElementObjectifDto = ElementObjectif & { fait: boolean; points?: string[]; entrainement?: Entrainement };
 
 /** GET /api/objectif-du-jour (et réponse de POST /api/objectif-du-jour/ouvert). */
 export type ObjectifDuJourDto = {
@@ -72,8 +85,13 @@ export type ObjectifDuJourDto = {
   valideLe: string | null;
 };
 
-/** Clé d'un élément qui se coche à l'ouverture, faute d'autre trace (POST /api/objectif-du-jour/ouvert). */
-export const CLE_OUVERTURE = /^(retenir|rattrapage):[1-9]\d{0,9}$/;
+/**
+ * Clé d'un élément qui se coche à l'ouverture (POST /api/objectif-du-jour/ouvert) :
+ * seulement « À retenir », une lecture courte. Un rattrapage ne se coche jamais
+ * à l'ouverture : il faut avoir travaillé le cours complet (quiz, fiches, cartes)
+ * ou regardé le replay (server/engagement/progression-cours.ts).
+ */
+export const CLE_OUVERTURE = /^retenir:[1-9]\d{0,9}$/;
 
 // ── Progression honnête d'un cours ────────────────────────────────────────
 
@@ -87,7 +105,7 @@ export const CLE_OUVERTURE = /^(retenir|rattrapage):[1-9]\d{0,9}$/;
 export type ProgressionCours = {
   leconsTerminees: number;
   leconsTotal: number;
-  /** Présent, ou séance rattrapée (replay, cours complet, cartes de révision). */
+  /** Présent, ou séance rattrapée : replay regardé, cours complet travaillé (quiz, fiches, exercice) ou cartes de révision ; jamais une simple ouverture. */
   seancesSuivies: number;
   seancesTotal: number;
   /** null quand il n'y a encore rien à compter : rien ne s'affiche. */
@@ -105,6 +123,10 @@ export type CoursAccueilSuivi = CoursAccueil & { suivi: ProgressionCours };
 export type AccueilEtudiantSuivi = Omit<AccueilEtudiant, "cours"> & { cours: CoursAccueilSuivi[] };
 /** Cours de « Mes cours » (GET /api/cours) : suivi renseigné pour l'étudiant, null pour les autres rôles. */
 export type CoursResumeSuivi = CoursResume & { suivi?: ProgressionCours | null };
+/** Page d'un cours (GET /api/cours/:id) : même progression que la carte du cours, pour l'étudiant ; null pour les autres rôles. */
+export type CoursDetailSuivi = CoursDetail & { suivi?: ProgressionCours | null };
+/** Leçon terminée ou rouverte (POST/DELETE /api/lecons/:id/terminee) : la progression du cours, même calcul que sa carte. */
+export type ReponseTermineeSuivi = ReponseTerminee & { suivi?: ProgressionCours };
 
 /**
  * « 3 séances sur 4 suivies ou rattrapées · 1 leçon sur 2 terminée » (accueil

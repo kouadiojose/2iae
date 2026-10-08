@@ -14,13 +14,17 @@ export const t = creerTextes({
   "objectif.ligneValide": "Objectif du jour validé",
   "objectif.voir": { tu: "Voir mon objectif du jour", vous: "Voir votre objectif du jour" },
   "objectif.masquer": "Masquer",
+  /** Ligne repliée : la seule ligne qui reste est déjà la grande carte « À faire maintenant ». */
+  "objectif.resteCarte": { tu: "Il ne te reste que la carte ci-dessus.", vous: "Il ne vous reste que la carte ci-dessus." },
+  "objectif.dansCarte": "C'est la carte « À faire maintenant » ci-dessus.",
 
   "revision.titre": "Révision du jour",
   "revision.detail": "{min} min",
 
   "rattrapage.titre": "Rattrape {cours} {quand}",
-  "rattrapage.complet": "{min} min, sans vidéo (≈ {ko} Ko)",
-  "rattrapage.replay": "Replay : la vidéo seulement si tu veux",
+  // Un rattrapage ne se coche qu'après un vrai travail (server/engagement/progression-cours.ts).
+  "rattrapage.complet": "{min} min, sans vidéo (≈ {ko} Ko) · se coche après son quiz ou 3 fiches",
+  "rattrapage.replay": "Replay : se coche après 5 min de vidéo",
   "rattrapage.emarger": { tu: "Tu étais en salle ? Pense à émarger la prochaine fois.", vous: "En salle ? Pensez à émarger la prochaine fois." },
   "quand.aujourdhui": "d'aujourd'hui",
   "quand.hier": "d'hier",
@@ -31,7 +35,17 @@ export const t = creerTextes({
   "retenir.tout": "Tout le cours complet",
 
   "devoir.quiz": "QCM {deCours}",
-  "devoir.quizDetail": "{n} questions, {min} min",
+  "devoir.quizDetail": "{n} questions, {min} min · à faire {quand}",
+  // Interrogation de la routine du soir : l'entraînement fait sur son cours complet.
+  "devoir.sansEntrainement": {
+    tu: "Elle compte dans ta moyenne : entraîne-toi d'abord avec le quiz du cours complet.",
+    vous: "Elle compte dans la moyenne : entraînement conseillé avec le quiz du cours complet.",
+  },
+  "devoir.pret": { tu: "Entraînement : {score}/{total}. Tu es prêt (elle compte dans ta moyenne).", vous: "Entraînement : {score}/{total} (elle compte dans la moyenne)." },
+  "devoir.revoir": {
+    tu: "Entraînement : {score}/{total}. Revois le cours complet avant (elle compte dans ta moyenne).",
+    vous: "Entraînement : {score}/{total} (elle compte dans la moyenne).",
+  },
   "devoir.depot": "Exercice {deCours}",
   "devoir.depotDetail": "À rendre {quand}",
   "devoir.aujourdhui": "aujourd'hui",

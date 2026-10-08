@@ -12,12 +12,15 @@
 // quand le total vaut 0 (pourcentage null).
 //
 // « Rattrapée » (sqlSeanceRattrapee) sert aussi au rattrapage de l'objectif du
-// jour : replay ouvert (vues_replay), cours complet ouvert (suivis_cours_complets
-// de C1, ou l'ouverture notée par l'objectif du jour tant que C1 n'est pas là),
-// ou au moins 3 cartes de révision de cette séance (tables de C1).
+// jour. Il faut un vrai travail, jamais une simple ouverture : replay regardé
+// au moins REPLAY_MINUTES (même règle que les points du registre, C5), cours
+// complet travaillé (quiz d'entraînement terminé, 3 fiches retournées ou un
+// exercice fait, suivis_cours_complets de C1), ou au moins 3 cartes de révision
+// de cette séance (tables de C1). Lire « À retenir » ne rattrape pas une séance.
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { sqlAttendus } from "../routes/admin";
+import { REPLAY_MINUTES } from "./bareme";
 import { sqlEtatPresence } from "./presence";
 import { tableExiste } from "./tables";
 import { calculerPourcentage, type ProgressionCours } from "@shared/engagement/objectif";
@@ -52,7 +55,7 @@ const SANS_TRACES: TracesRevision = { suivis: false, cartes: false };
 
 export async function tracesRevision(): Promise<TracesRevision> {
   const [suivis, cartes, reponses] = await Promise.all([
-    tableUtilisable("suivis_cours_complets", ["utilisateur_id", "seance_id"]),
+    tableUtilisable("suivis_cours_complets", ["utilisateur_id", "seance_id", "quiz_meilleur", "fiches_vues", "exercices_faits"]),
     tableUtilisable("cartes_revision", ["id", "seance_id"]),
     tableUtilisable("reponses_revision", ["utilisateur_id", "carte_id"]),
   ]);
@@ -92,22 +95,27 @@ export async function avecTraces<T>(lecture: (traces: TracesRevision) => Promise
   }
 }
 
-/** Nombre de cartes différentes d'une séance auxquelles il faut avoir répondu pour l'avoir rattrapée. */
+/** Nombre de cartes différentes d'une séance (révision ou fiches du cours complet) qu'il faut avoir travaillées pour l'avoir rattrapée. */
 export const CARTES_RATTRAPAGE = 3;
 
 /**
  * La séance a-t-elle été rattrapée par l'étudiant ? Expression booléenne ;
  * arguments évalués dans la requête de l'appelant (sql`a.seance_id`).
+ * Une ouverture (replay demandé, cours complet ouvert, ligne touchée) ne suffit
+ * jamais : il faut un acte d'apprentissage.
  */
 export function sqlSeanceRattrapee(seanceId: SQL, etudiantId: SQL, traces: TracesRevision): SQL {
   const conditions: SQL[] = [
-    sql`EXISTS (SELECT 1 FROM campus.vues_replay vr WHERE vr.seance_id = ${seanceId} AND vr.utilisateur_id = ${etudiantId})`,
-    // Cours complet ouvert depuis l'objectif du jour (POST /api/objectif-du-jour/ouvert).
-    sql`EXISTS (SELECT 1 FROM campus.objectifs_jours oj WHERE oj.utilisateur_id = ${etudiantId}
-      AND oj.faits @> jsonb_build_array('rattrapage:' || ${seanceId}::text))`,
+    // Replay où il est resté ou revenu (même règle que les points « replay » du registre, C5).
+    sql`EXISTS (SELECT 1 FROM campus.vues_replay vr WHERE vr.seance_id = ${seanceId} AND vr.utilisateur_id = ${etudiantId}
+      AND vr.derniere_vue >= vr.premiere_vue + make_interval(mins => ${REPLAY_MINUTES}::int))`,
   ];
   if (traces.suivis) {
-    conditions.push(sql`EXISTS (SELECT 1 FROM campus.suivis_cours_complets sc WHERE sc.seance_id = ${seanceId} AND sc.utilisateur_id = ${etudiantId})`);
+    // Cours complet travaillé : quiz d'entraînement terminé, quelques fiches retournées, ou un exercice fait (ou « difficile »).
+    conditions.push(sql`EXISTS (SELECT 1 FROM campus.suivis_cours_complets sc WHERE sc.seance_id = ${seanceId} AND sc.utilisateur_id = ${etudiantId}
+      AND (sc.quiz_meilleur IS NOT NULL OR sc.fiches_vues >= ${CARTES_RATTRAPAGE}::int
+        OR EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(sc.exercices_faits) = 'object' THEN sc.exercices_faits ELSE '{}'::jsonb END) x
+          WHERE jsonb_typeof(x.value) = 'object' AND (x.value -> 'etat') IS NOT NULL)))`);
   }
   if (traces.cartes) {
     conditions.push(sql`(SELECT count(DISTINCT rr.carte_id) FROM campus.reponses_revision rr

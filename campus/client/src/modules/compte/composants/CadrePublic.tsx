@@ -60,7 +60,7 @@ function PanneauMarque() {
           <span className="text-orange">En direct.</span>
         </h2>
         <p className="max-w-md text-lg leading-relaxed text-nuit-doux">
-          Tes cours, tes devoirs, tes replays et tes formateurs, depuis ton téléphone, ton ordinateur ou la salle de conférence de ton campus.
+          Les cours, les devoirs, les replays et les formateurs, depuis un téléphone, un ordinateur ou la salle de conférence du campus.
         </p>
       </div>
       <ul className="grid grid-cols-5 gap-2" aria-label="Les cinq campus">

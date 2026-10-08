@@ -11,10 +11,10 @@ const FR = {
   // ── Après la séance (accueil du formateur) ─────────────────────────────────
   "apres.etiquette": "Après votre séance · {code}",
   "apres.sousTitre": "Le campus s'est occupé de la suite.",
-  "apres.coursComplet.prete": "Cours complet prêt",
-  "apres.coursComplet.en_cours": "Cours complet en préparation",
-  "apres.coursComplet.a_venir": "Cours complet préparé cette nuit",
-  "apres.coursComplet.erreur": "Cours complet : nouvel essai automatique",
+  "apres.coursComplet.prete": "Cours résumé prêt",
+  "apres.coursComplet.en_cours": "Cours résumé en préparation",
+  "apres.coursComplet.a_venir": "Cours résumé préparé cette nuit",
+  "apres.coursComplet.erreur": "Cours résumé : nouvel essai automatique",
   "apres.coursComplet.ouvert.un": "ouvert par 1 étudiant",
   "apres.coursComplet.ouvert.n": "ouvert par {n} étudiants",
   "apres.coursComplet.attente": "quiz, exercices et fiches pour vos étudiants",
@@ -127,7 +127,7 @@ const FR = {
   "corriger.phrase.3": "Explique davantage ta démarche.",
   "corriger.phrase.4": "Relis la consigne : une partie manque.",
   "corriger.phrase.5": "Soigne la présentation.",
-  "corriger.phrase.6": "Revois le cours complet sur ce point.",
+  "corriger.phrase.6": "Revois le cours résumé sur ce point.",
 
   // ── Relecture facultative des devoirs écrits par l'IA ──────────────────────
   "relire.etiquette": "Facultatif",
@@ -177,7 +177,7 @@ const FR = {
   "groupe.devoir.livrable": "**À rendre :** {livrable}",
   "groupe.devoir.comment":
     "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos nettes, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie. Le campus corrige le travail d'après le corrigé validé par ton formateur, avec des conseils critère par critère.",
-  "groupe.devoir.origine": "_Travail de groupe du cours complet de la séance du {jour}._",
+  "groupe.devoir.origine": "_Travail de groupe du cours résumé de la séance du {jour}._",
   "groupe.critere.contenu": "Contenu juste et appuyé sur le cours",
   "groupe.critere.roles": "Chaque rôle tenu",
   "groupe.critere.livrable": "Livrable complet",

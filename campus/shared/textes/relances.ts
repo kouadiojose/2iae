@@ -60,13 +60,13 @@ const fr = {
   // On dit ce qu'on sait (sa présence n'a pas été relevée), jamais « tu as manqué » : il a pu être en salle sans scanner.
   // {cours} · {jour} « mercredi »
   "rappel.rattrapage.1.titre": "Ta présence n'a pas été relevée {jour}",
-  "rappel.rattrapage.1.corps": "Le cours complet de {cours} est prêt : 15 minutes, sans vidéo. Tu étais en salle ? Dis-le à la vie scolaire.",
+  "rappel.rattrapage.1.corps": "Le cours résumé de {cours} est prêt : 15 minutes, sans vidéo. Tu étais en salle ? Dis-le à la vie scolaire.",
   "rappel.rattrapage.2.titre": "Le cours de {cours} de {jour}, en 15 minutes",
   "rappel.rattrapage.2.corps": "L'essentiel, les fiches et un petit quiz, à lire tranquillement.",
   "rappel.rattrapage.3.titre": "Rattrape {cours} sans regarder la vidéo",
   "rappel.rattrapage.3.corps": "Le cours de {jour} est résumé pour toi. Lis-le à ton rythme.",
   "rappel.rattrapage.4.titre": "Le cours de {jour} t'attend",
-  "rappel.rattrapage.4.corps": "Le cours complet de {cours} t'attend : 15 minutes suffisent pour être à jour.",
+  "rappel.rattrapage.4.corps": "Le cours résumé de {cours} t'attend : 15 minutes suffisent pour être à jour.",
   "rappel.rattrapage.5.titre": "{cours} : le cours de {jour} est prêt",
   "rappel.rattrapage.5.corps": "Une lecture légère, faite pour le téléphone. Tu seras à jour pour la suite.",
   "rappel.rattrapage.6.titre": "Remets-toi à jour en {cours}",
@@ -78,7 +78,7 @@ const fr = {
   "rappel.rattrapage.9.titre": "Le résumé du cours de {jour} t'attend",
   "rappel.rattrapage.9.corps": "{cours} en quelques pages. Idéal pour revenir dans le rythme.",
   "rappel.rattrapage.10.titre": "On rattrape {cours} ensemble ?",
-  "rappel.rattrapage.10.corps": "Le cours complet de {jour} est prêt. Lis l'essentiel, puis fais le quiz.",
+  "rappel.rattrapage.10.corps": "Le cours résumé de {jour} est prêt. Lis l'essentiel, puis fais le quiz.",
 
   // ── Cartes de révision dues (chantier C1) ── {n} cartes · {minutes}
   "rappel.cartes.1.titre": "{n} cartes à revoir aujourd'hui · {minutes} min",
@@ -138,7 +138,7 @@ const fr = {
   "rappel.objectif_semaine.6.titre": "Encore un jour et ta semaine est gagnée",
   "rappel.objectif_semaine.6.corps": "Tu as déjà {faits} sur {objectif} jours. Bravo, continue.",
   "rappel.objectif_semaine.7.titre": "Belle semaine : {faits} sur {objectif} jours",
-  "rappel.objectif_semaine.7.corps": "Il manque un jour. Une carte, un QCM ou un cours complet compte.",
+  "rappel.objectif_semaine.7.corps": "Il manque un jour. Une carte, un QCM ou un cours résumé compte.",
   "rappel.objectif_semaine.8.titre": "Un jour de plus pour ta semaine ?",
   "rappel.objectif_semaine.8.corps": "{faits} sur {objectif} : tu touches au but.",
   "rappel.objectif_semaine.9.titre": "Ton objectif de la semaine est à portée",
@@ -147,7 +147,7 @@ const fr = {
   "rappel.objectif_semaine.10.corps": "{faits} sur {objectif} jours. Un de plus et la semaine est à toi.",
 
   // ── Cours complet récent pas encore ouvert ── {cours} · {quand} « d'hier », « de mardi »
-  "rappel.cours_complet.1.titre": "Le cours complet {quand} est prêt",
+  "rappel.cours_complet.1.titre": "Le cours résumé {quand} est prêt",
   "rappel.cours_complet.1.corps": "{cours} : l'essentiel, les fiches et un quiz, en 10 minutes.",
   "rappel.cours_complet.2.titre": "{cours} : relis l'essentiel en 10 minutes",
   "rappel.cours_complet.2.corps": "Le cours {quand} est résumé pour toi, sans vidéo à charger.",
@@ -156,9 +156,9 @@ const fr = {
   "rappel.cours_complet.4.titre": "10 minutes pour fixer le cours {quand}",
   "rappel.cours_complet.4.corps": "Relire le lendemain, c'est ce qui fait tenir un cours en mémoire.",
   "rappel.cours_complet.5.titre": "Le cours de {cours} t'attend",
-  "rappel.cours_complet.5.corps": "Le cours complet {quand} est prêt : fiches, glossaire et quiz.",
+  "rappel.cours_complet.5.corps": "Le cours résumé {quand} est prêt : fiches, glossaire et quiz.",
   "rappel.cours_complet.6.titre": "Un quiz sur le cours {quand} ?",
-  "rappel.cours_complet.6.corps": "{cours} : le cours complet a son quiz d'entraînement. Pas de note.",
+  "rappel.cours_complet.6.corps": "{cours} : le cours résumé a son quiz d'entraînement. Pas de note.",
   "rappel.cours_complet.7.titre": "Relis {cours} pendant que c'est frais",
   "rappel.cours_complet.7.corps": "Le cours {quand} tient en quelques pages, faites pour le téléphone.",
   "rappel.cours_complet.8.titre": "Ce qu'il faut retenir du cours {quand}",
@@ -213,7 +213,7 @@ const fr = {
 
   // Prochaine action concrète, glissée dans les relances. Phrases complètes.
   "action.devoir": "Ton devoir « {devoir} » ({cours}) est à rendre {quand}.",
-  "action.cours_complet": "Le cours complet de {cours} est prêt : l'essentiel en 10 minutes.",
+  "action.cours_complet": "Le cours résumé de {cours} est prêt : l'essentiel en 10 minutes.",
   "action.cartes": "{n} cartes de révision t'attendent : 3 minutes.",
   "action.defaut": "Ouvre ton campus : tes cours, tes replays et tes devoirs t'attendent.",
 
@@ -221,13 +221,13 @@ const fr = {
   "email.relance.etiquette": "Campus numérique · On pense à toi",
   "email.relance.titre": "Bonjour {prenom},",
   "email.relance.inactif.sujet": "{prenom}, ton campus numérique t'attend",
-  "email.relance.inactif.p1": "Aucune activité sur ton campus numérique depuis {n} jours (révision, QCM, devoir, cours complet). Pas d'inquiétude : tout est encore là, et rien n'est perdu.",
+  "email.relance.inactif.p1": "Aucune activité sur ton campus numérique depuis {n} jours (révision, QCM, devoir, cours résumé). Pas d'inquiétude : tout est encore là, et rien n'est perdu.",
   "email.relance.inactif.p2": "Pour reprendre en douceur, commence par ceci. {action}",
   "email.relance.devoir_non_rendu.sujet": "« {devoir} » : tu peux encore le rendre",
   "email.relance.devoir_non_rendu.p1": "Ton devoir **« {devoir} »** ({cours}) n'a pas encore été rendu, et la remise est encore ouverte.",
   "email.relance.devoir_non_rendu.p2": "Ouvre le campus, touche « Rendre mon devoir » et prends ta copie en photo : c'est fait en quelques minutes.",
   "email.relance.lives_manques.sujet": "Les cours de {cours} t'attendent",
-  "email.relance.lives_manques.p1": "Ta présence n'a pas été relevée aux deux derniers cours de **{cours}**. Tout t'attend sur le campus : le replay et, dès qu'il est prêt, le cours complet, l'essentiel en 15 minutes, sans vidéo.",
+  "email.relance.lives_manques.p1": "Ta présence n'a pas été relevée aux deux derniers cours de **{cours}**. Tout t'attend sur le campus : le replay et, dès qu'il est prêt, le cours résumé, l'essentiel en 15 minutes, sans vidéo.",
   "email.relance.lives_manques.p2": "Si tu étais en salle, pense à scanner le QR de l'écran au début du cours : c'est lui qui relève ta présence.",
   "email.relance.aide": "Un souci de téléphone, de réseau ou de code secret ? Écris sur WhatsApp à la vie scolaire de ton campus : on trouvera une solution.",
   "email.relance.bouton": "Reprendre sur le campus",
@@ -250,8 +250,8 @@ const fr = {
   "email.semaine.ligne.quiz.un": "1 QCM terminé",
   "email.semaine.ligne.directs": "{n} cours en direct suivis",
   "email.semaine.ligne.directs.un": "1 cours en direct suivi",
-  "email.semaine.ligne.replays": "{n} replays ou cours complets ouverts",
-  "email.semaine.ligne.replays.un": "1 replay ou cours complet ouvert",
+  "email.semaine.ligne.replays": "{n} replays ou cours résumés ouverts",
+  "email.semaine.ligne.replays.un": "1 replay ou cours résumé ouvert",
   "email.semaine.ligne.revisions": "{n} cartes révisées",
   "email.semaine.ligne.revisions.un": "1 carte révisée",
   "email.semaine.ligne.points": "{n} points gagnés",
@@ -260,7 +260,7 @@ const fr = {
   "email.semaine.ligne.direct": "{jour} à {heure} · {cours} : {titre}",
   "email.semaine.section.echeances": "À rendre cette semaine",
   "email.semaine.ligne.echeance": "{devoir} ({cours}) · avant {quand}",
-  "email.semaine.section.cours_complets": "Cours complets à lire",
+  "email.semaine.section.cours_complets": "Cours résumés à lire",
   "email.semaine.ligne.cours_complet": "{cours} : {titre}",
   "email.semaine.section.coupe": "Ta classe et ton campus",
   // Aucun rang dans l'e-mail (décision D5 : jamais « dernier ») : la participation, et « en progrès » si elle l'est.
@@ -269,7 +269,7 @@ const fr = {
   "email.semaine.ligne.campus": "Campus {campus} : {taux} % de participation",
   "email.semaine.ligne.campus.progres": "Campus {campus} : {taux} % de participation, en progrès dans la Coupe",
   "email.semaine.coupe.provisoire": "Chiffres provisoires : la Coupe de la semaine passée est arrêtée mercredi.",
-  "email.semaine.rien": "Rien de prévu pour l'instant : profites-en pour relire un cours complet.",
+  "email.semaine.rien": "Rien de prévu pour l'instant : profites-en pour relire un cours résumé.",
   "email.semaine.bouton": "Ouvrir mon campus",
   "email.semaine.apres": "Tes rappels arrivent sur ton téléphone ; cet e-mail, une fois par semaine, le lundi matin.",
 

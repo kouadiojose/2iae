@@ -27,6 +27,8 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage/scolarite", page: lazy(() => import("./PageScolarite")), acces: EQUIPE, droit: "argent" },
   { chemin: "/pilotage/recus/:id", page: lazy(() => import("./PageRecu")), acces: EQUIPE, coquille: "aucune", droit: "argent" },
   { chemin: "/pilotage/ia", page: lazy(() => import("./PageIa")), acces: EQUIPE, droit: "outils_campus" },
+  // « Le travail du campus » : séances tenues, cours résumés, QCM, exercices, notes (direction ; équipe avec notes ou présences).
+  { chemin: "/pilotage/travail", page: lazy(() => import("./PageTravail")), acces: EQUIPE, droit: ["notes", "presences_voir"] },
   { chemin: "/pilotage", page: lazy(() => import("./PageTableau")), acces: EQUIPE },
   // Public : le lien envoyé aux parents sur WhatsApp.
   { chemin: "/releve/:jeton", page: lazy(() => import("./PageReleve")), acces: "public", coquille: "aucune" },

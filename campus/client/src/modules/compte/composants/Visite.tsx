@@ -1,14 +1,36 @@
-// Visite guidée en trois écrans illustrés, adaptée au rôle :
+// Visite guidée en quelques écrans illustrés, adaptée au rôle :
 // étudiant (prochain cours, rendre un devoir, écrire à un formateur),
-// formateur (studio, corrections, questions) et équipe (pilotage, fiches,
-// présences et annonces). Les illustrations sont dessinées en HTML : aucune
-// image à télécharger.
+// formateur (ma classe, mes séances, notes : les trois gestes du nouvel accueil)
+// et équipe (le travail du campus, pilotage, fiches, présences et annonces).
+// Les illustrations sont dessinées en HTML : aucune image à télécharger.
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCheck, ClipboardList, Hand, MessageCircle, QrCode, Radio, Sparkles, Users, Camera, Megaphone, Home, BookOpen } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpenCheck,
+  CalendarCheck,
+  CheckCheck,
+  CheckCircle2,
+  ClipboardCheck,
+  ClipboardList,
+  GraduationCap,
+  ListChecks,
+  MessageCircle,
+  PlayCircle,
+  QrCode,
+  Radio,
+  Sparkles,
+  Users,
+  Camera,
+  Megaphone,
+  Home,
+  BookOpen,
+  type LucideIcon,
+} from "lucide-react";
 import { DecompteCourt } from "@/components/ui/compte-a-rebours";
-import { heure, heureDouble, jourLong } from "@/lib/dates";
+import { heure, jourLong } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { profilPermet, useMoi } from "@/lib/auth";
 import type { Role } from "@shared/schema";
 import type { EnCours } from "@shared/api";
 
@@ -20,6 +42,7 @@ const CAMPUS = ["Riviera", "Yopougon", "Yamoussoukro", "Azaguié", "M'Batto"];
 export function useEcransVisite(role: Role): EcranVisite[] {
   // Le vrai prochain cours quand il existe (module live) ; sinon un exemple.
   const { data } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], retry: false, staleTime: 60_000 });
+  const { moi } = useMoi();
   const seance = data?.enDirect ?? data?.prochaine ?? null;
 
   if (role === "etudiant") {
@@ -57,54 +80,70 @@ export function useEcransVisite(role: Role): EcranVisite[] {
   }
 
   if (role === "formateur") {
+    // Les trois gestes du nouvel accueil (/enseigner) : entrer dans sa classe, voir ses séances, ses notes.
     return [
       {
-        cle: "studio",
-        etiquette: "1 · Studio",
-        titre: "Vos cinq salles, en direct",
-        texte: "Depuis le studio, vous voyez les campus connectés, les mains levées et les questions votées. Vous donnez la parole à une salle en un clic.",
+        cle: "classe",
+        etiquette: "1 · Aujourd'hui",
+        titre: "Votre prochaine classe, un seul bouton",
+        texte: "En arrivant, vous voyez votre prochain cours. 45 minutes avant, le bouton devient « Entrer dans ma classe » : touchez-le, c'est tout.",
         illustration: (
-          <IllustrationStudio
+          <IllustrationMaClasse
             titre={seance?.coursTitre ?? "Initiation à l'IA"}
-            quand={seance ? heureDouble(seance.debut) : heureDouble("2026-09-28T08:30:00Z")}
+            quand={seance ? `${jourLong(seance.debut)} · ${heure(seance.debut)}` : "vendredi · 08h30"}
           />
         ),
       },
       {
-        cle: "corrections",
-        etiquette: "2 · Corrections",
-        titre: "Les copies arrivent ici",
-        texte: "Chaque matin, vous recevez le corrigé des devoirs de vos cours : validez-le ou modifiez-le. Le campus s'en sert pour noter les copies, et vous pouvez changer toute note.",
-        illustration: <IllustrationCorrections />,
+        cle: "seances",
+        etiquette: "2 · Mes séances",
+        titre: "Ce que le campus a fait après le cours",
+        texte: "Pour chaque séance : la vidéo, le cours résumé, le QCM, l'exercice et les présents. En vert : c'est prêt.",
+        illustration: <IllustrationMesSeances />,
       },
       {
-        cle: "questions",
-        etiquette: "3 · Messages",
-        titre: "Les questions de vos étudiants",
-        texte: "Chaque cours a son salon de questions, que vous modérez. Les étudiants peuvent aussi vous écrire directement.",
-        illustration: <IllustrationMessages formateur />,
+        cle: "notes",
+        etiquette: "3 · Notes",
+        titre: "Les copies et les notes",
+        texte: "Le campus corrige les copies avec le corrigé que vous vérifiez. Vous pouvez changer toute note.",
+        illustration: <IllustrationCorrections />,
       },
     ];
   }
 
+  // Équipe : « Le travail du campus » d'abord, pour qui peut l'ouvrir (direction, droit notes ou présences).
+  const travail: EcranVisite[] =
+    moi && profilPermet(moi, ["notes", "presences_voir"])
+      ? [
+          {
+            cle: "travail",
+            etiquette: "Le travail du campus",
+            titre: "Tout le travail fait, en grand",
+            texte: "Séances données, cours résumés, QCM, exercices, copies notées : les chiffres de la semaine, puis chaque séance en carte.",
+            illustration: <IllustrationTravail />,
+          },
+        ]
+      : [];
+
   return [
+    ...travail,
     {
       cle: "pilotage",
-      etiquette: "1 · Pilotage",
+      etiquette: "Pilotage",
       titre: "Votre campus d'un coup d'œil",
-      texte: "Comptes activés, présence aux lives, devoirs rendus et « Qui décroche ? » : vous voyez tout de suite qui a besoin d'un appel.",
+      texte: "Comptes activés, présence aux cours et « À contacter aujourd'hui » : vous voyez qui a besoin d'un appel.",
       illustration: <IllustrationPilotage />,
     },
     {
       cle: "fiches",
-      etiquette: "2 · Comptes",
+      etiquette: "Comptes",
       titre: "Des fiches de connexion à imprimer",
       texte: "Chaque étudiant reçoit une fiche avec un QR code : il entre sans rien taper. Un code oublié ? Un nouveau code en un clic, à envoyer sur WhatsApp.",
       illustration: <IllustrationFiche />,
     },
     {
       cle: "annonces",
-      etiquette: "3 · Présences et annonces",
+      etiquette: "Présences et annonces",
       titre: "Présences et annonces ciblées",
       texte: "Justifiez une absence, suivez les présences par séance et envoyez une annonce à un campus, une classe ou un cours, avec les accusés de lecture.",
       illustration: <IllustrationAnnonces />,
@@ -262,31 +301,116 @@ function IllustrationMessages({ formateur }: { formateur?: boolean }) {
   );
 }
 
-function IllustrationStudio({ titre, quand }: { titre: string; quand: string }) {
+/** Barre d'onglets du formateur, comme sur son téléphone. */
+function BarreOngletsFormateur() {
+  const onglets: { l: string; icone: LucideIcon; actif?: boolean; centre?: boolean }[] = [
+    { l: "Aujourd'hui", icone: Home, actif: true },
+    { l: "Mes séances", icone: CalendarCheck },
+    { l: "Ma classe", icone: Radio, centre: true },
+    { l: "Notes", icone: GraduationCap },
+    { l: "Messages", icone: MessageCircle },
+  ];
   return (
-    <div className="mx-auto w-full max-w-[320px] overflow-hidden rounded-[24px] bg-nuit p-3.5 text-white shadow-telephone" aria-hidden>
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 rounded-full bg-[#2A1510] px-2 py-1 font-mono text-[9px] uppercase text-[#FF8A6B]">
-          <span className="point-direct" /> En direct
-        </span>
-        <span className="font-mono text-[9px] text-nuit-gris">{quand}</span>
-      </div>
-      <p className="mt-2.5 text-[14px] font-extrabold leading-tight">{titre}</p>
-      <div className="mt-3 grid grid-cols-5 gap-1.5">
-        {CAMPUS.map((c, i) => (
-          <span key={c} className={cn("flex flex-col items-center gap-1 rounded-lg px-0.5 py-2", i === 4 ? "bg-orange text-encre" : "bg-nuit-carte")}>
-            {i === 4 ? <Hand className="h-3.5 w-3.5" /> : <span className="h-1.5 w-1.5 rounded-full bg-succes" />}
-            <span className="w-full truncate text-center text-[7px] font-bold">{c}</span>
+    <div className="flex items-end justify-around border-t border-ligne-douce px-1 pb-2 pt-1.5">
+      {onglets.map((o) =>
+        o.centre ? (
+          <span key={o.l} className="-mt-4 flex flex-col items-center gap-0.5">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-encre text-white ring-2 ring-white">
+              <o.icone className="h-4 w-4" />
+            </span>
+            <span className="text-[9px] font-bold text-texte-gris">{o.l}</span>
           </span>
+        ) : (
+          <span key={o.l} className={cn("flex flex-col items-center gap-0.5", o.actif ? "text-orange-fonce" : "text-texte-gris")}>
+            <o.icone className="h-4 w-4" />
+            <span className="text-[9px] font-bold">{o.l}</span>
+          </span>
+        ),
+      )}
+    </div>
+  );
+}
+
+function IllustrationMaClasse({ titre, quand }: { titre: string; quand: string }) {
+  return (
+    <Ecran>
+      <div className="flex flex-col gap-2.5 p-3">
+        <span className="text-[11px] font-bold text-texte-pale">Bonjour !</span>
+        <div className="flex flex-col gap-2 rounded-2xl bg-encre p-3.5 text-white">
+          <span className="font-mono text-[9px] uppercase tracking-wider text-orange-peche">Ma prochaine classe</span>
+          <p className="text-[16px] font-extrabold leading-tight">{titre}</p>
+          <p className="text-[13px] font-black capitalize leading-tight">{quand}</p>
+          <span className="mt-1 flex items-center justify-center gap-1.5 rounded-xl bg-orange py-2.5 text-[12px] font-extrabold text-encre">
+            Entrer dans ma classe <ArrowRight className="h-3.5 w-3.5" />
+          </span>
+        </div>
+        <span className="text-[12px] font-extrabold">Mes séances</span>
+        <div className="grid grid-cols-5 gap-1">
+          {[PlayCircle, BookOpenCheck, ListChecks, ClipboardList, Users].map((I, i) => (
+            <span key={i} className="grid h-8 place-items-center rounded-lg bg-succes-clair text-succes">
+              <I className="h-4 w-4" />
+            </span>
+          ))}
+        </div>
+      </div>
+      <BarreOngletsFormateur />
+    </Ecran>
+  );
+}
+
+/** Une séance tenue et ses cinq pastilles, comme dans « Mes séances ». */
+function IllustrationMesSeances() {
+  const pastilles: { l: string; v: string; icone: LucideIcon; fait: boolean }[] = [
+    { l: "Vidéo", v: "Prête", icone: PlayCircle, fait: true },
+    { l: "Cours résumé", v: "Prêt", icone: BookOpenCheck, fait: true },
+    { l: "QCM", v: "34 / 52", icone: ListChecks, fait: true },
+    { l: "Exercice", v: "20 copies", icone: ClipboardList, fait: false },
+    { l: "Présents", v: "41 / 60", icone: Users, fait: false },
+  ];
+  return (
+    <div className="mx-auto flex w-full max-w-[320px] flex-col gap-2.5 overflow-hidden rounded-[22px] border border-ligne bg-white shadow-carte" aria-hidden>
+      <div className="h-1.5 bg-orange" />
+      <div className="flex flex-col gap-2.5 px-3.5 pb-3.5">
+        <span className="font-mono text-[10px] font-bold text-texte-doux">IA-101 · Lundi 28 septembre</span>
+        <p className="text-[15px] font-extrabold leading-tight">Les modèles de langage</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {pastilles.map((p) => (
+            <span key={p.l} className={cn("flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-center", p.fait ? "bg-succes-clair" : "bg-orange-pale")}>
+              <span className={cn("grid h-7 w-7 place-items-center rounded-full", p.fait ? "bg-succes text-white" : "bg-orange text-encre")}>
+                <p.icone className="h-4 w-4" />
+              </span>
+              <span className="text-[10px] font-extrabold leading-tight">{p.l}</span>
+              <span className="text-[11px] font-black leading-tight">{p.v}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** « Le travail du campus » de la direction : grands chiffres, puis les séances en cartes. */
+function IllustrationTravail() {
+  return (
+    <div className="mx-auto flex w-full max-w-[320px] flex-col gap-2 rounded-[24px] border border-ligne bg-white p-3.5 shadow-carte" aria-hidden>
+      <span className="text-[13px] font-extrabold">Le travail du campus</span>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { l: "Séances données", v: "12", icone: CalendarCheck },
+          { l: "Cours résumés", v: "9", icone: BookOpenCheck },
+          { l: "Copies notées", v: "371", icone: ClipboardCheck },
+          { l: "Moyenne des notes", v: "12,9", icone: GraduationCap },
+        ].map((c) => (
+          <div key={c.l} className="flex flex-col gap-0.5 rounded-xl border border-ligne p-2.5">
+            <c.icone className="h-4 w-4 text-orange-fonce" />
+            <p className="text-[24px] font-black leading-none tracking-serre">{c.v}</p>
+            <span className="text-[10px] font-bold text-texte-pale">{c.l}</span>
+          </div>
         ))}
       </div>
-      <div className="mt-3 flex flex-col gap-1.5">
-        <span className="rounded-lg bg-nuit-carte px-2.5 py-2 text-[10px]">
-          <span className="font-mono text-orange-peche">▲ 14 · Yopougon</span> — Peut-on utiliser l'IA pour la comptabilité ?
-        </span>
-        <span className="rounded-lg bg-nuit-carte px-2.5 py-2 text-[10px]">
-          <span className="font-mono text-orange-peche">▲ 9 · M'Batto</span> — Main levée de la salle
-        </span>
+      <div className="flex items-center gap-2 rounded-xl bg-creme px-2.5 py-2">
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-succes" />
+        <span className="text-[11px] font-bold leading-tight">ENT-210 · Chiffrer son projet · Aïcha Bamba</span>
       </div>
     </div>
   );
@@ -295,7 +419,7 @@ function IllustrationStudio({ titre, quand }: { titre: string; quand: string }) 
 function IllustrationCorrections() {
   return (
     <div className="mx-auto flex w-full max-w-[320px] flex-col gap-2 rounded-[24px] border border-ligne bg-white p-3.5 shadow-carte" aria-hidden>
-      <span className="font-mono text-[9px] uppercase tracking-wider text-texte-gris">Corrections</span>
+      <span className="font-mono text-[10px] uppercase tracking-wider text-texte-gris">Notes</span>
       {[
         { t: "Business plan d'un maquis", n: "12 copies à corriger", ton: "bg-orange-clair text-orange-profond" },
         { t: "Quiz · Les modèles de langage", n: "Corrigé automatiquement", ton: "bg-succes-clair text-succes" },
@@ -307,7 +431,7 @@ function IllustrationCorrections() {
       ))}
       <div className="rounded-xl border border-dashed border-orange p-2.5">
         <span className="flex items-center gap-1 font-mono text-[8px] uppercase text-orange-fonce">
-          <Sparkles className="h-3 w-3" /> Proposé par l'IA
+          <Sparkles className="h-3 w-3" /> Proposé par le campus
         </span>
         <p className="mt-1 text-[10px] leading-snug text-texte-doux">Plan clair, chiffrage des ventes à revoir. Note suggérée : 13/20.</p>
         <div className="mt-2 flex gap-1.5">
@@ -334,7 +458,7 @@ function IllustrationPilotage() {
         ))}
       </div>
       <div className="rounded-xl bg-creme p-2.5">
-        <span className="font-mono text-[8px] uppercase text-orange-fonce">Qui décroche ?</span>
+        <span className="font-mono text-[9px] uppercase text-orange-fonce">À contacter aujourd'hui</span>
         {["Aucune connexion depuis 7 jours", "3 absences de suite", "2 devoirs non rendus"].map((t) => (
           <div key={t} className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5">
             <span className="flex items-center gap-1.5 text-[10px]">

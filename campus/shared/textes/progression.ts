@@ -16,7 +16,7 @@ export const t = creerTextes({
   "famille.lecon": "Leçon terminée",
   "famille.replay": "Replay d'un cours manqué",
   "famille.revision": "Révision",
-  "famille.entrainement": "Entraînement du cours complet",
+  "famille.entrainement": "Entraînement du cours résumé",
   "famille.objectif": "Objectif du jour",
 
   // ── Badges ──
@@ -106,7 +106,7 @@ export const t = creerTextes({
   "prog.bareme.devoir": "Rendre une copie : +{n} à l'heure, +{m} en retard",
   "prog.bareme.quiz": "Terminer une interrogation : +{n}, et +{m} avec au moins la moitié des points",
   "prog.bareme.revision": "Carte revue en révision, juste ou non : +{n} ({m} points par jour au plus)",
-  "prog.bareme.entrainement": "Quiz d'entraînement d'un cours complet : +{n}",
+  "prog.bareme.entrainement": "Quiz d'entraînement d'un cours résumé : +{n}",
   "prog.bareme.objectif": "Objectif du jour validé, avec un autre acte d'apprentissage ce jour-là : +{n}",
   "prog.bareme.lecon": "Leçon terminée : +{n} ({m} par jour au plus)",
   "prog.bareme.direct": "En direct : question +{q} (+{v} si 3 camarades la soutiennent), sondage +{s}, ressenti +{r} (avec ta présence, une question ou un sondage)",

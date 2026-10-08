@@ -512,7 +512,7 @@ function EtapeVisite({ moi, ecran, setEcran, onFini, derniere }: { moi: Moi; ecr
 
 function EtapeRappels({ moi, onFini }: { moi: Moi; onFini: () => void }) {
   const t = tuOuVous(moi);
-  const exemple = useMemo(() => (moi.role === "etudiant" ? "Initiation à l'IA commence dans 15 min. Touche pour rejoindre le live." : "Votre séance commence dans 15 min. Ouvrez le studio."), [moi.role]);
+  const exemple = useMemo(() => (moi.role === "etudiant" ? "Initiation à l'IA commence dans 15 min. Touche pour rejoindre le live." : "Votre séance commence dans 15 min. Entrez dans votre classe."), [moi.role]);
   return (
     <div className="flex flex-col gap-6">
       <Titre

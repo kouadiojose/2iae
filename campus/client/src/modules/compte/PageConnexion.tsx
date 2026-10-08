@@ -1,5 +1,9 @@
 // /connexion : un champ pour l'identifiant (matricule, téléphone ou e-mail),
-// un champ pour le code secret, un gros bouton. Rien d'autre à comprendre.
+// un champ pour le mot de passe (ou code secret), un gros bouton. Rien d'autre à comprendre.
+//
+// Neutre pour tous (8 octobre 2026) : formateurs, équipe et étudiants arrivent par la même page. On vouvoie,
+// comme chaque fois qu'on ne sait pas à qui l'on parle ; les champs viennent en premier, « Nouvel étudiant ?
+// Créer mon compte » ensuite, plus discret.
 import { useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { Eye, EyeOff, QrCode, UserPlus } from "lucide-react";
@@ -38,8 +42,8 @@ export default function PageConnexion() {
 
   async function entrer(e: FormEvent) {
     e.preventDefault();
-    if (!identifiant.trim()) return setErreur("Tape ton matricule ou ton numéro de téléphone.");
-    if (!code) return setErreur(personnel ? "Tapez votre mot de passe." : "Tape ton code secret.");
+    if (!identifiant.trim()) return setErreur("Indiquez votre identifiant : e-mail, téléphone ou matricule.");
+    if (!code) return setErreur(personnel ? "Tapez votre mot de passe." : "Tapez votre code secret.");
     setErreur(null);
     setEnvoi(true);
     try {
@@ -49,7 +53,7 @@ export default function PageConnexion() {
     } catch (err) {
       setEnvoi(false);
       setCode("");
-      setErreur(err instanceof ErreurApi ? err.message : "Une erreur est survenue. Réessaie dans un instant.");
+      setErreur(err instanceof ErreurApi ? err.message : "Une erreur est survenue. Réessayez dans un instant.");
     }
   }
 
@@ -59,29 +63,16 @@ export default function PageConnexion() {
     <CadrePublic identifiant={identifiant}>
       <div className="flex flex-col gap-2">
         <span className="etiquette">Campus numérique</span>
-        <h1 className="text-[40px] font-black leading-[0.98] tracking-tres-serre sm:text-[48px]">
-          Akwaba
-          <br />
-          <span className="text-orange">au campus.</span>
+        <h1 className="text-[36px] font-black leading-[1.02] tracking-tres-serre sm:text-[44px]">
+          Bienvenue sur le <span className="text-orange">campus 2IAE</span>
         </h1>
-        <p className="text-base leading-relaxed text-texte-pale">Connecte-toi avec ton e-mail, ton numéro de téléphone ou ton matricule, et ton code secret.</p>
-        <Link
-          href="/inscription"
-          className="mt-1 flex min-h-[56px] items-center justify-between gap-3 rounded-2xl bg-encre px-4 text-[16px] font-extrabold text-white no-underline hover:bg-orange-fonce hover:text-white"
-        >
-          <span className="flex items-center gap-3">
-            <UserPlus className="h-5 w-5 text-orange" aria-hidden />
-            Nouveau ? Créer mon compte étudiant
-          </span>
-          <span aria-hidden>→</span>
-        </Link>
+        <p className="text-[17px] leading-relaxed text-texte-pale">Entrez votre identifiant et votre mot de passe.</p>
       </div>
 
-      <form onSubmit={entrer} className="mt-7 flex flex-col gap-5" noValidate>
+      <form onSubmit={entrer} className="mt-6 flex flex-col gap-5" noValidate>
         <Champ
-          libelle="E-mail, téléphone ou matricule"
+          libelle="Identifiant : e-mail, téléphone ou matricule"
           placeholder="e-mail ou 07 07 12 34 56"
-          aide="Personnel du campus : votre adresse e-mail."
           value={identifiant}
           onChange={(e) => setIdentifiant(e.target.value)}
           autoComplete="username"
@@ -129,13 +120,13 @@ export default function PageConnexion() {
 
         {erreur && <Erreur message={erreur} />}
 
-        <Bouton type="submit" taille="lg" pleineLargeur chargement={envoi} className="min-h-[56px] text-[17px]">
-          Entrer dans mon campus
+        <Bouton type="submit" taille="lg" pleineLargeur chargement={envoi} className="min-h-[60px] text-[18px]">
+          Entrer
         </Bouton>
 
         <div className="flex items-center justify-between gap-3 text-[15px] font-bold">
           <Link href={lienOubli} className="inline-flex min-h-[48px] items-center">
-            Code oublié ?
+            {personnel ? "Mot de passe oublié ?" : "Code oublié ?"}
           </Link>
           <button type="button" onClick={() => setAide(true)} className="inline-flex min-h-[48px] items-center text-orange-fonce hover:text-encre">
             Besoin d'aide ?
@@ -143,27 +134,19 @@ export default function PageConnexion() {
         </div>
       </form>
 
-      <div className="mt-6 flex flex-col gap-3 rounded-2xl border-2 border-orange bg-orange-clair p-4">
-        <div className="flex gap-3">
+      {/* En second, plus discret : les nouveaux étudiants créent leur compte eux-mêmes. */}
+      <div className="mt-7 flex flex-col gap-3 border-t border-ligne-douce pt-6">
+        <LienBouton href="/inscription" taille="lg" variante="contour" icone={<UserPlus className="h-5 w-5 text-orange-fonce" />} className="min-h-[56px] w-full text-[16px]">
+          Nouvel étudiant ? Créer mon compte
+        </LienBouton>
+        <div className="flex gap-3 rounded-2xl bg-creme p-4">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-orange-fonce">
-            <UserPlus className="h-5 w-5" />
+            <QrCode className="h-5 w-5" />
           </span>
           <p className="text-[15px] leading-snug text-texte-doux">
-            <strong className="text-encre">Étudiant, pas encore de compte ?</strong> Nom, téléphone, e-mail, campus et année : ton compte est prêt tout de suite.
+            <strong className="text-encre">Une fiche de connexion avec un QR code ?</strong> Scannez-le avec l'appareil photo : vous entrez sans rien taper.
           </p>
         </div>
-        <LienBouton href="/inscription" taille="lg" variante="encre" className="min-h-[56px] w-full text-[17px]">
-          Créer mon compte
-        </LienBouton>
-      </div>
-
-      <div className="mt-4 flex gap-3 rounded-2xl bg-creme p-4">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-orange-fonce">
-          <QrCode className="h-5 w-5" />
-        </span>
-        <p className="text-[15px] leading-snug text-texte-doux">
-          <strong className="text-encre">Tu as reçu une fiche de connexion ?</strong> Scanne son QR code avec l'appareil photo : tu entres sans rien taper.
-        </p>
       </div>
 
       <AideWhatsApp ouverte={aide} onFermer={() => setAide(false)} identifiant={identifiant} />

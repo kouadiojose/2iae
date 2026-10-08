@@ -77,12 +77,12 @@ export default function PageMediatheque() {
   return (
     <Page className="max-w-5xl gap-6">
       <EnTetePage
-        etiquette="Enregistrements et documents"
+        etiquette="Vidéos, cours résumés et documents"
         titre="Médiathèque des cours"
         sousTitre={
           etudiant
-            ? "Revois les cours en vidéo et ouvre les supports PDF de tous les cours auxquels tu as accès, quand tu veux."
-            : "Les enregistrements des lives et les documents PDF des cours. Chaque cours est ouvert à tous les étudiants ou réservé à ses classes : le réglage se fait sur la page du cours."
+            ? "Revois les cours en vidéo, lis leurs cours résumés et ouvre les supports PDF de tous les cours auxquels tu as accès, quand tu veux."
+            : "Les vidéos des cours, leurs cours résumés et les documents PDF. Chaque cours est ouvert à tous les étudiants ou réservé à ses classes : le réglage se fait sur la page du cours."
         }
       />
 
@@ -231,7 +231,7 @@ function ListeEnregistrements({ elements, etudiant }: { elements: Enregistrement
                     <span className="min-w-0 font-bold leading-snug">{e.titre}</span>
                     {e.nouveau && <Badge ton="orange">Nouveau</Badge>}
                     {e.vu && <Badge ton="gris">Vu</Badge>}
-                    {e.coursComplet === "en_preparation" && <Badge ton="gris">Cours complet en préparation</Badge>}
+                    {e.coursComplet === "en_preparation" && <Badge ton="gris">Cours résumé en préparation</Badge>}
                   </span>
                   <span className="font-mono text-xs text-texte-gris">
                     {dateCourte(e.debut)}
@@ -245,7 +245,7 @@ function ListeEnregistrements({ elements, etudiant }: { elements: Enregistrement
                   </LienBouton>
                   {e.coursComplet === "pret" && (
                     <LienBouton href={`/mediatheque/cours/${e.seanceId}`} taille="sm" icone={<GraduationCap className="h-4 w-4" />} className="min-h-10">
-                      Cours complet
+                      Cours résumé
                     </LienBouton>
                   )}
                   {e.diapos > 0 && (

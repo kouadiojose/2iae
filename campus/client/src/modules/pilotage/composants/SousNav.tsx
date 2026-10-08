@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 // « droit » : ce que le profil de l'équipe doit permettre pour voir la page (shared/schema/ext-profils.ts).
 const PAGES: ({ href: string; libelle: string; prefixes?: string[] } & Pick<ElementNav, "droit" | "sansDroit" | "direction">)[] = [
+  { href: "/pilotage/travail", libelle: "Le travail du campus", droit: ["notes", "presences_voir"] },
   { href: "/pilotage", libelle: "Tableau" },
   { href: "/pilotage/etudiants", libelle: "Étudiants", prefixes: ["/pilotage/etudiants", "/pilotage/preinscrits"], droit: "comptes_voir" },
   { href: "/pilotage/relances", libelle: "Relances", droit: "crm" },

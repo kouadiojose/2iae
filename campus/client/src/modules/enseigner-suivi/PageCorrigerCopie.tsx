@@ -9,7 +9,8 @@
 // l'IA) et POST /api/enseigner/rendus/:id/envoyer pour publier cette copie seule.
 // Correction automatique (8 octobre 2026) : une copie que le campus a retenue
 // dit pourquoi (consigne cachée, vidéo…), et sa proposition s'affiche comme
-// celle du campus ; la justification par critère est gardée avec la note.
+// celle du campus (une proposition demandée ici reste « Proposé par l'IA ») ;
+// la justification par critère est gardée avec la note.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +24,7 @@ import { queryClient, rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { Visionneuse, EnregistreurVocal } from "@/modules/evaluations/composants/Correction";
-import { EtatCorrectionCopie } from "@/modules/evaluations/composants/CorrectionCampus";
+import { EtatCorrectionCopie, propositionDuCampus as estDuCampus } from "@/modules/evaluations/composants/CorrectionCampus";
 import type { CopieDetail } from "@shared/schema";
 import { notesRapides, type CopieEnAttente, type CopiesEnAttenteDto } from "@shared/engagement/enseigner";
 import { t, type CleEnseigner } from "@shared/textes/enseigner";
@@ -125,7 +126,7 @@ export default function PageCorrigerCopie({ id }: { id: string }) {
 
   return (
     <Notation
-      key={`${c.id}:${c.renduLe}`}
+      key={`${c.id}:${c.renduLe}:${c.note ?? ""}`}
       copie={c}
       element={element}
       position={position}
@@ -158,8 +159,8 @@ function Notation({
   const txc = useTextes(tc);
   const bareme = element.bareme;
   const proposition = copie.propositionIa;
-  // Copie retenue pour une consigne cachée : la proposition gardée est celle du campus (non publiée).
-  const propositionDuCampus = copie.correctionAuto?.etat === "a_revoir" && copie.correctionAuto.raison === "alerte";
+  // Copie retenue : la proposition gardée est celle du campus (non publiée), sauf si le formateur en a demandé une.
+  const propositionDuCampus = estDuCampus(copie);
   const [note, setNote] = useState<number | null>(copie.note);
   const [autre, setAutre] = useState(false);
   const [saisie, setSaisie] = useState(copie.note === null ? "" : String(copie.note));

@@ -1,6 +1,9 @@
 // Correction automatique côté étudiant (chantier K4, décision de José du 8 octobre 2026) : où en est la
 // correction de sa copie par le campus, la demande de relecture de sa note et la réponse du formateur, le
 // corrigé après la date limite. Le retour doit être rapide, clair et encourageant, sur un téléphone de 360 px.
+// Le campus ne corrige une copie qu'après la date limite (sa note arrive le soir qui suit, attendueLe du
+// serveur) ; une copie rendue en retard est corrigée tout de suite. Une copie avec une vidéo ou un son n'est
+// jamais notée par le campus : elle va au formateur, et l'étudiant le lit dès le dépôt.
 // Contrat : shared/engagement/corrections.ts (EtatCorrectionEtudiant, RelectureEtudiant, CorpsDemanderRelecture).
 import { useRef, useState } from "react";
 import { Hourglass, Camera, Eye, MessageSquareText, CheckCircle2, BookOpenCheck, ChevronDown } from "lucide-react";
@@ -18,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { t, type CleCorrectionsEtudiant } from "@shared/textes/corrections-etudiant";
 import type { Traducteur } from "@shared/textes";
 import { MOTIF_RELECTURE_MAX, type CorpsDemanderRelecture, type EtatCorrectionEtudiant } from "@shared/engagement/corrections";
-import type { RenduEtudiant } from "@shared/schema";
+import type { PieceJointe, RenduEtudiant } from "@shared/schema";
 import { nombre } from "../outils";
 
 type Tx = Traducteur<CleCorrectionsEtudiant>;
@@ -29,8 +32,26 @@ const JOUR = 86_400_000;
 /** Numéro du jour à Abidjan (GMT toute l'année). */
 const jourAbidjan = (ms: number) => Math.floor(ms / JOUR);
 
+/** Ce que le campus lit dans une copie : photos, PDF et texte. Le reste (vidéo, son, Word…) va au formateur. */
+export const luParLeCampus = (mime: string) => mime.startsWith("image/") || mime === "application/pdf" || mime === "text/plain";
+const estVideo = (f: Pick<PieceJointe, "mime">) => f.mime.startsWith("video/");
+const estSon = (f: Pick<PieceJointe, "mime">) => f.mime.startsWith("audio/");
+
 /**
- * Quand la note arrive, avec des mots : « ce soir », « demain soir », « jeudi soir », « le 12 oct. ».
+ * L'état à montrer à l'étudiant. Une copie avec une vidéo ou un son n'est jamais notée par le campus, même
+ * avec des photos ou du texte (le moteur la laisse au formateur) : dès le dépôt, on le lui dit, au lieu de
+ * « ta note arrive jeudi soir » tant que le serveur la dit encore « en file » (il ne le sait qu'au passage du
+ * moteur, après la date limite).
+ */
+export function etatAMontrer(c: EtatCorrectionEtudiant, fichiers: Pick<PieceJointe, "mime">[]): EtatCorrectionEtudiant {
+  if (c.etat !== "en_file" && c.etat !== "erreur") return c;
+  if (fichiers.some(estVideo)) return { etat: "a_revoir", raison: "video", attendueLe: null };
+  if (fichiers.some(estSon)) return { etat: "a_revoir", raison: null, attendueLe: null };
+  return c;
+}
+
+/**
+ * Quand la note arrive, avec des mots : « ce soir », « demain soir », « jeudi soir », « le 12 oct. au soir ».
  * Une heure déjà passée (la routine du soir tourne peut-être) devient « très bientôt ».
  */
 export function quandEnMots(iso: string, maintenant: number, tx: Tx): string {
@@ -41,12 +62,40 @@ export function quandEnMots(iso: string, maintenant: number, tx: Tx): string {
   if (ecart === 0) return tx(soir ? "quand.ceSoir" : "quand.aujourdhui");
   if (ecart === 1) return tx(soir ? "quand.demainSoir" : "quand.demain");
   if (ecart < 7) return tx(soir ? "quand.jourSoir" : "quand.jour", { v: { jour: jourLong(iso).split(" ")[0] } });
-  return tx("quand.date", { v: { date: dateCourte(iso) } });
+  return tx(soir ? "quand.dateSoir" : "quand.date", { v: { date: dateCourte(iso) } });
 }
 
-/** « Le campus corrige ta copie : ta note arrive ce soir. » */
-export function phraseNoteAttendue(c: EtatCorrectionEtudiant, maintenant: number, tx: Tx): string {
+/**
+ * Avant la date limite : « Le campus corrige ta copie après la date limite : ta note arrive jeudi soir. »
+ * Après (copie en retard, ou date limite passée) : « Le campus corrige ta copie : ta note arrive ce soir. »
+ */
+export function phraseNoteAttendue(c: EtatCorrectionEtudiant, maintenant: number, tx: Tx, dateLimite?: string | null): string {
+  const avantLimite = Boolean(dateLimite) && new Date(dateLimite!).getTime() > maintenant;
+  if (avantLimite) return c.attendueLe ? tx("campus.apresLimite", { v: { quand: quandEnMots(c.attendueLe, maintenant, tx) } }) : tx("campus.apresLimite.bientot");
   return c.attendueLe ? tx("campus.enFile", { v: { quand: quandEnMots(c.attendueLe, maintenant, tx) } }) : tx("campus.enFile.bientot");
+}
+
+/** Qui va regarder une copie que le campus ne note pas : sa vidéo, son enregistrement, ou sa copie. */
+function phraseFormateur(c: EtatCorrectionEtudiant, fichiers: Pick<PieceJointe, "mime">[], tx: Tx): string {
+  if (c.raison === "video" || fichiers.some(estVideo)) return tx("campus.video");
+  if (fichiers.some(estSon)) return tx("campus.son");
+  return tx("campus.formateur");
+}
+
+/**
+ * La phrase du reçu, juste après le dépôt : quand la note arrive, ou qui va regarder la copie (« formateur » :
+ * le campus ne la note pas).
+ */
+export function phraseApresDepot(
+  c: EtatCorrectionEtudiant,
+  fichiers: Pick<PieceJointe, "mime">[],
+  maintenant: number,
+  tx: Tx,
+  dateLimite?: string | null,
+): { texte: string; formateur: boolean } {
+  const vu = etatAMontrer(c, fichiers);
+  if (vu.etat === "a_revoir") return { texte: phraseFormateur(vu, fichiers, tx), formateur: true };
+  return { texte: phraseNoteAttendue(vu, maintenant, tx, dateLimite), formateur: false };
 }
 
 /**
@@ -55,17 +104,24 @@ export function phraseNoteAttendue(c: EtatCorrectionEtudiant, maintenant: number
  * (sans « onRemplacer » : la zone de remplacement est déjà ouverte, le bouton disparaît).
  */
 export function EtatCorrectionCampus({
-  correction,
+  correction: brute,
+  fichiers = [],
+  dateLimite,
   maintenant,
   peutRemplacer,
   onRemplacer,
 }: {
   correction: EtatCorrectionEtudiant;
+  /** Les fichiers de la copie : une vidéo ou un son la fait relire par le formateur. */
+  fichiers?: Pick<PieceJointe, "mime">[];
+  /** Date limite du devoir : avant, « le campus corrige ta copie après la date limite ». */
+  dateLimite?: string | null;
   maintenant: number;
   peutRemplacer: boolean;
   onRemplacer?: () => void;
 }) {
   const tx = useTextes(t);
+  const correction = etatAMontrer(brute, fichiers);
   if (correction.etat === "a_revoir" && correction.raison === "illisible" && peutRemplacer) {
     return (
       <div className="flex flex-col gap-3 rounded-2xl border border-alerte/30 bg-alerte-clair p-4">
@@ -89,7 +145,7 @@ export function EtatCorrectionCampus({
       <p className="flex items-start gap-2.5 rounded-2xl bg-white/70 p-3.5 text-[15px] leading-snug">
         <Eye className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" />
         <span>
-          <strong className="block text-encre">{tx(correction.raison === "video" ? "campus.video" : "campus.formateur")}</strong>
+          <strong className="block text-encre">{phraseFormateur(correction, fichiers, tx)}</strong>
           <span className="text-texte-doux">{tx("campus.formateur.detail")}</span>
         </span>
       </p>
@@ -101,7 +157,7 @@ export function EtatCorrectionCampus({
       <p className="flex items-start gap-2.5 text-[15px] leading-snug">
         <Hourglass className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" />
         <span>
-          <strong className="block text-encre">{phraseNoteAttendue(correction, maintenant, tx)}</strong>
+          <strong className="block text-encre">{phraseNoteAttendue(correction, maintenant, tx, dateLimite)}</strong>
           <span className="text-texte-doux">{tx("campus.enFile.detail")}</span>
         </span>
       </p>
@@ -119,7 +175,11 @@ export function RelectureNote({ rendu, bareme }: { rendu: RenduEtudiant; bareme:
   const tx = useTextes(t);
   const [ouverte, setOuverte] = useState(false);
   const r = rendu.relecture ?? null;
-  const noteRefaiteDepuis = Boolean(r?.traiteeLe && rendu.corrigeLe && new Date(rendu.corrigeLe).getTime() > new Date(r.traiteeLe).getTime());
+  // Refaite par le campus (corrigé précisé) après la réponse : pas un simple enregistrement du formateur, dont la
+  // note reste celle de la relecture (origine « formateur ») et dont la réponse doit rester visible.
+  const noteRefaiteDepuis = Boolean(
+    rendu.origineNote === "campus" && r?.traiteeLe && rendu.corrigeLe && new Date(rendu.corrigeLe).getTime() > new Date(r.traiteeLe).getTime(),
+  );
   const peutDemander = rendu.origineNote === "campus" && (!r || (r.statut === "traitee" && noteRefaiteDepuis));
   // Critères où des points manquent : des débuts de phrase à un toucher.
   const criteresPerdus = (rendu.noteDetail ?? []).filter((l) => l.obtenu < l.points).slice(0, 4);

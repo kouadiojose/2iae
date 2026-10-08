@@ -1,20 +1,28 @@
 // Textes de la correction automatique côté étudiant (chantier K4, décision de José du 8 octobre 2026) :
-// la copie corrigée par le campus après le dépôt, la note « Corrigé par le campus » critère par critère,
-// la demande de relecture et sa réponse, le corrigé après la date limite, le conseil de la zone de dépôt.
+// la copie corrigée par le campus après la date limite (sa note arrive le soir qui suit ; une copie rendue
+// en retard est corrigée tout de suite), la note « Corrigé par le campus » critère par critère, la demande
+// de relecture et sa réponse, le corrigé après la date limite, le conseil de la zone de dépôt (des photos
+// nettes ou un PDF : une vidéo, un son ou un fichier que le campus ne lit pas fait relire la copie par le
+// formateur).
 // Étudiants tutoyés : ces écrans ne s'adressent qu'à eux. Couche commune : shared/textes/index.ts ;
 // règles et types : shared/engagement/corrections.ts.
 import { creerTextes, type Dictionnaire } from "./index";
 
 const FR = {
   // ── Après le dépôt : où en est la correction par le campus ─────────────────
+  // Copie rendue avant la date limite : le campus la corrige après (le soir qui suit, attendueLe du serveur).
+  "campus.apresLimite": "Le campus corrige ta copie après la date limite : ta note arrive {quand}.",
+  "campus.apresLimite.bientot": "Le campus corrige ta copie après la date limite : ta note arrive le soir qui suit.",
+  // Copie rendue après la date limite (retard accepté), ou date limite passée : elle est corrigée tout de suite.
   "campus.enFile": "Le campus corrige ta copie : ta note arrive {quand}.",
   "campus.enFile.bientot": "Le campus corrige ta copie : ta note arrive bientôt.",
   "campus.enFile.detail": "Tu auras ta note critère par critère, avec des conseils pour progresser.",
-  "campus.remplacer": "Tu peux encore remplacer ta copie tant qu'elle n'est pas notée.",
+  "campus.remplacer": "Tu peux remplacer ta copie jusqu'à la date limite.",
   "campus.illisible.titre": "Ta copie est difficile à lire",
   "campus.illisible.texte": "Remplace-la par une photo nette : une page par photo, à plat, bien éclairée, sans ombre.",
   "campus.illisible.bouton": "Envoyer une photo nette",
   "campus.video": "Ta vidéo sera regardée par ton formateur.",
+  "campus.son": "Ton enregistrement sera écouté par ton formateur.",
   "campus.formateur": "Ton formateur va regarder ta copie.",
   "campus.formateur.detail": "Ta note arrivera ici dès qu'il l'aura corrigée.",
 
@@ -27,6 +35,7 @@ const FR = {
   "quand.jourSoir": "{jour} soir",
   "quand.jour": "{jour}",
   "quand.date": "le {date}",
+  "quand.dateSoir": "le {date} au soir",
 
   // ── La note du campus ──────────────────────────────────────────────────────
   "note.parCampus": "Corrigé par le campus",
@@ -64,7 +73,11 @@ const FR = {
   "corrige.cacher": "Cacher le corrigé",
 
   // ── Zone de dépôt ──────────────────────────────────────────────────────────
-  "conseil.depot": "Pour avoir ta note vite : des photos nettes (une page par photo) ou un fichier. Une vidéo seule est corrigée par ton formateur.",
+  // Devoir corrigé par le campus : il lit les photos et les PDF ; le reste (vidéo, son, Word…) va au formateur.
+  "depot.intro.campus": "Photographie ton cahier page par page, ajoute un PDF ou écris ta réponse.",
+  "conseil.depot": "Le campus corrige ta copie après la date limite, avec le corrigé de ton formateur. Pour qu'il la lise bien : des photos nettes (une page par photo) ou un PDF.",
+  "conseil.depot.formateur": "Une vidéo, un son ou un autre fichier (Word, Excel…) : c'est ton formateur qui corrigera ta copie, et ta note arrivera plus tard.",
+  "conseil.depot.joint": "Ta copie contient une vidéo, un son ou un fichier que le campus ne lit pas : c'est ton formateur qui la corrigera. Pour une note plus rapide, envoie des photos nettes ou un PDF.",
 
   // ── Listes ───────────────────────────────────────────────────────────
   "notes.campus": "corrigé par le campus",

@@ -69,28 +69,43 @@ export const ICONES_RAISON: Record<RaisonARevoir | "relecture", LucideIcon> = {
   relecture: MessageSquareQuote,
 };
 
+/**
+ * La proposition affichée est-elle celle du campus ? Seulement pour une copie retenue encore rendue, quand sa
+ * note est celle que le campus a proposée (corrections_auto.note_campus) : une proposition demandée par le
+ * formateur (« Proposer une correction (IA) ») reste « Proposé par l'IA », quelle que soit la raison.
+ */
+export function propositionDuCampus(copie: Pick<CopieDetail, "statut" | "propositionIa" | "correctionAuto">): boolean {
+  const auto = copie.correctionAuto;
+  return Boolean(copie.propositionIa) && copie.statut === "rendu" && auto?.etat === "a_revoir" && auto.noteCampus !== null && copie.propositionIa!.note === auto.noteCampus;
+}
+
 export const libelleRaison = (tx: Tx, raison: RaisonARevoir | "relecture") => tx(`raison.${raison}`);
 export const texteRaison = (tx: Tx, raison: RaisonARevoir | "relecture") => tx(`raison.${raison}.texte` as CleCorrections, { v: { n: ESSAIS_MAX_CORRECTION } });
 
+/** « Remarque du campus · Lecture partielle… » : ce que le campus a laissé au formateur sur cette copie. */
+export function RemarqueCampus({ texte, className }: { texte: string; className?: string }) {
+  const tx = useTextes(t);
+  return (
+    <p className={cn("rounded-xl bg-white/70 px-3 py-2 text-sm leading-snug text-texte-doux", className)}>
+      <span className="font-semibold">{tx("campus.remarque")} · </span>
+      {texte}
+    </p>
+  );
+}
+
 /**
- * Ce que le campus a fait (ou fait) de cette copie, au-dessus de la notation : note publiée par le campus,
- * correction en cours, ou copie retenue (et pourquoi). Rien pour une copie hors du circuit.
+ * Ce que le campus a fait (ou fait) de cette copie, au-dessus de la notation : copie retenue (et pourquoi,
+ * même quand une note du campus calculée sur un ancien corrigé reste publiée), note publiée par le campus
+ * (avec la remarque qu'il a laissée au formateur), ou correction en cours. Rien pour une copie hors du circuit.
  */
 export function EtatCorrectionCopie({ copie, bareme, className }: { copie: CopieDetail; bareme: number; className?: string }) {
   const tx = useTextes(t);
   const auto = copie.correctionAuto ?? null;
   const parLeCampus = copie.origineNote === "campus" && copie.statut === "corrige";
+  const remarque = auto?.detail ? <RemarqueCampus texte={auto.detail} /> : null;
 
-  if (parLeCampus) {
-    return (
-      <div className={cn("flex flex-col gap-1.5 rounded-2xl bg-succes-clair/70 p-3", className)}>
-        <BadgeCampus className="self-start" />
-        <p className="text-sm leading-snug text-texte-doux">{tx("campus.notee")}</p>
-      </div>
-    );
-  }
-  if (!auto) return null;
-  if (auto.etat === "a_revoir" && auto.raison) {
+  // Retenue d'abord : une recorrection retenue laisse publiée la note de l'ancien corrigé, le formateur décide.
+  if (auto?.etat === "a_revoir" && auto.raison) {
     const Icone = ICONES_RAISON[auto.raison];
     return (
       <div className={cn("flex flex-col gap-1.5 rounded-2xl bg-alerte-clair p-3", className)} role="status">
@@ -98,11 +113,25 @@ export function EtatCorrectionCopie({ copie, bareme, className }: { copie: Copie
           <Icone className="h-4 w-4 shrink-0" aria-hidden />
           {tx("campus.aRevoir")} · {libelleRaison(tx, auto.raison)}
         </span>
-        <p className="text-sm leading-snug text-texte-doux">{texteRaison(tx, auto.raison)}</p>
-        {auto.detail && <p className="rounded-xl bg-white/70 px-3 py-2 text-sm leading-snug text-texte-doux">{auto.detail}</p>}
+        {/* Note publiée : l'étudiant ne peut plus remplacer sa copie, on ne dit pas qu'il y est invité. */}
+        {!(parLeCampus && auto.raison === "illisible") && <p className="text-sm leading-snug text-texte-doux">{texteRaison(tx, auto.raison)}</p>}
+        {parLeCampus && copie.note !== null && (
+          <p className="text-sm font-semibold leading-snug text-encre">{tx("campus.aRevoir.notePubliee", { v: { note: nombre(copie.note), bareme: nombre(bareme) } })}</p>
+        )}
+        {remarque}
       </div>
     );
   }
+  if (parLeCampus) {
+    return (
+      <div className={cn("flex flex-col gap-1.5 rounded-2xl bg-succes-clair/70 p-3", className)}>
+        <BadgeCampus className="self-start" />
+        <p className="text-sm leading-snug text-texte-doux">{tx("campus.notee")}</p>
+        {auto?.etat === "notee" && remarque}
+      </div>
+    );
+  }
+  if (!auto) return null;
   if (auto.etat === "en_file" || auto.etat === "erreur") {
     return (
       <div className={cn("flex items-start gap-2.5 rounded-2xl bg-creme p-3", className)} role="status">
@@ -114,11 +143,15 @@ export function EtatCorrectionCopie({ copie, bareme, className }: { copie: Copie
       </div>
     );
   }
-  // Note du campus changée ensuite par un formateur : on garde la trace de l'écart.
-  if (auto.noteCampus !== null && copie.note !== null && auto.noteCampus !== copie.note) {
-    return <p className={cn("text-[13px] text-texte-gris", className)}>{tx("campus.noteChangee", { v: { note: nombre(auto.noteCampus), bareme: nombre(bareme) } })}</p>;
-  }
-  return null;
+  // Note du campus changée ensuite par un formateur : on garde la trace de l'écart (et la remarque du campus).
+  const changee = auto.noteCampus !== null && copie.note !== null && auto.noteCampus !== copie.note;
+  if (!changee && !(auto.etat === "notee" && remarque)) return null;
+  return (
+    <div className={cn("flex flex-col gap-1.5", className)}>
+      {changee && <p className="text-[13px] text-texte-gris">{tx("campus.noteChangee", { v: { note: nombre(auto.noteCampus!), bareme: nombre(bareme) } })}</p>}
+      {auto.etat === "notee" && auto.detail && <RemarqueCampus texte={auto.detail} className="bg-creme" />}
+    </div>
+  );
 }
 
 /** Pourquoi le campus a donné ces points à ce critère (note du campus). */

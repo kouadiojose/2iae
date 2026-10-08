@@ -67,7 +67,10 @@ export default function PageCharte() {
       <Bloc icone={<X className="h-5 w-5" />} titre="Ce qu'il ne fait pas" ton="blanc">
         <ul className="flex flex-col gap-3">
           <Ligne oui={false}>Il ne fait pas tes devoirs et ne donne pas la réponse d'un exercice noté, même si tu insistes.</Ligne>
-          <Ligne oui={false}>Il ne met jamais de note. Seul ton formateur note ton travail.</Ligne>
+          <Ligne oui={false}>
+            Il ne met pas de note dans la conversation. Tes dépôts sont notés par le campus après la date limite, d'après le corrigé de ton formateur (« Corrigé par le campus ») : tu peux
+            demander une relecture, et ton formateur peut changer ta note.
+          </Ligne>
           <Ligne oui={false}>Il ne connaît pas les corrigés des interrogations.</Ligne>
           <Ligne oui={false}>Il ne remplace pas ton formateur : il peut se tromper. En cas de doute, c'est ton formateur qui a le dernier mot.</Ligne>
         </ul>
@@ -80,7 +83,8 @@ export default function PageCharte() {
         <ul className="flex flex-col gap-3">
           <Ligne oui>Tes conversations sont privées : ni tes camarades ni ton formateur ne les lisent. Tu peux les supprimer quand tu veux.</Ligne>
           <Ligne oui>Ton nom, ton matricule et ton téléphone ne sont jamais envoyés à l'IA : pour elle, tu es « l'étudiant ».</Ligne>
-          <Ligne oui>L'IA reçoit seulement ta question et le contenu de ton cours (leçons publiées, fiches et résumés validés par ton formateur).</Ligne>
+          <Ligne oui>Pour tes questions, l'IA reçoit seulement ta question et le contenu de ton cours (leçons publiées, fiches et résumés validés par ton formateur).</Ligne>
+          <Ligne oui>Pour corriger tes dépôts, le campus lui envoie aussi les pages de ta copie (en images) et le corrigé du devoir, sans ton nom ni ton matricule.</Ligne>
           <Ligne oui={false}>N'écris pas d'informations personnelles (numéro, adresse, mot de passe) dans tes questions.</Ligne>
         </ul>
       </Bloc>

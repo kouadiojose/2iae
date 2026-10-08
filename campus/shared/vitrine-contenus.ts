@@ -101,6 +101,14 @@ export const CONTENUS_PAR_DEFAUT: ContenusSite = {
         visible: true,
       },
       {
+        id: "correction",
+        theme: "suivre",
+        question: "Qui corrige mes devoirs ?",
+        reponse:
+          "Le campus corrige tes copies après la date limite, d'après le corrigé de ton formateur : tu reçois ta note critère par critère, avec des conseils. Une note te semble fausse ? Demande une relecture depuis le devoir : ton formateur relit ta copie et garde toujours le dernier mot. Une copie en vidéo, ou difficile à lire, est corrigée par ton formateur.",
+        visible: true,
+      },
+      {
         id: "assistant",
         theme: "suivre",
         question: "À quoi sert l'assistant IA ?",

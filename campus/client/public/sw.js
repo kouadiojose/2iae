@@ -63,6 +63,42 @@ const PAGE_SECOURS = `<!doctype html><html lang="fr"><head><meta charset="utf-8"
 
 // ── Installation et activation ─────────────────────────────────────────────
 
+/**
+ * Fichiers /assets (JS, CSS) : leur nom porte l'empreinte de leur contenu, ils
+ * ne changent donc jamais. Ils vivent dans un cache gardé d'une version à
+ * l'autre (400 entrées au plus, les plus anciennes partent d'abord) : après une
+ * nouvelle version, un écran déjà ouvert (révision du jour, cours complet) dont
+ * le code n'a pas changé s'ouvre encore sans réseau.
+ */
+const CACHE_ASSETS = "campus-assets-v1";
+const MAX_ASSETS = 400;
+/**
+ * Écrans à garder sans réseau d'une version à l'autre. Le nom d'un fichier
+ * dépend aussi de ceux qu'il importe : une nouvelle version les renomme presque
+ * tous. Si l'ancienne version d'un de ces écrans a déjà servi sur ce téléphone,
+ * sa nouvelle version (et ses dépendances) est gardée dès l'installation.
+ */
+const ECRANS_HORS_LIGNE = ["PageReviser", "PageCoursComplet"];
+
+/** Lit dans le JS principal les fichiers de chaque écran (import("./PageReviser-….js"), __vite__mapDeps([…])). */
+async function prechargerEcrans(html, assets) {
+  const entree = (html.match(/src="(\/assets\/index-[^"]+\.js)"/) || [])[1];
+  if (!entree) return;
+  const deja = (await assets.keys()).map((r) => new URL(r.url).pathname);
+  const voulus = ECRANS_HORS_LIGNE.filter((nom) => deja.some((p) => p.startsWith(`/assets/${nom}-`)));
+  if (!voulus.length) return;
+  const reponse = (await assets.match(entree)) || (await fetch(entree));
+  const code = await reponse.text();
+  const liste = code.match(/m\.f\|\|\(m\.f=(\[[^\]]*\])/);
+  const fichiers = liste ? JSON.parse(liste[1]) : [];
+  for (const nom of voulus) {
+    const m = code.match(new RegExp(`import\\("\\./(${nom}-[\\w-]+\\.js)"\\),__vite__mapDeps\\(\\[([\\d,]*)\\]`));
+    if (!m) continue;
+    const urls = [`/assets/${m[1]}`, ...m[2].split(",").filter(Boolean).map((i) => fichiers[Number(i)] && `/${fichiers[Number(i)]}`).filter(Boolean)];
+    await Promise.all(urls.map(async (u) => (await assets.match(u)) || assets.add(u).catch(() => undefined)));
+  }
+}
+
 self.addEventListener("install", (evenement) => {
   evenement.waitUntil(
     (async () => {
@@ -76,7 +112,20 @@ self.addEventListener("install", (evenement) => {
           await cache.put(CLE_COQUILLE, reponse);
           await cache.put(HORS_LIGNE, new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } }));
           const ressources = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
-          await Promise.all([...new Set(ressources)].map((u) => cache.add(u).catch(() => undefined)));
+          const assets = await caches.open(CACHE_ASSETS);
+          // Les fichiers déjà gardés par les anciennes versions (dans leur coquille) passent dans le cache durable.
+          for (const nom of (await caches.keys()).filter((n) => n.startsWith("campus-coquille-"))) {
+            const ancien = await caches.open(nom);
+            for (const r of await ancien.keys()) {
+              if (new URL(r.url).pathname.startsWith("/assets/") && !(await assets.match(r))) {
+                const copie = await ancien.match(r);
+                if (copie) await assets.put(r, copie);
+              }
+            }
+          }
+          // Déjà gardé (même empreinte, donc même contenu) : rien à retélécharger.
+          await Promise.all([...new Set(ressources)].map(async (u) => (await assets.match(u)) || assets.add(u).catch(() => undefined)));
+          await prechargerEcrans(html, assets).catch(() => undefined);
         }
       } catch {
         /* pas de réseau pendant l'installation : la coquille sera gardée à la prochaine visite */
@@ -92,7 +141,9 @@ self.addEventListener("activate", (evenement) => {
   evenement.waitUntil(
     (async () => {
       const noms = await caches.keys();
+      // Seule la coquille de l'ancienne version part : le cache des /assets est gardé (voir CACHE_ASSETS).
       await Promise.all(noms.filter((n) => n.startsWith("campus-coquille-") && n !== CACHE_COQUILLE).map((n) => caches.delete(n)));
+      await limiter(CACHE_ASSETS, MAX_ASSETS);
       await self.clients.claim();
     })(),
   );
@@ -120,7 +171,7 @@ self.addEventListener("fetch", (evenement) => {
     return;
   }
   if (url.pathname.startsWith("/assets/")) {
-    evenement.respondWith(cacheDabord(requete, CACHE_COQUILLE));
+    evenement.respondWith(cacheDabord(requete, CACHE_ASSETS, MAX_ASSETS));
     return;
   }
   if (url.pathname.startsWith("/api/fichiers/")) {
@@ -156,13 +207,16 @@ async function navigation(requete) {
   }
 }
 
-async function cacheDabord(requete, nomCache) {
+async function cacheDabord(requete, nomCache, maximum) {
   const cache = await caches.open(nomCache);
   const trouve = await cache.match(requete, { ignoreVary: true });
   if (trouve) return trouve;
   try {
     const reponse = await fetch(requete);
-    if (reponse.ok && reponse.type === "basic") await cache.put(requete, reponse.clone());
+    if (reponse.ok && reponse.type === "basic") {
+      await cache.put(requete, reponse.clone());
+      if (maximum) void limiter(nomCache, maximum);
+    }
     return reponse;
   } catch {
     if (new URL(requete.url).pathname.endsWith(".js")) {

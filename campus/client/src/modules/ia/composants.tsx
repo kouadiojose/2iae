@@ -19,8 +19,6 @@ import {
   MessageCircle,
   RotateCcw,
   RefreshCw,
-  CheckCircle2,
-  XCircle,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,9 +27,13 @@ import { Badge, BarreProgression } from "@/components/ui/divers";
 import { Bouton } from "@/components/ui/bouton";
 import { toast } from "@/components/ui/toast";
 import type { EtatIa, MessageIaDto, QuestionRevision } from "@shared/schema/ext-ia";
+import { QuestionQcm } from "@/modules/revision/QuestionQcm";
 import { blocageDe } from "./api-ia";
 import { useDictee, useLecture, copier } from "./voix";
 import type { EchangeEnCours } from "./useConversationIa";
+
+// Une question corrigée (révision du jour, cours complet, « Me faire réviser ») : un seul composant.
+export { QuestionQcm };
 
 // ═══ Étiquettes et bandeaux ════════════════════════════════════════════════
 
@@ -477,6 +479,7 @@ export function FilConversation({
   );
 }
 
+
 // ═══ « Me faire réviser » : 5 questions interactives ═══════════════════════
 
 export function QuizRevision({
@@ -484,11 +487,22 @@ export function QuizRevision({
   onRecommencer,
   recommencerEnCours,
   desactiverRecommencer,
+  onReponse,
+  libelleRecommencer = "5 nouvelles questions",
+  mention = "Entraînement : pas de note, rien n'est enregistré.",
+  sousCorrection,
 }: {
   questions: QuestionRevision[];
   onRecommencer: () => void;
   recommencerEnCours?: boolean;
   desactiverRecommencer?: boolean;
+  /** Chaque réponse (le quiz du cours complet l'enregistre dans la révision de l'étudiant). */
+  onReponse?: (question: QuestionRevision, juste: boolean, choix: number) => void;
+  libelleRecommencer?: string;
+  /** Sous le résultat : ce que devient l'entraînement. */
+  mention?: string;
+  /** Sous la correction de chaque question (« Signaler une erreur » du cours complet). */
+  sousCorrection?: (question: QuestionRevision) => ReactNode;
 }) {
   const [index, setIndex] = useState(0);
   const [choix, setChoix] = useState<number | null>(null);
@@ -515,9 +529,9 @@ export function QuizRevision({
         <p className="max-w-sm text-[15px] leading-relaxed text-texte-doux">
           {bravo ? "Bravo, tu maîtrises cette leçon !" : score >= questions.length / 2 ? "Pas mal ! Relis les points où tu as hésité." : "Relis la leçon tranquillement, puis réessaie : c'est comme ça qu'on apprend."}
         </p>
-        <p className="font-mono text-xs text-texte-gris">Entraînement : pas de note, rien n'est enregistré.</p>
+        <p className="font-mono text-xs text-texte-gris">{mention}</p>
         <Bouton onClick={onRecommencer} chargement={recommencerEnCours} disabled={desactiverRecommencer} icone={<RotateCcw className="h-4 w-4" />} className="mt-2 min-h-12">
-          5 nouvelles questions
+          {libelleRecommencer}
         </Bouton>
       </div>
     );
@@ -536,59 +550,30 @@ export function QuizRevision({
         </div>
         <BarreProgression valeur={((index + (repondu ? 1 : 0)) / questions.length) * 100} />
       </div>
-      <p className="text-lg font-extrabold leading-snug tracking-[-0.01em]">{q.question}</p>
-      <div className="flex flex-col gap-2" role="radiogroup" aria-label="Réponses possibles">
-        {q.options.map((o, i) => {
-          const bonne = i === q.bonneReponse;
-          const choisie = i === choix;
-          return (
-            <button
-              key={i}
-              type="button"
-              role="radio"
-              aria-checked={choisie}
-              disabled={repondu}
-              onClick={() => {
-                setChoix(i);
-                if (bonne) setScore((s) => s + 1);
-              }}
-              className={cn(
-                "flex min-h-[52px] items-center gap-3 rounded-2xl border-[1.5px] px-4 py-3 text-left text-base font-semibold leading-snug transition-colors",
-                !repondu && "border-ligne bg-white hover:border-orange hover:bg-orange-pale",
-                repondu && bonne && "border-succes bg-succes-clair text-encre",
-                repondu && choisie && !bonne && "border-danger bg-danger-clair text-encre",
-                repondu && !bonne && !choisie && "border-ligne bg-white text-texte-gris",
-              )}
-            >
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-creme font-mono text-xs text-texte-doux">{String.fromCharCode(65 + i)}</span>
-              <span className="flex-1">{o}</span>
-              {repondu && bonne && <CheckCircle2 className="h-5 w-5 shrink-0 text-succes" aria-label="Bonne réponse" />}
-              {repondu && choisie && !bonne && <XCircle className="h-5 w-5 shrink-0 text-danger" aria-label="Mauvaise réponse" />}
-            </button>
-          );
-        })}
-      </div>
-      {repondu && (
-        <div className="flex flex-col gap-3 animate-monte">
-          <div className={cn("rounded-2xl p-4 text-[15px] leading-relaxed", choix === q.bonneReponse ? "bg-succes-clair text-encre" : "bg-creme text-texte-doux")}>
-            <p className="mb-1 font-extrabold text-encre">{choix === q.bonneReponse ? "Bonne réponse !" : `La bonne réponse était ${String.fromCharCode(65 + q.bonneReponse)}.`}</p>
-            {q.explication}
-          </div>
-          <Bouton
-            pleineLargeur
-            taille="lg"
-            onClick={() => {
-              if (index + 1 >= questions.length) setFini(true);
-              else {
-                setIndex(index + 1);
-                setChoix(null);
-              }
-            }}
-          >
-            {index + 1 >= questions.length ? "Voir mon résultat" : "Question suivante"}
-          </Bouton>
-        </div>
-      )}
+      <QuestionQcm
+        question={q.question}
+        options={q.options}
+        bonne={q.bonneReponse}
+        explication={q.explication}
+        choix={choix}
+        onChoisir={(i) => {
+          const juste = i === q.bonneReponse;
+          setChoix(i);
+          if (juste) setScore((s) => s + 1);
+          onReponse?.(q, juste, i);
+        }}
+        sousCorrection={sousCorrection?.(q)}
+        suite={{
+          libelle: index + 1 >= questions.length ? "Voir mon résultat" : "Question suivante",
+          onClick: () => {
+            if (index + 1 >= questions.length) setFini(true);
+            else {
+              setIndex(index + 1);
+              setChoix(null);
+            }
+          },
+        }}
+      />
     </div>
   );
 }

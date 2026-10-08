@@ -6,7 +6,8 @@
 // son heure (choisie, sinon habituelle, sinon 19 h ; jamais après 20 h 30),
 // seulement s'il n'a pas encore travaillé ce jour-là et qu'aucun direct de
 // ses cours n'est en cours. Le sujet est le premier qui s'applique : devoir dû
-// dans les 30 h, séance manquée (absent, jamais « inconnu ») avec cours
+// dans les 30 h (sauf s'il vient d'être annoncé ou rappelé), séance où il
+// n'a pas été compté présent (absent, jamais « inconnu ») avec cours
 // complet prêt, cartes dues, objectif du jour, objectif de la semaine, cours
 // complet récent pas encore ouvert. La décision elle-même est une fonction
 // pure (deciderRappel, shared/engagement/relances.ts) ; ici, les faits et l'écriture.
@@ -23,7 +24,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { planifier } from "../taches";
 import { notifier, pushDisponible, jourAbidjan, type NouvelleNotification } from "../notifications";
-import { sqlAttendus } from "../routes/admin";
+import { sqlAttendus, SQL_DUREE_REFERENCE } from "../routes/admin";
 import { tableExiste } from "./tables";
 import { sqlDevoirProposable } from "./proposables";
 import { sqlEtatPresence } from "./presence";
@@ -34,6 +35,7 @@ import {
   deciderRappel,
   heureEffective,
   mediane,
+  joursOuvresSansActe,
   CONSERVATION_RELANCES_JOURS,
   EMAILS_PAR_JOUR_DEFAUT,
   MOTIFS_DECROCHEUR,
@@ -44,6 +46,7 @@ import {
   type StatutRelance,
   type SujetRappel,
 } from "@shared/engagement/relances";
+import { SUIVI_MINUTES, SUIVI_PART } from "@shared/engagement/indicateurs";
 import { t, variantesDe, type CleRelances } from "@shared/textes/relances";
 import { formaterDate } from "@shared/textes";
 import { relancesEngagement } from "@shared/schema";
@@ -97,22 +100,33 @@ export async function lireReglage(): Promise<ReglageGlobal> {
 export const oublierReglage = () => void (reglageEnMemoire = null);
 
 // ── Actes d'apprentissage ──────────────────────────────────────────────────
-// Ce qui compte : copie rendue, QCM, présence en salle (émargé ou pointé) ou
-// direct suivi en ligne, leçon terminée, replay ou cours complet ouvert, et,
+// Ce qui compte, avec les mêmes seuils que le tableau Engagement (C8) et la
+// Coupe (C5) : copie rendue par l'étudiant (pas une copie papier déposée par
+// la vie scolaire), QCM avec au moins une réponse (l'ouvrir ne suffit pas),
+// présence en salle (émargé ou pointé présent) ou direct suivi en ligne au
+// moins 30 minutes (ou la moitié d'une séance plus courte : une minute de
+// direct ne suffit pas), leçon terminée, replay ou cours complet ouvert, et,
 // quand leurs tables existent, réponse de révision (C1), cours complet suivi
 // (C1), objectif du jour validé (C2). Une simple ouverture du campus, un
 // message ou une question à l'assistant ne comptent pas.
 
-type SourceActe = { nom: string; table?: string; uid: string; t: string; de: string; condition?: string };
+type SourceActe = { nom: string; table?: string; uid: string; t: string; de: string; condition?: string; conditionSql?: SQL };
 const SOURCES_DE_BASE: SourceActe[] = [
-  { nom: "rendus", uid: "etudiant_id", t: "rendu_le", de: "campus.rendus", condition: "statut IN ('rendu', 'corrige') AND rendu_le IS NOT NULL" },
-  { nom: "tentatives_quiz", uid: "etudiant_id", t: "COALESCE(fin_le, debut_le)", de: "campus.tentatives_quiz" },
+  { nom: "rendus", uid: "etudiant_id", t: "rendu_le", de: "campus.rendus", condition: "statut IN ('rendu', 'corrige') AND rendu_le IS NOT NULL AND depose_par_id IS NULL" },
+  {
+    nom: "tentatives_quiz",
+    uid: "etudiant_id",
+    t: "COALESCE(fin_le, debut_le)",
+    de: "campus.tentatives_quiz",
+    condition: `EXISTS (SELECT 1 FROM jsonb_each(reponses) e WHERE e.value NOT IN ('[]'::jsonb, 'null'::jsonb, '""'::jsonb, '{}'::jsonb))`,
+  },
   {
     nom: "presences",
-    uid: "utilisateur_id",
-    t: "CASE WHEN mode = 'salle' THEN COALESCE(arrivee_salle_le, arrivee_le) ELSE derniere_activite END",
-    de: "campus.presences",
-    condition: "(mode = 'salle' OR emarge_qr OR minutes > 0) AND NULLIF(justification, '') IS NULL",
+    uid: "pr.utilisateur_id",
+    t: "CASE WHEN pr.mode = 'salle' THEN COALESCE(pr.arrivee_salle_le, pr.arrivee_le) ELSE pr.derniere_activite END",
+    de: "campus.presences pr JOIN campus.seances s ON s.id = pr.seance_id",
+    condition: "NULLIF(pr.justification, '') IS NULL",
+    conditionSql: sql`(pr.mode = 'salle' OR pr.minutes >= LEAST(${SUIVI_MINUTES}::int, GREATEST(1, ceil((${SQL_DUREE_REFERENCE})::float8 * ${SUIVI_PART}::float8))::int))`,
   },
   { nom: "progressions", uid: "utilisateur_id", t: "terminee_le", de: "campus.progressions" },
   { nom: "vues_replay", uid: "utilisateur_id", t: "derniere_vue", de: "campus.vues_replay" },
@@ -157,6 +171,7 @@ export async function sqlActes(o: { depuis: SQL; uids?: number[]; uid?: SQL; jus
     const filtre: SQL[] = [sql`${sql.raw(`(${s.t})`)} > ${o.depuis}`];
     if (o.jusqua) filtre.push(sql`${sql.raw(`(${s.t})`)} <= ${o.jusqua}`);
     if (s.condition) filtre.push(sql.raw(`(${s.condition})`));
+    if (s.conditionSql) filtre.push(s.conditionSql);
     if (o.uids) filtre.push(sql`${sql.raw(s.uid)} = ANY(${entiers(o.uids)})`);
     if (o.uid) filtre.push(sql`${sql.raw(s.uid)} = ${o.uid}`);
     return sql`SELECT ${sql.raw(s.uid)} AS uid, ${sql.raw(s.t)} AS t FROM ${sql.raw(s.de)} WHERE ${sql.join(filtre, sql` AND `)}`;
@@ -215,7 +230,11 @@ export async function heuresHabituelles(etudiants: { id: number; fuseau: string 
 }
 export const oublierHabitudes = () => habitudes.clear();
 
-/** Jours entiers depuis le dernier acte d'apprentissage, ou depuis la création du compte s'il est plus récent. */
+/**
+ * Jours entiers depuis le dernier acte d'apprentissage, ou depuis la création du compte s'il est
+ * plus récent : le nombre dit dans les textes. Les seuils des relances comptent, eux, les jours
+ * ouvrés (joursOuvresSansActe, shared/engagement/relances.ts).
+ */
 export function joursSansActe(dernier: Date | null | undefined, creeLe: Date, maintenant: number): number {
   const reference = Math.max(dernier?.getTime() ?? 0, creeLe.getTime());
   return Math.floor((maintenant - reference) / JOUR_MS);
@@ -230,13 +249,36 @@ export async function abonnes(uids: number[]): Promise<Set<number>> {
   return new Set(r.rows.map((l) => l.uid));
 }
 
-/** Rappels déjà partis aujourd'hui (compteurs_push, jour d'Abidjan comme notifications.ts). */
-export async function rappelsDuJour(uids: number[], maintenant = Date.now()): Promise<Map<number, number>> {
-  if (!uids.length) return new Map();
-  const r = await db.execute<{ uid: number; n: number }>(
-    sql`SELECT utilisateur_id AS uid, nombre AS n FROM campus.compteurs_push WHERE jour = ${jourAbidjan(new Date(maintenant))} AND utilisateur_id = ANY(${entiers(uids)})`,
-  );
+/** Rappels déjà partis aujourd'hui (compteurs_push), au jour local de chacun, comme notifications.ts les compte. */
+export async function rappelsDuJour(etudiants: { id: number; fuseau: string | null }[], maintenant = Date.now()): Promise<Map<number, number>> {
+  if (!etudiants.length) return new Map();
+  const jours = etudiants.map((e) => jourLocal(maintenant, e.fuseau));
+  const r = await db.execute<{ uid: number; n: number }>(sql`
+    SELECT c.utilisateur_id AS uid, c.nombre AS n FROM campus.compteurs_push c
+    JOIN unnest(${entiers(etudiants.map((e) => e.id))}, ${textesSimples(jours)}) AS x(uid, jour) ON x.uid = c.utilisateur_id AND c.jour::text = x.jour`);
   return new Map(r.rows.map((l) => [l.uid, l.n]));
+}
+
+/**
+ * Pause automatique toujours en cours (le dernier rappel d'entraînement parti était le message
+ * « on arrête de t'en envoyer », sans acte d'apprentissage ni réglage touché depuis). « dernierActe »
+ * vient de derniersActes, « reglageMajLe » de reglages_engagement.maj_le.
+ */
+export async function pausesAutomatiques(etudiants: { id: number; dernierActe: Date | null; reglageMajLe: Date | null }[]): Promise<Set<number>> {
+  const enPause = new Set<number>();
+  if (!etudiants.length) return enPause;
+  const r = await db.execute<{ uid: number; statut: StatutRelance; cree_le: string }>(sql`
+    SELECT DISTINCT ON (utilisateur_id) utilisateur_id AS uid, statut, cree_le FROM campus.relances_engagement
+    WHERE utilisateur_id = ANY(${entiers(etudiants.map((e) => e.id))}) AND motif = 'rappel_du_jour' AND statut IN ('envoye', 'pause_auto')
+    ORDER BY utilisateur_id, cree_le DESC`);
+  const parUid = new Map(r.rows.map((l) => [l.uid, l]));
+  for (const e of etudiants) {
+    const l = parUid.get(e.id);
+    if (l?.statut !== "pause_auto") continue;
+    const le = new Date(l.cree_le);
+    if (!(e.dernierActe && e.dernierActe > le) && !(e.reglageMajLe && e.reglageMajLe > le)) enPause.add(e.id);
+  }
+  return enPause;
 }
 
 /** Directs de ses cours en cours, ou qui commencent dans l'heure : pas de rappel d'entraînement à ce moment-là. */
@@ -335,8 +377,15 @@ async function facultatif<T>(nom: string, f: () => Promise<T[]>): Promise<T[]> {
   }
 }
 
-/** Devoirs proposables, ouverts, dus dans les « heures » prochaines heures et pas encore faits, le plus proche d'abord. */
-export async function devoirsDus(uids: number[], heures: number, maintenant: number) {
+/** Un devoir annoncé ou rappelé par les rappels d'échéance (C3) depuis moins de 20 h n'est pas repris par le rappel du jour. */
+const HEURES_SANS_REDIRE_DEVOIR = 20;
+
+/**
+ * Devoirs proposables, ouverts, dus dans les « heures » prochaines heures et pas encore faits, le
+ * plus proche d'abord. « sansRappelRecent » (rappel du jour) écarte ceux que C3 vient d'annoncer
+ * ou de rappeler (« Nouveau devoir », veille, jour J) : un même devoir n'est pas redit le même jour.
+ */
+export async function devoirsDus(uids: number[], heures: number, maintenant: number, { sansRappelRecent = false } = {}) {
   if (!uids.length) return new Map<number, { id: number; titre: string; type: string; limite: Date; dureeMinutes: number | null; cours: string; questions: number }>();
   const r = await db.execute<{ uid: number; id: number; titre: string; type: string; date_limite: string; duree_minutes: number | null; cours: string; questions: number }>(sql`
     SELECT DISTINCT ON (u.id) u.id AS uid, d.id, d.titre, d.type, d.date_limite, d.duree_minutes, c.titre AS cours,
@@ -349,6 +398,12 @@ export async function devoirsDus(uids: number[], heures: number, maintenant: num
     WHERE u.id = ANY(${entiers(uids)}) AND ${sqlCoursDe(sql`d.cours_id`)} AND ${sqlDevoirProposable("d")}
       AND NOT EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.etudiant_id = u.id AND r.statut IN ('rendu', 'corrige'))
       AND NOT EXISTS (SELECT 1 FROM campus.tentatives_quiz tq WHERE tq.devoir_id = d.id AND tq.etudiant_id = u.id AND tq.fin_le IS NOT NULL)
+      ${
+        sansRappelRecent
+          ? sql`AND NOT EXISTS (SELECT 1 FROM campus.rappels_devoirs rd WHERE rd.devoir_id = d.id
+              AND rd.envoye_le > ${iso(maintenant - HEURES_SANS_REDIRE_DEVOIR * 3_600_000)}::timestamptz AND rd.envoye_le <= ${iso(maintenant)}::timestamptz)`
+          : sql``
+      }
     ORDER BY u.id, d.date_limite`);
   return new Map(
     r.rows.map((l) => [l.uid, { id: l.id, titre: l.titre, type: l.type, limite: new Date(l.date_limite), dureeMinutes: l.duree_minutes, cours: l.cours, questions: l.questions }]),
@@ -410,8 +465,9 @@ async function propositions(etudiants: EtudiantRappel[], maintenant: number): Pr
   const repetes = await liensRepetes(etudiants.map((e) => e.id));
   const dejaVu = (uid: number, lien: string) => repetes.get(uid)?.has(lien) ?? false;
 
-  // 1. Devoir proposable dû dans les 30 h et pas fait (une échéance ne connaît pas la règle de répétition).
-  for (const [uid, d] of await devoirsDus(restants().map((e) => e.id), 30, maintenant)) {
+  // 1. Devoir proposable dû dans les 30 h et pas fait (une échéance ne connaît pas la règle de répétition),
+  //    sauf s'il vient d'être annoncé ou rappelé par C3 : on passe alors au sujet suivant.
+  for (const [uid, d] of await devoirsDus(restants().map((e) => e.id), 30, maintenant, { sansRappelRecent: true })) {
     const quiz = d.type === "quiz";
     choix.set(uid, {
       sujet: "devoir",
@@ -538,15 +594,23 @@ export async function variantesRecentes(uids: number[], motifs: string[]): Promi
  * Pour chaque étudiant : rappels d'entraînement envoyés d'affilée sans être
  * ouverts ni suivis d'un acte le jour même, et pause automatique en cours
  * (dernier message honnête envoyé, pas de retour depuis, rappels pas réactivés).
+ * Un rappel que le téléphone n'a jamais reçu (plafond, échec, appareil oublié,
+ * plus d'abonnement : envois_push de C3) n'est pas compté comme ignoré.
+ * Les actes sont lus en une fois pour tout le lot (pas de sous-requête par ligne).
  */
-async function lassitude(etudiants: (EtudiantRappel & { reglageMajLe: Date | null })[]) {
+export async function lassitude(etudiants: (EtudiantRappel & { reglageMajLe: Date | null })[]) {
   const m = new Map<number, { ignores: number; enPause: boolean }>();
   if (!etudiants.length) return m;
   const ids = etudiants.map((e) => e.id);
-  const actesApres = await sqlActes({ depuis: sql`r.cree_le`, uid: sql`r.utilisateur_id` });
-  const r = await db.execute<{ uid: number; jour: string; statut: StatutRelance; cree_le: string; lu_le: string | null; acte: string | null }>(sql`
-    SELECT r.utilisateur_id AS uid, r.jour::text AS jour, r.statut, r.cree_le, n.lu_le,
-      (SELECT min(a.t) FROM (${actesApres}) a) AS acte
+  const envois = await tableExiste("envois_push");
+  const r = await db.execute<{ id: number; uid: number; jour: string; statut: StatutRelance; cree_le: string; lu_le: string | null; non_recu: boolean }>(sql`
+    SELECT r.id, r.utilisateur_id AS uid, r.jour::text AS jour, r.statut, r.cree_le, n.lu_le,
+      ${
+        envois
+          ? sql`(r.notification_id IS NOT NULL AND EXISTS (SELECT 1 FROM campus.envois_push ep WHERE ep.notification_id = r.notification_id)
+              AND NOT EXISTS (SELECT 1 FROM campus.envois_push ep WHERE ep.notification_id = r.notification_id AND ep.statut IN ('envoye', 'regroupe', 'differe')))`
+          : sql`false`
+      } AS non_recu
     FROM (
       SELECT x.*, row_number() OVER (PARTITION BY x.utilisateur_id ORDER BY x.cree_le DESC) AS rang
       FROM campus.relances_engagement x
@@ -555,6 +619,19 @@ async function lassitude(etudiants: (EtudiantRappel & { reglageMajLe: Date | nul
     LEFT JOIN campus.notifications n ON n.id = r.notification_id
     WHERE r.rang <= 6
     ORDER BY r.utilisateur_id, r.cree_le DESC`);
+  // Premier acte après chaque ligne, en une requête : les actes du lot depuis la plus ancienne ligne.
+  const acteApres = new Map<number, string>();
+  if (r.rows.length) {
+    const depuis = r.rows.reduce((min, l) => (new Date(l.cree_le) < min ? new Date(l.cree_le) : min), new Date(r.rows[0].cree_le));
+    const actes = await sqlActes({ depuis: sql`${iso(depuis.getTime() - 1000)}::timestamptz`, uids: [...new Set(r.rows.map((l) => l.uid))] });
+    const a = await db.execute<{ id: number; t: string }>(sql`
+      WITH actes AS MATERIALIZED (${actes})
+      SELECT x.id, min(a.t) AS t
+      FROM campus.relances_engagement x JOIN actes a ON a.uid = x.utilisateur_id AND a.t > x.cree_le
+      WHERE x.id = ANY(${entiers(r.rows.map((l) => l.id))})
+      GROUP BY x.id`);
+    for (const l of a.rows) acteApres.set(l.id, l.t);
+  }
   const parUid = new Map<number, typeof r.rows>();
   for (const l of r.rows) parUid.set(l.uid, [...(parUid.get(l.uid) ?? []), l]);
   for (const e of etudiants) {
@@ -562,14 +639,16 @@ async function lassitude(etudiants: (EtudiantRappel & { reglageMajLe: Date | nul
     let ignores = 0;
     let enPause = false;
     for (const [i, l] of lignes.entries()) {
+      const acte = acteApres.get(l.id) ?? null;
       if (l.statut === "pause_auto") {
-        const repris = (l.acte && true) || (e.reglageMajLe && e.reglageMajLe > new Date(l.cree_le));
+        const repris = Boolean(acte) || Boolean(e.reglageMajLe && e.reglageMajLe > new Date(l.cree_le));
         enPause = i === 0 && !repris;
         break;
       }
       const ouvert = Boolean(l.lu_le);
-      const actif = l.acte ? jourLocal(new Date(l.acte), e.fuseau) === l.jour : false;
+      const actif = acte ? jourLocal(new Date(acte), e.fuseau) === l.jour : false;
       if (ouvert || actif) break;
+      if (l.non_recu) continue;
       ignores++;
     }
     m.set(e.id, { ignores, enPause });
@@ -624,12 +703,13 @@ export async function passerRappelsDuJour(maintenant = Date.now()): Promise<Bila
   if (!r.rows.length) return bilan;
 
   // Lignes déjà écrites hier ou aujourd'hui (tous fuseaux) : rappel du jour et relances des décrocheurs.
-  const ecrites = await db.execute<{ uid: number; jour: string; motif: string }>(sql`
-    SELECT utilisateur_id AS uid, jour::text AS jour, motif FROM campus.relances_engagement
+  const ecrites = await db.execute<{ uid: number; jour: string; motif: string; statut: StatutRelance }>(sql`
+    SELECT utilisateur_id AS uid, jour::text AS jour, motif, statut FROM campus.relances_engagement
     WHERE jour >= ${ajouterJours(jourAbidjan(new Date(maintenant)), -1)}::date
       AND motif IN ('rappel_du_jour', ${sql.join(MOTIFS_DECROCHEUR.map((m) => sql`${m}`), sql`, `)})`);
   const rappelFait = new Set(ecrites.rows.filter((l) => l.motif === "rappel_du_jour").map((l) => `${l.uid}|${l.jour}`));
-  const relanceFaite = new Set(ecrites.rows.filter((l) => l.motif !== "rappel_du_jour").map((l) => `${l.uid}|${l.jour}`));
+  // Une relance seulement simulée (relances en essai) n'a rien envoyé : elle ne prend pas la place du vrai rappel du jour.
+  const relanceFaite = new Set(ecrites.rows.filter((l) => l.motif !== "rappel_du_jour" && l.statut !== "simulation").map((l) => `${l.uid}|${l.jour}`));
 
   const etudiants = r.rows.map((l) => ({
     id: l.id,
@@ -686,7 +766,7 @@ export async function passerRappelsDuJour(maintenant = Date.now()): Promise<Bila
     livesProches(ids, maintenant),
     lassitude(lot),
     abonnes(ids),
-    rappelsDuJour(ids, maintenant),
+    rappelsDuJour(lot, maintenant),
     propositions(lot, maintenant),
     variantesRecentes(ids, ["rappel_du_jour"]),
     // Relances actives : un décrocheur reçoit leurs messages, pas le rappel du jour.
@@ -700,7 +780,7 @@ export async function passerRappelsDuJour(maintenant = Date.now()): Promise<Bila
     const decision = deciderRappel({
       ...base(e),
       acteAujourdhui: Boolean(acte && jourLocal(acte, e.fuseau) === e.jour),
-      enDecrochage: anciens ? joursSansActe(anciens.get(e.id), e.creeLe, maintenant) >= DECROCHAGE.joursRappel : false,
+      enDecrochage: anciens ? joursOuvresSansActe(anciens.get(e.id), e.creeLe, maintenant, e.fuseau) >= DECROCHAGE.joursRappel : false,
       liveProche: lives.has(e.id),
       enPauseAuto: p.enPause,
       sujet: sujet?.sujet ?? null,
@@ -736,17 +816,31 @@ export async function passerRappelsDuJour(maintenant = Date.now()): Promise<Bila
 
 // ── Retours sous 48 h et purge ─────────────────────────────────────────────
 
-/** Remplit revenu_le : premier acte d'apprentissage dans les 48 h qui suivent chaque ligne (rappel, relance, e-mail, témoin). */
-export async function noterRetours(): Promise<number> {
-  const actes = await sqlActes({ depuis: sql`r.cree_le`, uid: sql`r.utilisateur_id`, jusqua: sql`r.cree_le + interval '48 hours'` });
+/**
+ * Remplit revenu_le : premier acte d'apprentissage dans les 48 h qui suivent chaque ligne (rappel,
+ * relance, e-mail, témoin ; pas les reports « quota », réécrits chaque jour). Les actes du lot sont
+ * lus en une seule fois puis joints aux lignes : aucune sous-requête par ligne, le coût suit le
+ * nombre d'actes récents et non le produit lignes × historique des présences.
+ */
+export async function noterRetours(maintenant = Date.now()): Promise<number> {
+  const enAttente = await db.execute<{ id: number; uid: number; cree_le: string }>(sql`
+    SELECT id, utilisateur_id AS uid, cree_le FROM campus.relances_engagement
+    WHERE revenu_le IS NULL AND statut <> 'quota' AND cree_le > ${iso(maintenant - 50 * 3_600_000)}::timestamptz AND cree_le <= ${iso(maintenant)}::timestamptz`);
+  if (!enAttente.rows.length) return 0;
+  const depuis = enAttente.rows.reduce((min, l) => Math.min(min, new Date(l.cree_le).getTime()), maintenant);
+  const actes = await sqlActes({ depuis: sql`${iso(depuis - 1000)}::timestamptz`, uids: [...new Set(enAttente.rows.map((l) => l.uid))] });
   const r = await db.execute(sql`
-    UPDATE campus.relances_engagement x SET revenu_le = y.t
-    FROM (
-      SELECT r.id, (SELECT min(a.t) FROM (${actes}) a) AS t
-      FROM campus.relances_engagement r
-      WHERE r.revenu_le IS NULL AND r.cree_le > now() - interval '50 hours'
-    ) y
-    WHERE x.id = y.id AND y.t IS NOT NULL`);
+    WITH actes AS MATERIALIZED (${actes}),
+    premiers AS (
+      SELECT x.id, min(a.t) AS t
+      FROM campus.relances_engagement x
+      JOIN actes a ON a.uid = x.utilisateur_id AND a.t > x.cree_le AND a.t <= x.cree_le + interval '48 hours'
+      WHERE x.id = ANY(${entiers(enAttente.rows.map((l) => l.id))})
+      GROUP BY x.id
+    )
+    UPDATE campus.relances_engagement x SET revenu_le = p.t
+    FROM premiers p
+    WHERE x.id = p.id AND x.revenu_le IS NULL`);
   return r.rowCount ?? 0;
 }
 

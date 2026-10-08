@@ -56,15 +56,16 @@ const fr = {
   "rappel.devoir.depot.10.titre": "On boucle « {devoir} » ?",
   "rappel.devoir.depot.10.corps": "{cours} : remise {quand}. Quelques minutes et c'est fait.",
 
-  // ── Rattrapage : séance où il était absent (jamais « inconnu »), cours complet prêt ──
+  // ── Rattrapage : séance où il n'a pas été compté présent (jamais « inconnu »), cours complet prêt ──
+  // On dit ce qu'on sait (sa présence n'a pas été relevée), jamais « tu as manqué » : il a pu être en salle sans scanner.
   // {cours} · {jour} « mercredi »
-  "rappel.rattrapage.1.titre": "Tu as manqué le cours de {jour}",
-  "rappel.rattrapage.1.corps": "Rattrape {cours} en 15 minutes, sans vidéo : le cours complet est prêt.",
+  "rappel.rattrapage.1.titre": "Ta présence n'a pas été relevée {jour}",
+  "rappel.rattrapage.1.corps": "Le cours complet de {cours} est prêt : 15 minutes, sans vidéo. Tu étais en salle ? Dis-le à la vie scolaire.",
   "rappel.rattrapage.2.titre": "Le cours de {cours} de {jour}, en 15 minutes",
   "rappel.rattrapage.2.corps": "L'essentiel, les fiches et un petit quiz, à lire tranquillement.",
   "rappel.rattrapage.3.titre": "Rattrape {cours} sans regarder la vidéo",
   "rappel.rattrapage.3.corps": "Le cours de {jour} est résumé pour toi. Lis-le à ton rythme.",
-  "rappel.rattrapage.4.titre": "Pas pu venir {jour} ?",
+  "rappel.rattrapage.4.titre": "Le cours de {jour} t'attend",
   "rappel.rattrapage.4.corps": "Le cours complet de {cours} t'attend : 15 minutes suffisent pour être à jour.",
   "rappel.rattrapage.5.titre": "{cours} : le cours de {jour} est prêt",
   "rappel.rattrapage.5.corps": "Une lecture légère, faite pour le téléphone. Tu seras à jour pour la suite.",
@@ -176,12 +177,14 @@ const fr = {
   "rappel.lassitude.3.corps": "Nos rappels d'entraînement s'arrêtent. Tu peux choisir une autre heure dans « Mes rappels ».",
 
   // ── Décrocheurs, palier 1 : un rappel doux et utile ──
+  // On dit seulement ce qu'on mesure (rien sur le campus numérique), jamais « on ne t'a pas vu » :
+  // il suit peut-être ses cours en salle sans être émargé.
   // {n} jours sans activité · {action} prochaine action concrète (phrase complète)
-  "relance.inactif.1.titre": "On garde ta place au campus",
+  "relance.inactif.1.titre": "Tes révisions t'attendent sur ton téléphone",
   "relance.inactif.1.corps": "{action}",
-  "relance.inactif.2.titre": "Tout va bien ? On ne t'a pas vu depuis {n} jours",
+  "relance.inactif.2.titre": "Rien sur ton campus numérique depuis {n} jours : on reprend ?",
   "relance.inactif.2.corps": "{action} Reprends en douceur, à ton rythme.",
-  "relance.inactif.3.titre": "Ton campus t'attend",
+  "relance.inactif.3.titre": "Ton campus numérique t'attend",
   "relance.inactif.3.corps": "Pas besoin de tout rattraper d'un coup. {action}",
   "relance.inactif.4.titre": "Un petit pas pour reprendre ?",
   "relance.inactif.4.corps": "{action} Quelques minutes suffisent.",
@@ -203,10 +206,10 @@ const fr = {
   "relance.lives_manques.1.corps": "Rattrape-les sur ton téléphone, à ton rythme. Si tu étais en salle, pense à scanner le QR de l'écran.",
   "relance.lives_manques.2.titre": "On t'a gardé les cours de {cours}",
   "relance.lives_manques.2.corps": "Tout est sur le campus : l'essentiel à lire et le replay. La prochaine fois en salle, scanne le QR : ta présence sera comptée.",
-  "relance.lives_manques.3.titre": "Pas pu suivre {cours} ces derniers jours ?",
-  "relance.lives_manques.3.corps": "Tout est résumé pour toi. Si tu étais bien là, dis-le à la vie scolaire.",
+  "relance.lives_manques.3.titre": "{cours} : les deux derniers cours sont résumés pour toi",
+  "relance.lives_manques.3.corps": "Ta présence n'y a pas été relevée. Si tu étais bien là, dis-le à la vie scolaire.",
   "relance.lives_manques.4.titre": "Remets-toi à jour en {cours}",
-  "relance.lives_manques.4.corps": "Les cours manqués t'attendent sur le campus. Si tu étais en salle, pense à émarger la prochaine fois.",
+  "relance.lives_manques.4.corps": "Les deux derniers cours t'attendent sur le campus. Si tu étais en salle, pense à émarger la prochaine fois.",
 
   // Prochaine action concrète, glissée dans les relances. Phrases complètes.
   "action.devoir": "Ton devoir « {devoir} » ({cours}) est à rendre {quand}.",
@@ -217,8 +220,8 @@ const fr = {
   // ── Décrocheurs, palier 2 : l'e-mail ──
   "email.relance.etiquette": "Campus numérique · On pense à toi",
   "email.relance.titre": "Bonjour {prenom},",
-  "email.relance.inactif.sujet": "{prenom}, ton campus t'attend",
-  "email.relance.inactif.p1": "On ne t'a pas vu sur le campus numérique depuis {n} jours. Pas d'inquiétude : tout est encore là, et rien n'est perdu.",
+  "email.relance.inactif.sujet": "{prenom}, ton campus numérique t'attend",
+  "email.relance.inactif.p1": "Aucune activité sur ton campus numérique depuis {n} jours (révision, QCM, devoir, cours complet). Pas d'inquiétude : tout est encore là, et rien n'est perdu.",
   "email.relance.inactif.p2": "Pour reprendre en douceur, commence par ceci. {action}",
   "email.relance.devoir_non_rendu.sujet": "« {devoir} » : tu peux encore le rendre",
   "email.relance.devoir_non_rendu.p1": "Ton devoir **« {devoir} »** ({cours}) n'a pas encore été rendu, et la remise est encore ouverte.",
@@ -260,8 +263,12 @@ const fr = {
   "email.semaine.section.cours_complets": "Cours complets à lire",
   "email.semaine.ligne.cours_complet": "{cours} : {titre}",
   "email.semaine.section.coupe": "Ta classe et ton campus",
-  "email.semaine.ligne.classe": "Ta classe : {rang} sur {total}, {taux} % de participation",
-  "email.semaine.ligne.campus": "Campus {campus} : {rang} sur {total}, {taux} % de participation",
+  // Aucun rang dans l'e-mail (décision D5 : jamais « dernier ») : la participation, et « en progrès » si elle l'est.
+  "email.semaine.ligne.classe": "Ta classe : {taux} % de participation",
+  "email.semaine.ligne.classe.progres": "Ta classe : {taux} % de participation, en progrès dans la Coupe",
+  "email.semaine.ligne.campus": "Campus {campus} : {taux} % de participation",
+  "email.semaine.ligne.campus.progres": "Campus {campus} : {taux} % de participation, en progrès dans la Coupe",
+  "email.semaine.coupe.provisoire": "Chiffres provisoires : la Coupe de la semaine passée est arrêtée mercredi.",
   "email.semaine.rien": "Rien de prévu pour l'instant : profites-en pour relire un cours complet.",
   "email.semaine.bouton": "Ouvrir mon campus",
   "email.semaine.apres": "Tes rappels arrivent sur ton téléphone ; cet e-mail, une fois par semaine, le lundi matin.",
@@ -291,7 +298,7 @@ const fr = {
   "page.pause_auto": "Tes rappels d'entraînement sont en pause : tu ne les ouvrais plus. Ils reprennent dès que tu travailles sur le campus, ou tout de suite si tu touches « Reprendre ».",
   "page.pause_auto.reprendre": "Reprendre",
   "page.emails.titre": "E-mails",
-  "page.emails.description": "« Ta semaine au campus », le lundi matin, et un mot si l'on ne te voit plus.",
+  "page.emails.description": "« Ta semaine au campus », le lundi matin, et un mot si tu ne fais plus rien sur le campus numérique.",
   "page.emails.sans_adresse": "Ajoute ton adresse e-mail dans ton profil pour recevoir « Ta semaine au campus ».",
   "page.emails.ajouter": "Ajouter mon e-mail",
   "page.telephone.non": "Ce téléphone ne reçoit pas encore les rappels.",
@@ -303,6 +310,10 @@ const fr = {
   "page.profil.ouvrir": "Régler",
 
   // ── Désabonnement (lien de l'e-mail, sans connexion) ──
+  // Le lien de l'e-mail mène d'abord à « confirmer » : un analyseur de liens qui l'ouvre ne désabonne personne.
+  "desabonnement.titre.confirmer": "Ne plus recevoir nos e-mails ?",
+  "desabonnement.texte.confirmer": "Tu ne recevrais plus « Ta semaine au campus » ni nos relances par e-mail. Les e-mails importants (code secret, inscription) continuent.",
+  "desabonnement.confirmer": "Ne plus recevoir ces e-mails",
   "desabonnement.titre.fait": "C'est fait",
   "desabonnement.texte.fait": "Tu ne recevras plus les e-mails « Ta semaine au campus » ni nos relances par e-mail. Les e-mails importants (code secret, inscription) continuent.",
   "desabonnement.titre.reabonne": "C'est noté",
@@ -319,7 +330,7 @@ const fr = {
   "pilotage.relances": "Relances des décrocheurs",
   "pilotage.emails": "E-mails",
   "pilotage.plafond": "E-mails par jour au plus",
-  "pilotage.plafond.aide": "Le compte d'envoi est partagé avec www.2iae.com : ce qui dépasse part le lendemain.",
+  "pilotage.plafond.aide": "Le compte d'envoi est partagé avec www.2iae.com : ce qui dépasse part le lendemain. Un quart est gardé aux e-mails des décrocheurs.",
   "pilotage.mode.essai": "En essai",
   "pilotage.mode.actif": "En marche",
   "pilotage.mode.pause": "En pause",
@@ -340,6 +351,8 @@ const fr = {
   "pilotage.stat.appeler": "À appeler",
   "pilotage.stat.emails": "E-mails aujourd'hui",
   "pilotage.stat.semaine": "E-mails du lundi · 7 j",
+  "pilotage.semaine_sans_email": "{n} étudiants n'ont pas encore reçu « Ta semaine » cette semaine : le plafond d'e-mails est atteint. Augmentez-le si votre forfait d'envoi le permet.",
+  "pilotage.semaine_sans_email.un": "1 étudiant n'a pas encore reçu « Ta semaine » cette semaine : le plafond d'e-mails est atteint. Augmentez-le si votre forfait d'envoi le permet.",
   "pilotage.maj": "Réglé le {date} par {qui}.",
   "pilotage.filtre": "À appeler",
   "pilotage.a_appeler.vide.titre": "Personne à appeler pour l'instant.",
@@ -348,6 +361,8 @@ const fr = {
   "pilotage.a_appeler.texte": "Relances automatiques restées sans effet : {liste}.",
   "pilotage.a_appeler.action": "Appeler l'étudiant pour comprendre ce qui bloque (réseau, téléphone, code secret ?)",
   "pilotage.a_appeler.relance": "{canal} le {jour}",
+  // Message WhatsApp proposé à la vie scolaire (au tutoiement : il s'adresse à l'étudiant). {entree} « Bonjour Awa, … »
+  "pilotage.a_appeler.whatsapp": "{entree} Tu n'as rien fait sur le campus numérique depuis quelques jours (révision, QCM, devoir). Tout va bien ? Si quelque chose t'empêche de suivre (réseau, téléphone, code secret), dis-le-nous : on trouvera une solution.",
 
   // État d'un étudiant dans « Qui décroche ? »
   "etat.relance": "Relancé le {jour} ({canal})",
@@ -356,6 +371,8 @@ const fr = {
   "etat.revenu.depuis": "revenu depuis ✓",
   "etat.attente": "pas encore revenu",
   "etat.a_appeler": "{n} relances sans effet : à appeler",
+  "etat.a_appeler.un": "1 relance sans effet : à appeler",
+  "etat.a_appeler.aucune": "Aucune relance n'a pu partir : à appeler",
   "etat.a_appeler.essai": "Serait à appeler (essai : rien n'est parti)",
   "etat.historique": "Historique des relances",
   "etat.historique.masquer": "Masquer l'historique",
@@ -364,9 +381,9 @@ const fr = {
   "canal.email": "e-mail",
   "canal.vie_scolaire": "vie scolaire",
   "motif.rappel_du_jour": "Rappel d'entraînement",
-  "motif.inactif": "Plus vu",
+  "motif.inactif": "Sans activité en ligne",
   "motif.devoir_non_rendu": "Devoir non rendu",
-  "motif.lives_manques": "Directs manqués",
+  "motif.lives_manques": "Présence non relevée à 2 directs",
   "motif.semaine": "E-mail de la semaine",
   "statut.simulation": "essai",
   "statut.envoye": "envoyé",

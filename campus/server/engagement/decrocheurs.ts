@@ -5,9 +5,14 @@
 // l'absence d'ACTES D'APPRENTISSAGE (copie, QCM, émargement ou direct suivi,
 // leçon, replay ou cours complet, révision, objectif du jour), jamais par des
 // absences « inconnues » aux directs. Est donc relancé l'étudiant activé qui
-// n'a fait aucun acte depuis 3 jours, alors que ses cours vivent (une séance
-// tenue depuis 14 jours ou un devoir autour de cette semaine) : pas de
-// relance pendant les vacances. Le motif choisit seulement la prochaine
+// n'a fait aucun acte depuis 3 jours ouvrés (le samedi et le dimanche ne
+// comptent pas : un week-end ne fait pas un décrocheur), alors que ses cours
+// vivent (une séance tenue depuis 14 jours ou un devoir autour de cette
+// semaine) : pas de relance pendant les vacances. Pendant sa « Pause de 7
+// jours », rien ; s'il a coupé ses rappels d'entraînement ou reçu le message
+// « on arrête de t'en envoyer », jamais de rappel sur le téléphone (l'e-mail
+// reste possible s'il l'accepte) ; un devoir à rendre reste rappelé.
+// Le motif choisit seulement la prochaine
 // action proposée : un devoir encore rendable, deux directs où il était
 // ABSENT (salle émargée sans lui, ou pointé absent ; jamais « inconnu »), ou
 // le plus utile à faire maintenant. « jamais_active » reste l'affaire d'un humain.
@@ -18,7 +23,9 @@
 // ou au 7e jour ; 3 « à appeler » après 2 relances sans retour. Au plus une
 // relance par jour. Tout s'arrête dès qu'il revient (un acte clôt l'épisode),
 // revenu_le note un retour sous 48 h. Aucun groupe témoin pour les décrocheurs.
-// En mode « essai » (par défaut), tout est écrit en « simulation », rien ne part.
+// En mode « essai » (par défaut), tout est écrit en « simulation », rien ne part ;
+// au passage en « actif », ces simulations ne comptent plus (simulationCaduque) :
+// la vraie relance repart du palier 1.
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { planifier } from "../taches";
@@ -36,17 +43,20 @@ import {
   envoyerRappel,
   joursSansActe,
   lireReglage,
+  pausesAutomatiques,
   quandEcheance,
   rappelsDuJour,
   sqlCoursDe,
   texteVariante,
   variantesRecentes,
+  versDate,
 } from "./rappel-du-jour";
 import { emailsDuJour, envoyerEmailEngagement, lienOuverture } from "./email-semaine";
 import { jourLocal, minutesLocales, type Jour } from "@shared/engagement/calendrier";
 import {
   choisirVariante,
   deciderDecrocheur,
+  joursOuvresSansActe,
   DECROCHAGE,
   FENETRE_DECROCHEURS,
   MOTIFS_DECROCHEUR,
@@ -75,8 +85,14 @@ type Candidat = {
   siteId: number | null;
   classeId: number | null;
   jour: Jour;
+  /** Jours calendaires sans acte : le nombre dit dans les textes. */
   joursSansActe: number;
+  /** Jours ouvrés sans acte : ce qui décide des relances. */
+  joursOuvres: number;
   dernierActe: Date | null;
+  rappelsActifs: boolean;
+  pauseJusquAu: Jour | null;
+  reglageMajLe: Date | null;
 };
 
 /** Ce qu'on propose à un décrocheur : motif, variables des textes, lien. */
@@ -141,7 +157,7 @@ async function propositions(candidats: Candidat[], maintenant: number): Promise<
       });
   }
 
-  // Sinon : plus vu. La relance propose la chose la plus utile à faire maintenant.
+  // Sinon : sans activité en ligne. La relance propose la chose la plus utile à faire maintenant.
   const inactifs = candidats.filter((c) => !choix.has(c.id));
   if (inactifs.length) {
     const ids3 = inactifs.map((c) => c.id);
@@ -202,8 +218,20 @@ export async function passerDecrocheurs(maintenant = Date.now(), { forcer = fals
   const reglage = await lireReglage();
   if (reglage.mode === "pause") return bilan;
 
-  const r = await db.execute<{ id: number; prenom: string; email: string | null; fuseau: string | null; site_id: number | null; classe_id: number | null; cree_le: string; emails_actifs: boolean | null }>(sql`
-    SELECT u.id, u.prenom, u.email, u.fuseau, u.site_id, u.classe_id, u.cree_le, re.emails_actifs
+  const r = await db.execute<{
+    id: number;
+    prenom: string;
+    email: string | null;
+    fuseau: string | null;
+    site_id: number | null;
+    classe_id: number | null;
+    cree_le: string;
+    emails_actifs: boolean | null;
+    rappels_actifs: boolean | null;
+    pause_jusqu_au: string | null;
+    maj_le: string | null;
+  }>(sql`
+    SELECT u.id, u.prenom, u.email, u.fuseau, u.site_id, u.classe_id, u.cree_le, re.emails_actifs, re.rappels_actifs, re.pause_jusqu_au::text AS pause_jusqu_au, re.maj_le
     FROM campus.utilisateurs u
     LEFT JOIN campus.reglages_engagement re ON re.utilisateur_id = u.id
     WHERE u.role = 'etudiant' AND u.actif AND NOT u.doit_changer_mot_de_passe
@@ -234,10 +262,14 @@ export async function passerDecrocheurs(maintenant = Date.now(), { forcer = fals
         classeId: l.classe_id,
         jour: jourLocal(maintenant, l.fuseau),
         joursSansActe: joursSansActe(dernier, new Date(l.cree_le), maintenant),
+        joursOuvres: joursOuvresSansActe(dernier, new Date(l.cree_le), maintenant, l.fuseau),
         dernierActe: dernier,
+        rappelsActifs: l.rappels_actifs ?? true,
+        pauseJusquAu: l.pause_jusqu_au,
+        reglageMajLe: versDate(l.maj_le),
       };
     })
-    .filter((c) => c.joursSansActe >= DECROCHAGE.joursRappel);
+    .filter((c) => c.joursOuvres >= DECROCHAGE.joursRappel);
   for (const l of dansFenetre) examines.set(l.id, jourLocal(maintenant, l.fuseau));
   const vivants = await coursVivants(
     candidats.map((c) => c.id),
@@ -264,11 +296,12 @@ export async function passerDecrocheurs(maintenant = Date.now(), { forcer = fals
     episodes.set(l.uid, [...(episodes.get(l.uid) ?? []), { jour: l.jour, palier: l.palier, canal: l.canal, statut: l.statut }]);
   }
 
-  const [joignables, compteurs, choix, recentes] = await Promise.all([
+  const [joignables, compteurs, choix, recentes, pausesAuto] = await Promise.all([
     abonnes(ids),
-    rappelsDuJour(ids, maintenant),
+    rappelsDuJour(candidats, maintenant),
     propositions(candidats, maintenant),
     variantesRecentes(ids, [...MOTIFS_DECROCHEUR]),
+    pausesAutomatiques(candidats),
   ]);
   const enEssai = reglage.mode === "essai" || reglage.emailsMode === "essai";
   let emailsRestants = reglage.emailsParJour - (await emailsDuJour(enEssai, maintenant));
@@ -280,12 +313,15 @@ export async function passerDecrocheurs(maintenant = Date.now(), { forcer = fals
       aujourdhui: c.jour,
       mode: reglage.mode,
       emailsMode: reglage.emailsMode,
-      joursSansActe: c.joursSansActe,
+      joursSansActe: c.joursOuvres,
       episode: episodes.get(c.id) ?? [],
       abonne: joignables.has(c.id),
       joignableParEmail: Boolean(c.email) && c.emailsActifs,
       emailsRestants,
       plafondRappel: (compteurs.get(c.id) ?? 0) >= (p.motif === "devoir_non_rendu" ? PLACES_AVANT_ENTRAINEMENT + 1 : PLACES_AVANT_ENTRAINEMENT),
+      motif: p.motif,
+      pauseEnCours: Boolean(c.pauseJusquAu && c.pauseJusquAu >= c.jour),
+      rappelsCoupes: !c.rappelsActifs || pausesAuto.has(c.id),
     });
     if (decision.action !== "ecrire") continue;
     const variante = decision.canal === "push" ? choisirVariante(variantesDe(`relance.${p.motif}`), recentes.get(c.id) ?? []) : `${decision.canal}.${p.motif}`;

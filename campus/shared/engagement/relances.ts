@@ -14,7 +14,7 @@
 //   absences « inconnues » aux directs ;
 // - relances : un rappel, puis un e-mail, puis la vie scolaire ; tout s'arrête dès qu'il revient ;
 // - la direction règle chaque envoi : « essai » (calculé, écrit, rien ne part), « actif » ou « en pause ».
-import { ecartJours, minutesLocales, type Jour } from "./calendrier";
+import { ajouterJours, ecartJours, estDimanche, jourLocal, minutesLocales, type Jour } from "./calendrier";
 
 // ── Vocabulaire (colonnes text de relances_engagement et reglage_relances) ──
 
@@ -67,7 +67,11 @@ export const PLACES_AVANT_ENTRAINEMENT = 2;
 /** Un même lien n'est pas proposé plus de 2 fois en 7 jours (sauf une échéance). */
 export const REPETITIONS_LIEN = { fois: 2, jours: 7 } as const;
 
-/** Décrocheurs : relance au 3e jour sans acte d'apprentissage, e-mail au 7e ou 4 jours après un rappel sans effet. */
+/**
+ * Décrocheurs : relance au 3e jour ouvré sans acte d'apprentissage, e-mail au 7e ou 4 jours après
+ * un rappel sans effet. Le samedi et le dimanche ne comptent pas (joursOuvresSansActe) : un
+ * week-end sans téléphone ne fait pas un décrocheur.
+ */
 export const DECROCHAGE = { joursRappel: 3, joursEmail: 7, joursSansEffet: 4, relancesAvantAppel: 2, heuresRetour: 48 } as const;
 /** Passage quotidien des décrocheurs, heure locale. */
 export const FENETRE_DECROCHEURS = { debut: 16 * H + 40, fin: 17 * H + 10 } as const;
@@ -75,6 +79,13 @@ export const FENETRE_DECROCHEURS = { debut: 16 * H + 40, fin: 17 * H + 10 } as c
 export const FENETRE_EMAIL_SEMAINE = { debut: 6 * H + 45, fin: 9 * H, joursDeReport: 3 } as const;
 export const EMAILS_PAR_JOUR_DEFAUT = 40;
 export const EMAILS_PAR_JOUR_MAX = 500;
+/**
+ * Part du plafond quotidien gardée pour les e-mails des décrocheurs (passage de 16 h 40) :
+ * l'e-mail de la semaine, envoyé le matin, s'arrête avant. Au moins un e-mail gardé dès que le
+ * plafond le permet.
+ */
+export const PART_RESERVEE_RELANCES = 0.25;
+export const reserveRelances = (emailsParJour: number) => (emailsParJour > 1 ? Math.max(1, Math.ceil(emailsParJour * PART_RESERVEE_RELANCES)) : 0);
 /** Conservation des relances (ENGAGEMENT.md § 4). */
 export const CONSERVATION_RELANCES_JOURS = 180;
 
@@ -106,6 +117,27 @@ export function mediane(valeurs: number[]): number | null {
   if (!valeurs.length) return null;
   const triees = [...valeurs].sort((a, b) => a - b);
   return triees[Math.floor((triees.length - 1) / 2)];
+}
+
+const JOUR_MS = 86_400_000;
+/** Samedi ou dimanche. */
+const estWeekend = (jour: Jour) => estDimanche(jour) || estDimanche(ajouterJours(jour, 1));
+
+/**
+ * Jours sans acte d'apprentissage qui comptent pour les relances : les jours entiers écoulés depuis
+ * le dernier acte (ou la création du compte s'il est plus récent), moins les samedis et dimanches
+ * passés depuis, dans le fuseau de l'étudiant. Jeudi 14 h → dimanche 16 h 40 : 1 ; → mardi : 3.
+ */
+export function joursOuvresSansActe(dernier: Date | null | undefined, creeLe: Date, maintenant: number, fuseau: string | null): number {
+  const reference = Math.max(dernier?.getTime() ?? 0, creeLe.getTime());
+  const calendaires = Math.floor((maintenant - reference) / JOUR_MS);
+  if (calendaires <= 0) return 0;
+  const de = jourLocal(reference, fuseau);
+  const n = ecartJours(de, jourLocal(maintenant, fuseau));
+  const semaines = Math.floor(n / 7);
+  let weekend = 2 * semaines;
+  for (let i = 7 * semaines + 1; i <= n; i++) if (estWeekend(ajouterJours(de, i))) weekend++;
+  return Math.max(0, calendaires - weekend);
 }
 
 /**
@@ -208,11 +240,12 @@ export function deciderRappel(c: ContexteRappel): DecisionRappel {
   if (c.liveProche) return { action: "attendre", raison: "live", heure };
   if (c.enPauseAuto) return { action: "sauter", raison: "pause_auto" };
   if (!c.sujet) return { action: "sauter", raison: "rien_a_proposer" };
-  // Le témoin est tiré parmi les jours où un rappel serait vraiment parti : la comparaison reste juste.
-  if (!c.autoriseParTirage) return { action: "ecrire", statut: "temoin", sujet: c.sujet, lassitude: false, envoyer: false };
   const lassitude = c.ignoresDeSuite >= RAPPELS_IGNORES_AVANT_PAUSE;
   const statut: StatutRelance =
     c.mode === "essai" ? "simulation" : !c.abonne ? "sans_canal" : c.rappelsDuJour >= PLACES_AVANT_ENTRAINEMENT ? "plafond" : lassitude ? "pause_auto" : "envoye";
+  // Le témoin est tiré seulement parmi les jours où le rappel serait vraiment parti (abonné, hors
+  // plafond, hors lassitude, en marche) : « avec rappel » et « sans rappel » restent comparables (C8).
+  if (statut === "envoye" && !c.autoriseParTirage) return { action: "ecrire", statut: "temoin", sujet: c.sujet, lassitude: false, envoyer: false };
   return { action: "ecrire", statut, sujet: c.sujet, lassitude: lassitude && statut === "pause_auto", envoyer: statut === "envoye" || statut === "pause_auto" };
 }
 
@@ -225,9 +258,9 @@ export type ContexteDecrocheur = {
   aujourdhui: Jour;
   mode: ModeRelances;
   emailsMode: ModeEmails;
-  /** Jours entiers depuis le dernier acte d'apprentissage (ou l'activation du compte). */
+  /** Jours ouvrés sans acte d'apprentissage (joursOuvresSansActe : samedi et dimanche ne comptent pas). */
   joursSansActe: number;
-  /** Relances des décrocheurs écrites depuis ce dernier acte, dans l'ordre. */
+  /** Relances des décrocheurs écrites depuis ce dernier acte, dans l'ordre (simulations comprises). */
   episode: RelancePassee[];
   abonne: boolean;
   /** Adresse e-mail connue et e-mails acceptés. */
@@ -236,14 +269,31 @@ export type ContexteDecrocheur = {
   emailsRestants: number;
   /** Plus de place ce jour-là pour un rappel de cette priorité (compteurs_push : 3 pour une échéance, 2 sinon). */
   plafondRappel: boolean;
+  /** Motif de la relance : « devoir_non_rendu » est un rappel de devoir, il passe la pause de l'étudiant. */
+  motif: MotifDecrocheur;
+  /** « Pause de 7 jours » demandée par l'étudiant et toujours en cours. */
+  pauseEnCours: boolean;
+  /** Rappels d'entraînement coupés par l'étudiant, ou pause automatique après « on arrête de t'en envoyer ». */
+  rappelsCoupes: boolean;
 };
 
 export type DecisionDecrocheur =
-  | { action: "rien"; raison: "actif" | "pause_globale" | "deja_relance" | "a_appeler" | "attendre" }
+  | { action: "rien"; raison: "actif" | "pause_globale" | "deja_relance" | "a_appeler" | "attendre" | "pause_etudiant" }
   | { action: "ecrire"; palier: 1 | 2 | 3; canal: CanalRelance; statut: StatutRelance; envoyer: boolean };
 
 /** Statuts qui comptent comme une tentative (une relance « sans effet » si l'étudiant ne revient pas). */
 export const STATUTS_TENTATIVE: readonly StatutRelance[] = ["envoye", "simulation", "sans_canal", "echec"];
+
+/**
+ * Une ligne « simulation » écrite pendant l'essai ne compte plus quand son canal est désormais en
+ * marche : rien n'est parti. Le rappel et la vie scolaire suivent le mode des relances ; l'e-mail
+ * suit en plus le mode des e-mails (tant qu'ils restent en essai, l'e-mail simulé compte toujours,
+ * sinon il serait simulé de nouveau chaque jour sans jamais mener à la vie scolaire).
+ */
+export function simulationCaduque(l: { statut: StatutRelance; canal: CanalRelance }, r: { mode: ModeRelances; emailsMode: ModeEmails }): boolean {
+  if (l.statut !== "simulation" || r.mode !== "actif") return false;
+  return l.canal !== "email" || r.emailsMode === "actif";
+}
 
 /**
  * Prochaine relance d'un décrocheur, au passage quotidien. Au plus une par
@@ -256,9 +306,16 @@ export const STATUTS_TENTATIVE: readonly StatutRelance[] = ["envoye", "simulatio
 export function deciderDecrocheur(c: ContexteDecrocheur): DecisionDecrocheur {
   if (c.mode === "pause") return { action: "rien", raison: "pause_globale" };
   if (c.joursSansActe < DECROCHAGE.joursRappel) return { action: "rien", raison: "actif" };
+  // Une seule ligne par jour, même quand celle du jour est une simulation devenue caduque (contrainte unique).
   if (c.episode.some((r) => r.jour === c.aujourdhui)) return { action: "rien", raison: "deja_relance" };
-  if (c.episode.some((r) => r.palier >= 3)) return { action: "rien", raison: "a_appeler" };
-  const tentatives = c.episode.filter((r) => r.palier < 3 && STATUTS_TENTATIVE.includes(r.statut));
+  // La pause et les rappels coupés valent pour l'engagement ; un devoir à rendre reste rappelé (« Les rappels de devoirs continuent »).
+  const engagement = c.motif !== "devoir_non_rendu";
+  if (engagement && c.pauseEnCours) return { action: "rien", raison: "pause_etudiant" };
+  const abonne = c.abonne && !(engagement && c.rappelsCoupes);
+  // Passage de l'essai au mode actif : ce qui a seulement été simulé sur un canal désormais en marche ne compte pas.
+  const episode = c.episode.filter((r) => !simulationCaduque(r, c));
+  if (episode.some((r) => r.palier >= 3)) return { action: "rien", raison: "a_appeler" };
+  const tentatives = episode.filter((r) => r.palier < 3 && STATUTS_TENTATIVE.includes(r.statut));
   const derniere = tentatives.at(-1);
   const joursDepuis = derniere ? ecartJours(derniere.jour, c.aujourdhui) : Infinity;
   const essai = c.mode === "essai";
@@ -268,22 +325,23 @@ export function deciderDecrocheur(c: ContexteDecrocheur): DecisionDecrocheur {
     const statut: StatutRelance = essai ? "simulation" : c.plafondRappel ? "plafond" : "envoye";
     return { action: "ecrire", palier: 1, canal: "push", statut, envoyer: statut === "envoye" };
   };
+  // Le plafond d'e-mails passe avant l'essai : la simulation montre aussi les e-mails reportés.
   const email = (): DecisionDecrocheur => {
     const statut: StatutRelance = !c.joignableParEmail
       ? "sans_canal"
-      : essai || c.emailsMode === "essai"
-        ? "simulation"
-        : c.emailsRestants <= 0
-          ? "quota"
+      : c.emailsRestants <= 0
+        ? "quota"
+        : essai || c.emailsMode === "essai"
+          ? "simulation"
           : "envoye";
     return { action: "ecrire", palier: 2, canal: "email", statut, envoyer: statut === "envoye" };
   };
 
   if (tentatives.length >= DECROCHAGE.relancesAvantAppel) return appeler();
-  if (!derniere) return c.abonne && c.joursSansActe < DECROCHAGE.joursEmail ? rappel() : email();
+  if (!derniere) return abonne && c.joursSansActe < DECROCHAGE.joursEmail ? rappel() : email();
   if (derniere.canal === "email") return joursDepuis >= DECROCHAGE.joursSansEffet ? appeler() : { action: "rien", raison: "attendre" };
   // Après un rappel resté sans effet : l'e-mail.
-  if (joursDepuis >= DECROCHAGE.joursSansEffet || c.joursSansActe >= DECROCHAGE.joursEmail || !c.abonne) return email();
+  if (joursDepuis >= DECROCHAGE.joursSansEffet || c.joursSansActe >= DECROCHAGE.joursEmail || !abonne) return email();
   return { action: "rien", raison: "attendre" };
 }
 
@@ -340,6 +398,10 @@ export type ReglageRelancesDto = {
     emailsSemaine: CompteStatuts;
     /** E-mails partis aujourd'hui (tous motifs), à comparer au plafond. */
     emailsAujourdhui: number;
+    /** Part du plafond gardée aux e-mails des décrocheurs (l'e-mail de la semaine s'arrête avant). */
+    reserveRelances: number;
+    /** Étudiants qui n'ont pas reçu « Ta semaine » cette semaine faute de place (plafond atteint). */
+    semaineSansEmail: number;
     /** Relances suivies d'un retour sous 48 h / relances parties (ou simulées). */
     revenus: number;
     relancesComptees: number;
@@ -369,8 +431,10 @@ export type LigneRelance = {
  */
 export type EtatRelanceEtudiant = {
   etat: "aucune" | "relance" | "revenu" | "a_appeler";
-  /** Dernière relance de décrocheur (sans les rappels d'entraînement). */
+  /** Dernière relance de décrocheur (sans les rappels d'entraînement ni les simulations devenues caduques). */
   derniere: LigneRelance | null;
+  /** Relances vraiment parties (rappel ou e-mail) depuis son dernier acte d'apprentissage. */
+  relancesParties: number;
   /** Les 10 dernières relances (décrocheurs, e-mails de la semaine), la plus récente d'abord. */
   historique: LigneRelance[];
 };

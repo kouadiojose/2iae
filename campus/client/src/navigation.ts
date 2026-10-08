@@ -74,7 +74,14 @@ const FORMATEUR: ElementNav[] = [
   { href: "/enseigner", libelle: "Aujourd'hui", icone: Home, mobile: true },
   { href: "/cours", libelle: "Mes cours", icone: BookOpen, mobile: true, prefixes: ["/cours", "/enseigner/cours"] },
   { href: "/direct", libelle: "Studio", icone: Radio, mobile: true, central: true, prefixes: ["/direct", "/live", "/enseigner/seances"] },
-  { href: "/corrections", libelle: "Corrections", icone: CheckSquare, mobile: true, prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs"] },
+  {
+    href: "/corrections",
+    libelle: "Corrections",
+    icone: CheckSquare,
+    mobile: true,
+    // Correction rapide, corrigés du jour, copies à revoir et devoirs de l'IA : tout ce qui touche aux copies.
+    prefixes: ["/corrections", "/enseigner/devoirs", "/devoirs", "/corriger", "/enseigner/corriges", "/enseigner/a-revoir", "/enseigner/relire"],
+  },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   // Les replays de tous les cours, les siens et ceux des collègues.
   { href: "/replays", libelle: "Enregistrements", icone: PlayCircle, prefixes: ["/replays"] },

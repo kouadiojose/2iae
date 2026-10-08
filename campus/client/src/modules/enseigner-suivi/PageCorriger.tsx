@@ -9,6 +9,10 @@
 // principal. Celles des exercices du campus (routine du soir) sont à part,
 // sous « Exercices du campus · facultatif » : il les corrige s'il le souhaite,
 // sans rappel ni compte à rebours.
+//
+// Correction automatique (8 octobre 2026) : le campus note les copies des
+// devoirs qui ont un corrigé validé. Ce qu'il laisse au formateur (copies
+// retenues, relectures) et les corrigés à valider ont leurs cartes, ici aussi.
 import { useEffect, useState } from "react";
 import { Link, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -25,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { selonNombre, t } from "@shared/textes/enseigner";
 import type { CopiesEnAttenteDto } from "@shared/engagement/enseigner";
 import { cleFile, copiesPassees, depuis } from "./outils";
+import { CartesCorrections } from "./CartesCorrections";
 
 export default function PageCorriger() {
   const tx = useTextes(t);
@@ -114,6 +119,8 @@ export default function PageCorriger() {
           </Bouton>
         </Carte>
       )}
+
+      {!devoir && <CartesCorrections />}
 
       {data.devoirs.some((g) => (devoir || !g.automatique) && g.aCorriger > 0) && (
         <section aria-labelledby="titre-par-devoir">

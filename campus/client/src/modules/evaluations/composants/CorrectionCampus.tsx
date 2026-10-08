@@ -1,215 +1,195 @@
-// Correction automatique côté étudiant (chantier K4, décision de José du 8 octobre 2026) : où en est la
-// correction de sa copie par le campus, la demande de relecture de sa note et la réponse du formateur, le
-// corrigé après la date limite. Le retour doit être rapide, clair et encourageant, sur un téléphone de 360 px.
-// Contrat : shared/engagement/corrections.ts (EtatCorrectionEtudiant, RelectureEtudiant, CorpsDemanderRelecture).
-import { useRef, useState } from "react";
-import { Hourglass, Camera, Eye, MessageSquareText, CheckCircle2, BookOpenCheck, ChevronDown } from "lucide-react";
+// Correction automatique des copies (décision de José du 8 octobre 2026), côté formateur : ce que partagent
+// les écrans des copies (PageCopies, /corriger/:id) et ceux du module « côté formateur » (corrigés du jour,
+// copies à revoir) : l'échéance du corrigé dite avec des mots, le badge « Corrigé par le campus », la raison
+// d'une copie retenue, l'état de la correction d'une copie, la justification par critère et la réponse à
+// une demande de relecture. Textes : shared/textes/corrections.ts (vouvoiement ; la réponse à l'étudiant
+// est tutoyée). Contrat des échanges : shared/engagement/corrections.ts.
+import { useState } from "react";
+import { EyeOff, FileQuestion, FileX, Hourglass, MessageSquareQuote, RefreshCw, School, ShieldAlert, Video, type LucideIcon } from "lucide-react";
 import { Bouton } from "@/components/ui/bouton";
-import { Carte } from "@/components/ui/carte";
 import { ZoneTexte } from "@/components/ui/champs";
-import { Fenetre } from "@/components/ui/fenetre";
-import { Markdown } from "@/components/ui/markdown";
+import { Badge } from "@/components/ui/divers";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { post } from "@/lib/api";
+import { heureDouble, jourLong, relatif } from "@/lib/dates";
 import { rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
-import { dateCourte, jourLong, relatif } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { t, type CleCorrectionsEtudiant } from "@shared/textes/corrections-etudiant";
 import type { Traducteur } from "@shared/textes";
-import { MOTIF_RELECTURE_MAX, type CorpsDemanderRelecture, type EtatCorrectionEtudiant } from "@shared/engagement/corrections";
-import type { RenduEtudiant } from "@shared/schema";
+import { selonNombre, t, type CleCorrections } from "@shared/textes/corrections";
+import { ESSAIS_MAX_CORRECTION, MOTIF_RELECTURE_MAX, type CorpsTraiterRelecture, type CorrigeAValider, type RaisonARevoir } from "@shared/engagement/corrections";
+import type { CopieDetail } from "@shared/schema";
 import { nombre } from "../outils";
 
-type Tx = Traducteur<CleCorrectionsEtudiant>;
-
-/** Longueur minimale d'un motif de relecture (même règle que le serveur). */
-const MOTIF_MIN = 10;
+type Tx = Traducteur<CleCorrections>;
 const JOUR = 86_400_000;
-/** Numéro du jour à Abidjan (GMT toute l'année). */
-const jourAbidjan = (ms: number) => Math.floor(ms / JOUR);
 
-/**
- * Quand la note arrive, avec des mots : « ce soir », « demain soir », « jeudi soir », « le 12 oct. ».
- * Une heure déjà passée (la routine du soir tourne peut-être) devient « très bientôt ».
- */
-export function quandEnMots(iso: string, maintenant: number, tx: Tx): string {
-  const ms = new Date(iso).getTime();
-  if (Number.isNaN(ms) || ms <= maintenant) return tx("quand.bientot");
-  const soir = new Date(ms).getUTCHours() >= 18;
-  const ecart = jourAbidjan(ms) - jourAbidjan(maintenant);
-  if (ecart === 0) return tx(soir ? "quand.ceSoir" : "quand.aujourdhui");
-  if (ecart === 1) return tx(soir ? "quand.demainSoir" : "quand.demain");
-  if (ecart < 7) return tx(soir ? "quand.jourSoir" : "quand.jour", { v: { jour: jourLong(iso).split(" ")[0] } });
-  return tx("quand.date", { v: { date: dateCourte(iso) } });
+/** « aujourd'hui », « demain » ou « jeudi 9 octobre » (jours d'Abidjan, GMT). */
+export function jourEcheance(tx: Tx, iso: string, maintenant = Date.now()): string {
+  const ecart = Math.floor(new Date(iso).getTime() / JOUR) - Math.floor(maintenant / JOUR);
+  if (ecart === 0) return tx("echeance.aujourdhui");
+  if (ecart === 1) return tx("echeance.demain");
+  return jourLong(iso);
 }
 
-/** « Le campus corrige ta copie : ta note arrive ce soir. » */
-export function phraseNoteAttendue(c: EtatCorrectionEtudiant, maintenant: number, tx: Tx): string {
-  return c.attendueLe ? tx("campus.enFile", { v: { quand: quandEnMots(c.attendueLe, maintenant, tx) } }) : tx("campus.enFile.bientot");
+/** « Tenu pour bon demain à 07h00 Abidjan sans réponse de votre part. » (avec l'heure de chez lui s'il est loin). */
+export function texteEcheance(tx: Tx, iso: string, maintenant = Date.now()): string {
+  if (new Date(iso).getTime() <= maintenant) return tx("echeance.depassee");
+  return tx("echeance.tenuPourBon", { v: { jour: jourEcheance(tx, iso, maintenant), heure: heureDouble(iso) } });
 }
 
+/** « 12 copies rendues · 8 notées par le campus · 1 à revoir » (exercice), « 15 étudiants l'ont fait » (QCM). */
+export function resumeCopies(tx: Tx, c: Pick<CorrigeAValider, "type" | "copies">): string[] {
+  if (c.type === "quiz") return [selonNombre(tx, "copies.tentatives", c.copies.rendues)];
+  return [
+    selonNombre(tx, "copies.rendues", c.copies.rendues),
+    c.copies.notees > 0 ? selonNombre(tx, "copies.notees", c.copies.notees) : null,
+    c.copies.enFile > 0 ? selonNombre(tx, "copies.enFile", c.copies.enFile) : null,
+    c.copies.aRevoir > 0 ? selonNombre(tx, "copies.aRevoir", c.copies.aRevoir) : null,
+  ].filter((x): x is string => Boolean(x));
+}
+
+/** Pastille « Corrigé par le campus » (note publiée par la correction automatique). */
+export function BadgeCampus({ className, court }: { className?: string; court?: boolean }) {
+  const tx = useTextes(t);
+  return (
+    <Badge ton="succes" className={className}>
+      <School className="h-3 w-3" aria-hidden /> {tx(court ? "liste.campus" : "campus.badge")}
+    </Badge>
+  );
+}
+
+export const ICONES_RAISON: Record<RaisonARevoir | "relecture", LucideIcon> = {
+  alerte: ShieldAlert,
+  illisible: EyeOff,
+  video: Video,
+  format: FileQuestion,
+  vide: FileX,
+  echecs: RefreshCw,
+  relecture: MessageSquareQuote,
+};
+
+export const libelleRaison = (tx: Tx, raison: RaisonARevoir | "relecture") => tx(`raison.${raison}`);
+export const texteRaison = (tx: Tx, raison: RaisonARevoir | "relecture") => tx(`raison.${raison}.texte` as CleCorrections, { v: { n: ESSAIS_MAX_CORRECTION } });
+
 /**
- * Copie rendue, pas encore notée : le campus la corrige (note attendue), ou il la laisse au formateur
- * (« à revoir »). Une copie illisible qu'il peut encore remplacer : le bouton de remplacement passe devant
- * (sans « onRemplacer » : la zone de remplacement est déjà ouverte, le bouton disparaît).
+ * Ce que le campus a fait (ou fait) de cette copie, au-dessus de la notation : note publiée par le campus,
+ * correction en cours, ou copie retenue (et pourquoi). Rien pour une copie hors du circuit.
  */
-export function EtatCorrectionCampus({
-  correction,
-  maintenant,
-  peutRemplacer,
-  onRemplacer,
+export function EtatCorrectionCopie({ copie, bareme, className }: { copie: CopieDetail; bareme: number; className?: string }) {
+  const tx = useTextes(t);
+  const auto = copie.correctionAuto ?? null;
+  const parLeCampus = copie.origineNote === "campus" && copie.statut === "corrige";
+
+  if (parLeCampus) {
+    return (
+      <div className={cn("flex flex-col gap-1.5 rounded-2xl bg-succes-clair/70 p-3", className)}>
+        <BadgeCampus className="self-start" />
+        <p className="text-sm leading-snug text-texte-doux">{tx("campus.notee")}</p>
+      </div>
+    );
+  }
+  if (!auto) return null;
+  if (auto.etat === "a_revoir" && auto.raison) {
+    const Icone = ICONES_RAISON[auto.raison];
+    return (
+      <div className={cn("flex flex-col gap-1.5 rounded-2xl bg-alerte-clair p-3", className)} role="status">
+        <span className="flex items-center gap-2 text-[15px] font-bold text-alerte">
+          <Icone className="h-4 w-4 shrink-0" aria-hidden />
+          {tx("campus.aRevoir")} · {libelleRaison(tx, auto.raison)}
+        </span>
+        <p className="text-sm leading-snug text-texte-doux">{texteRaison(tx, auto.raison)}</p>
+        {auto.detail && <p className="rounded-xl bg-white/70 px-3 py-2 text-sm leading-snug text-texte-doux">{auto.detail}</p>}
+      </div>
+    );
+  }
+  if (auto.etat === "en_file" || auto.etat === "erreur") {
+    return (
+      <div className={cn("flex items-start gap-2.5 rounded-2xl bg-creme p-3", className)} role="status">
+        <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-texte-pale" aria-hidden />
+        <span className="flex flex-col gap-0.5">
+          <span className="text-[15px] font-bold">{tx(auto.etat === "en_file" ? "campus.enFile" : "campus.erreur")}</span>
+          <span className="text-sm leading-snug text-texte-pale">{tx(auto.etat === "en_file" ? "campus.enFile.texte" : "campus.erreur.texte")}</span>
+        </span>
+      </div>
+    );
+  }
+  // Note du campus changée ensuite par un formateur : on garde la trace de l'écart.
+  if (auto.noteCampus !== null && copie.note !== null && auto.noteCampus !== copie.note) {
+    return <p className={cn("text-[13px] text-texte-gris", className)}>{tx("campus.noteChangee", { v: { note: nombre(auto.noteCampus), bareme: nombre(bareme) } })}</p>;
+  }
+  return null;
+}
+
+/** Pourquoi le campus a donné ces points à ce critère (note du campus). */
+export function JustificationCritere({ texte, className }: { texte: string; className?: string }) {
+  const tx = useTextes(t);
+  return (
+    <p className={cn("text-[13px] leading-snug text-texte-pale", className)}>
+      <span className="font-semibold text-succes">{tx("campus.pourquoi")} · </span>
+      {texte}
+    </p>
+  );
+}
+
+const PHRASES: Record<"garder" | "changer", CleCorrections[]> = {
+  garder: ["relecture.phrase.garder.1", "relecture.phrase.garder.2", "relecture.phrase.garder.3"],
+  changer: ["relecture.phrase.changer.1", "relecture.phrase.changer.2", "relecture.phrase.changer.3"],
+};
+
+/**
+ * Réponse du formateur à une demande de relecture : le motif de l'étudiant, « Garder la note » ou
+ * « Changer la note », un mot pour lui (tutoyé, phrases rapides), puis UN bouton qui envoie
+ * (POST /api/enseigner/relectures/:id). L'étudiant est prévenu par le campus.
+ */
+export function TraiterRelecture({
+  relecture,
+  prenom,
+  note,
+  bareme,
+  onFait,
+  className,
 }: {
-  correction: EtatCorrectionEtudiant;
-  maintenant: number;
-  peutRemplacer: boolean;
-  onRemplacer?: () => void;
+  relecture: { id: number; motif: string; creeLe: string };
+  prenom: string;
+  /** Note actuelle de la copie (celle que l'étudiant conteste). */
+  note: number | null;
+  bareme: number;
+  onFait?: () => void;
+  className?: string;
 }) {
   const tx = useTextes(t);
-  if (correction.etat === "a_revoir" && correction.raison === "illisible" && peutRemplacer) {
-    return (
-      <div className="flex flex-col gap-3 rounded-2xl border border-alerte/30 bg-alerte-clair p-4">
-        <span className="flex items-start gap-2.5">
-          <Camera className="mt-0.5 h-5 w-5 shrink-0 text-alerte" />
-          <span className="flex flex-col gap-1">
-            <strong className="text-base text-encre">{tx("campus.illisible.titre")}</strong>
-            <span className="text-[15px] leading-snug text-texte-doux">{tx("campus.illisible.texte")}</span>
-          </span>
-        </span>
-        {onRemplacer && (
-          <Bouton onClick={onRemplacer} icone={<Camera className="h-5 w-5" />} pleineLargeur className="min-h-[52px]">
-            {tx("campus.illisible.bouton")}
-          </Bouton>
-        )}
-      </div>
-    );
-  }
-  if (correction.etat === "a_revoir") {
-    return (
-      <p className="flex items-start gap-2.5 rounded-2xl bg-white/70 p-3.5 text-[15px] leading-snug">
-        <Eye className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" />
-        <span>
-          <strong className="block text-encre">{tx(correction.raison === "video" ? "campus.video" : "campus.formateur")}</strong>
-          <span className="text-texte-doux">{tx("campus.formateur.detail")}</span>
-        </span>
-      </p>
-    );
-  }
-  // en_file, erreur (nouvel essai automatique au passage suivant) : la note est en route.
-  return (
-    <div className="flex flex-col gap-2 rounded-2xl bg-white/70 p-3.5">
-      <p className="flex items-start gap-2.5 text-[15px] leading-snug">
-        <Hourglass className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" />
-        <span>
-          <strong className="block text-encre">{phraseNoteAttendue(correction, maintenant, tx)}</strong>
-          <span className="text-texte-doux">{tx("campus.enFile.detail")}</span>
-        </span>
-      </p>
-      {peutRemplacer && onRemplacer && <p className="pl-[30px] text-sm text-texte-pale">{tx("campus.remplacer")}</p>}
-    </div>
-  );
-}
-
-/**
- * Note publiée : la demande de relecture (bouton, puis son état et la réponse du formateur). Le bouton
- * n'apparaît que pour une note du campus sans demande ouverte ; une note refaite par le campus après la
- * réponse du formateur (corrigé précisé) peut faire l'objet d'une nouvelle demande. Fond sombre (bloc note).
- */
-export function RelectureNote({ rendu, bareme }: { rendu: RenduEtudiant; bareme: number }) {
-  const tx = useTextes(t);
-  const [ouverte, setOuverte] = useState(false);
-  const r = rendu.relecture ?? null;
-  const noteRefaiteDepuis = Boolean(r?.traiteeLe && rendu.corrigeLe && new Date(rendu.corrigeLe).getTime() > new Date(r.traiteeLe).getTime());
-  const peutDemander = rendu.origineNote === "campus" && (!r || (r.statut === "traitee" && noteRefaiteDepuis));
-  // Critères où des points manquent : des débuts de phrase à un toucher.
-  const criteresPerdus = (rendu.noteDetail ?? []).filter((l) => l.obtenu < l.points).slice(0, 4);
-
-  return (
-    <>
-      {r && !(r.statut === "traitee" && noteRefaiteDepuis) && <EtatRelecture r={r} note={rendu.note} bareme={bareme} tx={tx} />}
-      {peutDemander && (
-        <div className="flex flex-col gap-2 border-t border-nuit-ligne pt-4">
-          <p className="text-[15px] text-nuit-texte">{tx("relecture.question")}</p>
-          <Bouton variante="nuit" onClick={() => setOuverte(true)} icone={<MessageSquareText className="h-4 w-4" />} className="min-h-[48px]">
-            {tx("relecture.bouton")}
-          </Bouton>
-        </div>
-      )}
-      {peutDemander && <FenetreRelecture ouverte={ouverte} onFermer={() => setOuverte(false)} renduId={rendu.id} criteres={criteresPerdus.map((l) => l.critere)} tx={tx} />}
-    </>
-  );
-}
-
-function EtatRelecture({ r, note, bareme, tx }: { r: NonNullable<RenduEtudiant["relecture"]>; note: number | null; bareme: number; tx: Tx }) {
-  if (r.statut === "ouverte") {
-    return (
-      <div className="flex flex-col gap-2 rounded-2xl bg-nuit-carte p-4">
-        <span className="flex items-center gap-2 text-[15px] font-bold text-white">
-          <Hourglass className="h-4 w-4 shrink-0 text-orange" /> {tx("relecture.ouverte.titre")}
-        </span>
-        <p className="text-[15px] leading-snug text-nuit-texte">{tx("relecture.ouverte.texte")}</p>
-        <span className="font-mono text-xs text-nuit-gris">{tx("relecture.ouverte.le", { v: { quand: relatif(r.creeLe) } })}</span>
-        <Motif motif={r.motif} tx={tx} />
-      </div>
-    );
-  }
-  const change = r.noteAvant !== null && r.noteApres !== null && r.noteApres !== r.noteAvant;
-  return (
-    <div className="flex flex-col gap-2.5 rounded-2xl bg-nuit-carte p-4">
-      <span className="flex items-center gap-2 text-[15px] font-bold text-white">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-orange" /> {tx("relecture.traitee.titre")}
-      </span>
-      {r.reponse && <p className="whitespace-pre-line text-[15.5px] leading-relaxed text-nuit-texte">{r.reponse}</p>}
-      <p className={cn("text-[15px] font-bold", change ? "text-orange-peche" : "text-nuit-doux")}>
-        {change
-          ? tx("relecture.noteChangee", { v: { avant: nombre(r.noteAvant), apres: nombre(r.noteApres), bareme: nombre(bareme) } })
-          : tx("relecture.noteGardee", { v: { note: nombre(r.noteAvant ?? note), bareme: nombre(bareme) } })}
-      </p>
-      <Motif motif={r.motif} tx={tx} />
-    </div>
-  );
-}
-
-/** Le motif de l'étudiant, replié (il le connaît : il sert de rappel). */
-function Motif({ motif, tx }: { motif: string; tx: Tx }) {
-  return (
-    <details className="group text-sm text-nuit-gris">
-      <summary className="flex min-h-[44px] cursor-pointer list-none items-center gap-1.5 font-semibold text-nuit-doux [&::-webkit-details-marker]:hidden">
-        {tx("relecture.tonMotif")}
-        <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-      </summary>
-      <p className="whitespace-pre-line pb-1 leading-relaxed">{motif}</p>
-    </details>
-  );
-}
-
-function FenetreRelecture({ ouverte, onFermer, renduId, criteres, tx }: { ouverte: boolean; onFermer: () => void; renduId: number; criteres: string[]; tx: Tx }) {
-  const [motif, setMotif] = useState("");
+  const [choix, setChoix] = useState<"garder" | "changer" | null>(null);
+  const [saisie, setSaisie] = useState(note === null ? "" : String(note));
+  const [reponse, setReponse] = useState("");
   const [envoi, setEnvoi] = useState(false);
-  const zone = useRef<HTMLTextAreaElement>(null);
-  const longueur = motif.trim().length;
-  const manque = Math.max(0, MOTIF_MIN - longueur);
 
-  const ajouter = (debut: string) => {
-    setMotif((m) => `${m.trim() ? `${m.trimEnd()}\n` : ""}${debut}`.slice(0, MOTIF_RELECTURE_MAX));
-    requestAnimationFrame(() => {
-      const el = zone.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
-    });
-  };
+  const valeur = saisie.trim() === "" ? null : Number(saisie.replace(",", "."));
+  const noteValide = valeur !== null && !Number.isNaN(valeur) && valeur >= 0 && valeur <= bareme;
+  const pret = choix === "garder" || (choix === "changer" && noteValide);
+
+  function ajouterPhrase(cle: CleCorrections) {
+    const phrase = tx(cle);
+    setReponse((avant) => (avant.includes(phrase) ? avant : `${avant.trim()}${avant.trim() ? " " : ""}${phrase}`));
+  }
 
   async function envoyer() {
-    if (manque > 0 || envoi) return;
+    if (!choix) return;
+    if (choix === "changer" && !noteValide) {
+      toastErreur(new Error(tx("relecture.horsLimites", { v: { bareme: nombre(bareme) } })));
+      return;
+    }
+    if (!reponse.trim()) {
+      toastErreur(new Error(tx("relecture.reponseVide")));
+      return;
+    }
     setEnvoi(true);
     try {
-      const corps: CorpsDemanderRelecture = { motif: motif.trim() };
-      await post(`/api/rendus/${renduId}/relecture`, corps);
-      toast(tx("relecture.envoyee"));
-      setMotif("");
-      onFermer();
-      void rafraichir("/api/devoirs", "/api/notes");
+      const corps: CorpsTraiterRelecture = choix === "changer" ? { note: valeur, reponse: reponse.trim() } : { reponse: reponse.trim() };
+      await post(`/api/enseigner/relectures/${relecture.id}`, corps);
+      toast(tx("relecture.envoyee", { v: { prenom } }));
+      await rafraichir("/api/enseigner", "/api/rendus", "/api/devoirs");
+      onFait?.();
     } catch (e) {
       toastErreur(e);
     } finally {
@@ -218,90 +198,86 @@ function FenetreRelecture({ ouverte, onFermer, renduId, criteres, tx }: { ouvert
   }
 
   return (
-    <Fenetre
-      ouverte={ouverte}
-      onFermer={onFermer}
-      titre={tx("relecture.titre")}
-      description={tx("relecture.description")}
-      pied={
-        <>
-          <Bouton variante="contour" onClick={onFermer} className="min-h-[48px]">
-            {tx("relecture.annuler")}
-          </Bouton>
-          <Bouton onClick={() => void envoyer()} chargement={envoi} disabled={manque > 0} className="min-h-[48px]">
-            {tx("relecture.envoyer")}
-          </Bouton>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3 pb-1">
+    <div className={cn("flex flex-col gap-3", className)}>
+      <figure className="flex flex-col gap-1 rounded-2xl bg-creme p-3">
+        <figcaption className="text-[13px] font-bold text-texte-pale">{tx("revoir.motif", { v: { prenom } })}</figcaption>
+        <blockquote className="whitespace-pre-line text-[15px] leading-relaxed text-encre">« {relecture.motif} »</blockquote>
+        <span className="font-mono text-[11px] text-texte-gris">{tx("revoir.demandee", { v: { quand: relatif(relecture.creeLe) } })}</span>
+      </figure>
+
+      <div className="grid grid-cols-2 gap-2" role="group" aria-label={tx("relecture.choisir")}>
+        {(["garder", "changer"] as const).map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-pressed={choix === c}
+            onClick={() => setChoix(c)}
+            className={cn(
+              "flex min-h-[52px] flex-col items-center justify-center rounded-xl px-2 py-2 text-center text-[15px] font-bold leading-tight transition-colors",
+              choix === c ? "bg-encre text-white" : "bg-creme text-encre hover:bg-orange-clair",
+            )}
+          >
+            {tx(c === "garder" ? "relecture.garder" : "relecture.changer")}
+            {c === "garder" && note !== null && (
+              <span className={cn("font-mono text-xs font-normal", choix === c ? "text-orange-peche" : "text-texte-gris")}>
+                {nombre(note)}/{nombre(bareme)}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {choix === "changer" && (
+        <label className="flex items-center gap-3">
+          <span className="flex-1 text-[15px] font-semibold">{tx("relecture.nouvelleNote")}</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={bareme}
+            step={0.25}
+            autoFocus
+            value={saisie}
+            onChange={(e) => setSaisie(e.target.value)}
+            className="h-12 w-24 rounded-xl border border-ligne px-2 text-center text-lg font-bold tabular-nums outline-none focus:border-orange"
+          />
+          <span className="font-mono text-sm text-texte-gris">/{nombre(bareme)}</span>
+        </label>
+      )}
+
+      {choix && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm text-texte-pale">{tx("relecture.pourCommencer")}</span>
-          <div className="flex flex-wrap gap-2">
-            <Suggestion onClick={() => ajouter(tx("relecture.suggestion.page.texte"))}>{tx("relecture.suggestion.page")}</Suggestion>
-            {criteres.map((c) => (
-              <Suggestion key={c} onClick={() => ajouter(`« ${c} » : `)}>
-                « {c} »
-              </Suggestion>
+          <ZoneTexte
+            libelle={tx("relecture.reponse", { v: { prenom } })}
+            rows={3}
+            maxLength={MOTIF_RELECTURE_MAX}
+            value={reponse}
+            onChange={(e) => setReponse(e.target.value)}
+            aide={tx("relecture.reponse.aide")}
+          />
+          {/* Une seule ligne qui défile au doigt, comme les phrases rapides de la correction. */}
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap">
+            {PHRASES[choix].map((cle) => (
+              <button
+                key={cle}
+                type="button"
+                onClick={() => ajouterPhrase(cle)}
+                className="min-h-[44px] shrink-0 whitespace-nowrap rounded-full bg-creme px-3.5 text-[13px] font-semibold text-texte-doux hover:bg-orange-clair"
+              >
+                {tx(cle)}
+              </button>
             ))}
           </div>
         </div>
-        <ZoneTexte
-          ref={zone}
-          libelle={tx("relecture.libelle")}
-          placeholder={tx("relecture.placeholder")}
-          value={motif}
-          onChange={(e) => setMotif(e.target.value)}
-          maxLength={MOTIF_RELECTURE_MAX}
-          rows={5}
-          className="[&_textarea]:text-base"
-          aide={
-            <span className="flex justify-between gap-3">
-              <span>{manque > 0 ? tx("relecture.trop.court", { v: { n: manque } }) : ""}</span>
-              <span className="font-mono">{tx("relecture.compteur", { v: { n: motif.length, max: MOTIF_RELECTURE_MAX } })}</span>
-            </span>
-          }
-        />
-      </div>
-    </Fenetre>
-  );
-}
-
-function Suggestion({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="min-h-[44px] max-w-full truncate rounded-full border border-ligne bg-creme px-3.5 text-left text-sm font-semibold text-encre hover:border-orange hover:bg-orange-pale"
-    >
-      {children}
-    </button>
-  );
-}
-
-/** Le corrigé validé du devoir, après la date limite : replié, pour comparer avec sa copie. */
-export function LeCorrige({ contenu }: { contenu: string }) {
-  const tx = useTextes(t);
-  const [ouvert, setOuvert] = useState(false);
-  return (
-    <Carte className="flex flex-col gap-3 p-5 sm:p-6">
-      <div className="flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-succes-clair text-succes">
-          <BookOpenCheck className="h-5 w-5" />
-        </span>
-        <div className="flex flex-col gap-0.5">
-          <h2 className="text-lg font-extrabold">{tx("corrige.titre")}</h2>
-          <p className="text-[15px] text-texte-pale">{tx("corrige.texte")}</p>
-        </div>
-      </div>
-      <Bouton variante={ouvert ? "fantome" : "contour"} onClick={() => setOuvert((o) => !o)} aria-expanded={ouvert} className="min-h-[48px]">
-        {tx(ouvert ? "corrige.cacher" : "corrige.voir")}
-      </Bouton>
-      {ouvert && (
-        <div className="rounded-xl bg-succes-clair p-4">
-          <Markdown source={contenu} className="text-base" />
-        </div>
       )}
-    </Carte>
+
+      <Bouton taille="lg" pleineLargeur onClick={() => void envoyer()} disabled={!pret} chargement={envoi} className="min-h-[52px] px-3 leading-tight">
+        {!choix
+          ? tx("relecture.choisir")
+          : choix === "changer" && noteValide && valeur !== null
+            ? tx("relecture.envoyer.note", { v: { note: nombre(valeur), bareme: nombre(bareme), prenom } })
+            : tx("relecture.envoyer", { v: { prenom } })}
+      </Bouton>
+    </div>
   );
 }

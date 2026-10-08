@@ -7,6 +7,9 @@
 // Écran nu (pas de barre d'onglets), comme l'interrogation : on se concentre.
 // Réutilise les routes du module évaluations (copie, correction, proposition de
 // l'IA) et POST /api/enseigner/rendus/:id/envoyer pour publier cette copie seule.
+// Correction automatique (8 octobre 2026) : une copie que le campus a retenue
+// dit pourquoi (consigne cachée, vidéo…), et sa proposition s'affiche comme
+// celle du campus ; la justification par critère est gardée avec la note.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -20,9 +23,11 @@ import { queryClient, rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { Visionneuse, EnregistreurVocal } from "@/modules/evaluations/composants/Correction";
+import { EtatCorrectionCopie } from "@/modules/evaluations/composants/CorrectionCampus";
 import type { CopieDetail } from "@shared/schema";
 import { notesRapides, type CopieEnAttente, type CopiesEnAttenteDto } from "@shared/engagement/enseigner";
 import { t, type CleEnseigner } from "@shared/textes/enseigner";
+import { t as tc } from "@shared/textes/corrections";
 import { cleFile, copiesPassees, depuis, nombreFr } from "./outils";
 
 const PHRASES: CleEnseigner[] = ["corriger.phrase.1", "corriger.phrase.2", "corriger.phrase.3", "corriger.phrase.4", "corriger.phrase.5", "corriger.phrase.6"];
@@ -150,8 +155,11 @@ function Notation({
   onSuivante: (passer: boolean) => void;
 }) {
   const tx = useTextes(t);
+  const txc = useTextes(tc);
   const bareme = element.bareme;
   const proposition = copie.propositionIa;
+  // Copie retenue pour une consigne cachée : la proposition gardée est celle du campus (non publiée).
+  const propositionDuCampus = copie.correctionAuto?.etat === "a_revoir" && copie.correctionAuto.raison === "alerte";
   const [note, setNote] = useState<number | null>(copie.note);
   const [autre, setAutre] = useState(false);
   const [saisie, setSaisie] = useState(copie.note === null ? "" : String(copie.note));
@@ -218,7 +226,11 @@ function Notation({
     setEnvoi(true);
     try {
       // 1. La note, sur la copie affichée (une copie remplacée entre-temps est refusée : 409).
-      const detail = depuisIa && proposition && valeur === proposition.note ? proposition.detail.map(({ critere, points, obtenu }) => ({ critere, points, obtenu })) : undefined;
+      // Le détail par critère (avec sa justification) n'est gardé que si la note est celle de la proposition.
+      const detail =
+        depuisIa && proposition && valeur === proposition.note
+          ? proposition.detail.map(({ critere, points, obtenu, justification }) => ({ critere, points, obtenu, ...(justification ? { justification } : {}) }))
+          : undefined;
       await patch<CopieDetail>(`/api/rendus/${copie.id}/correction`, {
         note: valeur,
         commentaire: commentaire.trim() || null,
@@ -277,6 +289,7 @@ function Notation({
         </Badge>
         {copie.etudiant.site && <Badge ton="gris">{copie.etudiant.site}</Badge>}
       </div>
+      <EtatCorrectionCopie copie={copie} bareme={bareme} />
 
       <Visionneuse fichiers={copie.fichiers} texte={copie.texte} />
 
@@ -294,10 +307,13 @@ function Notation({
         {proposition && (
           <div className="flex flex-col gap-2 rounded-2xl border border-orange/50 bg-orange-pale/60 p-3">
             <div className="flex items-center justify-between gap-2">
-              <Badge ton="orange">
-                <Sparkles className="h-3 w-3" aria-hidden /> {tx("corriger.ia.propose", { v: { note: nombreFr(proposition.note), bareme: nombreFr(bareme) } })}
+              <Badge ton="orange" className="whitespace-normal">
+                <Sparkles className="h-3 w-3 shrink-0" aria-hidden />{" "}
+                {propositionDuCampus
+                  ? txc("campus.proposition", { v: { note: nombreFr(proposition.note), bareme: nombreFr(bareme) } })
+                  : tx("corriger.ia.propose", { v: { note: nombreFr(proposition.note), bareme: nombreFr(bareme) } })}
               </Badge>
-              <Bouton variante="encre" taille="sm" onClick={reprendreIa} className="min-h-[40px]">
+              <Bouton variante="encre" taille="sm" onClick={reprendreIa} className="min-h-[40px] shrink-0">
                 {tx("corriger.ia.reprendre")}
               </Bouton>
             </div>
@@ -307,7 +323,7 @@ function Notation({
               </p>
             )}
             {proposition.commentaire && <p className="text-sm text-texte-doux">{proposition.commentaire}</p>}
-            <p className="text-xs text-texte-gris">{tx("corriger.ia.relire")}</p>
+            <p className="text-xs text-texte-gris">{txc("ia.proposition.envoyer")}</p>
           </div>
         )}
 

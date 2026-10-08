@@ -28,7 +28,7 @@ import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import { ZoneRendu } from "./composants/ZoneRendu";
 import { EcranRecu, EcranEnAttente, ListePieces, Vignette } from "./composants/Recu";
 import { Coches } from "./composants/CarteDevoir";
-import { EtatCorrectionCampus, LeCorrige, RelectureNote, phraseNoteAttendue, quandEnMots } from "./composants/CorrectionCampus";
+import { EtatCorrectionCampus, LeCorrige, RelectureNote, phraseNoteAttendue, quandEnMots } from "./composants/CorrectionCampusEtudiant";
 import { useEvenementsDevoirs } from "./PageDevoirs";
 import { dateEtHeureCourte, envoyeeEnDiffere, lienEcrireAuFormateur, nombre } from "./outils";
 

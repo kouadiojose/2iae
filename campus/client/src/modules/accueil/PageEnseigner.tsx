@@ -3,8 +3,9 @@
 // En haut, la prochaine séance : double horloge Abidjan / chez vous, compte à
 // rebours, préparation, et UN bouton principal qui change avec l'heure
 // (« Préparer la séance » longtemps avant, « Ouvrir le studio » à 30 min).
-// Puis ce qui attend : « Après la séance » (chantier C7 : la suite de la
-// dernière séance et les copies à corriger, seul bloc « copies » de la page),
+// Puis ce qui attend : la correction automatique (corrigés du jour à valider,
+// copies à revoir, relectures), « Après la séance » (chantier C7 : la suite de la
+// dernière séance et les copies à corriger),
 // questions restées sans réponse au dernier live, messages ; les
 // enregistrements de tous les cours (les siens et ceux des collègues) ; enfin
 // ses cours et sa semaine.
@@ -42,6 +43,7 @@ import { LigneReplay, useReplays } from "@/modules/live/replays";
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 // Emplacement du plan d'engagement (campus/ENGAGEMENT.md), vide tant que C7 n'est pas là.
 import { ApresSeance } from "@/modules/enseigner-suivi/ApresSeance";
+import { CartesCorrections } from "@/modules/enseigner-suivi/CartesCorrections";
 
 const MINUTE = 60_000;
 
@@ -112,9 +114,13 @@ export default function PageEnseigner() {
             />
           )}
           {data.enDirect && data.prochaineSeance && <LigneSeanceSuivante seance={data.prochaineSeance} />}
+          {/* Correction automatique : corrigés à valider, copies à revoir, relectures demandées (sinon une ligne discrète). */}
+          <LimiteSilencieuse nom="CartesCorrections">
+            <CartesCorrections />
+          </LimiteSilencieuse>
           {/* Module visio : essai de la visio, fuseau, diapos, plan minuté. */}
           {!data.enDirect && data.prochaineSeance && <CartePretClasse />}
-          {/* « Après la séance » porte aussi les copies à corriger (les exercices du campus à part, facultatifs). */}
+          {/* « Après la séance » porte aussi les copies que le formateur corrige lui-même. */}
           <LimiteSilencieuse nom="ApresSeance">
             <ApresSeance />
           </LimiteSilencieuse>

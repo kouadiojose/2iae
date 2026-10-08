@@ -1,6 +1,8 @@
 // /corrections (formateur, équipe) : les devoirs avec des copies à corriger
 // d'abord, puis ceux dont les notes attendent d'être publiées, ceux en cours
-// et les terminés. Accès aux carnets de notes.
+// et les terminés. Accès aux carnets de notes. En haut, la correction
+// automatique (8 octobre 2026) : corrigés à valider, copies à revoir et
+// relectures (cartes partagées avec l'accueil du formateur).
 import { useQuery } from "@tanstack/react-query";
 import { Plus, CheckSquare, BookOpenCheck } from "lucide-react";
 import { Page, EnTetePage } from "@/components/layout/coquille";
@@ -14,6 +16,7 @@ import { rafraichir } from "@/lib/queryClient";
 import { pluriel } from "@/lib/utils";
 import type { ListeDevoirs, DevoirEnseignantResume } from "@shared/schema";
 import { LigneDevoirEnseignant } from "./composants/LigneDevoirEnseignant";
+import { CartesCorrections } from "@/modules/enseigner-suivi/CartesCorrections";
 
 type CoursEnseigne = { id: number; code: string; titre: string; couleur: string };
 
@@ -54,6 +57,8 @@ export default function PageCorrections() {
           </LienBouton>
         }
       />
+
+      <CartesCorrections />
 
       {isLoading ? (
         <Chargement lignes={3} />

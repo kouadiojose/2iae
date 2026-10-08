@@ -24,6 +24,8 @@ import { enregistrerObjectif } from "./objectif";
 import { enregistrerEnseignerSuivi } from "./enseigner-suivi";
 import { enregistrerProgression } from "./progression";
 import { enregistrerRelancesAuto } from "./relances-auto";
+import { enregistrerCorriges } from "./corriges";
+import { enregistrerCorrectionsCopies } from "./corrections-copies";
 import { enregistrerParticipationDirect } from "./participation-direct";
 import { enregistrerPublic } from "./public";
 import { enregistrerPush } from "./push";
@@ -71,6 +73,8 @@ export function enregistrerRoutes(app: Express) {
   enregistrerEnseignerSuivi(app); // C7
   enregistrerProgression(app); // C5
   enregistrerRelancesAuto(app); // C4
+  enregistrerCorriges(app); // correction automatique : corrigés à valider (K1)
+  enregistrerCorrectionsCopies(app); // correction automatique : copies, relectures, bilan (K2)
   enregistrerParticipationDirect(app); // C6
   enregistrerPush(app);
   enregistrerProgramme(app);

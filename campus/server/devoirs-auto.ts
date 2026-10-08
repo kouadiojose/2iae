@@ -95,7 +95,7 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
         exercice.enonce,
         exercice.consignes.length ? `**Ce que tu dois faire :**\n${exercice.consignes.map((x) => `- ${x}`).join("\n")}` : "",
         "**Comment rendre ton travail :** prends ta copie en photo (page par page), dépose un fichier (PDF, Word, Excel…) ou filme une courte vidéo (3 minutes au plus) où tu expliques ta démarche. Tu peux mélanger.",
-        `_Exercice préparé par le campus d'après le cours du ${jour}. Noté sur 20 par ton formateur._`,
+        `_Exercice préparé par le campus d'après le cours du ${jour}. Ton formateur peut le noter sur 20 : avant de rendre, vérifie ton travail avec la grille._`,
       ]
         .filter(Boolean)
         .join("\n\n");

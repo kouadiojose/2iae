@@ -41,7 +41,7 @@ export const TYPES_ACTIVITE = [
   "sondage", // réponse à un sondage du direct
   "ressenti", // ressenti donné pendant le direct
   "replay", // replay d'une séance manquée
-  "revision", // bonne réponse de révision (C1)
+  "revision", // carte revue en révision, juste ou non (C1)
   "entrainement", // quiz d'entraînement d'un cours complet terminé (C1)
   "objectif", // objectif du jour validé (C2)
 ] as const;

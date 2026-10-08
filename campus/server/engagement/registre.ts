@@ -32,6 +32,8 @@ import { ErreurHttp } from "../http";
 import { planifier } from "../taches";
 import { tableExiste } from "./tables";
 import { attribuerBadges } from "./badges";
+// Une tentative clôturée vide (« Terminer » sans répondre) ne rapporte rien : même règle que l'objectif du jour.
+import { sqlTentativeRepondue } from "./objectif";
 import { POINTS, PLAFONDS, MINUTES_PRESENCE, VOTES_QUESTION, REPLAY_MINUTES, FENETRE_JOURS, RENTREE } from "./bareme";
 import { SQL_DUREE_REFERENCE, sqlClasseA } from "../routes/admin";
 import { FUSEAU_PAR_DEFAUT } from "@shared/engagement/calendrier";
@@ -82,9 +84,6 @@ const sqlSuitLeCours = (uid: SQL, coursId: SQL) => sql`${coursId} IN (
     UNION SELECT pc.classe_id FROM campus.passages_classes pc WHERE pc.utilisateur_id = ${uid})
   UNION SELECT i.cours_id FROM campus.inscriptions i WHERE i.utilisateur_id = ${uid})`;
 
-/** Interrogation avec au moins une réponse (une tentative clôturée vide ne rapporte rien). */
-const sqlAuMoinsUneReponse = sql`EXISTS (SELECT 1 FROM jsonb_each(t.reponses) e WHERE e.value NOT IN ('[]'::jsonb, 'null'::jsonb, '""'::jsonb, '{}'::jsonb))`;
-
 export const SOURCES: Source[] = [
   {
     nom: "présences",
@@ -124,7 +123,7 @@ export const SOURCES: Source[] = [
       SELECT t.etudiant_id AS uid, 'quiz:' || t.devoir_id || ':' || t.etudiant_id AS cle, 'quiz'::text AS type, ${pts("quiz")} AS points,
         min(t.fin_le) AS fait_le, NULL::date AS jour, d.cours_id, NULL::int AS seance_id, d.id AS objet_id
       FROM campus.tentatives_quiz t JOIN campus.devoirs d ON d.id = t.devoir_id
-      WHERE t.fin_le IS NOT NULL AND ${sqlAuMoinsUneReponse} AND t.fin_le >= ${depuisDe(f)} ${pourQui(f, sql`t.etudiant_id`)}
+      WHERE ${sqlTentativeRepondue("t")} AND t.fin_le >= ${depuisDe(f)} ${pourQui(f, sql`t.etudiant_id`)}
       GROUP BY t.etudiant_id, t.devoir_id, d.cours_id, d.id`,
   },
   {
@@ -133,7 +132,7 @@ export const SOURCES: Source[] = [
       SELECT t.etudiant_id AS uid, 'quiz-reussi:' || t.devoir_id || ':' || t.etudiant_id AS cle, 'quiz_reussi'::text AS type, ${pts("quiz_reussi")} AS points,
         min(t.fin_le) AS fait_le, NULL::date AS jour, d.cours_id, NULL::int AS seance_id, d.id AS objet_id
       FROM campus.tentatives_quiz t JOIN campus.devoirs d ON d.id = t.devoir_id
-      WHERE t.fin_le IS NOT NULL AND ${sqlAuMoinsUneReponse} AND t.note IS NOT NULL AND d.bareme > 0 AND t.note >= d.bareme / 2.0
+      WHERE ${sqlTentativeRepondue("t")} AND t.note IS NOT NULL AND d.bareme > 0 AND t.note >= d.bareme / 2.0
         AND t.fin_le >= ${depuisDe(f)} ${pourQui(f, sql`t.etudiant_id`)}
       GROUP BY t.etudiant_id, t.devoir_id, d.cours_id, d.id`,
   },

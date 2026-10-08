@@ -86,8 +86,8 @@ async function lireLigne(utilisateurId: number, jour: string): Promise<Ligne | n
  * Tentative d'interrogation terminée avec au moins une réponse ; « alias »
  * désigne campus.tentatives_quiz. Même règle que les points du registre (C5,
  * registre.ts) : une tentative clôturée vide (« Terminer » sans répondre, ou
- * temps écoulé) ne compte pas. À reprendre par le registre pour qu'il n'y ait
- * qu'une écriture de la règle.
+ * temps écoulé) ne compte pas. Le registre reprend cette fonction : la règle
+ * n'est écrite qu'ici.
  */
 export function sqlTentativeRepondue(alias: string): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlTentativeRepondue : alias SQL invalide « ${alias} »`);

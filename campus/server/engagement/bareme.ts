@@ -82,9 +82,10 @@ export const COUPE = {
   seuilEquipe: 70,
   /**
    * Poids de la présence aux directs émargés dans le taux de la Coupe
-   * (amendement de José) ; le reste est la participation. Une séance sans
-   * aucun émargement dans un campus est neutre : sans séance émargée, le
-   * taux est la participation seule.
+   * (amendement de José) ; le reste est la participation. La présence ne peut
+   * que faire monter le taux (le plus haut des deux calculs est gardé) : faire
+   * émarger ne pénalise jamais un campus. Une séance sans aucun émargement dans
+   * un campus est neutre : sans séance émargée, le taux est la participation seule.
    */
   poidsPresence: 1 / 3,
   /** Semaines d'historique montrées à l'équipe. */

@@ -28,6 +28,7 @@ import { sqlAttendus, SQL_DUREE_REFERENCE } from "../routes/admin";
 import { tableExiste } from "./tables";
 import { sqlDevoirProposable } from "./proposables";
 import { sqlEtatPresence } from "./presence";
+import { avecTraces, sqlSeanceRattrapee } from "./progression-cours";
 import { rappelEntrainementAutorise } from "./tirage";
 import { ajouterJours, ecartJours, jourLocal, minutesLocales, semaineIso, type Jour } from "@shared/engagement/calendrier";
 import {
@@ -481,10 +482,8 @@ async function propositions(etudiants: EtudiantRappel[], maintenant: number): Pr
   // 2. Séance de ses cours tenue depuis 3 jours au plus, où il était ABSENT (jamais « inconnu »), cours complet prêt, pas rattrapée.
   const ids2 = restants().map((e) => e.id);
   if (ids2.length) {
-    const suivis = (await tableExiste("suivis_cours_complets"))
-      ? sql`AND NOT EXISTS (SELECT 1 FROM campus.suivis_cours_complets sc WHERE sc.seance_id = a.seance_id AND sc.utilisateur_id = a.uid)`
-      : sql``;
-    const lignes = await facultatif("rattrapage", async () => {
+    // « Rattrapée » = un vrai travail sur la séance (même règle que l'objectif du jour) : une simple ouverture ne suffit pas.
+    const lignes = await facultatif("rattrapage", () => avecTraces(async (traces) => {
       const r = await db.execute<{ uid: number; seance_id: number; debut: string; cours: string }>(sql`
         SELECT DISTINCT ON (a.uid) a.uid, a.seance_id, COALESCE(s.demarree_le, a.debut) AS debut, c.titre AS cours
         FROM (${sqlAttendus({ depuis: new Date(maintenant - 4 * JOUR_MS), sites: null })}) a
@@ -493,11 +492,10 @@ async function propositions(etudiants: EtudiantRappel[], maintenant: number): Pr
         JOIN campus.etudes_seances es ON es.seance_id = a.seance_id AND es.statut = 'prete'
         WHERE a.uid = ANY(${entiers(ids2)})
           AND ${sqlEtatPresence(sql`a.seance_id`, sql`a.uid`)} = 'absent'
-          AND NOT EXISTS (SELECT 1 FROM campus.vues_replay v WHERE v.seance_id = a.seance_id AND v.utilisateur_id = a.uid)
-          ${suivis}
+          AND NOT ${sqlSeanceRattrapee(sql`a.seance_id`, sql`a.uid`, traces)}
         ORDER BY a.uid, a.debut DESC`);
       return r.rows;
-    });
+    }));
     for (const l of lignes) {
       const lien = `/mediatheque/cours/${l.seance_id}?depuis=rappel`;
       if (dejaVu(l.uid, lien)) continue;

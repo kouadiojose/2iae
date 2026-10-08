@@ -84,8 +84,9 @@ export const badgesEtudiants = campusSchema.table(
 
 /**
  * Coupe des campus et des classes, semaine par semaine (server/engagement/coupe.ts) :
- * la semaine en cours est recalculée toutes les 15 minutes, la précédente est
- * figée une seule fois le lundi (fige_le). Que des taux et des moyennes,
+ * la semaine en cours est recalculée toutes les 15 minutes, la précédente reste
+ * recalculée pendant 48 h de clôture puis est figée une seule fois, le mercredi
+ * à 1 h (fige_le). Que des taux et des moyennes,
  * aucune donnée nominative. Lue aussi par d'autres chantiers (C8).
  */
 export const classementsSemaine = campusSchema.table(

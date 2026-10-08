@@ -32,9 +32,9 @@ import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, LigneNoteDet
 import type { CorrigeAValider } from "@shared/engagement/corrections";
 import { selonNombre, t as tc } from "@shared/textes/corrections";
 import { Visionneuse, EnregistreurVocal } from "./composants/Correction";
-import { EtatCorrectionCopie, JustificationCritere, TraiterRelecture, texteEcheance } from "./composants/CorrectionCampus";
+import { EtatCorrectionCopie, JustificationCritere, TraiterRelecture, propositionDuCampus, texteEcheance } from "./composants/CorrectionCampus";
 import { CorrectionQuiz } from "./composants/CorrectionQuiz";
-import { envoyeeEnDiffere, nombre } from "./outils";
+import { detailJustifieLaNote, envoyeeEnDiffere, nombre } from "./outils";
 
 type Filtre = "toutes" | "a_corriger" | "a_revoir" | "rendues" | "retard" | "non_rendues";
 
@@ -128,7 +128,8 @@ export default function PageCopies({ id }: { id: string }) {
   const avecCampus = copies.some((c) => c.correctionAuto || c.origineNote === "campus");
   const aCorriger = avecCampus ? copies.filter(FILTRES.a_corriger).length : compteurs.aCorriger;
   const aRevoir = copies.filter(FILTRES.a_revoir).length;
-  const noteesCampus = copies.filter((c) => c.origineNote === "campus" && c.note !== null).length;
+  // Une note du campus retenue à la recorrection (corrigé modifié) est comptée « à revoir », pas « notée ».
+  const noteesCampus = copies.filter((c) => c.origineNote === "campus" && c.note !== null && c.correctionAuto?.etat !== "a_revoir").length;
   const enCoursCampus = copies.filter((c) => c.etat !== "non_rendu" && c.note === null && campusSenOccupe(c)).length;
 
   async function publierNotes() {
@@ -260,7 +261,7 @@ export default function PageCopies({ id }: { id: string }) {
                         <Badge ton="gris" className="px-2 py-0.5 text-[10px]">Non rendu</Badge>
                       ) : c.relectureOuverte ? (
                         <Badge ton="orange" className="px-2 py-0.5 text-[10px]">{txc("liste.relecture")}</Badge>
-                      ) : c.correctionAuto?.etat === "a_revoir" && c.note === null ? (
+                      ) : c.correctionAuto?.etat === "a_revoir" ? (
                         <Badge ton="alerte" className="px-2 py-0.5 text-[10px]">{txc("liste.aRevoir")}</Badge>
                       ) : c.etat === "en_retard" ? (
                         <Badge ton="danger" className="px-2 py-0.5 text-[10px]">En retard</Badge>
@@ -462,8 +463,10 @@ function CopieOuverte({
           <span className="text-sm text-texte-pale">Ce cours est suivi par plusieurs campus : seul son formateur le corrige et publie les notes.</span>
         </Carte>
       ) : (
-        // Une copie remplacée par l'étudiant (autre heure d'arrivée) repart d'une notation vierge.
-        <PanneauNotation key={`${c.id}:${c.renduLe}`} copie={c} bareme={bareme} grille={grille} iaDisponible={iaDisponible} onSuivante={onSuivante} derniere={derniere} />
+        // Une copie remplacée par l'étudiant (autre heure d'arrivée) repart d'une notation vierge ; une note
+        // changée côté serveur (relecture traitée dans le panneau) recharge le panneau, qui ne garde jamais
+        // l'ancienne. Pas corrigeLe : le commentaire vocal le change sans toucher à la note (points en cours gardés).
+        <PanneauNotation key={`${c.id}:${c.renduLe}:${c.note ?? ""}`} copie={c} bareme={bareme} grille={grille} iaDisponible={iaDisponible} onSuivante={onSuivante} derniere={derniere} />
       )}
     </div>
   );
@@ -490,10 +493,14 @@ function PanneauNotation({
   derniere: boolean;
 }) {
   const txc = useTextes(tc);
-  const criteres = grille.length ? grille : null;
-  // Lignes de la note actuelle (celle du campus, avec sa justification, ou celle d'un formateur).
-  const lignes = criteres ? criteres.map((g, i) => ligneDuCritere(copie.noteDetail, g.critere, i, criteres.length)) : [];
-  const initialDetail = () => lignes.map((l) => (l ? String(l.obtenu) : ""));
+  // La grille ne reprend le détail enregistré que s'il justifie la note. Sinon (note changée à une relecture,
+  // ou posée sans détail), la note se reprend en « note globale » : jamais le total d'un ancien détail.
+  const detailFiable = detailJustifieLaNote(copie.noteDetail, copie.note, bareme);
+  const [parCritere, setParCritere] = useState(detailFiable);
+  const criteres = grille.length && parCritere ? grille : null;
+  // Lignes de la note actuelle (celle du campus, avec sa justification, ou celle d'un formateur), si elles la justifient.
+  const lignes = detailFiable ? grille.map((g, i) => ligneDuCritere(copie.noteDetail, g.critere, i, grille.length)) : [];
+  const initialDetail = () => grille.map((_, i) => (lignes[i] ? String(lignes[i]!.obtenu) : ""));
   const [detail, setDetail] = useState<string[]>(initialDetail);
   const [globale, setGlobale] = useState(copie.note === null ? "" : String(copie.note));
   const [commentaire, setCommentaire] = useState(copie.commentaire ?? "");
@@ -501,8 +508,8 @@ function PanneauNotation({
   const [envoi, setEnvoi] = useState<"enregistrer" | "envoyer" | null>(null);
   const [demandeIa, setDemandeIa] = useState(false);
   const proposition = copie.propositionIa;
-  // Une copie retenue pour une consigne cachée garde la proposition du campus (non publiée).
-  const propositionDuCampus = copie.correctionAuto?.etat === "a_revoir" && copie.correctionAuto.raison === "alerte";
+  // Proposition gardée par le campus pour une copie retenue (pas publiée), ou demandée par le formateur (IA).
+  const duCampus = propositionDuCampus(copie);
 
   const valeurs = detail.map((v) => (v === "" ? null : Number(v.replace(",", "."))));
   const total = criteres ? (valeurs.every((v) => v === null) ? null : valeurs.reduce<number>((s, v) => s + (v ?? 0), 0)) : globale === "" ? null : Number(globale.replace(",", "."));
@@ -563,7 +570,8 @@ function PanneauNotation({
             }),
             note: total,
           };
-          if (valeurs.every((v) => v === null)) corps = { commentaire, note: null, noteDetail: null };
+          // Grille vide : on efface la note, sauf une note posée sans détail (note globale) qu'on ne touche pas.
+          if (valeurs.every((v) => v === null)) corps = !detailFiable && copie.note !== null ? { commentaire } : { commentaire, note: null, noteDetail: null };
         } else {
           if (total !== null && (Number.isNaN(total) || total < 0 || total > bareme)) throw new Error(`La note doit être entre 0 et ${nombre(bareme)}.`);
           corps = { ...corps, note: total };
@@ -618,7 +626,7 @@ function PanneauNotation({
           <div className="flex items-center justify-between gap-2">
             <Badge ton="orange" className="whitespace-normal">
               <Sparkles className="h-3 w-3 shrink-0" />{" "}
-              {txc(propositionDuCampus ? "campus.proposition" : "ia.proposition", { v: { note: nombre(proposition.note), bareme: nombre(bareme) } })}
+              {txc(duCampus ? "campus.proposition" : "ia.proposition", { v: { note: nombre(proposition.note), bareme: nombre(bareme) } })}
             </Badge>
             <Bouton variante="encre" taille="sm" onClick={reprendreIa} className="min-h-[40px] shrink-0">
               Reprendre
@@ -630,7 +638,7 @@ function PanneauNotation({
             </p>
           )}
           <p className="text-sm text-texte-doux">{proposition.commentaire}</p>
-          <p className="text-xs text-texte-gris">{txc(propositionDuCampus ? "campus.proposition.aide" : "ia.proposition.aide")}</p>
+          <p className="text-xs text-texte-gris">{txc(duCampus ? "campus.proposition.aide" : "ia.proposition.aide")}</p>
         </div>
       )}
 
@@ -683,7 +691,7 @@ function PanneauNotation({
                 {ia && (
                   <p className="text-[13px] text-texte-gris">
                     <span className="font-semibold text-orange-fonce">
-                      {propositionDuCampus ? "Campus" : "IA"} : {nombre(ia.obtenu)}/{nombre(g.points)}
+                      {duCampus ? "Campus" : "IA"} : {nombre(ia.obtenu)}/{nombre(g.points)}
                     </span>{" "}
                     · {ia.justification}
                   </p>
@@ -710,6 +718,12 @@ function PanneauNotation({
           />
           <span className="font-mono text-sm text-texte-gris">/{nombre(bareme)}</span>
         </label>
+      )}
+      {!criteres && grille.length > 0 && (
+        // Note posée sans détail qui la justifie : la grille reste possible, en repartant de zéro.
+        <Bouton variante="fantome" taille="sm" onClick={() => setParCritere(true)} className="-mt-3 min-h-[44px] self-start px-0 text-texte-pale">
+          Noter critère par critère
+        </Bouton>
       )}
 
       <ZoneTexte

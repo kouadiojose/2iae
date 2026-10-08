@@ -5,6 +5,8 @@
 //     fichier non lu, copie vide, échecs techniques), avec la raison en clair : « Ouvrir la copie » mène à
 //     l'écran de correction existant (/enseigner/devoirs/:id/copies?etudiant=).
 // Lien des cartes de l'accueil. Réponse en « no-store » côté serveur (noms des étudiants, notes).
+// Étiquettes justes : « Corrigé par le campus » seulement sur une note publiée du campus (parCampus) ; une
+// note proposée ne dit pas qui l'a proposée (le campus, ou l'aide IA demandée par le formateur).
 import { useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -16,8 +18,9 @@ import { Avatar, Badge, Chargement, EtatVide, Erreur } from "@/components/ui/div
 import { useMoiConnecte } from "@/lib/auth";
 import { relatif } from "@/lib/dates";
 import { useTextes } from "@/lib/textes";
+import { cn } from "@/lib/utils";
 import { nombre } from "@/modules/evaluations/outils";
-import { BadgeCampus, ICONES_RAISON, TraiterRelecture, libelleRaison, texteRaison } from "@/modules/evaluations/composants/CorrectionCampus";
+import { BadgeCampus, ICONES_RAISON, RemarqueCampus, TraiterRelecture, libelleRaison, texteRaison } from "@/modules/evaluations/composants/CorrectionCampus";
 import { t, type CleCorrections } from "@shared/textes/corrections";
 import type { CopieARevoir, ListeARevoir } from "@shared/engagement/corrections";
 import type { Traducteur } from "@shared/textes";
@@ -137,10 +140,15 @@ function CarteRetenue({ c, tx }: { c: CopieARevoir; tx: Tx }) {
         <span className="flex items-center gap-2 text-[15px] font-bold text-alerte">
           <Icone className="h-4 w-4 shrink-0" aria-hidden /> {libelleRaison(tx, raison)}
         </span>
-        <p className="text-sm leading-snug text-texte-doux">{texteRaison(tx, raison)}</p>
-        {c.detail && <p className="mt-1 rounded-xl bg-white/70 px-3 py-2 text-sm leading-snug text-texte-doux">{c.detail}</p>}
+        {/* Note publiée (recorrection retenue) : l'étudiant ne peut plus remplacer sa copie. */}
+        {!(c.parCampus && raison === "illisible") && <p className="text-sm leading-snug text-texte-doux">{texteRaison(tx, raison)}</p>}
+        {c.detail && <RemarqueCampus texte={c.detail} className="mt-1" />}
       </div>
-      {c.note !== null && <p className="text-sm text-texte-pale">{tx("revoir.noteProposee", { v: { note: nombre(c.note), bareme: nombre(c.bareme) } })}</p>}
+      {c.note !== null && (
+        <p className={cn("text-sm", c.parCampus ? "font-semibold text-encre" : "text-texte-pale")}>
+          {tx(c.parCampus ? "revoir.notePubliee.ancienCorrige" : "revoir.noteProposee", { v: { note: nombre(c.note), bareme: nombre(c.bareme) } })}
+        </p>
+      )}
       {/* Contour : le seul bouton orange de la page reste l'envoi d'une réponse de relecture. */}
       <LienBouton href={lienCopie(c)} variante="contour" className="min-h-[52px] w-full">
         {tx("revoir.ouvrir")} <ChevronRight className="h-5 w-5" aria-hidden />
@@ -159,8 +167,10 @@ function CarteRelecture({ c, tx }: { c: CopieARevoir; tx: Tx }) {
             {tx("revoir.notePubliee", { v: { note: nombre(c.note), bareme: nombre(c.bareme) } })}
           </span>
         )}
-        <BadgeCampus />
+        {/* Une note retouchée par le formateur (commentaire seul : la relecture reste ouverte) n'est plus celle du campus. */}
+        {c.parCampus && <BadgeCampus />}
       </div>
+      {c.detail && <RemarqueCampus texte={c.detail} className="bg-creme" />}
       <Link href={lienCopie(c)} className="-my-1 inline-flex min-h-[44px] items-center gap-1 self-start text-[15px] font-bold">
         {tx("revoir.voirCopie")} <ChevronRight className="h-4 w-4" aria-hidden />
       </Link>

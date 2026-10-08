@@ -4,8 +4,11 @@
 // l'envoi, qui passe par la file d'envoi hors ligne : reçu vert tout de suite,
 // ou « En attente de réseau, partira tout seul » — le brouillon n'est effacé
 // qu'une fois le reçu arrivé.
+// Devoir corrigé par le campus (8 octobre 2026) : il lit les photos, les PDF
+// et le texte ; une vidéo, un son ou un autre fichier (Word…) fait relire la
+// copie par le formateur. La zone le dit avant l'envoi, sans « Tu peux mélanger ».
 import { useEffect, useRef, useState } from "react";
-import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check, Video, Lightbulb } from "lucide-react";
+import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check, Video, Lightbulb, Eye } from "lucide-react";
 import { EnregistreurVideo, enregistreurDisponible } from "./EnregistreurVideo";
 import { Bouton } from "@/components/ui/bouton";
 import { ZoneTexte } from "@/components/ui/champs";
@@ -17,6 +20,7 @@ import { maintenantServeur } from "@/lib/horloge";
 import { taille, pluriel, cn } from "@/lib/utils";
 import { useTextes } from "@/lib/textes";
 import { t as textesCampus } from "@shared/textes/corrections-etudiant";
+import { luParLeCampus } from "./CorrectionCampusEtudiant";
 import type { RecuDepot } from "@shared/schema";
 import {
   lireTexteBrouillon,
@@ -66,7 +70,7 @@ export function ZoneRendu({
 }: {
   utilisateurId: number;
   devoir: { id: number; titre: string };
-  /** Devoir corrigé par le campus : conseil pour une copie lisible (une vidéo seule va au formateur). */
+  /** Devoir corrigé par le campus : conseil pour une copie lisible (photos nettes ou PDF ; le reste va au formateur). */
   correctionCampus?: boolean;
   /** Une copie est déjà rendue : l'envoi la remplacera. */
   remplacement: boolean;
@@ -155,6 +159,8 @@ export function ZoneRendu({
 
   const poids = pages.reduce((s, p) => s + p.blob.size, 0);
   const photos = pages.filter((p) => p.type.startsWith("image/")).length;
+  // Une vidéo, un son ou un fichier que le campus ne lit pas : c'est le formateur qui corrigera la copie.
+  const pourLeFormateur = correctionCampus && pages.some((p) => !luParLeCampus(p.type));
   const vide = !texte.trim() && !pages.length;
 
   async function envoyer() {
@@ -196,13 +202,18 @@ export function ZoneRendu({
         <h2 id="titre-rendre" className="text-[22px] font-black tracking-serre">
           {remplacement ? "Remplacer ma copie" : "Rendre mon devoir"}
         </h2>
-        <p className="text-[15px] text-texte-pale">Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger.</p>
-        {/* Dépôt corrigé par le campus (8 octobre 2026) : une copie lisible, une vidéo seule allant au formateur. */}
+        <p className="text-[15px] text-texte-pale">
+          {correctionCampus ? tc("depot.intro.campus") : "Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger."}
+        </p>
+        {/* Dépôt corrigé par le campus (8 octobre 2026) : des photos nettes ou un PDF ; le reste va au formateur. */}
         {correctionCampus && (
-          <p className="mt-1.5 flex items-start gap-2 rounded-xl bg-orange-pale px-3 py-2.5 text-sm leading-snug text-texte-doux">
+          <div className="mt-1.5 flex items-start gap-2 rounded-xl bg-orange-pale px-3 py-2.5 text-sm leading-snug text-texte-doux">
             <Lightbulb className="mt-px h-4 w-4 shrink-0 text-orange-fonce" />
-            {tc("conseil.depot")}
-          </p>
+            <span className="flex flex-col gap-1">
+              <span>{tc("conseil.depot")}</span>
+              <span className="text-texte-pale">{tc("conseil.depot.formateur")}</span>
+            </span>
+          </div>
         )}
       </div>
 
@@ -256,6 +267,12 @@ export function ZoneRendu({
             <span className="text-[15px] font-bold">{pluriel(pages.length, photos === pages.length ? "page" : "élément")}</span>
             <span className="font-mono text-xs text-texte-gris">{taille(poids)} à envoyer</span>
           </div>
+          {pourLeFormateur && (
+            <p className="flex items-start gap-2 rounded-xl bg-alerte-clair px-3 py-2.5 text-sm leading-snug text-texte-doux" role="status">
+              <Eye className="mt-px h-4 w-4 shrink-0 text-alerte" aria-hidden />
+              {tc("conseil.depot.joint")}
+            </p>
+          )}
           <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {pages.map((p, i) => (
               <li key={p.id} className="flex flex-col overflow-hidden rounded-2xl border border-ligne bg-creme">

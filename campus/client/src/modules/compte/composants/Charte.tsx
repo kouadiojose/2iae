@@ -1,7 +1,9 @@
 // Charte d'utilisation du campus, en trois blocs courts (IA, enregistrement
 // des lives, données). Montrée à la première connexion (« J'accepte ») et
 // relisible à tout moment depuis le profil. Tutoiement pour les étudiants,
-// vouvoiement pour les formateurs et l'équipe.
+// vouvoiement pour les formateurs et l'équipe. Correction automatique (8 octobre
+// 2026) : les copies de dépôt sont notées par le campus d'après le corrigé du
+// formateur, après la date limite ; le formateur garde le dernier mot.
 import type { ReactNode } from "react";
 import { ShieldCheck, Sparkles, Video } from "lucide-react";
 import type { Role } from "@shared/schema";
@@ -18,6 +20,7 @@ function blocs(role: Role): Bloc[] {
           "Il explique autrement et te fait réviser, mais il ne fait pas tes devoirs.",
           "Il se met en pause pendant les interrogations.",
           "Il peut se tromper : vérifie toujours ce qu'il dit. Ton nom ne lui est jamais envoyé.",
+          "Tes copies sont corrigées par le campus après la date limite, avec le corrigé de ton formateur. Une note te semble fausse ? Demande une relecture : ton formateur a le dernier mot.",
         ],
       },
       {
@@ -45,9 +48,10 @@ function blocs(role: Role): Bloc[] {
   return [
     {
       icone: <Sparkles className="h-5 w-5" />,
-      titre: "L'IA propose, vous décidez",
+      titre: "L'IA propose, vous gardez le dernier mot",
       points: [
-        "Aucune note, publication ou annonce produite par l'IA ne part sans votre validation : elle reste marquée « Proposé par l'IA ».",
+        "Aucune publication ou annonce produite par l'IA ne part sans votre validation : elle reste marquée « Proposé par l'IA ».",
+        "Exception : les copies de dépôt sont notées par le campus après la date limite, d'après le corrigé du devoir, validé par vous ou tenu pour bon au bout de 24 h. Vous pouvez changer toute note, l'étudiant peut demander une relecture, et une copie douteuse vous est toujours laissée.",
         "Les noms des étudiants ne sont jamais envoyés à l'IA.",
       ],
     },

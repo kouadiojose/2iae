@@ -1,10 +1,11 @@
 // /devoirs/:id (étudiant) : consigne, pièces jointes avec leur poids, zone
 // « Rendre mon devoir », reçu vert, puis la correction (note, commentaire,
 // commentaire vocal). « Écrire au formateur » et le tuteur IA sont à un toucher.
-// Correction automatique (8 octobre 2026) : « Le campus corrige ta copie : ta note
-// arrive ce soir », note « Corrigé par le campus » critère par critère avec sa
-// justification, demande de relecture, corrigé après la date limite
-// (composants/CorrectionCampus.tsx).
+// Correction automatique (8 octobre 2026) : « Le campus corrige ta copie après la
+// date limite : ta note arrive jeudi soir » (une copie avec une vidéo ou un son :
+// « ton formateur va la regarder »), note « Corrigé par le campus » critère par
+// critère avec sa justification, demande de relecture, corrigé après la date
+// limite (composants/CorrectionCampusEtudiant.tsx).
 import { useCallback, useState } from "react";
 import { Link, Redirect } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -28,9 +29,9 @@ import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import { ZoneRendu } from "./composants/ZoneRendu";
 import { EcranRecu, EcranEnAttente, ListePieces, Vignette } from "./composants/Recu";
 import { Coches } from "./composants/CarteDevoir";
-import { EtatCorrectionCampus, LeCorrige, RelectureNote, phraseNoteAttendue, quandEnMots } from "./composants/CorrectionCampusEtudiant";
+import { EtatCorrectionCampus, LeCorrige, RelectureNote, phraseApresDepot, quandEnMots } from "./composants/CorrectionCampusEtudiant";
 import { useEvenementsDevoirs } from "./PageDevoirs";
-import { dateEtHeureCourte, envoyeeEnDiffere, lienEcrireAuFormateur, nombre } from "./outils";
+import { dateEtHeureCourte, detailJustifieLaNote, envoyeeEnDiffere, lienEcrireAuFormateur, nombre } from "./outils";
 
 export default function PageDevoir({ id }: { id: string }) {
   const moi = useMoiConnecte();
@@ -95,12 +96,14 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
   const depasse = new Date(devoir.dateLimite).getTime() < maintenant;
   const renduEnvoye = rendu && rendu.statut !== "brouillon" ? rendu : null;
   const lienFormateur = lienEcrireAuFormateur(devoir.formateur?.id, devoir.titre);
-  // La copie qui vient d'arriver (même heure de remise que le reçu) : le reçu dit quand le campus la notera.
-  const correctionRecue = recu && rendu?.renduLe === recu.renduLe && rendu.correctionAuto?.etat === "en_file" ? rendu.correctionAuto : null;
+  // La copie qui vient d'arriver (même heure de remise que le reçu) : le reçu dit quand le campus la notera
+  // (après la date limite), ou que son formateur la regardera (vidéo, son, fichier que le campus ne lit pas).
+  const correctionRecue = recu && rendu?.renduLe === recu.renduLe && rendu.correctionAuto ? rendu.correctionAuto : null;
+  const apresDepot = correctionRecue && recu ? phraseApresDepot(correctionRecue, recu.fichiers, maintenant, tc, devoir.dateLimite) : null;
 
   // Écrans plein cadre : reçu, ou copie en attente de réseau.
   let principal: React.ReactNode;
-  if (recu) principal = <EcranRecu recu={recu} onFermer={() => setRecu(null)} noteAttendue={correctionRecue ? phraseNoteAttendue(correctionRecue, maintenant, tc) : null} />;
+  if (recu) principal = <EcranRecu recu={recu} onFermer={() => setRecu(null)} noteAttendue={apresDepot?.texte ?? null} parFormateur={apresDepot?.formateur} />;
   else if (enAttente || cleEnFile) principal = <EcranEnAttente cle={enAttente?.cle ?? cleEnFile ?? undefined} titre={devoir.titre} onRecu={recuArrive} />;
   else if (d.peutRendre && (!renduEnvoye || remplacer)) {
     principal = (
@@ -219,6 +222,9 @@ function EtatCopie({
     // Corrigé précisé après coup : la note du campus reste affichée jusqu'à la nouvelle.
     const recorrection = parCampus && rendu.correctionAuto && rendu.correctionAuto.etat !== "a_revoir" && rendu.correctionAuto.etat !== "notee" ? rendu.correctionAuto : null;
     const commentaire = rendu.commentaire && <p className="whitespace-pre-line rounded-2xl bg-nuit-carte p-4 text-[15.5px] leading-relaxed text-nuit-texte">{rendu.commentaire}</p>;
+    // Le détail par critère n'est montré que s'il justifie la note affichée (même plafond au barème que le
+    // serveur) : une note changée par le formateur ne s'affiche jamais au-dessus des points de l'ancienne.
+    const detail = rendu.noteDetail?.length && rendu.note !== null && detailJustifieLaNote(rendu.noteDetail, rendu.note, devoir.bareme) ? rendu.noteDetail : null;
     return (
       <section className="flex flex-col gap-4 rounded-[24px] bg-encre p-5 text-white sm:p-6" aria-label="Correction">
         <div className="flex items-end justify-between gap-4">
@@ -242,11 +248,11 @@ function EtatCopie({
         )}
         {/* Note du campus : le commentaire d'abord (ce qu'il faut retenir), puis le détail qui le justifie. */}
         {parCampus && commentaire}
-        {rendu.noteDetail && rendu.noteDetail.length > 0 && (
+        {detail && (
           <div className="flex flex-col gap-3">
             {parCampus && <h3 className="font-mono text-xs uppercase tracking-wider text-nuit-gris">{tc("note.criteres")}</h3>}
             <ul className="flex flex-col gap-3">
-              {rendu.noteDetail.map((l) => (
+              {detail.map((l) => (
                 <li key={l.critere} className={cn("flex flex-col gap-1.5", l.justification && "rounded-2xl bg-nuit-carte p-3.5")}>
                   <span className="flex justify-between gap-3 text-[15px]">
                     <span className={cn(l.justification && "font-bold")}>{l.critere}</span>
@@ -309,7 +315,14 @@ function EtatCopie({
           </div>
         </div>
         {campus ? (
-          <EtatCorrectionCampus correction={campus} maintenant={maintenant} peutRemplacer={d.peutRemplacer} onRemplacer={remplacement ? undefined : onRemplacer} />
+          <EtatCorrectionCampus
+            correction={campus}
+            fichiers={rendu.fichiers}
+            dateLimite={devoir.dateLimite}
+            maintenant={maintenant}
+            peutRemplacer={d.peutRemplacer}
+            onRemplacer={remplacement ? undefined : onRemplacer}
+          />
         ) : (
           <p className="text-sm text-texte-pale">La note apparaîtra ici quand ton formateur l'aura publiée. Tu recevras un rappel.</p>
         )}

@@ -152,6 +152,12 @@ export type CopieARevoir = {
   detail: string | null;
   /** Note publiée (relecture) ou proposée par le campus (alerte…), si elle existe. */
   note: number | null;
+  /**
+   * La note est publiée et c'est celle du campus (statut « corrige », origine « campus ») : badge « Corrigé
+   * par le campus », et pour une copie retenue, la note de l'ancien corrigé encore publiée. Absent ou faux :
+   * note proposée (pas envoyée), ou posée par un formateur. Rempli par le serveur (r.origine_note).
+   */
+  parCampus?: boolean;
   bareme: number;
   relecture: { id: number; motif: string; creeLe: string } | null;
 };

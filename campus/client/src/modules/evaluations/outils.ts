@@ -59,6 +59,17 @@ export function nombre(n: number | null | undefined, decimales = 2): string {
 /** « 16,5/20 » */
 export const noteSur = (n: number | null | undefined, bareme: number) => `${nombre(n)}/${nombre(bareme)}`;
 
+/**
+ * Le détail par critère justifie-t-il la note ? (son total plafonné au barème, comme le calcule le serveur).
+ * Une note changée sans détail (relecture, note globale) laisse un détail périmé ou vide : on ne l'affiche
+ * pas sous la note (étudiant), et la grille ne le reprend pas (formateur), sinon l'ancienne note repartirait.
+ */
+export function detailJustifieLaNote(detail: { obtenu: number }[] | null | undefined, note: number | null, bareme: number): boolean {
+  if (note === null) return true;
+  if (!detail?.length) return false;
+  return Math.abs(Math.min(bareme, detail.reduce((s, l) => s + l.obtenu, 0)) - note) < 0.01;
+}
+
 export const LETTRES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 
 /** Lien « Écrire au formateur » avec le devoir en contexte (module messages). */

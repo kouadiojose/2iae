@@ -131,7 +131,10 @@ export default function PageConfidentialite() {
               elements={[
                 { titre: "Hébergement", texte: "Railway : le serveur, la base de données et les fichiers déposés." },
                 { titre: "Cours en direct", texte: "Daily : la visioconférence et l'enregistrement des cours." },
-                { titre: "Assistant IA", texte: "Anthropic (Claude) : il reçoit les questions et les leçons du cours, jamais le nom de l'étudiant." },
+                {
+                  titre: "Assistant IA et correction des copies",
+                  texte: "Anthropic (Claude) : il reçoit les questions, les leçons du cours et, pour la correction, les copies de dépôt (pages en images), jamais le nom de l'étudiant.",
+                },
                 { titre: "E-mails", texte: "Resend : l'envoi des liens de connexion et des invitations." },
               ]}
             />

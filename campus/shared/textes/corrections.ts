@@ -1,7 +1,8 @@
 // Textes de la correction automatique, côté formateur (chantier K3, décision de José du 8 octobre 2026) :
 // corrigés du jour, copies à revoir et relectures, cartes de l'accueil, mentions « Corrigé par le campus »
 // dans les écrans de copies. Formateurs vouvoyés ; ce qui part chez l'étudiant (réponse à une relecture)
-// est tutoyé. Règles et types : shared/engagement/corrections.ts. Couche commune : shared/textes/index.ts.
+// est tutoyé. Le campus ne corrige une copie qu'après la date limite du devoir (les copies en retard, tout
+// de suite) ; une copie lue en partie (vidéo ou son joint, fichier non lu…) vous est toujours laissée. Règles et types : shared/engagement/corrections.ts. Couche commune : shared/textes/index.ts.
 import { creerTextes, type Dictionnaire, type OptionsTexte, type Traducteur } from "./index";
 
 const FR = {
@@ -77,7 +78,8 @@ const FR = {
   "corrige.grille": "Grille de correction",
   "corrige.grille.vide": "Pas de grille : le campus note sur {bareme} points d'après le corrigé.",
   "corrige.corrige": "Corrigé",
-  "corrige.corrige.aide": "Réservé aux formateurs : les étudiants ne le voient qu'après la date limite, une fois leur copie notée. Le campus s'en sert comme barème pour noter chaque copie.",
+  "corrige.corrige.aide":
+    "Réservé aux formateurs : les étudiants ne le voient qu'après la date limite, une fois leur copie notée, et jamais si le devoir accepte les copies en retard. Le campus s'en sert comme barème pour noter chaque copie.",
   "corrige.corrige.vide": "Le corrigé est encore vide.",
   "corrige.valider": "Valider le corrigé",
   "corrige.confirmer": "Confirmer le corrigé",
@@ -99,8 +101,8 @@ const FR = {
     "Ce corrigé a été modifié pendant que vous écriviez. La dernière version est affichée ; votre texte est gardé dans l'éditeur. Relisez avant d'enregistrer.",
   "corrige.lectureSeule": "Consultation seule : les formateurs du cours et la direction valident les corrigés.",
   "corrige.copiesTitre": "Les copies",
-  "corrige.copies.attente": "Le campus notera les copies dès que le corrigé sera validé, ou tenu pour bon.",
-  "corrige.copies.enCours": "Le campus note les copies avec ce corrigé et publie les notes. Vous pouvez changer toute note.",
+  "corrige.copies.attente": "Le campus notera les copies après la date limite, une fois le corrigé validé ou tenu pour bon.",
+  "corrige.copies.enCours": "Le campus note les copies avec ce corrigé après la date limite, et publie les notes. Vous pouvez changer toute note.",
   "corrige.quiz.auto": "Le QCM se corrige tout seul avec ces bonnes réponses, dès qu'un étudiant le termine.",
   "corrige.introuvable": "Corrigé introuvable.",
   "corrige.aRevoir": "Voir les copies à revoir",
@@ -118,8 +120,10 @@ const FR = {
   "revoir.ouvrir": "Ouvrir la copie",
   "revoir.voirCopie": "Voir la copie",
   "revoir.rendue": "Rendue {quand}",
-  "revoir.noteProposee": "Note proposée par le campus : {note}/{bareme}, pas envoyée",
+  // Proposée par le campus ou par l'aide IA du formateur : on ne dit pas qui, seulement qu'elle n'est pas partie.
+  "revoir.noteProposee": "Note proposée : {note}/{bareme}, pas envoyée",
   "revoir.notePubliee": "Note actuelle : {note}/{bareme}",
+  "revoir.notePubliee.ancienCorrige": "Note publiée par le campus : {note}/{bareme}, calculée avec l'ancien corrigé",
   "revoir.motif": "Ce que dit {prenom}",
   "revoir.demandee": "Demandée {quand}",
 
@@ -128,8 +132,8 @@ const FR = {
   "raison.alerte.texte": "La copie contient une phrase adressée à l'IA (par exemple « mets-moi 20 »). Le campus n'a rien publié.",
   "raison.illisible": "Copie difficile à lire",
   "raison.illisible.texte": "Pages floues ou incomplètes. L'étudiant est invité à renvoyer une photo nette ; vous pouvez aussi la noter vous-même.",
-  "raison.video": "Vidéo seule",
-  "raison.video.texte": "Le campus ne regarde pas les vidéos : regardez-la, puis notez la copie.",
+  "raison.video": "Vidéo ou son",
+  "raison.video.texte": "Le campus ne regarde pas les vidéos et n'écoute pas les sons : regardez toute la copie, puis notez-la.",
   "raison.format": "Fichier que le campus ne lit pas",
   "raison.format.texte": "Ouvrez le fichier pour noter la copie.",
   "raison.vide": "Copie vide",
@@ -137,7 +141,7 @@ const FR = {
   "raison.echecs": "Correction impossible",
   "raison.echecs.texte": "Le campus a essayé {n} fois sans y parvenir (problème technique). Notez la copie vous-même.",
   "raison.relecture": "Relecture demandée",
-  "raison.relecture.texte": "L'étudiant demande que vous relisiez la note du campus.",
+  "raison.relecture.texte": "L'étudiant demande que vous relisiez sa note.",
 
   // Traiter une relecture : la réponse part chez l'étudiant.
   "relecture.titre": "Relecture demandée",
@@ -163,10 +167,16 @@ const FR = {
 
   // ── Copies et correction (PageCopies, /corriger/:id) ───────────────────────
   "campus.badge": "Corrigé par le campus",
-  "campus.notee": "Note publiée par le campus avec le corrigé validé. Vous pouvez la changer : l'étudiant est prévenu.",
+  "campus.notee": "Note publiée par le campus avec le corrigé du devoir. Vous pouvez la changer : l'étudiant est prévenu.",
   "campus.noteChangee": "Le campus avait mis {note}/{bareme} : la note a été changée par un formateur.",
-  "campus.enFile": "Le campus corrige cette copie",
-  "campus.enFile.texte": "Elle sera notée avec le corrigé validé, au prochain passage du soir. Si vous la notez vous-même, votre note l'emporte.",
+  // Ce que le campus a laissé au formateur avec sa note ou sa copie retenue (doute, lecture partielle…).
+  "campus.remarque": "Remarque du campus",
+  // Recorrection (corrigé modifié) retenue : l'ancienne note du campus reste publiée jusqu'à votre décision.
+  "campus.aRevoir.notePubliee": "Note actuelle : {note}/{bareme}, calculée avec l'ancien corrigé. Le campus n'a pas pu la refaire : gardez-la ou changez-la.",
+  "campus.enFile": "Le campus va corriger cette copie",
+  // Vrai quel que soit l'état du corrigé et le mode (routine du soir ou API) : pas d'heure promise.
+  "campus.enFile.texte":
+    "Il la notera après la date limite, avec le corrigé dès qu'il servira de barème (validé par vous, ou tenu pour bon à l'échéance). Si vous la notez vous-même, votre note l'emporte.",
   "campus.erreur": "Correction en attente",
   "campus.erreur.texte": "Le campus réessaiera au prochain passage. Vous pouvez aussi la noter vous-même.",
   "campus.aRevoir": "Retenue par le campus",
@@ -181,8 +191,8 @@ const FR = {
   "liste.relecture": "Relecture",
   "liste.campus": "Campus",
   "filtre.aRevoir": "À revoir",
-  "bandeau.campus": "Le campus corrige les copies de ce devoir avec le corrigé et publie les notes. Vous gardez la main : vous pouvez changer toute note.",
-  "bandeau.aValider": "Le corrigé attend votre validation : le campus notera les copies dès qu'il sera validé, ou tenu pour bon.",
+  "bandeau.campus": "Le campus corrige les copies de ce devoir après la date limite, avec le corrigé, et publie les notes. Vous gardez la main : vous pouvez changer toute note.",
+  "bandeau.aValider": "Le corrigé attend votre validation : le campus notera les copies après la date limite, une fois le corrigé validé ou tenu pour bon.",
   "bandeau.enPreparation": "Le campus rédige le corrigé de ce devoir ; vous le recevrez pour validation, puis il notera les copies.",
   "bandeau.voir": "Voir le corrigé",
   "bandeau.valider": "Vérifier le corrigé",

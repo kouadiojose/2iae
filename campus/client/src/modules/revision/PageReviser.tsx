@@ -15,6 +15,7 @@ import { BarreProgression, Chargement, EtatVide } from "@/components/ui/divers";
 import { useMoiConnecte } from "@/lib/auth";
 import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
+import { listerFile } from "@/lib/file-envoi";
 import { ecrireLocal } from "@/modules/pwa/outils";
 import { ajouterJours, type Jour } from "@shared/engagement/calendrier";
 import { boiteApres, CARTES_PAR_JOUR, type CarteDto, type OrigineReponse } from "@shared/engagement/revision";
@@ -39,7 +40,7 @@ import {
 type Etape = { carte: CarteDto; origine: OrigineReponse };
 type Phase = "chargement" | "accueil" | "session" | "fin" | "sansPaquet";
 
-/** Un paquet du jour plus vieux que cela est rafraîchi s'il n'a pas encore servi (le défi de la classe avance). */
+/** Un paquet du jour plus vieux que cela est rafraîchi s'il n'a pas encore servi (cartes nouvelles ; le défi, lui, est figé pour la journée). */
 const FRAICHEUR_MS = 30 * 60_000;
 const minutes = (n: number) => Math.max(1, Math.round(n * 0.6));
 const faite = (p: PaquetLocal, c: CarteDto) => Object.prototype.hasOwnProperty.call(p.repondues, c.id);
@@ -122,6 +123,31 @@ export default function PageReviser() {
       void envoyerReponses();
     };
   }, []);
+
+  // Fin de révision en attente de réseau : au retour du réseau, les réponses partent (ou la file hors
+  // ligne les envoie) et l'écran passe à « Tes réponses sont enregistrées ».
+  useEffect(() => {
+    if (phase !== "fin" || envoi === "envoye" || envoi === "envoi") return;
+    const verifierFile = () =>
+      void listerFile()
+        .then((l) => {
+          if (!l.some((e) => e.cle.startsWith("revision:")) && !reponsesEnAttente(moi.id)) setEnvoi("envoye");
+        })
+        .catch(() => undefined);
+    const reussi = (ev: Event) => {
+      if ((ev as CustomEvent<{ cle?: string }>).detail?.cle?.startsWith("revision:")) verifierFile();
+    };
+    const enLigne = () =>
+      void envoyerReponses().then((s) => {
+        if (s !== "rien") setEnvoi(s);
+      });
+    window.addEventListener("campus:envoi-reussi", reussi);
+    window.addEventListener("online", enLigne);
+    return () => {
+      window.removeEventListener("campus:envoi-reussi", reussi);
+      window.removeEventListener("online", enLigne);
+    };
+  }, [phase, envoi, moi.id]);
 
   const fermer = useCallback(() => naviguer(depuis), [naviguer, depuis]);
 

@@ -1,7 +1,9 @@
 // Barème des points et règles de la Coupe (chantier C5), regroupés ici pour
 // être ajustés d'un seul endroit. Les points ne paient que des actes
 // d'apprentissage : rien pour le temps passé, les pages rouvertes ni
-// l'assistant. Les plafonds empêchent d'accumuler des points sans apprendre.
+// l'assistant, et une ouverture ou un clic seuls ne rapportent rien (le
+// ressenti et l'objectif du jour accompagnent un acte vérifié, voir le
+// registre). Les plafonds empêchent d'accumuler des points sans apprendre.
 // À revoir au bout de 4 semaines (plan d'engagement, « mesures ») : un campus
 // qui gagne sans que ses jours d'apprentissage augmentent a détourné les points.
 import type { Jour } from "@shared/engagement/calendrier";
@@ -28,14 +30,18 @@ export const POINTS: Record<TypeActivite, number> = {
   /** En plus, question soutenue par au moins 3 camarades. */
   question_votee: 5,
   sondage: 3,
+  /** Ressenti donné en direct, une fois par séance, avec une présence, une question ou un sondage à cette séance. */
   ressenti: 2,
   /** Replay d'une séance manquée, une seule fois. */
   replay: 5,
-  /** Bonne réponse de révision (C1). */
+  /**
+   * Carte revue en révision (C1), juste ou non, une fois par carte et par jour :
+   * les points paient l'effort, jamais la seule réponse « Je savais » (décision D4).
+   */
   revision: 2,
   /** Quiz d'entraînement d'un cours complet terminé (C1), une fois par séance. */
   entrainement: 10,
-  /** Objectif du jour validé (C2). */
+  /** Objectif du jour validé (C2), le jour où un autre acte d'apprentissage est inscrit. */
   objectif: 10,
 };
 
@@ -44,7 +50,7 @@ export const PLAFONDS = {
   questionsParSeance: 3,
   /** Au-delà, un direct qui enchaîne les sondages ne fait plus gagner (15 points au plus). */
   sondagesParSeance: 5,
-  /** Bonnes réponses de révision comptées par jour (20 points). */
+  /** Cartes revues comptées par jour, justes ou non (20 points). */
   revisionsParJour: 10,
   replaysParJour: 3,
 } as const;

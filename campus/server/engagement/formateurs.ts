@@ -1,0 +1,727 @@
+// Côté formateur (plan d'engagement, chantier C7). Amendement de José du
+// 8 octobre 2026 : les formateurs utilisent peu la plateforme et ne donnent
+// presque pas de devoirs ; le QCM et l'exercice de la routine du soir arrivent
+// aux étudiants SANS eux. Ici, on leur MONTRE ce que le campus a fait :
+//
+//   - « Après la séance » : présence (même calcul que le bilan, plus les
+//     présences inconnues), participation, replay, cours complet, devoirs
+//     envoyés et combien les ont faits, copies à corriger ;
+//   - la correction rapide : copies en attente (les plus anciennes d'abord),
+//     envoi d'une note à un seul étudiant, tout de suite ;
+//   - la relecture FACULTATIVE des devoirs de l'IA (validations_devoirs_auto,
+//     lue par proposables.ts) ;
+//   - le travail de groupe du cours complet ouvert en devoir de dépôt ;
+//   - un rappel du matin, au plus un par jour, à 8 h chez le formateur, du
+//     lundi au vendredi : copies en attente depuis 48 h, questions du salon
+//     sans réponse depuis 24 h. La relecture des QCM n'en déclenche jamais :
+//     elle est facultative.
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { db } from "../db";
+import { enseigneCours, etudiantsDuCours, idsCoursAccessibles } from "../acces";
+import { perimetreSites } from "../auth";
+import { ErreurHttp, interdit, introuvable, invalide } from "../http";
+import { iaDisponible } from "../ia";
+import { notifier } from "../notifications";
+import { publierUtilisateur } from "../temps-reel";
+import { finEcheance } from "../evaluations-outils";
+import { feuillePresence } from "../routes/live";
+import { etatsPresence } from "./presence";
+import { tableExiste } from "./tables";
+import { DELAI_DEVOIR_AUTO_HEURES, sqlDevoirProposable } from "./proposables";
+import {
+  cours,
+  devoirs,
+  devoirsSeances,
+  etudesSeances,
+  journal,
+  questionsQuiz,
+  rendus,
+  seances,
+  travauxGroupeDevoirs,
+  utilisateurs,
+  validationsDevoirsAuto,
+  type CritereGrille,
+  type DossierCours,
+  type Seance,
+  type Utilisateur,
+} from "@shared/schema";
+import type {
+  ApresSeanceDto,
+  ARelireDto,
+  CopiesEnAttenteDto,
+  DevoirAutoApres,
+  DevoirAutoResume,
+  EtatCoursComplet,
+  GroupeCopies,
+  ResumeEnseigner,
+  StatutValidation,
+  TravailDeGroupeDto,
+} from "@shared/engagement/enseigner";
+import { heureLocale, jourLocal } from "@shared/engagement/calendrier";
+import { selonNombre, t } from "@shared/textes/enseigner";
+
+const HEURE = 3_600_000;
+const JOUR = 24 * HEURE;
+/** « Après la séance » ne remonte pas au-delà : une séance plus ancienne n'est plus la dernière qui compte. */
+const FRAICHEUR_SEANCE_JOURS = 21;
+const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
+const vous = { registre: "vous" as const };
+
+/** Note posée sur la copie ACTUELLE (même règle que le module évaluations : correctionAJour). */
+const SQL_CORRECTION_A_JOUR = sql`(r.note IS NOT NULL AND r.corrige_le IS NOT NULL AND (r.rendu_le IS NULL OR r.corrige_le >= r.rendu_le))`;
+
+async function tracer(utilisateurId: number, action: string, details: Record<string, unknown>) {
+  await db.insert(journal).values({ utilisateurId, action, details });
+}
+
+/** Cours dont la personne corrige les copies et suit les séances : les siens (formateur), tous (direction), ceux de son campus (équipe). */
+export async function coursEnseignes(u: Utilisateur): Promise<number[]> {
+  const ids = await idsCoursAccessibles(u);
+  if (u.role === "formateur" || u.role === "admin") return ids;
+  const siens: number[] = [];
+  for (const id of ids) if (await enseigneCours(u, id)) siens.push(id);
+  return siens;
+}
+
+/** Littéral SQL d'un tableau d'entiers (identifiants déjà validés). */
+const tableauEntiers = (ids: number[]) => sql`${`{${ids.map((i) => Math.trunc(i)).join(",")}}`}::int[]`;
+
+// ── Devoirs de la routine du soir ───────────────────────────────────────────
+
+type LigneDevoirAuto = {
+  id: number;
+  type: "quiz" | "depot";
+  titre: string;
+  publie: boolean;
+  cree_le: string;
+  date_limite: string;
+  bareme: number;
+  statut: StatutValidation | null;
+  propose: boolean;
+};
+
+/** Devoirs automatiques (avec la décision du formateur et la règle « proposable ») parmi ces identifiants. */
+async function devoirsAutoParIds(ids: number[]): Promise<LigneDevoirAuto[]> {
+  if (!ids.length) return [];
+  const r = await db.execute<LigneDevoirAuto>(sql`
+    SELECT d.id, d.type, d.titre, d.publie, d.cree_le, d.date_limite, d.bareme, v.statut,
+           ${sqlDevoirProposable("d")} AS propose
+    FROM campus.devoirs d
+    LEFT JOIN campus.validations_devoirs_auto v ON v.devoir_id = d.id
+    WHERE d.id = ANY(${tableauEntiers(ids)})
+    ORDER BY d.type DESC, d.id`);
+  return r.rows;
+}
+
+function versResume(l: LigneDevoirAuto): DevoirAutoResume {
+  const creeLe = new Date(l.cree_le).getTime();
+  const proposeLe = !l.propose && l.publie && l.statut === null ? new Date(creeLe + DELAI_DEVOIR_AUTO_HEURES * HEURE).toISOString() : null;
+  return {
+    id: l.id,
+    type: l.type,
+    titre: l.titre,
+    publie: l.publie,
+    validation: l.statut,
+    propose: l.propose,
+    proposeLe,
+    dateLimite: new Date(l.date_limite).toISOString(),
+    bareme: Number(l.bareme),
+  };
+}
+
+// ── Après la séance ─────────────────────────────────────────────────────────
+
+/** Dernière séance tenue (ni essai de visio, ni séance non tenue) de ces cours, depuis trois semaines. */
+async function derniereSeanceTenue(coursIds: number[]): Promise<Seance | null> {
+  if (!coursIds.length) return null;
+  const fin = sql`coalesce(${seances.termineeLe}, ${seances.demarreeLe})`;
+  const [s] = await db
+    .select()
+    .from(seances)
+    .where(
+      and(
+        inArray(seances.coursId, coursIds),
+        eq(seances.statut, "terminee"),
+        isNotNull(seances.demarreeLe),
+        sql`${fin} > now() - make_interval(days => ${FRAICHEUR_SEANCE_JOURS})`,
+        sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)`,
+      ),
+    )
+    .orderBy(desc(fin))
+    .limit(1);
+  return s ?? null;
+}
+
+/** Statistiques de révision de la séance (tables de C1, lues seulement si elles existent). Nul : pas encore mesuré. */
+async function revisionDeLaSeance(seanceId: number): Promise<{ ouvertures: number | null; revision: ApresSeanceDto["coursComplet"]["revision"] }> {
+  let ouvertures: number | null = null;
+  let revision: ApresSeanceDto["coursComplet"]["revision"] = null;
+  try {
+    if (await tableExiste("suivis_cours_complets")) {
+      const r = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM campus.suivis_cours_complets WHERE seance_id = ${seanceId}`);
+      ouvertures = r.rows[0]?.n ?? 0;
+    }
+  } catch (e) {
+    console.warn("[après la séance] suivis_cours_complets :", (e as Error).message);
+  }
+  try {
+    if ((await tableExiste("reponses_revision")) && (await tableExiste("cartes_revision"))) {
+      const [tot] = (
+        await db.execute<{ etudiants: number; reponses: number }>(sql`
+          SELECT count(DISTINCT rr.utilisateur_id)::int AS etudiants, count(*)::int AS reponses
+          FROM campus.reponses_revision rr JOIN campus.cartes_revision c ON c.id = rr.carte_id
+          WHERE c.seance_id = ${seanceId}`)
+      ).rows;
+      // La question la plus ratée, à partir de 5 étudiants (aucun chiffre sur un trop petit groupe).
+      const [ratee] = (
+        await db.execute<{ texte: string | null; taux: number }>(sql`
+          SELECT COALESCE(c.contenu->>'question', c.contenu->>'recto', c.contenu->>'texte') AS texte,
+                 round(100.0 * count(*) FILTER (WHERE NOT rr.juste) / count(*))::int AS taux
+          FROM campus.reponses_revision rr JOIN campus.cartes_revision c ON c.id = rr.carte_id
+          WHERE c.seance_id = ${seanceId}
+          GROUP BY c.id
+          HAVING count(DISTINCT rr.utilisateur_id) >= 5 AND count(*) FILTER (WHERE NOT rr.juste) > 0
+          ORDER BY taux DESC, count(*) DESC
+          LIMIT 1`)
+      ).rows;
+      revision = {
+        etudiants: tot?.etudiants ?? 0,
+        reponses: tot?.reponses ?? 0,
+        plusRatee: ratee?.texte ? { texte: ratee.texte.slice(0, 160), tauxErreur: ratee.taux } : null,
+        signalees: 0,
+      };
+      // Cartes signalées par les étudiants ou retirées comme suspectes : une information, jamais une tâche.
+      try {
+        const [s] = (
+          await db.execute<{ n: number }>(sql`
+            SELECT count(*)::int AS n FROM campus.cartes_revision WHERE seance_id = ${seanceId} AND (a_relire OR signalements > 0)`)
+        ).rows;
+        revision.signalees = s?.n ?? 0;
+      } catch (e) {
+        console.warn("[après la séance] cartes signalées :", (e as Error).message);
+      }
+    }
+  } catch (e) {
+    console.warn("[après la séance] révision :", (e as Error).message);
+  }
+  return { ouvertures, revision };
+}
+
+/** Ce que le campus a fait après cette séance (voir ApresSeanceDto). */
+export async function apresSeance(u: Utilisateur, s: Seance): Promise<ApresSeanceDto> {
+  const [c] = await db.select({ code: cours.code, titre: cours.titre }).from(cours).where(eq(cours.id, s.coursId));
+
+  // Présence : la feuille du bilan de séance (mêmes attendus, mêmes présents), puis les états en trois temps.
+  const feuille = await feuillePresence(u, s);
+  const presents = feuille.filter((l) => l.statut === "salle" || l.statut === "en_ligne" || l.statut === "retard").length;
+  const etats = await etatsPresence(
+    s.id,
+    feuille.map((l) => l.utilisateurId),
+  );
+  const inconnus = [...etats.values()].filter((e) => e === "inconnu").length;
+
+  const [participation] = (
+    await db.execute<{ questions: number; sondages: number; ouvertures: number }>(sql`
+      SELECT (SELECT count(*)::int FROM campus.questions_live q WHERE q.seance_id = ${s.id} AND NOT q.masquee) AS questions,
+             (SELECT count(*)::int FROM campus.sondages so WHERE so.seance_id = ${s.id} AND so.ouvert_le IS NOT NULL) AS sondages,
+             (SELECT count(*)::int FROM campus.vues_replay vr JOIN campus.utilisateurs e ON e.id = vr.utilisateur_id
+               WHERE vr.seance_id = ${s.id} AND e.role = 'etudiant') AS ouvertures`)
+  ).rows;
+
+  const [etude] = await db.select({ statut: etudesSeances.statut }).from(etudesSeances).where(eq(etudesSeances.seanceId, s.id));
+  const etat: EtatCoursComplet = etude?.statut ?? "a_venir";
+  const { ouvertures, revision } = etat === "prete" ? await revisionDeLaSeance(s.id) : { ouvertures: null, revision: null };
+
+  // Devoirs de la routine du soir pour cette séance, avec ce qu'en ont fait les étudiants.
+  const [lien] = await db.select({ ids: devoirsSeances.devoirIds }).from(devoirsSeances).where(eq(devoirsSeances.seanceId, s.id));
+  const lignes = await devoirsAutoParIds(lien?.ids ?? []);
+  let devoirsApres: DevoirAutoApres[] = [];
+  if (lignes.length) {
+    const destinataires = (await etudiantsDuCours(s.coursId)).length;
+    const stats = await db.execute<{ devoir_id: number; faits: number; moyenne: number | null; a_corriger: number }>(sql`
+      SELECT r.devoir_id, count(*)::int AS faits,
+             avg(r.note) FILTER (WHERE r.statut = 'corrige') AS moyenne,
+             count(*) FILTER (WHERE r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR})::int AS a_corriger
+      FROM campus.rendus r
+      WHERE r.devoir_id = ANY(${tableauEntiers(lignes.map((l) => l.id))}) AND r.statut <> 'brouillon'
+      GROUP BY r.devoir_id`);
+    const statDe = new Map(stats.rows.map((x) => [x.devoir_id, x]));
+    devoirsApres = lignes.map((l) => {
+      const st = statDe.get(l.id);
+      return {
+        ...versResume(l),
+        destinataires,
+        faits: st?.faits ?? 0,
+        moyenne: l.type === "quiz" && st?.moyenne !== null && st?.moyenne !== undefined ? Math.round(Number(st.moyenne) * 10) / 10 : null,
+        aCorriger: st?.a_corriger ?? 0,
+      };
+    });
+  }
+
+  return {
+    seance: {
+      id: s.id,
+      titre: s.titre,
+      coursId: s.coursId,
+      coursCode: c?.code ?? "",
+      coursTitre: c?.titre ?? "",
+      debut: s.debut.toISOString(),
+      termineeLe: iso(s.termineeLe),
+    },
+    presence: { attendus: feuille.length, presents, inconnus },
+    participation: { questions: participation?.questions ?? 0, sondages: participation?.sondages ?? 0 },
+    replay: { pret: Boolean(s.replayUrl || s.enregistrementId), ouvertures: participation?.ouvertures ?? 0 },
+    coursComplet: { etat, ouvertures, revision },
+    devoirs: devoirsApres,
+  };
+}
+
+/** Accueil du formateur : la dernière séance tenue (ou celle demandée), les copies, la relecture facultative. */
+export async function resumeEnseigner(u: Utilisateur, seanceId?: number): Promise<ResumeEnseigner> {
+  const ids = await coursEnseignes(u);
+  let seance: Seance | null = null;
+  if (seanceId) {
+    const [s] = await db.select().from(seances).where(eq(seances.id, seanceId));
+    if (!s) throw introuvable("Séance");
+    if (!ids.includes(s.coursId)) throw interdit("Seul le formateur de ce cours peut voir la suite de cette séance.");
+    if (!s.demarreeLe) throw new ErreurHttp(409, "Cette séance n'a pas encore été tenue.");
+    seance = s;
+  } else seance = await derniereSeanceTenue(ids);
+
+  const [copies, aRelire] = await Promise.all([resumeCopies(u, ids), compterARelire(ids)]);
+  return { apres: seance ? await apresSeance(u, seance) : null, copies, aRelire };
+}
+
+// ── Copies à corriger ───────────────────────────────────────────────────────
+
+type LigneCopie = {
+  rendu_id: number;
+  devoir_id: number;
+  devoir_titre: string;
+  cours_code: string;
+  bareme: number;
+  avec_grille: boolean;
+  etudiant_id: number;
+  prenom: string;
+  nom: string;
+  site_id: number | null;
+  site: string | null;
+  rendu_le: string;
+  en_retard: boolean;
+  a_jour: boolean;
+  ia: boolean;
+};
+
+/** Copies rendues et pas encore publiées de ces cours (à corriger, ou notées et pas envoyées), dans le périmètre de la personne. */
+async function lignesCopies(u: Utilisateur, coursIds: number[], devoirId?: number): Promise<LigneCopie[]> {
+  if (!coursIds.length) return [];
+  const r = await db.execute<LigneCopie>(sql`
+    SELECT r.id AS rendu_id, r.devoir_id, d.titre AS devoir_titre, c.code AS cours_code, d.bareme,
+           jsonb_array_length(d.grille) > 0 AS avec_grille,
+           e.id AS etudiant_id, e.prenom, e.nom, e.site_id, si.nom_court AS site,
+           r.rendu_le, r.en_retard, ${SQL_CORRECTION_A_JOUR} AS a_jour, r.proposition_ia IS NOT NULL AS ia
+    FROM campus.rendus r
+    JOIN campus.devoirs d ON d.id = r.devoir_id
+    JOIN campus.cours c ON c.id = d.cours_id
+    JOIN campus.utilisateurs e ON e.id = r.etudiant_id
+    LEFT JOIN campus.sites si ON si.id = e.site_id
+    WHERE d.cours_id = ANY(${tableauEntiers(coursIds)}) AND d.type = 'depot' AND r.statut = 'rendu'
+      ${devoirId ? sql`AND d.id = ${devoirId}` : sql``}
+    ORDER BY r.rendu_le ASC NULLS LAST, r.id ASC`);
+  const perimetre = perimetreSites(u);
+  return perimetre ? r.rows.filter((l) => l.site_id !== null && perimetre.includes(l.site_id)) : r.rows;
+}
+
+async function resumeCopies(u: Utilisateur, coursIds: number[]): Promise<ResumeEnseigner["copies"]> {
+  const lignes = await lignesCopies(u, coursIds);
+  const aCorriger = lignes.filter((l) => !l.a_jour);
+  return { aCorriger: aCorriger.length, aPublier: lignes.length - aCorriger.length, plusAncienne: iso(aCorriger[0]?.rendu_le) };
+}
+
+/** Début du jour à Abidjan (GMT toute l'année : minuit UTC). */
+const debutDuJour = (maintenant = new Date()) => new Date(`${jourLocal(maintenant)}T00:00:00Z`);
+
+export async function copiesEnAttente(u: Utilisateur, devoirId?: number): Promise<CopiesEnAttenteDto> {
+  const ids = await coursEnseignes(u);
+  const lignes = await lignesCopies(u, ids, devoirId);
+  const aCorriger = lignes.filter((l) => !l.a_jour);
+  const groupes = new Map<number, GroupeCopies>();
+  for (const l of lignes) {
+    const g = groupes.get(l.devoir_id) ?? { devoirId: l.devoir_id, devoirTitre: l.devoir_titre, coursCode: l.cours_code, aCorriger: 0, aPublier: 0, plusAncienne: null };
+    if (l.a_jour) g.aPublier++;
+    else {
+      g.aCorriger++;
+      g.plusAncienne ??= iso(l.rendu_le);
+    }
+    groupes.set(l.devoir_id, g);
+  }
+  const [{ n }] = (
+    await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM campus.rendus
+      WHERE correcteur_id = ${u.id} AND statut = 'corrige' AND maj_le >= ${debutDuJour().toISOString()}::timestamptz`)
+  ).rows;
+  return {
+    copies: aCorriger.map((l) => ({
+      renduId: l.rendu_id,
+      devoirId: l.devoir_id,
+      devoirTitre: l.devoir_titre,
+      coursCode: l.cours_code,
+      bareme: Number(l.bareme),
+      avecGrille: l.avec_grille,
+      etudiant: { id: l.etudiant_id, prenom: l.prenom, nom: l.nom, site: l.site },
+      renduLe: new Date(l.rendu_le).toISOString(),
+      enRetard: l.en_retard,
+      propositionIa: l.ia,
+    })),
+    devoirs: [...groupes.values()].sort((a, b) => (a.plusAncienne ?? "9").localeCompare(b.plusAncienne ?? "9")),
+    totalACorriger: aCorriger.length,
+    totalAPublier: lignes.length - aCorriger.length,
+    iaDisponible: iaDisponible(),
+    envoyeesAujourdhui: n ?? 0,
+  };
+}
+
+/**
+ * Envoie à l'étudiant la note posée sur SA copie (une seule copie, sans
+ * attendre « Publier les notes ») : même effet que la publication du module
+ * évaluations pour cette copie. La note doit avoir été enregistrée sur la copie
+ * actuelle (PATCH /api/rendus/:id/correction) ; une copie remplacée entre-temps
+ * n'est pas publiée.
+ */
+export async function envoyerNote(u: Utilisateur, renduId: number): Promise<{ envoyee: boolean }> {
+  const [ligne] = await db
+    .select({ r: rendus, d: devoirs, c: { code: cours.code }, e: { id: utilisateurs.id, siteId: utilisateurs.siteId } })
+    .from(rendus)
+    .innerJoin(devoirs, eq(devoirs.id, rendus.devoirId))
+    .innerJoin(cours, eq(cours.id, devoirs.coursId))
+    .innerJoin(utilisateurs, eq(utilisateurs.id, rendus.etudiantId))
+    .where(eq(rendus.id, renduId));
+  if (!ligne) throw introuvable("Copie");
+  if (!(await enseigneCours(u, ligne.d.coursId))) throw interdit("Seul le formateur du cours peut envoyer cette note.");
+  const perimetre = perimetreSites(u);
+  if (perimetre && (ligne.e.siteId === null || !perimetre.includes(ligne.e.siteId))) throw interdit("Cet étudiant n'est pas rattaché à votre campus.");
+  if (ligne.r.statut === "corrige") return { envoyee: false };
+  if (ligne.r.statut !== "rendu") throw new ErreurHttp(409, "Cette copie n'a pas encore été rendue.");
+  const r = await db.execute<{ id: number }>(sql`
+    UPDATE campus.rendus r SET statut = 'corrige', maj_le = now()
+    WHERE r.id = ${renduId} AND r.statut = 'rendu' AND ${SQL_CORRECTION_A_JOUR}
+    RETURNING r.id`);
+  if (!r.rows.length) throw new ErreurHttp(409, "Enregistrez d'abord une note pour cette copie (elle a peut-être été remplacée par l'étudiant).");
+  // Jamais la note dans la notification (écran verrouillé, téléphones partagés).
+  await notifier([ligne.r.etudiantId], { type: "note", titre: "Nouvelle note disponible", corps: `${ligne.c.code} · « ${ligne.d.titre} »`, lien: `/devoirs/${ligne.d.id}` });
+  publierUtilisateur(ligne.r.etudiantId, "devoir-corrige", { devoirId: ligne.d.id });
+  await tracer(u.id, "publier_notes", { devoirId: ligne.d.id, nombre: 1, etudiants: [ligne.r.etudiantId], correctionRapide: true });
+  return { envoyee: true };
+}
+
+// ── Relecture facultative des devoirs de l'IA ───────────────────────────────
+
+/** Devoirs automatiques encore ouverts de ces cours, sans décision ou « à revoir ». */
+async function idsDevoirsARelire(coursIds: number[], avecARevoir: boolean): Promise<{ id: number; seance_id: number }[]> {
+  if (!coursIds.length) return [];
+  const r = await db.execute<{ id: number; seance_id: number }>(sql`
+    SELECT d.id, ds.seance_id
+    FROM campus.devoirs_seances ds
+    JOIN campus.seances s ON s.id = ds.seance_id
+    CROSS JOIN LATERAL jsonb_array_elements_text(ds.devoir_ids) AS x(id)
+    JOIN campus.devoirs d ON d.id = x.id::int
+    LEFT JOIN campus.validations_devoirs_auto v ON v.devoir_id = d.id
+    WHERE s.cours_id = ANY(${tableauEntiers(coursIds)}) AND d.date_limite > now()
+      AND (v.statut IS NULL ${avecARevoir ? sql`OR v.statut = 'a_revoir'` : sql``})
+    ORDER BY d.cree_le DESC, d.id
+    LIMIT 40`);
+  return r.rows;
+}
+
+async function compterARelire(coursIds: number[]): Promise<number> {
+  return (await idsDevoirsARelire(coursIds, false)).length;
+}
+
+export async function devoirsARelire(u: Utilisateur): Promise<ARelireDto> {
+  const ids = await coursEnseignes(u);
+  const liste = await idsDevoirsARelire(ids, true);
+  if (!liste.length) return { devoirs: [] };
+  const seanceDe = new Map(liste.map((l) => [l.id, l.seance_id]));
+  const lignes = await devoirsAutoParIds(liste.map((l) => l.id));
+  const details = await db
+    .select({ id: devoirs.id, consigne: devoirs.consigne, creeLe: devoirs.creeLe, code: cours.code, seanceTitre: seances.titre })
+    .from(devoirs)
+    .innerJoin(cours, eq(cours.id, devoirs.coursId))
+    .innerJoin(devoirsSeances, sql`${devoirsSeances.devoirIds} @> jsonb_build_array(${devoirs.id})`)
+    .innerJoin(seances, eq(seances.id, devoirsSeances.seanceId))
+    .where(inArray(devoirs.id, lignes.map((l) => l.id)));
+  const detailDe = new Map(details.map((d) => [d.id, d]));
+  const idsQuiz = lignes.filter((l) => l.type === "quiz").map((l) => l.id);
+  const questions = idsQuiz.length
+    ? await db.select().from(questionsQuiz).where(inArray(questionsQuiz.devoirId, idsQuiz)).orderBy(asc(questionsQuiz.ordre), asc(questionsQuiz.id))
+    : [];
+  return {
+    devoirs: lignes
+      .map((l) => {
+        const d = detailDe.get(l.id);
+        return {
+          ...versResume(l),
+          coursCode: d?.code ?? "",
+          seanceId: seanceDe.get(l.id) ?? 0,
+          seanceTitre: d?.seanceTitre ?? "",
+          creeLe: (d?.creeLe ?? new Date(l.cree_le)).toISOString(),
+          questions: questions
+            .filter((q) => q.devoirId === l.id)
+            .map((q) => ({
+              id: q.id,
+              enonce: q.enonce,
+              options: q.options,
+              bonnes: q.bonnesReponses.filter((b): b is number => typeof b === "number"),
+              explication: q.explication,
+            })),
+          consigne: l.type === "depot" && d ? d.consigne.slice(0, 600) : null,
+        };
+      })
+      .sort((a, b) => b.creeLe.localeCompare(a.creeLe)),
+  };
+}
+
+/**
+ * Décision du formateur du cours (ou de la direction) sur un devoir de la
+ * routine du soir. Statut nul : la décision est retirée, la règle du délai
+ * s'applique de nouveau.
+ */
+export async function validerDevoirAuto(u: Utilisateur, devoirId: number, statut: StatutValidation | null, remarque: string | null): Promise<DevoirAutoResume> {
+  const [d] = await db.select().from(devoirs).where(eq(devoirs.id, devoirId));
+  if (!d) throw introuvable("Devoir");
+  const autorise = u.role === "admin" || (u.role === "formateur" && (await enseigneCours(u, d.coursId)));
+  if (!autorise) throw interdit("Seuls le formateur du cours et la direction peuvent relire ce devoir.");
+  const [lien] = await db
+    .select({ seanceId: devoirsSeances.seanceId })
+    .from(devoirsSeances)
+    .where(sql`${devoirsSeances.devoirIds} @> jsonb_build_array(${devoirId}::int)`);
+  if (!lien) throw invalide("Ce devoir n'a pas été créé par le campus : il est déjà le vôtre.");
+  if (statut === null) await db.delete(validationsDevoirsAuto).where(eq(validationsDevoirsAuto.devoirId, devoirId));
+  else {
+    const valeurs = { statut, parId: u.id, le: new Date(), remarque: remarque?.trim() || null };
+    await db.insert(validationsDevoirsAuto).values({ devoirId, ...valeurs }).onConflictDoUpdate({ target: validationsDevoirsAuto.devoirId, set: valeurs });
+  }
+  await tracer(u.id, "devoir_auto_relu", { devoirId, seanceId: lien.seanceId, statut });
+  const [l] = await devoirsAutoParIds([devoirId]);
+  return versResume(l);
+}
+
+// ── Travail de groupe du cours complet ──────────────────────────────────────
+
+const dateCourte = (d: Date) => d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "Africa/Abidjan" });
+
+/** Le jour J + n à 23 h 59, heure d'Abidjan (GMT), comme les devoirs du campus. */
+function dansJours(n: number, depuis = new Date()): Date {
+  const d = new Date(depuis);
+  d.setUTCDate(d.getUTCDate() + n);
+  d.setUTCHours(23, 59, 0, 0);
+  return finEcheance(d);
+}
+
+/** Consigne du devoir (lue par les étudiants : tutoiement), à partir du travail de groupe du cours complet. */
+function consigneTravailDeGroupe(g: DossierCours["travailDeGroupe"], s: Seance): string {
+  return [
+    `## ${g.sujet}`,
+    g.roles.length ? `${t("groupe.devoir.roles")}\n${g.roles.map((r) => `- **${r.role}** : ${r.mission}`).join("\n")}` : "",
+    t("groupe.devoir.livrable", { v: { livrable: g.livrable } }),
+    t("groupe.devoir.comment"),
+    t("groupe.devoir.origine", { v: { jour: dateCourte(s.debut) } }),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Le formateur du cours (ou la direction) peut-il ouvrir le travail de groupe en devoir ? */
+async function peutOuvrirTravail(u: Utilisateur, s: Seance): Promise<boolean> {
+  if (u.role === "etudiant" || u.role === "salle") return false;
+  return enseigneCours(u, s.coursId);
+}
+
+export async function travailDeGroupe(u: Utilisateur, s: Seance): Promise<TravailDeGroupeDto> {
+  const [lien] = await db
+    .select({ d: devoirs })
+    .from(travauxGroupeDevoirs)
+    .innerJoin(devoirs, eq(devoirs.id, travauxGroupeDevoirs.devoirId))
+    .where(eq(travauxGroupeDevoirs.seanceId, s.id));
+  const d = lien?.d;
+  if (u.role === "etudiant") {
+    // Rien tant que le formateur ne l'a pas publié (et ouvert).
+    if (!d || !d.publie || (d.ouvertureLe && d.ouvertureLe.getTime() > Date.now())) {
+      return { devoirId: null, publie: false, lien: null, peutCreer: false, dateLimite: null, rendus: null, monRendu: null };
+    }
+    const [mien] = await db
+      .select({ recu: rendus.recu, renduLe: rendus.renduLe, statut: rendus.statut })
+      .from(rendus)
+      .where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, u.id)));
+    return {
+      devoirId: d.id,
+      publie: true,
+      lien: `/devoirs/${d.id}`,
+      peutCreer: false,
+      dateLimite: finEcheance(d.dateLimite).toISOString(),
+      rendus: null,
+      monRendu: mien && mien.statut !== "brouillon" ? { recu: mien.recu, renduLe: iso(mien.renduLe) } : null,
+    };
+  }
+  const peut = await peutOuvrirTravail(u, s);
+  if (!d) {
+    const [etude] = await db.select({ statut: etudesSeances.statut }).from(etudesSeances).where(eq(etudesSeances.seanceId, s.id));
+    return { devoirId: null, publie: false, lien: null, peutCreer: peut && etude?.statut === "prete", dateLimite: null, rendus: null, monRendu: null };
+  }
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(rendus)
+    .where(and(eq(rendus.devoirId, d.id), sql`${rendus.statut} <> 'brouillon'`));
+  return {
+    devoirId: d.id,
+    publie: d.publie,
+    lien: peut ? (d.publie ? `/enseigner/devoirs/${d.id}/copies` : `/enseigner/devoirs/${d.id}`) : null,
+    peutCreer: false,
+    dateLimite: finEcheance(d.dateLimite).toISOString(),
+    rendus: n,
+    monRendu: null,
+  };
+}
+
+/**
+ * Crée le devoir de dépôt du travail de groupe, en BROUILLON (publie = false) :
+ * le formateur le relit dans l'éditeur des devoirs, puis le publie ; les
+ * étudiants ne sont prévenus qu'à ce moment-là (annoncerSiOuvert du module
+ * évaluations). Un seul par séance.
+ */
+export async function ouvrirTravailDeGroupe(u: Utilisateur, s: Seance): Promise<TravailDeGroupeDto> {
+  if (!(await peutOuvrirTravail(u, s))) throw interdit("Seul le formateur du cours peut ouvrir ce travail de groupe en devoir.");
+  const [etude] = await db.select().from(etudesSeances).where(eq(etudesSeances.seanceId, s.id));
+  const g = etude?.statut === "prete" ? etude.dossier?.travailDeGroupe : undefined;
+  if (!g?.sujet) throw new ErreurHttp(409, "Le cours complet de cette séance n'est pas encore prêt.");
+  const grille: CritereGrille[] = [
+    { critere: t("groupe.critere.contenu"), points: 8 },
+    { critere: t("groupe.critere.roles"), points: 4 },
+    { critere: t("groupe.critere.livrable"), points: 6 },
+    { critere: t("groupe.critere.presentation"), points: 2 },
+  ];
+  const deja = () => new ErreurHttp(409, "Le travail de groupe de cette séance est déjà ouvert en devoir.");
+  const [existant] = await db.select({ id: travauxGroupeDevoirs.devoirId }).from(travauxGroupeDevoirs).where(eq(travauxGroupeDevoirs.seanceId, s.id));
+  if (existant) throw deja();
+  const cree = await db.transaction(async (tx) => {
+    const [d] = await tx
+      .insert(devoirs)
+      .values({
+        coursId: s.coursId,
+        auteurId: u.id,
+        type: "depot",
+        titre: t("groupe.devoir.titre", { v: { sujet: g.sujet } }).slice(0, 200),
+        consigne: consigneTravailDeGroupe(g, s),
+        dateLimite: dansJours(10),
+        bareme: 20,
+        coefficient: 1,
+        accepteRetard: true,
+        grille,
+        publie: false,
+      })
+      .returning();
+    const [reserve] = await tx.insert(travauxGroupeDevoirs).values({ seanceId: s.id, devoirId: d.id }).onConflictDoNothing().returning();
+    // Ouvert au même instant par un autre toucher : la transaction est annulée, rien n'est créé.
+    if (!reserve) throw deja();
+    return d;
+  });
+  await tracer(u.id, "devoir_cree", { devoirId: cree.id, coursId: s.coursId, titre: cree.titre, type: "depot", travailDeGroupe: s.id });
+  return travailDeGroupe(u, s);
+}
+
+// ── Rappel du matin des formateurs ──────────────────────────────────────────
+
+/** Heure locale du rappel, du lundi au vendredi. */
+const HEURE_RAPPEL = 8;
+/** Une copie rendue depuis plus longtemps est « en attente ». */
+const ATTENTE_COPIE_MS = 48 * HEURE;
+/** Une question du salon sans réponse depuis plus longtemps est rappelée (au-delà de 14 jours, elle est oubliée). */
+const ATTENTE_SALON_MS = 24 * HEURE;
+const OUBLI_SALON_JOURS = 14;
+/** Marque du rappel dans le lien de la notification : au plus un par jour local, vérifié dans la table notifications. */
+const marque = (jour: string) => `rappel-formateur=${jour}`;
+
+/** 0 = dimanche … 6 = samedi, pour un jour « AAAA-MM-JJ ». */
+const jourDeSemaine = (jour: string) => new Date(`${jour}T12:00:00Z`).getUTCDay();
+
+type Attente = { copies: number; plusAncienne: Date | null; questions: number; coursSalon: number | null };
+
+/** Ce qui attend ce formateur : copies rendues depuis plus de 48 h, questions du salon sans réponse depuis 24 h. */
+export async function attenteFormateur(formateurId: number, maintenant = new Date()): Promise<Attente> {
+  const mesCours = sql`(SELECT c.id FROM campus.cours c WHERE c.formateur_id = ${formateurId}
+    UNION SELECT cf.cours_id FROM campus.cours_formateurs cf WHERE cf.formateur_id = ${formateurId})`;
+  const [copies] = (
+    await db.execute<{ n: number; plus_ancienne: string | null }>(sql`
+      SELECT count(*)::int AS n, min(r.rendu_le) AS plus_ancienne
+      FROM campus.rendus r JOIN campus.devoirs d ON d.id = r.devoir_id
+      WHERE d.cours_id IN ${mesCours} AND d.type = 'depot' AND r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR}
+        AND r.rendu_le < ${new Date(maintenant.getTime() - ATTENTE_COPIE_MS).toISOString()}::timestamptz`)
+  ).rows;
+  // Salon « Questions du cours » dont le dernier message (non supprimé) vient d'un étudiant.
+  const salons = await db.execute<{ cours_id: number }>(sql`
+    SELECT co.cours_id
+    FROM campus.conversations co
+    CROSS JOIN LATERAL (
+      SELECT m.auteur_id, m.cree_le FROM campus.messages m
+      WHERE m.conversation_id = co.id AND NOT m.supprime
+      ORDER BY m.cree_le DESC LIMIT 1) dernier
+    JOIN campus.utilisateurs a ON a.id = dernier.auteur_id
+    WHERE co.type = 'cours' AND co.cours_id IN ${mesCours} AND a.role = 'etudiant'
+      AND dernier.cree_le < ${new Date(maintenant.getTime() - ATTENTE_SALON_MS).toISOString()}::timestamptz
+      AND dernier.cree_le > ${new Date(maintenant.getTime() - OUBLI_SALON_JOURS * JOUR).toISOString()}::timestamptz
+    ORDER BY dernier.cree_le ASC`);
+  return {
+    copies: copies?.n ?? 0,
+    plusAncienne: copies?.plus_ancienne ? new Date(copies.plus_ancienne) : null,
+    questions: salons.rows.length,
+    coursSalon: salons.rows[0]?.cours_id ?? null,
+  };
+}
+
+/**
+ * Tâche planifiée (toutes les 15 minutes) : à 8 h dans le fuseau de chaque
+ * formateur (Abidjan par défaut), du lundi au vendredi, un seul rappel s'il a
+ * des copies en attente depuis 48 h ou des questions du salon sans réponse.
+ * Au plus un par jour : la marque du jour est dans le lien de la notification.
+ * Priorité « action », pas d'e-mail (quota partagé avec le site).
+ * « maintenant » se règle pour les essais (horloge simulée).
+ */
+export async function envoyerRelancesFormateurs(maintenant = new Date()): Promise<number[]> {
+  const formateurs = await db
+    .select({ id: utilisateurs.id, fuseau: utilisateurs.fuseau })
+    .from(utilisateurs)
+    .where(and(eq(utilisateurs.role, "formateur"), eq(utilisateurs.actif, true)));
+  const prevenus: number[] = [];
+  for (const f of formateurs) {
+    if (heureLocale(maintenant, f.fuseau) !== HEURE_RAPPEL) continue;
+    const jour = jourLocal(maintenant, f.fuseau);
+    const rang = jourDeSemaine(jour);
+    if (rang === 0 || rang === 6) continue;
+    const [deja] = (
+      await db.execute<{ x: number }>(sql`
+        SELECT 1 AS x FROM campus.notifications
+        WHERE utilisateur_id = ${f.id} AND cree_le > now() - interval '7 days' AND position(${marque(jour)} in coalesce(lien, '')) > 0
+        LIMIT 1`)
+    ).rows;
+    if (deja) continue;
+    const a = await attenteFormateur(f.id, maintenant);
+    if (!a.copies && !a.questions) continue;
+    let titre: string;
+    let corps: string;
+    let lien: string;
+    if (a.copies) {
+      const jours = a.plusAncienne ? Math.max(2, Math.floor((maintenant.getTime() - a.plusAncienne.getTime()) / JOUR)) : 2;
+      titre = selonNombre(t, "rappel.copies.titre", a.copies, vous);
+      corps = t("rappel.copies.corps", { ...vous, v: { jours } });
+      if (a.questions) corps += ` ${selonNombre(t, "rappel.salon.enPlus", a.questions, vous)}`;
+      lien = `/corriger?${marque(jour)}`;
+    } else {
+      titre = selonNombre(t, "rappel.salon.titre", a.questions, vous);
+      corps = t("rappel.salon.corps", vous);
+      lien = `/messages/cours/${a.coursSalon}?${marque(jour)}`;
+    }
+    await notifier([f.id], { type: a.copies ? "devoir" : "message", titre, corps, lien, priorite: "action" });
+    prevenus.push(f.id);
+  }
+  return prevenus;
+}

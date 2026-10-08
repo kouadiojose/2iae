@@ -35,8 +35,13 @@ const CLE_COQUILLE = "/";
 const HORS_LIGNE = "/hors-ligne";
 const A_PRECHARGER = ["/manifest.webmanifest", "/marque-2iae.png", "/icons/favicon-48.png", "/icons/icone-192.png", "/icons/icone-512.png", "/icons/badge-96.png"];
 
-/** Requêtes qui ouvrent ou ferment une session : les données de la personne précédente sont oubliées (téléphones partagés). */
-const CHANGE_DE_PERSONNE = /^\/api\/(auth\/(connexion|deconnexion)|activer\/|invitation\/|inscription\/|ecran\/installer|compte\/(reinitialiser|deconnecter-partout))/;
+/**
+ * Requêtes qui ouvrent ou ferment une session, ou changent de compte : les données de la personne
+ * précédente sont oubliées (téléphones partagés). Dont « Créer mon compte » (/api/inscription, sans
+ * jeton), l'inscription d'un formateur par lien et le passage à l'autre casquette (formateur ↔ direction).
+ */
+const CHANGE_DE_PERSONNE =
+  /^\/api\/(auth\/(connexion|deconnexion|casquette)|activer\/|invitation\/|inscription(-formateur)?(\/|$)|ecran\/installer|compte\/(reinitialiser|deconnecter-partout))/;
 /**
  * Jamais mis en cache : temps réel, connexion (sauf le profil courant), rappels, sonde de santé,
  * radio du cours (flux audio continu) et signalisation de la visio.
@@ -289,9 +294,14 @@ function oublierDonnees() {
 
 /*
  * Charge envoyée par le campus (server/notifications.ts) :
- *   { id, titre, corps, lien, type, tag, renotify, actions: [{ action, titre, lien }], resume }
+ *   { id, titre, corps, lien, type, tag, renotify, silencieux, urgent, actions: [{ action, titre, lien }], resume }
  * Une charge plus ancienne ({ titre, corps, lien, type }, sans identifiant) reste acceptée.
+ *
+ * Heures calmes (21 h à 6 h, heure du téléphone) : un rappel non urgent arrivé en
+ * retard (téléphone resté sans données, rallumé le soir) s'affiche sans sonner ;
+ * seul un rappel urgent (le cours commence) sonne la nuit.
  */
+const CALME = { debut: 21, fin: 6 };
 self.addEventListener("push", (evenement) => {
   let d = {};
   try {
@@ -308,6 +318,11 @@ self.addEventListener("push", (evenement) => {
   for (const a of actions) liens[a.action] = typeof a.lien === "string" ? a.lien : d.lien;
   // Même étiquette, même place dans la barre du téléphone : un seul rappel de live, une seule nouveauté par séance.
   const tag = typeof d.tag === "string" && d.tag ? d.tag : d.type === "live" ? "live" : undefined;
+  // Une charge sans « urgent » (ancien campus) : un rappel de live est traité comme urgent, comme avant.
+  const urgent = d.urgent === true || (d.urgent === undefined && d.type === "live");
+  const heure = new Date().getHours();
+  const nuit = heure >= CALME.debut || heure < CALME.fin;
+  const muet = d.silencieux === true || (nuit && !urgent);
   const options = {
     body: d.corps || "",
     icon: "/icons/icone-192.png",
@@ -316,8 +331,9 @@ self.addEventListener("push", (evenement) => {
     data: { lien: d.lien || "/accueil", id: Number.isInteger(d.id) ? d.id : null, resume: d.resume === true, liens },
     tag,
     // Sans étiquette, renotify est refusé par le navigateur.
-    renotify: Boolean(tag) && (d.type === "live" || d.renotify === true),
+    renotify: !muet && Boolean(tag) && (d.type === "live" || d.renotify === true),
   };
+  if (muet) options.silent = true;
   if (actions.length) options.actions = actions.map((a) => ({ action: a.action, title: a.titre }));
   evenement.waitUntil(self.registration.showNotification(titre, options));
 });

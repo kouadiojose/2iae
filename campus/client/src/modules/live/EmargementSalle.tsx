@@ -6,7 +6,8 @@
 //   - jamais pendant un sondage, ni quand la salle a la parole ou travaille en
 //     groupes : le moment attend (10 min au plus) ;
 //   - avec le compteur « 34 émargés à Riviera » et le classement des campus en
-//     direct, pour l'émulation. Aucun nom d'étudiant.
+//     direct, pour l'émulation : en taux (part des attendus), sans numéro de
+//     rang ni campus à 0 (décision D5 : jamais de dernier). Aucun nom d'étudiant.
 // La visio et le son continuent dessous : la scène n'est jamais démontée.
 // Aussi : le code d'émargement renouvelé chaque minute (useCodeSalle) et le
 // mini-guide du chargé de cours affiché avant le cours.
@@ -18,8 +19,15 @@ import { cn } from "@/lib/utils";
 import { useCanal } from "@/lib/flux";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { t } from "@shared/textes/direct";
-import { decisionEmargement, PAUSE_APRES_SONDAGE_MS, type AfficherEmargementDto, type EmargementSalleDto, type MemoireEmargement } from "@shared/engagement/direct";
-import type { CampusDirectDto, CodeSalleDto, EtatDirectDto, SeanceDetailDto } from "@shared/schema";
+import {
+  classementEmargement,
+  decisionEmargement,
+  PAUSE_APRES_SONDAGE_MS,
+  type AfficherEmargementDto,
+  type EmargementSalleDto,
+  type MemoireEmargement,
+} from "@shared/engagement/direct";
+import type { CodeSalleDto, EtatDirectDto, SeanceDetailDto } from "@shared/schema";
 
 // ── Code d'émargement renouvelé chaque minute ──────────────────────────────
 
@@ -109,19 +117,13 @@ function useFenetreEmargement(seance: SeanceDetailDto, etat: EtatDirectDto, site
     setMemoire(suivante);
     ecrireMemoire(seance.id, suivante);
   }, [enDirect, maintenant, demarreeLe, occupe, demande, memoire, seance.id]);
-  return { fenetre: enDirect ? memoire.courant : null, maintenant, sitesDuCours: infos?.sitesDuCours ?? null };
+  return { fenetre: enDirect ? memoire.courant : null, maintenant, sitesDuCours: infos?.sitesDuCours ?? null, attendus: infos?.attendus ?? null };
 }
 
 // ── Le QR en grand ─────────────────────────────────────────────────────────
 
-/** Campus du classement : ceux qui suivent le cours (sinon ceux qui sont allumés), du plus émargé au moins émargé. */
-function classement(campus: CampusDirectDto[], sitesDuCours: number[] | null): CampusDirectDto[] {
-  const retenus = campus.filter((c) => (sitesDuCours ? sitesDuCours.includes(c.siteId) : c.salleConnectee || c.emarges > 0));
-  return retenus.map((c, i) => ({ c, i })).sort((a, b) => b.c.emarges - a.c.emarges || a.i - b.i).map((x) => x.c);
-}
-
 export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; enGroupe: boolean }) {
-  const { fenetre, maintenant, sitesDuCours } = useFenetreEmargement(seance, etat, siteId, enGroupe);
+  const { fenetre, maintenant, sitesDuCours, attendus } = useFenetreEmargement(seance, etat, siteId, enGroupe);
   const visible = Boolean(fenetre && siteId);
   const { code } = useCodeSalle(seance.id, siteId, visible);
   // Le code d'une autre séance (minute précédente, rechargement) ne s'affiche jamais.
@@ -133,7 +135,8 @@ export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seanc
     // La durée totale se lit à l'ouverture de la fenêtre seulement (barre de retrait).
     if (fenetre) duree.current = Math.max(restant, 1);
   }, [fenetre?.cle]);
-  const liste = useMemo(() => classement(etat.campus, sitesDuCours), [etat.campus, sitesDuCours]);
+  // En taux, sans rang ni campus à 0 (shared/engagement/direct.ts).
+  const liste = useMemo(() => classementEmargement(etat.campus, sitesDuCours, attendus), [etat.campus, sitesDuCours, attendus]);
   if (!pret || !fenetre || !code) return null;
   const ici = etat.campus.find((c) => c.siteId === siteId);
   const n = ici?.emarges ?? 0;
@@ -190,8 +193,8 @@ export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seanc
           {liste.length > 1 && (
             <div className="flex flex-col gap-[1.2vh]">
               <p className="font-mono text-[clamp(12px,1.05vw,20px)] uppercase tracking-[0.14em] text-nuit-gris">{t("salle.qr.classement")}</p>
-              <ol className="flex flex-wrap gap-[0.8vw]">
-                {liste.map((c, i) => (
+              <ul className="flex flex-wrap gap-[0.8vw]">
+                {liste.map((c) => (
                   <li
                     key={c.siteId}
                     className={cn(
@@ -199,12 +202,11 @@ export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seanc
                       c.siteId === siteId ? "bg-orange text-encre" : "bg-nuit-carte text-white",
                     )}
                   >
-                    <span className={cn("font-mono text-[0.7em]", c.siteId === siteId ? "text-encre/70" : "text-nuit-gris")}>{i + 1}</span>
                     {c.nomCourt}
-                    <span className="tabular-nums">{c.emarges}</span>
+                    <span className="tabular-nums">{c.taux === null ? c.emarges : t("salle.qr.taux", { v: { n: c.taux } })}</span>
                   </li>
                 ))}
-              </ol>
+              </ul>
             </div>
           )}
         </div>

@@ -18,11 +18,13 @@ import { estEquipe, exigerConnexion, exigerRole, exigerDroit, exigerDroitDe, dro
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, coursVisible, devoirVisible, enseigneCours, etudiantsDuCours, formateursDuCours, idsCoursAccessibles, peutVoirCours } from "../acces";
 import { enregistrerGardienFichier, lireContenuFichier, remettreFichier, urlFichier } from "../fichiers";
-import { notifier } from "../notifications";
+import { notifier, type NouvelleNotification } from "../notifications";
+import { sqlDevoirProposable } from "../engagement/proposables";
 import { publierUtilisateur } from "../temps-reel";
 import { planifier } from "../taches";
 import { iaDisponible, demanderJson, verifierQuota } from "../ia";
 import { ajouterJours, heureLocale, jourLocal } from "@shared/engagement/calendrier";
+import { FIL_ECHEANCES } from "@shared/engagement/envois";
 import { formaterDate } from "@shared/textes";
 import { t as tRappels } from "@shared/textes/rappels";
 import {
@@ -388,9 +390,15 @@ async function nonRendus(d: Devoir): Promise<number[]> {
   return inscrits.filter((e) => !faits.has(e.id)).map((e) => e.id);
 }
 
-/** Rappels d'une échéance (chantier C3) : la veille entre 17 h et 20 h, le jour même à partir de 12 h, heure d'Abidjan. */
+/**
+ * Rappels d'une échéance (chantier C3) : la veille entre 17 h et 20 h, le jour même entre 12 h et 20 h,
+ * heure d'Abidjan. Jamais plus tard : un passage du soir (mise en ligne, campus arrêté l'après-midi) ne
+ * lance plus un rappel « jour J » qui partirait dans le résumé du lendemain, après l'échéance.
+ */
 const FENETRE_VEILLE = { debut: 17, fin: 20 } as const;
-const HEURE_JOUR_J = 12;
+const FENETRE_JOUR_J = { debut: 12, fin: 20 } as const;
+/** Titres cités dans un rappel qui regroupe plusieurs échéances (au-delà : « + n »). */
+const TITRES_REGROUPES = 3;
 
 /**
  * Réserve le rappel « veille » ou « jour_j » d'un devoir avant de l'envoyer
@@ -408,22 +416,66 @@ async function reserverRappel(d: Devoir, type: "veille" | "jour_j", maintenant: 
   return rows.length > 0;
 }
 
-/** Envoie le rappel « veille » ou « jour_j » aux inscrits qui n'ont pas encore rendu. */
-async function rappelerEcheance(d: Devoir, code: string, type: "veille" | "jour_j"): Promise<number> {
-  const ids = await nonRendus(d);
-  await db.execute(sql`UPDATE campus.rappels_devoirs SET destinataires = ${ids.length} WHERE devoir_id = ${d.id} AND type = ${type}`);
-  if (!ids.length) return 0;
-  const quiz = d.type === "quiz";
-  const v = { titre: d.titre, code, heure: formaterDate(d.dateLimite, { style: "heure" }) };
-  const titre =
-    type === "veille" ? tRappels(quiz ? "devoir.veille.titre.quiz" : "devoir.veille.titre.depot", { registre: "tu", v }) : tRappels(quiz ? "devoir.jourj.titre.quiz" : "devoir.jourj.titre.depot", { registre: "tu", v });
-  await notifier(ids, {
-    type: "devoir",
-    titre,
-    corps: tRappels(type === "veille" ? "devoir.veille.corps" : "devoir.jourj.corps", { registre: "tu", v }),
-    lien: quiz ? `/quiz/${d.id}` : `/devoirs/${d.id}`,
-  });
-  return ids.length;
+type Echeance = { d: Devoir; code: string; type: "veille" | "jour_j" };
+
+/**
+ * Le rappel d'un étudiant pour ses échéances de ce passage : le texte d'un
+ * devoir s'il n'y en a qu'un, sinon un seul rappel qui les cite (« 2 devoirs à
+ * rendre aujourd'hui »). Il expire avec la première échéance du jour annoncée,
+ * ou à minuit pour une veille (« demain » ne serait plus vrai) : passé ce
+ * moment, il n'est ni gardé chez le service d'envoi ni reporté au résumé.
+ */
+function rappelEcheances(liste: Echeance[]): NouvelleNotification {
+  const triee = [...liste].sort((a, b) => a.d.dateLimite.getTime() - b.d.dateLimite.getTime() || a.d.id - b.d.id);
+  const jourJ = triee.filter((e) => e.type === "jour_j");
+  const veille = triee.filter((e) => e.type === "veille");
+  const expireLe = jourJ.length ? jourJ[0].d.dateLimite : new Date(`${jourLocal(veille[0].d.dateLimite)}T00:00:00Z`);
+  const commun = { type: "devoir" as const, expireLe, fil: FIL_ECHEANCES };
+  if (triee.length === 1) {
+    const { d, code, type } = triee[0];
+    const quiz = d.type === "quiz";
+    const v = { titre: d.titre, code, heure: formaterDate(d.dateLimite, { style: "heure" }) };
+    const titre =
+      type === "veille" ? tRappels(quiz ? "devoir.veille.titre.quiz" : "devoir.veille.titre.depot", { registre: "tu", v }) : tRappels(quiz ? "devoir.jourj.titre.quiz" : "devoir.jourj.titre.depot", { registre: "tu", v });
+    return { ...commun, titre, corps: tRappels(type === "veille" ? "devoir.veille.corps" : "devoir.jourj.corps", { registre: "tu", v }), lien: quiz ? `/quiz/${d.id}` : `/devoirs/${d.id}` };
+  }
+  const titre = !veille.length
+    ? tRappels("devoir.groupe.jourj.titre", { registre: "tu", v: { n: jourJ.length } })
+    : !jourJ.length
+      ? tRappels("devoir.groupe.veille.titre", { registre: "tu", v: { n: veille.length } })
+      : tRappels("devoir.groupe.mixte.titre", { registre: "tu", v: { a: jourJ.length, b: veille.length } });
+  const cites = triee.slice(0, TITRES_REGROUPES).map((e) => `« ${e.d.titre} »`);
+  if (triee.length > TITRES_REGROUPES) cites.push(`+ ${triee.length - TITRES_REGROUPES}`);
+  return { ...commun, titre, corps: tRappels("devoir.groupe.corps", { registre: "tu", v: { liste: cites.join(" · ") } }), lien: "/devoirs" };
+}
+
+/**
+ * Envoie les rappels d'échéance réservés pendant ce passage, à ceux qui n'ont
+ * pas encore rendu : UNE notification par étudiant pour toutes ses échéances
+ * (deux devoirs dus le même jour ne prennent qu'une place), dans le fil
+ * « echeances » : un seul rappel d'échéance sonne par jour, les suivants
+ * remplacent le premier sans sonner (notifications.ts). Une place reste ainsi
+ * pour le rappel d'entraînement (C4) et pour un message.
+ */
+async function rappelerEcheances(echeances: Echeance[]): Promise<void> {
+  const parEtudiant = new Map<number, Echeance[]>();
+  for (const e of echeances) {
+    const ids = await nonRendus(e.d);
+    await db.execute(sql`UPDATE campus.rappels_devoirs SET destinataires = ${ids.length} WHERE devoir_id = ${e.d.id} AND type = ${e.type}`);
+    for (const id of ids) parEtudiant.set(id, [...(parEtudiant.get(id) ?? []), e]);
+  }
+  // Mêmes échéances, même rappel : un envoi par groupe d'étudiants.
+  const groupes = new Map<string, { ids: number[]; liste: Echeance[] }>();
+  for (const [uid, liste] of parEtudiant) {
+    const cle = liste
+      .map((e) => `${e.type}:${e.d.id}`)
+      .sort()
+      .join(",");
+    const g = groupes.get(cle) ?? { ids: [], liste };
+    g.ids.push(uid);
+    groupes.set(cle, g);
+  }
+  for (const { ids, liste } of groupes.values()) await notifier(ids, rappelEcheances(liste));
 }
 
 /** Jour d'Abidjan où le devoir a été annoncé aux étudiants (création, ou ouverture différée). */
@@ -432,8 +484,10 @@ const jourAnnonce = (d: Devoir) => jourLocal(d.ouvertureLe && d.ouvertureLe > d.
 /**
  * Tâche périodique : annonce les devoirs dont l'ouverture est arrivée, puis
  * rappelle l'échéance à ceux qui n'ont pas rendu : la veille entre 17 h et
- * 20 h (avant les heures calmes, plus jamais vers minuit), puis le jour même à
- * partir de 12 h. Jamais deux messages le jour où le devoir a été annoncé.
+ * 20 h (avant les heures calmes, plus jamais vers minuit), puis le jour même
+ * entre 12 h et 20 h. Jamais deux messages le jour où le devoir a été annoncé.
+ * Seulement les devoirs proposables (un devoir automatique que le formateur a
+ * marqué « à revoir » n'est pas poussé, server/engagement/proposables.ts).
  * Idempotente : chaque rappel est réservé en base avant d'être envoyé.
  */
 export async function envoyerRappelsDevoirs(maintenant = new Date()): Promise<{ ouvertures: number; veilles: number; joursJ: number }> {
@@ -465,26 +519,35 @@ export async function envoyerRappelsDevoirs(maintenant = new Date()): Promise<{ 
   const demain = ajouterJours(aujourdhui, 1);
   const heure = heureLocale(maintenant);
   const veille = heure >= FENETRE_VEILLE.debut && heure < FENETRE_VEILLE.fin;
-  const jourJ = heure >= HEURE_JOUR_J;
+  const jourJ = heure >= FENETRE_JOUR_J.debut && heure < FENETRE_JOUR_J.fin;
   if (!veille && !jourJ) return { ouvertures, veilles, joursJ };
   const proches = await db
     .select({ d: devoirs, code: cours.code })
     .from(devoirs)
     .innerJoin(cours, eq(cours.id, devoirs.coursId))
-    .where(and(eq(devoirs.publie, true), gt(devoirs.dateLimite, maintenant), lte(devoirs.dateLimite, new Date(maintenant.getTime() + 2 * JOUR))));
+    .where(
+      and(
+        eq(devoirs.publie, true),
+        gt(devoirs.dateLimite, maintenant),
+        lte(devoirs.dateLimite, new Date(maintenant.getTime() + 2 * JOUR)),
+        sqlDevoirProposable("devoirs"),
+      ),
+    );
+  const aRappeler: Echeance[] = [];
   for (const { d, code } of proches) {
     if (!ouvert(d, maintenant)) continue;
     // Le devoir a été annoncé aujourd'hui (« Nouveau devoir ») : pas de second message le même jour.
     if (jourAnnonce(d) === aujourdhui) continue;
     const jourEcheance = jourLocal(d.dateLimite);
     if (veille && jourEcheance === demain && (await reserverRappel(d, "veille", maintenant))) {
-      await rappelerEcheance(d, code, "veille");
+      aRappeler.push({ d, code, type: "veille" });
       veilles++;
     } else if (jourJ && jourEcheance === aujourdhui && (await reserverRappel(d, "jour_j", maintenant))) {
-      await rappelerEcheance(d, code, "jour_j");
+      aRappeler.push({ d, code, type: "jour_j" });
       joursJ++;
     }
   }
+  if (aRappeler.length) await rappelerEcheances(aRappeler);
   return { ouvertures, veilles, joursJ };
 }
 

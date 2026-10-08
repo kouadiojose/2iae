@@ -32,6 +32,7 @@ import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, conne
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { copierRessources, projectionDe, ressourcesDe } from "./ressources-seance";
 import { notifier } from "../notifications";
+import { rappelerDemarrage } from "./participation-direct";
 import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia";
 import { prevenirSite } from "../site";
 import { planifier } from "../taches";
@@ -1162,6 +1163,13 @@ async function convertirPdf(u: Utilisateur, f: Express.Multer.File): Promise<num
 // ── Code d'émargement : 4 chiffres par (séance, salle), renouvelé chaque minute ──
 
 const fenetreCourante = (t = Date.now()) => Math.floor(t / MINUTE);
+/**
+ * Le code de la minute précédente reste accepté pendant ces premières secondes
+ * seulement : l'étudiant qui a scanné ou lu le code à la 59e seconde est couvert
+ * (l'écran met une demi-seconde à afficher le nouveau), mais un code photographié
+ * et relayé à un camarade resté chez lui expire au plus 80 s après son affichage.
+ */
+const MARGE_CODE_PRECEDENT_MS = 20_000;
 
 /**
  * Code déterministe (aucun stockage) : une base secrète par minute, décalée
@@ -1667,16 +1675,12 @@ export function enregistrerLive(app: Express) {
       publier(canal(s.id), "statut", { statut: maj.statut, demarreeLe: iso(maj.demarreeLe), termineeLe: null, motif: null });
       annoncer(maj);
       // Reprise après une fin : ceux qui sont dans la classe la voient repartir et
-      // le bandeau « En direct » revient partout ; on ne renvoie pas « En direct » à tous.
+      // le bandeau « En direct » revient partout ; on ne renvoie pas le rappel du démarrage.
+      // Premier démarrage : UN rappel par étudiant (décision D3) : en salle, scanner le QR ;
+      // sinon, rejoindre en ligne (participation-direct.ts).
       if (!reprise) {
         const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
-        await notifier((await etudiantsDuCours(s.coursId)).map((e) => e.id), {
-          type: "live",
-          titre: `En direct : ${s.titre}`,
-          corps: `${c?.code ?? ""} · le formateur a ouvert la classe. Entre maintenant.`,
-          lien: `/live/${s.id}`,
-          urgent: true,
-        });
+        await rappelerDemarrage(maj, c?.code ?? "");
       }
       if (s.publierSurSite) prevenirSite("live en direct");
       res.json(await detailSeance(u, maj));
@@ -2010,15 +2014,8 @@ export function enregistrerLive(app: Express) {
       await consigner(s.id, "demarrage", { par: u.id, immediat: true, ...(!d.prevenir && { essai: true }) });
       await db.insert(journal).values({ utilisateurId: u.id, action: "direct_immediat", details: { seanceId: s.id, coursId: c.id, prevenir: d.prevenir } });
       annoncer(s);
-      if (d.prevenir) {
-        await notifier((await etudiantsDuCours(c.id)).map((e) => e.id), {
-          type: "live",
-          titre: `En direct : ${s.titre}`,
-          corps: `${c.code} · le cours commence maintenant. Entre dans la classe.`,
-          lien: `/live/${s.id}`,
-          urgent: true,
-        });
-      }
+      // Rappel unique du démarrage (décision D3), comme un démarrage ordinaire.
+      if (d.prevenir) await rappelerDemarrage(s, c.code);
       res.status(201).json(await detailSeance(u, s));
     }),
   );
@@ -2924,7 +2921,7 @@ export function enregistrerLive(app: Express) {
             )
         : [];
       const sitesListe = await listeSites();
-      const fenetres = [fenetreCourante(maintenant), fenetreCourante(maintenant) - 1];
+      const fenetres = [fenetreCourante(maintenant), ...(maintenant % MINUTE < MARGE_CODE_PRECEDENT_MS ? [fenetreCourante(maintenant) - 1] : [])];
       const trouves: { s: Seance; site: Site }[] = [];
       for (const s of candidates.filter((x) => fenetreEmargementOuverte(x, maintenant))) {
         for (const site of sitesListe) {
@@ -2956,6 +2953,9 @@ export function enregistrerLive(app: Express) {
           .where(eq(presences.id, p.id));
       }
       diffuserBientot(`campus:${s.id}`, () => diffuserCampus(s.id), 300);
+      // Le rappel du démarrage (« en salle, scanne le QR ») a servi : lu, il ne ressort ni dans la cloche ni au résumé.
+      const lus = await db.execute(sql`UPDATE campus.notifications SET lu_le = now() WHERE utilisateur_id = ${u.id} AND lien = ${`/emargement?seance=${s.id}`} AND lu_le IS NULL`);
+      if (lus.rowCount) publierUtilisateur(u.id, "notification", { lues: lus.rowCount });
       const dto: EmargementDto = {
         seanceId: s.id,
         titre: s.titre,

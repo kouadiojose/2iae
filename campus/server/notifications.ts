@@ -15,9 +15,15 @@
 //     sonne la nuit, sauf une urgence ;
 //   - ce qui ne peut pas sonner n'est jamais perdu : une action ou un contenu
 //     part dans le résumé du matin (le matin même pour la nuit, le lendemain
-//     pour le plafond), un engagement reste dans la cloche ;
+//     pour le plafond), un engagement reste dans la cloche ; mais un rappel
+//     qui aura expiré d'ici là (échéance passée, émargement fini : expireLe)
+//     reste dans la cloche, et le résumé écarte ce qui est devenu faux ;
 //   - deux nouveautés de la même séance (ou du même lien) à moins de 3 h : la
 //     seconde remplace la première sur le téléphone, sans prendre de place ;
+//     de même, un seul rappel d'échéance sonne par jour (fil « echeances ») ;
+//   - durée de vie chez le service d'envoi selon la priorité, raccourcie
+//     jusqu'à l'expiration du rappel ; la nuit, un rappel non urgent arrivé en
+//     retard s'affiche sans sonner (service worker) ;
 //   - contenu sensible masqué sur l'écran verrouillé (« Nouvelle note
 //     disponible », jamais la note ; un message jamais en clair).
 // Chaque décision laisse une ligne dans envois_push (lue par le tableau de C8).
@@ -30,12 +36,14 @@ import { config } from "./config";
 import { publierUtilisateur } from "./temps-reel";
 import { planifier } from "./taches";
 import { sqlDevoirProposable } from "./engagement/proposables";
-import { notifications, abonnementsPush, compteursPush, pushDifferes, envoisPush, utilisateurs } from "@shared/schema";
-import { ajouterJours, heureLocale, jourLocal, FUSEAU_PAR_DEFAUT } from "@shared/engagement/calendrier";
+import { notifications, abonnementsPush, compteursPush, pushDifferes, envoisPush, utilisateurs, devoirs, rendus, seances } from "@shared/schema";
+import { ajouterJours, heureLocale, jourLocal, minutesLocales, FUSEAU_PAR_DEFAUT } from "@shared/engagement/calendrier";
 import {
   CONSERVATION_ENVOIS_JOURS,
   DELAI_REGROUPEMENT_MS,
+  DUREE_VIE_MIN_S,
   DUREE_VIE_S,
+  FIL_ECHEANCES,
   HEURES_CALMES as CALMES,
   PLACES_CONTENU,
   PLACES_ENGAGEMENT,
@@ -75,6 +83,23 @@ export type NouvelleNotification = {
    * cas que le type ne dit pas (message d'un formateur, d'un camarade).
    */
   priorite?: Priorite;
+  /**
+   * Le rappel devient faux après cet instant (échéance du jour passée, émargement
+   * terminé) : il ne vit pas plus longtemps chez le service d'envoi, et il n'est
+   * jamais reporté au résumé du matin s'il aura expiré d'ici là (il reste dans la cloche).
+   */
+  expireLe?: Date;
+  /**
+   * Fil de rappels (FIL_ECHEANCES) : un seul rappel du fil sonne par jour et par
+   * personne ; les suivants du même jour remplacent le premier sur le téléphone,
+   * sans sonner ni prendre de place (statut « regroupe »).
+   */
+  fil?: string;
+  /**
+   * Hors plafond du jour : ne prend pas de place (rappel d'essai demandé par la
+   * personne, déjà limité à un par minute). Les heures calmes restent respectées.
+   */
+  horsPlafond?: boolean;
 };
 
 // ── Règles du téléphone ────────────────────────────────────────────────────
@@ -103,6 +128,21 @@ function jourDuResume(d: Date, fuseau: string | null): string {
   const jour = jourDe(d, fuseau);
   return heureLocale(d, fuseau || FUSEAU_PAR_DEFAUT) >= HEURES_CALMES.debut ? ajouterJours(jour, 1) : jour;
 }
+
+/**
+ * Heure (au plus tôt) du prochain résumé du matin chez la personne : la fin des
+ * heures calmes qui suit, ce matin avant 6 h, sinon demain matin. Sert à ne pas
+ * reporter au résumé un rappel qui aura expiré d'ici là.
+ */
+function prochainResume(d: Date, fuseau: string | null): Date {
+  const m = minutesLocales(d, fuseau || FUSEAU_PAR_DEFAUT);
+  const fin = HEURES_CALMES.fin * 60;
+  const attente = m < fin ? fin - m : 24 * 60 - m + fin;
+  return new Date(d.getTime() + attente * 60_000);
+}
+
+/** Groupe des rappels d'un fil (envois_push.groupe) : « fil:echeances ». */
+const groupeDuFil = (fil: string) => `fil:${fil}`;
 
 /**
  * Priorité d'envoi : celle demandée, sinon « urgent » pour une notification
@@ -152,9 +192,20 @@ export function contenuPush(
   return { titre: n.titre, corps: n.corps ?? "" };
 }
 
-/** Boutons du rappel : « Rejoindre » quand le live commence, « Rendre mon devoir » pour un devoir. */
+/**
+ * Boutons du rappel : « Rejoindre » quand le live commence ; « Je suis en salle » et
+ * « Suivre en ligne » quand le cours commence pour un étudiant d'un campus qui
+ * suit le cours (rappel unique du démarrage) ; « Rendre mon devoir » pour un devoir.
+ */
 function boutonsDe(type: string, priorite: Priorite, lien: string, registre: Registre): ActionPush[] {
   if (type === "live" && priorite === "urgent" && /^\/live\/\d+/.test(lien)) return [{ action: "rejoindre", titre: t("action.rejoindre", { registre }), lien }];
+  const salle = /^\/emargement\?seance=(\d+)$/.exec(lien);
+  if (type === "live" && salle) {
+    return [
+      { action: "emarger", titre: t("action.emarger", { registre }), lien },
+      { action: "en_ligne", titre: t("action.enLigne", { registre }), lien: `/live/${salle[1]}?enLigne=1` },
+    ];
+  }
   if (type === "devoir" && /^\/devoirs\/\d+/.test(lien)) return [{ action: "rendre", titre: t("action.rendre", { registre }), lien }];
   if (type === "devoir" && /^\/quiz\/\d+/.test(lien)) return [{ action: "quiz", titre: t("action.quiz", { registre }), lien }];
   return [];
@@ -179,6 +230,10 @@ type ChargePush = {
   tag: string;
   /** Faire sonner de nouveau quand le rappel en remplace un autre de même étiquette. */
   renotify: boolean;
+  /** Afficher sans sonner (second rappel d'échéance du jour). */
+  silencieux?: boolean;
+  /** Rappel urgent (le cours commence) : il sonne même la nuit ; les autres, arrivés la nuit, s'affichent sans sonner. */
+  urgent?: boolean;
   actions: ActionPush[];
   /** Résumé de plusieurs nouveautés : le toucher compte l'ouverture sans marquer la notification lue. */
   resume?: boolean;
@@ -262,6 +317,28 @@ export async function repartirPush(
   };
 }
 
+/** Personnes à qui un rappel du même fil a déjà sonné aujourd'hui (leur jour local). */
+async function dejaSurLeFil(dests: Destinataire[], fil: string, maintenant: Date): Promise<Set<number>> {
+  if (!dests.length) return new Set();
+  const lignes = await db
+    .select({ id: envoisPush.utilisateurId, creeLe: envoisPush.creeLe })
+    .from(envoisPush)
+    .where(
+      and(
+        inArray(
+          envoisPush.utilisateurId,
+          dests.map((d) => d.id),
+        ),
+        gt(envoisPush.creeLe, new Date(maintenant.getTime() - 24 * 60 * 60_000)),
+        lt(envoisPush.creeLe, new Date(maintenant.getTime() + 60_000)),
+        eq(envoisPush.groupe, groupeDuFil(fil)),
+        inArray(envoisPush.statut, ["envoye", "regroupe"]),
+      ),
+    );
+  const fuseauDe = new Map(dests.map((d) => [d.id, d.fuseau]));
+  return new Set(lignes.filter((l) => jourDe(l.creeLe, fuseauDe.get(l.id) ?? null) === jourDe(maintenant, fuseauDe.get(l.id) ?? null)).map((l) => l.id));
+}
+
 /** Personnes qui ont reçu une nouveauté du même groupe il y a moins de 3 h. */
 async function regroupables(ids: number[], groupe: string, maintenant: Date): Promise<Set<number>> {
   if (!ids.length) return new Set();
@@ -312,7 +389,10 @@ export async function envoyerPush(
   const statuts = new Map<number, StatutEnvoi>();
   if (!ids.length) return statuts;
   const priorite = prioriteDe(n);
-  const groupe = groupeDe(n.lien);
+  const groupe = n.fil ? groupeDuFil(n.fil) : groupeDe(n.lien);
+  // Un rappel qui aura expiré avant le prochain résumé du matin n'y est pas reporté : il reste dans la cloche.
+  const perimeAuResume = (d: Destinataire) => Boolean(n.expireLe && n.expireLe.getTime() <= prochainResume(maintenant, d.fuseau).getTime());
+  const silencieux = new Set<number>();
   const [dests, abonnements] = await Promise.all([destinatairesDe(ids), db.select().from(abonnementsPush).where(inArray(abonnementsPush.utilisateurId, ids))]);
   const appareils = new Map<number, Abonnement[]>();
   for (const a of abonnements) appareils.set(a.utilisateurId, [...(appareils.get(a.utilisateurId) ?? []), a]);
@@ -338,22 +418,41 @@ export async function envoyerPush(
       else {
         // La nuit : action et contenu partent dans le résumé du matin ; un engagement reste dans la cloche.
         statuts.set(d.id, "differe");
-        if (priorite !== "engagement") aDifferer.push({ utilisateurId: d.id, jour: jourDuResume(maintenant, d.fuseau) });
+        if (priorite !== "engagement" && !perimeAuResume(d)) aDifferer.push({ utilisateurId: d.id, jour: jourDuResume(maintenant, d.fuseau) });
       }
     }
     let candidats = deJour;
-    if (priorite === "contenu" && deJour.length) {
+    // Hors plafond (rappel d'essai) : part de jour sans prendre de place.
+    if (n.horsPlafond) {
+      for (const d of deJour) {
+        statuts.set(d.id, "envoye");
+        aEnvoyer.push(d);
+      }
+      candidats = [];
+    }
+    // Fil (échéances) : celui qui a déjà eu un rappel du fil aujourd'hui voit le nouveau remplacer l'ancien, sans sonnerie.
+    if (n.fil && candidats.length) {
+      const deja = await dejaSurLeFil(candidats, n.fil, maintenant);
+      for (const d of candidats) {
+        if (!deja.has(d.id)) continue;
+        statuts.set(d.id, "regroupe");
+        silencieux.add(d.id);
+        aEnvoyer.push(d);
+      }
+      candidats = candidats.filter((d) => !deja.has(d.id));
+    }
+    if (priorite === "contenu" && candidats.length) {
       const recents = await regroupables(
-        deJour.map((d) => d.id),
+        candidats.map((d) => d.id),
         groupe,
         maintenant,
       );
-      for (const d of deJour) {
+      for (const d of candidats) {
         if (!recents.has(d.id)) continue;
         statuts.set(d.id, "regroupe");
         aEnvoyer.push(d);
       }
-      candidats = deJour.filter((d) => !recents.has(d.id));
+      candidats = candidats.filter((d) => !recents.has(d.id));
     }
     const accordes = await reserver(candidats, priorite, maintenant);
     for (const d of candidats) {
@@ -362,9 +461,9 @@ export async function envoyerPush(
         comptes.add(d.id);
         aEnvoyer.push(d);
       } else {
-        // Plus de place aujourd'hui : action et contenu partent dans le résumé de demain matin.
+        // Plus de place aujourd'hui : action et contenu partent dans le résumé de demain matin (s'ils seront encore vrais).
         statuts.set(d.id, "plafond");
-        if (priorite !== "engagement") aDifferer.push({ utilisateurId: d.id, jour: ajouterJours(jourDe(maintenant, d.fuseau), 1) });
+        if (priorite !== "engagement" && !perimeAuResume(d)) aDifferer.push({ utilisateurId: d.id, jour: ajouterJours(jourDe(maintenant, d.fuseau), 1) });
       }
     }
   }
@@ -379,17 +478,20 @@ export async function envoyerPush(
   if (aEnvoyer.length) {
     const lien = n.lien ?? "/accueil";
     const tag = etiquetteDe(n.type, priorite, groupe);
-    const options = optionsEnvoi(priorite, tag);
+    const options = optionsEnvoi(priorite, tag, n.expireLe, maintenant);
     const cibles = aEnvoyer.flatMap((d) => {
       const registre = registreDe(d.role);
+      const muet = silencieux.has(d.id);
       const charge: ChargePush = {
         id: notificationDe.get(d.id) ?? null,
         ...contenuPush(n, registre),
         lien,
         type: n.type,
         tag,
-        // Une nouveauté qui en remplace une autre ne fait pas sonner de nouveau.
-        renotify: priorite !== "contenu" && priorite !== "engagement",
+        // Une nouveauté qui en remplace une autre ne fait pas sonner de nouveau, ni le second rappel d'échéance du jour.
+        renotify: !muet && priorite !== "contenu" && priorite !== "engagement",
+        ...(muet ? { silencieux: true } : {}),
+        urgent: priorite === "urgent",
         actions: boutonsDe(n.type, priorite, lien, registre),
       };
       return (appareils.get(d.id) ?? []).map((a) => ({ a, charge }));
@@ -417,10 +519,16 @@ export async function envoyerPush(
   return statuts;
 }
 
-/** Durée de vie, urgence et sujet du rappel chez le service d'envoi. */
-function optionsEnvoi(priorite: Priorite, tag: string): webpush.RequestOptions {
+/**
+ * Durée de vie, urgence et sujet du rappel chez le service d'envoi. La durée de
+ * vie suit la priorité (urgence 15 min, engagement 4 h, le reste 12 h) et
+ * s'arrête à l'expiration du rappel quand il en a une (une minute au moins).
+ */
+function optionsEnvoi(priorite: Priorite, tag: string, expireLe?: Date, maintenant = new Date()): webpush.RequestOptions {
+  const base = priorite === "urgent" ? DUREE_VIE_S.urgent : priorite === "engagement" ? DUREE_VIE_S.engagement : DUREE_VIE_S.autre;
+  const avantExpiration = expireLe ? Math.max(DUREE_VIE_MIN_S, Math.floor((expireLe.getTime() - maintenant.getTime()) / 1000)) : base;
   return {
-    TTL: priorite === "urgent" ? DUREE_VIE_S.urgent : DUREE_VIE_S.autre,
+    TTL: Math.min(base, avantExpiration),
     urgency: priorite === "urgent" ? "high" : "normal",
     topic: sujetDe(tag),
     // Un service d'envoi qui ne répond pas ne retient pas les autres rappels.
@@ -539,6 +647,49 @@ const idDevoirDuLien = (lien: string | null) => {
   return m ? Number(m[1]) : null;
 };
 
+const idSeanceEmargement = (lien: string | null) => {
+  const m = /^\/emargement\?seance=(\d+)$/.exec(lien ?? "");
+  return m ? Number(m[1]) : null;
+};
+
+/**
+ * Lignes en attente devenues fausses depuis leur report : rappel de devoir dont
+ * l'échéance est passée, ou que l'étudiant a déjà rendu (ou devoir supprimé) ;
+ * rappel d'émargement d'un direct qui n'est plus en cours. Elles ne passent pas
+ * dans le résumé du matin (elles restent dans la cloche).
+ */
+async function perimees(lignes: EnAttente[], maintenant: Date): Promise<Set<number>> {
+  const resultat = new Set<number>();
+  const deDevoir = lignes.filter((l) => l.type === "devoir" && idDevoirDuLien(l.lien) !== null);
+  const dEmargement = lignes.filter((l) => idSeanceEmargement(l.lien) !== null);
+  if (deDevoir.length) {
+    const ids = [...new Set(deDevoir.map((l) => idDevoirDuLien(l.lien)!))];
+    const uids = [...new Set(deDevoir.map((l) => l.utilisateurId))];
+    const [limites, faits] = await Promise.all([
+      db.select({ id: devoirs.id, dateLimite: devoirs.dateLimite }).from(devoirs).where(inArray(devoirs.id, ids)),
+      db
+        .select({ devoirId: rendus.devoirId, etudiantId: rendus.etudiantId })
+        .from(rendus)
+        .where(and(inArray(rendus.devoirId, ids), inArray(rendus.etudiantId, uids), sql`${rendus.statut} <> 'brouillon'`)),
+    ]);
+    const limiteDe = new Map(limites.map((d) => [d.id, d.dateLimite]));
+    const rendu = new Set(faits.map((r) => `${r.devoirId}:${r.etudiantId}`));
+    for (const l of deDevoir) {
+      const id = idDevoirDuLien(l.lien)!;
+      const limite = limiteDe.get(id);
+      if (!limite || limite.getTime() <= maintenant.getTime() || rendu.has(`${id}:${l.utilisateurId}`)) resultat.add(l.id);
+    }
+  }
+  if (dEmargement.length) {
+    const ids = [...new Set(dEmargement.map((l) => idSeanceEmargement(l.lien)!))];
+    const enDirect = new Set(
+      (await db.select({ id: seances.id }).from(seances).where(and(inArray(seances.id, ids), eq(seances.statut, "en_direct")))).map((x) => x.id),
+    );
+    for (const l of dEmargement) if (!enDirect.has(idSeanceEmargement(l.lien)!)) resultat.add(l.id);
+  }
+  return resultat;
+}
+
 /**
  * Compose le résumé : l'échéance du jour en tête s'il y en a une ; sinon la
  * seule nouveauté, ou la première action, suivie du nombre des autres ; un
@@ -604,8 +755,10 @@ function composerResume(nonLues: EnAttente[], echeance: EcheanceDuJour | undefin
 
 /**
  * Hors heures calmes (dans le fuseau de chacun) : pour chaque personne, un
- * seul envoi qui résume ce qui n'a pas pu sonner et n'a pas encore été lu.
- * Compte dans le plafond du jour, comme une action.
+ * seul envoi qui résume ce qui n'a pas pu sonner, n'a pas encore été lu et
+ * reste vrai (perimees). Compte dans le plafond du jour, comme une action ; le
+ * résumé qui annonce l'échéance du jour compte aussi comme le rappel
+ * d'échéance du jour (fil « echeances »).
  */
 export async function envoyerRappelsDuMatin(maintenant = new Date()): Promise<number> {
   const enAttente: EnAttente[] = await db
@@ -638,15 +791,17 @@ export async function envoyerRappelsDuMatin(maintenant = new Date()): Promise<nu
   }
   if (!parPersonne.size) return 0;
   const dests = new Map([...parPersonne].map(([id, lignes]) => [id, { id, fuseau: lignes[0].fuseau, role: lignes[0].role } as Destinataire]));
-  const echeances = await echeancesDuJour([...dests.values()], maintenant);
+  const [echeances, fausses] = await Promise.all([echeancesDuJour([...dests.values()], maintenant), perimees([...parPersonne.values()].flat(), maintenant)]);
 
   let envois = 0;
   for (const [utilisateurId, lignes] of parPersonne) {
     const d = dests.get(utilisateurId)!;
-    const nonLues = lignes.filter((l) => !l.luLe).sort((a, b) => a.creeLe.getTime() - b.creeLe.getTime() || a.id - b.id);
+    const nonLues = lignes.filter((l) => !l.luLe && !fausses.has(l.id)).sort((a, b) => a.creeLe.getTime() - b.creeLe.getTime() || a.id - b.id);
     if (nonLues.length && pushActif) {
-      const charge = composerResume(nonLues, echeances.get(utilisateurId), d);
-      const ligne: LigneEnvoi = { utilisateurId, notificationId: charge.id, type: TYPE_RESUME, priorite: "action", statut: "envoye", groupe: TYPE_RESUME, creeLe: maintenant };
+      const echeance = echeances.get(utilisateurId);
+      const charge = composerResume(nonLues, echeance, d);
+      const groupe = echeance ? groupeDuFil(FIL_ECHEANCES) : TYPE_RESUME;
+      const ligne: LigneEnvoi = { utilisateurId, notificationId: charge.id, type: TYPE_RESUME, priorite: "action", statut: "envoye", groupe, creeLe: maintenant };
       const appareils = await db.select().from(abonnementsPush).where(eq(abonnementsPush.utilisateurId, utilisateurId));
       const expires: number[] = [];
       if (!appareils.length) ligne.statut = "sans_abonnement";

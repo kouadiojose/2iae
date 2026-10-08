@@ -5,14 +5,16 @@
 // campus, devant l'écran de la salle, et personne ne les émargeait. L'écran
 // prend donc l'émargement en charge tout seul (QR plein écran au démarrage,
 // puis vers +15 et +45 min : PageSalle) ; ce fichier y ajoute :
-//   - un rappel unique sur le téléphone des étudiants au démarrage du direct
-//     (« Tu es en salle ? Scanne le QR de l'écran »), salle par salle, dès que
-//     l'écran de la salle est connecté : priorité « action », jamais la nuit ;
+//   - le rappel unique du démarrage du direct (décision D3) : UN rappel par
+//     étudiant, qui couvre les deux cas (« en salle, scanne le QR de l'écran ;
+//     sinon, rejoins le cours en ligne »), envoyé par live.ts au démarrage
+//     (rappelerDemarrage), avec un filet pour une salle oubliée ;
 //   - « Afficher l'émargement » (Studio, formateur et direction) : le QR
 //     revient une minute en grand sur toutes les salles (événement temps réel
 //     « emargement:afficher » du canal de la séance) ;
 //   - GET /api/seances/:id/emargement-salle : ce que l'écran de salle lit pour
-//     son QR plein écran (demande du Studio en cours, campus du classement) ;
+//     son QR plein écran (demande du Studio en cours, campus du classement et
+//     leurs attendus) ; le téléphone en mode salle le lit aussi (classement en taux) ;
 //   - GET /api/seances/:id/questions-rappel : 3 questions tirées du quiz du
 //     dernier cours complet du même cours (le formateur décide de les lancer) ;
 //   - GET /api/mes-presences et GET /api/seances/:id/ma-presence : la présence
@@ -25,7 +27,7 @@ import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerConnexion, moi } from "../auth";
 import { route, idParam, interdit, ErreurHttp } from "../http";
-import { etudiantsAttendusSeance, seanceVisible } from "../acces";
+import { etudiantsAttendusSeance, etudiantsDuCours, seanceVisible } from "../acces";
 import { publier, utilisateursSur } from "../temps-reel";
 import { notifier, HEURES_CALMES } from "../notifications";
 import { planifier } from "../taches";
@@ -80,23 +82,69 @@ async function sitesDuCours(coursId: number): Promise<number[]> {
 
 // ── Rappel unique au démarrage du direct ───────────────────────────────────
 
+/** Le filet laisse ce délai au démarrage (live.ts) pour poser ses lignes rappels_live avant de regarder. */
+const DELAI_FILET_MS = 30_000;
+
 /**
- * Au démarrage d'un direct (dans ses 10 premières minutes), chaque salle dont
- * l'écran est connecté déclenche UNE fois le rappel de ses étudiants attendus
- * qui ne sont pas encore émargés : « Tu es en salle ? Scanne le QR de
- * l'écran ». Une ligne par salle dans rappels_live (« emargement:<site> »,
- * clé primaire : un seul envoi, même si deux passages se croisent). Un
- * étudiant n'appartient qu'à un campus : il reçoit ce rappel une seule fois
- * par séance. Jamais pour un essai de visio ; jamais la nuit (heures calmes
- * dans le fuseau de l'étudiant) ; priorité « action » (politique d'envoi, C3).
- * Une salle sans écran allumé ne reçoit rien : il n'y aurait pas de QR à scanner.
+ * Rappel unique du démarrage d'un direct (décision D3 du 8 octobre 2026) : UN
+ * rappel par étudiant du cours, urgent (il sonne tout de suite, hors plafond,
+ * comme l'ancien « En direct »), qui remplace « Dans 15 min » sur le téléphone
+ * (même étiquette « live ») :
+ *   - étudiant d'un campus dont une classe suit le cours : « Le cours commence :
+ *     en salle, scanne le QR de l'écran ; sinon, rejoins le cours en ligne »,
+ *     vers /emargement?seance=<id> (boutons « Je suis en salle » et « Suivre en
+ *     ligne ») ; déjà émargé (le QR s'affiche une heure avant le cours) : « tu
+ *     es déjà compté présent », vers le mode salle ;
+ *   - les autres (sans campus, ou campus dont aucune classe ne suit ce cours) :
+ *     « En direct : entre maintenant », vers /live/<id>.
+ * Les lignes « emargement:<site> » de rappels_live sont posées AVANT l'envoi :
+ * le filet (envoyerRappelsEmargement) ne double jamais ce rappel. Appelé par
+ * live.ts au premier démarrage (jamais à une reprise) et par le direct
+ * immédiat qui prévient les étudiants (jamais pour un essai de visio).
+ */
+export async function rappelerDemarrage(s: { id: number; titre: string; coursId: number }, code: string): Promise<void> {
+  const [etudiants, sites] = await Promise.all([etudiantsDuCours(s.coursId), sitesDuCours(s.coursId)]);
+  for (const site of sites) {
+    await db.execute(sql`INSERT INTO campus.rappels_live (seance_id, type) VALUES (${s.id}, ${`emargement:${site}`}) ON CONFLICT DO NOTHING`);
+  }
+  const suivent = new Set(sites);
+  const emarges = await db.execute<{ uid: number }>(sql`SELECT utilisateur_id AS uid FROM campus.presences WHERE seance_id = ${s.id} AND mode = 'salle'`);
+  const deja = new Set(emarges.rows.map((l) => Number(l.uid)));
+  const enSalle = (e: Utilisateur) => e.siteId !== null && suivent.has(e.siteId);
+  const v = { titre: s.titre, code };
+  const ids = (garder: (e: Utilisateur) => boolean) => etudiants.filter(garder).map((e) => e.id);
+  await notifier(
+    ids((e) => enSalle(e) && !deja.has(e.id)),
+    { type: "live", titre: t("demarrage.titre", { registre: "tu", v }), corps: t("demarrage.salle.corps", { registre: "tu", v }), lien: `/emargement?seance=${s.id}`, urgent: true },
+  );
+  await notifier(
+    ids((e) => enSalle(e) && deja.has(e.id)),
+    { type: "live", titre: t("demarrage.titre", { registre: "tu", v }), corps: t("demarrage.emarge.corps", { registre: "tu", v }), lien: `/live/${s.id}`, urgent: true },
+  );
+  await notifier(
+    ids((e) => !enSalle(e)),
+    { type: "live", titre: t("demarrage.enLigne.titre", { registre: "tu", v }), corps: t("demarrage.enLigne.corps", { registre: "tu", v }), lien: `/live/${s.id}`, urgent: true },
+  );
+}
+
+/**
+ * Filet du rappel du démarrage : un direct en cours depuis 30 s à 10 min dont
+ * une salle (écran connecté) n'a pas de ligne « emargement:<site> » dans
+ * rappels_live (direct démarré avant cette version, serveur redémarré entre le
+ * démarrage et l'envoi) : ses étudiants attendus pas encore émargés reçoivent
+ * le même rappel que celui du démarrage. Une ligne par salle (clé primaire :
+ * un seul envoi, même si deux passages se croisent). Jamais pour un essai de
+ * visio ; jamais la nuit ; priorité « action », avec la même étiquette « live »
+ * (il remplace « Dans 15 min ») et une expiration à la fin de la fenêtre
+ * d'émargement du démarrage : jamais reporté au résumé du lendemain.
  */
 export async function envoyerRappelsEmargement(maintenant = new Date()): Promise<number> {
-  const directs = await db.execute<{ id: number; titre: string; cours_id: number; code: string; debut: Date | string; duree_minutes: number }>(sql`
-    SELECT s.id, s.titre, s.cours_id, c.code, s.debut, s.duree_minutes
+  const directs = await db.execute<{ id: number; titre: string; cours_id: number; code: string; debut: Date | string; duree_minutes: number; demarree_le: Date | string }>(sql`
+    SELECT s.id, s.titre, s.cours_id, c.code, s.debut, s.duree_minutes, s.demarree_le
     FROM campus.seances s JOIN campus.cours c ON c.id = s.cours_id
     WHERE s.statut = 'en_direct'
       AND s.demarree_le > ${new Date(maintenant.getTime() - REPORT_MAX_EMARGEMENT_MS).toISOString()}::timestamptz
+      AND s.demarree_le <= ${new Date(maintenant.getTime() - DELAI_FILET_MS).toISOString()}::timestamptz
       AND NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id AND NOT di.prevenir)`);
   let envoyes = 0;
   for (const s of directs.rows) {
@@ -122,12 +170,14 @@ export async function envoyerRappelsEmargement(maintenant = new Date()): Promise
       const deja = new Set(emarges.rows.map((l) => Number(l.uid)));
       const ids = candidats.filter((e) => !deja.has(e.id)).map((e) => e.id);
       if (!ids.length) continue;
+      const v = { titre: s.titre, code: s.code };
       await notifier(ids, {
-        type: "presence",
-        titre: t("rappel.titre", { registre: "tu" }),
-        corps: t("rappel.corps", { registre: "tu", v: { titre: s.titre, code: s.code } }),
+        type: "live",
+        titre: t("demarrage.titre", { registre: "tu", v }),
+        corps: t("demarrage.salle.corps", { registre: "tu", v }),
         lien: `/emargement?seance=${s.id}`,
         priorite: "action",
+        expireLe: new Date(new Date(s.demarree_le).getTime() + REPORT_MAX_EMARGEMENT_MS),
       });
       envoyes += ids.length;
     }
@@ -135,7 +185,7 @@ export async function envoyerRappelsEmargement(maintenant = new Date()): Promise
   return envoyes;
 }
 
-// Toutes les 15 s : le rappel arrive pendant que l'écran montre encore le QR du démarrage (une minute).
+// Toutes les 15 s : le filet passe pendant les 10 premières minutes du direct.
 planifier("direct-rappel-emargement", 15_000, async () => {
   await envoyerRappelsEmargement();
 });
@@ -177,17 +227,26 @@ function versSondage(q: unknown): QuestionQuiz | null {
 
 // ═══════════════════════════════════════════════════════════════════════════
 export function enregistrerParticipationDirect(app: Express) {
-  // Écran de salle : demande du Studio en cours et campus du classement.
+  // Écran de salle (et téléphone en mode salle) : demande du Studio en cours, campus du classement et
+  // leurs attendus. Rien de personnel : des nombres par campus, pour quiconque voit la séance.
   app.get(
     "/api/seances/:id/emargement-salle",
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      if (u.role === "etudiant") throw interdit(t("erreur.salle"));
       const s = await seanceVisible(u, idParam(req));
       const fin = demandeEnCours(s.id);
+      const [sites, attendus] = await Promise.all([sitesDuCours(s.coursId), etudiantsAttendusSeance(s)]);
+      // Dénominateur du taux d'émargement de chaque campus (classement projeté avec le QR, sans nom).
+      const parSite = new Map<number, number>();
+      for (const e of attendus) if (e.siteId !== null) parSite.set(e.siteId, (parSite.get(e.siteId) ?? 0) + 1);
       res.setHeader("Cache-Control", "no-store");
-      res.json({ seanceId: s.id, afficheJusqua: iso(fin ? new Date(fin) : null), sitesDuCours: await sitesDuCours(s.coursId) } satisfies EmargementSalleDto);
+      res.json({
+        seanceId: s.id,
+        afficheJusqua: iso(fin ? new Date(fin) : null),
+        sitesDuCours: sites,
+        attendus: [...parSite].map(([siteId, n]) => ({ siteId, attendus: n })),
+      } satisfies EmargementSalleDto);
     }),
   );
 

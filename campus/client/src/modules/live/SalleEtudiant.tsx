@@ -3,7 +3,10 @@
 // questions votées, sondages, main levée, ressentis, présence par
 // battements et « Voici ce que tu as raté » après une coupure.
 // Émargé dans sa salle (QR ou code de l'écran), l'étudiant passe d'office en
-// mode salle, sans vidéo (CompagnonSalle). En ligne, une jauge montre sa
+// mode salle, sans vidéo (CompagnonSalle). L'étudiant d'un campus qui n'a pas
+// dit suivre sur téléphone ou ordinateur est supposé en salle (amendement de
+// José : on suit le cours ensemble devant l'écran) : l'émargement lui est
+// proposé en premier, « Son + diapos » ensuite. En ligne, une jauge montre sa
 // présence ; « Quitter » arrête vraiment le comptage (SortieDuLive).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Hand, LogOut, Radio, Video, Users, Mic, CalendarPlus, Signal } from "lucide-react";
@@ -27,7 +30,7 @@ import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes
 import { CompagnonSalle } from "./CompagnonSalle";
 import { SortieDuLive } from "./SortieDuLive";
 import { JaugePresence } from "./JaugePresence";
-import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
+import type { EtatDirectDto, MainDirectDto, ModeSuivi, Moi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
 
 type Panneau = "questions" | "discussion" | "campus" | "assistant" | "documents";
 
@@ -36,25 +39,50 @@ const cleMode = (id: number) => `campus:live:mode:${id}`;
 const CLE_MODE_GENERAL = "campus:live:mode";
 const estModeEnLigne = (m: string | null): m is "radio" | "video" => m === "radio" || m === "video";
 
+/** « Suivre en ligne » (rappel du démarrage, page d'émargement) : /live/<id>?enLigne=1. */
+const demandeEnLigne = () => {
+  try {
+    return new URLSearchParams(window.location.search).get("enLigne") === "1";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Étudiant supposé dans la salle de conférence de son campus : il a un campus,
+ * n'a pas dit suivre sur téléphone ou ordinateur (profil), et n'a pas choisi
+ * « Suivre en ligne » pour ce cours. Sans réponse, on suppose la salle : c'est
+ * là que les étudiants suivent le cours (amendement de José du 8 octobre 2026).
+ */
+function supposeEnSalle(seance: SeanceDetailDto, moi: Pick<Moi, "preferences">): boolean {
+  const suivi = moi.preferences?.modeSuivi;
+  return Boolean(seance.monSite) && suivi !== "telephone" && suivi !== "ordinateur" && !demandeEnLigne();
+}
+
 /**
  * Mode de départ : celui de cette séance s'il a été choisi ; sinon le mode salle
  * pour l'étudiant déjà émargé dans sa salle ; sinon le dernier mode en ligne
- * (son + diapos ou vidéo) choisi pour un autre live. Jamais « compagnon » sans
- * émargement : il faut être compté dans la salle pour suivre sur son écran.
- * Stockage local protégé (navigation privée, stockage bloqué : on redemande).
+ * (son + diapos ou vidéo) choisi pour un autre live, mais seulement pour qui
+ * suit en ligne (sans campus, téléphone ou ordinateur dans son profil, ou
+ * « Suivre en ligne ») : l'étudiant supposé en salle repasse par le choix, où
+ * l'émargement est proposé d'abord. Jamais « compagnon » sans émargement : il
+ * faut être compté dans la salle pour suivre sur son écran. Stockage local
+ * protégé (navigation privée, stockage bloqué : on redemande).
  */
-function modeDeDepart(seance: SeanceDetailDto): ModeSuivi | null {
+function modeDeDepart(seance: SeanceDetailDto, moi: Pick<Moi, "preferences">): ModeSuivi | null {
   const enSalle = seance.maPresence?.mode === "salle";
   const garde = lireLocal(cleMode(seance.id));
   if (garde === "compagnon") return enSalle ? "compagnon" : null;
   if (estModeEnLigne(garde)) return garde;
   if (enSalle) return "compagnon";
+  if (supposeEnSalle(seance, moi)) return null;
   const general = lireLocal(CLE_MODE_GENERAL);
   return estModeEnLigne(general) ? general : null;
 }
 
 export default function SalleEtudiant({ seance }: { seance: SeanceDetailDto }) {
-  const [mode, setMode] = useState<ModeSuivi | null>(() => modeDeDepart(seance));
+  const moi = useMoiConnecte();
+  const [mode, setMode] = useState<ModeSuivi | null>(() => modeDeDepart(seance, moi));
   const choisir = (m: ModeSuivi | null) => {
     setMode(m);
     ecrireLocal(cleMode(seance.id), m);
@@ -75,8 +103,10 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
   // Coût de la visio (module visio) : « son + diapos » par défaut ; la vidéo seulement si
   // la direction l'a réglée par défaut et que l'étudiant suit sur ordinateur sans données réduites.
   const reglagesVisio = useOptionsVisio();
+  // Supposé en salle (campus, pas de suivi en ligne déclaré) : l'émargement d'abord, présélectionné.
+  const salleDabord = dejaEnSalle || moi.preferences?.modeSuivi === "salle" || supposeEnSalle(seance, moi);
   const parDefaut = (videoAutorisee: boolean): ModeSuivi =>
-    dejaEnSalle || moi.preferences?.modeSuivi === "salle"
+    salleDabord
       ? "compagnon"
       : videoAutorisee && moi.preferences?.donneesReduites === false && moi.preferences?.modeSuivi === "ordinateur"
         ? "video"
@@ -116,11 +146,14 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
     }
   };
 
-  const options: { m: ModeSuivi; icone: ReactNode; recommande?: boolean }[] = [
-    { m: "radio", icone: <Radio className="h-6 w-6" />, recommande: true },
+  // « Recommandé en 4G » ne vaut que pour qui suit en ligne ; en salle, l'émargement passe en tête.
+  type Option = { m: ModeSuivi; icone: ReactNode; recommande?: boolean };
+  const enLigne: Option[] = [
+    { m: "radio", icone: <Radio className="h-6 w-6" />, recommande: !salleDabord },
     { m: "video", icone: <Video className="h-6 w-6" /> },
-    { m: "compagnon", icone: <Users className="h-6 w-6" /> },
   ];
+  const salle: Option = { m: "compagnon", icone: <Users className="h-6 w-6" /> };
+  const options: Option[] = salleDabord ? [salle, ...enLigne] : [...enLigne, salle];
 
   return (
     <div className="min-h-[calc(100dvh-64px)] bg-nuit px-4 pb-32 pt-6 text-white sm:px-7 lg:pb-12">

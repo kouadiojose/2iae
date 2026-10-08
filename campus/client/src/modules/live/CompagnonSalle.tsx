@@ -3,9 +3,11 @@
 // avec ses camarades : le téléphone ne montre ni vidéo, ni diapo, ni son. Il
 // sert à participer : « Tu es compté présent ✓ », le sondage en cours (et les
 // questions de rappel du dernier cours, lancées comme des sondages), les
-// réactions, les questions au formateur, la discussion, et le classement des
-// campus en direct. Quelques Ko par minute : un état au départ, puis le temps
-// réel ; un battement de présence par minute, comme les autres modes.
+// réactions, les questions au formateur, la discussion, et les campus qui
+// émargent, comme sur l'écran de la salle : en taux (part des attendus), sans
+// numéro de rang ni campus à 0 (décision D5 : jamais de dernier). Quelques Ko
+// par minute : un état au départ, puis le temps réel ; un battement de
+// présence par minute, comme les autres modes.
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, LogOut, DoorOpen, Signal, VolumeX } from "lucide-react";
@@ -24,7 +26,7 @@ import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes
 import { cleDirect, estimationMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { SortieDuLive } from "./SortieDuLive";
 import { t } from "@shared/textes/direct";
-import type { MaPresenceDirectDto } from "@shared/engagement/direct";
+import { classementEmargement, type EmargementSalleDto, type MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { EtatDirectDto, ModeSuivi, ResultatsSondageDto, SeanceDetailDto, SondageDto } from "@shared/schema";
 
 type Onglet = "questions" | "discussion" | "campus";
@@ -37,6 +39,8 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
   const nonLus = useNonLusDiscussion(seance.id, false, moi.id, onglet === "discussion");
   const { data: etat } = useEtatDirect(seance.id, false, undefined, { leger: true });
   const { data: presence } = useQuery<MaPresenceDirectDto>({ queryKey: [`/api/seances/${seance.id}/ma-presence`], staleTime: 5 * 60_000 });
+  // Campus du cours et leurs attendus (dénominateur du taux), lus une fois : quelques octets.
+  const { data: infos } = useQuery<EmargementSalleDto>({ queryKey: [`/api/seances/${seance.id}/emargement-salle`], staleTime: 10 * 60_000 });
   const [sortie, setSortie] = useState<{ minutes: number; mo: number } | null>(null);
   const arrivee = useRef(Date.now());
   const enDirect = (etat?.statut ?? seance.statut) === "en_direct";
@@ -81,7 +85,9 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
     setSortie({ minutes: Math.round(secondes / 60), mo: Math.max(estimationMo("compagnon", secondes), octetsMesuresDepuis(arrivee.current) / 1_000_000) });
   };
   const site = presence?.site ?? seance.monSite?.nomCourt ?? null;
-  const campusDuCours = etat.campus.filter((c) => c.salleConnectee || c.emarges > 0).sort((a, b) => b.emarges - a.emarges);
+  // Comme l'écran de la salle : campus avec au moins un émargé, triés par taux, sans rang (shared/engagement/direct.ts).
+  const monSite = seance.monSite?.id ?? null;
+  const campusDuCours = classementEmargement(etat.campus, infos?.sitesDuCours ?? null, infos?.attendus ?? null);
 
   return (
     <div className="relative min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
@@ -104,13 +110,13 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
         {campusDuCours.length > 0 && (
           <div className="flex flex-col gap-1.5">
             <p className="font-mono text-[11px] uppercase tracking-wider text-nuit-gris">{tx("compagnon.classement")}</p>
-            <ol className="flex flex-wrap gap-1.5">
+            <ul className="flex flex-wrap gap-1.5">
               {campusDuCours.map((c) => (
-                <li key={c.siteId} className={cn("rounded-full px-3 py-1.5 text-[13px] font-extrabold", c.siteId === seance.monSite?.id ? "bg-orange text-encre" : "bg-nuit-carte text-white")}>
-                  {c.nomCourt} <span className="tabular-nums">{c.emarges}</span>
+                <li key={c.siteId} className={cn("rounded-full px-3 py-1.5 text-[13px] font-extrabold", c.siteId === monSite ? "bg-orange text-encre" : "bg-nuit-carte text-white")}>
+                  {c.nomCourt} <span className="tabular-nums">{c.taux === null ? c.emarges : tx("salle.qr.taux", { v: { n: c.taux } })}</span>
                 </li>
               ))}
-            </ol>
+            </ul>
           </div>
         )}
 

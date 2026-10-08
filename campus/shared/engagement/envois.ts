@@ -7,10 +7,13 @@
 //     annonce…) ne prend que les 2 premières places, un rappel d'engagement
 //     aussi, et un seul par jour ;
 //   - heures calmes de 21 h à 6 h dans le fuseau de la personne ; seul un
-//     rappel urgent (15 min avant un live, « En direct ») passe la nuit ;
+//     rappel urgent (15 min avant un live, « Le cours commence ») passe la nuit ;
+//     un rappel non urgent arrivé en retard la nuit s'affiche sans sonner ;
 //   - ce qui ne peut pas sonner n'est jamais perdu : une action ou un contenu
-//     part dans le résumé du matin suivant, un rappel d'engagement reste dans
-//     la cloche.
+//     part dans le résumé du matin suivant (sauf un rappel qui aura expiré
+//     d'ici là : il reste dans la cloche), un rappel d'engagement reste dans
+//     la cloche ;
+//   - un seul rappel d'échéance sonne par jour (FIL_ECHEANCES).
 
 /**
  * Priorité d'envoi :
@@ -25,9 +28,9 @@ export type Priorite = (typeof PRIORITES)[number];
 /**
  * Décision prise pour une personne et une notification (table envois_push, lue par C8) :
  * envoye : parti vers au moins un appareil ·
- * regroupe : nouveauté de la même séance (ou du même lien) dans les 3 h : remplace la précédente sur le téléphone, sans prendre de place ·
- * differe : heures calmes ; une action ou un contenu part dans le résumé du matin, un rappel d'engagement reste dans la cloche ·
- * plafond : plus de place ce jour-là ; une action ou un contenu part dans le résumé du lendemain matin, un rappel d'engagement reste dans la cloche ·
+ * regroupe : nouveauté de la même séance (ou du même lien) dans les 3 h, ou second rappel d'échéance du jour : remplace le précédent sur le téléphone, sans sonner ni prendre de place ·
+ * differe : heures calmes ; une action ou un contenu part dans le résumé du matin (sauf s'il aura expiré), un rappel d'engagement reste dans la cloche ·
+ * plafond : plus de place ce jour-là ; une action ou un contenu part dans le résumé du lendemain matin (sauf s'il aura expiré), un rappel d'engagement reste dans la cloche ·
  * echec : aucun appareil n'a accepté le rappel (la place est rendue) ·
  * expire : un appareil a été oublié (abonnement révoqué, erreur 404 ou 410), une ligne par appareil ·
  * sans_abonnement : la personne n'a aucun téléphone abonné.
@@ -48,8 +51,22 @@ export const PLACES_ENGAGEMENT = 2;
 export const HEURES_CALMES = { debut: 21, fin: 6 } as const;
 /** Deux nouveautés de la même séance (ou du même lien) à moins de 3 h : la seconde remplace la première. */
 export const DELAI_REGROUPEMENT_MS = 3 * 60 * 60_000;
-/** Durée de vie chez le service d'envoi : un téléphone sans données le reçoit encore 12 h plus tard. */
-export const DUREE_VIE_S = { urgent: 15 * 60, autre: 12 * 60 * 60 } as const;
+/**
+ * Durée de vie chez le service d'envoi : un téléphone sans données reçoit encore une action 12 h plus tard
+ * (le rappel d'un téléphone en prépayé n'est pas perdu), un rappel d'entraînement 4 h (celui du soir n'arrive
+ * pas le lendemain), une urgence 15 min. Un rappel qui expire plus tôt (échéance du jour, émargement) vit
+ * jusqu'à son expiration seulement (NouvelleNotification.expireLe, côté serveur).
+ */
+export const DUREE_VIE_S = { urgent: 15 * 60, engagement: 4 * 60 * 60, autre: 12 * 60 * 60 } as const;
+/** Durée de vie minimale demandée au service d'envoi, même pour un rappel qui expire très bientôt. */
+export const DUREE_VIE_MIN_S = 60;
+/**
+ * Fil des rappels d'échéance (veille et jour J d'un devoir) : un seul sonne par jour et par personne ; les
+ * suivants du même jour le remplacent sur le téléphone sans sonner ni prendre de place. Le résumé du matin
+ * qui annonce l'échéance du jour compte comme ce rappel. Ainsi une journée chargée (résumé, deux échéances)
+ * laisse encore une place au rappel d'entraînement (C4) et à un message.
+ */
+export const FIL_ECHEANCES = "echeances";
 /** Conservation des décisions d'envoi (plan d'engagement § 4). */
 export const CONSERVATION_ENVOIS_JOURS = 90;
 /** « Plus tard » sur l'accueil masque la carte des rappels une semaine. */

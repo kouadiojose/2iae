@@ -22,6 +22,9 @@ export const t = creerTextes(insecables({
   "push.masque.titre": "Nouveau sur le campus",
   "push.masque.corps": { tu: "Ouvre le campus pour voir.", vous: "Ouvrez le campus pour voir." },
   "action.rejoindre": "Rejoindre",
+  // Le cours commence, pour un étudiant d'un campus qui suit le cours : émarger (salle) ou suivre en ligne.
+  "action.emarger": { tu: "Je suis en salle", vous: "En salle" },
+  "action.enLigne": "Suivre en ligne",
   "action.rendre": { tu: "Rendre mon devoir", vous: "Rendre le devoir" },
   "action.quiz": { tu: "Faire l'interrogation", vous: "Ouvrir l'interrogation" },
 
@@ -37,16 +40,22 @@ export const t = creerTextes(insecables({
   "resume.titre": { tu: "{n} nouveautés t'attendent sur le campus", vous: "{n} nouveautés vous attendent sur le campus" },
   "resume.corps": { tu: "Ouvre le campus pour les voir.", vous: "Ouvrez le campus pour les voir." },
 
-  // Rappels d'un devoir : la veille entre 17 h et 20 h, le jour même à partir de 12 h.
+  // Rappels d'un devoir : la veille entre 17 h et 20 h, le jour même entre 12 h et 20 h. Plusieurs
+  // échéances du même passage : un seul rappel qui les cite (titres entre guillemets, « + n » au-delà de 3).
   "devoir.veille.titre.depot": "Rappel : « {titre} » à rendre demain",
   "devoir.veille.titre.quiz": "Rappel : interrogation « {titre} » demain",
   "devoir.veille.corps": { tu: "{code} · il te reste jusqu'à demain {heure} (heure d'Abidjan).", vous: "{code} · à rendre avant demain {heure} (heure d'Abidjan)." },
-  "devoir.jourj.titre.depot": { tu: "Aujourd'hui : rends « {titre} » avant {heure}", vous: "Aujourd'hui : « {titre} » à rendre avant {heure}" },
+  // Le jour J : un autre titre que le résumé du matin (« Aujourd'hui : … ») pour le même devoir.
+  "devoir.jourj.titre.depot": { tu: "Dernier jour : rends « {titre} » avant {heure}", vous: "Dernier jour : « {titre} » à rendre avant {heure}" },
   "devoir.jourj.titre.quiz": {
-    tu: "Aujourd'hui : fais l'interrogation « {titre} » avant {heure}",
-    vous: "Aujourd'hui : interrogation « {titre} » avant {heure}",
+    tu: "Dernier jour : fais l'interrogation « {titre} » avant {heure}",
+    vous: "Dernier jour : interrogation « {titre} » avant {heure}",
   },
   "devoir.jourj.corps": { tu: "{code} · il te reste quelques heures (heure d'Abidjan).", vous: "{code} · il reste quelques heures (heure d'Abidjan)." },
+  "devoir.groupe.jourj.titre": "Dernier jour : {n} devoirs à rendre",
+  "devoir.groupe.veille.titre": "Rappel : {n} devoirs à rendre demain",
+  "devoir.groupe.mixte.titre": "À rendre : {a} aujourd'hui, {b} demain",
+  "devoir.groupe.corps": "{liste}",
 
   // Réponses du serveur
   "erreur.inconnu": { tu: "Ce téléphone n'est plus inscrit aux rappels : réactive-les.", vous: "Ce téléphone n'est plus inscrit aux rappels : réactivez-les." },
@@ -54,8 +63,8 @@ export const t = creerTextes(insecables({
   // ── Carte des rappels (accueil) ──────────────────────────────────────────
   "carte.activer.titre": { tu: "Ne rate plus ton cours : active les rappels", vous: "Ne manquez plus un cours : activez les rappels" },
   "carte.activer.texte": {
-    tu: "3 rappels par jour au plus, jamais la nuit : avant chaque cours en direct, la veille d'une échéance et quand un formateur te répond.",
-    vous: "3 rappels par jour au plus, jamais la nuit : avant chaque cours en direct et quand un message vous attend.",
+    tu: "Avant chaque cours en direct, la veille d'une échéance et quand un formateur te répond. Au plus 3 rappels par jour, en plus du début de tes cours ; rien la nuit, sauf un cours qui commence.",
+    vous: "Avant chaque cours en direct et quand un message vous attend. Au plus 3 rappels par jour, en plus du début de vos cours ; rien la nuit, sauf un cours qui commence.",
   },
   "carte.activer.bouton": "Activer les rappels",
   "carte.activer.aide": {
@@ -101,8 +110,8 @@ export const t = creerTextes(insecables({
   "verif.non": "Non, rien reçu",
   "verif.ok": { tu: "Parfait : tes rappels arrivent sur ce téléphone.", vous: "Parfait : vos rappels arrivent sur ce téléphone." },
   "verif.nuit": {
-    tu: "Il est tard : rien ne sonne entre 21 h et 6 h. L'essai partira demain matin ; reviens ici nous dire s'il est arrivé.",
-    vous: "Il est tard : rien ne sonne entre 21 h et 6 h. L'essai partira demain matin ; revenez ici nous dire s'il est arrivé.",
+    tu: "Il est tard : rien ne sonne entre 21 h et 6 h (sauf un cours qui commence). L'essai partira demain matin ; reviens ici nous dire s'il est arrivé.",
+    vous: "Il est tard : rien ne sonne entre 21 h et 6 h (sauf un cours qui commence). L'essai partira demain matin ; revenez ici nous dire s'il est arrivé.",
   },
   "verif.plafond": {
     tu: "Tu as déjà reçu 3 rappels aujourd'hui : l'essai partira demain matin. Reviens ici nous dire s'il est arrivé.",
@@ -168,10 +177,13 @@ export const t = creerTextes(insecables({
   },
   "proposer.live.titre": { tu: "On te prévient avant le prochain cours ?", vous: "Être prévenu avant le prochain cours ?" },
   "proposer.live.texte": {
-    tu: "Un rappel 15 minutes avant chaque cours en direct. 3 rappels par jour au plus, jamais la nuit.",
-    vous: "Un rappel 15 minutes avant chaque cours en direct. 3 rappels par jour au plus, jamais la nuit.",
+    tu: "Un rappel 15 minutes avant chaque cours en direct, puis quand il commence. Au plus 3 autres rappels par jour, rien la nuit.",
+    vous: "Un rappel 15 minutes avant chaque cours en direct, puis quand il commence. Au plus 3 autres rappels par jour, rien la nuit.",
   },
   "proposer.revision.titre": { tu: "Un rappel pour ta révision de demain ?", vous: "Un rappel pour votre révision de demain ?" },
-  "proposer.revision.texte": "3 rappels par jour au plus, jamais la nuit.",
+  "proposer.revision.texte": {
+    tu: "Au plus 3 rappels par jour, en plus du début de tes cours ; rien la nuit.",
+    vous: "Au plus 3 rappels par jour, en plus du début de vos cours ; rien la nuit.",
+  },
   "proposer.bouton": "Activer les rappels",
 }));

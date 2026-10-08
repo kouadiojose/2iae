@@ -3,7 +3,7 @@
 //   GET    /api/push/cle            → { cle } : clé publique VAPID, ou null si les rappels ne sont pas configurés
 //   POST   /api/push/abonnement     { endpoint, keys: { p256dh, auth }, plateforme?, marque? } : enregistre ce téléphone
 //   DELETE /api/push/abonnement     { endpoint } : oublie ce téléphone
-//   POST   /api/push/test           : envoie un rappel d'essai à soi-même (via notifier())
+//   POST   /api/push/test           : envoie un rappel d'essai à soi-même (via notifier(), hors plafond du jour)
 //   POST   /api/push/verification   { endpoint, recu, marque? } : réponse à « L'as-tu reçu ? » (chantier C3)
 //   GET    /api/push/etat?endpoint= → EtatRappels : ce que le campus sait de cet appareil (chantier C3)
 //
@@ -148,9 +148,10 @@ export function enregistrerPush(app: Express) {
       if (!pushDisponible()) raison = "indisponible";
       else if (!appareils) raison = "aucun_appareil";
       else if (estHeureCalme(new Date(), u.fuseau)) raison = "heures_calmes";
-      else if ((await envoisDuJour(u.id, u.fuseau)) >= PLAFOND_PUSH_JOUR) raison = "plafond";
 
-      // Heures calmes ou plafond : l'essai part quand même dans la cloche (et le matin sur le téléphone).
+      // L'essai ne prend pas de place dans les 3 rappels du jour (un essai par minute au plus) : sinon trois
+      // essais d'un téléphone récalcitrant repousseraient au lendemain le rappel d'une échéance.
+      // Heures calmes : l'essai part quand même dans la cloche (et le matin sur le téléphone).
       if (raison !== "indisponible" && raison !== "aucun_appareil") {
         derniersEssais.set(u.id, Date.now());
         const etudiant = u.role === "etudiant";
@@ -160,6 +161,7 @@ export function enregistrerPush(app: Express) {
           corps: etudiant ? "Tu seras prévenu ici avant chaque cours en direct." : "Vous serez prévenu ici avant chaque cours en direct.",
           lien: "/profil",
           push: true,
+          horsPlafond: true,
         });
       }
       const reponse: ResultatEssaiPush = { envoye: raison === null, appareils, raison };

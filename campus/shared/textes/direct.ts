@@ -5,9 +5,14 @@
 import { creerTextes } from "./index";
 
 export const t = creerTextes({
-  // ── Rappel unique au démarrage du direct (téléphone des étudiants) ────────
-  "rappel.titre": "Tu es en salle ? Scanne le QR de l'écran",
-  "rappel.corps": "Pour être compté présent à « {titre} » ({code}).",
+  // ── Rappel unique au démarrage du direct (téléphone des étudiants, décision D3) ──
+  // Étudiant d'un campus qui suit le cours : les deux cas dans un seul rappel (salle ou en ligne).
+  "demarrage.titre": "Le cours commence : {titre}",
+  "demarrage.salle.corps": "{code} · en salle ? Scanne le QR de l'écran pour être compté présent. Sinon, rejoins le cours en ligne.",
+  "demarrage.emarge.corps": "{code} · tu es déjà compté présent ✓ Ouvre le mode salle pour participer.",
+  // Étudiant sans campus, ou dont le campus ne suit pas ce cours : en ligne seulement.
+  "demarrage.enLigne.titre": "En direct : {titre}",
+  "demarrage.enLigne.corps": "{code} · le formateur a ouvert la classe. Entre maintenant.",
 
   // ── Écran de salle : QR plein écran ─────────────────────────────────────
   "salle.qr.etiquette": "Émargement · {salle} · {site}",
@@ -17,7 +22,8 @@ export const t = creerTextes({
   "salle.qr.emarges.zero": "Personne n'est encore émargé à {site}",
   "salle.qr.emarges.un": "émargé à {site}",
   "salle.qr.emarges": "émargés à {site}",
-  "salle.qr.classement": "Classement des campus en direct",
+  "salle.qr.classement": "Part des étudiants émargés, par campus",
+  "salle.qr.taux": "{n} %",
   "salle.qr.retrait": "Ce message se retire tout seul dans {n} s · le cours continue",
 
   // ── Écran de salle : mini-guide du chargé de cours (avant le cours) ──────
@@ -53,7 +59,7 @@ export const t = creerTextes({
   "compagnon.present.detail": "{site} · émargé à {heure}",
   "compagnon.son": "Son coupé : suis le cours sur l'écran de la salle.",
   "compagnon.aVenir": "Le cours commence à {heure}. Tu peux déjà poser tes questions : elles attendront le formateur.",
-  "compagnon.classement": "En salle en ce moment",
+  "compagnon.classement": "Émargés par campus, en part des attendus",
   "compagnon.sondage": "Sondage en direct · réponds ici",
   "compagnon.sondage.ia": "Question de rappel, proposée par l'IA et validée par le formateur",
   "compagnon.sondage.resultats": "Résultats du sondage",
@@ -82,7 +88,8 @@ export const t = creerTextes({
   "sortie.salle": "Tu étais en salle · présent ✓",
   "sortie.ressenti": "Ce cours, pour toi ?",
   "sortie.ressenti.merci": "Merci : le formateur le voit, sans ton nom.",
-  "sortie.suite": "Ce soir : le cours complet et ses questions. Demain : ta révision de 3 minutes.",
+  // Sans promesse ferme : l'enregistrement peut manquer, la routine du soir peut prendre du retard.
+  "sortie.suite": "Dès qu'il est prêt, en général le soir même : le cours complet et ses questions, puis ta révision de 3 minutes. Tout arrive sur ton accueil.",
   "sortie.cout": "Ce cours t'a coûté environ {mo}.",
   "sortie.cout.moins": "Ce cours t'a coûté moins de 1 Mo.",
   "sortie.mesure": "Consommation mesurée sur ton téléphone · {minutes} min de cours.",
@@ -107,8 +114,8 @@ export const t = creerTextes({
   "presences.titre": "Mes présences",
   "presences.intro": "Tes 20 dernières séances : en salle (émargé avec le QR) ou en ligne jusqu'au bout.",
   "presences.present": "Présent ✓",
-  "presences.absent": "Absent : rattraper",
-  "presences.absent.court": "Absent",
+  "presences.absent": "Non compté présent : rattraper",
+  "presences.absent.court": "Non compté présent",
   "presences.inconnu": "Présence non relevée",
   "presences.inconnu.aide": "Ta salle n'a pas été émargée ce jour-là : rien n'est compté contre toi.",
   "presences.enSalle": "en salle",
@@ -119,10 +126,9 @@ export const t = creerTextes({
   "presences.vide": "Aucune séance tenue pour l'instant.",
   "presences.chargement": "Chargement de tes présences…",
   "fin.present": "Ta présence : présent ✓",
-  "fin.absent": "Ta présence : absent",
+  "fin.absent": "Ta présence : non compté présent",
   "fin.inconnu": "Ta présence n'a pas été relevée : ta salle n'a pas été émargée.",
 
   // ── Erreurs du serveur ──────────────────────────────────────────────────
   "erreur.etudiant": "Cette page est réservée aux étudiants.",
-  "erreur.salle": "Cet état sert à l'écran de la salle et au Studio.",
 });

@@ -28,7 +28,8 @@ const FR = {
   "apres.depot.rendus.zero": "aucune copie pour l'instant",
   "apres.depot.rendus.un": "1 copie rendue",
   "apres.depot.rendus.n": "{n} copies rendues",
-  "apres.depot.aCorriger": "{n} à corriger",
+  // Exercice de la routine du soir : le corriger est facultatif (décision D2), jamais « à corriger ».
+  "apres.depot.facultatif": "correction facultative",
   "apres.devoir.proposeLe": "mis en avant {quand}",
   "apres.devoir.aRevoir": "plus mis en avant (à revoir)",
   "apres.devoir.masque": "masqué aux étudiants",
@@ -57,6 +58,8 @@ const FR = {
   "apres.aPublier.n": "{n} notes posées attendent d'être envoyées.",
   "apres.relire.un": "Relire le devoir écrit par l'IA (facultatif)",
   "apres.relire.n": "Relire les {n} devoirs écrits par l'IA (facultatif)",
+  "apres.facultatives.un": "1 copie d'un exercice du campus (correction facultative)",
+  "apres.facultatives.n": "{n} copies des exercices du campus (correction facultative)",
   "apres.sansSeance.titre": "Copies à corriger",
 
   // ── Correction rapide (/corriger) ──────────────────────────────────────────
@@ -77,7 +80,10 @@ const FR = {
   "corriger.posees.envoyees.un": "1 note envoyée. L'étudiant est prévenu.",
   "corriger.posees.envoyees.n": "{n} notes envoyées. Les étudiants sont prévenus.",
   "corriger.vide.titre": "Aucune copie en attente",
-  "corriger.vide.texte": "Chaque copie rendue arrive ici, la plus ancienne en premier.",
+  "corriger.vide.texte": "Les copies de vos devoirs arrivent ici, la plus ancienne en premier.",
+  "corriger.facultatives.titre": "Exercices du campus · facultatif",
+  "corriger.facultatives.texte":
+    "Le campus a envoyé ces exercices à vos étudiants sans vous. Les corriger est facultatif : vous ne recevrez aucun rappel pour ces copies.",
   "corriger.bravo": "Bravo : toutes les copies ont leur note.",
   "corriger.aujourdhui.un": "1 note envoyée aujourd'hui.",
   "corriger.aujourdhui.n": "{n} notes envoyées aujourd'hui.",
@@ -117,7 +123,7 @@ const FR = {
   "relire.etiquette": "Facultatif",
   "relire.titre": "Devoirs écrits par l'IA",
   "relire.intro":
-    "Le campus prépare un QCM et un exercice après chaque séance enregistrée et les envoie à vos étudiants sans rien vous demander. Vous pouvez les relire ici si vous le souhaitez.",
+    "Le campus prépare un QCM et un exercice après chaque séance enregistrée et les envoie à vos étudiants sans rien vous demander. Vous pouvez les relire ici si vous le souhaitez. Corriger les copies de l'exercice est aussi facultatif : aucun rappel ne vous est envoyé pour elles.",
   "relire.vide": "Rien à relire : les derniers devoirs du campus sont déjà regardés.",
   "relire.quiz": "QCM",
   "relire.depot": "Exercice",
@@ -160,7 +166,7 @@ const FR = {
   "groupe.devoir.roles": "**Les rôles dans le groupe :**",
   "groupe.devoir.livrable": "**À rendre :** {livrable}",
   "groupe.devoir.comment":
-    "**Comment rendre :** formez votre groupe, répartissez les rôles, puis rendez le travail ici : photos, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : écris alors en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie.",
+    "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie.",
   "groupe.devoir.origine": "_Travail de groupe du cours complet de la séance du {jour}._",
   "groupe.critere.contenu": "Contenu juste et appuyé sur le cours",
   "groupe.critere.roles": "Chaque rôle tenu",

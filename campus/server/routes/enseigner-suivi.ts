@@ -11,6 +11,9 @@
 //
 // Un étudiant n'ouvre jamais /api/enseigner/* (403). Modifier ou dépublier un
 // devoir passe par les écrans et les routes existants du module évaluations.
+// Les copies (noms des étudiants) et la relecture (bonnes réponses des QCM
+// encore ouverts) partent en « no-store » : le service worker ne les garde pas
+// sur un poste partagé (secrétariat, salle des profs).
 import type { Express, Request } from "express";
 import { z } from "zod";
 import { exigerConnexion, exigerRole, droitSiEquipe, moi } from "../auth";
@@ -61,7 +64,9 @@ export function enregistrerEnseignerSuivi(app: Express) {
     exigerRole(...ENSEIGNANTS),
     droitSiEquipe("notes"),
     route(async (req, res) => {
-      res.json(await copiesEnAttente(moi(req), entierFacultatif(req, "devoir")));
+      const copies = await copiesEnAttente(moi(req), entierFacultatif(req, "devoir"));
+      res.setHeader("Cache-Control", "no-store");
+      res.json(copies);
     }),
   );
 
@@ -78,7 +83,9 @@ export function enregistrerEnseignerSuivi(app: Express) {
     "/api/enseigner/a-relire",
     exigerRole("formateur", "admin"),
     route(async (req, res) => {
-      res.json(await devoirsARelire(moi(req)));
+      const aRelire = await devoirsARelire(moi(req));
+      res.setHeader("Cache-Control", "no-store");
+      res.json(aRelire);
     }),
   );
 

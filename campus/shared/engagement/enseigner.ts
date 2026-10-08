@@ -6,6 +6,9 @@
 // formateur. « Après la séance » montre ce que le campus a fait pour lui
 // (cours complet prêt, QCM et exercice envoyés, combien les ont faits, copies
 // à corriger) ; la relecture des devoirs écrits par l'IA reste facultative.
+// Décision D2 : les copies des exercices automatiques (routine du soir) ne
+// sont jamais « à corriger » pour lui ; il peut les corriger s'il le souhaite
+// (« facultatives »), sans rappel ni compte à rebours.
 
 /** Décision facultative du formateur sur un devoir créé par la routine du soir. */
 export const STATUTS_VALIDATION = ["valide", "a_revoir"] as const;
@@ -36,7 +39,7 @@ export type DevoirAutoApres = DevoirAutoResume & {
   faits: number;
   /** QCM : moyenne des meilleures notes (sur le barème) ; nul sans tentative. */
   moyenne: number | null;
-  /** Exercice : copies rendues sans note. */
+  /** Exercice : copies rendues sans note (correction facultative : l'exercice vient du campus). */
   aCorriger: number;
 };
 
@@ -79,7 +82,12 @@ export type ApresSeanceDto = {
 export type ResumeEnseigner = {
   /** Nul : aucune séance tenue ces trois dernières semaines. */
   apres: ApresSeanceDto | null;
-  copies: { aCorriger: number; aPublier: number; plusAncienne: string | null };
+  /**
+   * aCorriger, plusAncienne : copies des devoirs du formateur seulement.
+   * facultatives : copies des exercices automatiques sans note (correction facultative, jamais rappelée).
+   * aPublier : notes posées et pas encore envoyées, tous devoirs confondus.
+   */
+  copies: { aCorriger: number; aPublier: number; plusAncienne: string | null; facultatives: number };
   /** Devoirs de la routine du soir que le formateur n'a pas regardés (relecture facultative). */
   aRelire: number;
 };
@@ -117,15 +125,33 @@ export type CopieEnAttente = {
   renduLe: string;
   enRetard: boolean;
   propositionIa: boolean;
+  /** Exercice créé par la routine du soir : correction facultative. */
+  automatique: boolean;
 };
 
-export type GroupeCopies = { devoirId: number; devoirTitre: string; coursCode: string; aCorriger: number; aPublier: number; plusAncienne: string | null };
+export type GroupeCopies = {
+  devoirId: number;
+  devoirTitre: string;
+  coursCode: string;
+  aCorriger: number;
+  aPublier: number;
+  plusAncienne: string | null;
+  /** Exercice créé par la routine du soir : correction facultative. */
+  automatique: boolean;
+};
 
-/** GET /api/enseigner/copies[?devoir=] : les copies rendues sans note, les plus anciennes d'abord. */
+/**
+ * GET /api/enseigner/copies[?devoir=] : les copies rendues sans note, celles
+ * des devoirs du formateur d'abord (les plus anciennes en premier), puis celles
+ * des exercices automatiques (facultatives).
+ */
 export type CopiesEnAttenteDto = {
   copies: CopieEnAttente[];
   devoirs: GroupeCopies[];
+  /** Copies des devoirs du formateur. */
   totalACorriger: number;
+  /** Copies des exercices automatiques (correction facultative). */
+  totalFacultatives: number;
   totalAPublier: number;
   iaDisponible: boolean;
   /** Notes que cette personne a envoyées aujourd'hui (heure d'Abidjan). */

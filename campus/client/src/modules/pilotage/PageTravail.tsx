@@ -3,8 +3,9 @@
 //
 // En haut, cinq très grands chiffres de la période (7 ou 30 jours, GET /api/fil/resume) : séances données,
 // cours résumés, QCM et exercices envoyés, copies notées (dont par le campus), moyenne. Puis trois listes
-// déroulantes (campus, cours, formateur) et le fil des séances en cartes (CarteSeance), avec le nom du
-// formateur. Direction, et équipe avec le droit « notes » ou « présences » (le serveur limite au périmètre).
+// déroulantes (campus, cours, formateur), que suivent les grands chiffres comme le fil des séances en cartes
+// (CarteSeance), avec le nom du formateur. Direction, et équipe avec le droit « notes » ou « présences » (le
+// serveur limite au périmètre).
 import { useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpenCheck, CalendarCheck, ClipboardCheck, GraduationCap, ListChecks, type LucideIcon } from "lucide-react";
@@ -35,7 +36,8 @@ export default function PageTravail() {
   const formateur = recherche.get("formateur") ?? "";
 
   const refs = useReferences();
-  const resume = useResumeTravail(jours, site || undefined);
+  // Les grands chiffres suivent les trois filtres, comme le fil.
+  const resume = useResumeTravail(jours, { site, cours: coursChoisi, formateur });
   const { data: listeCours } = useQuery<CoursResume[]>({ queryKey: ["/api/cours"], staleTime: 5 * 60_000 });
 
   // Les formateurs qui ont un cours (pas les comptes d'essai sans cours), dans l'ordre alphabétique.
@@ -56,16 +58,20 @@ export default function PageTravail() {
 
   const r = resume.data;
   const campusChoisi = refs.data?.sites.find((s) => String(s.id) === site);
+  const coursFiltre = (listeCours ?? []).find((c) => String(c.id) === coursChoisi);
+  const formateurFiltre = formateurs.find((f) => String(f.id) === formateur);
+  // Sous « Les 7 derniers jours » : « Yamoussoukro · IA-101 », ce que comptent les grands chiffres.
+  const precision = [campusChoisi?.nomCourt, coursFiltre?.code, !coursFiltre && formateurFiltre ? `${formateurFiltre.prenom} ${formateurFiltre.nom}` : null].filter(Boolean);
   return (
     <Page>
       <EnTetePage etiquette={tx("travail.etiquette")} titre={tx("travail.titre")} sousTitre={tx("travail.sousTitre")} />
 
-      {/* Les grands chiffres de la période, pour tout le groupe ou le campus choisi. */}
+      {/* Les grands chiffres de la période, pour tout le groupe ou les filtres choisis (campus, cours, formateur). */}
       <section aria-labelledby="titre-chiffres" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="titre-chiffres" className="text-[22px] font-extrabold leading-tight">
             {jours === 7 ? tx("travail.semaine") : tx("travail.mois")}
-            {campusChoisi ? ` · ${campusChoisi.nomCourt}` : ""}
+            {precision.length > 0 && <span className="block text-[16px] font-bold text-texte-pale">{precision.join(" · ")}</span>}
           </h2>
           <div role="radiogroup" aria-label={tx("travail.periode")} className="flex w-full gap-1 rounded-2xl bg-creme p-1 sm:w-auto">
             {PERIODES.map((p) => (

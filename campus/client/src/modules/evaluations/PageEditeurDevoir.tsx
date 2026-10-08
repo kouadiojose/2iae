@@ -5,7 +5,9 @@
 // tentatives, correction visible et questions (avec l'aide de l'IA).
 // Correction automatique (8 octobre 2026) : pour un devoir à rendre, le champ
 // « Corrigé (réservé aux formateurs) », barème du campus pour noter les copies ;
-// vide, le campus le rédige et l'envoie au formateur pour validation.
+// vide, le campus le rédige et l'envoie au formateur pour validation. Le corrigé part avec la version lue
+// (409 s'il a changé entre-temps). La vie scolaire le lit sans l'écrire, et ne touche pas aux questions d'un
+// QCM qui a un corrigé (décision D-F : seuls le formateur du cours et la direction écrivent les corrigés).
 import { useEffect, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +24,7 @@ import { post, patch, suppr, televerser } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { versChampDate, depuisChampDate, heureDouble, jourLong } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
+import { useMoi } from "@/lib/auth";
 import { useTextes } from "@/lib/textes";
 import { cn, taille } from "@/lib/utils";
 import type { DevoirDetail, DevoirDetailEnseignant, PieceJointe, CritereGrille, TypeDevoir } from "@shared/schema";
@@ -124,6 +127,13 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
   const [apercuCorrige, setApercuCorrige] = useState(false);
   // Le corrigé ne part que s'il a été touché : enregistrer la date limite ne valide pas un corrigé du campus.
   const [corrigeModifie, setCorrigeModifie] = useState(false);
+  // Version du corrigé chargé dans le champ (au chargement, puis après chaque enregistrement) : modifié ailleurs
+  // depuis (page des corrigés, co-formateur), le serveur répond 409 au lieu d'écraser. Pas celle d'un detail
+  // relu entre-temps : le champ, lui, n'est pas rechargé.
+  const [versionCorrige, setVersionCorrige] = useState<number | null>(null);
+  // Seuls le formateur et la direction écrivent un corrigé (D-F) : la vie scolaire le lit.
+  const { moi } = useMoi();
+  const ecritCorrige = moi?.role === "formateur" || moi?.role === "admin";
   const txc = useTextes(tc);
   const [envoi, setEnvoi] = useState(false);
   const [televersement, setTeleversement] = useState(false);
@@ -135,6 +145,7 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
     if (detail && !initialise.current) {
       initialise.current = true;
       setF(depuisDevoir(detail.devoir, detail.corrige?.contenu ?? ""));
+      setVersionCorrige(detail.corrige?.version ?? null);
     }
   }, [detail]);
   // Un seul cours : il est choisi d'office.
@@ -164,6 +175,8 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
   const quiz = f.type === "quiz";
   const typeVerrouille = Boolean(detail?.aDesRendus);
   const questions = detail?.questions ?? [];
+  // QCM qui a un corrigé : ses questions sont ce corrigé, la vie scolaire ne les modifie pas (le serveur répond 403).
+  const questionsEnLecture = quiz && !ecritCorrige && Boolean(detail?.corrige);
   const totalGrille = f.grille.reduce((s, c) => s + (Number(c.points) || 0), 0);
   const grilleOk = !f.grille.length || Math.abs(totalGrille - f.bareme) < 0.001;
 
@@ -203,8 +216,9 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
       correctionVisible: f.correctionVisible,
       grille: f.grille.map((c) => ({ critere: c.critere.trim(), points: Number(c.points), ...(c.description?.trim() ? { description: c.description.trim() } : {}) })),
       publie: f.publie,
-      // Devoir à rendre : le corrigé à la création (vide : le campus le rédige), puis seulement s'il a changé.
-      ...(!quiz && (nouveau || corrigeModifie) ? { corrige: f.corrige.trim() } : {}),
+      // Devoir à rendre : le corrigé à la création (vide : le campus le rédige), puis seulement s'il a changé, avec
+      // la version lue. Jamais de la vie scolaire, qui ne l'écrit pas.
+      ...(!quiz && ecritCorrige && (nouveau || corrigeModifie) ? { corrige: f.corrige.trim(), corrigeVersion: versionCorrige } : {}),
     };
   }
 
@@ -221,7 +235,8 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
       } else {
         const r = await patch<DevoirDetailEnseignant>(`/api/devoirs/${devoirId}`, c);
         setF(depuisDevoir(r.devoir, r.corrige?.contenu ?? f.corrige));
-        const corrigeEnvoye = corrigeModifie && Boolean(f.corrige.trim());
+        setVersionCorrige(r.corrige?.version ?? null);
+        const corrigeEnvoye = ecritCorrige && corrigeModifie && Boolean(f.corrige.trim());
         setCorrigeModifie(false);
         await rafraichir("/api/devoirs", "/api/enseigner/corriges");
         toast(
@@ -286,8 +301,8 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
         <Link href={`/enseigner/corriges/${devoirId}`} className="flex min-h-[56px] items-center gap-3 rounded-2xl bg-orange-pale px-4 py-3 text-encre no-underline hover:text-encre">
           <Clock3 className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-[15px] font-bold">Bonnes réponses à valider</span>
-            {detail.corrige.echeanceLe && <span className="text-sm text-texte-pale">{texteEcheance(txc, detail.corrige.echeanceLe)}</span>}
+            <span className="text-[15px] font-bold">{ecritCorrige ? "Bonnes réponses à valider" : "Bonnes réponses à valider par le formateur"}</span>
+            {detail.corrige.echeanceLe && <span className="text-sm text-texte-pale">{texteEcheance(txc, detail.corrige.echeanceLe, Date.now(), !ecritCorrige)}</span>}
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
         </Link>
@@ -381,7 +396,24 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
             </Carte>
           )}
 
-          {!quiz && (
+          {!quiz && !ecritCorrige && (
+            <Carte className="flex flex-col gap-3">
+              <h2 className="text-xl font-extrabold">Corrigé (réservé aux formateurs)</h2>
+              <p className="-mt-1 text-sm text-texte-pale">Le campus s'en sert pour corriger les copies. Seuls le formateur du cours et la direction l'écrivent ou le valident.</p>
+              {detail?.corrige ? (
+                <EtatCorrige corrige={detail.corrige} devoirId={devoirId} lectureSeule />
+              ) : (
+                <p className="rounded-xl bg-creme px-3 py-2.5 text-sm leading-snug text-encre">Une fois le devoir publié, le campus rédige le corrigé et l'envoie au formateur pour validation.</p>
+              )}
+              {f.corrige.trim() && (
+                <div className="rounded-xl border border-ligne bg-creme/40 p-4" aria-label="Corrigé (lecture seule)">
+                  <Markdown source={f.corrige} />
+                </div>
+              )}
+            </Carte>
+          )}
+
+          {!quiz && ecritCorrige && (
             <Carte className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <h2 className="text-xl font-extrabold">Corrigé (réservé aux formateurs)</h2>
@@ -422,7 +454,7 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
 
           {quiz && detail && (
             <Carte>
-              <EditeurQuestions devoirId={devoirId} questions={questions} iaDisponible={detail.iaDisponible} />
+              <EditeurQuestions devoirId={devoirId} questions={questions} iaDisponible={detail.iaDisponible} lectureSeule={questionsEnLecture} />
             </Carte>
           )}
           {quiz && nouveau && (
@@ -520,17 +552,22 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
   );
 }
 
-/** Où en est le corrigé du devoir : rédigé par le campus et à valider, validé, tenu pour bon, ou en préparation. */
-function EtatCorrige({ corrige, devoirId }: { corrige: CorrigeDuDevoir; devoirId: number }) {
+/**
+ * Où en est le corrigé du devoir : rédigé par le campus et à valider, validé, tenu pour bon, ou en préparation.
+ * En lecture seule (vie scolaire) : c'est le formateur qui le reçoit et le valide.
+ */
+function EtatCorrige({ corrige, devoirId, lectureSeule = false }: { corrige: CorrigeDuDevoir; devoirId: number; lectureSeule?: boolean }) {
   const txc = useTextes(tc);
   const texte =
     corrige.statut === "propose"
-      ? `${corrige.source === "campus" ? "Rédigé par le campus" : "Rédigé par un formateur"}, à valider. ${corrige.echeanceLe ? texteEcheance(txc, corrige.echeanceLe) : ""}`
+      ? `${corrige.source === "campus" ? "Rédigé par le campus" : "Rédigé par un formateur"}, à valider${lectureSeule ? " par le formateur" : ""}. ${corrige.echeanceLe ? texteEcheance(txc, corrige.echeanceLe, Date.now(), lectureSeule) : ""}`
       : corrige.statut === "valide"
         ? "Validé : le campus s'en sert pour noter les copies."
         : corrige.statut === "tacite"
           ? "Tenu pour bon sans réponse : le campus s'en sert pour noter les copies."
-          : "Le campus rédige ce corrigé : vous le recevrez pour validation. Vous pouvez aussi l'écrire vous-même.";
+          : lectureSeule
+            ? "Le campus rédige ce corrigé : le formateur le recevra pour validation."
+            : "Le campus rédige ce corrigé : vous le recevrez pour validation. Vous pouvez aussi l'écrire vous-même.";
   return (
     <div className={cn("flex flex-col gap-2 rounded-xl px-3 py-2.5 sm:flex-row sm:items-center", corrige.statut === "propose" ? "bg-orange-pale" : corrige.statut === "en_preparation" ? "bg-creme" : "bg-succes-clair/70")}>
       <p className="flex flex-1 items-start gap-2 text-sm leading-snug text-encre">
@@ -539,7 +576,7 @@ function EtatCorrige({ corrige, devoirId }: { corrige: CorrigeDuDevoir; devoirId
       </p>
       {corrige.statut !== "en_preparation" && (
         <Link href={`/enseigner/corriges/${devoirId}`} className="inline-flex min-h-[44px] shrink-0 items-center gap-1 self-start text-sm font-bold sm:self-center">
-          {corrige.statut === "propose" ? "Vérifier et valider" : "Voir le corrigé"} <ChevronRight className="h-4 w-4" aria-hidden />
+          {corrige.statut === "propose" && !lectureSeule ? "Vérifier et valider" : "Voir le corrigé"} <ChevronRight className="h-4 w-4" aria-hidden />
         </Link>
       )}
     </div>

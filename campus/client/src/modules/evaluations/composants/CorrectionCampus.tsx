@@ -32,10 +32,13 @@ export function jourEcheance(tx: Tx, iso: string, maintenant = Date.now()): stri
   return jourLong(iso);
 }
 
-/** « Tenu pour bon demain à 07h00 Abidjan sans réponse de votre part. » (avec l'heure de chez lui s'il est loin). */
-export function texteEcheance(tx: Tx, iso: string, maintenant = Date.now()): string {
+/**
+ * « Tenu pour bon demain à 07h00 Abidjan sans réponse de votre part. » (avec l'heure de chez lui s'il est loin).
+ * « duFormateur » : lu par la vie scolaire, qui ne valide pas (« sans réponse du formateur »).
+ */
+export function texteEcheance(tx: Tx, iso: string, maintenant = Date.now(), duFormateur = false): string {
   if (new Date(iso).getTime() <= maintenant) return tx("echeance.depassee");
-  return tx("echeance.tenuPourBon", { v: { jour: jourEcheance(tx, iso, maintenant), heure: heureDouble(iso) } });
+  return tx(duFormateur ? "echeance.tenuPourBon.formateur" : "echeance.tenuPourBon", { v: { jour: jourEcheance(tx, iso, maintenant), heure: heureDouble(iso) } });
 }
 
 /** « 12 copies rendues · 8 notées par le campus · 1 à revoir » (exercice), « 15 étudiants l'ont fait » (QCM). */

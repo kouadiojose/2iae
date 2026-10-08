@@ -63,7 +63,7 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
           auteurId,
           type: "quiz",
           titre: `QCM : ${s.titre}`.slice(0, 200),
-          consigne: `Interrogation sur le cours du ${jour} (${questions.length} questions, une seule bonne réponse par question). Ta note sur 20 est calculée automatiquement dès que tu valides ; la correction détaillée s'affiche après la date limite. Tu as droit à deux essais : la meilleure note compte.\n\nRévise d'abord le cours complet dans la médiathèque.\n\n_Interrogation préparée par le campus d'après l'enregistrement du cours._`,
+          consigne: `Interrogation sur le cours du ${jour} (${questions.length} questions, une seule bonne réponse par question). Ta note sur 20 est calculée automatiquement dès que tu valides ; la correction détaillée s'affiche après la date limite. Tu as droit à deux essais : la meilleure note compte.\n\nRévise d'abord le cours résumé dans la médiathèque.\n\n_Interrogation préparée par le campus d'après l'enregistrement du cours._`,
           dateLimite: dansJours(7),
           bareme: 20,
           coefficient: 1,

@@ -34,9 +34,12 @@ export function useFilSeances(filtres: FiltresFil, limite = 10) {
   });
 }
 
-/** Les grands chiffres de la période (7 ou 30 jours), pour tout le groupe ou un campus. */
-export function useResumeTravail(jours: number, site?: string) {
+/**
+ * Les grands chiffres de la période (7 ou 30 jours), pour tout le groupe ou les filtres choisis (campus, cours,
+ * formateur) : les mêmes que le fil, pour que les chiffres et les cartes parlent des mêmes séances.
+ */
+export function useResumeTravail(jours: number, filtres: FiltresFil = {}) {
   const p = new URLSearchParams({ jours: String(jours) });
-  if (site) p.set("site", site);
+  for (const cle of ["cours", "formateur", "site"] as const) if (filtres[cle]) p.set(cle, filtres[cle]!);
   return useQuery<ResumeTravail>({ queryKey: [`/api/fil/resume?${p.toString()}`], staleTime: 2 * 60_000, retry: 1, placeholderData: (avant) => avant });
 }

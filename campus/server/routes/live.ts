@@ -3769,7 +3769,7 @@ planifier("live-rappels", MINUTE, async () => {
       await notifier([f.id], {
         type: "live",
         titre: urgent ? `Dans 15 min : ${s.titre}` : `${quandLocal} à ${heureDouble(s.debut, f.fuseau)} : ${s.titre}`,
-        corps: urgent ? `${code} · ouvrez le studio : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan, vos diapos et la visio (salle d'essai).`,
+        corps: urgent ? `${code} · entrez dans votre classe : les cinq campus arrivent.` : `${code} · live multi-campus. Vérifiez votre plan, vos diapos et la visio (salle d'essai).`,
         lien: urgent ? `/live/${s.id}` : `/enseigner/seances/${s.id}`,
         urgent,
       });

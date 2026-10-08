@@ -248,7 +248,7 @@ export async function composerEmailSemaine(e: EtudiantEmail, lundi: Jour, bouton
   const resume = [
     lignesDirects.length ? `${lignesDirects.length} cours en direct` : null,
     lignesEcheances.length ? (lignesEcheances.length === 1 ? "1 devoir à rendre" : `${lignesEcheances.length} devoirs à rendre`) : null,
-    !lignesDirects.length && !lignesEcheances.length && lignesALire.length ? (lignesALire.length === 1 ? "1 cours complet à lire" : `${lignesALire.length} cours complets à lire`) : null,
+    !lignesDirects.length && !lignesEcheances.length && lignesALire.length ? (lignesALire.length === 1 ? "1 cours résumé à lire" : `${lignesALire.length} cours résumés à lire`) : null,
   ]
     .filter(Boolean)
     .join(", ");

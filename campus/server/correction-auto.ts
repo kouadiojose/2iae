@@ -37,7 +37,7 @@ import { notifier } from "./notifications";
 import { publierUtilisateur } from "./temps-reel";
 import { demanderJsonCout, ErreurIa, iaDisponible, travailDeFondPermis } from "./ia";
 import { avecOrigine, estIaDuSoir, iaDuSoir, supprimerDemandesDe } from "./ia-soir";
-import { echeanceValidation } from "./corrections-socle";
+import { corrigeChezLeCampus, echeanceValidation } from "./corrections-socle";
 import { echeance } from "./evaluations-outils";
 import { apercuCopie, copieLisible, lectureComplete, lireCopie, resumeApercu, resumeNonLus, type ApercuCopie } from "./copies-pages";
 import {
@@ -660,26 +660,33 @@ function prochainSoir(apres: Date): Date {
   return d;
 }
 
+/** Ce que les écrans lisent du corrigé d'un devoir (la ligne complète de corriges_devoirs convient). */
+type LigneCorrige = Pick<
+  CorrigeDevoir,
+  "statut" | "contenu" | "version" | "echeanceLe" | "valideLe" | "majLe" | "creeLe" | "messageEnvoyeLe" | "rappelEnvoyeLe"
+>;
+
 /**
  * Quand l'étudiant peut attendre sa note : le campus ne corrige qu'après la date limite du devoir (D-A), et
- * quand le corrigé sert de barème. Donc le premier tour de la routine du soir qui suit à la fois la date limite
- * et l'échéance du corrigé (tenu pour bon 24 h après le message du jour, qui part à 7 h quand il est prêt la
- * nuit) : « le soir qui suit la date limite » d'ordinaire, « ce soir » pour une copie en retard. Hors mode IA
- * du soir, l'API corrige dans le quart d'heure qui suit.
+ * quand le corrigé sert de barème. Donc le premier tour de la routine du soir qui suit à la fois la date limite,
+ * l'arrivée de la copie et le moment où le corrigé sert de barème (tenu pour bon 24 h après le message du jour,
+ * qui part à 7 h quand il est prêt la nuit) : « le soir qui suit la date limite » d'ordinaire, « ce soir » pour
+ * une copie en retard. Hors mode IA du soir, l'API corrige dans le quart d'heure qui suit.
+ * Le calcul part de dates fixées (date limite, arrivée de la copie, dates du corrigé), jamais de l'heure
+ * qu'il est : la date annoncée ne recule pas de jour en jour quand le circuit prend du retard. Passée, l'écran
+ * dit « très bientôt » ; un corrigé bloqué (D-G) ne promet plus rien (etatPourEtudiant).
  */
-export function noteAttendueLe(
-  cd: Pick<CorrigeDevoir, "statut" | "contenu" | "echeanceLe"> | null,
-  d: Pick<Devoir, "dateLimite">,
-  maintenant = new Date(),
-): Date | null {
+export function noteAttendueLe(cd: LigneCorrige | null, d: Pick<Devoir, "dateLimite">, renduLe: Date | null = null): Date | null {
   if (!cd) return null;
   const apres = (t: Date) => (iaDuSoir() ? prochainSoir(t) : new Date(t.getTime() + 15 * MINUTE));
-  const depart = (t: Date) => new Date(Math.max(t.getTime(), maintenant.getTime(), echeance(d).getTime()));
-  if (corrigeUtilisableLigne(cd)) return apres(depart(maintenant));
+  const depart = (t: Date) => new Date(Math.max(t.getTime(), renduLe?.getTime() ?? 0, echeance(d).getTime()));
+  // Barème depuis sa validation (ou sa dernière modification) : copies en file, ou à refaire sur un corrigé modifié.
+  if (corrigeUtilisableLigne(cd)) return apres(depart(cd.valideLe ?? cd.majLe));
   if (cd.statut === "propose" && cd.echeanceLe) return apres(depart(cd.echeanceLe));
-  // Corrigé pas encore proposé au formateur : rédigé ce soir par la routine (en préparation), ou message du jour à venir.
-  const propose = cd.statut === "en_preparation" && iaDuSoir() ? prochainSoir(maintenant) : maintenant;
-  return apres(depart(echeanceValidation(propose)));
+  // Pas encore proposé au formateur : le message du jour part dès qu'il est prêt (proposé depuis majLe), ou le
+  // campus le rédige d'abord (en préparation depuis creeLe : au tour du soir qui suit, en mode IA du soir).
+  const pret = cd.statut === "en_preparation" ? (iaDuSoir() ? prochainSoir(cd.creeLe) : cd.creeLe) : cd.majLe;
+  return apres(depart(echeanceValidation(pret)));
 }
 
 /**
@@ -703,18 +710,19 @@ const raisonPourEtudiant = (raison: RaisonARevoir | null): RaisonARevoir | null 
  * le dépôt pour une copie que le campus ne lira pas : vidéo, son, format, vide ; une consigne cachée repérée
  * n'est pas dite). Une note du campus déjà publiée dont le corrigé a changé reste visible, la copie est « en
  * file » (le campus la relit). Nul quand le campus n'est pas concerné (devoir sans corrigé, formateur qui a la
- * main) ou quand la note publiée est définitive. Une erreur technique reste « en file » pour lui (réessayée).
+ * main, corrigé bloqué : D-G, c'est le formateur qui note) ou quand la note publiée est définitive. Une erreur
+ * technique reste « en file » pour lui (réessayée).
  */
 export function etatPourEtudiant(
   r: Pick<Rendu, "statut" | "renduLe" | "correcteurId" | "corrigeLe" | "origineNote">,
   ca: CorrectionAuto | null | undefined,
-  cd: Pick<CorrigeDevoir, "statut" | "contenu" | "echeanceLe" | "version"> | null | undefined,
-  d: Pick<Devoir, "dateLimite">,
+  cd: LigneCorrige | null | undefined,
+  d: Pick<Devoir, "dateLimite" | "publie">,
   maintenant = new Date(),
   apercu: ApercuCopie | null = null,
 ): EtatCorrectionEtudiant | null {
   if (!cd) return null;
-  const enFile = (): EtatCorrectionEtudiant => ({ etat: "en_file", raison: null, attendueLe: noteAttendueLe(cd, d, maintenant)?.toISOString() ?? null });
+  const enFile = (): EtatCorrectionEtudiant => ({ etat: "en_file", raison: null, attendueLe: noteAttendueLe(cd, d, r.renduLe)?.toISOString() ?? null });
   if (r.statut === "corrige") {
     // Recorrection d'une note du campus (corrigé modifié) : seulement tant qu'elle est à faire.
     if (r.origineNote !== "campus" || !ca) return null;
@@ -726,36 +734,49 @@ export function etatPourEtudiant(
   if (sousAlerte(ca)) return { etat: "a_revoir", raison: null, attendueLe: null };
   const valable = ca && ligneAJour(ca, r, cd) ? ca : null;
   if (valable?.etat === "a_revoir") return { etat: "a_revoir", raison: raisonPourEtudiant(valable.raison), attendueLe: null };
+  // Corrigé bloqué (D-G : en préparation depuis 48 h, rédaction abandonnée, devoir masqué) : la copie revient au
+  // formateur, qui la note ; le campus ne promet plus de note.
+  if (!corrigeChezLeCampus(cd, d.publie, maintenant)) return null;
   // Avant le passage du campus : ce que l'aperçu dit déjà (pas « ta note arrive ce soir » pour une vidéo).
   const prevue = apercu ? raisonPrevue(apercu) : null;
   if (prevue) return { etat: "a_revoir", raison: prevue, attendueLe: null };
   return enFile();
 }
 
-/** État vu par le formateur (CopieResume, CopieDetail) : « en file » tant que le campus doit encore la corriger. */
+/**
+ * État vu par le formateur (CopieResume, CopieDetail) : « en file » tant que le campus doit encore la corriger.
+ * Corrigé bloqué (D-G) : une copie sans suivi à jour (ou seulement en file) n'est plus « en file » mais à
+ * corriger par le formateur (nul), comme dans ses compteurs (sqlCorrigeParLeCampus) ; une copie déjà notée ou
+ * retenue par le campus le reste.
+ */
 export function etatPourFormateur(
   r: Pick<Rendu, "statut" | "renduLe" | "correcteurId" | "corrigeLe" | "origineNote">,
   ca: CorrectionAuto | null | undefined,
-  cd: Pick<CorrigeDevoir, "version"> | null | undefined,
+  cd: LigneCorrige | null | undefined,
+  d: Pick<Devoir, "publie">,
+  maintenant = new Date(),
 ): { etat: EtatCorrection; raison: RaisonARevoir | null; detail: string | null; noteCampus: number | null } | null {
   if (!cd || r.statut === "brouillon") return null;
+  const chezLeCampus = corrigeChezLeCampus(cd, d.publie, maintenant);
   if (ca?.etat === "notee") {
     // Note du campus publiée, à refaire sur un corrigé modifié : « en file » ; sinon « notée » (même si le
     // formateur l'a changée depuis : note_campus garde la note du campus, pour l'écart).
-    if (r.statut === "corrige" && r.origineNote === "campus" && !ligneAJour(ca, r, cd)) return { etat: "en_file", raison: null, detail: null, noteCampus: ca.noteCampus };
+    if (r.statut === "corrige" && r.origineNote === "campus" && !ligneAJour(ca, r, cd) && chezLeCampus) return { etat: "en_file", raison: null, detail: null, noteCampus: ca.noteCampus };
     return { etat: "notee", raison: null, detail: ca.detail, noteCampus: ca.noteCampus };
   }
   if (r.statut === "corrige" && r.origineNote === "campus" && ca) {
     // Recorrection (corrigé modifié) retenue « à revoir » ou en file : la note publiée du campus reste visible.
-    return ligneAJour(ca, r, cd) && ca.etat === "a_revoir" ? { etat: "a_revoir", raison: ca.raison, detail: ca.detail, noteCampus: ca.noteCampus } : { etat: "en_file", raison: null, detail: null, noteCampus: ca.noteCampus };
+    if (ligneAJour(ca, r, cd) && ca.etat === "a_revoir") return { etat: "a_revoir", raison: ca.raison, detail: ca.detail, noteCampus: ca.noteCampus };
+    return chezLeCampus ? { etat: "en_file", raison: null, detail: null, noteCampus: ca.noteCampus } : null;
   }
   if (r.statut !== "rendu" || formateurALaMain(r)) return null;
   // Alerte collante (copie remplacée après une consigne adressée à l'IA) : toujours « à revoir ».
   if (sousAlerte(ca)) return { etat: "a_revoir", raison: ca!.raison, detail: ca!.detail, noteCampus: ca!.noteCampus };
-  if (!ca || !ligneAJour(ca, r, cd)) return { etat: "en_file", raison: null, detail: null, noteCampus: null };
-  // Une erreur technique en cours de reprise reste « en file » pour le formateur.
-  if (ca.etat === "erreur") return { etat: "en_file", raison: null, detail: null, noteCampus: null };
-  return { etat: ca.etat, raison: ca.raison, detail: ca.etat === "a_revoir" ? ca.detail : null, noteCampus: ca.noteCampus };
+  const valable = ca && ligneAJour(ca, r, cd) ? ca : null;
+  if (valable?.etat === "a_revoir") return { etat: "a_revoir", raison: valable.raison, detail: valable.detail, noteCampus: valable.noteCampus };
+  // Sans suivi à jour, en file, ou en reprise après une erreur technique : « en file » tant que le campus s'en
+  // occupe ; corrigé bloqué : rien, la copie est à corriger par le formateur.
+  return chezLeCampus ? { etat: "en_file", raison: null, detail: null, noteCampus: valable?.etat === "en_file" ? valable.noteCampus : null } : null;
 }
 
 // ── Tâche planifiée ────────────────────────────────────────────────────────

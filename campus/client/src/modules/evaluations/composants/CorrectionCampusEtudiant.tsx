@@ -75,10 +75,15 @@ export function phraseNoteAttendue(c: EtatCorrectionEtudiant, maintenant: number
   return c.attendueLe ? tx("campus.enFile", { v: { quand: quandEnMots(c.attendueLe, maintenant, tx) } }) : tx("campus.enFile.bientot");
 }
 
-/** Qui va regarder une copie que le campus ne note pas : sa vidéo, son enregistrement, ou sa copie. */
+/**
+ * Qui va regarder une copie que le campus ne note pas : sa vidéo, son enregistrement, ou sa copie. Une copie
+ * difficile à lire qu'il ne peut plus remplacer (date limite passée) : le formateur la lit, sans l'inviter à
+ * renvoyer une photo.
+ */
 function phraseFormateur(c: EtatCorrectionEtudiant, fichiers: Pick<PieceJointe, "mime">[], tx: Tx): string {
   if (c.raison === "video" || fichiers.some(estVideo)) return tx("campus.video");
   if (fichiers.some(estSon)) return tx("campus.son");
+  if (c.raison === "illisible") return tx("campus.illisible.formateur");
   return tx("campus.formateur");
 }
 

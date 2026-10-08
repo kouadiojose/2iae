@@ -23,7 +23,7 @@ import {
   peutEcrireCorrige,
   verifierVersionCorrige,
 } from "../corriges";
-import { lireCorrige, sqlCorrigeParLeCampus } from "../corrections-socle";
+import { corrigeChezLeCampus, lireCorrige, sqlCorrigeParLeCampus } from "../corrections-socle";
 import { t as tEnseigner } from "@shared/textes/enseigner";
 import type { Express, Request } from "express";
 import { z } from "zod";
@@ -66,7 +66,9 @@ import {
   finDe,
   terminerTentative,
   cloturerTentativesExpirees,
-  meilleureNoteQuiz,
+  noteGardeeQuiz,
+  questionsAjoutees,
+  questionsDeLaTentative,
   recalculerQuiz,
 } from "../evaluations-outils";
 import {
@@ -91,6 +93,7 @@ import {
   type Rendu,
   type Cours,
   type QuestionQuiz,
+  type TentativeQuiz,
   type Utilisateur,
   type Fichier,
   type TypeQuestion,
@@ -732,6 +735,16 @@ const questionsDe = (devoirId: number) =>
 /** La correction détaillée d'une interrogation est-elle visible maintenant ? */
 const correctionOuverte = (d: Devoir, maintenant = new Date()) => d.correctionVisible && maintenant.getTime() > echeance(d).getTime();
 
+/**
+ * Correction détaillée d'une tentative, sur les questions qu'elle a eues : une question ajoutée après son début,
+ * à laquelle l'étudiant n'a pas répondu, n'y figure pas (pas de question « fausse » jamais vue ; même règle que
+ * sa note : questionsDeLaTentative).
+ */
+async function correctionDeLaTentative(questions: QuestionQuiz[], t: TentativeQuiz, d: Pick<Devoir, "id" | "bareme">): Promise<QuestionCorrigee[]> {
+  const ajoutees = await questionsAjoutees(d.id, t.debutLe);
+  return corrigerTentative(questionsDeLaTentative(questions, t, ajoutees), t.reponses, d.bareme).detail;
+}
+
 // ── Détails ────────────────────────────────────────────────────────────────
 
 async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<DevoirDetailEtudiant> {
@@ -759,13 +772,15 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
     const enCours = aJour.find((t) => !t.finLe) ?? null;
     quizEnCours = Boolean(enCours);
     const meilleure = faites.length ? faites.reduce((a, b) => ((b.note ?? 0) > (a.note ?? 0) ? b : a)) : null;
+    // La note gardée : celle qu'un formateur a posée sur la copie, sinon la meilleure tentative (noteGardeeQuiz).
+    const gardee = faites.length ? await noteGardeeQuiz(d.id, u.id) : null;
     quiz = {
       tentativesFaites: faites.length,
       tentativesMax: d.tentativesMax,
       nbQuestions: questions.length,
       enCours: enCours ? { id: enCours.id, finPrevueLe: iso(finDe(enCours, d)) } : null,
-      meilleureNote: meilleure?.note ?? null,
-      correction: meilleure && correctionOuverte(d, maintenant) ? corrigerTentative(questions, meilleure.reponses, d.bareme).detail : null,
+      meilleureNote: gardee?.note ?? meilleure?.note ?? null,
+      correction: meilleure && correctionOuverte(d, maintenant) ? await correctionDeLaTentative(questions, meilleure, d) : null,
       correctionLe: d.correctionVisible ? echeance(d).toISOString() : null,
     };
   }
@@ -837,7 +852,8 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
     rendu,
     quiz,
     corrige,
-    correctionCampus: Boolean(cd),
+    // Le campus corrige les copies de ce devoir (conseil de dépôt) : pas quand son corrigé est bloqué (D-G).
+    correctionCampus: corrigeChezLeCampus(cd, d.publie, maintenant),
   };
 }
 
@@ -884,10 +900,10 @@ async function copieDetail(r: Rendu, d: Devoir, e: Utilisateur): Promise<CopieDe
       .from(tentativesQuiz)
       .where(and(eq(tentativesQuiz.devoirId, d.id), eq(tentativesQuiz.etudiantId, e.id), isNotNull(tentativesQuiz.finLe)));
     const meilleure = faites.length ? faites.reduce((a, b) => ((b.note ?? 0) > (a.note ?? 0) ? b : a)) : null;
-    if (meilleure) reponsesQuiz = corrigerTentative(await questionsDe(d.id), meilleure.reponses, d.bareme).detail;
+    if (meilleure) reponsesQuiz = await correctionDeLaTentative(await questionsDe(d.id), meilleure, d);
   }
   // Correction par le campus (dépôt) : état, raison d'une copie « à revoir », note du campus ; relecture demandée.
-  const [cd] = d.type === "depot" ? await db.select({ version: corrigesDevoirs.version }).from(corrigesDevoirs).where(eq(corrigesDevoirs.devoirId, d.id)) : [];
+  const [cd] = d.type === "depot" ? await db.select().from(corrigesDevoirs).where(eq(corrigesDevoirs.devoirId, d.id)) : [];
   const suivi = cd ? (await suiviDesCopies([r.id])).get(r.id) : undefined;
   const relecture = d.type === "depot" ? (await relecturesDesCopies([r.id])).get(r.id) : undefined;
   return {
@@ -911,7 +927,7 @@ async function copieDetail(r: Rendu, d: Devoir, e: Utilisateur): Promise<CopieDe
     deposePar: depose ?? null,
     reponsesQuiz,
     origineNote: r.origineNote,
-    correctionAuto: etatPourFormateur(r, suivi, cd),
+    correctionAuto: etatPourFormateur(r, suivi, cd, d),
     relecture: relecture ? versRelectureEtudiant(relecture) : null,
   };
 }
@@ -1507,11 +1523,11 @@ export function enregistrerEvaluations(app: Express) {
       const lesRendus = await db.select().from(rendus).where(and(eq(rendus.devoirId, d.id), ne(rendus.statut, "brouillon")));
       const renduDe = new Map(lesRendus.map((r) => [r.etudiantId, r]));
       // Correction par le campus : suivi de chaque copie et relectures ouvertes.
-      const [cd] = d.type === "depot" ? await db.select({ version: corrigesDevoirs.version }).from(corrigesDevoirs).where(eq(corrigesDevoirs.devoirId, d.id)) : [];
+      const [cd] = d.type === "depot" ? await db.select().from(corrigesDevoirs).where(eq(corrigesDevoirs.devoirId, d.id)) : [];
       const suivis = cd ? await suiviDesCopies(lesRendus.map((r) => r.id)) : new Map<number, CorrectionAuto>();
       const relectures = d.type === "depot" ? await relecturesDesCopies(lesRendus.map((r) => r.id)) : new Map<number, DemandeRelecture>();
       const etatCampus = (r: Rendu) => {
-        const e = etatPourFormateur(r, suivis.get(r.id), cd);
+        const e = etatPourFormateur(r, suivis.get(r.id), cd, d);
         return e ? { etat: e.etat, raison: e.raison } : null;
       };
       const copies: CopieResume[] = inscrits
@@ -2126,15 +2142,16 @@ export function enregistrerEvaluations(app: Express) {
       // Déjà terminée (double clic, reprise) : on renvoie le résultat enregistré.
       const [tAJour] = await db.select().from(tentativesQuiz).where(eq(tentativesQuiz.id, t.id));
       const questions = await questionsDe(d.id);
-      const resultat = fin ?? corrigerTentative(questions, tAJour.reponses, d.bareme);
-      const { note: meilleure, faites } = await meilleureNoteQuiz(d.id, u.id);
+      const resultat = fin ?? corrigerTentative(questionsDeLaTentative(questions, tAJour, await questionsAjoutees(d.id, tAJour.debutLe)), tAJour.reponses, d.bareme);
+      // La note gardée : celle du formateur s'il en a posé une (une tentative ne la remplace jamais), sinon la meilleure.
+      const { note: gardee, faites } = await noteGardeeQuiz(d.id, u.id);
       const reponse: ResultatQuiz = {
         devoirId: d.id,
         score: resultat.score,
         total: resultat.total,
         note: tAJour.note ?? resultat.note,
         bareme: d.bareme,
-        meilleureNote: meilleure ?? resultat.note,
+        meilleureNote: gardee ?? resultat.note,
         tentativesRestantes: Math.max(0, d.tentativesMax - faites),
         correction: correctionOuverte(d) ? resultat.detail : null,
         correctionLe: d.correctionVisible ? echeance(d).toISOString() : null,

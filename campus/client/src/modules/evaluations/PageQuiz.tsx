@@ -573,6 +573,8 @@ function Resultat({ r, d, onRecommencer, depart, retour }: { r: ResultatQuiz; d:
         <p className="text-[15px] text-nuit-doux">
           {nombre(r.score)} point{r.score > 1 ? "s" : ""} sur {nombre(r.total)}
           {r.meilleureNote > r.note && ` · ta meilleure note (${nombre(r.meilleureNote)}/${nombre(r.bareme)}) est gardée`}
+          {/* Note gardée plus basse que cette tentative : c'est celle que ton formateur a posée (le serveur la garde). */}
+          {r.meilleureNote < r.note && ` · la note de ton formateur (${nombre(r.meilleureNote)}/${nombre(r.bareme)}) est gardée`}
         </p>
         {r.horsDelai && <p className="rounded-xl bg-nuit-carte px-3 py-2 text-sm text-nuit-texte">Le temps était écoulé : tes réponses déjà enregistrées ont été corrigées.</p>}
       </section>

@@ -2,13 +2,17 @@
 // d'engagement (C3, C4) ont le droit de POUSSER vers un étudiant.
 //
 // Un devoir créé par la routine du soir (son identifiant figure dans
-// devoirs_seances.devoir_ids, voir devoirs-auto.ts) n'a été relu par personne :
-// il n'est proposé qu'une fois publié et créé depuis plus de 8 h (le lendemain matin), le temps
-// que le formateur le voie. Un devoir écrit par un formateur est toujours
-// proposable. La règle ne retire rien de la page « Devoirs » : elle ne règle
-// que ce que le campus met en avant.
+// devoirs_seances.devoir_ids, voir devoirs-auto.ts) arrive aux étudiants SANS
+// action du formateur (amendement de José du 8 octobre 2026) : il est proposé
+// une fois publié et créé depuis 8 h (le lendemain matin). Le formateur peut,
+// s'il le veut, le relire (chantier C7, validations_devoirs_auto) :
+//   - « valide »   : proposé tout de suite ;
+//   - « a_revoir » : jamais proposé (il reste visible dans « Devoirs ») ;
+//   - sans décision : la règle du délai.
+// Un devoir écrit par un formateur est toujours proposable. La règle ne retire
+// rien de la page « Devoirs » : elle ne règle que ce que le campus met en avant.
 //
-// Seul C7 modifie ce fichier ensuite (validation du formateur).
+// Seul C7 modifie ce fichier.
 import { sql, type SQL } from "drizzle-orm";
 
 /**
@@ -18,7 +22,8 @@ import { sql, type SQL } from "drizzle-orm";
 export const DELAI_DEVOIR_AUTO_HEURES = 8;
 /**
  * Question 1 pour José. Vrai : seuls les devoirs automatiques validés par le
- * formateur seraient proposés (aucun tant que la validation de C7 n'existe pas).
+ * formateur seraient proposés. José a répondu non (8 octobre 2026) : la
+ * relecture reste facultative.
  */
 export const VALIDATION_OBLIGATOIRE = false;
 
@@ -26,13 +31,17 @@ export const VALIDATION_OBLIGATOIRE = false;
  * Condition SQL « le devoir peut être proposé », pour un WHERE où « alias »
  * désigne campus.devoirs (ex. sqlDevoirProposable("d")). Elle ne regarde ni
  * l'ouverture, ni l'échéance, ni le rendu : le chantier appelant s'en charge.
+ * Lectures par clé primaire (validations_devoirs_auto) ; devoirs_seances compte
+ * une ligne par séance enregistrée.
  */
 export function sqlDevoirProposable(alias: string): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlDevoirProposable : alias SQL invalide « ${alias} »`);
   const d = sql.raw(alias);
   const automatique = sql`EXISTS (SELECT 1 FROM campus.devoirs_seances ds WHERE ds.devoir_ids @> jsonb_build_array(${d}.id))`;
+  const decision = sql`(SELECT v.statut FROM campus.validations_devoirs_auto v WHERE v.devoir_id = ${d}.id)`;
+  const delaiEcoule = sql`${d}.cree_le <= now() - make_interval(hours => ${sql.raw(String(DELAI_DEVOIR_AUTO_HEURES))})`;
   const automatiqueProposable = VALIDATION_OBLIGATOIRE
-    ? sql`false`
-    : sql`(${d}.publie AND ${d}.cree_le <= now() - make_interval(hours => ${sql.raw(String(DELAI_DEVOIR_AUTO_HEURES))}))`;
+    ? sql`(${d}.publie AND ${decision} IS NOT DISTINCT FROM 'valide')`
+    : sql`(${d}.publie AND CASE ${decision} WHEN 'valide' THEN true WHEN 'a_revoir' THEN false ELSE ${delaiEcoule} END)`;
   return sql`(NOT ${automatique} OR ${automatiqueProposable})`;
 }

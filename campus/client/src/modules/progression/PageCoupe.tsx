@@ -229,7 +229,7 @@ function Ligne({ e, personnel, moiLibelle, tx }: { e: EntreeCoupe; personnel: bo
           <Chiffre libelle={tx("coupe.col.participation")} valeur={`${d.participants}/${d.inscrits}`} />
           <Chiffre libelle={tx("coupe.col.assidus")} valeur={String(d.assidus)} />
           <Chiffre libelle={tx("coupe.col.points")} valeur={String(d.pointsMoyens)} />
-          <Chiffre libelle={tx("coupe.col.presence")} valeur={e.presence !== null ? tx("coupe.seances", { v: { n: d.seances } }) : tx("coupe.nonMesure")} large />
+          <Chiffre libelle={tx("coupe.col.presence")} valeur={e.presence === null ? tx("coupe.nonMesure") : d.seances === 1 ? tx("coupe.seances1") : tx("coupe.seances", { v: { n: d.seances } })} large />
         </dl>
       )}
     </li>

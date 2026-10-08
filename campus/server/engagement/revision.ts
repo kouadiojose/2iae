@@ -280,6 +280,16 @@ export async function enregistrerReponses(u: Utilisateur, reponses: ReponseRevis
   const ignorees = reponses.length - valides.length;
   if (!valides.length) return { enregistrees: 0, doublons: 0, ignorees };
 
+  // « Défi » : seulement pour une carte du défi de sa classe ce jour-là (sinon, une révision ordinaire).
+  // Le défi relevé compte pour « 14 sur 25 l'ont relevé » et pour les points (C5) : le serveur vérifie.
+  const joursDefi = [...new Set(valides.filter((v) => v.origine === "defi").map((v) => v.jour))];
+  if (joursDefi.length) {
+    const ids = await idsCoursAccessibles(u);
+    const cartesDuDefi = new Map<Jour, Set<number>>();
+    for (const jour of joursDefi) cartesDuDefi.set(jour, new Set((await defiDe(u, jour, ids))?.lignes.map((l) => l.id) ?? []));
+    for (const v of valides) if (v.origine === "defi" && !cartesDuDefi.get(v.jour)?.has(v.carteId)) v.origine = "du_jour";
+  }
+
   const nouvelles = await db.transaction(async (tx) => {
     const { rows: inserees } = await tx.execute<{ carte_id: number; juste: boolean; jour: string; repondu_le: string }>(sql`
       INSERT INTO campus.reponses_revision (utilisateur_id, carte_id, juste, origine, jour, repondu_le, cle_envoi, classe_id, site_id)

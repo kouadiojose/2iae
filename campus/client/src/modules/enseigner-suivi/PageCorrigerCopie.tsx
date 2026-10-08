@@ -53,11 +53,13 @@ export default function PageCorrigerCopie({ id }: { id: string }) {
   const file = useQuery<CopiesEnAttenteDto>({ queryKey: [cleFile(devoir)] });
   const copie = useQuery<CopieDetail>({ queryKey: ["/api/rendus", renduId], enabled: Number.isInteger(renduId) });
 
-  // Ordre de la file : la plus ancienne d'abord, celles passées à la fin.
+  // Ordre de la file : la plus ancienne d'abord, celles passées à la fin. Sans ?devoir=, la file ne mêle pas
+  // ses devoirs et les exercices du campus (facultatifs, décision D2) : elle reste du côté de la copie ouverte.
+  const automatique = file.data?.copies.find((x) => x.renduId === renduId)?.automatique ?? false;
   const ordre = useMemo(() => {
-    const c = file.data?.copies ?? [];
+    const c = (file.data?.copies ?? []).filter((x) => devoir !== null || x.automatique === automatique);
     return [...c.filter((x) => !copiesPassees.has(x.renduId)), ...c.filter((x) => copiesPassees.has(x.renduId))];
-  }, [file.data]);
+  }, [file.data, devoir, automatique]);
   const position = ordre.findIndex((c) => c.renduId === renduId);
   const element = position >= 0 ? ordre[position] : null;
 

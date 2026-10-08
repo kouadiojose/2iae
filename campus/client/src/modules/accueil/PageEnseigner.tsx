@@ -3,9 +3,11 @@
 // En haut, la prochaine séance : double horloge Abidjan / chez vous, compte à
 // rebours, préparation, et UN bouton principal qui change avec l'heure
 // (« Préparer la séance » longtemps avant, « Ouvrir le studio » à 30 min).
-// Puis ce qui attend : copies à corriger, questions restées sans réponse au
-// dernier live, messages ; les enregistrements de tous les cours (les siens et
-// ceux des collègues) ; enfin ses cours et sa semaine.
+// Puis ce qui attend : « Après la séance » (chantier C7 : la suite de la
+// dernière séance et les copies à corriger, seul bloc « copies » de la page),
+// questions restées sans réponse au dernier live, messages ; les
+// enregistrements de tous les cours (les siens et ceux des collègues) ; enfin
+// ses cours et sa semaine.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -15,7 +17,6 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
-  ClipboardCheck,
   Megaphone,
   MessageCircle,
   MessagesSquare,
@@ -49,7 +50,7 @@ export default function PageEnseigner() {
   const maintenant = useMaintenant(30_000);
 
   useTousEvenements((e) => {
-    if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil/formateur");
+    if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil/formateur", "/api/enseigner/apres-seance");
   });
 
   if (error && !data) {
@@ -113,10 +114,10 @@ export default function PageEnseigner() {
           {data.enDirect && data.prochaineSeance && <LigneSeanceSuivante seance={data.prochaineSeance} />}
           {/* Module visio : essai de la visio, fuseau, diapos, plan minuté. */}
           {!data.enDirect && data.prochaineSeance && <CartePretClasse />}
+          {/* « Après la séance » porte aussi les copies à corriger (les exercices du campus à part, facultatifs). */}
           <LimiteSilencieuse nom="ApresSeance">
             <ApresSeance />
           </LimiteSilencieuse>
-          <CopiesACorriger data={data} />
           <QuestionsEnSuspens questions={data.questions} maintenant={maintenant} />
         </div>
         <div className="flex min-w-0 flex-col gap-7">
@@ -283,62 +284,6 @@ function Enregistrements() {
           </span>
           <span className="text-sm text-texte-pale">Les replays de tous les cours, les vôtres et ceux de vos collègues, arrivent ici dès que la vidéo est prête. Vous recevrez une alerte.</span>
         </Carte>
-      )}
-    </section>
-  );
-}
-
-// ── Copies à corriger ──────────────────────────────────────────────────────
-
-function CopiesACorriger({ data }: { data: AccueilFormateur }) {
-  return (
-    <section aria-labelledby="titre-copies">
-      <TitreSection
-        titre={
-          <span id="titre-copies" className="flex items-center gap-2">
-            Copies à corriger {data.totalCopies > 0 && <Badge ton="orange">{data.totalCopies}</Badge>}
-          </span>
-        }
-        action={
-          <Link href="/corrections" className="-my-2.5 inline-flex items-center gap-1 py-2.5 text-[15px] font-bold">
-            Tout voir <ChevronRight className="h-4 w-4" aria-hidden />
-          </Link>
-        }
-      />
-      {data.copies.length ? (
-        <ul className="flex flex-col gap-2.5">
-          {data.copies.map((c) => (
-            <li key={c.devoirId}>
-              <CarteLien href={c.lien} className="flex items-center gap-4 px-4 py-3.5">
-                <span
-                  className={cn(
-                    "grid h-12 w-12 shrink-0 place-items-center rounded-xl text-lg font-black tabular-nums",
-                    c.nombre > 0 ? "bg-orange text-encre" : "bg-creme text-texte-pale",
-                  )}
-                  aria-label={c.nombre > 0 ? `${pluriel(c.nombre, "copie")} à corriger` : "Aucune copie à corriger"}
-                >
-                  {c.nombre}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="font-bold leading-snug">{c.titre}</span>
-                  <span className="text-sm text-texte-pale">
-                    <span className="font-mono text-xs font-semibold text-orange-fonce">{c.coursCode}</span>
-                    {c.enRetard > 0 && ` · dont ${c.enRetard} en retard`}
-                    {c.plusAncienne && ` · la plus ancienne ${relatif(c.plusAncienne)}`}
-                    {c.aPublier > 0 && ` · ${c.aPublier} ${c.aPublier > 1 ? "notes" : "note"} à publier`}
-                  </span>
-                </span>
-                <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
-              </CarteLien>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <EtatVide
-          icone={<ClipboardCheck className="h-5 w-5" />}
-          titre="Aucune copie en attente"
-          texte="Les devoirs rendus par vos étudiants apparaissent ici, les plus anciens d'abord, dès qu'ils arrivent."
-        />
       )}
     </section>
   );

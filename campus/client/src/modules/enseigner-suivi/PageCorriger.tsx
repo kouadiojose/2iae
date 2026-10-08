@@ -4,7 +4,12 @@
 // (/corriger/:id), et la note part aussitôt chez l'étudiant. 102 copies
 // attendaient le 8 octobre : une copie notée vite donne envie de rendre la
 // suivante. La correction guidée complète reste dans /corrections.
-import { useState } from "react";
+//
+// Décision D2 : seules les copies de SES devoirs forment la file et le bouton
+// principal. Celles des exercices du campus (routine du soir) sont à part,
+// sous « Exercices du campus · facultatif » : il les corrige s'il le souhaite,
+// sans rappel ni compte à rebours.
+import { useEffect, useState } from "react";
 import { Link, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CheckCircle2, ChevronRight, ClipboardCheck, Send } from "lucide-react";
@@ -27,6 +32,13 @@ export default function PageCorriger() {
   const { data, isLoading, error, refetch } = useQuery<CopiesEnAttenteDto>({ queryKey: [cleFile(devoir)] });
   const [envoi, setEnvoi] = useState(false);
 
+  // Lien « copies des exercices du campus » de l'accueil : on descend jusqu'à elles.
+  useEffect(() => {
+    if (!data || window.location.hash !== "#facultatives") return;
+    const minuterie = setTimeout(() => document.getElementById("facultatives")?.scrollIntoView({ block: "start" }), 120);
+    return () => clearTimeout(minuterie);
+  }, [data]);
+
   if (isLoading) {
     return (
       <Page className="max-w-2xl">
@@ -42,10 +54,16 @@ export default function PageCorriger() {
     );
   }
 
+  // La file : les copies de ses devoirs (ou, avec ?devoir=, celles de ce devoir-là, même facultatif).
   // La plus ancienne d'abord ; celles passées (« Plus tard ») à la fin.
-  const file = [...data.copies.filter((c) => !copiesPassees.has(c.renduId)), ...data.copies.filter((c) => copiesPassees.has(c.renduId))];
+  const base = devoir ? data.copies : data.copies.filter((c) => !c.automatique);
+  const ordonner = (liste: typeof data.copies) => [...liste.filter((c) => !copiesPassees.has(c.renduId)), ...liste.filter((c) => copiesPassees.has(c.renduId))];
+  const file = ordonner(base);
   const premiere = file[0];
+  const enAttente = base.length;
   const suffixe = devoir ? `?devoir=${devoir}` : "";
+  const facultatives = devoir ? [] : data.devoirs.filter((g) => g.automatique && g.aCorriger > 0);
+  const fileFacultative = ordonner(data.copies.filter((c) => c.automatique));
 
   async function envoyerPosees() {
     setEnvoi(true);
@@ -69,9 +87,9 @@ export default function PageCorriger() {
       <header className="flex flex-col gap-1.5">
         <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-fonce">{tx("corriger.etiquette")}</span>
         <h1 className="titre-page">{tx("corriger.titre")}</h1>
-        {data.totalACorriger > 0 && (
+        {enAttente > 0 && (
           <p className="text-[15px] text-texte-pale">
-            {selonNombre(tx, "corriger.resume", data.totalACorriger)} {premiere && tx("corriger.ancienne", { v: { duree: depuis(tx, data.copies[0].renduLe) } })}
+            {selonNombre(tx, "corriger.resume", enAttente)} {tx("corriger.ancienne", { v: { duree: depuis(tx, base[0].renduLe) } })}
           </p>
         )}
       </header>
@@ -97,12 +115,12 @@ export default function PageCorriger() {
         </Carte>
       )}
 
-      {data.devoirs.some((g) => g.aCorriger > 0) && (
+      {data.devoirs.some((g) => (devoir || !g.automatique) && g.aCorriger > 0) && (
         <section aria-labelledby="titre-par-devoir">
           <TitreSection titre={<span id="titre-par-devoir">{tx("corriger.parDevoir")}</span>} />
           <ul className="flex flex-col gap-2.5">
             {data.devoirs
-              .filter((g) => g.aCorriger > 0)
+              .filter((g) => (devoir || !g.automatique) && g.aCorriger > 0)
               .map((g) => {
                 const debut = file.find((c) => c.devoirId === g.devoirId);
                 return (
@@ -123,6 +141,34 @@ export default function PageCorriger() {
                   </li>
                 );
               })}
+          </ul>
+        </section>
+      )}
+
+      {facultatives.length > 0 && (
+        <section id="facultatives" aria-labelledby="titre-facultatives" className="flex scroll-mt-20 flex-col gap-2.5">
+          <TitreSection titre={<span id="titre-facultatives">{tx("corriger.facultatives.titre")}</span>} />
+          <p className="-mt-1 text-sm text-texte-pale">{tx("corriger.facultatives.texte")}</p>
+          <ul className="flex flex-col gap-2.5">
+            {facultatives.map((g) => {
+              const debut = fileFacultative.find((c) => c.devoirId === g.devoirId);
+              return (
+                <li key={g.devoirId}>
+                  <CarteLien href={debut ? `/corriger/${debut.renduId}?devoir=${g.devoirId}` : `/corriger?devoir=${g.devoirId}`} className="flex items-center gap-4 px-4 py-3">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-creme text-base font-bold tabular-nums text-texte-pale" aria-hidden>
+                      {g.aCorriger}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="font-semibold leading-snug">{g.devoirTitre}</span>
+                      <span className="text-sm text-texte-pale">
+                        <span className="font-mono text-xs font-semibold">{g.coursCode}</span> · {selonNombre(tx, "corriger.devoir", g.aCorriger)}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
+                  </CarteLien>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

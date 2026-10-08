@@ -27,6 +27,23 @@ export const DELAI_DEVOIR_AUTO_HEURES = 8;
  */
 export const VALIDATION_OBLIGATOIRE = false;
 
+function aliasSql(alias: string, fonction: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`${fonction} : alias SQL invalide « ${alias} »`);
+  return sql.raw(alias);
+}
+
+/**
+ * Condition SQL « le devoir a été créé par la routine du soir » (son identifiant
+ * figure dans devoirs_seances.devoir_ids), pour un WHERE où « alias » désigne
+ * campus.devoirs. Décision D2 (revue de l'engagement) : les copies de ces
+ * exercices ne relancent jamais le formateur et ne comptent pas dans ses
+ * retards ; il peut les corriger s'il le souhaite (correction facultative).
+ */
+export function sqlDevoirAutomatique(alias: string): SQL {
+  const d = aliasSql(alias, "sqlDevoirAutomatique");
+  return sql`EXISTS (SELECT 1 FROM campus.devoirs_seances ds WHERE ds.devoir_ids @> jsonb_build_array(${d}.id))`;
+}
+
 /**
  * Condition SQL « le devoir peut être proposé », pour un WHERE où « alias »
  * désigne campus.devoirs (ex. sqlDevoirProposable("d")). Elle ne regarde ni
@@ -35,9 +52,8 @@ export const VALIDATION_OBLIGATOIRE = false;
  * une ligne par séance enregistrée.
  */
 export function sqlDevoirProposable(alias: string): SQL {
-  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlDevoirProposable : alias SQL invalide « ${alias} »`);
-  const d = sql.raw(alias);
-  const automatique = sql`EXISTS (SELECT 1 FROM campus.devoirs_seances ds WHERE ds.devoir_ids @> jsonb_build_array(${d}.id))`;
+  const d = aliasSql(alias, "sqlDevoirProposable");
+  const automatique = sqlDevoirAutomatique(alias);
   const decision = sql`(SELECT v.statut FROM campus.validations_devoirs_auto v WHERE v.devoir_id = ${d}.id)`;
   const delaiEcoule = sql`${d}.cree_le <= now() - make_interval(hours => ${sql.raw(String(DELAI_DEVOIR_AUTO_HEURES))})`;
   const automatiqueProposable = VALIDATION_OBLIGATOIRE

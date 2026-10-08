@@ -4,9 +4,13 @@
 // Amendement de José : on MONTRE au formateur ce que le campus a fait pour
 // lui après sa dernière séance (cours complet, QCM et exercice envoyés,
 // combien les ont faits, replay), on ne lui demande rien. Une seule action
-// principale : corriger les copies qui attendent, parce qu'un travail noté vite
-// donne envie de rendre le suivant. La relecture des devoirs de l'IA reste un
-// lien discret, facultatif.
+// principale : corriger les copies de SES devoirs qui attendent, parce qu'un
+// travail noté vite donne envie de rendre le suivant. Les copies des exercices
+// du campus (routine du soir) et la relecture des devoirs de l'IA restent des
+// liens discrets, facultatifs (décision D2).
+//
+// C'est le seul bloc « copies » de /enseigner : l'ancienne section « Copies à
+// corriger » de la page faisait doublon (et comptait les exercices du campus).
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowRight, BookOpenCheck, CheckCircle2, ChevronRight, ClipboardList, Clock3, Lightbulb, ListChecks, PlayCircle, Sparkles, type LucideIcon } from "lucide-react";
@@ -25,17 +29,17 @@ export function ApresSeance() {
   const { data } = useQuery<ResumeEnseigner>({ queryKey: ["/api/enseigner/apres-seance"], staleTime: 60_000 });
   if (!data) return null;
   const { apres, copies, aRelire } = data;
-  if (!apres && !copies.aCorriger && !copies.aPublier) return null;
+  if (!apres && !copies.aCorriger && !copies.aPublier && !copies.facultatives) return null;
 
   return (
-    <section aria-labelledby="titre-apres-seance" className="flex flex-col gap-5 rounded-[24px] border border-ligne bg-white p-5 sm:p-6">
+    <section aria-labelledby={apres || copies.aCorriger || copies.aPublier ? "titre-apres-seance" : undefined} className="flex flex-col gap-5 rounded-[24px] border border-ligne bg-white p-5 sm:p-6">
       {apres ? (
         <Suite apres={apres} tx={tx} />
-      ) : (
+      ) : copies.aCorriger || copies.aPublier ? (
         <h2 id="titre-apres-seance" className="text-xl font-extrabold">
           {tx("apres.sansSeance.titre")}
         </h2>
-      )}
+      ) : null}
 
       {copies.aCorriger > 0 ? (
         <div className="flex flex-col gap-1.5">
@@ -53,6 +57,14 @@ export function ApresSeance() {
           <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
         </Link>
       ) : null}
+
+      {copies.facultatives > 0 && (
+        <Link href="/corriger#facultatives" className="-my-1 flex min-h-[44px] items-center gap-2 text-sm font-semibold text-texte-pale no-underline hover:text-encre">
+          <ClipboardList className="h-4 w-4 shrink-0 text-texte-gris" aria-hidden />
+          <span className="flex-1">{selonNombre(tx, "apres.facultatives", copies.facultatives)}</span>
+          <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
+        </Link>
+      )}
 
       {aRelire > 0 && (
         <Link href="/enseigner/relire" className="-my-1 flex min-h-[44px] items-center gap-2 text-sm font-semibold text-texte-pale no-underline hover:text-encre">
@@ -141,7 +153,7 @@ function LigneDevoir({ d, tx }: { d: DevoirAutoApres; tx: Tx }) {
   const quiz = d.type === "quiz";
   const morceaux = quiz
     ? [selonNombre(tx, "apres.quiz.faits", d.faits), d.moyenne !== null ? tx("apres.quiz.moyenne", { v: { note: nombreFr(d.moyenne), bareme: nombreFr(d.bareme) } }) : null]
-    : [selonNombre(tx, "apres.depot.rendus", d.faits), d.aCorriger > 0 ? tx("apres.depot.aCorriger", { v: { n: d.aCorriger } }) : null];
+    : [selonNombre(tx, "apres.depot.rendus", d.faits), d.aCorriger > 0 ? tx("apres.depot.facultatif") : null];
   // Seuls les choix du formateur se signalent : l'envoi lui-même s'est fait sans lui.
   if (!d.publie) morceaux.push(tx("apres.devoir.masque"));
   else if (d.validation === "a_revoir") morceaux.push(tx("apres.devoir.aRevoir"));

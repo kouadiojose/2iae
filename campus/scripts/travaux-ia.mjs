@@ -2,7 +2,8 @@
 // Outil de la routine du soir (IA du soir) : voir campus/TRAVAUX-IA.md.
 //
 //   node campus/scripts/travaux-ia.mjs tour              fait avancer les travaux, écrit chaque demande en attente
-//                                                        dans campus/.travaux-ia/<id>/ (consignes.md, images/, schema.json)
+//                                                        dans campus/.travaux-ia/<id>/ (consignes.md, images/,
+//                                                        documents/ pour les PDF, schema.json)
 //   node campus/scripts/travaux-ia.mjs repondre <id>     envoie campus/.travaux-ia/<id>/reponse.json
 //   node campus/scripts/travaux-ia.mjs etat              demandes en attente, sans rien lancer
 //
@@ -46,11 +47,16 @@ async function appel(methode, chemin, corps) {
   return { statut: r.status, donnees };
 }
 
-/** Une demande en fichiers lisibles : les consignes et les messages en Markdown, les images à part, le schéma. */
+const EXTENSIONS_IMAGE = { "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+
+/**
+ * Une demande en fichiers lisibles : les consignes et les messages en Markdown, les images et les PDF (blocs
+ * « document ») à part, le schéma. Un bloc d'un autre type n'est jamais perdu en silence : il est signalé.
+ */
 function ecrireDemande(d) {
   const dir = path.join(DOSSIER, String(d.id));
   // Un nouveau tour réécrit la demande sans effacer une réponse déjà écrite (reponse.json) mais pas encore envoyée.
-  fs.rmSync(path.join(dir, "images"), { recursive: true, force: true });
+  for (const sous of ["images", "documents"]) fs.rmSync(path.join(dir, sous), { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, "images"), { recursive: true });
   const r = d.requete;
   const lignes = [
@@ -65,6 +71,8 @@ function ecrireDemande(d) {
   ];
   if (r.contexte) lignes.push("", "## Contexte", "", r.contexte);
   let n = 0;
+  let docs = 0;
+  let perdus = 0;
   for (const m of r.messages ?? []) {
     lignes.push("", `## Message (${m.role === "assistant" ? "assistant" : "utilisateur"})`, "");
     const blocs = typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content ?? [];
@@ -72,16 +80,32 @@ function ecrireDemande(d) {
       if (b.type === "text") lignes.push(b.text);
       else if (b.type === "image" && b.source?.type === "base64") {
         n += 1;
-        const ext = b.source.media_type === "image/png" ? "png" : b.source.media_type === "image/webp" ? "webp" : "jpg";
-        const fichier = `images/${String(n).padStart(3, "0")}.${ext}`;
+        const fichier = `images/${String(n).padStart(3, "0")}.${EXTENSIONS_IMAGE[b.source.media_type] ?? "jpg"}`;
         fs.writeFileSync(path.join(dir, fichier), Buffer.from(b.source.data, "base64"));
         lignes.push(`[Image ${n} : ${fichier}]`);
+      } else if (b.type === "document" && b.source?.type === "base64") {
+        docs += 1;
+        fs.mkdirSync(path.join(dir, "documents"), { recursive: true });
+        const fichier = `documents/${String(docs).padStart(3, "0")}.pdf`;
+        fs.writeFileSync(path.join(dir, fichier), Buffer.from(b.source.data, "base64"));
+        lignes.push(`[Document ${docs} (PDF) : ${fichier} — à lire en entier avec l'outil de lecture]`);
+      } else {
+        perdus += 1;
+        lignes.push(`[Bloc « ${b.type} » non transcrit : le signaler dans le compte rendu, ne pas répondre à cette demande]`);
       }
     }
   }
   fs.writeFileSync(path.join(dir, "consignes.md"), lignes.filter((l) => l !== null).join("\n") + "\n");
   fs.writeFileSync(path.join(dir, "schema.json"), JSON.stringify(r.schema, null, 2) + "\n");
-  return { dir, images: n };
+  return { dir, images: n, documents: docs, perdus };
+}
+
+/** Libellé d'une issue : les copies (« copie:<id> ») ont leurs propres mots. */
+function libelle(travail, issue) {
+  if (travail.startsWith("copie:")) {
+    return { prete: "note publiée, étudiant prévenu", soir: "en attente de réponse", rien: "rien à publier (à revoir par le formateur, ou plus rien à faire)", erreur: "échec, réessayée au prochain tour" }[issue] ?? issue;
+  }
+  return issue === "prete" ? "prêt, étudiants prévenus" : issue === "soir" ? "en attente de réponses" : issue;
 }
 
 const [commande, arg] = process.argv.slice(2);
@@ -92,7 +116,15 @@ if (commande === "tour") {
     console.error(`✗ Tour refusé (${t.statut}) :`, typeof t.donnees === "string" ? t.donnees.slice(0, 300) : t.donnees.message ?? t.donnees);
     process.exit(1);
   }
-  for (const b of t.donnees.bilan) console.log(`  ${b.travail} : ${b.issue === "prete" ? "prêt, étudiants prévenus" : b.issue === "soir" ? "en attente de réponses" : b.issue}`);
+  // Les copies peuvent être des centaines : un décompte par issue, puis le détail des autres travaux.
+  const copies = t.donnees.bilan.filter((b) => b.travail.startsWith("copie:"));
+  for (const b of t.donnees.bilan) if (!b.travail.startsWith("copie:")) console.log(`  ${b.travail} : ${libelle(b.travail, b.issue)}`);
+  if (copies.length) {
+    const parIssue = {};
+    for (const b of copies) (parIssue[b.issue] ??= []).push(b.travail.slice("copie:".length));
+    console.log(`  Copies à corriger (${copies.length}) :`);
+    for (const [issue, ids] of Object.entries(parIssue)) console.log(`    ${ids.length} ${libelle("copie:", issue)}${issue === "erreur" ? ` (copies ${ids.join(", ")})` : ""}`);
+  }
   const demandes = t.donnees.demandes;
   if (!demandes.length) {
     console.log("✓ Aucune demande en attente : le travail du soir est fini.");
@@ -106,8 +138,10 @@ if (commande === "tour") {
       console.error(`  ✗ demande ${resume.id} illisible (${d.statut})`);
       continue;
     }
-    const { dir, images } = ecrireDemande(d.donnees);
-    console.log(`  ${resume.id} · ${resume.origine} · ${Math.round(resume.taille / 1000)} ko${images ? ` · ${images} image(s)` : ""} → ${path.relative(process.cwd(), dir)}`);
+    const { dir, images, documents, perdus } = ecrireDemande(d.donnees);
+    console.log(
+      `  ${resume.id} · ${resume.origine} · ${Math.round(resume.taille / 1000)} ko${images ? ` · ${images} image(s)` : ""}${documents ? ` · ${documents} PDF` : ""}${perdus ? ` · ⚠ ${perdus} bloc(s) non transcrit(s)` : ""} → ${path.relative(process.cwd(), dir)}`,
+    );
   }
 } else if (commande === "repondre" && arg) {
   const fichier = path.join(DOSSIER, arg, "reponse.json");

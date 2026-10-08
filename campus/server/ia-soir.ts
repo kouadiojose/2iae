@@ -5,9 +5,14 @@
 // réponse, et le travail s'arrête là (IaDuSoir). Le soir, la routine (campus/TRAVAUX-IA.md) répond à chaque
 // demande par /api/travaux-ia ; le campus vérifie la réponse contre le schéma, puis relance le travail, qui
 // relit ces réponses (même demande, même empreinte) et avance jusqu'à la demande suivante ou jusqu'au bout.
+//
+// Une demande devenue inutile (copie remplacée, corrigé modifié, copie notée par un formateur) est supprimée
+// par le travail qui l'avait gardée (supprimerDemandes, supprimerDemandesDe) : la routine ne l'écrit plus.
+// La correction des copies (server/correction-auto.ts) range l'identifiant de sa demande (IaDuSoir.demandeId)
+// et relit ensuite la réponse par cet identifiant, sans reconstruire la demande (pages converties, lourdes).
 import crypto from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { and, asc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { config } from "./config";
 import { db } from "./db";
 import { planifier } from "./taches";
@@ -15,9 +20,9 @@ import { demandesIa, type RequeteIaDuSoir } from "@shared/schema";
 
 export const iaDuSoir = () => config.ia.soir;
 
-/** Le travail attend la routine du soir : ce n'est pas une erreur. */
+/** Le travail attend la routine du soir : ce n'est pas une erreur. « demandeId » : la demande gardée, quand elle est connue. */
 export class IaDuSoir extends Error {
-  constructor() {
+  constructor(public demandeId?: number) {
     super("Travail d'IA prévu ce soir.");
     this.name = "IaDuSoir";
   }
@@ -33,10 +38,15 @@ const empreinte = (r: RequeteIaDuSoir) => crypto.createHash("sha256").update(JSO
 /** Réponse déjà donnée par la routine, sinon la demande est gardée et le travail s'arrête (IaDuSoir). */
 export async function demanderLeSoir<T>(r: RequeteIaDuSoir): Promise<T> {
   const cle = empreinte(r);
-  const [d] = await db.select({ reponse: demandesIa.reponse, reponduLe: demandesIa.reponduLe }).from(demandesIa).where(eq(demandesIa.cle, cle));
+  const lire = () => db.select({ id: demandesIa.id, reponse: demandesIa.reponse, reponduLe: demandesIa.reponduLe }).from(demandesIa).where(eq(demandesIa.cle, cle));
+  let [d] = await lire();
   if (d?.reponduLe) return d.reponse as T;
-  if (!d) await db.insert(demandesIa).values({ cle, origine: origines.getStore() ?? "inconnue", requete: r }).onConflictDoNothing();
-  throw new IaDuSoir();
+  if (!d) {
+    const [cree] = await db.insert(demandesIa).values({ cle, origine: origines.getStore() ?? "inconnue", requete: r }).onConflictDoNothing().returning({ id: demandesIa.id });
+    // Gardée au même instant par un autre passage : c'est la même demande.
+    [d] = cree ? [{ id: cree.id, reponse: null, reponduLe: null }] : await lire();
+  }
+  throw new IaDuSoir(d?.id);
 }
 
 // ── Pour la routine ────────────────────────────────────────────────────────
@@ -61,6 +71,16 @@ export async function demandesEnAttente(): Promise<DemandeEnAttente[]> {
 export async function demande(id: number) {
   const [d] = await db.select().from(demandesIa).where(eq(demandesIa.id, id));
   return d ?? null;
+}
+
+/** Supprime des demandes devenues inutiles (répondues ou non) : la routine ne les verra plus. */
+export async function supprimerDemandes(ids: number[]): Promise<void> {
+  if (ids.length) await db.delete(demandesIa).where(inArray(demandesIa.id, ids));
+}
+
+/** Supprime toutes les demandes d'un travail (« copie:123 ») : il est fini, ou ses demandes ne valent plus rien. */
+export async function supprimerDemandesDe(origine: string): Promise<void> {
+  await db.delete(demandesIa).where(eq(demandesIa.origine, origine));
 }
 
 /** Garde la réponse de la routine si elle respecte le schéma de la demande ; sinon, la liste des écarts. */

@@ -151,15 +151,24 @@ async function envoyerPush(ids: number[], n: NouvelleNotification, notificationD
   await pousser(
     abonnements.filter((a) => autorises.has(a.utilisateurId)),
     charge,
+    n.urgent,
   );
 }
 
-async function pousser(abonnements: (typeof abonnementsPush.$inferSelect)[], charge: ChargePush) {
+/**
+ * Durée de vie chez le service d'envoi : un téléphone sans données reçoit
+ * encore un rappel ordinaire 12 h plus tard ; un rappel urgent (le live
+ * commence) n'a plus de sens après 15 minutes, et part en priorité haute.
+ */
+const DUREE_VIE_S = { urgent: 15 * 60, autre: 12 * 60 * 60 } as const;
+
+async function pousser(abonnements: (typeof abonnementsPush.$inferSelect)[], charge: ChargePush, urgent = false) {
   const texte = JSON.stringify(charge);
+  const options: webpush.RequestOptions = { TTL: urgent ? DUREE_VIE_S.urgent : DUREE_VIE_S.autre, urgency: urgent ? "high" : "normal" };
   await Promise.all(
     abonnements.map(async (a) => {
       try {
-        await webpush.sendNotification({ endpoint: a.endpoint, keys: a.cles }, texte, { TTL: 3600 });
+        await webpush.sendNotification({ endpoint: a.endpoint, keys: a.cles }, texte, options);
       } catch (e) {
         const statut = (e as { statusCode?: number }).statusCode;
         // Abonnement expiré ou révoqué : on l'oublie.

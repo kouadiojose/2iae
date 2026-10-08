@@ -16,8 +16,12 @@
 import { createHash } from "node:crypto";
 import { ecartJours, type Jour } from "@shared/engagement/calendrier";
 
-/** Premier jour de l'expérience (« AAAA-MM-JJ », heure d'Abidjan) ; null : aucune expérience en cours. */
-export const DEBUT_EXPERIENCE: Jour | null = null;
+/**
+ * Premier jour de l'expérience (« AAAA-MM-JJ », heure d'Abidjan) ; null : aucune expérience en cours.
+ * Réglé par C4 sur le lundi de la mise en ligne prévue (vague 3). Si le rappel d'entraînement passe
+ * « actif » plus tard, reporter ce jour à celui de son activation : les 28 jours doivent être des jours d'envoi réel.
+ */
+export const DEBUT_EXPERIENCE: Jour | null = "2026-10-19";
 export const DUREE_EXPERIENCE_JOURS = 28;
 /** Un jour sur PART_TEMOIN est un jour témoin, sans rappel d'entraînement. */
 export const PART_TEMOIN = 5;

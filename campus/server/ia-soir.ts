@@ -51,16 +51,17 @@ export async function demanderLeSoir<T>(r: RequeteIaDuSoir): Promise<T> {
 
 // ── Pour la routine ────────────────────────────────────────────────────────
 
-export type DemandeEnAttente = { id: number; origine: string; creeLe: string; taille: number; images: number };
+/** « taille » : place de la demande en base (octets, à peu près celle du JSON), lue sans relire son contenu. */
+export type DemandeEnAttente = { id: number; origine: string; creeLe: string; taille: number };
 
 export async function demandesEnAttente(): Promise<DemandeEnAttente[]> {
+  // pg_column_size lit la taille sans charger la valeur : une demande de copie porte ses pages en images (Mo).
   const lignes = await db
     .select({
       id: demandesIa.id,
       origine: demandesIa.origine,
       creeLe: demandesIa.creeLe,
-      taille: sql<number>`length(${demandesIa.requete}::text)`,
-      images: sql<number>`(select count(*) from jsonb_path_query(${demandesIa.requete}, 'lax $.messages[*].content[*] ? (@.type == "image")'))::int`,
+      taille: sql<number>`pg_column_size(${demandesIa.requete})::int`,
     })
     .from(demandesIa)
     .where(isNull(demandesIa.reponduLe))
@@ -83,12 +84,22 @@ export async function supprimerDemandesDe(origine: string): Promise<void> {
   await db.delete(demandesIa).where(eq(demandesIa.origine, origine));
 }
 
-/** Garde la réponse de la routine si elle respecte le schéma de la demande ; sinon, la liste des écarts. */
-export async function repondre(id: number, reponse: unknown): Promise<{ ok: true } | { ok: false; ecarts: string[] }> {
+/**
+ * Garde la réponse de la routine si elle respecte le schéma de la demande (et les contrôles propres à son travail,
+ * « ecartsEnPlus », par exemple ceux d'une copie : référence, critères, barème) ; sinon, la liste des écarts.
+ * Une réponse qui contient la clé de la routine est toujours refusée : elle ne peut atteindre personne.
+ */
+export async function repondre(
+  id: number,
+  reponse: unknown,
+  ecartsEnPlus?: (d: NonNullable<Awaited<ReturnType<typeof demande>>>) => Promise<string[]>,
+): Promise<{ ok: true } | { ok: false; ecarts: string[] }> {
   const d = await demande(id);
   if (!d) return { ok: false, ecarts: ["demande introuvable"] };
   if (d.reponduLe) return { ok: true };
+  if (config.ia.jetonSoir && JSON.stringify(reponse ?? null).includes(config.ia.jetonSoir)) return { ok: false, ecarts: ["réponse refusée : elle contient la clé de la routine"] };
   const ecarts = verifier(d.requete.schema, reponse, "réponse");
+  if (!ecarts.length && ecartsEnPlus) ecarts.push(...(await ecartsEnPlus(d)));
   if (ecarts.length) return { ok: false, ecarts: ecarts.slice(0, 30) };
   await db
     .update(demandesIa)

@@ -60,6 +60,7 @@ type LigneARevoir = {
   rendu_le: string | null;
   statut: string;
   note: number | null;
+  origine_note: string;
   raison: RaisonARevoir | null;
   detail: string | null;
   note_proposee: number | null;
@@ -71,18 +72,20 @@ type LigneARevoir = {
 };
 
 /**
- * Copies que le campus n'a pas publiées (« à revoir » et encore rendues, sans correction d'un formateur : même
- * définition que les compteurs de l'accueil du formateur, ResumeEnseigner.corriges.aRevoir) et copies dont
- * l'étudiant demande la relecture, les plus anciennes d'abord.
+ * Copies que le campus n'a pas publiées (« à revoir » et encore rendues, sans correction d'un formateur), notes
+ * du campus déjà publiées dont la recorrection (corrigé modifié) est retenue « à revoir » (la note publiée reste,
+ * le formateur la garde ou la change), et copies dont l'étudiant demande la relecture, les plus anciennes
+ * d'abord. Même définition que les compteurs : « à revoir » ET (rendue OU note du campus).
  */
 async function copiesARevoir(u: Utilisateur, coursIds: number[]): Promise<ListeARevoir> {
   if (!coursIds.length) return { copies: [] };
   const { rows } = await db.execute<LigneARevoir>(sql`
     SELECT r.id AS rendu_id, d.id AS devoir_id, d.titre AS devoir_titre, c.code AS cours_code, d.bareme,
            e.id AS etudiant_id, e.prenom, e.nom, e.site_id, si.nom_court AS site,
-           r.rendu_le, r.statut, r.note, ca.raison, ca.detail, (r.proposition_ia ->> 'note')::real AS note_proposee,
-           (ca.etat = 'a_revoir' AND r.statut = 'rendu'
-             AND NOT (r.correcteur_id IS NOT NULL AND r.corrige_le IS NOT NULL AND (r.rendu_le IS NULL OR r.corrige_le >= r.rendu_le))) AS a_revoir,
+           r.rendu_le, r.statut, r.note, r.origine_note, ca.raison, ca.detail, ca.note_campus AS note_proposee,
+           (ca.etat = 'a_revoir' AND (
+             (r.statut = 'rendu' AND NOT (r.correcteur_id IS NOT NULL AND r.corrige_le IS NOT NULL AND (r.rendu_le IS NULL OR r.corrige_le >= r.rendu_le)))
+             OR (r.statut = 'corrige' AND r.origine_note = 'campus'))) AS a_revoir,
            dr.id AS relecture_id, dr.motif, dr.cree_le AS relecture_le,
            COALESCE(dr.cree_le, ca.maj_le) AS depuis
     FROM campus.rendus r
@@ -107,9 +110,13 @@ async function copiesARevoir(u: Utilisateur, coursIds: number[]): Promise<ListeA
       etudiant: { id: Number(l.etudiant_id), prenom: l.prenom, nom: l.nom, site: l.site },
       renduLe: iso(l.rendu_le),
       raison: l.relecture_id !== null ? "relecture" : l.raison ?? "echecs",
-      detail: l.a_revoir ? l.detail : null,
-      // Note publiée (relecture, recorrection retenue) ; sinon la note que le campus proposait.
+      // Raison de la retenue, ou remarque du campus sur la note dont l'étudiant demande la relecture.
+      detail: l.a_revoir || l.relecture_id !== null ? l.detail : null,
+      // Note publiée (relecture, recorrection retenue) ; sinon la note que le campus proposait (jamais celle d'une
+      // aide demandée par le formateur : note_campus).
       note: l.statut === "corrige" ? l.note : l.note_proposee,
+      // Note publiée par le campus (relecture, ou recorrection retenue : la note de l'ancien corrigé reste publiée).
+      parCampus: l.statut === "corrige" && l.origine_note === "campus",
       bareme: l.bareme,
       relecture: l.relecture_id !== null ? { id: Number(l.relecture_id), motif: l.motif ?? "", creeLe: iso(l.relecture_le)! } : null,
     }));
@@ -150,7 +157,7 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
     db.execute<{ en_file: number; notees: number; a_revoir: number; erreurs: number }>(sql`
       SELECT count(*) FILTER (WHERE ca.etat = 'en_file' OR (ca.rendu_id IS NULL AND r.statut = 'rendu' AND r.correcteur_id IS NULL)) AS en_file,
              count(*) FILTER (WHERE ca.etat = 'notee') AS notees,
-             count(*) FILTER (WHERE ca.etat = 'a_revoir' AND r.statut = 'rendu') AS a_revoir,
+             count(*) FILTER (WHERE ca.etat = 'a_revoir' AND (r.statut = 'rendu' OR (r.statut = 'corrige' AND r.origine_note = 'campus'))) AS a_revoir,
              count(*) FILTER (WHERE ca.etat = 'erreur') AS erreurs
       FROM campus.rendus r
       JOIN campus.devoirs d ON d.id = r.devoir_id
@@ -325,10 +332,12 @@ export function enregistrerCorrectionsCopies(app: Express) {
           .where(and(eq(demandesRelecture.id, l.dr.id), eq(demandesRelecture.statut, "ouverte")))
           .returning();
         if (!dr) return null;
-        // Gardée ou changée, la note est désormais celle du formateur : le campus ne la reprendra plus.
+        // Gardée ou changée, la note est désormais celle du formateur : le campus ne la reprendra plus. Changée
+        // (D-E) : le détail critère par critère du campus ne la justifie plus, il est retiré (jamais deux notes
+        // qui se contredisent sous les yeux de l'étudiant).
         await tx
           .update(rendus)
-          .set({ note, origineNote: "formateur", correcteurId: u.id, corrigeLe: maintenant, majLe: maintenant })
+          .set({ note, ...(changee ? { noteDetail: null } : {}), origineNote: "formateur", correcteurId: u.id, corrigeLe: maintenant, majLe: maintenant })
           .where(and(eq(rendus.id, l.r.id), eq(rendus.statut, "corrige")));
         return dr;
       });

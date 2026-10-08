@@ -10,11 +10,18 @@
 //     part tel quel (l'API et la routine du soir le lisent) ;
 //   - Word, Excel, PowerPoint, OpenDocument : LibreOffice en PDF (profil jetable, une conversion à la fois),
 //     puis pdftoppm ;
-//   - fichiers texte : ajoutés au texte saisi ;
-//   - vidéos et sons : comptés, jamais lus (le formateur les regarde) ; zip et le reste : « non lus ».
+//   - fichiers texte : ajoutés au texte saisi (au-delà de TEXTE_MAX caractères, la coupe est signalée) ;
+//   - vidéos et sons : comptés, jamais lus : une copie qui en contient, même avec du texte ou des photos, est
+//     relue par le formateur (lectureComplete) ; zip et le reste : « non lus ».
 // Au plus PAGES_MAX_PAR_COPIE pages : les suivantes sont comptées (pagesEnTrop). Rien ne lève d'erreur pour
-// un fichier : ce qui ne se lit pas (outil absent, fichier abîmé, trop lourd) est rendu dans « nonLus », et
-// la correction automatique ne publie jamais la note d'une copie lue en partie.
+// un fichier : ce qui ne se lit pas (outil absent, fichier abîmé, trop lourd, conversion trop longue, bucket
+// qui ne répond pas) est rendu dans « nonLus », et la correction automatique ne publie jamais la note d'une
+// copie lue en partie (un fichier momentanément illisible, « indisponible », fait réessayer la copie).
+//
+// Les outils (LibreOffice, pdftoppm, pdfinfo, heif-convert) lisent des fichiers d'étudiants sans regard humain :
+// ils tournent avec un environnement minimal (aucun secret du campus), un dossier personnel et temporaire
+// jetables, des délais, et un budget de temps par copie ; aucune ressource liée d'un document piégé n'est
+// demandée au réseau (proxy sans issue : pas de requête vers le réseau privé de Railway ni vers Internet).
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
@@ -30,7 +37,13 @@ const executer = promisify(execFile);
 export type PageLue = { mime: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; base64: string; fichier: number; nom: string; page: number | null };
 /** PDF envoyé tel quel (pdftoppm absent du serveur). */
 export type DocumentLu = { base64: string; fichier: number; nom: string };
-export type RaisonNonLu = "format" | "erreur" | "taille";
+/**
+ * format : jamais lu par le campus ; erreur : fichier abîmé ; taille : trop lourd, ou texte coupé ; delai : budget
+ * de conversion de la copie épuisé ; indisponible : le bucket (ou le volume) n'a pas rendu le fichier, la copie
+ * sera réessayée (correction-auto.ts).
+ */
+export type RaisonNonLu = "format" | "erreur" | "taille" | "delai" | "indisponible";
+/** « fichier » : rang dans la copie, à partir de 1 ; 0 pour le texte saisi (coupé). */
 export type FichierNonLu = { fichier: number; nom: string; genre: string; raison: RaisonNonLu };
 
 export type CopieLue = {
@@ -46,8 +59,8 @@ export type CopieLue = {
   pagesEnTrop: number;
 };
 
-/** Texte gardé (saisi et fichiers texte) : au-delà, il est coupé. */
-const TEXTE_MAX = 30_000;
+/** Texte gardé (saisi et fichiers texte) : au-delà, il est coupé, et la coupe est signalée (lecture incomplète). */
+export const TEXTE_MAX = 30_000;
 /** Photo gardée telle quelle : déjà à la bonne taille, droite, et légère. */
 const JPEG_TEL_QUEL_OCTETS = 700 * 1024;
 /** PNG, WebP, GIF gardés tels quels jusqu'à ce poids (au-delà : réduits si LibreOffice est là). */
@@ -58,12 +71,63 @@ const IMAGE_MAX_OCTETS = 5 * 1024 * 1024;
 const DOCUMENTS_MAX = 2;
 const DOCUMENT_MAX_OCTETS = 10 * 1024 * 1024;
 const QUALITE_JPEG = 78;
+/** Conversions d'une copie (LibreOffice, pdftoppm, heif-convert) : au-delà, les fichiers suivants ne sont pas lus. */
+const BUDGET_CONVERSIONS_MS = 120_000;
+/** Délai d'une conversion LibreOffice d'un fichier d'étudiant. */
+const DELAI_OFFICE_MS = 60_000;
+
+/** Proxy sans issue (port « discard », rien n'y répond) : toute requête d'un outil vers le réseau échoue aussitôt. */
+const PROXY_MORT = "http://127.0.0.1:9";
+
+/**
+ * Environnement des outils : rien de celui du campus (base, clés, jeton de la routine) ; un dossier personnel et
+ * un dossier temporaire jetables (effacés avec la copie), en UTF-8 ; et un proxy sans issue, pour qu'aucun lien
+ * d'un fichier piégé ne fasse sortir une requête (réseau privé de Railway ou Internet).
+ */
+const environnementOutil = (dossier: string): NodeJS.ProcessEnv => ({
+  PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+  HOME: dossier,
+  TMPDIR: dossier,
+  LANG: "C.UTF-8",
+  LC_ALL: "C.UTF-8",
+  http_proxy: PROXY_MORT,
+  https_proxy: PROXY_MORT,
+  ftp_proxy: PROXY_MORT,
+  all_proxy: PROXY_MORT,
+  HTTP_PROXY: PROXY_MORT,
+  HTTPS_PROXY: PROXY_MORT,
+  ALL_PROXY: PROXY_MORT,
+  no_proxy: "",
+  NO_PROXY: "",
+});
+
+const reglage = (chemin: string, nom: string, valeur: string | number | boolean) =>
+  `<item oor:path="${chemin}"><prop oor:name="${nom}" oor:op="fuse"><value>${valeur}</value></prop></item>`;
+
+/**
+ * Profil LibreOffice jetable : un document piégé (image « liée » à une adresse du réseau) ne fait sortir aucune
+ * requête : proxy manuel sans issue (essai du 8 octobre 2026 : sans lui, une image liée d'un .odp est demandée
+ * pendant la conversion ; le seul réglage BlockUntrustedRefererLinks ne l'empêche pas). Aucune macro.
+ */
+const REGLAGES_LIBREOFFICE = [
+  `<?xml version="1.0" encoding="UTF-8"?>`,
+  `<oor:items xmlns:oor="http://openoffice.org/2001/registry">`,
+  reglage("/org.openoffice.Inet/Settings", "ooInetProxyType", 2),
+  ...["HTTP", "HTTPS", "FTP"].flatMap((p) => [reglage("/org.openoffice.Inet/Settings", `ooInet${p}ProxyName`, "127.0.0.1"), reglage("/org.openoffice.Inet/Settings", `ooInet${p}ProxyPort`, 9)]),
+  reglage("/org.openoffice.Inet/Settings", "ooInetNoProxy", ""),
+  reglage("/org.openoffice.Office.Common/Security/Scripting", "BlockUntrustedRefererLinks", true),
+  reglage("/org.openoffice.Office.Common/Security/Scripting", "MacroSecurityLevel", 3),
+  reglage("/org.openoffice.Office.Common/Security/Scripting", "DisableMacrosExecution", true),
+  `</oor:items>`,
+].join("\n");
 
 // ── Outils du serveur ──────────────────────────────────────────────────────
 
 /** L'outil est-il installé ? (ENOENT : absent ; toute autre erreur, par exemple sur --version : présent). */
 const detecter = (commande: string, args: string[]) =>
-  new Promise<boolean>((fini) => execFile(commande, args, { timeout: 60_000 }, (err) => fini(!err || (err as NodeJS.ErrnoException).code !== "ENOENT")));
+  new Promise<boolean>((fini) =>
+    execFile(commande, args, { timeout: 60_000, env: environnementOutil(os.tmpdir()) }, (err) => fini(!err || (err as NodeJS.ErrnoException).code !== "ENOENT")),
+  );
 
 let outils: Promise<{ pdf: boolean; office: boolean; heic: boolean; pdfinfo: boolean }> | null = null;
 /** Détectés une fois, au premier besoin (LibreOffice met quelques secondes à répondre la première fois). */
@@ -80,16 +144,24 @@ export function outilsDeLecture() {
 /** Une conversion LibreOffice à la fois : il est gourmand en mémoire. */
 let fileOffice: Promise<unknown> = Promise.resolve();
 
-async function versPdfParLibreOffice(source: string, dossier: string): Promise<string | null> {
+/** Temps restant d'un budget (au moins une seconde, au plus « max ») ; 0 s'il est épuisé. */
+type Budget = (max: number) => number;
+
+async function versPdfParLibreOffice(source: string, dossier: string, budget: Budget): Promise<string | null> {
   const tache = fileOffice.then(async () => {
+    const delai = budget(DELAI_OFFICE_MS);
+    if (!delai) throw new Error("budget de conversion épuisé");
     const sortie = path.join(dossier, "pdf");
     await fs.promises.mkdir(sortie, { recursive: true });
-    // Profil LibreOffice jetable : deux conversions ne se marchent pas dessus, rien ne traîne sur le disque.
-    await executer(
-      "soffice",
-      [`-env:UserInstallation=file://${path.join(dossier, "profil")}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", sortie, source],
-      { timeout: 180_000 },
-    );
+    // Profil LibreOffice jetable (deux conversions ne se marchent pas dessus, rien ne traîne sur le disque),
+    // qui ne suit aucun lien extérieur et n'exécute aucune macro.
+    const profil = path.join(dossier, "profil");
+    await fs.promises.mkdir(path.join(profil, "user"), { recursive: true });
+    await fs.promises.writeFile(path.join(profil, "user", "registrymodifications.xcu"), REGLAGES_LIBREOFFICE);
+    await executer("soffice", [`-env:UserInstallation=file://${profil}`, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", sortie, source], {
+      timeout: delai,
+      env: environnementOutil(dossier),
+    });
     const pdf = (await fs.promises.readdir(sortie)).find((n) => n.endsWith(".pdf"));
     return pdf ? path.join(sortie, pdf) : null;
   });
@@ -98,9 +170,11 @@ async function versPdfParLibreOffice(source: string, dossier: string): Promise<s
 }
 
 /** Nombre de pages d'un PDF (pdfinfo), ou null s'il ne le dit pas. */
-async function pagesDuPdf(chemin: string): Promise<number | null> {
+async function pagesDuPdf(chemin: string, budget: Budget): Promise<number | null> {
+  const delai = budget(30_000);
+  if (!delai) return null;
   try {
-    const { stdout } = await executer("pdfinfo", [chemin], { timeout: 30_000 });
+    const { stdout } = await executer("pdfinfo", [chemin], { timeout: delai, env: environnementOutil(path.dirname(chemin)) });
     const n = /^Pages:\s+(\d+)/m.exec(String(stdout));
     return n ? Number(n[1]) : null;
   } catch {
@@ -112,12 +186,14 @@ async function pagesDuPdf(chemin: string): Promise<number | null> {
  * Pages premiere..derniere d'un PDF en JPEG (qualité 78). « reduire » : le plus grand côté ramené à
  * LARGEUR_PAGE_IA px ; sinon 72 points par pouce, soit un pixel par point (photo enveloppée, déjà assez petite).
  */
-async function rendrePages(pdf: string, dossier: string, premiere: number, derniere: number, reduire = true): Promise<Buffer[]> {
-  const sortie = path.join(dossier, `pages-${premiere}`);
-  await fs.promises.mkdir(sortie, { recursive: true });
+async function rendrePages(pdf: string, dossier: string, premiere: number, derniere: number, budget: Budget, reduire = true): Promise<Buffer[]> {
+  const delai = budget(120_000);
+  if (!delai) throw new Error("budget de conversion épuisé");
+  const sortie = await fs.promises.mkdtemp(path.join(dossier, `pages-${premiere}-`));
   const taille = reduire ? ["-scale-to", String(LARGEUR_PAGE_IA)] : ["-r", "72"];
   await executer("pdftoppm", ["-jpeg", "-jpegopt", `quality=${QUALITE_JPEG}`, ...taille, "-f", String(premiere), "-l", String(derniere), pdf, path.join(sortie, "p")], {
-    timeout: 120_000,
+    timeout: delai,
+    env: environnementOutil(dossier),
   });
   const noms = (await fs.promises.readdir(sortie)).filter((n) => n.endsWith(".jpg"));
   // pdftoppm numérote p-1.jpg… ou p-01.jpg… selon le nombre de pages : tri par numéro.
@@ -293,17 +369,63 @@ const contientDuSens = (texte: string) => /[\p{L}\p{N}]/u.test(texte);
 
 /** La copie a-t-elle quelque chose à lire (texte, page ou document) ? */
 export const copieLisible = (c: CopieLue) => contientDuSens(c.texte) || c.pages.length > 0 || c.documents.length > 0;
-/** Tout ce que l'étudiant a rendu a-t-il été lu (vidéos et sons mis à part) ? */
-export const lectureComplete = (c: CopieLue) => !c.nonLus.length && c.pagesEnTrop === 0;
+/**
+ * Tout ce que l'étudiant a rendu a-t-il été lu ? Une vidéo ou un son joints peuvent porter une partie de la
+ * réponse : le campus ne les regarde pas, la copie n'est donc jamais lue en entier (le formateur la note).
+ */
+export const lectureComplete = (c: CopieLue) => !c.nonLus.length && c.pagesEnTrop === 0 && !c.videos && !c.audios;
 
-/** Ce que le campus n'a pas lu, pour le formateur (avec les noms des fichiers). */
+const pluriel = (n: number, mot: string, mots = `${mot}s`) => `${n} ${n > 1 ? mots : mot}`;
+
+/** Ce que le campus n'a pas lu, pour le formateur (avec les noms des fichiers) ; null si la copie est lue en entier. */
 export function resumeNonLus(c: CopieLue): string | null {
   const morceaux: string[] = [];
-  if (c.nonLus.length) {
-    const raison = (r: RaisonNonLu) => (r === "format" ? "format non lu" : r === "taille" ? "trop lourd" : "illisible");
-    morceaux.push(`Fichiers non lus : ${c.nonLus.map((n) => `${n.nom} (${raison(n.raison)})`).join(", ")}.`);
+  if (c.videos) morceaux.push(`${pluriel(c.videos, "vidéo jointe", "vidéos jointes")}, que le campus ne regarde pas.`);
+  if (c.audios) morceaux.push(`${pluriel(c.audios, "enregistrement audio joint", "enregistrements audio joints")}, que le campus n'écoute pas.`);
+  const texte = c.nonLus.find((n) => n.fichier === 0);
+  if (texte) morceaux.push(`Texte saisi coupé après ${TEXTE_MAX.toLocaleString("fr-FR")} caractères.`);
+  const fichiersNonLus = c.nonLus.filter((n) => n.fichier !== 0);
+  if (fichiersNonLus.length) {
+    const raisons: Record<RaisonNonLu, string> = {
+      format: "format non lu",
+      taille: "trop lourd ou trop long",
+      erreur: "illisible",
+      delai: "conversion trop longue",
+      indisponible: "momentanément illisible",
+    };
+    morceaux.push(`Fichiers non lus en entier : ${fichiersNonLus.map((n) => `${n.nom} (${raisons[n.raison]})`).join(", ")}.`);
   }
-  if (c.pagesEnTrop) morceaux.push(`${c.pagesEnTrop} page${c.pagesEnTrop > 1 ? "s" : ""} au-delà des ${PAGES_MAX_PAR_COPIE} que le campus lit.`);
+  if (c.pagesEnTrop) morceaux.push(`${pluriel(c.pagesEnTrop, "page")} au-delà des ${PAGES_MAX_PAR_COPIE} que le campus lit.`);
+  return morceaux.length ? morceaux.join(" ") : null;
+}
+
+/** Ce que les seules informations des fichiers (type, nom) disent d'une copie, sans la lire. */
+export type ApercuCopie = { videos: number; audios: number; jamaisLus: number; texteCoupe: boolean; aLire: boolean };
+
+/**
+ * Aperçu d'une copie sans lecture du bucket ni conversion (dès le dépôt, et en dernier contrôle avant de
+ * publier) : vidéos, sons, fichiers d'un format que le campus ne lit jamais, texte trop long, et s'il y a
+ * quelque chose à lire. Les HEIC et documents ne sont pas jugés ici (cela dépend des outils du serveur).
+ */
+export function apercuCopie(texte: string, liste: Pick<Fichier, "mime" | "nomOriginal">[]): ApercuCopie {
+  const genres = liste.map(genreDe);
+  const compte = (g: Genre) => genres.filter((x) => x === g).length;
+  return {
+    videos: compte("video"),
+    audios: compte("audio"),
+    jamaisLus: compte("autre"),
+    texteCoupe: texte.trim().length > TEXTE_MAX,
+    aLire: contientDuSens(texte) || genres.some((g) => g !== "video" && g !== "audio" && g !== "autre"),
+  };
+}
+
+/** Ce que l'aperçu dit déjà que le campus ne lira pas (pour le formateur), ou null. */
+export function resumeApercu(a: ApercuCopie): string | null {
+  const morceaux: string[] = [];
+  if (a.videos) morceaux.push(`${pluriel(a.videos, "vidéo jointe", "vidéos jointes")}, que le campus ne regarde pas.`);
+  if (a.audios) morceaux.push(`${pluriel(a.audios, "enregistrement audio joint", "enregistrements audio joints")}, que le campus n'écoute pas.`);
+  if (a.jamaisLus) morceaux.push(`${pluriel(a.jamaisLus, "fichier", "fichiers")} d'un format que le campus ne lit pas.`);
+  if (a.texteCoupe) morceaux.push(`Texte saisi de plus de ${TEXTE_MAX.toLocaleString("fr-FR")} caractères.`);
   return morceaux.length ? morceaux.join(" ") : null;
 }
 
@@ -312,11 +434,19 @@ export function resumeNonLus(c: CopieLue): string | null {
  * (ou sur le volume) puis convertis dans un dossier temporaire, effacé à la fin.
  */
 export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<CopieLue> {
-  const copie: CopieLue = { texte: texteSaisi.trim().slice(0, TEXTE_MAX), pages: [], documents: [], nonLus: [], videos: 0, audios: 0, pagesEnTrop: 0 };
+  const saisi = texteSaisi.trim();
+  const copie: CopieLue = { texte: saisi.slice(0, TEXTE_MAX), pages: [], documents: [], nonLus: [], videos: 0, audios: 0, pagesEnTrop: 0 };
+  // Texte coupé : la fin n'est pas lue (la note n'est pas publiée, le formateur relit).
+  if (saisi.length > TEXTE_MAX) copie.nonLus.push({ fichier: 0, nom: "texte saisi", genre: "texte", raison: "taille" });
   if (!liste.length) return copie;
   const o = await outilsDeLecture();
   const dossier = await fs.promises.mkdtemp(path.join(os.tmpdir(), "copie-"));
   const reste = () => PAGES_MAX_PAR_COPIE - copie.pages.length;
+  const limite = Date.now() + BUDGET_CONVERSIONS_MS;
+  const budget: Budget = (max) => {
+    const restant = limite - Date.now();
+    return restant < 1000 ? 0 : Math.min(max, restant);
+  };
   try {
     for (const [k, f] of liste.entries()) {
       const rang = k + 1;
@@ -349,27 +479,38 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
           const tmp = path.join(dossier, `${rang}.pdf`);
           const contenu = await lireContenuFichier(f);
           if (contenu) await fs.promises.writeFile(tmp, contenu);
-          copie.pagesEnTrop += (contenu && o.pdfinfo ? await pagesDuPdf(tmp) : null) ?? 1;
+          copie.pagesEnTrop += (contenu && o.pdfinfo ? await pagesDuPdf(tmp, budget) : null) ?? 1;
         } else copie.pagesEnTrop += 1;
+        continue;
+      }
+      // Budget de la copie épuisé (fichiers lourds ou piégés) : les fichiers suivants ne sont pas lus.
+      if (genre !== "texte" && !budget(1000)) {
+        nonLu("delai");
         continue;
       }
       const contenu = await lireContenuFichier(f);
       if (!contenu) {
-        nonLu("erreur");
+        // Le bucket n'a pas rendu le fichier : panne passagère le plus souvent, la copie sera réessayée.
+        nonLu("indisponible");
         continue;
       }
       try {
         if (genre === "texte") {
+          const t = contenu.toString("utf8").replace(/\0/g, "");
           const place = TEXTE_MAX - copie.texte.length;
-          if (place > 200) copie.texte += `${copie.texte ? "\n\n" : ""}[Contenu du fichier texte ${rang}]\n${contenu.toString("utf8").replace(/\0/g, "").slice(0, place - 40)}`;
-          else nonLu("taille");
+          if (place > 200) {
+            copie.texte += `${copie.texte ? "\n\n" : ""}[Contenu du fichier texte ${rang}]\n${t.slice(0, place - 40)}`;
+            if (t.length > place - 40) nonLu("taille");
+          } else nonLu("taille");
         } else if (genre === "jpeg" || genre === "heic") {
           let jpeg = contenu;
           if (genre === "heic") {
             const source = path.join(dossier, `${rang}.heic`);
             const cible = path.join(dossier, `${rang}-heic.jpg`);
             await fs.promises.writeFile(source, contenu);
-            await executer("heif-convert", ["-q", String(QUALITE_JPEG), source, cible], { timeout: 60_000 });
+            const delai = budget(60_000);
+            if (!delai) throw new Error("budget de conversion épuisé");
+            await executer("heif-convert", ["-q", String(QUALITE_JPEG), source, cible], { timeout: delai, env: environnementOutil(dossier) });
             jpeg = await fs.promises.readFile(cible);
           }
           const j = infosJpeg(jpeg);
@@ -379,7 +520,7 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
           else if (j && o.pdf && j.precision === 8 && [1, 3, 4].includes(j.composantes)) {
             const pdf = path.join(dossier, `${rang}-photo.pdf`);
             await fs.promises.writeFile(pdf, pdfDuJpeg(jpeg, j));
-            const [rendue] = await rendrePages(pdf, dossier, 1, 1, !petite);
+            const [rendue] = await rendrePages(pdf, dossier, 1, 1, budget, !petite);
             if (rendue) page(rendue.toString("base64"), "image/jpeg", null);
             else nonLu("erreur");
           } else if (j && jpeg.length <= IMAGE_MAX_OCTETS) page(jpeg.toString("base64"), "image/jpeg", null);
@@ -393,8 +534,8 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
             // Image lourde (capture d'écran géante) : LibreOffice la pose sur une page, pdftoppm la rend en JPEG.
             const source = path.join(dossier, `${rang}${path.extname(f.nomOriginal) || "." + mime.split("/")[1]}`);
             await fs.promises.writeFile(source, contenu);
-            const pdf = await versPdfParLibreOffice(source, path.join(dossier, `lo-${rang}`));
-            const [rendue] = pdf ? await rendrePages(pdf, dossier, 1, 1) : [];
+            const pdf = await versPdfParLibreOffice(source, path.join(dossier, `lo-${rang}`), budget).catch(() => null);
+            const [rendue] = pdf ? await rendrePages(pdf, dossier, 1, 1, budget) : [];
             if (rendue) page(rendue.toString("base64"), "image/jpeg", null);
             else if (contenu.length <= IMAGE_MAX_OCTETS) page(contenu.toString("base64"), mime, null);
             else nonLu("taille");
@@ -407,10 +548,16 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
             const source = path.join(dossier, `${rang}${path.extname(f.nomOriginal).toLowerCase() || ".docx"}`);
             await fs.promises.writeFile(source, contenu);
             // Échec de LibreOffice (module Writer ou Calc absent du serveur, fichier abîmé) : « format non lu ».
-            pdf = await versPdfParLibreOffice(source, path.join(dossier, `lo-${rang}`)).catch((e) => {
+            let horsDelai = false;
+            pdf = await versPdfParLibreOffice(source, path.join(dossier, `lo-${rang}`), budget).catch((e) => {
+              horsDelai = Boolean((e as { killed?: boolean }).killed) || !budget(1000);
               console.warn(`[copies] fichier ${f.id} : LibreOffice n'a pas pu le convertir :`, (e as Error).message.slice(0, 200));
               return null;
             });
+            if (!pdf && horsDelai) {
+              nonLu("delai");
+              continue;
+            }
           } else await fs.promises.writeFile(pdf, contenu);
           if (!pdf) nonLu(genre === "office" ? "format" : "erreur");
           else if (!o.pdf) {
@@ -418,10 +565,10 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
             if (copie.documents.length < DOCUMENTS_MAX && contenu.length <= DOCUMENT_MAX_OCTETS) copie.documents.push({ base64: contenu.toString("base64"), fichier: rang, nom: f.nomOriginal });
             else nonLu(contenu.length > DOCUMENT_MAX_OCTETS ? "taille" : "format");
           } else {
-            const total = o.pdfinfo ? await pagesDuPdf(pdf) : null;
+            const total = o.pdfinfo ? await pagesDuPdf(pdf, budget) : null;
             const lues = Math.min(reste(), total ?? reste());
             // Nombre de pages inconnu : une page de plus que la place dit s'il en reste.
-            const images = await rendrePages(pdf, dossier, 1, total === null ? lues + 1 : lues);
+            const images = await rendrePages(pdf, dossier, 1, total === null ? lues + 1 : lues, budget);
             if (!images.length) nonLu("erreur");
             images.slice(0, lues).forEach((img, n) => page(img.toString("base64"), "image/jpeg", n + 1));
             copie.pagesEnTrop += total !== null ? Math.max(0, total - lues) : images.length > lues ? 1 : 0;
@@ -429,7 +576,8 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
         }
       } catch (e) {
         console.warn(`[copies] fichier ${f.id} (${genre}) non lu :`, (e as Error).message.slice(0, 300));
-        nonLu("erreur");
+        // Délai dépassé (processus arrêté) ou budget épuisé : « conversion trop longue », pas un fichier abîmé.
+        nonLu((e as { killed?: boolean }).killed || !budget(1000) ? "delai" : "erreur");
       }
     }
     return copie;

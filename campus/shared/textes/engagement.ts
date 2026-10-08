@@ -205,14 +205,50 @@ export const t = creerTextes({
   // ── 6. Copies, séances mal datées, questions ratées ──
   "copies.titre": "Copies en attente de correction, par formateur",
   "copies.lecture":
-    "Copies rendues par les étudiants du groupe sur les devoirs que les formateurs ont eux-mêmes donnés, pas encore notées. Délai médian : entre la remise et la note, pour les copies corrigées sur la période (cible : moins de 72 h). Les exercices automatiques de la routine du soir n'y sont jamais : leur correction est facultative.",
-  "copies.auto.titre": "Exercices automatiques (routine du soir) : correction facultative",
-  "copies.auto.attente.un": "{n} copie rendue pas encore corrigée",
-  "copies.auto.attente.n": "{n} copies rendues pas encore corrigées",
-  "copies.auto.corrigees.un": "{n} corrigée sur la période",
-  "copies.auto.corrigees.n": "{n} corrigées sur la période",
+    "Copies rendues par les étudiants du groupe sur les devoirs que les formateurs ont eux-mêmes donnés, pas encore notées. Délai médian : entre la remise et la note, pour les copies corrigées sur la période (cible : moins de 72 h). Les exercices automatiques de la routine du soir n'y sont jamais : le campus les corrige (voir « Correction automatique »).",
+  "copies.auto.titre": "Exercices automatiques (routine du soir) : corrigés par le campus",
+  "copies.auto.attente.un": "{n} copie rendue pas encore notée",
+  "copies.auto.attente.n": "{n} copies rendues pas encore notées",
+  "copies.auto.corrigees.un": "{n} notée sur la période",
+  "copies.auto.corrigees.n": "{n} notées sur la période",
   "copies.auto.lecture":
-    "Comptées à part pour la direction : aucun rappel au formateur, aucun retard. Il peut les corriger s'il le souhaite.",
+    "Comptées à part : aucun rappel au formateur, aucun retard. Le campus les note d'après le corrigé du devoir ; le formateur peut changer toute note.",
+
+  // ── 6 bis. Correction automatique (décision du 8 octobre 2026, GET /api/pilotage/corrections) ──
+  "corrections.titre": "Correction automatique",
+  "corrections.lecture":
+    "Le campus note les copies de dépôt d'après le corrigé du devoir, validé par le formateur ou tenu pour bon sans réponse au bout de 24 h. Chiffres de votre périmètre, tous cours confondus (les filtres de campus et de classe ne s'y appliquent pas) ; « sur la période » : depuis le {date}.",
+  "corrections.corriges": "Corrigés",
+  "corrections.corriges.enPreparation": "En préparation",
+  "corrections.corriges.aValider": "À valider",
+  "corrections.corriges.valides": "Validés",
+  "corrections.corriges.tacites": "Tenus pour bons",
+  "corrections.corriges.lecture":
+    "En préparation : le campus rédige le corrigé (devoir donné sans corrigé). À valider : envoyé au formateur, en attente de sa réponse. Validés : par le formateur ou la direction, tels quels ou modifiés. Tenus pour bons : sans réponse au bout de 24 h. Seuls les deux derniers servent de barème.",
+  "corrections.copies": "Copies",
+  "corrections.copies.enFile": "En attente",
+  "corrections.copies.notees": "Notées",
+  "corrections.copies.aRevoir": "À revoir",
+  "corrections.copies.erreurs": "En erreur",
+  "corrections.copies.periode.un": "{n} copie notée par le campus sur la période",
+  "corrections.copies.periode.n": "{n} copies notées par le campus sur la période",
+  "corrections.copies.lecture":
+    "En attente : notées au prochain passage (la routine du soir). À revoir : le campus n'a pas publié de note (consigne cachée pour l'IA, pages illisibles, vidéo seule, fichier illisible, copie vide, échecs répétés), le formateur décide. En erreur : échec technique, nouvel essai automatique.",
+  "corrections.relectures": "Relectures demandées",
+  "corrections.relectures.detail": "{o} en attente · {t} traitées",
+  "corrections.relectures.lecture": "Demandes des étudiants qui contestent une note du campus ; le formateur garde la note ou la change, et leur répond.",
+  "corrections.changees": "Notes changées par un formateur",
+  "corrections.changees.ecart": "écart moyen : {n} point(s) sur 20",
+  "corrections.changees.sansEcart": "aucune sur la période",
+  "corrections.changees.lecture":
+    "Notes du campus qu'un formateur a ensuite modifiées sur la période (après une relecture, ou de lui-même). Un écart moyen faible : le campus note comme les formateurs.",
+  "corrections.formateurs": "Qui répond au corrigé du jour",
+  "corrections.formateurs.ligne": "{v} validés · {t} sans réponse · {a} à valider",
+  "corrections.formateurs.repond": "{n} % validés",
+  "corrections.formateurs.lecture":
+    "Par formateur : corrigés qu'il a validés ou modifiés lui-même, corrigés tenus pour bons sans réponse de sa part, corrigés qui attendent encore sa réponse. Le pourcentage : part des corrigés validés parmi ceux qui ont servi de barème.",
+  "corrections.formateurs.aucun": "Aucun corrigé n'a encore été envoyé aux formateurs.",
+  "corrections.erreur": "Le bilan de la correction automatique n'a pas pu être chargé.",
   "copies.formateur": "Formateur",
   "copies.enAttente": "En attente",
   "copies.plusAncienne": "Plus ancienne",

@@ -5,7 +5,7 @@
 // ou « En attente de réseau, partira tout seul » — le brouillon n'est effacé
 // qu'une fois le reçu arrivé.
 import { useEffect, useRef, useState } from "react";
-import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check, Video } from "lucide-react";
+import { Camera, Paperclip, Trash2, ArrowLeft, ArrowRight, Send, FileText, Check, Video, Lightbulb } from "lucide-react";
 import { EnregistreurVideo, enregistreurDisponible } from "./EnregistreurVideo";
 import { Bouton } from "@/components/ui/bouton";
 import { ZoneTexte } from "@/components/ui/champs";
@@ -15,6 +15,8 @@ import { alleger, put } from "@/lib/api";
 import { envoyerOuMettreEnFile } from "@/lib/file-envoi";
 import { maintenantServeur } from "@/lib/horloge";
 import { taille, pluriel, cn } from "@/lib/utils";
+import { useTextes } from "@/lib/textes";
+import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import type { RecuDepot } from "@shared/schema";
 import {
   lireTexteBrouillon,
@@ -85,6 +87,7 @@ export function ZoneRendu({
   const fichier = useRef<HTMLInputElement>(null);
   const filmer = useRef<HTMLInputElement>(null);
   const [enregistreur, setEnregistreur] = useState(false);
+  const tc = useTextes(textesCampus);
 
   // Pages gardées lors d'une visite précédente (ou avant que l'appareil photo ne recharge la page).
   useEffect(() => {
@@ -191,6 +194,11 @@ export function ZoneRendu({
           {remplacement ? "Remplacer ma copie" : "Rendre mon devoir"}
         </h2>
         <p className="text-[15px] text-texte-pale">Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger.</p>
+        {/* Tous les dépôts sont corrigés par le campus (8 octobre 2026), sauf une vidéo seule. */}
+        <p className="mt-1.5 flex items-start gap-2 rounded-xl bg-orange-pale px-3 py-2.5 text-sm leading-snug text-texte-doux">
+          <Lightbulb className="mt-px h-4 w-4 shrink-0 text-orange-fonce" />
+          {tc("conseil.depot")}
+        </p>
       </div>
 
       <input ref={photo} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void ajouter(e.target.files)} />

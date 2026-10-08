@@ -1,6 +1,6 @@
 // /notes (étudiant) : moyenne par cours (sur 20, pondérée par les
 // coefficients) et le détail de chaque évaluation. Seules les notes publiées
-// par les formateurs apparaissent.
+// apparaissent (par un formateur, ou par le campus : elles comptent pareil).
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { GraduationCap, ArrowLeft, ChevronRight } from "lucide-react";
@@ -9,7 +9,10 @@ import { LienBouton } from "@/components/ui/bouton";
 import { Chargement, EtatVide, Erreur, Badge } from "@/components/ui/divers";
 import { dateCourte } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { useTextes } from "@/lib/textes";
 import type { NotesEtudiant, EvaluationNote } from "@shared/schema";
+import type { OrigineNote } from "@shared/engagement/corrections";
+import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import { useEvenementsDevoirs } from "./PageDevoirs";
 import { nombre } from "./outils";
 
@@ -19,7 +22,14 @@ const ETATS: Record<Exclude<EvaluationNote["etat"], "note">, { libelle: string; 
   a_venir: { libelle: "À venir", ton: "gris" },
 };
 
+/**
+ * Qui a posé la note : EvaluationNote ne le dit pas encore (demandé au socle, chantier K4) ; le repère
+ * « corrigé par le campus » s'affiche dès que le serveur envoie ce champ facultatif, sans rien casser avant.
+ */
+type EvaluationAvecOrigine = EvaluationNote & { origineNote?: OrigineNote };
+
 export default function PageNotes() {
+  const tc = useTextes(textesCampus);
   const { data, isLoading, error, refetch } = useQuery<NotesEtudiant>({ queryKey: ["/api/notes"] });
   useEvenementsDevoirs();
   const cours = data?.cours ?? [];
@@ -33,7 +43,7 @@ export default function PageNotes() {
       <EnTetePage
         etiquette="Carnet de notes"
         titre="Mes notes"
-        sousTitre="Moyennes sur 20, pondérées par les coefficients. Seules les notes publiées par tes formateurs comptent."
+        sousTitre={tc("notes.sousTitre")}
       />
       {isLoading ? (
         <Chargement lignes={3} />
@@ -68,7 +78,7 @@ export default function PageNotes() {
                 </div>
               </div>
               <ul className="divide-y divide-ligne-douce border-t border-ligne-douce">
-                {c.evaluations.map((e) => (
+                {c.evaluations.map((e: EvaluationAvecOrigine) => (
                   <li key={e.devoirId}>
                     <Link
                       href={e.type === "quiz" ? `/quiz/${e.devoirId}` : `/devoirs/${e.devoirId}`}
@@ -79,6 +89,13 @@ export default function PageNotes() {
                         <span className="font-mono text-[11px] text-texte-gris">
                           {e.type === "quiz" ? "Interrogation" : "Devoir"} · <span className="whitespace-nowrap">{dateCourte(e.dateLimite)}</span> ·{" "}
                           <span className="whitespace-nowrap">coef. {nombre(e.coefficient)}</span>
+                          {/* Repère discret : un devoir noté par le campus (les interrogations le sont toutes, inutile de le dire). */}
+                          {e.etat === "note" && e.type === "depot" && e.origineNote === "campus" && (
+                            <>
+                              {" "}
+                              · <span className="whitespace-nowrap text-orange-fonce">{tc("notes.campus")}</span>
+                            </>
+                          )}
                         </span>
                       </div>
                       {e.etat === "note" ? (
@@ -98,7 +115,7 @@ export default function PageNotes() {
               </ul>
             </section>
           ))}
-          <p className="text-center text-sm text-texte-gris">Une note te semble fausse ? Écris à ton formateur depuis la page du devoir.</p>
+          <p className="text-center text-sm text-texte-gris">{tc("notes.fausse")}</p>
         </div>
       )}
     </Page>

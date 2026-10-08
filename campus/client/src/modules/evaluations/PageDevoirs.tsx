@@ -15,7 +15,9 @@ import { useCanal } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
 import { useFileEnvoi } from "@/lib/file-envoi";
 import { pluriel } from "@/lib/utils";
+import { useTextes } from "@/lib/textes";
 import type { ListeDevoirs, DevoirEtudiantResume } from "@shared/schema";
+import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import { CarteDevoir } from "./composants/CarteDevoir";
 
 type Onglet = "a_rendre" | "rendus" | "corriges";
@@ -37,6 +39,7 @@ export default function PageDevoirs() {
   const maintenant = useMaintenant(60_000);
   const file = useFileEnvoi();
   useEvenementsDevoirs();
+  const tc = useTextes(textesCampus);
   const { data, isLoading, error, refetch } = useQuery<ListeDevoirs>({ queryKey: ["/api/devoirs"], enabled: moi.role === "etudiant" });
 
   // Le formateur et l'équipe corrigent : leur page est « Corrections ».
@@ -137,7 +140,7 @@ export default function PageDevoirs() {
         <EtatVide
           icone={<GraduationCap className="h-6 w-6" />}
           titre="Pas encore de note."
-          texte="Quand ton formateur publie les notes, tu les retrouves ici avec son commentaire (parfois un message vocal)."
+          texte={tc("devoirs.corriges.vide")}
         />
       )}
     </Page>

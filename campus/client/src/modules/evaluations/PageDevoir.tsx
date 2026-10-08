@@ -1,6 +1,10 @@
 // /devoirs/:id (étudiant) : consigne, pièces jointes avec leur poids, zone
 // « Rendre mon devoir », reçu vert, puis la correction (note, commentaire,
 // commentaire vocal). « Écrire au formateur » et le tuteur IA sont à un toucher.
+// Correction automatique (8 octobre 2026) : « Le campus corrige ta copie : ta note
+// arrive ce soir », note « Corrigé par le campus » critère par critère avec sa
+// justification, demande de relecture, corrigé après la date limite
+// (composants/CorrectionCampus.tsx).
 import { useCallback, useState } from "react";
 import { Link, Redirect } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -12,6 +16,7 @@ import { Chargement, EtatVide, Erreur, Badge, BarreProgression } from "@/compone
 import { Markdown } from "@/components/ui/markdown";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { useMoiConnecte } from "@/lib/auth";
+import { useTextes } from "@/lib/textes";
 import { ErreurApi } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useFileEnvoi } from "@/lib/file-envoi";
@@ -19,9 +24,11 @@ import { relatif, heure } from "@/lib/dates";
 import { taille, cn } from "@/lib/utils";
 import { BoutonAssistant } from "@/modules/ia/BoutonAssistant";
 import type { DevoirDetail, DevoirDetailEtudiant, RecuDepot } from "@shared/schema";
+import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import { ZoneRendu } from "./composants/ZoneRendu";
 import { EcranRecu, EcranEnAttente, ListePieces, Vignette } from "./composants/Recu";
 import { Coches } from "./composants/CarteDevoir";
+import { EtatCorrectionCampus, LeCorrige, RelectureNote, phraseNoteAttendue, quandEnMots } from "./composants/CorrectionCampus";
 import { useEvenementsDevoirs } from "./PageDevoirs";
 import { dateEtHeureCourte, envoyeeEnDiffere, lienEcrireAuFormateur, nombre } from "./outils";
 
@@ -67,6 +74,7 @@ export default function PageDevoir({ id }: { id: string }) {
 
 function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisateurId: number }) {
   const maintenant = useMaintenant(30_000);
+  const tc = useTextes(textesCampus);
   const [remplacer, setRemplacer] = useState(false);
   const [recu, setRecu] = useState<RecuDepot | null>(null);
   const [cleEnFile, setCleEnFile] = useState<string | null>(null);
@@ -87,10 +95,12 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
   const depasse = new Date(devoir.dateLimite).getTime() < maintenant;
   const renduEnvoye = rendu && rendu.statut !== "brouillon" ? rendu : null;
   const lienFormateur = lienEcrireAuFormateur(devoir.formateur?.id, devoir.titre);
+  // La copie qui vient d'arriver (même heure de remise que le reçu) : le reçu dit quand le campus la notera.
+  const correctionRecue = recu && rendu?.renduLe === recu.renduLe && rendu.correctionAuto?.etat === "en_file" ? rendu.correctionAuto : null;
 
   // Écrans plein cadre : reçu, ou copie en attente de réseau.
   let principal: React.ReactNode;
-  if (recu) principal = <EcranRecu recu={recu} onFermer={() => setRecu(null)} />;
+  if (recu) principal = <EcranRecu recu={recu} onFermer={() => setRecu(null)} noteAttendue={correctionRecue ? phraseNoteAttendue(correctionRecue, maintenant, tc) : null} />;
   else if (enAttente || cleEnFile) principal = <EcranEnAttente cle={enAttente?.cle ?? cleEnFile ?? undefined} titre={devoir.titre} onRecu={recuArrive} />;
   else if (d.peutRendre && (!renduEnvoye || remplacer)) {
     principal = (
@@ -130,7 +140,9 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] lg:gap-6">
         {!recu && (
           <div className="flex flex-col gap-5 empty:hidden lg:col-start-2 lg:row-start-1">
-            <EtatCopie d={d} onRemplacer={() => setRemplacer(true)} remplacement={remplacer} enAttente={Boolean(enAttente || cleEnFile)} />
+            <EtatCopie d={d} maintenant={maintenant} onRemplacer={() => setRemplacer(true)} remplacement={remplacer} enAttente={Boolean(enAttente || cleEnFile)} />
+            {/* Corrigé validé du devoir : le serveur ne l'envoie qu'après la date limite, à qui a une copie notée. */}
+            {d.corrige && d.corrige.trim().length > 0 && !remplacer && <LeCorrige contenu={d.corrige} />}
           </div>
         )}
         <div className="flex flex-col gap-5 lg:col-start-1 lg:row-span-2 lg:row-start-1">
@@ -179,18 +191,40 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
   );
 }
 
-/** Où en est la copie : retard, manqué, ✓ envoyé, ✓✓ vu, ou la correction publiée. */
-function EtatCopie({ d, onRemplacer, remplacement, enAttente }: { d: DevoirDetailEtudiant; onRemplacer: () => void; remplacement: boolean; enAttente: boolean }) {
+/**
+ * Où en est la copie : retard, manqué, ✓ envoyé, ✓✓ vu, correction par le campus en cours (ou laissée au
+ * formateur), ou la correction publiée (du formateur, ou du campus avec sa justification critère par critère).
+ */
+function EtatCopie({
+  d,
+  maintenant,
+  onRemplacer,
+  remplacement,
+  enAttente,
+}: {
+  d: DevoirDetailEtudiant;
+  maintenant: number;
+  onRemplacer: () => void;
+  remplacement: boolean;
+  enAttente: boolean;
+}) {
   const { rendu, statut, devoir } = d;
+  const tc = useTextes(textesCampus);
   const [voirCopie, setVoirCopie] = useState(false);
   if (enAttente) return null;
 
   if (statut === "corrige" && rendu) {
+    const parCampus = rendu.origineNote === "campus";
+    // Corrigé précisé après coup : la note du campus reste affichée jusqu'à la nouvelle.
+    const recorrection = parCampus && rendu.correctionAuto && rendu.correctionAuto.etat !== "a_revoir" && rendu.correctionAuto.etat !== "notee" ? rendu.correctionAuto : null;
+    const commentaire = rendu.commentaire && <p className="whitespace-pre-line rounded-2xl bg-nuit-carte p-4 text-[15.5px] leading-relaxed text-nuit-texte">{rendu.commentaire}</p>;
     return (
       <section className="flex flex-col gap-4 rounded-[24px] bg-encre p-5 text-white sm:p-6" aria-label="Correction">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="font-mono text-xs uppercase tracking-wider text-orange-peche">Corrigé{rendu.correcteur ? ` par ${rendu.correcteur.prenom} ${rendu.correcteur.nom}` : ""}</div>
+            <div className="font-mono text-xs uppercase tracking-wider text-orange-peche">
+              {parCampus ? tc("note.parCampus") : `Corrigé${rendu.correcteur ? ` par ${rendu.correcteur.prenom} ${rendu.correcteur.nom}` : ""}`}
+            </div>
             <div className="mt-1 text-[56px] font-black leading-none tracking-tres-serre tabular-nums">
               {nombre(rendu.note)}
               <span className="text-2xl text-nuit-gris">/{nombre(devoir.bareme)}</span>
@@ -198,20 +232,33 @@ function EtatCopie({ d, onRemplacer, remplacement, enAttente }: { d: DevoirDetai
           </div>
           {rendu.enRetard && <Badge ton="direct">Rendu en retard</Badge>}
         </div>
+        {parCampus && <p className="-mt-2 text-sm text-nuit-gris">{tc("note.parCampus.detail")}</p>}
+        {recorrection && (
+          <p className="flex items-start gap-2 rounded-2xl bg-nuit-carte p-3.5 text-[14.5px] leading-snug text-orange-peche">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+            {tc("note.recorrection", { v: { quand: recorrection.attendueLe ? quandEnMots(recorrection.attendueLe, maintenant, tc) : tc("quand.bientot") } })}
+          </p>
+        )}
+        {/* Note du campus : le commentaire d'abord (ce qu'il faut retenir), puis le détail qui le justifie. */}
+        {parCampus && commentaire}
         {rendu.noteDetail && rendu.noteDetail.length > 0 && (
-          <ul className="flex flex-col gap-3">
-            {rendu.noteDetail.map((l) => (
-              <li key={l.critere} className="flex flex-col gap-1.5">
-                <span className="flex justify-between gap-3 text-[15px]">
-                  <span>{l.critere}</span>
-                  <span className="font-mono text-nuit-doux">
-                    {nombre(l.obtenu)}/{nombre(l.points)}
+          <div className="flex flex-col gap-3">
+            {parCampus && <h3 className="font-mono text-xs uppercase tracking-wider text-nuit-gris">{tc("note.criteres")}</h3>}
+            <ul className="flex flex-col gap-3">
+              {rendu.noteDetail.map((l) => (
+                <li key={l.critere} className={cn("flex flex-col gap-1.5", l.justification && "rounded-2xl bg-nuit-carte p-3.5")}>
+                  <span className="flex justify-between gap-3 text-[15px]">
+                    <span className={cn(l.justification && "font-bold")}>{l.critere}</span>
+                    <span className="shrink-0 font-mono text-nuit-doux">
+                      {nombre(l.obtenu)}/{nombre(l.points)}
+                    </span>
                   </span>
-                </span>
-                <BarreProgression valeur={(l.obtenu / l.points) * 100} ton="nuit" />
-              </li>
-            ))}
-          </ul>
+                  <BarreProgression valeur={l.points > 0 ? (l.obtenu / l.points) * 100 : 0} ton="nuit" />
+                  {l.justification && <p className="whitespace-pre-line pt-0.5 text-[14.5px] leading-relaxed text-nuit-texte">{l.justification}</p>}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {rendu.commentaireAudio && (
           <div className="flex flex-col gap-2 rounded-2xl bg-nuit-carte p-4">
@@ -224,16 +271,20 @@ function EtatCopie({ d, onRemplacer, remplacement, enAttente }: { d: DevoirDetai
             </audio>
           </div>
         )}
-        {rendu.commentaire && <p className="whitespace-pre-line rounded-2xl bg-nuit-carte p-4 text-[15.5px] leading-relaxed text-nuit-texte">{rendu.commentaire}</p>}
+        {!parCampus && commentaire}
         <Bouton variante="nuit" onClick={() => setVoirCopie((v) => !v)} icone={<Eye className="h-4 w-4" />} className="min-h-[48px]">
           {voirCopie ? "Masquer ma copie" : "Revoir ma copie"}
         </Bouton>
         {voirCopie && <MaCopie rendu={rendu} nuit />}
+        <RelectureNote rendu={rendu} bareme={devoir.bareme} />
       </section>
     );
   }
 
   if (rendu && (statut === "rendu" || statut === "vu")) {
+    // Copie corrigée par le campus : son état remplace « la note apparaîtra quand ton formateur l'aura publiée ».
+    const campus = rendu.correctionAuto ?? null;
+    const photoNette = campus?.etat === "a_revoir" && campus.raison === "illisible" && d.peutRemplacer && !remplacement;
     return (
       <section className="flex flex-col gap-3 rounded-[24px] border border-succes/30 bg-succes-clair p-5" aria-label="Ma copie">
         <div className="flex items-start gap-3">
@@ -247,19 +298,25 @@ function EtatCopie({ d, onRemplacer, remplacement, enAttente }: { d: DevoirDetai
               {rendu.deposeParEquipe ? " · copie papier déposée par la vie scolaire" : ""}
             </span>
             {envoyeeEnDiffere(rendu.prepareLe, rendu.renduLe) && rendu.prepareLe && <span className="text-sm text-texte-pale">Préparé sur ton téléphone à {heure(rendu.prepareLe)}, envoyé au retour du réseau.</span>}
-            <span className="mt-1 flex items-center gap-1.5 text-[15px] font-semibold">
-              <Coches vu={statut === "vu"} className="h-5 w-5" />
-              {statut === "vu" ? "Ton formateur a ouvert ta copie." : "Ton formateur ne l'a pas encore ouverte."}
-            </span>
+            {(!campus || statut === "vu") && (
+              <span className="mt-1 flex items-center gap-1.5 text-[15px] font-semibold">
+                <Coches vu={statut === "vu"} className="h-5 w-5" />
+                {statut === "vu" ? "Ton formateur a ouvert ta copie." : "Ton formateur ne l'a pas encore ouverte."}
+              </span>
+            )}
             {rendu.enRetard && <Badge ton="danger" className="mt-1 self-start">Rendu en retard</Badge>}
           </div>
         </div>
-        <p className="text-sm text-texte-pale">La note apparaîtra ici quand ton formateur l'aura publiée. Tu recevras un rappel.</p>
+        {campus ? (
+          <EtatCorrectionCampus correction={campus} maintenant={maintenant} peutRemplacer={d.peutRemplacer} onRemplacer={remplacement ? undefined : onRemplacer} />
+        ) : (
+          <p className="text-sm text-texte-pale">La note apparaîtra ici quand ton formateur l'aura publiée. Tu recevras un rappel.</p>
+        )}
         <div className="flex flex-wrap gap-2">
           <Bouton variante="contour" onClick={() => setVoirCopie((v) => !v)} icone={<Eye className="h-4 w-4" />} className="min-h-[48px] flex-1">
             {voirCopie ? "Masquer ma copie" : "Voir ma copie"}
           </Bouton>
-          {d.peutRemplacer && !remplacement && (
+          {d.peutRemplacer && !remplacement && !photoNette && (
             <Bouton variante="encre" onClick={onRemplacer} className="min-h-[48px] flex-1">
               Remplacer ma copie
             </Bouton>

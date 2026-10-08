@@ -166,7 +166,7 @@ const FR = {
   "groupe.devoir.roles": "**Les rôles dans le groupe :**",
   "groupe.devoir.livrable": "**À rendre :** {livrable}",
   "groupe.devoir.comment":
-    "**Comment rendre :** formez votre groupe, répartissez les rôles, puis rendez le travail ici : photos, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : écris alors en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie.",
+    "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie.",
   "groupe.devoir.origine": "_Travail de groupe du cours complet de la séance du {jour}._",
   "groupe.critere.contenu": "Contenu juste et appuyé sur le cours",
   "groupe.critere.roles": "Chaque rôle tenu",

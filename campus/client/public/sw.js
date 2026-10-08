@@ -233,50 +233,75 @@ function oublierDonnees() {
 
 // ── Rappels (Web Push) ─────────────────────────────────────────────────────
 
+/*
+ * Charge envoyée par le campus (server/notifications.ts) :
+ *   { id, titre, corps, lien, type, tag, renotify, actions: [{ action, titre, lien }], resume }
+ * Une charge plus ancienne ({ titre, corps, lien, type }, sans identifiant) reste acceptée.
+ */
 self.addEventListener("push", (evenement) => {
   let d = {};
   try {
-    d = evenement.data ? evenement.data.json() : {};
+    d = (evenement.data ? evenement.data.json() : {}) || {};
   } catch {
     d = { titre: evenement.data ? evenement.data.text() : "" };
   }
   const titre = d.titre || "Campus numérique 2IAE";
-  evenement.waitUntil(
-    self.registration.showNotification(titre, {
-      body: d.corps || "",
-      icon: "/icons/icone-192.png",
-      badge: "/icons/badge-96.png",
-      lang: "fr",
-      data: { lien: d.lien || "/accueil" },
-      // Un seul rappel de live affiché à la fois (le plus récent remplace l'ancien).
-      tag: d.type === "live" ? "live" : undefined,
-      renotify: d.type === "live",
-    }),
-  );
+  // Boutons « Rejoindre », « Rendre mon devoir » : deux au plus, chacun avec son lien.
+  const actions = (Array.isArray(d.actions) ? d.actions : [])
+    .filter((a) => a && typeof a.action === "string" && typeof a.titre === "string")
+    .slice(0, 2);
+  const liens = {};
+  for (const a of actions) liens[a.action] = typeof a.lien === "string" ? a.lien : d.lien;
+  // Même étiquette, même place dans la barre du téléphone : un seul rappel de live, une seule nouveauté par séance.
+  const tag = typeof d.tag === "string" && d.tag ? d.tag : d.type === "live" ? "live" : undefined;
+  const options = {
+    body: d.corps || "",
+    icon: "/icons/icone-192.png",
+    badge: "/icons/badge-96.png",
+    lang: "fr",
+    data: { lien: d.lien || "/accueil", id: Number.isInteger(d.id) ? d.id : null, resume: d.resume === true, liens },
+    tag,
+    // Sans étiquette, renotify est refusé par le navigateur.
+    renotify: Boolean(tag) && (d.type === "live" || d.renotify === true),
+  };
+  if (actions.length) options.actions = actions.map((a) => ({ action: a.action, title: a.titre }));
+  evenement.waitUntil(self.registration.showNotification(titre, options));
 });
 
-/** Au toucher : ouvre le bon écran, dans la fenêtre du campus déjà ouverte si possible. */
+/** Au toucher : prévient le campus (lu, ouvert), puis ouvre le bon écran, dans la fenêtre du campus déjà ouverte si possible. */
 self.addEventListener("notificationclick", (evenement) => {
   evenement.notification.close();
+  const donnees = evenement.notification.data || {};
+  const lienAction = evenement.action && donnees.liens ? donnees.liens[evenement.action] : null;
   let lien = new URL("/accueil", self.location.origin).href;
   try {
-    const demande = new URL((evenement.notification.data && evenement.notification.data.lien) || "/accueil", self.location.origin);
+    const demande = new URL(lienAction || donnees.lien || "/accueil", self.location.origin);
     if (demande.origin === self.location.origin) lien = demande.href;
   } catch {
     /* lien illisible : accueil */
   }
-  evenement.waitUntil(
-    (async () => {
-      const fenetres = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const fenetre = fenetres.find((c) => new URL(c.url).origin === self.location.origin);
-      if (fenetre) {
-        await fenetre.focus();
-        fenetre.postMessage({ type: "naviguer", lien: new URL(lien).pathname + new URL(lien).search });
-        return;
-      }
-      await self.clients.openWindow(lien);
-    })(),
-  );
+  // keepalive : la requête part même si la page s'ouvre et que le service worker s'endort.
+  const ouvert = Number.isInteger(donnees.id)
+    ? fetch(`/api/notifications/${donnees.id}/ouvert`, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume: donnees.resume === true }),
+      }).catch(() => undefined)
+    : Promise.resolve();
+  const ouvrir = (async () => {
+    const fenetres = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const fenetre = fenetres.find((c) => new URL(c.url).origin === self.location.origin);
+    if (fenetre) {
+      // L'écran change d'abord : un navigateur qui refuse de donner le focus n'empêche pas d'y arriver.
+      fenetre.postMessage({ type: "naviguer", lien: new URL(lien).pathname + new URL(lien).search });
+      await fenetre.focus().catch(() => undefined);
+      return;
+    }
+    await self.clients.openWindow(lien);
+  })();
+  evenement.waitUntil(Promise.all([ouvert, ouvrir]));
 });
 
 /** Le navigateur a renouvelé l'abonnement : on prévient le campus (session du téléphone). */

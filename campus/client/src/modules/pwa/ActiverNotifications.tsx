@@ -4,11 +4,16 @@
 // sèche et fait refuser. États : non supporté (conseil : Chrome, ou installer
 // sur iPhone), bloqué (aide pas à pas pour débloquer), actif (essai,
 // désactivation), et masqué quand le campus n'a pas de clé d'envoi.
+//
+// Chantier C3 : les outils d'abonnement servent aussi à la carte de l'accueil
+// et à la proposition au bon moment (module rappels) ; l'abonnement envoie la
+// plateforme et la marque, et un téléphone actif passe par la vérification
+// « L'as-tu reçu ? » tant qu'il n'a pas confirmé qu'un essai est arrivé.
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BellRing, BellOff, Check, Smartphone } from "lucide-react";
 import { useMoi, rechargerMoi } from "@/lib/auth";
-import { api, post } from "@/lib/api";
+import { api, get, post, ErreurApi } from "@/lib/api";
 import { Bouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
 import { Badge } from "@/components/ui/divers";
@@ -17,15 +22,18 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { obtenirEnregistrement } from "./service-worker";
 import { formuler, plateforme, estInstallee } from "./outils";
+import { VerificationRappel } from "@/modules/rappels/VerificationRappel";
+import { marqueRetenue, noterRappelsActives, rappelsDejaActives } from "@/modules/rappels/memoire";
 import type { ClePush, ResultatEssaiPush } from "@shared/schema";
+import type { EtatRappels } from "@shared/engagement/envois";
 
 type Etat = "chargement" | "masque" | "non_supporte" | "refuse" | "inactif" | "actif";
 
-/** Prévient les autres cartes de la page (compacte et complète) qu'il faut relire l'état. */
-const EVENEMENT_MAJ = "campus:rappels-maj";
-const prevenirAutresCartes = () => window.dispatchEvent(new Event(EVENEMENT_MAJ));
+/** Prévient les autres cartes de la page (compacte, complète, accueil) qu'il faut relire l'état. */
+export const EVENEMENT_MAJ = "campus:rappels-maj";
+export const prevenirAutresCartes = () => window.dispatchEvent(new Event(EVENEMENT_MAJ));
 
-const pushSupporte = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+export const pushSupporte = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 
 /** Clé VAPID (base64url) → octets attendus par pushManager.subscribe. */
 function cleEnOctets(cle: string): Uint8Array {
@@ -42,9 +50,73 @@ async function travailleurPret(): Promise<ServiceWorkerRegistration> {
   return Promise.race([navigator.serviceWorker.ready, delai]);
 }
 
-async function abonnementActuel(): Promise<PushSubscription | null> {
+export async function abonnementActuel(): Promise<PushSubscription | null> {
   const reg = await navigator.serviceWorker.getRegistration();
   return (await reg?.pushManager.getSubscription()) ?? null;
+}
+
+/** Enregistre ce téléphone sur le compte connecté, avec sa plateforme et la marque si elle a été choisie. */
+async function envoyerAbonnement(abo: PushSubscription) {
+  await post("/api/push/abonnement", { ...abo.toJSON(), plateforme: plateforme(), marque: marqueRetenue() });
+  noterRappelsActives(true);
+}
+
+async function nouvelAbonnement(cle: string): Promise<PushSubscription> {
+  const reg = await travailleurPret();
+  return (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(cle) }));
+}
+
+/** Demande l'autorisation (après l'explication), abonne ce téléphone et l'enregistre sur le campus. */
+export async function activerRappels(cle: string): Promise<{ resultat: "actif"; endpoint: string } | { resultat: "refuse" } | { resultat: "plus_tard" }> {
+  const permission = await Notification.requestPermission();
+  if (permission === "denied") return { resultat: "refuse" };
+  if (permission !== "granted") return { resultat: "plus_tard" };
+  const abo = await nouvelAbonnement(cle);
+  await envoyerAbonnement(abo);
+  prevenirAutresCartes();
+  void rechargerMoi();
+  return { resultat: "actif", endpoint: abo.endpoint };
+}
+
+/** État des rappels de ce téléphone, vu du navigateur puis du campus. */
+export type EtatTelephone =
+  | { etat: "masque" | "non_supporte" | "refuse" }
+  /** perdu : ce téléphone avait des rappels, il ne les a plus. */
+  | { etat: "inactif"; perdu: boolean }
+  /** serveur : null hors connexion. */
+  | { etat: "actif"; endpoint: string; serveur: EtatRappels | null };
+
+const lireEtatServeur = (endpoint: string) => get<EtatRappels>(`/api/push/etat?endpoint=${encodeURIComponent(endpoint)}`);
+
+/**
+ * Lit l'état des rappels de ce téléphone et le répare au passage : un
+ * abonnement que le campus ne connaît plus (oublié après un refus du service
+ * d'envoi, base remise à zéro…) est refait, sans redemander l'autorisation.
+ */
+export async function lireEtatTelephone(cle: string | null, connecte: boolean): Promise<EtatTelephone> {
+  if (!cle) return { etat: "masque" };
+  if (!pushSupporte()) return { etat: "non_supporte" };
+  if (Notification.permission === "denied") return { etat: "refuse" };
+  const abo = await abonnementActuel().catch(() => null);
+  const dejaActives = rappelsDejaActives();
+  if (!abo || Notification.permission !== "granted") return { etat: "inactif", perdu: dejaActives };
+  if (!connecte) return { etat: "actif", endpoint: abo.endpoint, serveur: null };
+  let serveur = await lireEtatServeur(abo.endpoint);
+  if (serveur.cetAppareil) {
+    noterRappelsActives(true);
+    return { etat: "actif", endpoint: abo.endpoint, serveur };
+  }
+  // Inconnu du campus : on repart d'un abonnement neuf (l'ancien a pu être refusé par le service d'envoi).
+  try {
+    await abo.unsubscribe().catch(() => false);
+    const neuf = await nouvelAbonnement(cle);
+    await envoyerAbonnement(neuf);
+    serveur = await lireEtatServeur(neuf.endpoint);
+    if (serveur.cetAppareil) return { etat: "actif", endpoint: neuf.endpoint, serveur };
+  } catch {
+    /* le téléphone refuse un nouvel abonnement : on le dit à la personne */
+  }
+  return { etat: "inactif", perdu: true };
 }
 
 export function ActiverNotifications({ compact = false }: { compact?: boolean }) {
@@ -54,23 +126,19 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
   const { data, isLoading, isError } = useQuery<ClePush>({ queryKey: ["/api/push/cle"], staleTime: 10 * 60_000 });
   const cle = data?.cle ?? null;
   const [etat, setEtat] = useState<Etat>("chargement");
+  const [ici, setIci] = useState<{ endpoint: string; recu: boolean | null } | null>(null);
+  const [verification, setVerification] = useState<"auto" | "manuelle" | null>(null);
   const [occupe, setOccupe] = useState<"activer" | "essai" | "desactiver" | null>(null);
   const [aide, setAide] = useState(false);
   // « ce téléphone » ou « cet ordinateur » : les rappels sont liés à l'appareil, pas au compte.
   const appareil = plateforme() === "ordinateur" ? "ordinateur" : "téléphone";
-  const ici = appareil === "ordinateur" ? "cet ordinateur" : "ce téléphone";
-  const Ici = ici.charAt(0).toUpperCase() + ici.slice(1);
+  const iciTexte = appareil === "ordinateur" ? "cet ordinateur" : "ce téléphone";
+  const Ici = iciTexte.charAt(0).toUpperCase() + iciTexte.slice(1);
 
   const verifier = useCallback(async () => {
-    if (!cle) return setEtat("masque");
-    if (!pushSupporte()) return setEtat("non_supporte");
-    if (Notification.permission === "denied") return setEtat("refuse");
-    const abo = await abonnementActuel().catch(() => null);
-    if (abo && Notification.permission === "granted") {
-      setEtat("actif");
-      // Resynchronise ce téléphone avec le compte connecté (téléphone partagé, base remise à zéro…).
-      if (moi) void post("/api/push/abonnement", abo.toJSON()).catch(() => undefined);
-    } else setEtat("inactif");
+    const e = await lireEtatTelephone(cle, Boolean(moi)).catch((): EtatTelephone => ({ etat: "inactif", perdu: false }));
+    if (e.etat === "actif") setIci({ endpoint: e.endpoint, recu: e.serveur?.cetAppareil?.recu ?? null });
+    setEtat(e.etat);
   }, [cle, moi?.id]);
 
   useEffect(() => {
@@ -86,23 +154,17 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
     if (!cle) return;
     setOccupe("activer");
     try {
-      const permission = await Notification.requestPermission();
-      if (permission === "denied") {
-        setEtat("refuse");
-        return;
-      }
-      if (permission !== "granted") {
+      const r = await activerRappels(cle);
+      if (r.resultat === "refuse") return setEtat("refuse");
+      if (r.resultat === "plus_tard") {
         toast(f("Pas de souci : tu pourras activer les rappels plus tard.", "Pas de souci : vous pourrez activer les rappels plus tard."), "info");
         return;
       }
-      const reg = await travailleurPret();
-      const abo =
-        (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: cleEnOctets(cle) }));
-      await post("/api/push/abonnement", abo.toJSON());
+      setIci({ endpoint: r.endpoint, recu: null });
       setEtat("actif");
-      prevenirAutresCartes();
-      toast(`Rappels activés sur ${ici}.`);
-      void rechargerMoi();
+      // Carte complète : l'essai part tout de suite, puis « L'as-tu reçu ? ».
+      if (!compact) setVerification("auto");
+      toast(`Rappels activés sur ${iciTexte}.`);
     } catch (e) {
       toastErreur(e instanceof Error && e.name !== "Error" ? new Error("L'inscription aux rappels a échoué. Réessaie dans un instant.") : e);
     } finally {
@@ -118,9 +180,13 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         await api("/api/push/abonnement", { methode: "DELETE", corps: { endpoint: abo.endpoint } });
         await abo.unsubscribe().catch(() => false);
       }
+      // Désactivés exprès : ce n'est pas une perte à signaler sur l'accueil.
+      noterRappelsActives(false);
       setEtat("inactif");
+      setIci(null);
+      setVerification(null);
       prevenirAutresCartes();
-      toast(f(`Tu ne recevras plus de rappels sur ${ici}.`, `Vous ne recevrez plus de rappels sur ${ici}.`), "info");
+      toast(f(`Tu ne recevras plus de rappels sur ${iciTexte}.`, `Vous ne recevrez plus de rappels sur ${iciTexte}.`), "info");
       void rechargerMoi();
     } catch (e) {
       toastErreur(e);
@@ -145,7 +211,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         toast(f(`${Ici} n'est plus inscrit. Réactive les rappels.`, `${Ici} n'est plus inscrit. Réactivez les rappels.`), "erreur");
       } else toast("Les rappels ne sont pas disponibles pour le moment.", "erreur");
     } catch (e) {
-      toastErreur(e);
+      toastErreur(e instanceof ErreurApi && e.statut === 429 ? new Error(e.message) : e);
     } finally {
       setOccupe(null);
     }
@@ -166,27 +232,14 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         );
 
   const aideDeblocage = (
-    <Fenetre
+    <FenetreDeblocage
       ouverte={aide}
       onFermer={() => setAide(false)}
-      titre="Débloquer les rappels"
-      description={f(
-        `Ton ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`,
-        `Votre ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`,
-      )}
-      pied={
-        <Bouton
-          onClick={() => {
-            setAide(false);
-            void verifier();
-          }}
-        >
-          J'ai autorisé, vérifier
-        </Bouton>
-      }
-    >
-      <AideDeblocage installee={estInstallee()} f={f} />
-    </Fenetre>
+      onVerifier={() => {
+        setAide(false);
+        void verifier();
+      }}
+    />
   );
 
   if (compact) {
@@ -207,7 +260,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
           {etat === "actif" ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-base font-bold">Rappels sur {ici}</p>
+          <p className="text-base font-bold">Rappels sur {iciTexte}</p>
           <p className="text-sm text-texte-pale">{etat === "non_supporte" ? texteNonSupporte : libelles[etat]}</p>
         </div>
         {etat === "inactif" && (
@@ -229,6 +282,9 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
       </div>
     );
   }
+
+  // Téléphone actif mais pas encore confirmé : la vérification remplace le simple bouton d'essai.
+  const aVerifier = etat === "actif" && ici && (verification !== null || ici.recu !== true);
 
   return (
     <Carte className="flex flex-col gap-4">
@@ -256,7 +312,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
         <div className="flex min-w-0 flex-col gap-1.5">
           {etat === "inactif" && (
             <>
-              <h3 className="text-lg font-extrabold leading-tight">Recevoir les rappels sur {ici}</h3>
+              <h3 className="text-lg font-extrabold leading-tight">Recevoir les rappels sur {iciTexte}</h3>
               <p className="text-base leading-relaxed text-texte-pale">
                 {f(
                   "On te prévient 15 minutes avant chaque cours en direct, la veille d'un devoir et quand un formateur te répond. Jamais la nuit, et 3 rappels par jour au plus.",
@@ -281,7 +337,7 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
           )}
           {etat === "refuse" && (
             <>
-              <h3 className="text-lg font-extrabold leading-tight">Les rappels sont bloqués sur {ici}</h3>
+              <h3 className="text-lg font-extrabold leading-tight">Les rappels sont bloqués sur {iciTexte}</h3>
               <p className="text-base leading-relaxed text-texte-pale">
                 {f(
                   "Sans rappel, tu risques de rater le début d'un cours en direct. Tu peux les débloquer en trois gestes.",
@@ -316,11 +372,22 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
           </p>
         </div>
       )}
+      {aVerifier && (
+        <VerificationRappel
+          endpoint={ici.endpoint}
+          autoEssai={verification === "auto"}
+          recuInitial={verification === "auto" ? null : ici.recu}
+          onFini={(recu) => setIci({ ...ici, recu })}
+          onPerdu={() => void verifier()}
+        />
+      )}
       {etat === "actif" && (
         <div className="flex flex-wrap gap-2">
-          <Bouton variante="doux" className="min-h-[48px]" chargement={occupe === "essai"} onClick={() => void essayer()}>
-            M'envoyer un essai
-          </Bouton>
+          {!aVerifier && (
+            <Bouton variante="doux" className="min-h-[48px]" chargement={occupe === "essai"} onClick={() => void essayer()}>
+              M'envoyer un essai
+            </Bouton>
+          )}
           <Bouton variante="fantome" className="min-h-[48px]" chargement={occupe === "desactiver"} onClick={() => void desactiver()}>
             Ne plus recevoir
           </Bouton>
@@ -335,6 +402,27 @@ export function ActiverNotifications({ compact = false }: { compact?: boolean })
       )}
       {aideDeblocage}
     </Carte>
+  );
+}
+
+/** Fenêtre « Débloquer les rappels » : le pas à pas, puis « J'ai autorisé, vérifier ». */
+export function FenetreDeblocage({ ouverte, onFermer, onVerifier }: { ouverte: boolean; onFermer: () => void; onVerifier: () => void }) {
+  const { moi } = useMoi();
+  const f = (tu: string, vous: string) => formuler(moi?.role, tu, vous);
+  const appareil = plateforme() === "ordinateur" ? "ordinateur" : "téléphone";
+  return (
+    <Fenetre
+      ouverte={ouverte}
+      onFermer={onFermer}
+      titre="Débloquer les rappels"
+      description={f(
+        `Ton ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`,
+        `Votre ${appareil} a bloqué les rappels du campus. Voici comment les autoriser.`,
+      )}
+      pied={<Bouton onClick={onVerifier}>J'ai autorisé, vérifier</Bouton>}
+    >
+      <AideDeblocage installee={estInstallee()} f={f} />
+    </Fenetre>
   );
 }
 

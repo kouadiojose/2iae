@@ -1235,6 +1235,7 @@ async function prevenir(u: Utilisateur, c: Conversation, m: MessageDto, autre: {
         push: true,
         // Écran verrouillé : pas d'aperçu du message (CONCEPTION, revue critique).
         sensible: true,
+        priorite: u.role === "etudiant" ? "contenu" : "action", // C3 : un camarade ne prend pas la place d'une échéance
       });
     }
     return;

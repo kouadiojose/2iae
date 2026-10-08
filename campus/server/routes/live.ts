@@ -3894,6 +3894,7 @@ async function annoncerReplay(s: Seance, { formateurs: prevenirFormateurs = true
     titre: `Nouveau replay : ${s.titre}`,
     corps: `${c?.code ?? ""}${a ? ` · ${a.prenom} ${a.nom}` : ""}${duree}. À voir dans « Enregistrements », depuis votre tableau de bord.`,
     lien,
+    push: false, // C3 : le replay d'un collègue reste dans la cloche, il ne sonne pas
   });
   return { formateurs: duCours.size + collegues.length, etudiants: etudiants.length };
 }

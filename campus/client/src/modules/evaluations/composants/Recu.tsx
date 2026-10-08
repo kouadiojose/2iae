@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { CheckCircle2, CloudUpload, FileText, Share2, Clock } from "lucide-react";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+import { ProposerRappel } from "@/modules/rappels/ProposerRappel";
 import { heure } from "@/lib/dates";
 import { taille, pluriel } from "@/lib/utils";
 import type { RecuDepot, PieceJointe } from "@shared/schema";
@@ -87,6 +89,12 @@ export function EcranRecu({ recu, onFermer }: { recu: RecuDepot; onFermer?: () =
             Revenir à mes devoirs
           </LienBouton>
         )}
+      </div>
+      {/* Chantier C3 : « Un rappel avant la prochaine échéance ? », seulement si ce téléphone n'en reçoit pas. */}
+      <div className="w-full max-w-sm empty:hidden">
+        <LimiteSilencieuse nom="ProposerRappel">
+          <ProposerRappel moment="rendu" />
+        </LimiteSilencieuse>
       </div>
     </section>
   );

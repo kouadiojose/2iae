@@ -72,8 +72,7 @@ export type ObjectifDuJourDto = {
   valideLe: string | null;
 };
 
-/** Éléments qui se cochent à l'ouverture, faute d'autre trace (POST /api/objectif-du-jour/ouvert). */
-export const TYPES_OUVERTURE = ["retenir", "rattrapage"] as const;
+/** Clé d'un élément qui se coche à l'ouverture, faute d'autre trace (POST /api/objectif-du-jour/ouvert). */
 export const CLE_OUVERTURE = /^(retenir|rattrapage):[1-9]\d{0,9}$/;
 
 // ── Progression honnête d'un cours ────────────────────────────────────────

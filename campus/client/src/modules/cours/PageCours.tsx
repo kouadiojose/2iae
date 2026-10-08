@@ -1,6 +1,7 @@
-// Page d'un cours : en-tête coloré puis onglets Leçons · Séances · Devoirs ·
-// Questions du cours · À propos. L'étudiant reprend où il en était ; le
-// formateur modifie son cours.
+// Page d'un cours : en-tête coloré puis onglets Leçons · Réviser · Séances ·
+// Devoirs · Questions du cours · À propos. L'étudiant reprend où il en était ;
+// le formateur modifie son cours. La page s'ouvre sur le premier onglet qui a
+// du contenu : sans leçon, les cours complets à réviser (chantier C1).
 import { useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -19,13 +20,15 @@ import { SeancesDuCours } from "@/modules/live/SeancesDuCours";
 import { DevoirsDuCours } from "@/modules/evaluations/DevoirsDuCours";
 import { PauseIaCours } from "@/modules/ia/PauseIaCours";
 import { ReglageMediatheque } from "@/modules/mediatheque/ReglageMediatheque";
+import { OngletReviser, cleCoursComplets } from "@/modules/revision/OngletReviser";
 import { EnTeteCours } from "./composants/EnTeteCours";
 import { ProgrammeLecons } from "./composants/ProgrammeLecons";
 import { classeSansSite, listeObjectifs, texteSur, typographie } from "./outils";
 import type { CoursDetail } from "@shared/schema";
+import type { CoursCompletARevise } from "@shared/engagement/revision";
 
-type Onglet = "lecons" | "seances" | "devoirs" | "questions" | "apropos";
-const ONGLETS: Onglet[] = ["lecons", "seances", "devoirs", "questions", "apropos"];
+type Onglet = "lecons" | "reviser" | "seances" | "devoirs" | "questions" | "apropos";
+const ONGLETS: Onglet[] = ["lecons", "reviser", "seances", "devoirs", "questions", "apropos"];
 
 export default function PageCours({ id }: { id: string }) {
   const moi = useMoiConnecte();
@@ -36,8 +39,17 @@ export default function PageCours({ id }: { id: string }) {
   const recherche = useSearch();
   const [chemin, naviguer] = useLocation();
   const demande = new URLSearchParams(recherche).get("onglet") as Onglet | null;
-  const onglet: Onglet = demande && ONGLETS.includes(demande) ? demande : "lecons";
-  const changerOnglet = (o: Onglet) => naviguer(o === "lecons" ? chemin : `${chemin}?onglet=${o}`, { replace: true });
+  // Sans leçon (cas le plus courant), la page s'ouvre sur les cours complets s'il y en a, sinon sur les séances.
+  const nbLeconsCours = cours?.chapitres.reduce((n, ch) => n + ch.lecons.length, 0) ?? 0;
+  const sansLecon = Boolean(cours) && nbLeconsCours === 0;
+  const { data: coursComplets } = useQuery<CoursCompletARevise[]>({
+    queryKey: cleCoursComplets(coursId),
+    enabled: (sansLecon && !demande) || demande === "reviser",
+    staleTime: 60_000,
+  });
+  const parDefaut: Onglet = !sansLecon ? "lecons" : !coursComplets || coursComplets.length ? "reviser" : "seances";
+  const onglet: Onglet = demande && ONGLETS.includes(demande) ? demande : parDefaut;
+  const changerOnglet = (o: Onglet) => naviguer(o === parDefaut ? chemin : `${chemin}?onglet=${o}`, { replace: true });
 
   // Sur téléphone, l'onglet choisi (même arrivé par un lien) reste visible dans la bande.
   const bandeOnglets = useRef<HTMLDivElement>(null);
@@ -143,6 +155,7 @@ export default function PageCours({ id }: { id: string }) {
         onChange={changerOnglet}
         options={[
           { valeur: "lecons", libelle: "Leçons", compteur: nbLecons || undefined },
+          { valeur: "reviser", libelle: "Réviser", compteur: coursComplets?.length || undefined },
           { valeur: "seances", libelle: "Séances" },
           { valeur: "devoirs", libelle: "Devoirs" },
           { valeur: "questions", libelle: "Questions du cours" },
@@ -177,6 +190,8 @@ export default function PageCours({ id }: { id: string }) {
               texte={`${cours.formateur ? `${cours.formateur.prenom} ${cours.formateur.nom} prépare` : "Ton formateur prépare"} les leçons de ce cours. Tu recevras une notification dès qu'une leçon sera publiée.`}
             />
           ))}
+
+        {onglet === "reviser" && <OngletReviser coursId={cours.id} etudiant={etudiant} />}
 
         {onglet === "seances" && <SeancesDuCours coursId={cours.id} enseignant={cours.enseignant} />}
 

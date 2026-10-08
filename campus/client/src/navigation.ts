@@ -10,6 +10,7 @@ import {
   CalendarDays,
   GraduationCap,
   Sparkles,
+  Layers,
   LayoutDashboard,
   Users,
   CheckSquare,
@@ -56,6 +57,7 @@ const ETUDIANT: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   // « On apprend avec l'IA » : l'assistant reste visible dans l'en-tête.
   { href: "/assistant", libelle: "Assistant IA", icone: Sparkles, prefixes: ["/assistant"] },
+  { href: "/reviser", libelle: "Réviser", icone: Layers, prefixes: ["/reviser"] }, // révision du jour (C1), aussi sans réseau
   { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, prefixes: ["/emploi-du-temps"] },
   // Enregistrements et PDF de ses cours, et des cours ouverts à tous.

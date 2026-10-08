@@ -41,6 +41,17 @@
   ],
   "shortcuts": [
     {
+      "name": "Réviser en 3 minutes",
+      "short_name": "Réviser",
+      "url": "/reviser?source=pwa",
+      "icons": [
+        {
+          "src": "/icons/icone-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "Le live",
       "short_name": "Live",
       "url": "/direct?source=pwa",

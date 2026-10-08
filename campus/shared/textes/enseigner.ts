@@ -1,6 +1,8 @@
 // Textes du chantier C7 (côté formateur) : « Après la séance », correction
 // rapide, relecture facultative des devoirs de l'IA, travail de groupe, rappel
-// du matin. Formateurs vouvoyés ; étudiants tutoyés (travail de groupe).
+// du matin ; et de la correction automatique (chantier K1, 8 octobre 2026) :
+// corrigés du jour, lien de validation de l'e-mail, rappels. Formateurs
+// vouvoyés ; étudiants tutoyés (travail de groupe, consignes des devoirs).
 // Couche commune : shared/textes/index.ts. Un texte « .un » / « .n » se choisit
 // selon le nombre avec selonNombre().
 import { creerTextes, type Dictionnaire, type OptionsTexte, type Traducteur } from "./index";
@@ -28,8 +30,16 @@ const FR = {
   "apres.depot.rendus.zero": "aucune copie pour l'instant",
   "apres.depot.rendus.un": "1 copie rendue",
   "apres.depot.rendus.n": "{n} copies rendues",
-  // Exercice de la routine du soir : le corriger est facultatif (décision D2), jamais « à corriger ».
+  // Exercice de la routine du soir sans corrigé : le corriger est facultatif (décision D2), jamais « à corriger ».
   "apres.depot.facultatif": "correction facultative",
+  // Exercice corrigé par le campus (D6, 8 octobre 2026).
+  "apres.depot.campus.notees.zero": "aucune notée pour l'instant",
+  "apres.depot.campus.notees.un": "1 notée",
+  "apres.depot.campus.notees.n": "{n} notées",
+  "apres.depot.campus.attente.un": "1 en attente de correction",
+  "apres.depot.campus.attente.n": "{n} en attente de correction",
+  "apres.depot.campus.revoir.un": "1 à revoir par vous",
+  "apres.depot.campus.revoir.n": "{n} à revoir par vous",
   "apres.devoir.proposeLe": "mis en avant {quand}",
   "apres.devoir.aRevoir": "plus mis en avant (à revoir)",
   "apres.devoir.masque": "masqué aux étudiants",
@@ -98,7 +108,7 @@ const FR = {
   "corriger.ia.propose": "Proposé par l'IA : {note}/{bareme}",
   "corriger.ia.reprendre": "Reprendre",
   "corriger.ia.demander": "Proposer une note (IA)",
-  "corriger.ia.relire": "Une proposition, jamais une note : relisez avant d'envoyer.",
+  "corriger.ia.relire": "Proposition de l'IA : relisez-la avant d'envoyer.",
   "corriger.ia.prete": "Correction proposée par l'IA. Relisez-la avant d'envoyer.",
   "corriger.commentaire": "Un mot pour l'étudiant",
   "corriger.commentaire.aide": "Facultatif. Touchez une phrase pour l'ajouter.",
@@ -123,7 +133,7 @@ const FR = {
   "relire.etiquette": "Facultatif",
   "relire.titre": "Devoirs écrits par l'IA",
   "relire.intro":
-    "Le campus prépare un QCM et un exercice après chaque séance enregistrée et les envoie à vos étudiants sans rien vous demander. Vous pouvez les relire ici si vous le souhaitez. Corriger les copies de l'exercice est aussi facultatif : aucun rappel ne vous est envoyé pour elles.",
+    "Le campus prépare un QCM et un exercice après chaque séance enregistrée et les envoie à vos étudiants. Chaque jour, il vous envoie leurs corrigés : validez-les ou corrigez-les. Sans réponse, ils sont tenus pour bons au bout de 24 heures et le campus s'en sert pour noter les copies.",
   "relire.vide": "Rien à relire : les derniers devoirs du campus sont déjà regardés.",
   "relire.quiz": "QCM",
   "relire.depot": "Exercice",
@@ -166,7 +176,7 @@ const FR = {
   "groupe.devoir.roles": "**Les rôles dans le groupe :**",
   "groupe.devoir.livrable": "**À rendre :** {livrable}",
   "groupe.devoir.comment":
-    "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie.",
+    "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos nettes, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie. Le campus corrige le travail d'après le corrigé validé par ton formateur, avec des conseils critère par critère.",
   "groupe.devoir.origine": "_Travail de groupe du cours complet de la séance du {jour}._",
   "groupe.critere.contenu": "Contenu juste et appuyé sur le cours",
   "groupe.critere.roles": "Chaque rôle tenu",
@@ -189,6 +199,98 @@ const FR = {
   "rappel.salon.corps": "Vos étudiants l'ont posée dans « Questions du cours » il y a plus d'un jour.",
   "rappel.salon.enPlus.un": "Et une question du salon attend votre réponse.",
   "rappel.salon.enPlus.n": "Et {n} questions du salon attendent votre réponse.",
+  // Correction automatique : copies que le campus vous laisse, relectures demandées, corrigés à valider.
+  "rappel.relectures.titre.un": "Un étudiant demande la relecture de sa note",
+  "rappel.relectures.titre.n": "{n} étudiants demandent la relecture de leur note",
+  "rappel.relectures.corps": "Gardez la note ou changez-la, avec un mot pour l'étudiant.",
+  "rappel.relectures.enPlus.un": "Et un étudiant demande la relecture de sa note.",
+  "rappel.relectures.enPlus.n": "Et {n} étudiants demandent la relecture de leur note.",
+  "rappel.revoir.titre.un": "Une copie attend votre décision",
+  "rappel.revoir.titre.n": "{n} copies attendent votre décision",
+  "rappel.revoir.corps": "Le campus ne les a pas notées seul (consigne cachée, page illisible, vidéo…) : à vous de voir.",
+  "rappel.revoir.enPlus.un": "Et une copie attend votre décision.",
+  "rappel.revoir.enPlus.n": "Et {n} copies attendent votre décision.",
+  "rappel.copies.enPlus.un": "Et une copie attend votre correction.",
+  "rappel.copies.enPlus.n": "Et {n} copies attendent votre correction.",
+  "rappel.corriges.enPlus.un": "Et un corrigé attend votre validation.",
+  "rappel.corriges.enPlus.n": "Et {n} corrigés attendent votre validation.",
+
+  // ── Corrigés du jour (correction automatique, 8 octobre 2026) ──────────────
+  // Notification et rappel (cloche et téléphone).
+  "corriges.notif.titre.un": "Corrigé du jour : 1 devoir à vérifier",
+  "corriges.notif.titre.n": "Corrigés du jour : {n} devoirs à vérifier",
+  "corriges.notif.corps.un": "{liste}. Est-ce conforme à ce que vous avez expliqué ? Sans réponse, il sera tenu pour bon {quand}.",
+  "corriges.notif.corps.n": "{liste}. Est-ce conforme à ce que vous avez expliqué ? Sans réponse, ils seront tenus pour bons {quand}.",
+  "corriges.rappel.titre.un": "Un corrigé sera tenu pour bon à {heure}",
+  "corriges.rappel.titre.n": "{n} corrigés seront tenus pour bons à {heure}",
+  "corriges.rappel.corps": "Sans réponse de votre part, le campus s'en servira pour noter les copies. Un coup d'œil suffit.",
+  // E-mail du jour.
+  "corriges.email.sujet.un": "Corrigé du jour : 1 devoir à vérifier",
+  "corriges.email.sujet.n": "Corrigés du jour : {n} devoirs à vérifier",
+  "corriges.email.etiquette": "Corrigés du jour · {date}",
+  "corriges.email.titre": "Bonjour {appel},",
+  "corriges.email.apercu": "Est-ce conforme à ce que vous avez expliqué ? Un toucher suffit pour valider.",
+  "corriges.email.intro.un": "Voici le corrigé du devoir que vos étudiants ont reçu. Est-ce qu'il correspond à ce que vous avez expliqué ?",
+  "corriges.email.intro.n": "Voici les corrigés des {n} devoirs que vos étudiants ont reçus. Est-ce qu'ils correspondent à ce que vous avez expliqué ?",
+  "corriges.email.regle.un":
+    "Le campus s'en sert comme barème pour corriger les copies et publier les notes. **Sans réponse de votre part, il sera tenu pour bon {quand}.** Vous pourrez encore le modifier ensuite : les copies seront alors corrigées de nouveau.",
+  "corriges.email.regle.n":
+    "Le campus s'en sert comme barème pour corriger les copies et publier les notes. **Sans réponse de votre part, ils seront tenus pour bons {quand}.** Vous pourrez encore les modifier ensuite : les copies seront alors corrigées de nouveau.",
+  "corriges.email.valider": "Tout est juste : valider",
+  "corriges.email.voir": "Voir et modifier",
+  "corriges.email.apres.confirmer": "« Tout est juste » ouvre une page de confirmation : rien n'est validé avant votre confirmation.",
+  "corriges.email.apres.qcm": "Une bonne réponse est fausse ? Corrigez-la sur le campus : les notes du QCM sont recalculées.",
+  "corriges.email.autres.un": "Et 1 autre devoir à vérifier sur le campus.",
+  "corriges.email.autres.n": "Et {n} autres devoirs à vérifier sur le campus.",
+  "corriges.email.bloc.quiz": "QCM · {code}",
+  "corriges.email.bloc.depot": "Exercice · {code}",
+  "corriges.email.bloc.questions.un": "1 question",
+  "corriges.email.bloc.questions.n": "{n} questions",
+  "corriges.email.question": "**{i}. {enonce}**\nBonne réponse : **{reponse}**",
+  "corriges.email.explication": "\n{explication}",
+  "corriges.email.consigne": "**Consigne donnée aux étudiants :**\n{texte}",
+  "corriges.email.grille": "**Grille ({bareme} points) :** {criteres}",
+  "corriges.email.sansGrille": "**Barème :** note globale sur {bareme}",
+  "corriges.email.corrige": "**Corrigé :**\n{texte}",
+  "corriges.email.suite": "Lire le corrigé en entier sur le campus",
+  "corriges.email.lireTout": "Voir sur le campus",
+  "corriges.email.vrai": "Vrai",
+  "corriges.email.faux": "Faux",
+  // Page du lien de validation (sans connexion).
+  "corriges.lien.etiquette": "Corrigés du jour",
+  "corriges.lien.titre.un": "Valider ce corrigé ?",
+  "corriges.lien.titre.n": "Valider ces corrigés ?",
+  "corriges.lien.intro": "Le campus s'en servira comme barème pour corriger les copies et publier les notes. Vous pourrez encore le modifier ensuite sur le campus.",
+  "corriges.lien.valider.un": "Valider ce corrigé",
+  "corriges.lien.valider.n": "Valider ces {n} corrigés",
+  "corriges.lien.voir": "Voir et modifier sur le campus",
+  "corriges.lien.etat.propose": "À valider · tenu pour bon {quand}",
+  "corriges.lien.etat.proposeSansDate": "À valider",
+  "corriges.lien.etat.valide": "Déjà validé",
+  "corriges.lien.etat.tacite": "Déjà tenu pour bon",
+  "corriges.lien.etat.modifie": "Modifié depuis l'e-mail : ouvrez-le sur le campus",
+  "corriges.lien.etat.introuvable": "Ce devoir n'existe plus",
+  "corriges.lien.rien.titre": "Rien à valider",
+  "corriges.lien.rien": "Ces corrigés sont déjà validés, tenus pour bons, ou ont été modifiés depuis l'e-mail.",
+  "corriges.lien.fait.titre": "C'est fait, merci !",
+  "corriges.lien.fait.un": "Le corrigé est validé.",
+  "corriges.lien.fait.n": "{n} corrigés sont validés.",
+  "corriges.lien.fait.suite": "Le campus corrige les copies d'après ce barème et publie les notes. Vous pouvez encore le modifier sur le campus.",
+  "corriges.lien.expire.titre": "Ce lien a expiré",
+  "corriges.lien.expire": "Il reste valable 7 jours. Ouvrez vos corrigés sur le campus pour les valider ou les modifier.",
+  "corriges.lien.invalide.titre": "Lien incomplet",
+  "corriges.lien.invalide": "Ce lien n'est pas valide (il a peut-être été coupé par la messagerie). Ouvrez vos corrigés sur le campus.",
+  "corriges.lien.refuse": "Ce lien ne vous permet plus de valider ces corrigés. Ouvrez-les sur le campus.",
+  "corriges.lien.ouvrir": "Ouvrir le campus",
+  // Erreurs des routes du formateur.
+  "corriges.erreur.version": "Ce corrigé a changé entre-temps (version {version}). Rechargez la page pour voir la dernière version.",
+  "corriges.erreur.enPreparation": "Le campus n'a pas encore rédigé ce corrigé. Vous pouvez l'écrire vous-même : « Modifier ».",
+  "corriges.erreur.quiz": "Les bonnes réponses d'un QCM se corrigent dans l'éditeur de questions : les notes sont alors recalculées.",
+  "corriges.erreur.vide": "Le corrigé est vide.",
+  "corriges.erreur.long": "Le corrigé est trop long ({max} caractères au plus).",
+  "corriges.erreur.droit": "Seuls le formateur du cours et la direction peuvent valider ce corrigé.",
+  "corriges.erreur.lecture": "Seuls le formateur du cours et la direction peuvent ouvrir ce corrigé.",
+  "corriges.erreur.aucun": "Ce devoir n'a pas de corrigé.",
 } satisfies Dictionnaire;
 
 export const t = creerTextes(FR);

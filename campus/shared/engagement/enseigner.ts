@@ -39,8 +39,13 @@ export type DevoirAutoApres = DevoirAutoResume & {
   faits: number;
   /** QCM : moyenne des meilleures notes (sur le barème) ; nul sans tentative. */
   moyenne: number | null;
-  /** Exercice : copies rendues sans note (correction facultative : l'exercice vient du campus). */
+  /** Exercice : copies rendues sans note (correction facultative : l'exercice vient du campus). 0 s'il est corrigé par le campus. */
   aCorriger: number;
+  /**
+   * Exercice corrigé par le campus (décision du 8 octobre 2026) : copies dont la note est publiée, copies qui
+   * attendent la correction du campus, copies qu'il vous laisse revoir. Absent : exercice sans corrigé.
+   */
+  correction?: { notees: number; enAttente: number; aRevoir: number } | null;
 };
 
 /** GET /api/enseigner/apres-seance : la dernière séance tenue et ce que le campus en a fait. */

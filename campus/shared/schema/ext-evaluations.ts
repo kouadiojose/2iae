@@ -6,7 +6,7 @@
 import { integer, text, timestamp, primaryKey } from "drizzle-orm/pg-core";
 import { campusSchema } from "./base";
 import { devoirs, type TypeDevoir, type TypeQuestion, type StatutRendu, type CritereGrille, type PropositionIa } from "./evaluations";
-import type { EtatCorrection, EtatCorrectionEtudiant, OrigineNote, RaisonARevoir, RelectureEtudiant } from "../engagement/corrections";
+import type { EtatCorrection, EtatCorrectionEtudiant, OrigineNote, RaisonARevoir, RelectureEtudiant, SourceCorrige, StatutCorrige } from "../engagement/corrections";
 
 /**
  * Rappels déjà envoyés pour un devoir, pour ne jamais prévenir deux fois :
@@ -194,6 +194,12 @@ export type DevoirDetailEnseignant = {
   iaDisponible: boolean;
   /** La personne peut modifier le devoir (formateur du cours, direction, vie scolaire d'un cours propre à son campus). */
   modifiable: boolean;
+  /**
+   * Corrigé du devoir (correction automatique, 8 octobre 2026), réservé au personnel : le campus s'en sert de
+   * barème une fois validé (ou tenu pour bon). Nul : pas de corrigé (interrogation d'un formateur, dépôt pas
+   * encore publié sans corrigé). Contenu vide pour un QCM (les bonnes réponses sont dans les questions).
+   */
+  corrige?: { contenu: string; statut: StatutCorrige; version: number; source: SourceCorrige; echeanceLe: string | null } | null;
 };
 
 export type DevoirDetail = DevoirDetailEtudiant | DevoirDetailEnseignant;

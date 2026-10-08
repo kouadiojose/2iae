@@ -21,6 +21,14 @@
 // (routine du soir, devoirs_seances) ne relancent jamais le formateur et ne
 // sont jamais son action principale « Corriger N copies ». Elles restent
 // corrigeables s'il le souhaite : « facultatives », à part dans /corriger.
+//
+// Décision D6 (correction automatique, José, 8 octobre 2026) : le campus
+// corrige lui-même les copies des devoirs qui ont un corrigé (corriges_devoirs,
+// sqlCorrigeParLeCampus) : elles ne sont plus ni « à corriger » ni
+// « facultatives ». Le travail du formateur devient : valider les corrigés du
+// jour (server/corriges.ts), trancher les copies que le campus lui laisse
+// (« à revoir ») et répondre aux demandes de relecture ; le rappel du matin en
+// parle (plus des copies du campus).
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { enseigneCours, etudiantsDuCours, idsCoursAccessibles } from "../acces";
@@ -34,7 +42,9 @@ import { feuillePresence } from "../routes/live";
 import { etatsPresence } from "./presence";
 import { tableExiste } from "./tables";
 import { DELAI_DEVOIR_AUTO_HEURES, sqlDevoirAutomatique, sqlDevoirProposable } from "./proposables";
+import { sqlCorrigeParLeCampus } from "../corrections-socle";
 import {
+  corrigesDevoirs,
   cours,
   devoirs,
   devoirsSeances,
@@ -104,6 +114,8 @@ type LigneDevoirAuto = {
   bareme: number;
   statut: StatutValidation | null;
   propose: boolean;
+  /** Le campus corrige ses copies (il a un corrigé : D6). */
+  par_campus: boolean;
 };
 
 /** Devoirs automatiques (avec la décision du formateur et la règle « proposable ») parmi ces identifiants. */
@@ -111,7 +123,7 @@ async function devoirsAutoParIds(ids: number[]): Promise<LigneDevoirAuto[]> {
   if (!ids.length) return [];
   const r = await db.execute<LigneDevoirAuto>(sql`
     SELECT d.id, d.type, d.titre, d.publie, d.cree_le, d.date_limite, d.bareme, v.statut,
-           ${sqlDevoirProposable("d")} AS propose
+           ${sqlDevoirProposable("d")} AS propose, ${sqlCorrigeParLeCampus("d")} AS par_campus
     FROM campus.devoirs d
     LEFT JOIN campus.validations_devoirs_auto v ON v.devoir_id = d.id
     WHERE d.id = ANY(${tableauEntiers(ids)})
@@ -244,22 +256,31 @@ export async function apresSeance(u: Utilisateur, s: Seance): Promise<ApresSeanc
   let devoirsApres: DevoirAutoApres[] = [];
   if (lignes.length) {
     const destinataires = (await etudiantsDuCours(s.coursId)).length;
-    const stats = await db.execute<{ devoir_id: number; faits: number; moyenne: number | null; a_corriger: number }>(sql`
+    const stats = await db.execute<{ devoir_id: number; faits: number; moyenne: number | null; a_corriger: number; notees: number; a_revoir: number }>(sql`
       SELECT r.devoir_id, count(*)::int AS faits,
              avg(r.note) FILTER (WHERE r.statut = 'corrige') AS moyenne,
-             count(*) FILTER (WHERE r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR})::int AS a_corriger
+             count(*) FILTER (WHERE r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR})::int AS a_corriger,
+             count(*) FILTER (WHERE r.statut = 'corrige')::int AS notees,
+             count(*) FILTER (WHERE r.statut = 'rendu' AND ca.etat = 'a_revoir')::int AS a_revoir
       FROM campus.rendus r
+      LEFT JOIN campus.corrections_auto ca ON ca.rendu_id = r.id
       WHERE r.devoir_id = ANY(${tableauEntiers(lignes.map((l) => l.id))}) AND r.statut <> 'brouillon'
       GROUP BY r.devoir_id`);
     const statDe = new Map(stats.rows.map((x) => [x.devoir_id, x]));
     devoirsApres = lignes.map((l) => {
       const st = statDe.get(l.id);
+      const faits = st?.faits ?? 0;
+      // Exercice corrigé par le campus (D6) : rien « à corriger » pour le formateur ; notées, en attente, à revoir.
+      const campus = l.type === "depot" && l.par_campus;
       return {
         ...versResume(l),
         destinataires,
-        faits: st?.faits ?? 0,
+        faits,
         moyenne: l.type === "quiz" && st?.moyenne !== null && st?.moyenne !== undefined ? Math.round(Number(st.moyenne) * 10) / 10 : null,
-        aCorriger: st?.a_corriger ?? 0,
+        aCorriger: campus ? 0 : (st?.a_corriger ?? 0),
+        correction: campus
+          ? { notees: st?.notees ?? 0, enAttente: Math.max(0, faits - (st?.notees ?? 0) - (st?.a_revoir ?? 0)), aRevoir: st?.a_revoir ?? 0 }
+          : null,
       };
     });
   }
@@ -282,7 +303,37 @@ export async function apresSeance(u: Utilisateur, s: Seance): Promise<ApresSeanc
   };
 }
 
-/** Accueil du formateur : la dernière séance tenue (ou celle demandée), les copies, la relecture facultative. */
+/**
+ * Correction automatique (D6) : corrigés de ses cours à valider (devoirs publiés) et la prochaine échéance,
+ * copies que le campus lui laisse (« à revoir », pas encore notées) et demandes de relecture ouvertes, dans le
+ * périmètre de la personne (son campus pour l'équipe).
+ */
+async function resumeCorriges(u: Utilisateur, coursIds: number[]): Promise<NonNullable<ResumeEnseigner["corriges"]>> {
+  if (!coursIds.length) return { aValider: 0, prochaineEcheance: null, aRevoir: 0, relectures: 0 };
+  const ids = tableauEntiers(coursIds);
+  const perimetre = perimetreSites(u);
+  const duSite = perimetre ? sql`AND e.site_id = ANY(${tableauEntiers(perimetre)})` : sql``;
+  const [l] = (
+    await db.execute<{ a_valider: number; prochaine: Date | string | null; a_revoir: number; relectures: number }>(sql`
+      SELECT c.a_valider, c.prochaine,
+        (SELECT count(*)::int FROM campus.corrections_auto ca
+          JOIN campus.rendus r ON r.id = ca.rendu_id
+          JOIN campus.devoirs d ON d.id = r.devoir_id
+          JOIN campus.utilisateurs e ON e.id = r.etudiant_id
+          WHERE d.cours_id = ANY(${ids}) AND ca.etat = 'a_revoir' AND r.statut = 'rendu' ${duSite}) AS a_revoir,
+        (SELECT count(*)::int FROM campus.demandes_relecture dr
+          JOIN campus.rendus r ON r.id = dr.rendu_id
+          JOIN campus.devoirs d ON d.id = r.devoir_id
+          JOIN campus.utilisateurs e ON e.id = r.etudiant_id
+          WHERE d.cours_id = ANY(${ids}) AND dr.statut = 'ouverte' ${duSite}) AS relectures
+      FROM (SELECT count(*)::int AS a_valider, min(cd.echeance_le) AS prochaine
+            FROM campus.corriges_devoirs cd JOIN campus.devoirs d ON d.id = cd.devoir_id
+            WHERE d.cours_id = ANY(${ids}) AND d.publie AND cd.statut = 'propose') c`)
+  ).rows;
+  return { aValider: l?.a_valider ?? 0, prochaineEcheance: iso(l?.prochaine), aRevoir: l?.a_revoir ?? 0, relectures: l?.relectures ?? 0 };
+}
+
+/** Accueil du formateur : la dernière séance tenue (ou celle demandée), les copies, les corrigés, la relecture facultative. */
 export async function resumeEnseigner(u: Utilisateur, seanceId?: number): Promise<ResumeEnseigner> {
   const ids = await coursEnseignes(u);
   let seance: Seance | null = null;
@@ -294,8 +345,8 @@ export async function resumeEnseigner(u: Utilisateur, seanceId?: number): Promis
     seance = s;
   } else seance = await derniereSeanceTenue(ids);
 
-  const [copies, aRelire] = await Promise.all([resumeCopies(u, ids), compterARelire(ids)]);
-  return { apres: seance ? await apresSeance(u, seance) : null, copies, aRelire };
+  const [copies, aRelire, corriges] = await Promise.all([resumeCopies(u, ids), compterARelire(ids), resumeCorriges(u, ids)]);
+  return { apres: seance ? await apresSeance(u, seance) : null, copies, corriges, aRelire };
 }
 
 // ── Copies à corriger ───────────────────────────────────────────────────────
@@ -318,6 +369,8 @@ type LigneCopie = {
   ia: boolean;
   /** Exercice de la routine du soir : correction facultative (D2). */
   automatique: boolean;
+  /** Devoir corrigé par le campus (D6) : ses copies ne sont ni à corriger ni facultatives pour le formateur. */
+  campus: boolean;
 };
 
 /**
@@ -333,7 +386,7 @@ async function lignesCopies(u: Utilisateur, coursIds: number[], devoirId?: numbe
            jsonb_array_length(d.grille) > 0 AS avec_grille,
            e.id AS etudiant_id, e.prenom, e.nom, e.site_id, si.nom_court AS site,
            r.rendu_le, r.en_retard, ${SQL_CORRECTION_A_JOUR} AS a_jour, r.proposition_ia IS NOT NULL AS ia,
-           ${sqlDevoirAutomatique("d")} AS automatique
+           ${sqlDevoirAutomatique("d")} AS automatique, ${sqlCorrigeParLeCampus("d")} AS campus
     FROM campus.rendus r
     JOIN campus.devoirs d ON d.id = r.devoir_id
     JOIN campus.cours c ON c.id = d.cours_id
@@ -348,12 +401,14 @@ async function lignesCopies(u: Utilisateur, coursIds: number[], devoirId?: numbe
 
 async function resumeCopies(u: Utilisateur, coursIds: number[]): Promise<ResumeEnseigner["copies"]> {
   const lignes = await lignesCopies(u, coursIds);
-  const sansNote = lignes.filter((l) => !l.a_jour);
-  // « À corriger » : ses devoirs seulement ; les exercices du campus sont facultatifs (D2).
+  // Les copies que le campus corrige (D6) ne sont ni à corriger ni facultatives : celles qu'il laisse au
+  // formateur comptent dans corriges.aRevoir. Une note posée par le formateur reste « à publier ».
+  const sansNote = lignes.filter((l) => !l.a_jour && !l.campus);
+  // « À corriger » : ses devoirs seulement ; les exercices automatiques sans corrigé sont facultatifs (D2).
   const aCorriger = sansNote.filter((l) => !l.automatique);
   return {
     aCorriger: aCorriger.length,
-    aPublier: lignes.length - sansNote.length,
+    aPublier: lignes.filter((l) => l.a_jour).length,
     plusAncienne: iso(aCorriger[0]?.rendu_le),
     facultatives: sansNote.length - aCorriger.length,
   };
@@ -364,7 +419,8 @@ const debutDuJour = (maintenant = new Date()) => new Date(`${jourLocal(maintenan
 
 export async function copiesEnAttente(u: Utilisateur, devoirId?: number): Promise<CopiesEnAttenteDto> {
   const ids = await coursEnseignes(u);
-  const lignes = await lignesCopies(u, ids, devoirId);
+  // Copies du campus (D6) : seulement celles que le formateur a notées lui-même et pas encore envoyées.
+  const lignes = (await lignesCopies(u, ids, devoirId)).filter((l) => l.a_jour || !l.campus);
   const aCorriger = lignes.filter((l) => !l.a_jour);
   const groupes = new Map<number, GroupeCopies>();
   for (const l of lignes) {
@@ -655,6 +711,10 @@ export async function ouvrirTravailDeGroupe(u: Utilisateur, s: Seance): Promise<
     const [reserve] = await tx.insert(travauxGroupeDevoirs).values({ seanceId: s.id, devoirId: d.id }).onConflictDoNothing().returning();
     // Ouvert au même instant par un autre toucher : la transaction est annulée, rien n'est créé.
     if (!reserve) throw deja();
+    // Le dossier du cours complet n'a pas de corrigé du travail de groupe : le campus le rédigera une fois le
+    // devoir publié (routine du soir), puis l'enverra au formateur pour validation (D6). Le formateur peut aussi
+    // l'écrire lui-même dans l'éditeur du devoir avant de publier.
+    await tx.insert(corrigesDevoirs).values({ devoirId: d.id, source: "campus", statut: "en_preparation" }).onConflictDoNothing();
     return d;
   });
   await tracer(u.id, "devoir_cree", { devoirId: cree.id, coursId: s.coursId, titre: cree.titre, type: "depot", travailDeGroupe: s.id });
@@ -673,8 +733,9 @@ const OUBLI_SALON_JOURS = 14;
 /**
  * Un même lot (rien de nouveau depuis le dernier rappel) n'est rappelé que
  * trois fois au plus, à deux jours d'écart au moins (lundi, mercredi,
- * vendredi), puis plus rien tant qu'une nouvelle copie ne passe pas 48 h ou
- * qu'un étudiant n'écrit pas de nouveau dans le salon.
+ * vendredi), puis plus rien tant qu'une nouvelle copie ne passe pas 48 h,
+ * qu'un étudiant n'écrit pas de nouveau dans le salon, que le campus ne laisse
+ * pas une nouvelle copie au formateur ou qu'une relecture n'est pas demandée.
  */
 export const RAPPELS_PAR_LOT = 3;
 export const ECART_RAPPELS_JOURS = 2;
@@ -686,14 +747,19 @@ export const ECART_RAPPELS_JOURS = 2;
  * 0 si la partie n'y était pas).
  */
 const MARQUE = "rappel-formateur=";
-const marque = (jour: string, lots: Lots) => `${MARQUE}${jour}&copies=${lots.copies}&salon=${lots.salon}`;
+const marque = (jour: string, lots: Lots) =>
+  `${MARQUE}${jour}&copies=${lots.copies}&salon=${lots.salon}&revoir=${lots.revoir}&relectures=${lots.relectures}`;
 
 /** 0 = dimanche … 6 = samedi, pour un jour « AAAA-MM-JJ ». */
 const jourDeSemaine = (jour: string) => new Date(`${jour}T12:00:00Z`).getUTCDay();
 /** Jours entre deux jours « AAAA-MM-JJ ». */
 const ecartJours = (de: string, a: string) => Math.round((Date.parse(`${a}T12:00:00Z`) - Date.parse(`${de}T12:00:00Z`)) / JOUR);
 
-type Lots = { copies: number; salon: number };
+/**
+ * Les parties du rappel : copies de ses devoirs sans corrigé, questions du salon, et (D6) copies que le campus
+ * lui laisse (« à revoir ») et demandes de relecture.
+ */
+type Lots = { copies: number; salon: number; revoir: number; relectures: number };
 /** Un rappel déjà envoyé : son jour local et les lots qu'il portait. */
 export type RappelPasse = { jour: string } & Lots;
 
@@ -702,14 +768,22 @@ type Attente = {
   plusAncienne: Date | null;
   questions: number;
   coursSalon: number | null;
+  /** Copies que le campus n'a pas notées seul (consigne cachée, page illisible, vidéo…). */
+  aRevoir: number;
+  /** Demandes de relecture ouvertes. */
+  relectures: number;
+  /** Corrigés envoyés avant aujourd'hui et toujours sans réponse (mentionnés, jamais rappelés seuls). */
+  corriges: number;
   /** Élément le plus récent de chaque partie (horodatage en ms ; 0 : rien n'attend). */
   lots: Lots;
 };
 
 /**
- * Ce qui attend ce formateur : copies de SES devoirs rendues depuis plus de
- * 48 h (jamais celles des exercices automatiques : D2 ; cours publiés
- * seulement), questions du salon sans réponse depuis 24 h.
+ * Ce qui attend ce formateur (cours publiés seulement) : copies de SES devoirs
+ * rendues depuis plus de 48 h (jamais celles des exercices automatiques : D2,
+ * ni celles que le campus corrige : D6), questions du salon sans réponse
+ * depuis 24 h, copies que le campus lui laisse, demandes de relecture, et
+ * corrigés qui attendent sa validation depuis la veille.
  */
 export async function attenteFormateur(formateurId: number, maintenant = new Date()): Promise<Attente> {
   const mesCours = sql`(SELECT c.id FROM campus.cours c WHERE c.formateur_id = ${formateurId}
@@ -721,7 +795,7 @@ export async function attenteFormateur(formateurId: number, maintenant = new Dat
       JOIN campus.devoirs d ON d.id = r.devoir_id
       JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
       WHERE d.cours_id IN ${mesCours} AND d.type = 'depot' AND r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR}
-        AND NOT ${sqlDevoirAutomatique("d")}
+        AND NOT ${sqlDevoirAutomatique("d")} AND NOT ${sqlCorrigeParLeCampus("d")}
         AND r.rendu_le < ${new Date(maintenant.getTime() - ATTENTE_COPIE_MS).toISOString()}::timestamptz`)
   ).rows;
   // Salon « Questions du cours » dont le dernier message (non supprimé) vient d'un étudiant.
@@ -737,6 +811,27 @@ export async function attenteFormateur(formateurId: number, maintenant = new Dat
       AND dernier.cree_le < ${new Date(maintenant.getTime() - ATTENTE_SALON_MS).toISOString()}::timestamptz
       AND dernier.cree_le > ${new Date(maintenant.getTime() - OUBLI_SALON_JOURS * JOUR).toISOString()}::timestamptz
     ORDER BY dernier.cree_le ASC`);
+  // Correction automatique (D6) : copies laissées au formateur, relectures, corrigés proposés avant aujourd'hui.
+  const [auto] = (
+    await db.execute<{ a_revoir: number; revoir_recente: string | null; relectures: number; relecture_recente: string | null; corriges: number }>(sql`
+      SELECT
+        (SELECT count(*)::int FROM campus.corrections_auto ca JOIN campus.rendus r ON r.id = ca.rendu_id
+          JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
+          WHERE d.cours_id IN ${mesCours} AND ca.etat = 'a_revoir' AND r.statut = 'rendu') AS a_revoir,
+        (SELECT max(ca.maj_le) FROM campus.corrections_auto ca JOIN campus.rendus r ON r.id = ca.rendu_id
+          JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
+          WHERE d.cours_id IN ${mesCours} AND ca.etat = 'a_revoir' AND r.statut = 'rendu') AS revoir_recente,
+        (SELECT count(*)::int FROM campus.demandes_relecture dr JOIN campus.rendus r ON r.id = dr.rendu_id
+          JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
+          WHERE d.cours_id IN ${mesCours} AND dr.statut = 'ouverte') AS relectures,
+        (SELECT max(dr.cree_le) FROM campus.demandes_relecture dr JOIN campus.rendus r ON r.id = dr.rendu_id
+          JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
+          WHERE d.cours_id IN ${mesCours} AND dr.statut = 'ouverte') AS relecture_recente,
+        (SELECT count(*)::int FROM campus.corriges_devoirs cd JOIN campus.devoirs d ON d.id = cd.devoir_id
+          JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
+          WHERE d.cours_id IN ${mesCours} AND d.publie AND cd.statut = 'propose'
+            AND cd.message_envoye_le < ${debutDuJour(maintenant).toISOString()}::timestamptz) AS corriges`)
+  ).rows;
   const n = copies?.n ?? 0;
   const derniereQuestion = salons.rows.at(-1)?.cree_le;
   return {
@@ -744,19 +839,25 @@ export async function attenteFormateur(formateurId: number, maintenant = new Dat
     plusAncienne: copies?.plus_ancienne ? new Date(copies.plus_ancienne) : null,
     questions: salons.rows.length,
     coursSalon: salons.rows[0]?.cours_id ?? null,
+    aRevoir: auto?.a_revoir ?? 0,
+    relectures: auto?.relectures ?? 0,
+    corriges: auto?.corriges ?? 0,
     lots: {
       copies: n && copies?.plus_recente ? new Date(copies.plus_recente).getTime() : 0,
       salon: derniereQuestion ? new Date(derniereQuestion).getTime() : 0,
+      revoir: auto?.a_revoir && auto.revoir_recente ? new Date(auto.revoir_recente).getTime() : 0,
+      relectures: auto?.relectures && auto.relecture_recente ? new Date(auto.relecture_recente).getTime() : 0,
     },
   };
 }
 
 /**
- * Faut-il rappeler cette partie (copies ou salon) aujourd'hui ? « lot » :
- * horodatage de son élément le plus récent qui attend ; « passes » : les
- * rappels déjà envoyés, du plus récent au plus ancien. Un lot plus récent que
- * tout ce qui a déjà été rappelé ouvre une nouvelle série ; sinon, au plus
- * RAPPELS_PAR_LOT rappels dans la série, à ECART_RAPPELS_JOURS jours d'écart.
+ * Faut-il rappeler cette partie (copies, salon, copies à revoir, relectures)
+ * aujourd'hui ? « lot » : horodatage de son élément le plus récent qui attend ;
+ * « passes » : les rappels déjà envoyés, du plus récent au plus ancien. Un lot
+ * plus récent que tout ce qui a déjà été rappelé ouvre une nouvelle série ;
+ * sinon, au plus RAPPELS_PAR_LOT rappels dans la série, à ECART_RAPPELS_JOURS
+ * jours d'écart.
  */
 export function partieARappeler(partie: keyof Lots, lot: number, jour: string, passes: RappelPasse[]): boolean {
   if (!lot) return false;
@@ -782,9 +883,9 @@ async function rappelsPasses(formateurId: number): Promise<RappelPasse[]> {
     LIMIT 30`);
   const passes: RappelPasse[] = [];
   for (const { lien } of r.rows) {
-    const m = /rappel-formateur=(\d{4}-\d{2}-\d{2})(?:&copies=(\d+)&salon=(\d+))?/.exec(lien);
+    const m = /rappel-formateur=(\d{4}-\d{2}-\d{2})(?:&copies=(\d+)&salon=(\d+))?(?:&revoir=(\d+)&relectures=(\d+))?/.exec(lien);
     // Rappel d'avant les lots (copies et salon mêlés) : il compte pour le jour, pas pour une série.
-    if (m) passes.push({ jour: m[1], copies: Number(m[2] ?? 0), salon: Number(m[3] ?? 0) });
+    if (m) passes.push({ jour: m[1], copies: Number(m[2] ?? 0), salon: Number(m[3] ?? 0), revoir: Number(m[4] ?? 0), relectures: Number(m[5] ?? 0) });
   }
   return passes;
 }
@@ -792,9 +893,13 @@ async function rappelsPasses(formateurId: number): Promise<RappelPasse[]> {
 /**
  * Tâche planifiée (toutes les 15 minutes) : à 8 h dans le fuseau de chaque
  * formateur (Abidjan par défaut), du lundi au vendredi, un seul rappel s'il a
- * des copies de ses devoirs en attente depuis 48 h ou des questions du salon
- * sans réponse ; chaque partie au plus trois fois pour un même lot (voir
- * partieARappeler). Au plus un par jour : la marque du jour est dans le lien.
+ * des demandes de relecture, des copies que le campus lui laisse, des copies
+ * de ses devoirs en attente depuis 48 h ou des questions du salon sans
+ * réponse ; chaque partie au plus trois fois pour un même lot (voir
+ * partieARappeler). La partie la plus pressée fait le titre, les autres
+ * suivent en une phrase, avec les corrigés qui attendent sa validation depuis
+ * la veille (jamais rappelés seuls : le message du jour et son rappel s'en
+ * chargent). Au plus un par jour : la marque du jour est dans le lien.
  * Priorité « action », pas d'e-mail (quota partagé avec le site).
  * « maintenant » se règle pour les essais (horloge simulée).
  */
@@ -812,25 +917,42 @@ export async function envoyerRelancesFormateurs(maintenant = new Date()): Promis
     const passes = await rappelsPasses(f.id);
     if (passes.some((p) => p.jour === jour)) continue;
     const a = await attenteFormateur(f.id, maintenant);
-    const copies = partieARappeler("copies", a.lots.copies, jour, passes) ? a.copies : 0;
-    const questions = partieARappeler("salon", a.lots.salon, jour, passes) ? a.questions : 0;
-    if (!copies && !questions) continue;
-    const lots: Lots = { copies: copies ? a.lots.copies : 0, salon: questions ? a.lots.salon : 0 };
+    const nombres = {
+      relectures: partieARappeler("relectures", a.lots.relectures, jour, passes) ? a.relectures : 0,
+      revoir: partieARappeler("revoir", a.lots.revoir, jour, passes) ? a.aRevoir : 0,
+      copies: partieARappeler("copies", a.lots.copies, jour, passes) ? a.copies : 0,
+      salon: partieARappeler("salon", a.lots.salon, jour, passes) ? a.questions : 0,
+    };
+    // Dans l'ordre de ce qui presse le plus : un étudiant qui attend une réponse, puis une note à décider.
+    const parties = (["relectures", "revoir", "copies", "salon"] as const).filter((p) => nombres[p] > 0);
+    if (!parties.length) continue;
+    const lots: Lots = {
+      copies: nombres.copies ? a.lots.copies : 0,
+      salon: nombres.salon ? a.lots.salon : 0,
+      revoir: nombres.revoir ? a.lots.revoir : 0,
+      relectures: nombres.relectures ? a.lots.relectures : 0,
+    };
+    const [premiere, ...autres] = parties;
     let titre: string;
     let corps: string;
     let lien: string;
-    if (copies) {
+    if (premiere === "relectures" || premiere === "revoir") {
+      titre = selonNombre(t, `rappel.${premiere}.titre`, nombres[premiere], vous);
+      corps = t(premiere === "relectures" ? "rappel.relectures.corps" : "rappel.revoir.corps", vous);
+      lien = `/enseigner/a-revoir?${marque(jour, lots)}`;
+    } else if (premiere === "copies") {
       const jours = a.plusAncienne ? Math.max(2, Math.floor((maintenant.getTime() - a.plusAncienne.getTime()) / JOUR)) : 2;
-      titre = selonNombre(t, "rappel.copies.titre", copies, vous);
+      titre = selonNombre(t, "rappel.copies.titre", nombres.copies, vous);
       corps = t("rappel.copies.corps", { ...vous, v: { jours } });
-      if (questions) corps += ` ${selonNombre(t, "rappel.salon.enPlus", questions, vous)}`;
       lien = `/corriger?${marque(jour, lots)}`;
     } else {
-      titre = selonNombre(t, "rappel.salon.titre", questions, vous);
+      titre = selonNombre(t, "rappel.salon.titre", nombres.salon, vous);
       corps = t("rappel.salon.corps", vous);
       lien = `/messages/cours/${a.coursSalon}?${marque(jour, lots)}`;
     }
-    await notifier([f.id], { type: copies ? "devoir" : "message", titre, corps, lien, priorite: "action" });
+    for (const p of autres) corps += ` ${selonNombre(t, p === "relectures" ? "rappel.relectures.enPlus" : p === "revoir" ? "rappel.revoir.enPlus" : p === "copies" ? "rappel.copies.enPlus" : "rappel.salon.enPlus", nombres[p], vous)}`;
+    if (a.corriges) corps += ` ${selonNombre(t, "rappel.corriges.enPlus", a.corriges, vous)}`;
+    await notifier([f.id], { type: premiere === "salon" ? "message" : "devoir", titre, corps, lien, priorite: "action" });
     prevenus.push(f.id);
   }
   return prevenus;

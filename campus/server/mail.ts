@@ -7,6 +7,8 @@
 // et styles en ligne : lisible dans Gmail, Outlook et les messageries des
 // téléphones, et encore lisible si les images sont bloquées.
 import { config } from "./config";
+import { selonNombre, t as tEnseigner } from "@shared/textes/enseigner";
+import type { TypeQuestion } from "@shared/schema";
 
 /** Le service d'e-mail est-il configuré ? */
 export const emailDisponible = () => Boolean(config.mail.resendCle);
@@ -62,6 +64,8 @@ const ENCRE = "#141414";
 const TEXTE_PALE = "#6B625B";
 const CREME = "#FBF6F2";
 const LIGNE = "#EADFD5";
+/** Couleurs des e-mails, reprises par les pages servies hors de l'application (lien de validation des corrigés). */
+export const COULEURS_EMAIL = { ORANGE, ORANGE_FONCE, ENCRE, TEXTE_PALE, CREME, LIGNE } as const;
 
 /** Contacts officiels du groupe (www.2iae.com). */
 export const CONTACTS_2IAE = {
@@ -71,7 +75,7 @@ export const CONTACTS_2IAE = {
   site: "https://www.2iae.com",
 };
 
-const echapper = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+export const echapper = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export type ContenuEmail = {
   /** Petite ligne en capitales au-dessus du titre (« Invitation »). */
@@ -80,6 +84,8 @@ export type ContenuEmail = {
   /** Paragraphes (texte brut, échappé). Les ** entourent un passage en gras. */
   paragraphes: string[];
   bouton?: { libelle: string; lien: string };
+  /** Second bouton, plus discret (contour), à côté du premier (« Voir et modifier »). */
+  boutonSecondaire?: { libelle: string; lien: string };
   /** Petites lignes sous le bouton. */
   apresBouton?: string[];
   /** Encadré crème : paires libellé / valeur (identifiant, lien à copier…). */
@@ -92,6 +98,11 @@ export type ContenuEmail = {
   apercu?: string;
   /** Rubriques courtes entre les paragraphes et le bouton (e-mail de la semaine) : un intertitre et des lignes. */
   sections?: { titre: string; lignes: string[] }[];
+  /**
+   * Fiches encadrées entre les rubriques et le bouton (corrigés du jour) : une petite étiquette, un titre, des
+   * lignes (** pour le gras, retours à la ligne gardés) et un lien discret facultatif.
+   */
+  blocs?: { etiquette?: string; titre: string; lignes: string[]; lien?: { libelle: string; lien: string } }[];
   /** Étudiant : le pied de page le tutoie (« Écris-nous »). */
   tutoiement?: boolean;
   /** E-mails d'engagement : pourquoi on le reçoit, et le lien signé « Ne plus recevoir ces e-mails » (sans connexion). */
@@ -101,6 +112,8 @@ export type ContenuEmail = {
 /** Paragraphe : échappe puis met en gras ce qui est entre ** **. */
 const enrichir = (s: string) => echapper(s).replace(/\*\*(.+?)\*\*/g, `<strong style="color:${ENCRE}">$1</strong>`);
 const enClair = (s: string) => s.replace(/\*\*(.+?)\*\*/g, "$1");
+/** Ligne d'une fiche : comme un paragraphe, et les retours à la ligne deviennent des sauts de ligne (gras ligne par ligne). */
+const enrichirLignes = (s: string) => s.split("\n").map(enrichir).join("<br>");
 
 /** Construit la version HTML et la version texte d'un e-mail du campus. */
 export function gabaritEmail(c: ContenuEmail): { html: string; texte: string } {
@@ -131,11 +144,34 @@ ${(c.sections ?? [])
 </td></tr>`,
   )
   .join("\n")}
+${(c.blocs ?? [])
+  .map(
+    (b) => `<tr><td style="padding:8px 32px 8px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${CREME};border:1px solid ${LIGNE};border-radius:14px">
+  <tr><td style="padding:14px 16px 4px">
+    ${b.etiquette ? `<p style="margin:0 0 4px;font-family:'IBM Plex Mono',Menlo,Consolas,monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:${ORANGE_FONCE}">${echapper(b.etiquette)}</p>` : ""}
+    <p style="margin:0 0 6px;font-size:16px;line-height:1.3;font-weight:800;color:${ENCRE}">${echapper(b.titre)}</p>
+  </td></tr>
+  ${b.lignes.map((l) => `<tr><td style="padding:8px 16px;border-top:1px solid ${LIGNE};font-size:14.5px;line-height:1.5;color:#3D3833">${enrichirLignes(l)}</td></tr>`).join("\n  ")}
+  ${b.lien ? `<tr><td style="padding:6px 16px 14px"><a href="${echapper(b.lien.lien)}" style="font-size:14px;font-weight:700;color:${ORANGE_FONCE};text-decoration:none">${echapper(b.lien.libelle)} →</a></td></tr>` : `<tr><td style="padding:0 0 6px"></td></tr>`}
+  </table>
+</td></tr>`,
+  )
+  .join("\n")}
 ${
   c.bouton
     ? `<tr><td style="padding:10px 32px 6px">
   <table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius:12px;background:${ORANGE}">
     <a href="${echapper(c.bouton.lien)}" style="display:inline-block;padding:15px 26px;font-size:16px;font-weight:800;color:${ENCRE};text-decoration:none;border-radius:12px">${echapper(c.bouton.libelle)}</a>
+  </td></tr></table>
+</td></tr>`
+    : ""
+}
+${
+  c.boutonSecondaire
+    ? `<tr><td style="padding:8px 32px 6px">
+  <table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="border-radius:12px;border:2px solid ${ENCRE}">
+    <a href="${echapper(c.boutonSecondaire.lien)}" style="display:inline-block;padding:13px 24px;font-size:16px;font-weight:800;color:${ENCRE};text-decoration:none;border-radius:12px">${echapper(c.boutonSecondaire.libelle)}</a>
   </td></tr></table>
 </td></tr>`
     : ""
@@ -207,7 +243,14 @@ ${
     "",
     ...c.paragraphes.map(enClair).flatMap((p) => [p, ""]),
     ...(c.sections ?? []).filter((s) => s.lignes.length).flatMap((s) => [s.titre.toUpperCase(), ...s.lignes.map((l) => `- ${enClair(l)}`), ""]),
+    ...(c.blocs ?? []).flatMap((b) => [
+      [b.etiquette, b.titre].filter(Boolean).join(" · ").toUpperCase(),
+      ...b.lignes.map((l) => enClair(l)),
+      ...(b.lien ? [`${b.lien.libelle} : ${b.lien.lien}`] : []),
+      "",
+    ]),
     ...(c.bouton ? [`${c.bouton.libelle} : ${c.bouton.lien}`, ""] : []),
+    ...(c.boutonSecondaire ? [`${c.boutonSecondaire.libelle} : ${c.boutonSecondaire.lien}`, ""] : []),
     ...(c.apresBouton ?? []).map(enClair),
     ...(c.encadre?.length ? ["", ...c.encadre.map((l) => `${l.libelle} : ${l.valeur}`)] : []),
     ...(c.etapes?.length
@@ -305,7 +348,7 @@ export function emailGuideBienvenue(o: {
         },
         {
           titre: "Donner et corriger les devoirs",
-          texte: "Dans « **Corrections** », « Nouveau devoir » : un **devoir à rendre** (copie en photo, PDF ou Word) ou une **interrogation** corrigée toute seule, avec la consigne, la date limite et le barème, puis « Publier ». Quand les copies arrivent, l'IA vous propose une note et un commentaire : vous relisez, vous décidez, puis « Publier les notes ».",
+          texte: "Dans « **Corrections** », « Nouveau devoir » : un **devoir à rendre** (copie en photo, PDF ou Word) ou une **interrogation** corrigée toute seule, avec la consigne, la date limite et le barème, puis « Publier ». Chaque jour, le campus vous envoie le **corrigé** des devoirs de vos cours (bonnes réponses du QCM, corrigé de l'exercice) : validez-le ou modifiez-le ; sans réponse, il est tenu pour bon au bout de 24 heures. Le campus **corrige alors les copies** d'après ce corrigé et publie les notes. Vous gardez la main : vous changez toute note, et vous tranchez les copies douteuses et les demandes de relecture des étudiants.",
         },
         {
           titre: "Après le cours",
@@ -405,7 +448,7 @@ export function emailGuideEtudiant(o: {
       },
       {
         titre: "Rendre un devoir",
-        texte: "« **Devoirs** » : ouvre le devoir, touche « Rendre mon devoir » et prends ta copie en photo (ou joins un PDF). Ta note et le commentaire du formateur arrivent dès qu'ils sont publiés.",
+        texte: "« **Devoirs** » : ouvre le devoir, touche « Rendre mon devoir » et prends ta copie en photo nette (ou joins un PDF). Le campus la corrige d'après le corrigé de ton formateur : ta note et les conseils critère par critère arrivent dès qu'ils sont publiés. Une note te semble fausse ? Demande une relecture à ton formateur.",
       },
       {
         titre: "Besoin d'aide",
@@ -457,4 +500,149 @@ export function emailLienFormateur(o: { pour: string; lien: string; expireLe: Da
     encadre: [{ libelle: "Lien d'inscription", valeur: o.lien, mono: true }],
   });
   return { sujet: "Créez votre compte formateur · Campus numérique 2IAE", html, texte };
+}
+
+// ── Corrigés du jour (correction automatique, 8 octobre 2026) ──────────────
+
+/**
+ * Markdown lisible en texte d'e-mail : titres et listes gardés comme lignes, liens et images réduits à leur
+ * texte, gras gardé (** **), le reste des marques retiré. Coupé proprement à « max » caractères (fin de ligne
+ * ou de phrase), avec « … » : « coupe » dit si le texte a été raccourci.
+ */
+export function markdownEnTexte(md: string, max: number): { texte: string; coupe: boolean } {
+  const lignes = md
+    .replace(/\r\n?/g, "\n")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/`{1,3}/g, "")
+    .split("\n")
+    .map((l) =>
+      l
+        .replace(/^\s{0,3}#{1,6}\s+(.*)$/, "**$1**")
+        .replace(/^\s*[-*+]\s+/, "• ")
+        .replace(/^\s*>\s?/, "")
+        .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2")
+        .replace(/__([^_]+)__/g, "**$1**")
+        .replace(/\s+$/, ""),
+    );
+  // Pas plus d'une ligne vide d'affilée.
+  const propre = lignes.filter((l, i) => l !== "" || (i > 0 && lignes[i - 1] !== "")).join("\n").trim();
+  if (propre.length <= max) return { texte: propre, coupe: false };
+  const debut = propre.slice(0, max);
+  const fin = Math.max(debut.lastIndexOf("\n"), debut.lastIndexOf(". "));
+  const coupe = (fin > max * 0.6 ? debut.slice(0, fin + 1) : debut).trimEnd();
+  // Un gras ouvert et pas refermé dans la partie gardée n'est pas affiché tel quel.
+  const ouverts = (coupe.match(/\*\*/g) ?? []).length % 2;
+  return { texte: `${ouverts ? `${coupe}**` : coupe} …`, coupe: true };
+}
+
+/** Un corrigé à montrer dans l'e-mail du jour (préparé par server/corriges.ts). */
+export type CorrigeDuJourEmail = {
+  type: "quiz" | "depot";
+  titre: string;
+  coursCode: string;
+  seanceTitre: string | null;
+  consigne: string;
+  bareme: number;
+  grille: { critere: string; points: number }[];
+  contenu: string;
+  questions: { type: TypeQuestion; enonce: string; options: string[]; bonnes: (number | string)[]; explication: string | null }[];
+  /** Page du corrigé sur le campus. */
+  lien: string;
+};
+
+/** Longueurs gardées dans l'e-mail (Gmail coupe un message au-delà de 100 Ko environ). */
+const MAX_CONSIGNE_EMAIL = 700;
+const MAX_CORRIGE_EMAIL = 2200;
+const MAX_ENONCE_EMAIL = 300;
+const MAX_OPTION_EMAIL = 200;
+const MAX_EXPLICATION_EMAIL = 260;
+
+const enUneLigne = (s: string, max: number) => {
+  const l = s.replace(/\s+/g, " ").trim();
+  return l.length > max ? `${l.slice(0, max - 1).trimEnd()}…` : l;
+};
+const LETTRES = "ABCDEFGHIJ";
+
+/** La bonne réponse d'une question, lisible (« B. Une fonction »), quel que soit son type. */
+function bonneReponseLisible(q: CorrigeDuJourEmail["questions"][number]): string {
+  if (q.type === "reponse_courte") return q.bonnes.map((b) => `« ${enUneLigne(String(b), MAX_OPTION_EMAIL)} »`).join(" ou ");
+  if (q.type === "vrai_faux") return q.bonnes.map((b) => (Number(b) === 0 ? tEnseigner("corriges.email.vrai") : tEnseigner("corriges.email.faux"))).join(", ");
+  return q.bonnes
+    .map((b) => Number(b))
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < q.options.length)
+    .map((i) => `${LETTRES[i] ?? i + 1}. ${enUneLigne(q.options[i], MAX_OPTION_EMAIL)}`)
+    .join(" + ");
+}
+
+/** La fiche d'un corrigé dans l'e-mail : questions et bonnes réponses (QCM), consigne, grille et corrigé (exercice). */
+function blocCorrige(c: CorrigeDuJourEmail): NonNullable<ContenuEmail["blocs"]>[number] {
+  const v = { code: c.coursCode };
+  if (c.type === "quiz") {
+    return {
+      etiquette: tEnseigner("corriges.email.bloc.quiz", { v }),
+      titre: c.titre,
+      lignes: [
+        selonNombre(tEnseigner, "corriges.email.bloc.questions", c.questions.length),
+        ...c.questions.map(
+          (q, i) =>
+            tEnseigner("corriges.email.question", { v: { i: i + 1, enonce: enUneLigne(q.enonce, MAX_ENONCE_EMAIL), reponse: bonneReponseLisible(q) } }) +
+            (q.explication?.trim() ? tEnseigner("corriges.email.explication", { v: { explication: enUneLigne(q.explication, MAX_EXPLICATION_EMAIL) } }) : ""),
+        ),
+      ],
+      lien: { libelle: tEnseigner("corriges.email.lireTout"), lien: c.lien },
+    };
+  }
+  const consigne = markdownEnTexte(c.consigne, MAX_CONSIGNE_EMAIL);
+  const corrige = markdownEnTexte(c.contenu, MAX_CORRIGE_EMAIL);
+  return {
+    etiquette: tEnseigner("corriges.email.bloc.depot", { v }),
+    titre: c.titre,
+    lignes: [
+      ...(consigne.texte ? [tEnseigner("corriges.email.consigne", { v: { texte: consigne.texte } })] : []),
+      c.grille.length
+        ? tEnseigner("corriges.email.grille", { v: { bareme: c.bareme, criteres: c.grille.map((g) => `${g.critere} (${g.points})`).join(" · ") } })
+        : tEnseigner("corriges.email.sansGrille", { v: { bareme: c.bareme } }),
+      tEnseigner("corriges.email.corrige", { v: { texte: corrige.texte } }),
+    ],
+    lien: { libelle: tEnseigner(corrige.coupe || consigne.coupe ? "corriges.email.suite" : "corriges.email.lireTout"), lien: c.lien },
+  };
+}
+
+/**
+ * E-mail du jour au formateur : le corrigé des devoirs que ses étudiants ont reçus (bonnes réponses du QCM,
+ * consigne, grille et corrigé de l'exercice), l'heure à laquelle ils seront tenus pour bons, et deux boutons :
+ * « Tout est juste : valider » (lien signé, qui ouvre une page de confirmation) et « Voir et modifier ».
+ * « autres » : corrigés envoyés aussi mais pas détaillés ici (trop nombreux pour un e-mail).
+ */
+export function emailCorrigesDuJour(o: {
+  personne: { prenom: string; nom: string };
+  corriges: CorrigeDuJourEmail[];
+  autres: number;
+  /** « demain, vendredi 9 octobre à 15h00 » */
+  quand: string;
+  /** « jeudi 8 octobre » */
+  date: string;
+  lienValider: string | null;
+  lienVoir: string;
+}): { sujet: string; html: string; texte: string } {
+  const n = o.corriges.length + o.autres;
+  const appel = /^(m|mme|mlle|dr|pr)\.?$/i.test(o.personne.prenom.trim()) ? nomAffiche(o.personne) : o.personne.prenom.trim() || nomAffiche(o.personne);
+  const avecQcm = o.corriges.some((c) => c.type === "quiz");
+  const { html, texte } = gabaritEmail({
+    etiquette: tEnseigner("corriges.email.etiquette", { v: { date: o.date } }),
+    titre: tEnseigner("corriges.email.titre", { v: { appel } }),
+    apercu: tEnseigner("corriges.email.apercu"),
+    paragraphes: [selonNombre(tEnseigner, "corriges.email.intro", n), selonNombre(tEnseigner, "corriges.email.regle", n, { v: { quand: o.quand } })],
+    blocs: o.corriges.map(blocCorrige),
+    sections: [],
+    bouton: o.lienValider ? { libelle: tEnseigner("corriges.email.valider"), lien: o.lienValider } : undefined,
+    boutonSecondaire: { libelle: tEnseigner("corriges.email.voir"), lien: o.lienVoir },
+    apresBouton: [
+      ...(o.autres ? [selonNombre(tEnseigner, "corriges.email.autres", o.autres)] : []),
+      ...(o.lienValider ? [tEnseigner("corriges.email.apres.confirmer")] : []),
+      ...(avecQcm ? [tEnseigner("corriges.email.apres.qcm")] : []),
+    ],
+  });
+  return { sujet: selonNombre(tEnseigner, "corriges.email.sujet", n), html, texte };
 }

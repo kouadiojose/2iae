@@ -1,14 +1,17 @@
 // Devoirs préparés par le campus à partir du cours complet d'une séance :
 // - une interrogation en QCM, notée automatiquement (correction détaillée
 //   visible après la date limite) ;
-// - un exercice pratique à rendre en photo de la copie, en fichier ou en
-//   courte vidéo, corrigé par le formateur (grille et corrigé fournis pour
-//   l'aide à la correction).
-// Le formateur du cours en est l'auteur : il peut les modifier, les dépublier
-// ou les supprimer comme les siens. DEVOIRS_AUTO=non coupe la fonction.
+// - un exercice pratique à rendre en photo de la copie ou en fichier, corrigé
+//   par le campus d'après le corrigé que le formateur valide (correction
+//   automatique, décision de José du 8 octobre 2026 : server/corriges.ts) ; une
+//   vidéo seule est corrigée par le formateur.
+// Chacun a sa ligne de corrigé (corriges_devoirs), proposée au formateur par le
+// message du jour. Le formateur du cours en est l'auteur : il peut les modifier,
+// les dépublier ou les supprimer comme les siens. DEVOIRS_AUTO=non coupe la
+// fonction.
 import { eq, sql } from "drizzle-orm";
 import { db } from "./db";
-import { cours, devoirs, devoirsSeances, questionsQuiz, type CritereGrille, type Devoir, type DossierCours, type Seance } from "@shared/schema";
+import { corrigesDevoirs, cours, devoirs, devoirsSeances, questionsQuiz, type CritereGrille, type Devoir, type DossierCours, type Seance } from "@shared/schema";
 import { finEcheance } from "./evaluations-outils";
 import { annoncerSiOuvert } from "./routes/evaluations";
 
@@ -27,8 +30,9 @@ function dansJours(n: number): Date {
 const dateCourte = (d: Date) => d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: "UTC" });
 
 /**
- * Crée les deux devoirs de la séance ; renvoie leurs identifiants et les
- * corrigés réservés au formateur (aucun devoir si le cours n'est pas publié).
+ * Crée les deux devoirs de la séance et leurs corrigés à valider ; renvoie
+ * leurs identifiants et les corrigés réservés au formateur (gardés aussi dans
+ * devoirs_seances, comme avant), aucun devoir si le cours n'est pas publié.
  * Les questions et l'exercice notés sont différents de ceux d'entraînement du
  * cours complet, que les étudiants voient avec leurs corrigés.
  */
@@ -80,6 +84,9 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
           ordre: i,
         })),
       );
+      // Corrigé du QCM (les bonnes réponses sont dans les questions) : proposé au formateur par le message du jour,
+      // qui fixe aussi son échéance.
+      await tx.insert(corrigesDevoirs).values({ devoirId: quiz.id, contenu: "", source: "campus", statut: "propose" }).onConflictDoNothing();
       faits.push(quiz);
     }
     if (exercice) {
@@ -94,8 +101,9 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
         `## ${exercice.titre}`,
         exercice.enonce,
         exercice.consignes.length ? `**Ce que tu dois faire :**\n${exercice.consignes.map((x) => `- ${x}`).join("\n")}` : "",
-        "**Comment rendre ton travail :** prends ta copie en photo (page par page), dépose un fichier (PDF, Word, Excel…) ou filme une courte vidéo (3 minutes au plus) où tu expliques ta démarche. Tu peux mélanger.",
-        `_Exercice préparé par le campus d'après le cours du ${jour}. Ton formateur peut le noter sur 20 : avant de rendre, vérifie ton travail avec la grille._`,
+        "**Comment rendre ton travail :** prends ta copie en photo, page par page, bien nette et bien éclairée, ou dépose un fichier (PDF, Word, Excel…). Une vidéo seule n'est pas corrigée par le campus : c'est ton formateur qui la regarde, plus tard.",
+        `**Comment tu es noté :** le campus corrige ta copie d'après le corrigé validé par ton formateur. Tu reçois ta note sur 20 et des conseils critère par critère ; si une note te semble fausse, tu peux demander une relecture à ton formateur.`,
+        `_Exercice préparé par le campus d'après le cours du ${jour}. Avant de rendre, vérifie ton travail avec la grille._`,
       ]
         .filter(Boolean)
         .join("\n\n");
@@ -115,7 +123,13 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
           publie: true,
         })
         .returning();
-      corriges[String(depot.id)] = exercice.corrige.slice(0, 8000);
+      const corrige = exercice.corrige.trim().slice(0, 8000);
+      corriges[String(depot.id)] = corrige;
+      // Corrigé proposé au formateur (message du jour) ; sans corrigé, le campus le rédige (routine du soir).
+      await tx
+        .insert(corrigesDevoirs)
+        .values({ devoirId: depot.id, contenu: corrige, source: "campus", statut: corrige ? "propose" : "en_preparation" })
+        .onConflictDoNothing();
       faits.push(depot);
     }
     return faits;
@@ -126,8 +140,14 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
   return { devoirIds: crees.map((x) => x.id), corriges };
 }
 
-/** Corrigé réservé au formateur d'un devoir créé par le campus, s'il y en a un. */
+/**
+ * Corrigé réservé au formateur d'un devoir, s'il y en a un (aide à la correction) : celui du circuit des
+ * corrigés (corriges_devoirs : validé, modifié ou proposé), sinon celui que la routine du soir a rangé à la
+ * création du devoir (devoirs_seances).
+ */
 export async function corrigeDuDevoir(devoirId: number): Promise<string | null> {
+  const [c] = await db.select({ contenu: corrigesDevoirs.contenu }).from(corrigesDevoirs).where(eq(corrigesDevoirs.devoirId, devoirId));
+  if (c?.contenu.trim()) return c.contenu;
   const [l] = await db
     .select({ corriges: devoirsSeances.corriges })
     .from(devoirsSeances)

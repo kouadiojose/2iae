@@ -1,11 +1,13 @@
 // Outils du module évaluations : reçus de dépôt, correction automatique des
-// interrogations, fin des tentatives. Certains servent à d'autres modules
+// interrogations, fin des tentatives, nouveau calcul des notes d'une
+// interrogation dont le corrigé change. Certains servent à d'autres modules
 // (interrogationEnCours met l'assistant IA en pause).
 import crypto from "crypto";
 import { and, asc, eq, isNull, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { config } from "./config";
 import { publierUtilisateur } from "./temps-reel";
+import { notifier } from "./notifications";
 import {
   devoirs,
   rendus,
@@ -237,16 +239,60 @@ export async function terminerTentative(tentativeId: number, horsDelai = false) 
       renduLe: meilleure.premiere ?? fin,
       enRetard: false,
       note: meilleure.note,
+      // Note posée par le campus (correction automatique), comme toutes les notes d'interrogation (migration 0033).
+      origineNote: "campus",
       corrigeLe: new Date(),
     })
     .onConflictDoUpdate({
       target: [rendus.devoirId, rendus.etudiantId],
-      set: { statut: "corrige", note: meilleure.note, corrigeLe: new Date(), majLe: new Date() },
+      set: { statut: "corrige", note: meilleure.note, origineNote: "campus", corrigeLe: new Date(), majLe: new Date() },
     })
     .returning();
   if (!rendu.recu) await db.update(rendus).set({ recu: recuPour(rendu.id) }).where(eq(rendus.id, rendu.id));
   publierUtilisateur(t.etudiantId, "quiz-termine", { devoirId: d.id, tentativeId: t.id });
   return { ...resultat, devoir: d, meilleureNote: meilleure.note ?? resultat.note, faites: meilleure.faites, horsDelai };
+}
+
+/**
+ * Recalcule les notes d'une interrogation dont le corrigé a changé (bonne réponse corrigée, points, question
+ * ajoutée ou retirée, barème) : chaque tentative terminée est corrigée de nouveau, puis la meilleure note de
+ * chaque étudiant remplace celle de sa copie. Les étudiants dont la note publiée a changé sont prévenus
+ * (« Note mise à jour », jamais la note). Sans aucune question, rien n'est recalculé : toutes les notes
+ * tomberaient à zéro. Une note posée à la main par un formateur (correcteur connu) n'est jamais remplacée.
+ * Les tentatives en cours seront corrigées à leur fin, avec les nouvelles réponses.
+ */
+export async function recalculerQuiz(devoirId: number): Promise<{ tentatives: number; etudiants: number[] }> {
+  const [d] = await db.select().from(devoirs).where(eq(devoirs.id, devoirId));
+  if (!d || d.type !== "quiz") return { tentatives: 0, etudiants: [] };
+  const questions = await db.select().from(questionsQuiz).where(eq(questionsQuiz.devoirId, d.id)).orderBy(asc(questionsQuiz.ordre), asc(questionsQuiz.id));
+  if (!questions.length) return { tentatives: 0, etudiants: [] };
+  const faites = await db
+    .select()
+    .from(tentativesQuiz)
+    .where(and(eq(tentativesQuiz.devoirId, d.id), isNotNull(tentativesQuiz.finLe)));
+  let tentatives = 0;
+  for (const t of faites) {
+    const r = corrigerTentative(questions, t.reponses, d.bareme);
+    if (r.score === t.score && r.note === t.note) continue;
+    await db.update(tentativesQuiz).set({ score: r.score, note: r.note }).where(eq(tentativesQuiz.id, t.id));
+    tentatives++;
+  }
+  const etudiants: number[] = [];
+  const copies = await db.select().from(rendus).where(eq(rendus.devoirId, d.id));
+  for (const etudiantId of new Set(faites.map((t) => t.etudiantId))) {
+    const copie = copies.find((r) => r.etudiantId === etudiantId);
+    if (!copie || copie.correcteurId !== null) continue;
+    const { note } = await meilleureNoteQuiz(d.id, etudiantId);
+    // Notes rangées en réel simple précision : comparées au centième, comme elles s'affichent.
+    if (note === null || (copie.note !== null && Math.abs(copie.note - note) < 0.005)) continue;
+    await db.update(rendus).set({ note, corrigeLe: new Date(), majLe: new Date() }).where(eq(rendus.id, copie.id));
+    if (copie.statut === "corrige") etudiants.push(etudiantId);
+  }
+  if (etudiants.length) {
+    await notifier(etudiants, { type: "note", titre: "Note mise à jour", corps: `« ${d.titre} »`, lien: `/quiz/${d.id}` });
+    for (const id of etudiants) publierUtilisateur(id, "devoir-corrige", { devoirId: d.id });
+  }
+  return { tentatives, etudiants };
 }
 
 /** Termine les tentatives dont le temps (et la marge) est écoulé : l'étudiant a fermé l'onglet ou perdu le réseau. */

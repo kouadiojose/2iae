@@ -5,10 +5,12 @@
 //   GET  /api/coupe[?vue=bandeau]    tout compte sauf l'écran de salle : la Coupe de la semaine
 //   GET  /api/coupe/salle[?site=]    écran de salle (et équipe) : la Coupe des campus, en grand
 // Réponses « private, no-cache », sans aucune donnée nominative dans la Coupe :
-// des taux de campus et de classes, jamais un étudiant. Un étudiant ne voit le
-// rang que dans la moitié haute ; les autres voient leur progression, par
-// ordre alphabétique. L'équipe (vouvoyée) voit tous les chiffres de son
-// périmètre (perimetreSites), 8 semaines d'historique et le détail des actes.
+// des taux de campus et de classes, jamais un étudiant. Un étudiant (et l'écran
+// de salle) ne voit un rang que s'il est montrable (rangVisible : moitié haute,
+// jamais le dernier, jamais à 0 %) ; les autres sont listés par ordre
+// alphabétique avec leur progression, seulement si elle monte. L'équipe
+// (vouvoyée) voit tous les chiffres de son périmètre (perimetreSites),
+// 8 semaines d'historique et le détail des actes.
 // Les classements lus sont gardés 5 minutes en mémoire.
 import type { Express, Response } from "express";
 import { z } from "zod";
@@ -17,16 +19,17 @@ import { db } from "../db";
 import { exigerRole, moi, perimetreSites, estEquipe } from "../auth";
 import { route, valider } from "../http";
 import { rafraichirPersonne, rattrapageTermine } from "../engagement/registre";
-import { mettreAJourSemaines, jokerDuMoisLibre } from "../engagement/semaines";
+import { mettreAJourSemaines, jokerDuMoisLibre, lundiCourantPourBilan } from "../engagement/semaines";
 import { attribuerBadges, badgesDisponibles, compteursBadges, prochainBadge } from "../engagement/badges";
 import { estClassee, lireClassement, lundiEnCours, passerCoupe, type ClassementLu, type LigneCoupe } from "../engagement/coupe";
-import { COUPE, PLAFONDS, POINTS } from "../engagement/bareme";
+import { COUPE, PLAFONDS, POINTS, RENTREE } from "../engagement/bareme";
 import { ajouterJours, jourLocal, lundiDe, semaineIso, FUSEAU_PAR_DEFAUT, type SemaineIso } from "@shared/engagement/calendrier";
 import {
   FAMILLE_DU_TYPE,
   LIGUES,
   OBJECTIFS_SEMAINE,
   ligueDuNiveau,
+  rangVisible as rangMontrable,
   type BadgeObtenu,
   type BandeauCoupeDto,
   type CodeBadge,
@@ -54,8 +57,13 @@ async function progressionDe(u: Utilisateur): Promise<ProgressionMoi> {
   if (juges.length) await attribuerBadges(juges);
   const etat = etats.get(u.id);
   const fuseau = u.fuseau || FUSEAU_PAR_DEFAUT;
-  const aujourdhui = jourLocal(new Date(), fuseau);
+  const maintenant = new Date();
+  const aujourdhui = jourLocal(maintenant, fuseau);
   const lundi = lundiDe(aujourdhui);
+  const semaineDerniere = semaineIso(ajouterJours(lundi, -7));
+  // Lundi et mardi, la semaine dernière est en clôture (révisions faites hors ligne) : pas encore jugée.
+  const dejaInscrit = lundiDe(jourLocal(u.creeLe, fuseau)) < lundi && lundi > lundiDe(RENTREE);
+  const bilanEnAttente = dejaInscrit && lundiCourantPourBilan(maintenant, u.fuseau) < lundi && etat?.semaineEvaluee !== semaineDerniere;
   const [semaine, total, badges, compteurs, disponibles, classe] = await Promise.all([
     db.execute<{ type: TypeActivite; jour: string; cours: string | null; actes: number; points: number }>(sql`
       SELECT a.type, a.jour::text AS jour, c.titre AS cours, count(*)::int AS actes, sum(a.points)::int AS points
@@ -97,7 +105,9 @@ async function progressionDe(u: Utilisateur): Promise<ProgressionMoi> {
       actuelle: etat?.serie ?? 0,
       record: etat?.record ?? 0,
       jokerDisponible: jokerDuMoisLibre({ jokerMois: etat?.jokerMois ?? null }, lundi),
-      derniere: etat?.dernier ?? null,
+      // Le bilan d'une semaine plus ancienne (lundi et mardi, avant la clôture) ne se dit pas « semaine dernière ».
+      derniere: etat?.semaineEvaluee === semaineDerniere ? (etat?.dernier ?? null) : null,
+      bilanEnAttente,
     },
     points: {
       semaine: pointsSemaine,
@@ -164,10 +174,15 @@ function entree(l: LigneCoupe, personnel: boolean, moiCible: number | null): Ent
   };
 }
 
+/** Une hausse, sinon rien : un étudiant ne voit jamais la baisse d'une classe ou d'un campus. */
+const hausse = (n: number | null) => (n !== null && n > 0 ? n : null);
+
 /**
- * Une liste de la Coupe. Vue étudiante : la moitié haute avec rang et taux ;
- * les autres par ordre alphabétique, avec leur progression seulement si elle
- * est positive (jamais de liste des derniers). Équipe : tout, hors classement compris.
+ * Une liste de la Coupe. Vue étudiante : en haut, les lignes dont le rang est
+ * montrable (rangVisible), avec rang et taux ; les autres par ordre
+ * alphabétique, avec leur progression seulement si elle monte : jamais de
+ * dernier désigné, même quand la ligue ne compte que 2 ou 3 classés, ni de
+ * « 1er » à 0 %. Équipe : tout, hors classement compris.
  */
 function liste(lignes: LigneCoupe[], personnel: boolean, moiCible: number | null): ListeCoupe {
   const classees = lignes.filter(estClassee).sort((a, b) => (a.rang ?? 999) - (b.rang ?? 999) || a.nom.localeCompare(b.nom, "fr"));
@@ -177,26 +192,35 @@ function liste(lignes: LigneCoupe[], personnel: boolean, moiCible: number | null
       autres: lignes.filter((l) => !estClassee(l) && l.inscrits > 0).sort((a, b) => a.nom.localeCompare(b.nom, "fr")).map((l) => entree(l, true, moiCible)),
     };
   }
-  const moitie = Math.ceil(classees.length / 2);
-  const haut = classees.filter((l) => (l.rang ?? 999) <= moitie);
-  const autres = classees.filter((l) => (l.rang ?? 999) > moitie).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+  const haut = classees.filter((l) => rangMontrable(classees, l) !== null);
+  const autres = classees.filter((l) => !haut.includes(l)).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
   return {
-    haut: haut.map((l) => entree(l, false, moiCible)),
+    haut: haut.map((l) => {
+      const e = entree(l, false, moiCible);
+      return { ...e, progression: hausse(e.progression) };
+    }),
     autres: autres.map((l) => {
       const e = entree(l, false, moiCible);
-      return { ...e, score: null, participation: null, presence: null, rang: null, progression: e.progression !== null && e.progression > 0 ? e.progression : null };
+      return { ...e, score: null, participation: null, presence: null, rang: null, progression: hausse(e.progression) };
     }),
   };
 }
 
+/** Rang montrable d'une ligne parmi les classés de sa ligue (règle commune rangVisible), sinon null. */
 const rangVisible = (lignes: LigneCoupe[], l: LigneCoupe | undefined) => {
-  if (!l?.rang || !estClassee(l)) return null;
-  const n = lignes.filter((x) => x.ligue === l.ligue && estClassee(x)).length;
-  return l.rang <= Math.ceil(n / 2) ? l.rang : null;
+  if (!l || !estClassee(l)) return null;
+  return rangMontrable(lignes.filter((x) => x.ligue === l.ligue && estClassee(x)), l);
 };
 
-/** Le campus en tête (s'il a déjà un taux), sinon personne : une semaine qui commence n'a pas de meneur. */
-const meneurDe = (campus: LigneCoupe[]) => campus.find((l) => l.rang === 1 && l.score > 0)?.nom ?? null;
+/**
+ * Le campus seul en tête, si son rang est montrable (il a un taux, et la ligue
+ * compte assez de campus pour que le nommer ne désigne pas le dernier) ;
+ * sinon personne : une semaine qui commence ou une égalité en tête n'a pas de meneur.
+ */
+const meneurDe = (campus: LigneCoupe[]) => {
+  const tete = campus.filter((l) => rangVisible(campus, l) === 1);
+  return tete.length === 1 ? tete[0].nom : null;
+};
 
 async function coupeDe(u: Utilisateur): Promise<CoupeDto> {
   const lundi = lundiEnCours();
@@ -218,29 +242,34 @@ async function coupeDe(u: Utilisateur): Promise<CoupeDto> {
   const liguesMontrees = u.role === "etudiant" ? (maLigue ? [maLigue] : []) : [...LIGUES];
   const monCampus = u.role === "etudiant" ? u.siteId : null;
 
-  const precedente =
-    avant && avant.figee
-      ? {
-          numero: numeroDe(precedenteIso),
-          essai: avant.essai,
-          laureats: avant.lignes
-            .filter(dansPerimetre)
-            .filter((l) => l.portee === "campus" || u.role !== "etudiant" || l.ligue === maLigue)
-            .flatMap((l) => l.trophees.map((trophee) => ({ trophee, portee: l.portee, nom: l.nom }))),
-        }
-      : null;
+  // Semaine précédente : ses lauréats une fois figée ; avant (lundi et mardi, jusqu'au mercredi 1 h), « en
+  // clôture » : les révisions faites hors ligne peuvent encore arriver, aucun lauréat n'est encore annoncé.
+  const precedente = avant
+    ? {
+        numero: numeroDe(precedenteIso),
+        essai: avant.essai,
+        cloture: !avant.figee,
+        laureats: avant.figee
+          ? avant.lignes
+              .filter(dansPerimetre)
+              .filter((l) => l.portee === "campus" || u.role !== "etudiant" || l.ligue === maLigue)
+              .flatMap((l) => l.trophees.map((trophee) => ({ trophee, portee: l.portee, nom: l.nom })))
+          : [],
+      }
+    : null;
 
   const dto: CoupeDto = {
     semaine: { iso: semaine, numero: numeroDe(semaine), lundi, essai: lu?.essai ?? false, figee: lu?.figee ?? false, majLe: lu?.majLe ? new Date(lu.majLe).toISOString() : null },
     personnel,
     campus: { ...liste(campus, personnel, monCampus), bientot: campus.filter((l) => l.inscrits === 0).map((l) => l.nom) },
     ligues: liguesMontrees.map((ligue) => ({ ligue, ...liste(classes.filter((l) => l.ligue === ligue), personnel, maLigneClasse?.cibleId ?? null) })),
+    // Classe de moins de 5 : ni participants ni objectif (dans une classe de 2, « 1 participant » dirait à l'un ce que l'autre a fait).
     maClasse: maLigneClasse
       ? {
           nom: maLigneClasse.nom,
           inscrits: maLigneClasse.inscrits,
-          participants: maLigneClasse.participants,
-          objectifEquipe: Math.ceil((maLigneClasse.inscrits * COUPE.seuilEquipe) / 100),
+          participants: estClassee(maLigneClasse) ? maLigneClasse.participants : null,
+          objectifEquipe: estClassee(maLigneClasse) ? Math.ceil((maLigneClasse.inscrits * COUPE.seuilEquipe) / 100) : null,
           classee: estClassee(maLigneClasse),
           ligue: maLigneClasse.ligue as Ligue,
         }
@@ -284,7 +313,7 @@ async function bandeauDe(u: Utilisateur): Promise<BandeauCoupeDto> {
     essai: lu?.essai ?? false,
     meneur: meneurDe(campus),
     monCampus: monCampus ? { nom: monCampus.nom, rang: rangVisible(lignes, monCampus) } : null,
-    maClasse: maClasse && estClassee(maClasse) ? { progression: entier(maClasse.progression) } : null,
+    maClasse: maClasse && estClassee(maClasse) ? { progression: hausse(entier(maClasse.progression)) } : null,
   };
 }
 
@@ -293,7 +322,6 @@ async function salleDe(siteId: number | null): Promise<CoupeSalleDto> {
   const lu = await classement(semaine);
   const campus = (lu?.lignes ?? []).filter((l) => l.portee === "campus");
   const classes = campus.filter(estClassee);
-  const moitie = Math.ceil(classes.length / 2);
   const ici = siteId ? campus.find((l) => l.cibleId === siteId) : undefined;
   let nomIci = ici?.nom ?? null;
   if (siteId && !nomIci) {
@@ -308,12 +336,16 @@ async function salleDe(siteId: number | null): Promise<CoupeSalleDto> {
       ? {
           nom: nomIci,
           rang: rangVisible(campus, ici),
-          progression: ici && ici.progression !== null && ici.progression > 0 ? Math.round(ici.progression) : null,
+          progression: ici ? hausse(entier(ici.progression)) : null,
           bientot: !ici || ici.inscrits === 0,
         }
       : null,
-    // Le dernier n'est jamais montré : seulement la moitié haute, et seulement des campus qui ont déjà un taux.
-    podium: classes.filter((l) => (l.rang ?? 999) <= moitie && l.score > 0).map((l) => ({ nom: l.nom, rang: l.rang! })),
+    // Le dernier n'est jamais montré : seulement les rangs montrables (moitié haute, jamais le dernier ni un ex aequo
+    // du dernier rang, jamais à 0 %). L'écran ne place donc jamais son propre campus dernier.
+    podium: classes.flatMap((l) => {
+      const rang = rangVisible(classes, l);
+      return rang === null ? [] : [{ nom: l.nom, rang }];
+    }),
   };
 }
 

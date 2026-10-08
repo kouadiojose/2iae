@@ -2,8 +2,9 @@
 // mode nuit, lisible du fond de la salle : seulement sans cours et avant le
 // cours, jamais pendant (placement du socle, PageSalle). « Coupe des campus :
 // Yamoussoukro mène cette semaine », le rang du campus de la salle s'il est
-// dans la moitié haute, sinon sa progression. Le dernier n'est jamais montré,
-// aucun nom d'étudiant n'apparaît.
+// montrable (le serveur décide : moitié haute, jamais le dernier, jamais à
+// 0 %) et qu'un campus mène, sinon sa progression. Le dernier n'est jamais
+// montré, aucun nom d'étudiant n'apparaît.
 import { useQuery } from "@tanstack/react-query";
 import { Trophy } from "lucide-react";
 import { useTextes } from "@/lib/textes";
@@ -25,7 +26,7 @@ export function CoupeSalle({ siteId }: { siteId: number | null }) {
     ? null
     : c.bientot
       ? tx("salle.bientot", { v: { nom: c.nom } })
-      : c.rang && c.nom !== data.meneur
+      : c.rang && data.meneur && c.nom !== data.meneur
         ? tx("salle.rang", { v: { nom: c.nom, rang: rangTexte(tx, c.rang) } })
         : c.progression
           ? tx("salle.progression", { v: { nom: c.nom, n: c.progression } })

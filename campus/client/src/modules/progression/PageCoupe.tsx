@@ -1,9 +1,10 @@
 // /coupe — Coupe des campus et des classes (chantier C5), pour tout compte
 // connecté. Des taux, jamais des étudiants : aucun nom, aucun rang individuel.
 // Étudiant (tutoyé) : la quête de sa classe, les campus et sa ligue ; le rang
-// n'est montré que dans la moitié haute, les autres sont listés par ordre
-// alphabétique avec leur progression. Équipe (vouvoyée) : tous les chiffres de
-// son périmètre, 8 semaines d'historique et le détail des actes par campus.
+// n'est montré que s'il est montrable (moitié haute, jamais le dernier, jamais
+// à 0 % : le serveur décide), les autres sont listés par ordre alphabétique
+// avec leur progression. Équipe (vouvoyée) : tous les chiffres de son
+// périmètre, 8 semaines d'historique et le détail des actes par campus.
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Info, Minus, TrendingDown, TrendingUp } from "lucide-react";
@@ -102,7 +103,8 @@ function Section({ titre, children }: { titre: string; children: ReactNode }) {
 }
 
 function QueteClasse({ classe, tx }: { classe: NonNullable<CoupeDto["maClasse"]>; tx: Tx }) {
-  if (!classe.classee) return <Carte className="text-[15px] text-texte-doux">{tx("coupe.maClasse.petite")}</Carte>;
+  if (!classe.classee || classe.participants === null || classe.objectifEquipe === null)
+    return <Carte className="text-[15px] text-texte-doux">{tx("coupe.maClasse.petite")}</Carte>;
   const reste = Math.max(0, classe.objectifEquipe - classe.participants);
   return (
     <Carte className="flex flex-col gap-3 border-orange bg-orange-pale">
@@ -133,7 +135,7 @@ function Progression({ n, personnel, tx }: { n: number | null; personnel: boolea
   return (
     <span className="inline-flex items-center gap-1 font-mono text-xs text-texte-gris">
       {n < 0 ? <TrendingDown className="h-3.5 w-3.5" aria-hidden /> : <Minus className="h-3.5 w-3.5" aria-hidden />}
-      {n < 0 ? `${String(n).replace("-", "−")} pts` : "="}
+      {n < 0 ? tx("coupe.baisse", { v: { n: Math.abs(n) } }) : "="}
     </span>
   );
 }
@@ -276,6 +278,8 @@ function Trophees({ data, tx }: { data: CoupeDto; tx: Tx }) {
 }
 
 function Precedente({ precedente, tx }: { precedente: NonNullable<CoupeDto["precedente"]>; tx: Tx }) {
+  // Lundi et mardi : la semaine passée attend encore les révisions faites hors ligne.
+  if (precedente.cloture) return <p className="text-sm text-texte-pale">{tx("coupe.precedente.cloture", { v: { n: precedente.numero } })}</p>;
   if (!precedente.laureats.length) return <p className="text-sm text-texte-pale">{tx("coupe.precedente.aucun", { v: { n: precedente.numero } })}</p>;
   return (
     <Carte className="flex flex-col gap-2">
@@ -304,6 +308,7 @@ function Comment({ tx }: { tx: Tx }) {
       <ul className="mt-3 flex list-disc flex-col gap-2 pl-5 text-[15px] text-texte-doux">
         <li>{tx("coupe.comment.participer")}</li>
         <li>{tx("coupe.comment.salle")}</li>
+        <li>{tx("coupe.comment.progression")}</li>
         <li>{tx("coupe.comment.classes")}</li>
         <li>{tx("coupe.principe")}</li>
       </ul>

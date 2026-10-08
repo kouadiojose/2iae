@@ -3,21 +3,31 @@
 // Yamoussoukro 15) et jamais des étudiants : un petit campus très actif passe
 // devant un grand campus peu actif, et tout repart à zéro chaque lundi.
 //
-// Semaine ISO du lundi 0 h au dimanche 24 h, heure d'Abidjan. La semaine
-// précédente est figée une seule fois (fige_le), avec ses trophées ; la cloche
-// les annonce aux classes et aux campus primés, sans rappel sur le téléphone.
+// Semaine ISO du lundi 0 h au dimanche 24 h, heure d'Abidjan. Une semaine
+// terminée reste ouverte 48 h de plus (DELAI_BILAN_HEURES, jusqu'au mercredi
+// 1 h) : une révision faite hors ligne le dimanche et reçue le lundi ou le
+// mardi compte encore pour elle. Elle est alors recalculée, puis figée une
+// seule fois (fige_le) après un dernier passage du registre, avec ses
+// trophées ; la cloche les annonce une seule fois aux classes et aux campus
+// primés, sans rappel sur le téléphone.
 //
 // Par campus, et par classe d'au moins 5 inscrits actifs (une classe plus
 // petite reste hors classement mais compte pour son campus) :
 //   - participation : part des inscrits qui ont fait des actes d'au moins deux
 //     familles différentes dans la semaine (plus difficile à gonfler que les points) ;
-//   - présence aux directs ÉMARGÉS : une séance sans aucun émargement dans la
-//     salle d'un campus est neutre pour ce campus (amendement de José), une
-//     séance touchée par un incident de salle aussi ;
+//   - présence aux directs des salles ÉMARGÉES (décision D1, sqlSalleEmargee
+//     du socle) : une séance dont la salle d'un campus n'est pas émargée est
+//     neutre pour ce campus (amendement de José), une séance touchée par un
+//     incident de salle aussi ; une présence « inconnue » ne compte jamais ;
 //   - taux de la Coupe (classement principal) : la participation, mêlée à la
-//     présence (un tiers) quand au moins une séance a été émargée ;
+//     présence (un tiers) quand au moins une salle a été émargée, sans jamais
+//     descendre sous la participation : émarger ne fait jamais perdre un
+//     campus, la présence ne peut que faire monter son taux ;
 //   - points moyens (plafonnés par étudiant), part d'assidus (3 jours actifs),
-//     progression sur la semaine précédente.
+//     progression sur la semaine précédente, prise au même moment tant que la
+//     semaine est en cours (un mardi midi contre un mardi midi), complète
+//     ensuite.
+// Rangs : à 0 %, aucun (personne n'est « 1er » à 0 %, personne n'est dernier).
 // Ligues des classes : 1re année, 2e année, licences et certificats. Un campus
 // sans inscrit est masqué (M'Batto : « bientôt »). La toute première semaine
 // de la Coupe est une semaine d'essai : affichée, sans aucun trophée.
@@ -27,8 +37,8 @@ import { planifier } from "../taches";
 import { notifier } from "../notifications";
 import { sqlAttendus, sqlClasseA, SQL_INCIDENT_SALLE } from "../routes/admin";
 import { sqlSalleEmargee } from "./presence";
-import { rattrapageTermine } from "./registre";
-import { mettreAJourSemaines } from "./semaines";
+import { passerRegistre, rattrapageTermine } from "./registre";
+import { DELAI_BILAN_HEURES, mettreAJourSemaines } from "./semaines";
 import { attribuerBadges } from "./badges";
 import { COUPE } from "./bareme";
 import { ajouterJours, jourLocal, lundiDe, semaineIso, FUSEAU_PAR_DEFAUT, type Jour, type SemaineIso } from "@shared/engagement/calendrier";
@@ -70,6 +80,13 @@ const part = (n: number, sur: number) => (sur > 0 ? (n / sur) * 100 : 0);
 export const debutDeSemaine = (lundi: Jour) => new Date(`${lundi}T00:00:00Z`);
 /** Lundi de la semaine en cours à Abidjan : la semaine bascule à 0 h. */
 export const lundiEnCours = (maintenant = new Date()) => lundiDe(jourLocal(maintenant, FUSEAU_PAR_DEFAUT));
+/**
+ * La semaine précédente est-elle encore en clôture ? Du lundi 0 h au mercredi
+ * 1 h : ses révisions faites hors ligne peuvent encore arriver, elle n'est pas
+ * figée et ses trophées ne sont pas encore attribués.
+ */
+export const semainePrecedenteEnCloture = (maintenant = new Date()) =>
+  maintenant.getTime() < debutDeSemaine(lundiEnCours(maintenant)).getTime() + DELAI_BILAN_HEURES * 3_600_000;
 
 /** Famille d'un type d'activité, en SQL (même table que FAMILLE_DU_TYPE). */
 export function sqlFamille(type: SQL): SQL {
@@ -79,12 +96,20 @@ export function sqlFamille(type: SQL): SQL {
 
 // ── Calcul d'une semaine ───────────────────────────────────────────────────
 
-/** Chiffres bruts d'une semaine, par campus et par classe (sans rang ni trophée). */
-export async function calculerSemaine(ex: Executeur, lundi: Jour): Promise<LigneCoupe[]> {
+/**
+ * Chiffres bruts d'une semaine, par campus et par classe (sans rang ni
+ * trophée). « jusqua » : la semaine arrêtée à cet instant (actes faits avant,
+ * séances commencées avant, inscrits à ce moment), pour comparer une semaine
+ * en cours à la précédente prise au même moment.
+ */
+export async function calculerSemaine(ex: Executeur, lundi: Jour, options: { jusqua?: Date } = {}): Promise<LigneCoupe[]> {
   const debut = debutDeSemaine(lundi);
-  const fin = new Date(debut.getTime() + 7 * JOUR_MS);
+  const finSemaine = new Date(debut.getTime() + 7 * JOUR_MS);
+  const fin = options.jusqua && options.jusqua < finSemaine ? options.jusqua : finSemaine;
+  const coupee = fin < finSemaine;
   const semaine = semaineIso(lundi);
   const finSql = sql`${fin.toISOString()}::timestamptz`;
+  const avantCoupure = coupee ? sql`AND a.fait_le < ${finSql}` : sql``;
   // Inscrits : étudiants actifs, avec leur classe à la fin de la semaine (passages_classes).
   const ins = sql`SELECT u.id AS uid, u.site_id, h.classe_id FROM campus.utilisateurs u ${sqlClasseA(finSql)}
     WHERE u.role = 'etudiant' AND u.actif AND u.cree_le < ${finSql}`;
@@ -94,7 +119,7 @@ export async function calculerSemaine(ex: Executeur, lundi: Jour): Promise<Ligne
       act AS (
         SELECT a.utilisateur_id AS uid, sum(a.points)::int AS points, count(DISTINCT a.jour)::int AS jours,
           count(DISTINCT ${sqlFamille(sql`a.type`)})::int AS familles
-        FROM campus.activites a WHERE a.semaine = ${semaine} GROUP BY 1
+        FROM campus.activites a WHERE a.semaine = ${semaine} ${avantCoupure} GROUP BY 1
       ),
       par AS (
         SELECT i.site_id, i.classe_id, COALESCE(a.points, 0) AS points, COALESCE(a.jours, 0) AS jours, COALESCE(a.familles, 0) AS familles
@@ -115,18 +140,24 @@ export async function calculerSemaine(ex: Executeur, lundi: Jour): Promise<Ligne
       WITH ins AS (${ins})
       SELECT i.site_id, i.classe_id, ${sqlFamille(sql`a.type`)} AS famille, count(*)::int AS n
       FROM campus.activites a JOIN ins i ON i.uid = a.utilisateur_id
-      WHERE a.semaine = ${semaine}
+      WHERE a.semaine = ${semaine} ${avantCoupure}
       GROUP BY 1, 2, 3`);
-  // Présence aux directs : seulement les séances dont la salle du campus a été émargée, hors incident de salle.
+  // Présence aux directs : seulement les séances dont la salle du campus est émargée au sens de la
+  // décision D1 (sqlSalleEmargee, socle), hors incident de salle ; la règle est évaluée une fois par
+  // (séance, campus). Une présence justifiée ou « inconnue » n'entre pas dans le taux.
   const presences = await ex.execute<{ site_id: number | null; classe_id: number | null; g_site: number; presents: number; attendus: number; seances: number }>(sql`
+      WITH a AS (${sqlAttendus({ depuis: debut, jusqua: fin, sites: null })}),
+      salles AS (
+        SELECT x.seance_id, x.site_id FROM (SELECT DISTINCT seance_id, site_id FROM a WHERE site_id IS NOT NULL) x
+        WHERE ${sqlSalleEmargee(sql`x.seance_id`, sql`x.site_id`)}
+          AND NOT EXISTS (SELECT 1 FROM campus.effectifs_salles e JOIN campus.seances s ON s.id = e.seance_id
+            WHERE e.seance_id = x.seance_id AND e.site_id = x.site_id AND ${SQL_INCIDENT_SALLE})
+      )
       SELECT a.site_id, a.classe_id, GROUPING(a.site_id)::int AS g_site,
         count(*) FILTER (WHERE a.statut IN ('emarge', 'pointe', 'en_ligne'))::int AS presents,
         count(*)::int AS attendus, count(DISTINCT a.seance_id)::int AS seances
-      FROM (${sqlAttendus({ depuis: debut, jusqua: fin, sites: null })}) a
-      WHERE a.site_id IS NOT NULL AND a.statut <> 'justifie'
-        AND ${sqlSalleEmargee(sql`a.seance_id`, sql`a.site_id`)}
-        AND NOT EXISTS (SELECT 1 FROM campus.effectifs_salles e JOIN campus.seances s ON s.id = e.seance_id
-          WHERE e.seance_id = a.seance_id AND e.site_id = a.site_id AND ${SQL_INCIDENT_SALLE})
+      FROM a JOIN salles sa ON sa.seance_id = a.seance_id AND sa.site_id = a.site_id
+      WHERE a.statut NOT IN ('justifie', 'inconnu')
       GROUP BY GROUPING SETS ((a.site_id), (a.classe_id))`);
   const noms = await ex.execute<{ portee: PorteeCoupe; id: number; nom: string; niveau: string | null; ordre: number }>(sql`
       SELECT 'campus' AS portee, id, nom_court AS nom, NULL AS niveau, ordre FROM campus.sites
@@ -163,7 +194,9 @@ export async function calculerSemaine(ex: Executeur, lundi: Jour): Promise<Ligne
     const taux = part(g?.participants ?? 0, inscrits);
     const p = presenceDe.get(k);
     const presence = p && p.attendus > 0 ? part(p.presents, p.attendus) : null;
-    const score = presence === null ? taux : (1 - COUPE.poidsPresence) * taux + COUPE.poidsPresence * presence;
+    // La présence ne peut que faire monter le taux : un campus qui commence à émarger, avec encore peu
+    // d'étudiants qui scannent, ne passe jamais derrière celui qui ne fait émarger personne.
+    const score = presence === null ? taux : Math.max(taux, (1 - COUPE.poidsPresence) * taux + COUPE.poidsPresence * presence);
     return {
       portee,
       cibleId: id,
@@ -190,8 +223,10 @@ export async function calculerSemaine(ex: Executeur, lundi: Jour): Promise<Ligne
 export const estClassee = (l: Pick<LigneCoupe, "portee" | "inscrits">) => (l.portee === "campus" ? l.inscrits > 0 : l.inscrits >= COUPE.tailleMinClasse);
 
 /**
- * Rangs (par ligue, ex aequo au même rang), progression sur la semaine
- * précédente et trophées (aucun pendant la semaine d'essai).
+ * Rangs (par ligue, ex aequo au même rang ; aucun à 0 % : la ligne reste
+ * classée, sans être ni « 1er » ni dernier), progression sur les scores
+ * « precedents » (semaine précédente, comparable) et trophées (aucun pendant
+ * la semaine d'essai).
  */
 export function classer(lignes: LigneCoupe[], precedents: Map<string, number>, essai: boolean): LigneCoupe[] {
   const sortie = lignes.map((l) => {
@@ -202,7 +237,7 @@ export function classer(lignes: LigneCoupe[], precedents: Map<string, number>, e
   for (const l of sortie) if (estClassee(l)) parLigue.set(l.ligue, [...(parLigue.get(l.ligue) ?? []), l]);
   for (const groupe of parLigue.values()) {
     groupe.sort((a, b) => b.score - a.score);
-    groupe.forEach((l, i) => (l.rang = i > 0 && groupe[i - 1].score === l.score ? groupe[i - 1].rang : i + 1));
+    groupe.forEach((l, i) => (l.rang = l.score <= 0 ? null : i > 0 && groupe[i - 1].score === l.score ? groupe[i - 1].rang : i + 1));
     if (essai) continue;
     const meilleurs = (valeur: (l: LigneCoupe) => number | null, trophee: Trophee) => {
       const valeurs = groupe.map(valeur).filter((v): v is number => v !== null && v > 0);
@@ -285,11 +320,13 @@ export async function lireClassement(semaine: SemaineIso, ex: Executeur = db): P
   };
 }
 
-/** Scores d'une semaine, pour la progression : enregistrés, sinon recalculés (sans être écrits). */
+/** Scores des lignes classées, pour la progression. */
+const scoresDes = (lignes: LigneCoupe[]) => new Map(lignes.filter(estClassee).map((l) => [cle(l.portee, l.cibleId), l.score]));
+
+/** Scores d'une semaine complète, pour la progression : enregistrés, sinon recalculés (sans être écrits). */
 async function scoresDe(ex: Executeur, lundi: Jour): Promise<Map<string, number>> {
   const lu = await lireClassement(semaineIso(lundi), ex);
-  const lignes = lu?.lignes ?? (await calculerSemaine(ex, lundi));
-  return new Map(lignes.filter(estClassee).map((l) => [cle(l.portee, l.cibleId), l.score]));
+  return scoresDes(lu?.lignes ?? (await calculerSemaine(ex, lundi)));
 }
 
 /** Écrit les lignes d'une semaine ; une semaine figée ne bouge plus. Renvoie le nombre de lignes écrites. */
@@ -347,7 +384,7 @@ async function estEssai(ex: Executeur, semaine: SemaineIso): Promise<boolean> {
 
 type SemaineFigee = { semaine: SemaineIso; lundi: Jour; essai: boolean; lignes: LigneCoupe[] };
 
-/** Fige une semaine terminée (une seule fois) : dernier calcul, rangs et trophées définitifs. */
+/** Fige une semaine terminée et close (une seule fois) : dernier calcul, rangs et trophées définitifs. */
 async function figer(ex: Executeur, lundi: Jour): Promise<SemaineFigee | null> {
   const semaine = semaineIso(lundi);
   const deja = await ex.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM campus.classements_semaine WHERE semaine = ${semaine} AND fige_le IS NOT NULL`);
@@ -361,14 +398,23 @@ async function figer(ex: Executeur, lundi: Jour): Promise<SemaineFigee | null> {
 export type BilanCoupe = { semaine: SemaineIso; essai: boolean; figees: SemaineFigee[] };
 
 /**
- * Passage de la Coupe : fige les semaines terminées qui ne le sont pas encore
- * (et comble au plus 8 semaines manquées si le campus était arrêté), puis
- * recalcule la semaine en cours. Les trophées des semaines figées sont
- * annoncés une fois la transaction validée.
+ * Passage de la Coupe : fige les semaines terminées et closes qui ne le sont
+ * pas encore (et comble au plus 8 semaines manquées si le campus était
+ * arrêté), recalcule la semaine précédente tant qu'elle est en clôture (lundi
+ * et mardi), puis la semaine en cours. Les trophées des semaines figées sont
+ * annoncés une fois la transaction validée : une semaine ne se fige qu'une
+ * fois, ses trophées ne s'annoncent qu'une fois.
  */
 export async function passerCoupe(maintenant = new Date(), options: { annoncer?: boolean } = {}): Promise<BilanCoupe> {
   const lundi = lundiEnCours(maintenant);
   const semaine = semaineIso(lundi);
+  const lundiPrecedent = ajouterJours(lundi, -7);
+  const cloture = semainePrecedenteEnCloture(maintenant);
+  // Avant de figer : un passage du registre qui couvre la semaine précédente, pour que tous ses actes
+  // reçus (révisions faites hors ligne comprises) y soient, sans attendre le passage des 5 minutes.
+  const aFiger = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM campus.classements_semaine WHERE semaine < ${semaineIso(cloture ? lundiPrecedent : lundi)} AND fige_le IS NULL`);
+  if ((aFiger.rows[0]?.n ?? 0) > 0) await passerRegistre({ depuis: debutDeSemaine(lundiPrecedent) });
   const bilan = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${VERROU_COUPE})`);
     const figees: SemaineFigee[] = [];
@@ -378,21 +424,30 @@ export async function passerCoupe(maintenant = new Date(), options: { annoncer?:
       const ouvertes = new Set(existantes.rows.filter((l) => l.ouverte).map((l) => l.semaine));
       const connues = new Set(existantes.rows.map((l) => l.semaine));
       const premiere = [...connues].sort()[0];
-      for (let i = COUPE.semainesHistorique; i >= 1; i--) {
+      for (let i: number = COUPE.semainesHistorique; i >= 1; i--) {
         const l = ajouterJours(lundi, -7 * i);
         const s = semaineIso(l);
         // Une semaine ouverte, ou une semaine manquée après le début de la Coupe.
-        if (ouvertes.has(s) || (!connues.has(s) && s > premiere)) {
-          const f = await figer(tx, l);
-          if (f) figees.push(f);
+        if (!ouvertes.has(s) && (connues.has(s) || s <= premiere)) continue;
+        if (i === 1 && cloture) {
+          // Semaine tout juste terminée, encore en clôture : recalculée (rien n'est annoncé), figée mercredi.
+          const essaiPrecedent = await estEssai(tx, s);
+          await ecrire(tx, s, classer(await calculerSemaine(tx, l), await scoresDe(tx, ajouterJours(l, -7)), essaiPrecedent), essaiPrecedent, false);
+          continue;
         }
+        const f = await figer(tx, l);
+        if (f) figees.push(f);
       }
       // Semaine ouverte plus ancienne que la fenêtre (campus arrêté très longtemps) : figée telle quelle.
       for (const s of ouvertes) if (s < semaineIso(ajouterJours(lundi, -7 * COUPE.semainesHistorique)))
         await tx.execute(sql`UPDATE campus.classements_semaine SET fige_le = now(), trophees = '[]'::jsonb WHERE semaine = ${s} AND fige_le IS NULL`);
     }
     const essai = await estEssai(tx, semaine);
-    const lignes = classer(await calculerSemaine(tx, lundi), await scoresDe(tx, ajouterJours(lundi, -7)), essai);
+    // Semaine entamée : sa progression se compare à la semaine précédente prise au même moment (un
+    // mardi midi contre un mardi midi), pas à une semaine complète. Le trophée « Progression » définitif
+    // compare deux semaines complètes (figer).
+    const auMemeMoment = await calculerSemaine(tx, lundiPrecedent, { jusqua: new Date(maintenant.getTime() - 7 * JOUR_MS) });
+    const lignes = classer(await calculerSemaine(tx, lundi), scoresDes(auMemeMoment), essai);
     await ecrire(tx, semaine, lignes, essai, false);
     return { semaine, essai, figees };
   });
@@ -446,6 +501,8 @@ let derniereSemaine: SemaineIso | null = null;
 // Toutes les 15 minutes, une fois le registre rattrapé depuis la rentrée (sinon
 // une semaine pourrait être figée avant que tous ses actes soient inscrits) ;
 // tout de suite après ce rattrapage, et dès 0 h le lundi (la semaine bascule).
+// La semaine précédente est figée au premier passage après le mercredi 1 h,
+// et les séries jugées dans la foulée (bilansDesSemaines, même délai).
 planifier("progression-coupe", 60_000, async () => {
   if (!rattrapageTermine()) return;
   const maintenant = new Date();

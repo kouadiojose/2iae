@@ -125,6 +125,35 @@ export function ligueDuNiveau(niveau: string | null | undefined): Ligue {
 export const TROPHEES = ["participation", "progression", "assiduite", "equipe"] as const;
 export type Trophee = (typeof TROPHEES)[number];
 
+/**
+ * Plus grand rang d'une ligue qu'on peut montrer aux étudiants (page /coupe,
+ * bandeau de l'accueil), sur l'écran de salle et dans leurs e-mails, d'après
+ * les lignes CLASSÉES de cette ligue. Aucun classement ne désigne un dernier
+ * (décision D5) :
+ *   - au plus la moitié haute ;
+ *   - au moins deux classés restent hors du haut : une liste « Les autres »
+ *     d'une seule entrée nommerait le dernier (2 classés : aucun rang montré,
+ *     3 classés : le 1er seulement) ;
+ *   - jamais un ex aequo du dernier rang (tous à égalité : aucun rang) ;
+ *   - des ex aequo à la limite restent ensemble, en haut ou en bas.
+ * Une ligne à 0 % n'a pas de rang (voir classer, server/engagement/coupe.ts) :
+ * elle est alors forcément en bas, sans que personne y soit « dernier ».
+ * 0 : aucun rang montrable.
+ */
+export function seuilRangVisible(classees: readonly { rang: number | null }[]): number {
+  const n = classees.length;
+  const rangs = classees.map((l) => l.rang);
+  const dernier = rangs.some((r) => r === null) ? Infinity : Math.max(0, ...rangs.map((r) => r ?? 0));
+  let seuil = Math.min(Math.ceil(n / 2), n - 2, dernier - 1);
+  while (seuil > 0 && classees.filter((l) => l.rang !== null && l.rang <= seuil).length > n - 2) seuil--;
+  return Math.max(0, seuil);
+}
+
+/** Rang montrable d'une ligne parmi les classés de sa ligue (seuilRangVisible), sinon null ; jamais pour un taux nul. */
+export function rangVisible(classees: readonly { rang: number | null }[], l: { rang: number | null; score: number }): number | null {
+  return l.rang !== null && l.score > 0 && l.rang <= seuilRangVisible(classees) ? l.rang : null;
+}
+
 // ── Échanges avec le client ────────────────────────────────────────────────
 
 /** Une ligne de « ce qui t'a rapporté des points » : une famille d'actes dans un cours. */
@@ -144,12 +173,17 @@ export type ProgressionMoi = {
     objectif: ObjectifSemaine;
   };
   serie: {
-    /** Semaines réussies d'affilée (semaines terminées). */
+    /** Semaines réussies d'affilée (semaines jugées). */
     actuelle: number;
     record: number;
     jokerDisponible: boolean;
-    /** Bilan de la semaine dernière (null : pas encore de semaine terminée). */
+    /** Bilan de la semaine dernière (null : pas de semaine dernière, ou pas encore jugée). */
     derniere: ResultatSemaine | null;
+    /**
+     * La semaine dernière n'est pas encore jugée : elle l'est le mercredi, une
+     * fois arrivées les révisions faites hors ligne (48 h, DELAI_BILAN_HEURES).
+     */
+    bilanEnAttente: boolean;
   };
   points: { semaine: number; aujourdhui: number; total: number; detail: LignePoints[] };
   badges: {
@@ -172,11 +206,15 @@ export type EntreeCoupe = {
   score: number | null;
   /** Part des inscrits qui ont fait au moins deux types d'actes dans la semaine (0 à 100). */
   participation: number | null;
-  /** Présence aux directs émargés (0 à 100) ; null : aucune séance émargée, la semaine est neutre. */
+  /** Présence aux directs des salles émargées (0 à 100) ; null : aucune salle émargée, la semaine est neutre. */
   presence: number | null;
-  /** Écart de score avec la semaine précédente, en points. */
+  /**
+   * Écart de taux avec la semaine précédente, en points de pourcentage : prise
+   * au même moment pour la semaine en cours, complète pour une semaine figée.
+   * Vue étudiante : seulement une hausse.
+   */
   progression: number | null;
-  /** Rang dans sa ligue, seulement dans la moitié haute (vue étudiante). */
+  /** Rang dans sa ligue (aucun à 0 %) ; vue étudiante : seulement s'il est montrable (rangVisible). */
   rang: number | null;
   trophees: Trophee[];
   /** Le campus ou la classe de la personne qui regarde. */
@@ -194,9 +232,13 @@ export type CoupeDto = {
   personnel: boolean;
   campus: ListeCoupe & { bientot: string[] };
   ligues: ({ ligue: Ligue } & ListeCoupe)[];
-  maClasse: { nom: string; inscrits: number; participants: number; objectifEquipe: number; classee: boolean; ligue: Ligue } | null;
-  /** Lauréats de la semaine précédente (figée). */
-  precedente: { numero: number; essai: boolean; laureats: { trophee: Trophee; portee: PorteeCoupe; nom: string }[] } | null;
+  /** participants et objectifEquipe : null pour une classe de moins de 5 (rien n'y dit ce qu'un camarade a fait). */
+  maClasse: { nom: string; inscrits: number; participants: number | null; objectifEquipe: number | null; classee: boolean; ligue: Ligue } | null;
+  /**
+   * Semaine précédente : ses lauréats une fois figée ; « cloture » pendant les
+   * 48 h qui suivent sa fin (révisions faites hors ligne), sans lauréat encore.
+   */
+  precedente: { numero: number; essai: boolean; cloture: boolean; laureats: { trophee: Trophee; portee: PorteeCoupe; nom: string }[] } | null;
   /** Équipe : scores des 8 dernières semaines, et détail des actes de la semaine par campus. */
   historique?: { semaines: { iso: SemaineIso; numero: number }[]; lignes: { portee: PorteeCoupe; id: number; nom: string; scores: (number | null)[] }[] };
   actes?: { id: number; nom: string; actes: Partial<Record<Famille, number>> }[];
@@ -206,9 +248,10 @@ export type CoupeDto = {
 export type BandeauCoupeDto = {
   numero: number;
   essai: boolean;
+  /** Le campus seul en tête, si son rang est montrable ; sinon personne (début de semaine, égalité). */
   meneur: string | null;
   monCampus: { nom: string; rang: number | null } | null;
-  /** Progression de sa classe (classes de 5 étudiants ou plus). */
+  /** Progression de sa classe (classes de 5 étudiants ou plus), seulement une hausse. */
   maClasse: { progression: number | null } | null;
 };
 
@@ -217,8 +260,8 @@ export type CoupeSalleDto = {
   numero: number;
   essai: boolean;
   meneur: string | null;
-  /** Le campus de la salle : rang s'il est dans la moitié haute, sinon sa progression. */
+  /** Le campus de la salle : son rang s'il est montrable (rangVisible), sinon sa progression (une hausse). */
   campus: { nom: string; rang: number | null; progression: number | null; bientot: boolean } | null;
-  /** La moitié haute du classement des campus. */
+  /** Les campus dont le rang est montrable (rangVisible) : jamais le dernier. */
   podium: { nom: string; rang: number }[];
 };

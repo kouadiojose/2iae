@@ -187,22 +187,29 @@
     {
       "idx": 26,
       "version": "7",
-      "when": 1791463361434,
+      "when": 1791463361684,
       "tag": "0026_envois_push",
       "breakpoints": true
     },
     {
       "idx": 27,
       "version": "7",
-      "when": 1791463361435,
+      "when": 1791463361685,
       "tag": "0029_objectif_du_jour",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "7",
-      "when": 1791463361436,
+      "when": 1791463361686,
       "tag": "0030_suivi_formateurs",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791463361687,
+      "tag": "0031_progression_coupe",
       "breakpoints": true
     }
   ]

@@ -21,6 +21,7 @@ import {
   Clapperboard,
   Video,
   Wallet,
+  Trophy,
   FolderOpen,
   PlayCircle,
   MonitorPlay,
@@ -63,6 +64,7 @@ const ETUDIANT: ElementNav[] = [
   { href: "/notes", libelle: "Notes", icone: GraduationCap },
   { href: "/annonces", libelle: "Annonces", icone: Megaphone, prefixes: ["/annonces"] },
   { href: "/mon-dossier", libelle: "Mon dossier", icone: FolderOpen, prefixes: ["/mon-dossier"] },
+  { href: "/progression", libelle: "Ma progression", icone: Trophy, prefixes: ["/progression", "/coupe"] },
 ];
 
 const FORMATEUR: ElementNav[] = [
@@ -101,6 +103,7 @@ const EQUIPE: ElementNav[] = [
   { href: "/pilotage/planning", libelle: "Planning", icone: CalendarClock, prefixes: ["/pilotage/planning", "/pilotage/cours"] },
   { href: "/pilotage/presences", libelle: "Présences", icone: BarChart3, prefixes: ["/pilotage/presences", "/pilotage/suivi"], droit: "presences_voir" },
   { href: "/pilotage/annonces", libelle: "Annonces", icone: Megaphone, mobile: true, droit: "annonces" },
+  { href: "/coupe", libelle: "Coupe", icone: Trophy, prefixes: ["/coupe"] },
   { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"], droit: "outils_campus" },
   { href: "/pilotage/formateurs", libelle: "Présentations", icone: Clapperboard, prefixes: ["/pilotage/formateurs"], direction: true },
   { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"], droit: "outils_campus" },

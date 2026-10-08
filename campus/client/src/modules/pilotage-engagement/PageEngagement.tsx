@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, RefreshCw, Users, TriangleAlert, Smartphone, Info } from "lucide-react";
 import type { EngagementPilotage, Part, LigneTravail, LigneEnvois } from "@shared/engagement/indicateurs";
 import { PERIODES, PERIODE_PAR_DEFAUT } from "@shared/engagement/indicateurs";
-import { t, type CleEngagement } from "@shared/textes/engagement";
+import { t, selonNombre, type CleEngagement } from "@shared/textes/engagement";
 import type { Traducteur } from "@shared/textes";
 import { useTextes } from "@/lib/textes";
 import { api } from "@/lib/api";
@@ -175,12 +175,18 @@ function ValeurPart({ p, tx, grand }: { p: Part; tx: Tx; grand?: boolean }) {
   );
 }
 
-function TuilePart({ titre, p, lecture, tx }: { titre: string; p: Part; lecture: string; tx: Tx }) {
+function TuilePart({ titre, p, lecture, tx, alerte }: { titre: string; p: Part; lecture: string; tx: Tx; alerte?: string | null }) {
   return (
     <Carte className="flex flex-col gap-2 p-4">
       <div className="font-mono text-xs uppercase tracking-wider text-texte-gris">{titre}</div>
       <ValeurPart p={p} tx={tx} grand />
       {p.taux !== null && <BarreProgression valeur={p.taux} />}
+      {alerte && (
+        <span className="flex items-center gap-1.5 text-sm text-alerte">
+          <TriangleAlert className="h-4 w-4 shrink-0" />
+          {alerte}
+        </span>
+      )}
       <Lecture>{lecture}</Lecture>
     </Carte>
   );
@@ -351,7 +357,13 @@ function Contenu({ d, tx }: { d: EngagementPilotage; tx: Tx }) {
               </div>
               <Lecture>{tx("presence.lecture")}</Lecture>
             </Carte>
-            <TuilePart titre={tx("suivi.titre")} p={d.directs.ontSuivi} lecture={tx("suivi.lecture")} tx={tx} />
+            <TuilePart
+              titre={tx("suivi.titre")}
+              p={d.directs.ontSuivi}
+              lecture={tx("suivi.lecture")}
+              tx={tx}
+              alerte={d.directs.ontSuiviInconnue ? tx("suivi.inconnue", { v: { n: d.directs.ontSuiviInconnue } }) : null}
+            />
           </div>
 
           <Carte className="flex flex-col gap-3 p-4 sm:p-5">
@@ -667,6 +679,16 @@ function BlocCopies({ d, tx }: { d: EngagementPilotage; tx: Tx }) {
         )}
         <Lecture>{tx("copies.lecture")}</Lecture>
       </Carte>
+      {/* Exercices automatiques (D2) : comptés à part, sans retard ni délai cible, jamais reprochés au formateur. */}
+      {d.copiesAutomatiques && (d.copiesAutomatiques.enAttente > 0 || d.copiesAutomatiques.corrigees > 0) && (
+        <Carte className="flex flex-col gap-1.5 p-4 sm:p-5">
+          <h3 className="font-bold text-encre">{tx("copies.auto.titre")}</h3>
+          <p className="text-sm text-texte-doux">
+            {selonNombre(tx, "copies.auto.attente", d.copiesAutomatiques.enAttente)} · {selonNombre(tx, "copies.auto.corrigees", d.copiesAutomatiques.corrigees)}
+          </p>
+          <Lecture>{tx("copies.auto.lecture")}</Lecture>
+        </Carte>
+      )}
     </Section>
   );
 }

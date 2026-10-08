@@ -15,12 +15,16 @@
 // - les tables des autres chantiers (C1 révision, C2 objectif, C3 envois,
 //   C4 relances, C5 progression) se lisent en SQL brut après lisible() : absentes,
 //   leur bloc vaut null (« pas encore mesuré »), jamais 0 % ni erreur 500 ;
-// - le résultat est gardé 10 minutes en mémoire.
+// - le résultat est gardé 10 minutes en mémoire ; les calculs lourds passent
+//   un par un (une seule connexion de la base à la fois) et s'arrêtent au bout
+//   de 60 s : les directs et l'émargement gardent toujours leurs connexions ;
+// - aucune requête quadratique : des agrégats joints, jamais une sous-requête
+//   corrélée par étudiant sur une table temporaire sans index.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { sqlAttendus, sqlDevoirsAttendus, SQL_DUREE_REFERENCE, SQL_INCIDENT_SALLE } from "../routes/admin";
-import { sqlEtatPresence, sqlSalleEmargee, type EtatPresence } from "./presence";
+import type { EtatPresence } from "./presence";
 import { tableExiste } from "./tables";
 import { DEBUT_EXPERIENCE, rappelEntrainementAutorise } from "./tirage";
 import { corrigerQuestion } from "../evaluations-outils";
@@ -38,6 +42,7 @@ import {
   type BlocTravail,
   type CleTravail,
   type CohorteRetour,
+  type CopiesAutomatiques,
   type CopiesFormateur,
   type EmargementCampus,
   type EngagementPilotage,
@@ -71,19 +76,39 @@ const lecteur = new AsyncLocalStorage<Transaction>();
 /** La connexion des lectures en cours : la transaction de sansJit, sinon le pool. */
 const ex = () => lecteur.getStore() ?? db;
 
+/** Une requête du tableau qui dépasse cette durée est arrêtée par PostgreSQL (la page affiche l'erreur, rien ne reste bloqué). */
+const DELAI_REQUETE = "60s";
+
 /**
- * Les requêtes agrégées du tableau (sous-requêtes corrélées sur des CTE)
- * trompent l'estimation de PostgreSQL, qui passerait près d'une seconde à les
- * compiler (JIT) pour quelques millisecondes d'exécution. Elles passent donc
- * dans une transaction en lecture seule, JIT coupé, sur une seule connexion.
+ * Les calculs lourds (page Engagement, tableau, export) passent un par un :
+ * plusieurs personnes qui ouvrent le tableau ou changent de filtre en même
+ * temps n'occupent jamais qu'une connexion de la base (le pool en compte 15,
+ * partagées avec les directs et l'émargement). Une erreur ne bloque pas la file.
+ */
+let fileCalculs: Promise<unknown> = Promise.resolve();
+function unALaFois<T>(f: () => Promise<T>): Promise<T> {
+  const suivant = fileCalculs.then(f, f);
+  fileCalculs = suivant.catch(() => undefined);
+  return suivant;
+}
+
+/**
+ * Les requêtes agrégées du tableau trompent l'estimation de PostgreSQL, qui
+ * passerait près d'une seconde à les compiler (JIT) pour quelques
+ * millisecondes d'exécution. Elles passent donc dans une transaction en
+ * lecture seule, JIT coupé, limitée à DELAI_REQUETE par requête, sur une seule
+ * connexion, un calcul à la fois.
  */
 async function sansJit<T>(f: () => Promise<T>): Promise<T> {
   if (lecteur.getStore()) return f();
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`SET TRANSACTION READ ONLY`);
-    await tx.execute(sql`SET LOCAL jit = off`);
-    return lecteur.run(tx, f);
-  });
+  return unALaFois(() =>
+    db.transaction(async (tx) => {
+      await tx.execute(sql`SET TRANSACTION READ ONLY`);
+      await tx.execute(sql`SET LOCAL jit = off`);
+      await tx.execute(sql.raw(`SET LOCAL statement_timeout = '${DELAI_REQUETE}'`));
+      return lecteur.run(tx, f);
+    }),
+  );
 }
 
 // ── Briques de calcul ──────────────────────────────────────────────────────
@@ -327,13 +352,34 @@ async function blocRegularite(f: FiltreEngagement, sites: Perimetre, aujourdhui:
     cj AS MATERIALIZED (${sqlJoursCours(depuis, sites)}),
     jours AS (SELECT generate_series(${jourSql(debut)}, ${auj}, interval '1 day')::date AS jour),
     semaines AS (SELECT generate_series(${jourSql(lundi0)}, ${jourSql(lundiCourant)}, interval '7 days')::date AS lundi),
-    pe AS (
-      SELECT s.lundi, p.uid, (SELECT count(*) FROM appr x WHERE x.uid = p.uid AND x.jour >= s.lundi AND x.jour < s.lundi + 7)::int AS jours
-      FROM semaines s JOIN pop p ON p.inscrit_le < s.lundi),
-    coh AS (
-      SELECT p.uid, date_trunc('week', p.inscrit_le)::date AS lundi,
-        (SELECT min(v.jour) FROM vus v WHERE v.uid = p.uid AND v.jour >= p.inscrit_le) AS premier
-      FROM pop p WHERE p.inscrit_le >= ${jourSql(lundiCohortes)})
+    -- Tout se calcule par agrégats joints (jointures par hachage), jamais par une sous-requête corrélée
+    -- par étudiant ou par jour sur une table temporaire sans index : le coût suit le nombre de lignes,
+    -- pas son carré (page entière, 1 061 étudiants sur 30 jours : 54 s → 1 s).
+    pe AS MATERIALIZED (
+      SELECT s.lundi, p.uid, count(x.jour)::int AS jours
+      FROM semaines s JOIN pop p ON p.inscrit_le < s.lundi
+      LEFT JOIN appr x ON x.uid = p.uid AND x.jour >= s.lundi AND x.jour < s.lundi + 7
+      GROUP BY s.lundi, p.uid),
+    coh0 AS MATERIALIZED (
+      SELECT p.uid, date_trunc('week', p.inscrit_le)::date AS lundi, min(v.jour) AS premier
+      FROM pop p LEFT JOIN vus v ON v.uid = p.uid AND v.jour >= p.inscrit_le
+      WHERE p.inscrit_le >= ${jourSql(lundiCohortes)}
+      GROUP BY p.uid, p.inscrit_le),
+    coh AS MATERIALIZED (
+      SELECT c.uid, c.lundi, c.premier,
+        COALESCE(bool_or(v.jour = c.premier + 1), false) AS r1,
+        COALESCE(bool_or(v.jour BETWEEN c.premier + 7 AND c.premier + 13), false) AS r7
+      FROM coh0 c LEFT JOIN vus v ON v.uid = c.uid
+      GROUP BY c.uid, c.lundi, c.premier),
+    -- Par jour : actions un jour de cours (ac) ou sans cours (asc), ouvertures, attendus d'un direct.
+    acj AS MATERIALIZED (
+      SELECT x.jour, count(*) FILTER (WHERE cj.uid IS NOT NULL)::int AS ac, count(*) FILTER (WHERE cj.uid IS NULL)::int AS asc_
+      FROM appr x LEFT JOIN cj ON cj.uid = x.uid AND cj.jour = x.jour
+      GROUP BY x.jour),
+    ouvj AS MATERIALIZED (
+      SELECT z.jour, count(*)::int AS n FROM (SELECT uid, jour FROM ouv UNION SELECT uid, jour FROM appr) z GROUP BY z.jour),
+    cjj AS MATERIALIZED (SELECT jour, count(*)::int AS n FROM cj GROUP BY jour),
+    insj AS MATERIALIZED (SELECT inscrit_le, count(*)::int AS n FROM pop GROUP BY inscrit_le)
     SELECT json_build_object(
       'effectif', (SELECT count(*) FROM pop),
       'actifs', json_build_object(
@@ -345,12 +391,13 @@ async function blocRegularite(f: FiltreEngagement, sites: Perimetre, aujourdhui:
         'ma', (SELECT count(DISTINCT uid) FROM appr WHERE jour > ${auj} - 30 AND jour <= ${auj})),
       'courbe', (SELECT json_agg(json_build_object(
           'jour', j.jour::text,
-          'ouverts', (SELECT count(*) FROM (SELECT uid FROM ouv o WHERE o.jour = j.jour UNION SELECT uid FROM appr x WHERE x.jour = j.jour) z),
-          'ac', (SELECT count(*) FROM appr x WHERE x.jour = j.jour AND EXISTS (SELECT 1 FROM cj WHERE cj.uid = x.uid AND cj.jour = j.jour)),
-          'asc', (SELECT count(*) FROM appr x WHERE x.jour = j.jour AND NOT EXISTS (SELECT 1 FROM cj WHERE cj.uid = x.uid AND cj.jour = j.jour)),
-          'attendus', (SELECT count(*) FROM cj WHERE cj.jour = j.jour),
-          'inscrits', (SELECT count(*) FROM pop p WHERE p.inscrit_le <= j.jour)
-        ) ORDER BY j.jour) FROM jours j),
+          'ouverts', COALESCE(o.n, 0),
+          'ac', COALESCE(a.ac, 0),
+          'asc', COALESCE(a.asc_, 0),
+          'attendus', COALESCE(c.n, 0),
+          'inscrits', (SELECT COALESCE(sum(i.n), 0)::int FROM insj i WHERE i.inscrit_le <= j.jour)
+        ) ORDER BY j.jour)
+        FROM jours j LEFT JOIN ouvj o ON o.jour = j.jour LEFT JOIN acj a ON a.jour = j.jour LEFT JOIN cjj c ON c.jour = j.jour),
       'semaines', (SELECT json_agg(w ORDER BY w.lundi) FROM (
           SELECT lundi::text AS lundi, count(*)::int AS inscrits,
             percentile_cont(0.5) WITHIN GROUP (ORDER BY jours) AS mediane, avg(jours)::float8 AS moyenne,
@@ -359,10 +406,9 @@ async function blocRegularite(f: FiltreEngagement, sites: Perimetre, aujourdhui:
       'cohortes', (SELECT json_agg(c ORDER BY c.lundi) FROM (
           SELECT lundi::text AS lundi, count(*)::int AS inscrits, count(premier)::int AS venus,
             count(*) FILTER (WHERE premier + 1 < ${auj})::int AS e1,
-            count(*) FILTER (WHERE premier + 1 < ${auj} AND EXISTS (SELECT 1 FROM vus v WHERE v.uid = coh.uid AND v.jour = coh.premier + 1))::int AS r1,
+            count(*) FILTER (WHERE premier + 1 < ${auj} AND coh.r1)::int AS r1,
             count(*) FILTER (WHERE premier + 13 < ${auj})::int AS e7,
-            count(*) FILTER (WHERE premier + 13 < ${auj} AND EXISTS (
-              SELECT 1 FROM vus v WHERE v.uid = coh.uid AND v.jour BETWEEN coh.premier + 7 AND coh.premier + 13))::int AS r7,
+            count(*) FILTER (WHERE premier + 13 < ${auj} AND coh.r7)::int AS r7,
             min(premier)::text AS premier_min
           FROM coh GROUP BY lundi) c),
       'plateformes', (SELECT json_object_agg(cle, n) FROM (
@@ -467,12 +513,13 @@ type LigneDirect = {
 /**
  * Une ligne par (séance tenue et finie, étudiant attendu) du périmètre, avec
  * son état de présence en trois états et l'entonnoir. Classe : celle de
- * l'étudiant au moment de la séance (sqlAttendus).
+ * l'étudiant au moment de la séance (sqlAttendus). L'état et « salle émargée »
+ * (règle D1) viennent de sqlAttendus, qui compte la salle une fois par
+ * (séance, campus) et non une fois par ligne.
  */
 async function lignesDirects(depuis: Date, sites: Perimetre, classeId: number | null): Promise<LigneDirect[]> {
   const r = await ex().execute<LigneDirect>(sql`
-    SELECT a.seance_id, a.site_id, a.classe_id, a.uid, a.statut,
-      ${sqlEtatPresence(sql`a.seance_id`, sql`a.uid`)} AS etat,
+    SELECT a.seance_id, a.site_id, a.classe_id, a.uid, a.statut, a.etat,
       COALESCE(pr.mode = 'salle' AND NULLIF(pr.justification, '') IS NULL, false) AS en_salle,
       COALESCE(pr.mode <> 'salle' AND pr.minutes > 0 AND NULLIF(pr.justification, '') IS NULL, false) AS en_ligne,
       COALESCE(NULLIF(pr.justification, '') IS NULL AND (pr.mode = 'salle' OR pr.minutes >= ${sqlMinutesSuivi()}), false) AS a_suivi,
@@ -485,7 +532,7 @@ async function lignesDirects(depuis: Date, sites: Perimetre, classeId: number | 
         OR EXISTS (SELECT 1 FROM campus.messages_live m WHERE m.seance_id = a.seance_id AND m.auteur_id = a.uid)
         OR EXISTS (SELECT 1 FROM campus.mains_levees ml WHERE ml.seance_id = a.seance_id AND ml.utilisateur_id = a.uid AND NOT ml.pour_salle)
       ) AS participe,
-      COALESCE(${sqlSalleEmargee(sql`a.seance_id`, sql`a.site_id`)}, false) AS salle_emargee,
+      a.salle_emargee,
       COALESCE(e.seance_id IS NOT NULL AND ${SQL_INCIDENT_SALLE}, false) AS incident,
       EXISTS (SELECT 1 FROM campus.vues_replay v WHERE v.seance_id = a.seance_id AND v.utilisateur_id = a.uid) AS replay_vu
     FROM (${sqlAttendus({ depuis, sites })}) a
@@ -494,6 +541,25 @@ async function lignesDirects(depuis: Date, sites: Perimetre, classeId: number | 
     LEFT JOIN campus.effectifs_salles e ON e.seance_id = a.seance_id AND e.site_id = a.site_id
     ${classeId ? sql`WHERE a.classe_id = ${classeId}` : sql``}`);
   return r.rows;
+}
+
+/**
+ * « Ont suivi au moins un direct », là où la présence est connue : le
+ * dénominateur ne compte que les étudiants dont au moins une présence est
+ * connue (présent ou absent) ou qui ont suivi ; ceux dont toutes les présences
+ * sont « inconnu » (salle non émargée) sont comptés à part, jamais comme
+ * n'ayant rien suivi. Le numérateur garde tous ceux qui ont suivi (30 min en
+ * ligne, même sous le seuil de présence, dans une salle non émargée).
+ */
+function ontSuiviConnu(parEtudiant: LigneDirect[][]): { suivis: number; connus: number; inconnus: number; total: number } {
+  const connu = (ls: LigneDirect[]) => ls.some((l) => l.etat === "present" || l.etat === "absent" || l.a_suivi);
+  const connus = parEtudiant.filter(connu).length;
+  return {
+    suivis: parEtudiant.filter((ls) => ls.some((l) => l.a_suivi)).length,
+    connus,
+    inconnus: parEtudiant.length - connus,
+    total: parEtudiant.length,
+  };
 }
 
 function ligneEntonnoir(libelle: string, ls: LigneDirect[], salleEmargee: boolean | null = null): LigneEntonnoir {
@@ -587,7 +653,7 @@ async function blocDirects(
     })
     .sort((a, b) => (a.taux ?? -1) - (b.taux ?? -1) || a.site.localeCompare(b.site));
 
-  const parEtudiant = grouper(lignes, (l) => l.uid);
+  const suivi = ontSuiviConnu([...grouper(lignes, (l) => l.uid).values()]);
   return {
     seancesTenues: parSeance.size,
     presence: troisEtats(
@@ -595,7 +661,8 @@ async function blocDirects(
       lignes.filter((l) => l.etat === "absent").length,
       lignes.filter((l) => l.etat !== "present" && l.etat !== "absent").length,
     ),
-    ontSuivi: part([...parEtudiant.values()].filter((ls) => ls.some((l) => l.a_suivi)).length, parEtudiant.size),
+    ontSuivi: part(suivi.suivis, suivi.connus),
+    ontSuiviInconnue: suivi.total >= EFFECTIF_MINIMUM ? Math.round((suivi.inconnus / suivi.total) * 100) : null,
     emargement,
     // Les 30 dernières suffisent à l'écran (le CSV et la page Présences ont le reste).
     seances: seances.slice(0, 30),
@@ -725,8 +792,8 @@ async function blocTravail(
           semaine: l.semaine,
           cibleId: l.cible_id,
           nom: l.nom,
-          // Le taux de C5 peut être stocké en part (0 à 1) ou en pourcentage : ramené en pourcentage.
-          tauxParticipation: l.taux === null ? null : Math.round(l.taux <= 1 ? l.taux * 100 : l.taux),
+          // C5 stocke toujours un pourcentage (0 à 100, au dixième) : 1 % reste 1 %, jamais 100 %.
+          tauxParticipation: l.taux === null ? null : Math.round(l.taux),
           rang: l.rang,
         }));
       })
@@ -809,6 +876,11 @@ async function blocRappels(f: FiltreEngagement, sites: Perimetre, debut: Jour, e
   // Effet du rappel d'entraînement (C4) : action d'apprentissage dans les 24 h qui suivent l'heure du
   // rappel, les jours avec rappel comparés aux jours tirés au sort sans rappel (statut « temoin »).
   // Le tirage est recalculé (rappelEntrainementAutorise) : une ligne qui le contredit est écartée.
+  // Groupes comparables : un rappel « envoye » ne part que vers un téléphone abonné ; les témoins ne
+  // sont donc retenus que pour un étudiant qui avait déjà un téléphone abonné à l'heure de la ligne.
+  // Sans cela, le groupe témoin mélangerait tous les étudiants sans rappels et l'écart mesurerait
+  // surtout la différence entre abonnés et non-abonnés (constat 5 de la revue). Les rappels écrits
+  // « envoye » mais refusés ensuite par le plafond gardent leur place (intention de traiter).
   const effetRappel = relancesLisibles
     ? await facultatif("effet du rappel", async () => {
         const r2 = await ex().execute<{ uid: number; jour: string; statut: string; suivi: boolean }>(sql`${pop},
@@ -819,7 +891,8 @@ async function blocRappels(f: FiltreEngagement, sites: Perimetre, debut: Jour, e
               OR (x.t IS NULL AND x.jour IN ((re.jour)::date, (re.jour)::date + 1)))) AS suivi
           FROM campus.relances_engagement re JOIN pop p ON p.uid = re.utilisateur_id
           WHERE re.motif = 'rappel_du_jour' AND re.statut IN ('envoye', 'temoin') AND re.cree_le >= ${depuis}
-            AND re.cree_le <= now() - interval '24 hours'`);
+            AND re.cree_le <= now() - interval '24 hours'
+            AND EXISTS (SELECT 1 FROM campus.abonnements_push ap WHERE ap.utilisateur_id = re.utilisateur_id AND ap.cree_le <= re.cree_le)`);
         const garde = (l: (typeof r2.rows)[number]) =>
           !DEBUT_EXPERIENCE || (l.statut === "temoin") === !rappelEntrainementAutorise(l.uid, l.jour);
         const avec = r2.rows.filter((l) => l.statut === "envoye" && garde(l));
@@ -871,6 +944,16 @@ async function blocRappels(f: FiltreEngagement, sites: Perimetre, debut: Jour, e
 
 // ── 5. Copies en attente par formateur ─────────────────────────────────────
 
+/** Le devoir « d » vient de la routine du soir (devoirs_seances.devoir_ids). */
+const sqlAutomatique = sql`EXISTS (SELECT 1 FROM campus.devoirs_seances ds WHERE ds.devoir_ids @> jsonb_build_array(d.id))`;
+
+/**
+ * Copies en attente de correction, par formateur : seulement les devoirs que
+ * le formateur a lui-même donnés. Les copies des exercices automatiques de la
+ * routine du soir n'y entrent jamais (décision D2 : leur correction est
+ * facultative, jamais un retard reproché au formateur) ; copiesAutomatiques
+ * les compte à part pour la direction.
+ */
 async function copiesParFormateur(f: FiltreEngagement, sites: Perimetre, debut: Jour): Promise<CopiesFormateur[]> {
   const r = await ex().execute<{
     formateur_id: number | null;
@@ -894,7 +977,7 @@ async function copiesParFormateur(f: FiltreEngagement, sites: Perimetre, debut: 
     JOIN campus.devoirs d ON d.id = r.devoir_id AND d.type = 'depot'
     JOIN campus.cours c ON c.id = d.cours_id
     LEFT JOIN campus.utilisateurs fo ON fo.id = c.formateur_id
-    WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige')
+    WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige') AND NOT ${sqlAutomatique}
     GROUP BY c.formateur_id, fo.prenom, fo.nom
     HAVING count(*) FILTER (WHERE r.statut = 'rendu') > 0
       OR count(*) FILTER (WHERE r.statut = 'corrige' AND r.corrige_le >= ${`${debut}T00:00:00Z`}::timestamptz) > 0
@@ -908,6 +991,21 @@ async function copiesParFormateur(f: FiltreEngagement, sites: Perimetre, debut: 
     delaiMedianHeures: l.delai === null ? null : Math.round(l.delai),
     corrigees: l.corrigees,
   }));
+}
+
+/** Copies des exercices automatiques (correction facultative), tous formateurs confondus : ni retard, ni délai cible. */
+async function copiesAutomatiques(f: FiltreEngagement, sites: Perimetre, debut: Jour): Promise<CopiesAutomatiques> {
+  const [l] = (
+    await ex().execute<CopiesAutomatiques>(sql`
+      WITH pop AS (${sqlPopulation(sites, f.siteId, f.classeId)})
+      SELECT count(*) FILTER (WHERE r.statut = 'rendu')::int AS "enAttente",
+        count(*) FILTER (WHERE r.statut = 'corrige' AND r.corrige_le >= ${`${debut}T00:00:00Z`}::timestamptz)::int AS corrigees
+      FROM campus.rendus r
+      JOIN pop p ON p.uid = r.etudiant_id
+      JOIN campus.devoirs d ON d.id = r.devoir_id AND d.type = 'depot'
+      WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige') AND ${sqlAutomatique}`)
+  ).rows;
+  return { enAttente: l?.enAttente ?? 0, corrigees: l?.corrigees ?? 0 };
 }
 
 // ── 6. Questions les plus ratées par séance ────────────────────────────────
@@ -1009,9 +1107,14 @@ async function noms(): Promise<{ sites: Map<number, string>; classes: Map<number
   return { sites: new Map(s.rows.map((l) => [l.id, l.nom])), classes: new Map(c.rows.map((l) => [l.id, l.nom])) };
 }
 
+/** « Recalculer » ne relance pas un calcul de moins d'une minute (ni un calcul en cours) : il rend celui-là. */
+const FRAICHEUR_MINIMALE_MS = 60_000;
+
 /**
  * Tous les indicateurs de la page, pour ce périmètre et ce filtre. Gardés
- * 10 minutes (frais = vrai : recalcul demandé par la personne).
+ * 10 minutes (frais = vrai : recalcul demandé par la personne, sauf si le même
+ * filtre a été lancé il y a moins d'une minute). Les calculs passent un par
+ * un (sansJit).
  */
 export function indicateursEngagement(
   sites: Perimetre,
@@ -1021,7 +1124,8 @@ export function indicateursEngagement(
 ): Promise<EngagementPilotage> {
   const cle = JSON.stringify([sites, f.jours, f.siteId, f.classeId]);
   const connu = cache.get(cle);
-  if (!frais && connu && Date.now() - connu.le < DUREE_CACHE_MS) return connu.promesse;
+  const age = connu ? Date.now() - connu.le : Infinity;
+  if (connu && age < (frais ? FRAICHEUR_MINIMALE_MS : DUREE_CACHE_MS)) return connu.promesse;
   const promesse = sansJit(() => calculer(sites, perimetre, f));
   cache.set(cle, { le: Date.now(), promesse });
   // Un calcul qui échoue n'est pas gardé : la visite suivante recommence.
@@ -1049,6 +1153,7 @@ async function calculer(sites: Perimetre, perimetre: EngagementPilotage["perimet
     travail: null,
     rappels: null,
     copies: [],
+    copiesAutomatiques: null,
     seancesMalDatees: [],
     questionsRatees: [],
     genereLe: new Date().toISOString(),
@@ -1067,6 +1172,7 @@ async function calculer(sites: Perimetre, perimetre: EngagementPilotage["perimet
   const travail = await blocTravail(f, perimetreDirects, debut, aujourdhui, lignes, effectif);
   const rappels = await blocRappels(f, sites, debut, effectif, nomsSites);
   const copies = await copiesParFormateur(f, sites, debut);
+  const automatiques = await copiesAutomatiques(f, sites, debut);
   const seancesMalDatees: SeanceMalDatee[] = [...meta.values()]
     .filter(estMalDatee)
     .map((m) => ({
@@ -1086,6 +1192,7 @@ async function calculer(sites: Perimetre, perimetre: EngagementPilotage["perimet
     travail,
     rappels,
     copies,
+    copiesAutomatiques: automatiques,
     seancesMalDatees,
     questionsRatees: ratees,
     calculMs: Date.now() - debutCalcul,
@@ -1197,6 +1304,8 @@ export type ChiffresSite = {
 /**
  * Par campus du périmètre : actifs aujourd'hui (ouverture et action
  * d'apprentissage) et « revenus » (vus au moins deux jours différents).
+ * Agrégats joints par étudiant (v, x) : le coût suit le nombre de jours vus,
+ * jamais le carré de l'effectif (1 061 étudiants : 5,1 s → 0,13 s).
  */
 export function chiffresTableau(sites: Perimetre): Promise<ChiffresSite[]> {
   return sansJit(() => calculerChiffresTableau(sites));
@@ -1207,34 +1316,54 @@ async function calculerChiffresTableau(sites: Perimetre): Promise<ChiffresSite[]
   const auj = jourSql(aujourdhui);
   const r = await ex().execute<ChiffresSite>(sql`
     WITH pop AS MATERIALIZED (${sqlPopulation(sites)}),
-    actes AS MATERIALIZED (${await sqlActes(new Date(Date.now() - 400 * JOUR_MS))}),
-    vus AS MATERIALIZED (
-      SELECT DISTINCT uid, jour FROM actes
+    actes AS MATERIALIZED (SELECT DISTINCT uid, jour FROM (${await sqlActes(new Date(Date.now() - 400 * JOUR_MS))}) a),
+    vus AS (
+      SELECT uid, jour FROM actes
       UNION SELECT a.utilisateur_id, a.jour FROM campus.activite_jours a JOIN pop p ON p.uid = a.utilisateur_id
-      UNION SELECT p.uid, (p.derniere_connexion AT TIME ZONE p.fz)::date FROM pop p WHERE p.derniere_connexion IS NOT NULL)
+      UNION SELECT p.uid, (p.derniere_connexion AT TIME ZONE p.fz)::date FROM pop p WHERE p.derniere_connexion IS NOT NULL),
+    v AS (SELECT uid, count(*) AS jours, bool_or(jour = ${auj}) AS auj FROM vus GROUP BY uid),
+    x AS (SELECT DISTINCT uid FROM actes WHERE jour = ${auj})
     SELECT p.site_id, count(*)::int AS etudiants,
-      count(*) FILTER (WHERE EXISTS (SELECT 1 FROM vus v WHERE v.uid = p.uid AND v.jour = ${auj}))::int AS actifs_aujourdhui,
-      count(*) FILTER (WHERE EXISTS (SELECT 1 FROM actes x WHERE x.uid = p.uid AND x.jour = ${auj}))::int AS apprenants_aujourdhui,
-      count(*) FILTER (WHERE (SELECT count(*) FROM vus v WHERE v.uid = p.uid) >= 2)::int AS revenus
-    FROM pop p GROUP BY p.site_id`);
+      count(*) FILTER (WHERE v.auj)::int AS actifs_aujourdhui,
+      count(x.uid)::int AS apprenants_aujourdhui,
+      count(*) FILTER (WHERE v.jours >= 2)::int AS revenus
+    FROM pop p LEFT JOIN v ON v.uid = p.uid LEFT JOIN x ON x.uid = p.uid
+    GROUP BY p.site_id`);
   return r.rows;
 }
 
-export type PresenceSite = { site_id: number | null; presents: number; absents: number; inconnus: number; suivis: number; avec_direct: number; seances: number; emargees: number };
+export type PresenceSite = {
+  site_id: number | null;
+  presents: number;
+  absents: number;
+  inconnus: number;
+  /** Étudiants qui ont suivi au moins un direct. */
+  suivis: number;
+  /** Étudiants dont la présence est connue (au moins un présent ou absent) ou qui ont suivi : le dénominateur de « Ont suivi ». */
+  avec_direct: number;
+  /** Étudiants attendus à un direct dont toutes les présences sont « inconnu » (salle non émargée). */
+  inconnus_etudiants: number;
+  /** Étudiants attendus à au moins un direct. */
+  attendus_etudiants: number;
+  seances: number;
+  emargees: number;
+};
 
 /** Présence aux directs de la période par campus, en trois états, et séances dont la salle du campus a été émargée. */
 export async function presencesTableau(sites: Perimetre, depuis: Date): Promise<PresenceSite[]> {
   const lignes = await sansJit(() => lignesDirects(depuis, sites, null));
   return [...grouper(lignes, (l) => l.site_id).entries()].map(([siteId, ls]) => {
-    const parEtudiant = [...grouper(ls, (l) => l.uid).values()];
+    const suivi = ontSuiviConnu([...grouper(ls, (l) => l.uid).values()]);
     const paires = [...grouper(ls, (l) => l.seance_id).values()];
     return {
       site_id: siteId,
       presents: ls.filter((l) => l.etat === "present").length,
       absents: ls.filter((l) => l.etat === "absent").length,
       inconnus: ls.filter((l) => l.etat !== "present" && l.etat !== "absent").length,
-      suivis: parEtudiant.filter((x) => x.some((l) => l.a_suivi)).length,
-      avec_direct: parEtudiant.length,
+      suivis: suivi.suivis,
+      avec_direct: suivi.connus,
+      inconnus_etudiants: suivi.inconnus,
+      attendus_etudiants: suivi.total,
       seances: siteId ? paires.length : 0,
       emargees: siteId ? paires.filter((p) => p[0].salle_emargee).length : 0,
     };

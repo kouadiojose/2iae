@@ -39,7 +39,8 @@ export function LigneAContacter({
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {ligne.raisons.map((r) => (
-              <Badge key={r.type} ton={TON_RAISON[r.type]}>
+              // Libellé long (« Sans activité en ligne depuis 7 jours ») : il passe à la ligne plutôt que de déborder à 360 px.
+              <Badge key={r.type} ton={TON_RAISON[r.type]} className="max-w-full whitespace-normal">
                 {LIBELLES_RAISONS[r.type]}
               </Badge>
             ))}

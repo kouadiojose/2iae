@@ -33,6 +33,8 @@ export const TON_PRESENCE: Record<StatutPresencePilotage, Ton> = {
   en_ligne: "succes",
   justifie: "gris",
   incident: "encre",
+  // Présence non mesurée (salle non émargée) : jamais la couleur d'une absence.
+  inconnu: "gris",
   partiel: "alerte",
   absent: "danger",
 };
@@ -44,6 +46,7 @@ export const FOND_PRESENCE: Record<StatutPresencePilotage, string> = {
   en_ligne: "bg-succes",
   justifie: "bg-texte-gris",
   incident: "bg-encre",
+  inconnu: "bg-ligne-forte",
   partiel: "bg-alerte",
   absent: "bg-danger",
 };

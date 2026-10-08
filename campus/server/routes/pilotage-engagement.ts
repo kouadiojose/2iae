@@ -5,7 +5,9 @@
 // (exigerDroit : un étudiant, un formateur ou un écran de salle reçoit 403),
 // toujours limitées au périmètre de la personne (perimetreSites) : la vie
 // scolaire de Yopougon ne voit que Yopougon. Aucune donnée nominative
-// d'étudiant. Calculs : server/engagement/indicateurs.ts (gardés 10 minutes).
+// d'étudiant. Calculs : server/engagement/indicateurs.ts (gardés 10 minutes ;
+// « Recalculer » (frais=1) rend le calcul en cours ou de moins d'une minute ;
+// les calculs passent un par un, 60 s au plus par requête).
 // Posé vide par le socle commun (C0) et déjà branché dans routes/index.ts.
 import type { Express } from "express";
 import { z } from "zod";

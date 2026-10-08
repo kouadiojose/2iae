@@ -29,6 +29,8 @@ import { urlCrm } from "./composants/DossierOutils";
 import { TON_PRESENCE, FOND_PRESENCE, vuLe, telephoneLisible, pourcent, copier, useReferences } from "./outils";
 import { Selection } from "@/components/ui/champs";
 import { TONS_STATUT, fcfa, jourCourt, aujourdhui } from "./outils-crm";
+import { t as te, selonNombre } from "@shared/textes/engagement";
+import { useTextes } from "@/lib/textes";
 
 // Les onglets du dossier ne sont téléchargés qu'à leur première ouverture.
 const DossierIdentite = lazy(() => import("./composants/DossierIdentite").then((m) => ({ default: m.DossierIdentite })));
@@ -401,7 +403,13 @@ function TuileResume({ libelle, valeur, onClick, children }: { libelle: string; 
   );
 }
 
+/**
+ * Assiduité aux lives, en trois états : une séance dont la salle n'a pas été
+ * émargée est « non mesurée » (gris), jamais une absence, et ne compte pas
+ * dans le taux.
+ */
 function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier?: (s: LignePresenceEtudiant) => void }) {
+  const tx = useTextes(te);
   const r = d.presences.resume;
   const frise = [...d.presences.seances].reverse();
   return (
@@ -415,10 +423,13 @@ function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier?: (s: L
             <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
               <div>
                 <div className="text-5xl font-black tracking-serre">{pourcent(r.taux)}</div>
-                <div className="text-sm text-texte-pale">de présence ({r.presents} sur {r.attendus - r.justifie - r.incident} séances comptées)</div>
+                <div className="text-sm text-texte-pale">
+                  {r.taux === null && r.inconnu > 0 ? tx("presences.tauxNonMesure") : tx("presences.comptees", { v: { p: r.presents, m: r.mesurees } })}
+                </div>
               </div>
               <div className="flex flex-wrap gap-1.5 pb-1 text-xs">
                 {r.absent > 0 && <Badge ton="danger">{pluriel(r.absent, "absence")}</Badge>}
+                {r.inconnu > 0 && <Badge ton="gris">{selonNombre(tx, "presences.nonMesurees", r.inconnu)}</Badge>}
                 {r.partiel > 0 && <Badge ton="alerte">{r.partiel} partiel{r.partiel > 1 ? "s" : ""}</Badge>}
                 {r.justifie > 0 && <Badge ton="gris">{r.justifie} justifiée{r.justifie > 1 ? "s" : ""}</Badge>}
                 {r.incident > 0 && <Badge ton="encre">{pluriel(r.incident, "incident")} de salle</Badge>}
@@ -441,6 +452,7 @@ function Assiduite({ d, onJustifier }: { d: DossierEtudiant; onJustifier?: (s: L
                 <Legende classe="bg-succes" texte="Présent" />
                 <Legende classe="bg-alerte" texte="Partiel" />
                 <Legende classe="bg-danger" texte="Absent" />
+                <Legende classe="bg-ligne-forte" texte={tx("presences.legendeNonMesure")} />
                 <Legende classe="bg-texte-gris" texte="Justifié" />
                 <Legende classe="bg-encre" texte="Incident de salle" />
               </div>

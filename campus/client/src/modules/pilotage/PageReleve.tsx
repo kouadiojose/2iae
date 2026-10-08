@@ -1,13 +1,33 @@
 // /releve/:jeton : le relevé envoyé aux parents par WhatsApp (page publique,
 // sans compte). Lisible sur un téléphone et imprimable : nom, classe, campus,
 // moyennes par cours, présence aux cours en direct. Rien d'autre.
+//
+// Présence en trois états : les étudiants suivent les cours ensemble dans la
+// salle de leur campus ; une séance dont la salle n'a pas été émargée n'est
+// pas mesurée et n'est JAMAIS comptée comme une absence. Rien de mesuré :
+// « Non mesurée », jamais « 0 % ».
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Printer, Link2Off } from "lucide-react";
 import type { ReleveParent } from "@shared/schema";
+import { t as te, selonNombre } from "@shared/textes/engagement";
 import { get, ErreurApi } from "@/lib/api";
 import { dateComplete } from "@/lib/dates";
-import { cn, note, pluriel } from "@/lib/utils";
+import { cn, note } from "@/lib/utils";
+
+/** Page publique, lue par les parents : vouvoiement (registre par défaut des textes). */
+const tx = (cle: Parameters<typeof te>[0], v?: Record<string, string | number>) => te(cle, { v });
+
+/** La phrase sous le taux de présence : séances suivies sur séances mesurées, et ce qui n'est pas mesuré. */
+function detailPresence(p: ReleveParent["presence"]): string {
+  if (!p.seances) return tx("releve.presence.aucunCours");
+  if (p.taux === null) return tx("releve.presence.rien");
+  const phrases = [`${selonNombre(te, "releve.presence.presents", p.presents)} ${selonNombre(te, "releve.presence.mesurees", p.mesurees)}`];
+  if (p.justifiees) phrases[0] += `, ${selonNombre(te, "releve.presence.justifiees", p.justifiees)}`;
+  phrases[0] += ".";
+  if (p.nonMesurees) phrases.push(selonNombre(te, "releve.presence.nonMesurees", p.nonMesurees));
+  return phrases.join(" ");
+}
 
 export default function PageReleve({ jeton }: { jeton: string }) {
   const { data, isLoading, error } = useQuery<ReleveParent, ErreurApi>({
@@ -86,13 +106,11 @@ export default function PageReleve({ jeton }: { jeton: string }) {
                 <div className="mt-1 text-sm text-nuit-doux">{data.moyenneGenerale === null ? "Pas encore de note publiée." : "Moyenne des cours notés, sur 20."}</div>
               </div>
               <div className="rounded-2xl bg-orange p-5 text-encre">
-                <div className="font-mono text-xs uppercase tracking-wider">Présence aux cours en direct</div>
-                <div className="mt-1 text-5xl font-black">{data.presence.taux === null ? "–" : `${data.presence.taux} %`}</div>
-                <div className="mt-1 text-sm">
-                  {data.presence.seances
-                    ? `Présence à ${data.presence.presents} ${data.presence.presents > 1 ? "séances" : "séance"} sur ${data.presence.seances}${data.presence.justifiees ? `, dont ${pluriel(data.presence.justifiees, "absence justifiée", "absences justifiées")} non comptée${data.presence.justifiees > 1 ? "s" : ""}` : ""}.`
-                    : "Aucun cours en direct pour l'instant."}
+                <div className="font-mono text-xs uppercase tracking-wider">{tx("releve.presence.titre")}</div>
+                <div className={cn("mt-1 font-black", data.presence.taux === null && data.presence.seances ? "text-3xl" : "text-5xl")}>
+                  {data.presence.taux !== null ? `${data.presence.taux} %` : data.presence.seances ? tx("releve.presence.nonMesuree") : "–"}
                 </div>
+                <div className="mt-1 text-sm">{detailPresence(data.presence)}</div>
               </div>
             </section>
 

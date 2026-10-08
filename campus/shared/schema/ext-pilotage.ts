@@ -107,11 +107,14 @@ export const FCFA_PAR_DOLLAR = 600;
  * même ordre que le module live (statutPresence) : absence justifiée d'abord ;
  * en salle, émargé (QR ou code) ou pointé PRÉSENT par le responsable ; présent
  * en ligne (≥ 70 % de la durée tenue) ; incident de sa salle (personne n'est
- * compté absent) ; partiel (en ligne < 70 %) ; absent. Un étudiant pointé
+ * compté absent) ; inconnu (présence non mesurée : la salle de son campus n'a
+ * pas été émargée, server/engagement/presence.ts) ; partiel (en ligne < 70 %,
+ * salle émargée) ; absent (salle émargée sans lui). Un étudiant pointé
  * « absent » garde ses minutes en ligne : il est en ligne, partiel ou absent.
- * Le taux de présence vaut présents / (attendus − justifiés − incidents).
+ * Le taux de présence vaut présents / (attendus − justifiés − incidents −
+ * inconnus) : une présence non mesurée n'est jamais une absence.
  */
-export const STATUTS_PRESENCE_PILOTAGE = ["emarge", "pointe", "en_ligne", "justifie", "incident", "partiel", "absent"] as const;
+export const STATUTS_PRESENCE_PILOTAGE = ["emarge", "pointe", "en_ligne", "justifie", "incident", "inconnu", "partiel", "absent"] as const;
 export type StatutPresencePilotage = (typeof STATUTS_PRESENCE_PILOTAGE)[number];
 
 export const LIBELLES_PRESENCE_PILOTAGE: Record<StatutPresencePilotage, string> = {
@@ -120,6 +123,7 @@ export const LIBELLES_PRESENCE_PILOTAGE: Record<StatutPresencePilotage, string> 
   en_ligne: "Présent en ligne",
   justifie: "Absence justifiée",
   incident: "Incident de salle",
+  inconnu: "Non mesurée (salle non émargée)",
   partiel: "Partiel",
   absent: "Absent",
 };
@@ -127,12 +131,13 @@ export const LIBELLES_PRESENCE_PILOTAGE: Record<StatutPresencePilotage, string> 
 export const comptePresent = (s: StatutPresencePilotage) => s === "emarge" || s === "pointe" || s === "en_ligne";
 
 /**
- * Taux de présence, UNE définition pour tout le campus (pilotage, bilan de
- * séance du live) : présents / (attendus − justifiés − incidents de salle),
- * arrondi au pour cent ; null quand il ne reste personne à compter.
+ * Taux de présence, UNE définition pour tout le campus (pilotage, relevé,
+ * bilan de séance du live) : présents / (attendus − justifiés − incidents de
+ * salle − présences non mesurées), arrondi au pour cent ; null quand il ne
+ * reste personne à compter (« non mesurée »).
  */
-export function tauxPresence(r: { presents: number; attendus: number; justifies: number; incidents: number }): number | null {
-  const base = r.attendus - r.justifies - r.incidents;
+export function tauxPresence(r: { presents: number; attendus: number; justifies: number; incidents: number; inconnus?: number }): number | null {
+  const base = r.attendus - r.justifies - r.incidents - (r.inconnus ?? 0);
   return base > 0 ? Math.round((r.presents / base) * 100) : null;
 }
 
@@ -172,7 +177,7 @@ export type TypeRaisonContact = "jamais_active" | "inactif" | "lives_manques" | 
 
 export const LIBELLES_RAISONS: Record<TypeRaisonContact, string> = {
   jamais_active: "Jamais activé",
-  inactif: "Plus vu depuis 7 jours",
+  inactif: "Sans activité en ligne depuis 7 jours",
   lives_manques: "2 lives manqués",
   devoir_non_rendu: "Devoir non rendu",
 };
@@ -425,10 +430,14 @@ export type ResumePresences = {
   en_ligne: number;
   justifie: number;
   incident: number;
+  /** Présence non mesurée : salle de son campus non émargée (jamais une absence). */
+  inconnu: number;
   partiel: number;
   absent: number;
   presents: number;
-  /** Présents / (attendus − justifiés − incidents), en %. */
+  /** Séances où la présence est connue : attendus − justifiés − incidents − inconnus (la base du taux). */
+  mesurees: number;
+  /** Présents / mesurées, en % ; null quand rien n'est mesuré. */
   taux: number | null;
 };
 
@@ -584,7 +593,12 @@ export type ReleveParent = {
   anneeScolaire: string | null;
   moyennes: { code: string; titre: string; moyenne: number | null; notes: number }[];
   moyenneGenerale: number | null;
-  presence: { taux: number | null; seances: number; presents: number; justifiees: number };
+  /**
+   * Présence aux directs : taux sur les séances où elle est connue (null : « non mesurée ») ;
+   * seances = séances attendues, mesurees = séances comptées dans le taux, nonMesurees = salle non
+   * émargée ou incident de salle (jamais comptées comme des absences).
+   */
+  presence: { taux: number | null; seances: number; presents: number; justifiees: number; mesurees: number; nonMesurees: number };
   date: string;
 };
 

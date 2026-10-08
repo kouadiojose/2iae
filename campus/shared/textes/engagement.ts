@@ -2,7 +2,7 @@
 // (/pilotage/engagement), chiffres corrigés du tableau de pilotage et export
 // CSV. Pages du personnel : vouvoiement. Chaque chiffre a sa phrase de lecture
 // (« … · lecture ») qui dit exactement ce qu'il compte.
-import { creerTextes } from "./index";
+import { creerTextes, type OptionsTexte, type Traducteur } from "./index";
 
 export const t = creerTextes({
   // ── En-tête et filtres ──
@@ -65,8 +65,12 @@ export const t = creerTextes({
   "courbe.cours": "Action, jour de cours",
   "courbe.sansCours": "Action, jour sans cours",
   "courbe.ouvertSeul": "Ouverture sans action",
-  "courbe.detail": "{jour} : {ac} actions un jour de cours, {asc} un jour sans cours, {o} ouvertures en tout",
-  "courbe.detailSansOuverture": "{jour} : {ac} actions un jour de cours, {asc} un jour sans cours (ouverture non mesurée)",
+  "courbe.detail": "{jour} : {ac} un jour de cours, {asc} un jour sans cours, {o} en tout",
+  "courbe.detailSansOuverture": "{jour} : {ac} un jour de cours, {asc} un jour sans cours (ouverture non mesurée)",
+  "courbe.actions.un": "{n} action",
+  "courbe.actions.n": "{n} actions",
+  "courbe.ouvertures.un": "{n} ouverture",
+  "courbe.ouvertures.n": "{n} ouvertures",
   "courbe.colonneJour": "Jour",
   "courbe.colonneOuverts": "Ouvertures",
   "courbe.colonneInscrits": "Inscrits",
@@ -96,7 +100,7 @@ export const t = creerTextes({
   "directs.titre": "Directs : présence et participation",
   "presence.titre": "Présence aux directs, en trois états",
   "presence.lecture":
-    "Chaque étudiant attendu à chaque séance tenue de la période. Présent : émargé en salle (QR ou code) ou suivi en ligne jusqu'au seuil de 70 %. Absent : sa salle a été émargée sans lui, ou il ne peut suivre qu'en ligne. Inconnu : personne n'a été émargé dans la salle de son campus ; ce n'est jamais compté comme une absence.",
+    "Chaque étudiant attendu à chaque séance tenue de la période. Présent : émargé en salle (QR ou code) ou suivi en ligne jusqu'au seuil de 70 %. Absent : sa salle a été émargée sans lui (au moins 3 émargés de son campus et un quart des attendus), ou il ne peut suivre qu'en ligne. Inconnu : la salle de son campus n'a pas été émargée ; ce n'est jamais compté comme une absence.",
   "presence.presents": "Présents",
   "presence.absents": "Absents",
   "presence.inconnus": "Inconnus",
@@ -104,12 +108,14 @@ export const t = creerTextes({
   "presence.partInconnue": "{n} % de présence inconnue : faites émarger les salles",
   "emargement.titre": "Séances émargées par campus",
   "emargement.lecture":
-    "Une salle est émargée quand au moins un étudiant y a scanné le QR de l'écran ou a été pointé par le responsable. Sans émargement, la présence de tout le campus reste inconnue : les campus en tête de liste doivent faire émarger.",
+    "Une salle est émargée quand au moins 3 étudiants de son campus y ont été émargés (QR de l'écran, code, ou pointés présents par le responsable), et au moins un quart de ceux qui étaient attendus. Sinon, la présence de tout le campus reste inconnue, jamais absente : les campus en tête de liste doivent faire émarger.",
   "emargement.seances": "{e} séances émargées sur {n}",
   "emargement.incidents": "dont {n} avec un incident de salle",
   "emargement.emarges": "{n} % des étudiants attendus émargés",
   "suivi.titre": "Ont suivi au moins un direct",
-  "suivi.lecture": "Étudiants émargés en salle, ou qui ont suivi en ligne au moins 30 minutes (ou la moitié d'une séance plus courte), sur ceux qui avaient au moins un direct.",
+  "suivi.lecture":
+    "Étudiants émargés en salle, ou qui ont suivi en ligne au moins 30 minutes (ou la moitié d'une séance plus courte), sur ceux dont la présence est connue (au moins une salle émargée, ou un direct suivi en ligne). Un étudiant dont la salle n'a jamais été émargée n'est pas compté comme n'ayant rien suivi : sa part est donnée à part.",
+  "suivi.inconnue": "{n} % des étudiants attendus : présence encore inconnue (salle non émargée)",
   "entonnoir.titre": "Entonnoir, séance par séance",
   "entonnoir.lecture":
     "Attendus → venus (en salle ou en ligne) → ont suivi (30 minutes ou la moitié) → au seuil officiel de 70 % en ligne → ont participé (question, vote, sondage, message, main levée). Les campus et les classes de moins de 5 attendus ne sont pas détaillés. Mêmes règles que le bilan de séance.",
@@ -185,7 +191,7 @@ export const t = creerTextes({
   "envois.ouverts": "Ouverts sous 24 h",
   "effet.titre": "Effet du rappel d'entraînement",
   "effet.lecture":
-    "Part des jours suivis d'une action d'apprentissage dans les 24 h : jours avec rappel, comparés aux jours tirés au sort sans rappel (un sur cinq pendant 4 semaines). On garde le rappel s'il apporte au moins 5 points.",
+    "Part des jours suivis d'une action d'apprentissage dans les 24 h : jours avec rappel, comparés aux jours tirés au sort sans rappel (un sur cinq pendant 4 semaines), seulement pour les étudiants dont le téléphone recevait déjà les rappels. On garde le rappel s'il apporte au moins 5 points.",
   "effet.avec": "Avec rappel",
   "effet.sans": "Sans rappel (tirés au sort)",
   "effet.ecart": "{n} points d'écart",
@@ -199,7 +205,14 @@ export const t = creerTextes({
   // ── 6. Copies, séances mal datées, questions ratées ──
   "copies.titre": "Copies en attente de correction, par formateur",
   "copies.lecture":
-    "Copies rendues par les étudiants du groupe et pas encore notées. Délai médian : entre la remise et la note, pour les copies corrigées sur la période (cible : moins de 72 h).",
+    "Copies rendues par les étudiants du groupe sur les devoirs que les formateurs ont eux-mêmes donnés, pas encore notées. Délai médian : entre la remise et la note, pour les copies corrigées sur la période (cible : moins de 72 h). Les exercices automatiques de la routine du soir n'y sont jamais : leur correction est facultative.",
+  "copies.auto.titre": "Exercices automatiques (routine du soir) : correction facultative",
+  "copies.auto.attente.un": "{n} copie rendue pas encore corrigée",
+  "copies.auto.attente.n": "{n} copies rendues pas encore corrigées",
+  "copies.auto.corrigees.un": "{n} corrigée sur la période",
+  "copies.auto.corrigees.n": "{n} corrigées sur la période",
+  "copies.auto.lecture":
+    "Comptées à part pour la direction : aucun rappel au formateur, aucun retard. Il peut les corriger s'il le souhaite.",
   "copies.formateur": "Formateur",
   "copies.enAttente": "En attente",
   "copies.plusAncienne": "Plus ancienne",
@@ -225,11 +238,13 @@ export const t = creerTextes({
   "tableau.lienEngagement": "Engagement et participation",
   "tableau.lienEngagement.texte": "Jour par jour, téléphone, directs, rappels",
   "tableau.actifsAujourdhui": "Actifs aujourd'hui",
-  "tableau.actifsAujourdhui.detail": "{n} ont fait une action d'apprentissage",
+  "tableau.actifsAujourdhui.detail.un": "{n} a fait une action d'apprentissage",
+  "tableau.actifsAujourdhui.detail.n": "{n} ont fait une action d'apprentissage",
   "tableau.revenus": "Revenus après le 1er jour",
   "tableau.revenus.detail": "vus au moins deux jours différents",
   "tableau.ontSuivi": "Ont suivi un direct",
-  "tableau.ontSuivi.detail": "émargés, ou 30 min en ligne, en 30 jours",
+  "tableau.ontSuivi.detail": "là où la présence est connue · émargés, ou 30 min en ligne, en 30 jours",
+  "tableau.ontSuivi.detailInconnue": "là où la présence est connue · {n} % inconnue",
   "tableau.presence": "Présence aux directs",
   "tableau.presence.detail": "là où elle est connue · {n} % inconnue",
   "tableau.presence.detailConnue": "là où elle est connue",
@@ -237,7 +252,42 @@ export const t = creerTextes({
   "tableau.copies.detail": "{n} sur {sur}, devoirs ouverts compris",
   "tableau.emargement": "Salles émargées : {e} séances sur {n}",
   "tableau.copiesCourt": "Copies à ce jour",
-  "tableau.actifsCourt": "actifs aujourd'hui",
+  "tableau.actifsCourt.un": "actif aujourd'hui",
+  "tableau.actifsCourt.n": "actifs aujourd'hui",
+  "tableau.sousTitre": "Où en sont nos étudiants ? Chiffres des 30 derniers jours, recalculés toutes les 2 minutes.",
+  "tableau.aContacter.vide":
+    "Un étudiant apparaîtra ici s'il n'a pas activé son compte après 7 jours, n'a eu aucune activité en ligne depuis 7 jours, a été absent aux deux derniers lives alors que sa salle a émargé (une présence non mesurée ne compte jamais comme une absence) ou n'a pas rendu un devoir.",
+
+  // ── Présences (/pilotage/presences, dossier de l'étudiant) ──
+  "presences.nonMesures.un": "{n} non mesuré",
+  "presences.nonMesures.n": "{n} non mesurés",
+  "presences.nonMesurees.un": "{n} non mesurée",
+  "presences.nonMesurees.n": "{n} non mesurées",
+  "presences.filtreNonMesures": "Non mesurés",
+  "presences.tauxNonMesure": "non mesurée",
+  "presences.regle":
+    "Présent en ligne à partir de {seuil} % de {duree} min, soit {minutes} min. Les absences justifiées, les incidents de salle et les présences non mesurées ne comptent pas dans le taux : une salle n'est émargée qu'avec au moins 3 émargés de son campus et un quart des attendus ; sinon, les autres étudiants de ce campus sont « non mesurés », jamais absents.",
+  "presences.sousTitre":
+    "Émargement en salle, pointage du responsable et présence en ligne (70 % de la durée au moins), réunis sur une seule feuille par séance. Une salle non émargée laisse la présence non mesurée, jamais absente.",
+  "presences.comptees": "de présence (présences / séances mesurées : {p} / {m})",
+  "presences.legendeNonMesure": "Non mesurée",
+
+  // ── Relevé des parents (/releve/:jeton, page publique) ──
+  "releve.presence.titre": "Présence aux cours en direct",
+  "releve.presence.nonMesuree": "Non mesurée",
+  "releve.presence.aucunCours": "Aucun cours en direct pour l'instant.",
+  "releve.presence.presents.un": "Présent à {n} séance",
+  "releve.presence.presents.n": "Présent à {n} séances",
+  "releve.presence.mesurees.un": "sur {n} séance mesurée",
+  "releve.presence.mesurees.n": "sur {n} séances mesurées",
+  "releve.presence.justifiees.un": "{n} absence justifiée non comptée",
+  "releve.presence.justifiees.n": "{n} absences justifiées non comptées",
+  "releve.presence.nonMesurees.un":
+    "{n} séance non mesurée : les étudiants suivent les cours ensemble dans la salle de leur campus, et la présence n'y a pas été relevée. Ce n'est jamais compté comme une absence.",
+  "releve.presence.nonMesurees.n":
+    "{n} séances non mesurées : les étudiants suivent les cours ensemble dans la salle de leur campus, et la présence n'y a pas été relevée. Ce n'est jamais compté comme une absence.",
+  "releve.presence.rien":
+    "Les étudiants suivent les cours ensemble dans la salle de leur campus, et la présence n'y a pas encore été relevée : elle n'est pas encore mesurée. Ce n'est jamais compté comme une absence.",
 
   // ── Export CSV ──
   "csv.campus": "Campus",
@@ -255,3 +305,11 @@ export const t = creerTextes({
 });
 
 export type CleEngagement = Parameters<typeof t>[0];
+
+/**
+ * Texte au singulier ou au pluriel : « base.un » jusqu'à 1 (0 et 1 au singulier,
+ * en français), « base.n » au-delà. {n} reçoit le nombre.
+ */
+export function selonNombre(tx: Traducteur<CleEngagement>, base: string, n: number, options: OptionsTexte = {}): string {
+  return tx(`${base}.${n <= 1 ? "un" : "n"}` as CleEngagement, { ...options, v: { n, ...options.v } });
+}

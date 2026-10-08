@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JourActivite, RepartitionPlateformes, SemaineApprentissage, TroisEtats } from "@shared/engagement/indicateurs";
 import { PLATEFORMES } from "@shared/engagement/indicateurs";
-import { t } from "@shared/textes/engagement";
+import { t, selonNombre } from "@shared/textes/engagement";
 import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 
@@ -107,10 +107,14 @@ export function CourbeJours({ jours }: { jours: JourActivite[] }) {
   const total = (j: JourActivite) => Math.max(j.ouverts ?? 0, j.apprenantsCours + j.apprenantsSansCours);
   const max = plafond(Math.max(1, ...jours.map(total)));
   const actif = jours.find((j) => j.jour === choisi) ?? jours.at(-1);
-  const detail = (j: JourActivite) =>
-    j.ouverts === null
-      ? tx("courbe.detailSansOuverture", { v: { jour: jourLongCivil(j.jour), ac: j.apprenantsCours, asc: j.apprenantsSansCours } })
-      : tx("courbe.detail", { v: { jour: jourLongCivil(j.jour), ac: j.apprenantsCours, asc: j.apprenantsSansCours, o: total(j) } });
+  // « 1 action », « 2 actions » : chaque nombre accordé.
+  const detail = (j: JourActivite) => {
+    const ac = selonNombre(tx, "courbe.actions", j.apprenantsCours);
+    const asc = selonNombre(tx, "courbe.actions", j.apprenantsSansCours);
+    return j.ouverts === null
+      ? tx("courbe.detailSansOuverture", { v: { jour: jourLongCivil(j.jour), ac, asc } })
+      : tx("courbe.detail", { v: { jour: jourLongCivil(j.jour), ac, asc, o: selonNombre(tx, "courbe.ouvertures", total(j)) } });
+  };
   const etroit = jours.length > 45;
   const [axe, largeurAxe] = useLargeur<HTMLDivElement>();
   return (

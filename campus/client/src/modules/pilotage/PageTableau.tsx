@@ -5,15 +5,16 @@
 // Chiffres justes (chantier C8) : présence aux directs là où elle est connue
 // (une salle non émargée laisse la présence « inconnue », jamais absente),
 // copies rendues « à ce jour », actifs du jour, « revenus » au lieu des « vus
-// en 7 jours », et lien vers le tableau « Engagement et participation ». La
-// liste « à contacter » arrive avec le tableau : un seul calcul par visite.
+// en 7 jours », « ont suivi un direct » là où la présence est connue, et lien
+// vers le tableau « Engagement et participation ». La liste « à contacter »
+// arrive avec le tableau ; le serveur garde le calcul 2 minutes par périmètre.
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus, Activity } from "lucide-react";
 import type { Droit } from "@shared/schema";
 import type { IndicateursTableau, TableauPilotageEngagement } from "@shared/engagement/indicateurs";
-import { t as te } from "@shared/textes/engagement";
+import { t as te, selonNombre } from "@shared/textes/engagement";
 import { useTextes } from "@/lib/textes";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Chiffre, BarreProgression, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
@@ -49,7 +50,7 @@ export default function PageTableau() {
       <EnTetePage
         etiquette={t ? `Pilotage · ${t.perimetre.tout ? "Tout le groupe" : `Campus ${t.perimetre.site ?? ""}`}` : "Pilotage"}
         titre={`${salutation(new Date(maintenantServeur()))} ${moi.prenom}.`}
-        sousTitre="Où en sont nos étudiants ? Chiffres des 30 derniers jours, recalculés à chaque visite."
+        sousTitre={tx("tableau.sousTitre")}
         actions={
           nb > 0 ? (
             <LienBouton href="/pilotage/suivi" taille="lg" icone={<ArrowRight className="h-5 w-5" />} className="min-h-[52px]">
@@ -77,10 +78,20 @@ export default function PageTableau() {
             <Chiffre
               libelle={tx("tableau.actifsAujourdhui")}
               valeur={t.total.actifsAujourdhui}
-              detail={tx("tableau.actifsAujourdhui.detail", { v: { n: t.total.apprenantsAujourdhui } })}
+              detail={selonNombre(tx, "tableau.actifsAujourdhui.detail", t.total.apprenantsAujourdhui)}
             />
             <Chiffre libelle={tx("tableau.revenus")} valeur={pourcent(t.total.revenus.taux)} detail={tx("tableau.revenus.detail")} />
-            <Chiffre libelle={tx("tableau.ontSuivi")} valeur={pourcent(t.total.ontSuivi.taux)} detail={tx("tableau.ontSuivi.detail")} />
+            {/* Là où la présence est connue : une salle non émargée ne fait pas croire que les étudiants n'ont rien suivi. */}
+            <Chiffre
+              libelle={tx("tableau.ontSuivi")}
+              valeur={pourcent(t.total.ontSuivi.taux)}
+              detail={
+                t.total.ontSuiviInconnue
+                  ? tx("tableau.ontSuivi.detailInconnue", { v: { n: t.total.ontSuiviInconnue } })
+                  : tx("tableau.ontSuivi.detail")
+              }
+              ton={t.total.ontSuiviInconnue !== null && t.total.ontSuiviInconnue >= 50 ? "orange" : "encre"}
+            />
             <Chiffre
               libelle={tx("tableau.presence")}
               valeur={pourcent(t.total.presence30j)}
@@ -142,7 +153,7 @@ export default function PageTableau() {
           <EtatVide
             icone={<PartyPopper className="h-6 w-6" />}
             titre="Personne à relancer pour l'instant."
-            texte="Un étudiant apparaîtra ici s'il n'a pas activé son compte après 7 jours, n'est plus venu depuis 7 jours, a été absent aux deux derniers lives (une salle non émargée ne compte jamais comme une absence) ou n'a pas rendu un devoir."
+            texte={tx("tableau.aContacter.vide")}
           />
         ) : (
           <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -214,7 +225,7 @@ function CarteCampus({ c, lienSuivi }: { c: IndicateursTableau; lienSuivi: boole
             </p>
           )}
           <div className="flex items-center justify-between border-t border-ligne-douce pt-3 text-sm">
-            <span className="text-texte-pale"><strong className="text-encre">{c.actifsAujourdhui}</strong> {tx("tableau.actifsCourt")}</span>
+            <span className="text-texte-pale"><strong className="text-encre">{c.actifsAujourdhui}</strong> {tx(c.actifsAujourdhui <= 1 ? "tableau.actifsCourt.un" : "tableau.actifsCourt.n")}</span>
             {lienSuivi && (
               <Link href={`/pilotage/suivi?site=${c.siteId}`} className={cn("font-bold no-underline", c.aContacter ? "text-danger" : "text-succes")}>
                 {c.aContacter ? `${c.aContacter} à contacter` : "Rien à signaler"}

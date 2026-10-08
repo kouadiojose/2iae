@@ -47,9 +47,9 @@ import { fuseauValide } from "../visio-daily";
 import { iaDisponible, reglagesIaActuels, budgetDuMois, oublierReglagesIa } from "../ia";
 import { adresseDeDemonstration, ADRESSE_DEMO_REFUSEE, DOMAINE_DEMO } from "../demo-constantes";
 import { lireVitrine, oublierVitrine } from "./public";
-import { sqlEtatPresence } from "../engagement/presence";
+import { sqlCaseEtat, sqlEmargeDansSaSalle, sqlRegleSalleEmargee, sqlSalleEmargee, type EtatPresence } from "../engagement/presence";
 import { chiffresTableau, presencesTableau, part, troisEtats } from "../engagement/indicateurs";
-import type { IndicateursTableau, TableauPilotageEngagement } from "@shared/engagement/indicateurs";
+import { EFFECTIF_MINIMUM, type IndicateursTableau, type TableauPilotageEngagement } from "@shared/engagement/indicateurs";
 import {
   ROLES,
   PROFILS_EQUIPE,
@@ -324,10 +324,16 @@ export const SQL_INCIDENT_SALLE = sql`(NULLIF(e.incident, '') IS NOT NULL
  * inscription individuelle. Jointure par égalité (rapide), affinée ensuite
  * par sqlAttenduAuCours.
  */
-const SQL_CANDIDATS_COURS = sql`(
-  SELECT cc.cours_id, e.id AS uid FROM campus.cours_classes cc JOIN campus.utilisateurs e ON e.classe_id = cc.classe_id
-  UNION SELECT cc.cours_id, pc.utilisateur_id FROM campus.cours_classes cc JOIN campus.passages_classes pc ON pc.classe_id = cc.classe_id
-  UNION SELECT i.cours_id, i.utilisateur_id FROM campus.inscriptions i)`;
+const candidats = (coursId?: SQL) => {
+  const filtre = (colonne: SQL) => (coursId ? sql`WHERE ${colonne} = ${coursId}` : sql``);
+  return sql`
+  SELECT cc.cours_id, e.id AS uid FROM campus.cours_classes cc JOIN campus.utilisateurs e ON e.classe_id = cc.classe_id ${filtre(sql`cc.cours_id`)}
+  UNION SELECT cc.cours_id, pc.utilisateur_id FROM campus.cours_classes cc JOIN campus.passages_classes pc ON pc.classe_id = cc.classe_id ${filtre(sql`cc.cours_id`)}
+  UNION SELECT i.cours_id, i.utilisateur_id FROM campus.inscriptions i ${filtre(sql`i.cours_id`)}`;
+};
+const SQL_CANDIDATS_COURS = sql`(${candidats()})`;
+/** Les mêmes candidats (cours_id, uid), pour un seul cours (expression SQL) : compte des attendus d'une salle (presence.ts). */
+export const sqlCandidatsDuCours = (coursId: SQL) => candidats(coursId);
 
 /**
  * Classe de l'étudiant « u » à l'instant t (colonne SQL), lue ensuite dans
@@ -345,8 +351,8 @@ export const sqlClasseA = (t: SQL) => sql`
     ) END AS classe_id
   ) h`;
 
-/** Attendu à ce cours à l'instant t : sa classe d'alors suit le cours, ou il y était déjà inscrit. */
-const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
+/** Attendu à ce cours à l'instant t : sa classe d'alors suit le cours, ou il y était déjà inscrit (alias u, et h de sqlClasseA). */
+export const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
   ((${coursId}, h.classe_id) IN (SELECT cc.cours_id, cc.classe_id FROM campus.cours_classes cc)
     OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.cours_id = ${coursId} AND i.utilisateur_id = u.id AND i.cree_le <= ${t}))`;
 
@@ -355,8 +361,18 @@ const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
  * dans le même ordre que le live (statutPresence) : absence justifiée ·
  * émargé en salle (QR ou code) · pointé présent en salle par le responsable ·
  * présent en ligne (≥ 70 % de la durée de référence) · incident de sa salle ·
- * partiel · absent. Un étudiant pointé « absent » ou « justifié » n'est donc
- * jamais compté présent parce qu'il a été pointé.
+ * présence inconnue · partiel · absent. Un étudiant pointé « absent » ou
+ * « justifié » n'est donc jamais compté présent parce qu'il a été pointé.
+ *
+ * Présence en TROIS états (engagement/presence.ts, règle D1) : chaque ligne
+ * porte aussi « etat » (present, absent, inconnu) et « salle_emargee » (la
+ * salle de son campus a été émargée : au moins 3 émargés de ce campus et au
+ * moins 25 % de ses attendus). Un étudiant ni présent ni excusé dont la salle
+ * n'a pas été émargée a le statut « inconnu », jamais « absent » ni
+ * « partiel » : il ne compte pas dans le taux (versResume).
+ * Sans filtre par étudiant, la salle émargée se compte une fois par (séance,
+ * campus) sur les lignes elles-mêmes (tous les attendus du campus sont là) ;
+ * avec un filtre par étudiant, par sqlSalleEmargee.
  *
  * Seules les séances TENUES comptent (démarrées : demarree_le renseigné) ; une
  * séance jamais démarrée (terminée d'office par le live) n'a pas d'absents.
@@ -389,37 +405,74 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
     if (!f.inclureEnCours) conds.push(sql`(s.statut = 'terminee' OR d.fin <= now())`);
   }
   if (f.sites) conds.push(sql`u.site_id = ANY(${entiers(f.sites)})`);
+  // Sans filtre par étudiant, chaque campus d'une séance a toutes ses lignes (le filtre de campus garde des campus
+  // entiers) : émargés et attendus de la salle se comptent par une fenêtre, une seule fois par (séance, campus).
+  const enMasse = f.etudiantId === undefined;
+  const salle = enMasse
+    ? sql`COALESCE(b.site_id IS NOT NULL AND ${sqlRegleSalleEmargee(sql`b.emarges_salle`, sql`b.attendus_salle`)}, false)`
+    : sql`COALESCE(${sqlSalleEmargee(sql`b.seance_id`, sql`b.site_id`)}, false)`;
+  const etat = sqlCaseEtat({
+    tenue: sql`b.tenue`,
+    justifiee: sql`b.justifiee`,
+    enSalle: sql`b.en_salle`,
+    auSeuil: sql`b.au_seuil`,
+    pointe: sql`b.pointe`,
+    sansCampus: sql`b.site_id IS NULL`,
+    incident: sql`b.incident`,
+    salleEmargee: salle,
+  });
   return sql`
-    SELECT s.id AS seance_id, s.cours_id, d.reel AS debut, s.titre AS seance_titre, c.code AS cours_code,
-      u.id AS uid, u.site_id, h.classe_id,
-      COALESCE(p.minutes, 0)::int AS minutes, p.justification,
-      CASE WHEN p.mode = 'salle' THEN COALESCE(p.arrivee_salle_le, p.arrivee_le) ELSE p.arrivee_le END AS arrivee_le,
-      CASE
-        WHEN NULLIF(p.justification, '') IS NOT NULL THEN 'justifie'
-        WHEN p.mode = 'salle' AND p.emarge_qr THEN 'emarge'
-        WHEN p.mode = 'salle' AND p.pointe_par_id IS NOT NULL THEN 'pointe'
-        WHEN p.mode = 'salle' THEN 'emarge'
-        WHEN p.minutes >= d.seuil THEN 'en_ligne'
-        WHEN ${SQL_INCIDENT_SALLE} THEN 'incident'
-        WHEN p.minutes > 0 THEN 'partiel'
-        ELSE 'absent'
-      END AS statut,
-      COALESCE(NULLIF(p.justification, '') IS NULL AND p.mode = 'salle' AND p.pointe_par_id IS NULL
-        AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > COALESCE(s.demarree_le, s.debut) + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard
-    FROM campus.seances s
-    JOIN campus.cours c ON c.id = s.cours_id
-    CROSS JOIN LATERAL (
-      SELECT GREATEST(1, ceil(r.duree::float8 * ${SEUIL_PRESENCE_EN_LIGNE}::float8))::int AS seuil,
-        COALESCE(s.demarree_le, s.debut) AS reel,
-        COALESCE(s.demarree_le, s.debut) + make_interval(mins => s.duree_minutes) AS fin
-      FROM (SELECT ${SQL_DUREE_REFERENCE} AS duree) r
-    ) d
-    JOIN ${SQL_CANDIDATS_COURS} cand ON cand.cours_id = s.cours_id
-    JOIN campus.utilisateurs u ON u.id = cand.uid AND u.role = 'etudiant' AND u.cree_le <= d.fin
-    ${sqlClasseA(sql`d.fin`)}
-    LEFT JOIN campus.presences p ON p.seance_id = s.id AND p.utilisateur_id = u.id
-    LEFT JOIN campus.effectifs_salles e ON e.seance_id = s.id AND e.site_id = u.site_id
-    WHERE ${sql.join(conds, sql` AND `)} AND ${sqlAttenduAuCours(sql`s.cours_id`, sql`d.fin`)}`;
+    SELECT b.seance_id, b.cours_id, b.debut, b.seance_titre, b.cours_code, b.uid, b.site_id, b.classe_id,
+      b.minutes, b.justification, b.arrivee_le,
+      CASE WHEN b.statut_brut NOT IN ('partiel', 'absent') THEN b.statut_brut
+        WHEN ${etat} = 'inconnu' THEN 'inconnu'
+        ELSE b.statut_brut END AS statut,
+      b.retard, ${etat} AS etat, ${salle} AS salle_emargee
+    FROM (
+      SELECT s.id AS seance_id, s.cours_id, d.reel AS debut, s.titre AS seance_titre, c.code AS cours_code,
+        u.id AS uid, u.site_id, h.classe_id,
+        COALESCE(p.minutes, 0)::int AS minutes, p.justification,
+        CASE WHEN p.mode = 'salle' THEN COALESCE(p.arrivee_salle_le, p.arrivee_le) ELSE p.arrivee_le END AS arrivee_le,
+        CASE
+          WHEN NULLIF(p.justification, '') IS NOT NULL THEN 'justifie'
+          WHEN p.mode = 'salle' AND p.emarge_qr THEN 'emarge'
+          WHEN p.mode = 'salle' AND p.pointe_par_id IS NOT NULL THEN 'pointe'
+          WHEN p.mode = 'salle' THEN 'emarge'
+          WHEN p.minutes >= d.seuil THEN 'en_ligne'
+          WHEN ${SQL_INCIDENT_SALLE} THEN 'incident'
+          WHEN p.minutes > 0 THEN 'partiel'
+          ELSE 'absent'
+        END AS statut_brut,
+        COALESCE(NULLIF(p.justification, '') IS NULL AND p.mode = 'salle' AND p.pointe_par_id IS NULL
+          AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > COALESCE(s.demarree_le, s.debut) + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard,
+        -- Ce que lit la règle des trois états (engagement/presence.ts, sqlCaseEtat).
+        s.demarree_le IS NOT NULL AS tenue,
+        NULLIF(p.justification, '') IS NOT NULL AS justifiee,
+        p.mode = 'salle' AS en_salle,
+        p.minutes >= d.seuil AS au_seuil,
+        p.pointe_par_id IS NOT NULL AS pointe,
+        ${SQL_INCIDENT_SALLE} AS incident,
+        ${
+          enMasse
+            ? sql`count(*) OVER salle AS attendus_salle, count(*) FILTER (WHERE ${sqlEmargeDansSaSalle("p", "u")}) OVER salle AS emarges_salle`
+            : sql`NULL::bigint AS attendus_salle, NULL::bigint AS emarges_salle`
+        }
+      FROM campus.seances s
+      JOIN campus.cours c ON c.id = s.cours_id
+      CROSS JOIN LATERAL (
+        SELECT GREATEST(1, ceil(r.duree::float8 * ${SEUIL_PRESENCE_EN_LIGNE}::float8))::int AS seuil,
+          COALESCE(s.demarree_le, s.debut) AS reel,
+          COALESCE(s.demarree_le, s.debut) + make_interval(mins => s.duree_minutes) AS fin
+        FROM (SELECT ${SQL_DUREE_REFERENCE} AS duree) r
+      ) d
+      JOIN ${SQL_CANDIDATS_COURS} cand ON cand.cours_id = s.cours_id
+      JOIN campus.utilisateurs u ON u.id = cand.uid AND u.role = 'etudiant' AND u.cree_le <= d.fin
+      ${sqlClasseA(sql`d.fin`)}
+      LEFT JOIN campus.presences p ON p.seance_id = s.id AND p.utilisateur_id = u.id
+      LEFT JOIN campus.effectifs_salles e ON e.seance_id = s.id AND e.site_id = u.site_id
+      WHERE ${sql.join(conds, sql` AND `)} AND ${sqlAttenduAuCours(sql`s.cours_id`, sql`d.fin`)}
+      ${enMasse ? sql`WINDOW salle AS (PARTITION BY s.id, u.site_id)` : sql``}
+    ) b`;
 }
 
 type LigneAttendu = {
@@ -437,6 +490,10 @@ type LigneAttendu = {
   justification: string | null;
   statut: StatutPresencePilotage;
   retard: boolean;
+  /** Présence en trois états (engagement/presence.ts). */
+  etat: EtatPresence;
+  /** La salle de son campus a été émargée pour cette séance (règle D1). */
+  salle_emargee: boolean;
 };
 
 /** Colonnes d'agrégat d'un résumé de présences (sur un sous-ensemble de sqlAttendus). */
@@ -449,6 +506,11 @@ export const COLONNES_RESUME = sql.raw(
 
 type LigneResume = { attendus: number } & Record<StatutPresencePilotage, number>;
 
+/**
+ * Résumé d'un ensemble de lignes de sqlAttendus. Le taux ne porte que sur les
+ * séances où la présence est connue : une présence « inconnu » (salle non
+ * émargée) n'est jamais comptée comme une absence ; null quand rien n'est mesuré.
+ */
 export function versResume(l: Partial<LigneResume> | undefined): ResumePresences {
   const r = {
     attendus: l?.attendus ?? 0,
@@ -457,11 +519,17 @@ export function versResume(l: Partial<LigneResume> | undefined): ResumePresences
     en_ligne: l?.en_ligne ?? 0,
     justifie: l?.justifie ?? 0,
     incident: l?.incident ?? 0,
+    inconnu: l?.inconnu ?? 0,
     partiel: l?.partiel ?? 0,
     absent: l?.absent ?? 0,
   };
   const presents = r.emarge + r.pointe + r.en_ligne;
-  return { ...r, presents, taux: tauxPresence({ presents, attendus: r.attendus, justifies: r.justifie, incidents: r.incident }) };
+  return {
+    ...r,
+    presents,
+    mesurees: Math.max(0, r.attendus - r.justifie - r.incident - r.inconnu),
+    taux: tauxPresence({ presents, attendus: r.attendus, justifies: r.justifie, incidents: r.incident, inconnus: r.inconnu }),
+  };
 }
 
 /** Résume une liste de lignes déjà chargées. */
@@ -484,11 +552,17 @@ function resumeDe(lignes: { statut: StatutPresencePilotage }[]): ResumePresences
  * de l'étudiant à cet instant (classe_id), le type du devoir, s'il est encore
  * ouvert, s'il vient de la routine du soir (automatique), et si une tentative
  * d'interrogation a été commencée.
+ *
+ * Un devoir automatique que le formateur a marqué « à revoir » (chantier C7,
+ * validations_devoirs_auto) n'est jamais proposé aux étudiants
+ * (engagement/proposables.ts) : il n'est pas attendu non plus. Ni copie
+ * manquante dans le tableau, ni « devoir non rendu » dans « à contacter ».
  */
 export function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: number; inclureOuverts?: boolean }): SQL {
   const conds: SQL[] = [
     sql`d.publie`,
     sql`c.statut <> 'brouillon'`,
+    sql`NOT EXISTS (SELECT 1 FROM campus.validations_devoirs_auto va WHERE va.devoir_id = d.id AND va.statut = 'a_revoir')`,
     f.inclureOuverts ? sql`(d.ouverture_le IS NULL OR d.ouverture_le <= now())` : sql`d.date_limite < now()`,
     sql`d.date_limite >= ${f.depuis.toISOString()}::timestamptz`,
     sql`u.cree_le < ref.t`,
@@ -619,7 +693,7 @@ function messageRelance(e: EtudiantResume, raisons: RaisonContact[], devoir?: { 
     case "inactif":
       return `${debut} On ne t'a pas vu sur le campus numérique depuis quelques jours. Tout va bien ? Si tu as un souci de téléphone ou de connexion, dis-le-nous : on trouvera une solution.`;
     case "lives_manques":
-      return `${debut} Tu as manqué les deux derniers cours en direct. Tout va bien ? Dis-nous si quelque chose t'empêche de suivre (réseau, téléphone, horaires…).`;
+      return `${debut} Ta présence n'a pas été relevée aux deux derniers cours en direct, alors que ta salle a émargé. Tout va bien ? Si tu étais là, dis-le-nous ; sinon, dis-nous ce qui t'empêche de suivre (réseau, téléphone, horaires…).`;
     case "devoir_non_rendu":
       return `${debut} Ton devoir « ${devoir?.titre ?? "en cours"} » n'a pas été rendu.${devoir?.retard ? " Tu peux encore le rendre en retard sur le campus." : ""} Besoin d'aide ?`;
     default:
@@ -681,7 +755,7 @@ export async function calculerAContacter(u: Utilisateur): Promise<AContacter[]> 
         const depuis = vu ? Math.floor((maintenant - vu.getTime()) / JOUR_MS) : null;
         ajouter(e.id, {
           type: "inactif",
-          texte: depuis ? `Plus vu sur le campus depuis ${depuis} jours.` : "Jamais revenu sur le campus depuis son activation.",
+          texte: depuis ? `Aucune activité sur le campus numérique depuis ${depuis} jours.` : "Aucune activité sur le campus numérique depuis son activation.",
           action: "Prendre des nouvelles sur WhatsApp",
         });
       }
@@ -694,21 +768,19 @@ export async function calculerAContacter(u: Utilisateur): Promise<AContacter[]> 
   // présence « inconnue » (salle non émargée) ne fait jamais entrer un étudiant dans cette liste.
   const lives = await db.execute<{ uid: number; titres: string[]; codes: string[]; absences: number; n: number }>(sql`
     SELECT uid, array_agg(seance_titre ORDER BY debut DESC) AS titres, array_agg(cours_code ORDER BY debut DESC) AS codes,
-      count(*) FILTER (WHERE statut = 'absent' AND etat = 'absent')::int AS absences, count(*)::int AS n
+      count(*) FILTER (WHERE manque)::int AS absences, count(*)::int AS n
     FROM (
-      SELECT r.*, ${sqlEtatPresence(sql`r.seance_id`, sql`r.uid`)} AS etat
-      FROM (
-        SELECT a.*, row_number() OVER (PARTITION BY a.uid ORDER BY a.debut DESC) AS rang
-        FROM (${sqlAttendus({ depuis: new Date(maintenant - 60 * JOUR_MS), sites: p })}) a
-      ) r
-      WHERE r.rang <= 2
-    ) x
+      SELECT a.uid, a.seance_titre, a.cours_code, a.debut, (a.statut = 'absent' AND a.etat = 'absent') AS manque,
+        row_number() OVER (PARTITION BY a.uid ORDER BY a.debut DESC) AS rang
+      FROM (${sqlAttendus({ depuis: new Date(maintenant - 60 * JOUR_MS), sites: p })}) a
+    ) r
+    WHERE r.rang <= 2
     GROUP BY uid
-    HAVING count(*) = 2 AND count(*) FILTER (WHERE statut = 'absent' AND etat = 'absent') = 2`);
+    HAVING count(*) = 2 AND count(*) FILTER (WHERE manque) = 2`);
   for (const l of lives.rows) {
     ajouter(l.uid, {
       type: "lives_manques",
-      texte: `Absent aux 2 derniers lives : « ${l.titres[0]} » (${l.codes[0]}) et « ${l.titres[1]} » (${l.codes[1]}).`,
+      texte: `Absent aux 2 derniers lives, alors que sa salle a émargé : « ${l.titres[0]} » (${l.codes[0]}) et « ${l.titres[1]} » (${l.codes[1]}).`,
       action: "Appeler pour comprendre (réseau, téléphone, horaires ?)",
     });
   }
@@ -1510,6 +1582,124 @@ setInterval(() => {
   for (const [cle, t] of consultationsNotees) if (t < limite) consultationsNotees.delete(cle);
 }, 3_600_000).unref();
 
+// ── Tableau de pilotage (calcul gardé) ─────────────────────────────────────
+
+type CalculTableau = { tableau: Omit<TableauPilotageEngagement, "aContacter">; aContacter: AContacter[] };
+
+/**
+ * Le tableau est la page d'accueil de toute l'équipe et se recharge à chaque
+ * retour sur l'onglet : son calcul (présences de 30 jours, « à contacter »,
+ * chiffres d'engagement) est gardé TABLEAU_GARDE_MS par périmètre, et un seul
+ * calcul tourne à la fois pour un même périmètre (les visites simultanées
+ * attendent le même). Le résultat ne dépend que du périmètre (perimetreSites) ;
+ * ce que le profil permet de voir est appliqué à chaque visite.
+ */
+const TABLEAU_GARDE_MS = 2 * 60_000;
+const tableauxGardes = new Map<string, { le: number; promesse: Promise<CalculTableau> }>();
+setInterval(() => {
+  const limite = Date.now() - TABLEAU_GARDE_MS;
+  for (const [cle, c] of tableauxGardes) if (c.le < limite) tableauxGardes.delete(cle);
+}, TABLEAU_GARDE_MS).unref();
+
+function tableauGarde(u: Utilisateur): Promise<CalculTableau> {
+  const cle = JSON.stringify(perimetreSites(u));
+  const connu = tableauxGardes.get(cle);
+  if (connu && Date.now() - connu.le < TABLEAU_GARDE_MS) return connu.promesse;
+  const promesse = calculerTableau(u);
+  tableauxGardes.set(cle, { le: Date.now(), promesse });
+  // Un calcul qui échoue n'est pas gardé : la visite suivante recommence.
+  promesse.catch(() => tableauxGardes.get(cle)?.promesse === promesse && tableauxGardes.delete(cle));
+  return promesse;
+}
+
+async function calculerTableau(u: Utilisateur): Promise<CalculTableau> {
+  const p = perimetreSites(u);
+  const maintenant = Date.now();
+  const listeSites = await db.select().from(sites).where(surSites(sites.id, p)).orderBy(asc(sites.ordre));
+
+  const comptes = await db.execute<{ site_id: number | null; etudiants: number; actives: number; actifs7j: number }>(sql`
+    SELECT u.site_id, count(*)::int AS etudiants,
+      count(*) FILTER (WHERE NOT u.doit_changer_mot_de_passe)::int AS actives,
+      count(*) FILTER (WHERE act.t >= now() - interval '7 days')::int AS actifs7j
+    FROM campus.utilisateurs u
+    LEFT JOIN (${SQL_DERNIERE_ACTIVITE}) act ON act.uid = u.id
+    WHERE u.role = 'etudiant' AND u.actif ${p ? sql`AND u.site_id = ANY(${entiers(p)})` : sql``}
+    GROUP BY u.site_id`);
+  // Chiffres justes (chantier C8) : présence en trois états (« inconnu » n'est pas une absence),
+  // séances à leur date réelle, copies comptées « à ce jour » dès la publication du devoir,
+  // actifs comptés en jours réels.
+  const il30j = new Date(maintenant - 30 * JOUR_MS);
+  const chiffres = await chiffresTableau(p);
+  const presencesParSite = await presencesTableau(p, il30j);
+  const devoirsParSite = await db.execute<{ site_id: number | null; attendus: number; rendus: number; ouverts: number[] }>(sql`
+    SELECT site_id, count(*)::int AS attendus, count(*) FILTER (WHERE rendu)::int AS rendus,
+      COALESCE(array_agg(DISTINCT devoir_id) FILTER (WHERE ouvert), '{}') AS ouverts
+    FROM (${sqlDevoirsAttendus({ depuis: il30j, sites: p, inclureOuverts: true })}) a
+    GROUP BY site_id`);
+  // Calculée une seule fois par calcul : les 4 premières lignes partent avec le tableau.
+  const aContacter = await calculerAContacter(u);
+
+  const indicateurs = (siteId: number | null | "tous", nom: string): IndicateursTableau => {
+    const garde = <T extends { site_id: number | null }>(l: T) => siteId === "tous" || l.site_id === siteId;
+    const c = comptes.rows.filter(garde);
+    const ch = chiffres.filter(garde);
+    const pr = presencesParSite.filter(garde);
+    const dv = devoirsParSite.rows.filter(garde);
+    const somme = <T,>(l: T[], f: (x: T) => number) => l.reduce((s, x) => s + f(x), 0);
+    const etudiants = somme(c, (x) => x.etudiants);
+    const actives = somme(c, (x) => x.actives);
+    const presence = troisEtats(
+      somme(pr, (x) => x.presents),
+      somme(pr, (x) => x.absents),
+      somme(pr, (x) => x.inconnus),
+    );
+    const copies = part(
+      somme(dv, (x) => x.rendus),
+      somme(dv, (x) => x.attendus),
+    );
+    // « Ont suivi un direct » là où la présence est connue : les étudiants dont toutes les présences
+    // sont inconnues (salle non émargée) ne sont pas au dénominateur, leur part est donnée à côté.
+    const attendusDirect = somme(pr, (x) => x.attendus_etudiants);
+    return {
+      siteId: siteId === "tous" ? null : siteId,
+      nom,
+      etudiants,
+      actives,
+      tauxActivation: pourcent(actives, etudiants),
+      actifs7j: somme(c, (x) => x.actifs7j),
+      presence30j: presence.tauxConnu,
+      devoirsRendus: copies.taux,
+      aContacter: aContacter.filter((l) => siteId === "tous" || l.etudiant.siteId === siteId).length,
+      actifsAujourdhui: somme(ch, (x) => x.actifs_aujourdhui),
+      apprenantsAujourdhui: somme(ch, (x) => x.apprenants_aujourdhui),
+      revenus: part(
+        somme(ch, (x) => x.revenus),
+        etudiants,
+      ),
+      ontSuivi: part(
+        somme(pr, (x) => x.suivis),
+        somme(pr, (x) => x.avec_direct),
+      ),
+      ontSuiviInconnue: attendusDirect >= EFFECTIF_MINIMUM ? Math.round((somme(pr, (x) => x.inconnus_etudiants) / attendusDirect) * 100) : null,
+      presence,
+      copies,
+      devoirsOuverts: new Set(dv.flatMap((x) => x.ouverts)).size,
+      emargement: siteId === "tous" ? null : { seances: somme(pr, (x) => x.seances), emargees: somme(pr, (x) => x.emargees) },
+    };
+  };
+
+  const monSite = p && listeSites.length === 1 ? listeSites[0].nomCourt : null;
+  return {
+    tableau: {
+      perimetre: { tout: !p, site: monSite },
+      total: indicateurs("tous", p ? `Campus ${monSite ?? ""}`.trim() : "Tout le groupe"),
+      campus: listeSites.map((s) => indicateurs(s.id, s.nomCourt)),
+      genereLe: new Date().toISOString(),
+    },
+    aContacter,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Routes
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1522,86 +1712,12 @@ export function enregistrerAdmin(app: Express) {
     EQUIPE,
     route(async (req, res) => {
       const u = moi(req);
-      const p = perimetreSites(u);
-      const maintenant = Date.now();
-      const listeSites = await db.select().from(sites).where(surSites(sites.id, p)).orderBy(asc(sites.ordre));
-
-      const comptes = await db.execute<{ site_id: number | null; etudiants: number; actives: number; actifs7j: number }>(sql`
-        SELECT u.site_id, count(*)::int AS etudiants,
-          count(*) FILTER (WHERE NOT u.doit_changer_mot_de_passe)::int AS actives,
-          count(*) FILTER (WHERE act.t >= now() - interval '7 days')::int AS actifs7j
-        FROM campus.utilisateurs u
-        LEFT JOIN (${SQL_DERNIERE_ACTIVITE}) act ON act.uid = u.id
-        WHERE u.role = 'etudiant' AND u.actif ${p ? sql`AND u.site_id = ANY(${entiers(p)})` : sql``}
-        GROUP BY u.site_id`);
-      // Chiffres justes (chantier C8) : présence en trois états (« inconnu » n'est pas une absence),
-      // séances à leur date réelle, copies comptées « à ce jour » dès la publication du devoir,
-      // actifs comptés en jours réels.
-      const il30j = new Date(maintenant - 30 * JOUR_MS);
-      const chiffres = await chiffresTableau(p);
-      const presencesParSite = await presencesTableau(p, il30j);
-      const devoirsParSite = await db.execute<{ site_id: number | null; attendus: number; rendus: number; ouverts: number[] }>(sql`
-        SELECT site_id, count(*)::int AS attendus, count(*) FILTER (WHERE rendu)::int AS rendus,
-          COALESCE(array_agg(DISTINCT devoir_id) FILTER (WHERE ouvert), '{}') AS ouverts
-        FROM (${sqlDevoirsAttendus({ depuis: il30j, sites: p, inclureOuverts: true })}) a
-        GROUP BY site_id`);
-      // Calculée une seule fois par visite : les 4 premières lignes partent avec le tableau.
-      const aContacter = await calculerAContacter(u);
-
-      const indicateurs = (siteId: number | null | "tous", nom: string): IndicateursTableau => {
-        const garde = <T extends { site_id: number | null }>(l: T) => siteId === "tous" || l.site_id === siteId;
-        const c = comptes.rows.filter(garde);
-        const ch = chiffres.filter(garde);
-        const pr = presencesParSite.filter(garde);
-        const dv = devoirsParSite.rows.filter(garde);
-        const somme = <T,>(l: T[], f: (x: T) => number) => l.reduce((s, x) => s + f(x), 0);
-        const etudiants = somme(c, (x) => x.etudiants);
-        const actives = somme(c, (x) => x.actives);
-        const presence = troisEtats(
-          somme(pr, (x) => x.presents),
-          somme(pr, (x) => x.absents),
-          somme(pr, (x) => x.inconnus),
-        );
-        const copies = part(
-          somme(dv, (x) => x.rendus),
-          somme(dv, (x) => x.attendus),
-        );
-        return {
-          siteId: siteId === "tous" ? null : siteId,
-          nom,
-          etudiants,
-          actives,
-          tauxActivation: pourcent(actives, etudiants),
-          actifs7j: somme(c, (x) => x.actifs7j),
-          presence30j: presence.tauxConnu,
-          devoirsRendus: copies.taux,
-          aContacter: aContacter.filter((l) => siteId === "tous" || l.etudiant.siteId === siteId).length,
-          actifsAujourdhui: somme(ch, (x) => x.actifs_aujourdhui),
-          apprenantsAujourdhui: somme(ch, (x) => x.apprenants_aujourdhui),
-          revenus: part(
-            somme(ch, (x) => x.revenus),
-            etudiants,
-          ),
-          ontSuivi: part(
-            somme(pr, (x) => x.suivis),
-            somme(pr, (x) => x.avec_direct),
-          ),
-          presence,
-          copies,
-          devoirsOuverts: new Set(dv.flatMap((x) => x.ouverts)).size,
-          emargement: siteId === "tous" ? null : { seances: somme(pr, (x) => x.seances), emargees: somme(pr, (x) => x.emargees) },
-        };
-      };
-
-      const monSite = p && listeSites.length === 1 ? listeSites[0].nomCourt : null;
-      const tableau: TableauPilotageEngagement = {
-        perimetre: { tout: !p, site: monSite },
-        total: indicateurs("tous", p ? `Campus ${monSite ?? ""}`.trim() : "Tout le groupe"),
-        campus: listeSites.map((s) => indicateurs(s.id, s.nomCourt)),
-        genereLe: new Date().toISOString(),
+      const { tableau, aContacter } = await tableauGarde(u);
+      const reponse: TableauPilotageEngagement = {
+        ...tableau,
         aContacter: peut(u, "suivi") ? { total: aContacter.length, lignes: aContacter.slice(0, 4) } : null,
       };
-      res.json(tableau);
+      res.json(reponse);
     }),
   );
 
@@ -3169,7 +3285,16 @@ export function enregistrerAdmin(app: Express) {
         anneeScolaire: e.annee,
         moyennes: notes.cours.map(({ code, titre, moyenne, notes: n }) => ({ code, titre, moyenne, notes: n })),
         moyenneGenerale: notes.generale,
-        presence: { taux: resume.taux, seances: resume.attendus, presents: resume.presents, justifiees: resume.justifie },
+        // Présence en trois états : une séance dont la salle n'a pas été émargée n'est pas mesurée,
+        // jamais comptée comme une absence (taux null : « non mesurée »).
+        presence: {
+          taux: resume.taux,
+          seances: resume.attendus,
+          presents: resume.presents,
+          justifiees: resume.justifie,
+          mesurees: resume.mesurees,
+          nonMesurees: resume.inconnu + resume.incident,
+        },
         date: new Date().toISOString(),
       };
       res.json(releve);

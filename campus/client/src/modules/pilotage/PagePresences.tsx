@@ -1,7 +1,9 @@
 // /pilotage/presences : les présences par séance (campus par campus, avec
 // l'effectif déclaré par la salle) et par étudiant ; justifier une absence ;
 // exporter pour Excel. Règle unique : présent en ligne à partir de 70 % de
-// la durée ; absences justifiées et incidents de salle ne comptent pas.
+// la durée ; absences justifiées, incidents de salle et présences non
+// mesurées (salle non émargée, engagement/presence.ts) ne comptent pas :
+// une présence non mesurée n'est jamais une absence.
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -19,10 +21,16 @@ import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreJustifier, type CibleJustification } from "./composants/FenetreJustifier";
 import { TON_PRESENCE, pourcent, lundiIso, decalerSemaine, libelleSemaine } from "./outils";
+import { t as te, selonNombre } from "@shared/textes/engagement";
+import { useTextes } from "@/lib/textes";
+
+/** Statuts pour lesquels la vie scolaire peut saisir (ou modifier) une justification. */
+const JUSTIFIABLE = new Set<StatutPresencePilotage>(["absent", "partiel", "inconnu", "justifie"]);
 
 type Vue = "seances" | "etudiants";
 
 export default function PagePresences() {
+  const tx = useTextes(te);
   const recherche = new URLSearchParams(useSearch());
   const [, naviguer] = useLocation();
   const seanceId = recherche.get("seance");
@@ -45,7 +53,7 @@ export default function PagePresences() {
       <EnTetePage
         etiquette="Pilotage · Présences"
         titre="Présences"
-        sousTitre="Émargement en salle, pointage du responsable et présence en ligne (70 % de la durée au moins), réunis sur une seule feuille par séance."
+        sousTitre={tx("presences.sousTitre")}
       />
       <Onglets<Vue>
         valeur={vue}
@@ -68,6 +76,7 @@ export default function PagePresences() {
 // ── Par séance ─────────────────────────────────────────────────────────────
 
 function ListeSeances() {
+  const tx = useTextes(te);
   const [semaine, setSemaine] = useState(lundiIso());
   const { data, isLoading, error, refetch } = useQuery<ListePresences>({ queryKey: [`/api/pilotage/presences?semaine=${semaine}`] });
   return (
@@ -97,7 +106,7 @@ function ListeSeances() {
                   </div>
                   <div className="text-right">
                     <div className="text-3xl font-black">{pourcent(s.resume.taux)}</div>
-                    <div className="text-xs text-texte-gris">présents</div>
+                    <div className="text-xs text-texte-gris">{s.resume.taux === null && s.resume.inconnu > 0 ? tx("presences.tauxNonMesure") : "présents"}</div>
                   </div>
                 </div>
                 {s.statut === "en_direct" && (
@@ -116,11 +125,13 @@ function ListeSeances() {
 }
 
 function Decompte({ r, className }: { r: ResumePresences; className?: string }) {
+  const tx = useTextes(te);
   return (
     <div className={cn("flex flex-wrap gap-1.5", className)}>
       <Badge ton="succes">{pluriel(r.presents, "présent")}</Badge>
       {r.partiel > 0 && <Badge ton="alerte">{pluriel(r.partiel, "partiel")}</Badge>}
       <Badge ton={r.absent ? "danger" : "gris"}>{pluriel(r.absent, "absent")}</Badge>
+      {r.inconnu > 0 && <Badge ton="gris">{selonNombre(tx, "presences.nonMesures", r.inconnu)}</Badge>}
       {r.justifie > 0 && <Badge ton="gris">{pluriel(r.justifie, "justifié")}</Badge>}
       {r.incident > 0 && <Badge ton="encre">{pluriel(r.incident, "incident")}</Badge>}
       <Badge ton="gris">{pluriel(r.attendus, "attendu")}</Badge>
@@ -148,9 +159,10 @@ function NavSemaine({ semaine, onChange }: { semaine: string; onChange: (s: stri
   );
 }
 
-type FiltreStatut = "tous" | "absents" | "partiels" | "presents" | "justifies";
+type FiltreStatut = "tous" | "absents" | "partiels" | "inconnus" | "presents" | "justifies";
 
 function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () => void; onJustifier: (c: CibleJustification) => void }) {
+  const tx = useTextes(te);
   const { data: d, isLoading, error, refetch } = useQuery<PresencesSeance>({ queryKey: [`/api/pilotage/presences/seance/${id}`] });
   const [filtre, setFiltre] = useState<FiltreStatut>("tous");
   if (isLoading) return <Chargement lignes={4} />;
@@ -160,6 +172,7 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
     filtre === "tous" ||
     (filtre === "absents" && s === "absent") ||
     (filtre === "partiels" && s === "partiel") ||
+    (filtre === "inconnus" && s === "inconnu") ||
     (filtre === "presents" && comptePresent(s)) ||
     (filtre === "justifies" && (s === "justifie" || s === "incident"));
 
@@ -197,12 +210,14 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
             <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
               <div>
                 <div className="text-5xl font-black tracking-serre">{pourcent(d.total.taux)}</div>
-                <div className="text-sm text-texte-pale">de présence, tous campus de votre périmètre</div>
+                <div className="text-sm text-texte-pale">
+                  {d.total.taux === null && d.total.inconnu > 0 ? tx("presences.tauxNonMesure") : "de présence"}, tous campus de votre périmètre
+                </div>
               </div>
               <Decompte r={d.total} />
             </div>
             <p className="text-sm text-texte-pale">
-              Présent en ligne à partir de {Math.round(d.seuil * 100)} % de {d.dureeReference} min, soit {d.seuilMinutes} min. Les absences justifiées et les incidents de salle ne comptent pas dans le taux.
+              {tx("presences.regle", { v: { seuil: Math.round(d.seuil * 100), duree: d.dureeReference, minutes: d.seuilMinutes } })}
             </p>
           </Carte>
           <Onglets<FiltreStatut>
@@ -212,6 +227,7 @@ function DetailSeance({ id, onRetour, onJustifier }: { id: string; onRetour: () 
               { valeur: "tous", libelle: "Tous", compteur: d.total.attendus },
               { valeur: "absents", libelle: "Absents", compteur: d.total.absent },
               { valeur: "partiels", libelle: "Partiels", compteur: d.total.partiel },
+              ...(d.total.inconnu > 0 ? [{ valeur: "inconnus" as const, libelle: tx("presences.filtreNonMesures"), compteur: d.total.inconnu }] : []),
               { valeur: "presents", libelle: "Présents", compteur: d.total.presents },
               { valeur: "justifies", libelle: "Justifiés", compteur: d.total.justifie + d.total.incident },
             ]}
@@ -281,7 +297,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
                 </div>
               </div>
               <Badge ton={TON_PRESENCE[e.statut]}>{LIBELLES_PRESENCE_PILOTAGE[e.statut]}</Badge>
-              {peutJustifier && (e.statut === "absent" || e.statut === "partiel" || e.statut === "justifie") && (
+              {peutJustifier && JUSTIFIABLE.has(e.statut) && (
                 <button type="button" onClick={() => onJustifier(e)} className="min-h-[48px] px-1 text-sm font-bold text-orange-fonce hover:text-encre">
                   {e.justification ? "Modifier" : "Justifier"}
                 </button>
@@ -297,6 +313,7 @@ function BlocCampus({ c, garde, onJustifier }: { c: PresencesCampus; garde: (s: 
 // ── Par étudiant ───────────────────────────────────────────────────────────
 
 function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; onJustifier: (c: CibleJustification) => void }) {
+  const tx = useTextes(te);
   const peutJustifier = profilPermet(useMoiConnecte(), "presences");
   const [, naviguer] = useLocation();
   const [q, setQ] = useState("");
@@ -365,7 +382,9 @@ function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; o
             </div>
             <div className="text-right">
               <div className="text-4xl font-black">{pourcent(d.resume.taux)}</div>
-              <div className="text-xs text-texte-gris">de présence sur l'année</div>
+              <div className="text-xs text-texte-gris">
+                {d.resume.taux === null && d.resume.inconnu > 0 ? tx("presences.tauxNonMesure") : tx("presences.comptees", { v: { p: d.resume.presents, m: d.resume.mesurees } })}
+              </div>
             </div>
           </div>
           <Decompte r={d.resume} />
@@ -386,7 +405,7 @@ function ParEtudiant({ etudiantId, onJustifier }: { etudiantId: string | null; o
                     </div>
                   </div>
                   <Badge ton={TON_PRESENCE[s.statut]}>{LIBELLES_PRESENCE_PILOTAGE[s.statut]}</Badge>
-                  {peutJustifier && (s.statut === "absent" || s.statut === "partiel" || s.statut === "justifie") && (
+                  {peutJustifier && JUSTIFIABLE.has(s.statut) && (
                     <button
                       type="button"
                       onClick={() => onJustifier({ seanceId: s.seanceId, seanceTitre: s.titre, etudiantId: d.etudiant.id, nom: `${d.etudiant.prenom} ${d.etudiant.nom}`, justification: s.justification })}

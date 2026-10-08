@@ -9,7 +9,9 @@
 //   au direct, et, quand leurs chantiers sont en ligne, révision, cours complet,
 //   objectif validé) ; ouvrir le campus ne suffit jamais ;
 // - présence à un direct en trois états (server/engagement/presence.ts) :
-//   « inconnu » n'est jamais compté comme une absence ;
+//   « inconnu » n'est jamais compté comme une absence ; une salle n'est
+//   « émargée » qu'avec au moins 3 émargés de son campus et au moins 25 % de
+//   ses attendus (décision D1) ;
 // - aucun taux sous EFFECTIF_MINIMUM personnes, aucune donnée nominative
 //   d'étudiant ;
 // - un bloc qui dépend d'un autre chantier vaut null tant que sa table
@@ -179,7 +181,7 @@ export type EmargementCampus = {
   site: string;
   /** Séances tenues où ce campus avait au moins un étudiant attendu. */
   seances: number;
-  /** Séances où sa salle a été émargée (au moins un émargé ou un pointage). */
+  /** Séances où sa salle a été émargée (au moins 3 émargés de ce campus et 25 % de ses attendus). */
   emargees: number;
   /** Séances touchées par un incident de sa salle (présence inconnue, pas de reproche). */
   incidents: number;
@@ -191,8 +193,14 @@ export type EmargementCampus = {
 export type BlocDirects = {
   seancesTenues: number;
   presence: TroisEtats;
-  /** Étudiants qui ont suivi au moins un direct dans la période, sur ceux qui en avaient au moins un. */
+  /**
+   * Étudiants qui ont suivi au moins un direct dans la période, sur ceux dont la présence est connue
+   * (au moins une présence ou une absence, ou un direct suivi) : une salle non émargée ne fait pas
+   * baisser ce chiffre.
+   */
   ontSuivi: Part;
+  /** Part des étudiants attendus à un direct dont toutes les présences sont inconnues (null sous 5). */
+  ontSuiviInconnue: number | null;
   emargement: EmargementCampus[];
   seances: SeanceEntonnoir[];
 };
@@ -294,6 +302,13 @@ export type CopiesFormateur = {
   corrigees: number;
 };
 
+/** Copies des exercices automatiques de la routine du soir : correction facultative (D2), comptées à part. */
+export type CopiesAutomatiques = {
+  enAttente: number;
+  /** Corrigées sur la période (le formateur l'a fait de lui-même). */
+  corrigees: number;
+};
+
 export type SeanceMalDatee = { id: number; titre: string; coursCode: string; prevueLe: string; tenueLe: string; ecartJours: number };
 
 export type QuestionRatee = {
@@ -323,7 +338,10 @@ export type EngagementPilotage = {
   directs: BlocDirects | null;
   travail: BlocTravail | null;
   rappels: BlocRappels | null;
+  /** Copies des devoirs donnés par les formateurs (les exercices automatiques n'y sont jamais). */
   copies: CopiesFormateur[];
+  /** Copies des exercices automatiques, à part (null si rien n'est calculé : groupe trop petit). */
+  copiesAutomatiques: CopiesAutomatiques | null;
   seancesMalDatees: SeanceMalDatee[];
   questionsRatees: QuestionRatee[];
   genereLe: string;
@@ -341,8 +359,13 @@ export type IndicateursEngagement = {
   apprenantsAujourdhui: number;
   /** Vus au moins deux jours différents. */
   revenus: Part;
-  /** Ont suivi au moins un direct en 30 jours (émargés, ou 30 min ou la moitié en ligne). */
+  /**
+   * Ont suivi au moins un direct en 30 jours (émargés, ou 30 min ou la moitié en ligne), sur les
+   * étudiants dont la présence est connue : les présences « inconnu » ne sont pas au dénominateur.
+   */
   ontSuivi: Part;
+  /** Part des étudiants attendus à un direct dont la présence est entièrement inconnue (null sous 5). */
+  ontSuiviInconnue: number | null;
   /** Présence aux directs de 30 jours en trois états. */
   presence: TroisEtats;
   /** Copies rendues à ce jour, devoirs ouverts compris. */

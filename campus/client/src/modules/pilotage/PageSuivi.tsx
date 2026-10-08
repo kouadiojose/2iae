@@ -37,10 +37,16 @@ const sansAccents = (s: string) =>
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
 
-/** Un étudiant « à appeler », présenté comme une ligne de « Qui décroche ? ». */
+/**
+ * Un étudiant « à appeler », présenté comme une ligne de « Qui décroche ? ».
+ * Seules les relances réellement parties (statut « envoye ») de l'épisode en
+ * cours (depuis son dernier acte d'apprentissage) sont citées : ni les
+ * simulations du mode essai, ni les relances d'un épisode ancien.
+ */
 function versAContacter(l: EtudiantAAppeler): AContacter {
+  const debutEpisode = l.dernierActe ? new Date(l.dernierActe).getTime() : -Infinity;
   const relances = l.etat.historique
-    .filter((h) => h.palier < 3 && h.motif !== "semaine")
+    .filter((h) => h.statut === "envoye" && h.palier < 3 && h.motif !== "semaine" && new Date(h.creeLe).getTime() > debutEpisode)
     .reverse()
     .map((h) => t("pilotage.a_appeler.relance", { ...vous, v: { canal: t(`canal.${h.canal}`, vous), jour: formaterDate(`${h.jour}T12:00:00Z`, { style: "court" }) } }));
   const motif = l.etat.derniere?.motif;
@@ -119,7 +125,7 @@ export default function PageSuivi() {
       <EnTetePage
         etiquette="Pilotage · Suivi des étudiants"
         titre="À contacter"
-        sousTitre="Jamais activé après 7 jours, plus vu depuis 7 jours, deux lives manqués d'affilée, devoir échu non rendu. Un message ou un appel suffit souvent."
+        sousTitre="Jamais activé après 7 jours, sans activité en ligne depuis 7 jours, absent aux deux derniers lives alors que sa salle a émargé (une présence non mesurée ne compte jamais), devoir échu non rendu. Un message ou un appel suffit souvent."
       />
 
       <ReglagesRelances estDirection={moi.role === "admin"} etat={modeLecture} />
@@ -201,15 +207,29 @@ export default function PageSuivi() {
             ))}
           </ul>
           {data.total > PAR_PAGE && (
-            <div className="flex items-center justify-between gap-2">
-              <Bouton variante="contour" icone={<ChevronLeft className="h-4 w-4" />} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Précédents
+            // Tient dans 360 px : sur téléphone, les boutons n'ont que leur flèche (libellé lu par les lecteurs d'écran).
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+              <Bouton
+                variante="contour"
+                icone={<ChevronLeft className="h-4 w-4" />}
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                aria-label="Précédents"
+                className="min-h-[44px] min-w-[44px] px-3 sm:px-4"
+              >
+                <span className="hidden sm:inline">Précédents</span>
               </Bouton>
-              <span className="whitespace-nowrap font-mono text-sm text-texte-gris">
+              <span className="truncate text-center font-mono text-sm text-texte-gris">
                 page {data.page} / {pages}
               </span>
-              <Bouton variante="contour" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
-                Suivants <ChevronRight className="h-4 w-4" />
+              <Bouton
+                variante="contour"
+                disabled={page >= pages}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label="Suivants"
+                className="min-h-[44px] min-w-[44px] px-3 sm:px-4"
+              >
+                <span className="hidden sm:inline">Suivants</span> <ChevronRight className="h-4 w-4" />
               </Bouton>
             </div>
           )}

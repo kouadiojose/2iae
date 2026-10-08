@@ -25,6 +25,8 @@ import { cleDirect, FORMATS_DIAPOS, useEcranAllume, useEtatDirect } from "./outi
 import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroupes } from "./groupes";
 import { BoutonLienInvite } from "./LienInvite";
 import { BoutonAfficherEmargement } from "./AfficherEmargement";
+import { QuestionsRappel } from "./QuestionsRappel";
+import { RappelInteraction } from "./RappelInteraction";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "campus";
@@ -229,6 +231,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           </div>
 
           <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !avecDiapos && "xl:order-3")}>
+            {!observation && <RappelInteraction seanceId={seance.id} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
             <OngletsPanneau
               valeur={onglet}
               onChange={setOnglet}
@@ -449,6 +452,8 @@ function PanneauSondages({ seance, etat, lectureSeule }: { seance: SeanceDetailD
           {etat.resultats && <ResultatsParCampus sondage={ouvert} resultats={etat.resultats} />}
         </div>
       )}
+
+      {!lectureSeule && <QuestionsRappel seanceId={seance.id} etat={etat} onLancee={() => void charger()} />}
 
       {!lectureSeule && (
         <div className="flex flex-col gap-2.5 rounded-[16px] bg-nuit-bulle p-4">

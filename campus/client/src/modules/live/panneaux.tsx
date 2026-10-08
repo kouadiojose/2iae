@@ -23,10 +23,12 @@ import type {
 const LETTRES = ["A", "B", "C", "D", "E"];
 
 // ── Onglets du panneau latéral (boutons de même largeur, comme la maquette) ──
+// Sur un petit écran (360 px), les onglets ne se tassent plus : ils gardent leur
+// largeur et défilent d'un glissement (cran par cran), sans barre visible.
 
 export function OngletsPanneau<T extends string>({ valeur, onChange, options }: { valeur: T; onChange: (v: T) => void; options: { valeur: T; libelle: string; compteur?: number }[] }) {
   return (
-    <div role="tablist" className="flex gap-1 border-b border-nuit-ligne p-2.5">
+    <div role="tablist" className="flex snap-x snap-mandatory gap-1 overflow-x-auto border-b border-nuit-ligne p-2.5 [scrollbar-width:none]">
       {options.map((o) => {
         const actif = o.valeur === valeur;
         return (
@@ -36,7 +38,7 @@ export function OngletsPanneau<T extends string>({ valeur, onChange, options }: 
             aria-selected={actif}
             onClick={() => onChange(o.valeur)}
             className={cn(
-              "flex min-h-11 min-w-0 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2.5 text-[13px] font-bold transition-colors",
+              "flex min-h-11 flex-[1_0_auto] snap-start items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2.5 text-[13px] font-bold transition-colors",
               actif ? "bg-orange text-encre" : "text-nuit-doux hover:text-white",
             )}
           >

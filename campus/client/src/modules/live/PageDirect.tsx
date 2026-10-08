@@ -18,6 +18,7 @@ import { Selection } from "@/components/ui/champs";
 import { CompteARebours, DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { OutilsStudio } from "@/modules/visio";
 import { LigneSeance } from "./ui";
+import { PastillePresence, useMesPresences } from "@/modules/dossier/MesPresences";
 import type { DirectDuCampus, EnCours, SeanceResume } from "@shared/api";
 
 type CoursResume = { id: number; code: string; titre: string };
@@ -27,6 +28,9 @@ export default function PageDirect() {
   const { data: enCours, isLoading } = useQuery<EnCours>({ queryKey: ["/api/live/en-cours"], refetchInterval: 30_000 });
   const avenir = useQuery<SeanceResume[]>({ queryKey: ["/api/seances?periode=avenir&limite=20"] });
   const passees = useQuery<SeanceResume[]>({ queryKey: ["/api/seances?periode=passees&limite=12"] });
+  // Étudiant : sa présence à chaque séance passée, en trois états (présent, absent, non relevée).
+  const { data: presences } = useMesPresences(moi.role === "etudiant");
+  const etatDe = new Map((presences?.seances ?? []).map((l) => [l.seanceId, l.etat]));
   const [choixCours, setChoixCours] = useState(false);
 
   if (moi.role === "salle") return <Redirect to="/salle" replace />;
@@ -112,11 +116,16 @@ export default function PageDirect() {
                   <span className="grid h-12 w-[76px] shrink-0 place-items-center rounded-[10px] bg-nuit-ligne font-mono text-[11px] text-orange">
                     {s.replayDisponible ? <PlayCircle className="h-5 w-5" /> : `${s.dureeMinutes} min`}
                   </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-[15px] font-bold">{s.titre}</span>
-                    <span className="truncate text-[12px] font-normal text-nuit-gris">
+                  <span className="flex min-w-0 flex-1 flex-col items-start">
+                    <span className="w-full truncate text-[15px] font-bold">{s.titre}</span>
+                    <span className="w-full truncate text-[12px] font-normal text-nuit-gris">
                       {s.coursCode} · {dateEtHeure(s.debut).split(" · ")[0]}
                     </span>
+                    {etatDe.has(s.id) && (
+                      <span className="mt-1">
+                        <PastillePresence etat={etatDe.get(s.id)!} nuit />
+                      </span>
+                    )}
                   </span>
                 </LienBouton>
               ))}

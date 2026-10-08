@@ -16,6 +16,8 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { ETATS_ECHEANCE, ETATS_PIECE, fcfa, jourCourt, libelleMoyen } from "@/modules/pilotage/outils-crm";
 import { LienWhatsApp, classeEtCampus } from "@/modules/pilotage/composants/ScolariteElements";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+import { MesPresences } from "./MesPresences";
 
 const CLE = ["/api/mon-dossier"];
 
@@ -55,6 +57,10 @@ export default function PageMonDossier() {
       </header>
 
       <MaScolarite scolarite={scolarite} />
+      {/* Présences aux directs, en trois états (chantier C6). */}
+      <LimiteSilencieuse nom="MesPresences">
+        <MesPresences />
+      </LimiteSilencieuse>
       {(scolarite.situation || scolarite.versements.length > 0) && <MesPaiements versements={scolarite.versements} />}
       <MesPieces pieces={pieces} />
       <Aide lien={data.whatsappVieScolaire} />

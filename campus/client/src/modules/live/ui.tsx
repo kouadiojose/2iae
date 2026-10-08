@@ -2,6 +2,7 @@
 import { useState, type ReactNode } from "react";
 import { CalendarPlus, PlayCircle, Ban, RotateCcw } from "lucide-react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { heure, heureDouble, pastilleDate, jourLong } from "@/lib/dates";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
@@ -11,7 +12,10 @@ import { post } from "@/lib/api";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { Badge, BadgeDirect, PastilleDate } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
+import { useTextes } from "@/lib/textes";
 import { chrono, cleDirect, CONSOMMATION, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE } from "./outils";
+import { t } from "@shared/textes/direct";
+import type { MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { EtatDirectDto, ModeSuivi, SeanceDetailDto } from "@shared/schema";
 import type { SeanceResume } from "@shared/api";
 
@@ -71,10 +75,15 @@ export function FinDeSeance({ seance }: { seance: SeanceFinie }) {
         <span className="etiquette text-orange-peche">{seance.coursCode}</span>
         <h1 className="text-3xl font-black tracking-serre">{annulee ? "Ce live est annulé." : "Ce live est terminé."}</h1>
         {annulee && seance.motifAnnulation && <p className="rounded-2xl bg-nuit-carte px-5 py-3 text-lg font-semibold">{seance.motifAnnulation}</p>}
-        {!annulee && seance.maPresence && (
-          <p className="text-[15px] text-nuit-doux">
-            Ta présence : {seance.maPresence.minutes} min · <strong className="text-white">{LIBELLES_PRESENCE[seance.maPresence.statut]}</strong>
-          </p>
+        {!annulee && seance.monRole === "etudiant" ? (
+          <PresenceEtudiant seanceId={seance.id} />
+        ) : (
+          !annulee &&
+          seance.maPresence && (
+            <p className="text-[15px] text-nuit-doux">
+              Ta présence : {seance.maPresence.minutes} min · <strong className="text-white">{LIBELLES_PRESENCE[seance.maPresence.statut]}</strong>
+            </p>
+          )
         )}
         <p className="text-[15px] text-nuit-doux">
           {annulee
@@ -101,6 +110,19 @@ export function FinDeSeance({ seance }: { seance: SeanceFinie }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Présence de l'étudiant à la fin de la séance, en trois états (chantier C6) :
+ * « non relevée » quand sa salle n'a pas été émargée, jamais « absent » à tort.
+ */
+function PresenceEtudiant({ seanceId }: { seanceId: number }) {
+  const tx = useTextes(t);
+  const { data } = useQuery<MaPresenceDirectDto>({ queryKey: [`/api/seances/${seanceId}/ma-presence`], staleTime: 60_000 });
+  if (!data) return null;
+  if (data.etat === "present") return <p className="text-[15px] font-bold text-[#6FCF97]">{tx("fin.present")}</p>;
+  if (data.etat === "absent") return <p className="text-[15px] text-nuit-doux">{tx("fin.absent")}</p>;
+  return <p className="text-[15px] text-nuit-doux">{tx("fin.inconnu")}</p>;
 }
 
 /** Fin d'un direct lancé avant l'heure : proposer d'effacer l'essai pour que le vrai cours reparte de zéro. */

@@ -104,8 +104,40 @@ export type QuestionsRappelDto = {
   questions: QuestionRappelDto[];
 };
 
-/** Après 15 min de direct sans sondage ni question traitée, le Studio propose une question de rappel. */
+/** Après 15 min de direct sans sondage ni question, le Studio propose une question de rappel. */
 export const SILENCE_INTERACTION_MS = 15 * 60_000;
+
+type InstantSondage = { ouvert: boolean; ouvertLe: string | null; fermeLe: string | null };
+type InstantQuestion = { creeLe: string; reponduLe: string | null };
+
+/**
+ * Minutes de silence du direct (heure du serveur), ou null s'il n'y a pas de
+ * silence à signaler : un sondage est ouvert, ou la dernière interaction (le
+ * démarrage, un sondage lancé ou fermé, une question posée ou traitée, un
+ * « Plus tard ») date de moins de 15 min. Fonction pure, vérifiée avec une
+ * horloge simulée.
+ */
+export function silenceDuDirect({
+  maintenant,
+  demarreeLe,
+  sondages,
+  questions,
+  reporteLe,
+}: {
+  maintenant: number;
+  demarreeLe: number | null;
+  sondages: InstantSondage[];
+  questions: InstantQuestion[];
+  reporteLe: number | null;
+}): number | null {
+  if (demarreeLe === null || sondages.some((s) => s.ouvert && s.ouvertLe)) return null;
+  const instants = [demarreeLe, reporteLe ?? 0];
+  const ms = (x: string | null) => (x ? new Date(x).getTime() : 0);
+  for (const s of sondages) instants.push(ms(s.ouvertLe), ms(s.fermeLe));
+  for (const q of questions) instants.push(ms(q.creeLe), ms(q.reponduLe));
+  const silence = maintenant - Math.max(...instants.filter((x) => Number.isFinite(x)));
+  return silence >= SILENCE_INTERACTION_MS ? Math.floor(silence / 60_000) : null;
+}
 
 // ── Présences de l'étudiant ─────────────────────────────────────────────────
 

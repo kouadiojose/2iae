@@ -442,6 +442,8 @@ export type BilanSiteDto = {
   retard: number;
   partiel: number;
   absents: number;
+  /** Pas comptés, dans une salle qui n'a pas émargé (règle D1) : présence non relevée, jamais une absence. */
+  inconnus: number;
   justifies: number;
   incident: number;
   effectifDeclare: number | null;
@@ -469,7 +471,7 @@ export type BilanDto = {
   /** Seuil de présence en ligne (70 % de la durée). */
   seuilMinutes: number;
   sites: BilanSiteDto[];
-  /** taux : présents / (attendus − justifiés − incidents), null s'il ne reste personne à compter (tauxPresence). */
+  /** taux : présents / (attendus − justifiés − incidents − non relevés), null s'il ne reste personne à compter (tauxPresence). */
   totaux: { inscrits: number; presents: number; taux: number | null };
   questionsNonTraitees: QuestionDirectDto[];
   questionsTotal: number;

@@ -616,10 +616,10 @@ function SectionBilan({ seance }: { seance: SeanceDetailDto }) {
         <section>
           <TitreSection titre="Présences par campus" />
           <div className="overflow-x-auto rounded-2xl border border-ligne">
-            <table className="w-full min-w-[720px] text-left text-[14px]">
+            <table className="w-full min-w-[800px] text-left text-[14px]">
               <thead className="bg-creme font-mono text-[11px] uppercase tracking-wider text-texte-gris">
                 <tr>
-                  {["Campus", "Inscrits", "En salle", "En ligne", "Retard", "Partiel", "Absents", "Justifiés", "Incident", "Effectif déclaré"].map((t) => (
+                  {["Campus", "Inscrits", "En salle", "En ligne", "Retard", "Partiel", "Absents", "Non relevés", "Justifiés", "Incident", "Effectif déclaré"].map((t) => (
                     <th key={t} className="px-3 py-2.5 font-normal">
                       {t}
                     </th>
@@ -644,6 +644,7 @@ function SectionBilan({ seance }: { seance: SeanceDetailDto }) {
                     <td className="px-3 py-2.5 tabular-nums">{s.retard}</td>
                     <td className="px-3 py-2.5 tabular-nums">{s.partiel}</td>
                     <td className="px-3 py-2.5 tabular-nums">{s.absents}</td>
+                    <td className="px-3 py-2.5 tabular-nums text-texte-gris" title="Salle sans émargement : présence non relevée, jamais comptée comme une absence">{s.inconnus}</td>
                     <td className="px-3 py-2.5 tabular-nums">{s.justifies}</td>
                     <td className="px-3 py-2.5 tabular-nums">{s.incident}</td>
                     <td className="px-3 py-2.5 tabular-nums">

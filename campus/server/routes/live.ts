@@ -33,6 +33,7 @@ import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichie
 import { copierRessources, projectionDe, ressourcesDe } from "./ressources-seance";
 import { notifier } from "../notifications";
 import { rappelerDemarrage } from "./participation-direct";
+import { etatsPresence } from "../engagement/presence";
 import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia";
 import { prevenirSite } from "../site";
 import { planifier } from "../taches";
@@ -3119,6 +3120,7 @@ export function enregistrerLive(app: Express) {
           retard: 0,
           partiel: 0,
           absents: 0,
+          inconnus: 0,
           justifies: 0,
           incident: 0,
           effectifDeclare: e ? e.nombre : null,
@@ -3127,10 +3129,13 @@ export function enregistrerLive(app: Express) {
           horsCampus: 0,
         });
       }
+      // Présence en trois états (server/engagement/presence.ts) : un étudiant pas compté dont la salle n'a pas
+      // émargé est « non relevé », jamais absent ni partiel.
+      const etats = await etatsPresence(s.id, feuille.map((l) => l.utilisateurId));
       for (const l of feuille) {
         let b = parSite.get(l.siteId);
         if (!b) {
-          b = { siteId: l.siteId, site: l.siteId ? sitesParId.get(l.siteId)?.nomCourt ?? "?" : "Sans campus", inscrits: 0, enSalle: 0, enLigne: 0, retard: 0, partiel: 0, absents: 0, justifies: 0, incident: 0, effectifDeclare: null, ecart: null, incidentSalle: null, horsCampus: 0 };
+          b = { siteId: l.siteId, site: l.siteId ? sitesParId.get(l.siteId)?.nomCourt ?? "?" : "Sans campus", inscrits: 0, enSalle: 0, enLigne: 0, retard: 0, partiel: 0, absents: 0, inconnus: 0, justifies: 0, incident: 0, effectifDeclare: null, ecart: null, incidentSalle: null, horsCampus: 0 };
           parSite.set(l.siteId, b);
         }
         b.inscrits++;
@@ -3138,9 +3143,10 @@ export function enregistrerLive(app: Express) {
         if (l.statut === "salle") b.enSalle++;
         else if (l.statut === "en_ligne") b.enLigne++;
         else if (l.statut === "retard") b.retard++;
-        else if (l.statut === "partiel") b.partiel++;
         else if (l.statut === "justifie") b.justifies++;
         else if (l.statut === "incident") b.incident++;
+        else if (etats.get(l.utilisateurId) === "inconnu") b.inconnus++;
+        else if (l.statut === "partiel") b.partiel++;
         else b.absents++;
       }
       for (const b of parSite.values()) if (b.effectifDeclare !== null) b.ecart = b.effectifDeclare - (b.enSalle + b.retard);
@@ -3173,6 +3179,7 @@ export function enregistrerLive(app: Express) {
             attendus: inscrits,
             justifies: sitesBilan.reduce((a, b) => a + b.justifies, 0),
             incidents: sitesBilan.reduce((a, b) => a + b.incident, 0),
+            inconnus: sitesBilan.reduce((a, b) => a + b.inconnus, 0),
           }),
         },
         questionsNonTraitees: toutes.filter((q) => !q.repondue && !q.masquee),

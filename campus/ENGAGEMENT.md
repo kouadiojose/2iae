@@ -48,8 +48,10 @@ sans action du formateur.
 - `etatPresence(seanceId, etudiantId)` et `etatsPresence(seanceId, ids)` pour une séance ;
   ``sqlEtatPresence(sql`s.id`, sql`u.id`)`` (colonne text) pour les calculs en masse ;
   `sqlSalleEmargee(seance, site)` pour « cette salle a-t-elle été émargée ? ». La règle n'est écrite
-  qu'une fois, en SQL. Savoir si l'étudiant était **attendu** reste l'affaire de l'appelant
-  (`sqlAttendus`, `etudiantsAttendusSeance`).
+  qu'une fois, en SQL (`sqlCaseEtat`, `sqlRegleSalleEmargee`). Savoir si l'étudiant était **attendu** reste
+  l'affaire de l'appelant (`sqlAttendus`, `etudiantsAttendusSeance`). Pour un grand nombre de lignes,
+  `sqlAttendus` donne déjà les colonnes `etat` et `salle_emargee` (salle comptée une fois par séance et
+  campus) : les lire plutôt que recalculer l'état ligne par ligne.
 - **`inconnu` ne compte JAMAIS comme une absence** : pas de rattrapage « tu as manqué », pas de relance
   de décrocheur, pas de « à contacter », pas de perte de points ni de série, pas de malus dans la Coupe.
 - Le téléphone sert surtout **avant et après** le cours ; pendant, seulement pour émarger et participer

@@ -148,9 +148,12 @@ export type IndicateursCampus = {
   tauxActivation: number | null;
   /** Étudiants vus sur le campus ces 7 derniers jours. */
   actifs7j: number;
-  /** % de présence aux lives tenus des 30 derniers jours (justifiés et incidents exclus). */
+  /**
+   * % de présence aux lives tenus des 30 derniers jours, là où elle est connue : présents sur
+   * présents + absents, la présence « inconnue » (salle non émargée) mise à part (chantier C8).
+   */
   presence30j: number | null;
-  /** % de devoirs rendus parmi ceux échus depuis 30 jours. */
+  /** % de copies rendues « à ce jour » : devoirs échus depuis 30 jours et devoirs encore ouverts (chantier C8). */
   devoirsRendus: number | null;
   aContacter: number;
 };

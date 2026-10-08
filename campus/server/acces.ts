@@ -204,10 +204,13 @@ export async function etudiantsDuCours(coursId: number): Promise<Utilisateur[]> 
  * compte créé avant la fin prévue, et soit sa classe d'alors suit le cours
  * (dernier passage de classe avant la fin, sinon sa classe actuelle), soit il
  * y était déjà inscrit individuellement. Un étudiant arrivé en cours d'année
- * n'est donc pas compté absent aux séances d'avant son arrivée.
+ * n'est donc pas compté absent aux séances d'avant son arrivée. Comme le
+ * pilotage, la fin se compte depuis le démarrage réel quand la séance a été
+ * tenue (une séance démarrée une semaine avant sa date n'attend pas les
+ * étudiants inscrits entre-temps).
  */
-export async function etudiantsAttendusSeance(s: { coursId: number; debut: Date; dureeMinutes: number }): Promise<Utilisateur[]> {
-  const fin = new Date(s.debut.getTime() + s.dureeMinutes * 60_000).toISOString();
+export async function etudiantsAttendusSeance(s: { coursId: number; debut: Date; dureeMinutes: number; demarreeLe?: Date | null }): Promise<Utilisateur[]> {
+  const fin = new Date((s.demarreeLe ?? s.debut).getTime() + s.dureeMinutes * 60_000).toISOString();
   const { rows } = await db.execute<{ id: number }>(sql`
     SELECT u.id FROM campus.utilisateurs u
     WHERE u.role = 'etudiant' AND u.actif AND u.cree_le <= ${fin}::timestamptz

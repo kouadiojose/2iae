@@ -1,11 +1,20 @@
 // /pilotage : le tableau de la vie scolaire et de la direction. Les grands
 // chiffres du périmètre, chaque campus d'un coup d'œil, puis les étudiants à
 // contacter aujourd'hui et les raccourcis du quotidien.
+//
+// Chiffres justes (chantier C8) : présence aux directs là où elle est connue
+// (une salle non émargée laisse la présence « inconnue », jamais absente),
+// copies rendues « à ce jour », actifs du jour, « revenus » au lieu des « vus
+// en 7 jours », et lien vers le tableau « Engagement et participation ». La
+// liste « à contacter » arrive avec le tableau : un seul calcul par visite.
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus } from "lucide-react";
-import type { TableauPilotage, ListeAContacter, IndicateursCampus, Droit } from "@shared/schema";
+import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus, Activity } from "lucide-react";
+import type { Droit } from "@shared/schema";
+import type { IndicateursTableau, TableauPilotageEngagement } from "@shared/engagement/indicateurs";
+import { t as te } from "@shared/textes/engagement";
+import { useTextes } from "@/lib/textes";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Chiffre, BarreProgression, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
 import { LienBouton } from "@/components/ui/bouton";
@@ -24,12 +33,14 @@ export default function PageTableau() {
   const moi = useMoiConnecte();
   // Ce que le profil permet (ext-profils.ts) : le tableau ne montre que ce que la personne peut utiliser.
   const peutSuivre = profilPermet(moi, "suivi");
-  const tableau = useQuery<TableauPilotage>({ queryKey: ["/api/pilotage/tableau"] });
-  // Les 4 premiers suffisent ici (la liste complète, paginée, est sur /pilotage/suivi).
-  const aContacter = useQuery<ListeAContacter>({ queryKey: ["/api/pilotage/a-contacter?parPage=4"], enabled: peutSuivre });
+  const tx = useTextes(te);
+  // Le tableau apporte aussi les 4 premiers « à contacter » (la liste complète, paginée, est sur /pilotage/suivi).
+  const tableau = useQuery<TableauPilotageEngagement>({ queryKey: ["/api/pilotage/tableau"] });
   const [suivi, setSuivi] = useState<{ id: number; prenom: string; nom: string } | null>(null);
   const t = tableau.data;
-  const nb = peutSuivre ? (aContacter.data?.total ?? t?.total.aContacter ?? 0) : 0;
+  const aContacter = t?.aContacter ?? null;
+  const nb = peutSuivre ? (aContacter?.total ?? t?.total.aContacter ?? 0) : 0;
+  const voitEngagement = profilPermet(moi, "presences_voir");
   const raccourcis = RACCOURCIS.filter((r) => profilPermet(moi, r.droit));
 
   return (
@@ -55,7 +66,7 @@ export default function PageTableau() {
 
       {t && (
         <>
-          <section aria-label="Chiffres clés" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <section aria-label="Chiffres clés" className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Chiffre libelle="Étudiants" valeur={t.total.etudiants} detail={t.perimetre.tout ? "dans les 5 campus" : `au campus ${t.perimetre.site ?? ""}`} />
             <Chiffre
               libelle="Comptes activés"
@@ -63,11 +74,43 @@ export default function PageTableau() {
               detail={`${t.total.actives} sur ${t.total.etudiants}`}
               ton={t.total.tauxActivation !== null && t.total.tauxActivation < 70 ? "orange" : "encre"}
             />
-            <Chiffre libelle="Vus cette semaine" valeur={t.total.actifs7j} detail="venus sur le campus en 7 jours" />
-            <Chiffre libelle="Présence aux lives" valeur={pourcent(t.total.presence30j)} detail="en salle ou en ligne" />
-            <Chiffre libelle="Devoirs rendus" valeur={pourcent(t.total.devoirsRendus)} detail="devoirs échus ce mois" />
+            <Chiffre
+              libelle={tx("tableau.actifsAujourdhui")}
+              valeur={t.total.actifsAujourdhui}
+              detail={tx("tableau.actifsAujourdhui.detail", { v: { n: t.total.apprenantsAujourdhui } })}
+            />
+            <Chiffre libelle={tx("tableau.revenus")} valeur={pourcent(t.total.revenus.taux)} detail={tx("tableau.revenus.detail")} />
+            <Chiffre libelle={tx("tableau.ontSuivi")} valeur={pourcent(t.total.ontSuivi.taux)} detail={tx("tableau.ontSuivi.detail")} />
+            <Chiffre
+              libelle={tx("tableau.presence")}
+              valeur={pourcent(t.total.presence30j)}
+              detail={
+                t.total.presence.partInconnue
+                  ? tx("tableau.presence.detail", { v: { n: t.total.presence.partInconnue } })
+                  : tx("tableau.presence.detailConnue")
+              }
+              ton={t.total.presence.partInconnue !== null && t.total.presence.partInconnue >= 50 ? "orange" : "encre"}
+            />
+            <Chiffre
+              libelle={tx("tableau.copies")}
+              valeur={pourcent(t.total.copies.taux)}
+              detail={tx("tableau.copies.detail", { v: { n: t.total.copies.n ?? 0, sur: t.total.copies.sur } })}
+            />
             <Chiffre libelle="À contacter" valeur={t.total.aContacter} ton={t.total.aContacter ? "danger" : "succes"} detail={!t.total.aContacter ? "personne pour l'instant" : peutSuivre ? "voir la liste ci-dessous" : "suivis par la vie scolaire"} />
           </section>
+
+          {voitEngagement && (
+            <CarteLien href="/pilotage/engagement" className="flex min-h-[64px] items-center gap-3 p-4">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-clair text-orange-fonce">
+                <Activity className="h-5 w-5" />
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="font-extrabold">{tx("tableau.lienEngagement")}</span>
+                <span className="text-[13px] text-texte-gris">{tx("tableau.lienEngagement.texte")}</span>
+              </span>
+              <ArrowRight className="ml-auto h-5 w-5 shrink-0" />
+            </CarteLien>
+          )}
 
           {t.campus.length > 1 && (
             <section>
@@ -93,19 +136,17 @@ export default function PageTableau() {
             ) : undefined
           }
         />
-        {aContacter.isLoading ? (
+        {tableau.isLoading ? (
           <Chargement lignes={2} />
-        ) : aContacter.error ? (
-          <Erreur message={(aContacter.error as Error).message} reessayer={() => aContacter.refetch()} />
-        ) : !aContacter.data?.lignes.length ? (
+        ) : tableau.error ? null : !aContacter?.lignes.length ? (
           <EtatVide
             icone={<PartyPopper className="h-6 w-6" />}
             titre="Personne à relancer pour l'instant."
-            texte="Un étudiant apparaîtra ici s'il n'a pas activé son compte après 7 jours, n'est plus venu depuis 7 jours, a manqué deux lives d'affilée ou n'a pas rendu un devoir."
+            texte="Un étudiant apparaîtra ici s'il n'a pas activé son compte après 7 jours, n'est plus venu depuis 7 jours, a été absent aux deux derniers lives (une salle non émargée ne compte jamais comme une absence) ou n'a pas rendu un devoir."
           />
         ) : (
           <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {aContacter.data.lignes.slice(0, 4).map((l) => (
+            {aContacter.lignes.slice(0, 4).map((l) => (
               <LigneAContacter key={l.etudiant.id} ligne={l} onSuivi={setSuivi} compacte />
             ))}
           </ul>
@@ -152,7 +193,8 @@ const RACCOURCIS: { href: string; icone: ReactNode; titre: string; texte: string
   { href: "/pilotage/ia", icone: <Sparkles className="h-5 w-5" />, titre: "Budget IA", texte: "Consommation 30 jours", droit: "outils_campus" },
 ];
 
-function CarteCampus({ c, lienSuivi }: { c: IndicateursCampus; lienSuivi: boolean }) {
+function CarteCampus({ c, lienSuivi }: { c: IndicateursTableau; lienSuivi: boolean }) {
+  const tx = useTextes(te);
   return (
     <li className="flex flex-col gap-3 rounded-2xl border border-ligne bg-white p-5">
       <div className="flex items-baseline justify-between gap-2">
@@ -164,10 +206,15 @@ function CarteCampus({ c, lienSuivi }: { c: IndicateursCampus; lienSuivi: boolea
       ) : (
         <>
           <Indicateur libelle="Comptes activés" valeur={c.tauxActivation} />
-          <Indicateur libelle="Présence aux lives" valeur={c.presence30j} />
-          <Indicateur libelle="Devoirs rendus" valeur={c.devoirsRendus} />
+          <Indicateur libelle={tx("tableau.presence")} valeur={c.presence30j} />
+          <Indicateur libelle={tx("tableau.copiesCourt")} valeur={c.devoirsRendus} />
+          {c.emargement && c.emargement.seances > 0 && (
+            <p className={cn("text-[13px]", c.emargement.emargees === 0 ? "font-bold text-alerte" : "text-texte-pale")}>
+              {tx("tableau.emargement", { v: { e: c.emargement.emargees, n: c.emargement.seances } })}
+            </p>
+          )}
           <div className="flex items-center justify-between border-t border-ligne-douce pt-3 text-sm">
-            <span className="text-texte-pale">Vus en 7 jours : <strong className="text-encre">{c.actifs7j}</strong></span>
+            <span className="text-texte-pale"><strong className="text-encre">{c.actifsAujourdhui}</strong> {tx("tableau.actifsCourt")}</span>
             {lienSuivi && (
               <Link href={`/pilotage/suivi?site=${c.siteId}`} className={cn("font-bold no-underline", c.aContacter ? "text-danger" : "text-succes")}>
                 {c.aContacter ? `${c.aContacter} à contacter` : "Rien à signaler"}

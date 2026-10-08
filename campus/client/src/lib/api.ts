@@ -1,5 +1,24 @@
 // Appels à l'API du campus : JSON, cookies de session, messages d'erreur lisibles.
 import { noterHeureServeur } from "./horloge";
+import { estApplicationAndroid, estInstallee, plateforme } from "@/modules/pwa/outils";
+import { ENTETE_PLATEFORME, type Plateforme } from "@shared/engagement/indicateurs";
+
+/**
+ * Appareil utilisé (appli Android, appli installée, navigateur du téléphone,
+ * ordinateur), calculé une fois au chargement et envoyé à chaque appel : le
+ * serveur en tire l'activité jour par jour du pilotage (chantier C8). Déclaratif,
+ * pour les statistiques seulement.
+ */
+const PLATEFORME: Plateforme = (() => {
+  try {
+    if (estApplicationAndroid()) return "android_app";
+    if (estInstallee()) return "installee";
+    return plateforme() === "ordinateur" ? "ordinateur" : "mobile";
+  } catch {
+    return "ordinateur";
+  }
+})();
+
 export class ErreurApi extends Error {
   constructor(public statut: number, message: string, public details?: unknown) {
     super(message);
@@ -16,7 +35,7 @@ export async function api<T = unknown>(url: string, options: Options = {}): Prom
     reponse = await fetch(url, {
       method: methode,
       credentials: "include",
-      headers: corps !== undefined && !estFormulaire ? { "Content-Type": "application/json" } : undefined,
+      headers: corps !== undefined && !estFormulaire ? { "Content-Type": "application/json", [ENTETE_PLATEFORME]: PLATEFORME } : { [ENTETE_PLATEFORME]: PLATEFORME },
       body: corps === undefined ? undefined : estFormulaire ? (corps as FormData) : JSON.stringify(corps),
       signal,
     });

@@ -62,7 +62,7 @@ export default function PageCorriges() {
               <ul className="flex flex-col gap-3">
                 {data.aValider.map((c) => (
                   <li key={c.devoirId}>
-                    <CarteAValider c={c} tx={tx} maintenant={maintenant} />
+                    <CarteAValider c={c} tx={tx} maintenant={maintenant} duFormateur={moi.role === "vie_scolaire"} />
                   </li>
                 ))}
               </ul>
@@ -122,7 +122,7 @@ function Origine({ c, tx }: { c: CorrigeAValider; tx: Tx }) {
   );
 }
 
-function CarteAValider({ c, tx, maintenant }: { c: CorrigeAValider; tx: Tx; maintenant: number }) {
+function CarteAValider({ c, tx, maintenant, duFormateur }: { c: CorrigeAValider; tx: Tx; maintenant: number; duFormateur: boolean }) {
   const detail = c.type === "quiz" ? selonNombre(tx, "corriges.questions", c.questions.length) : resumeCopies(tx, c)[0];
   return (
     <CarteLien href={`/enseigner/corriges/${c.devoirId}`} className="flex flex-col gap-3 border-orange/60 p-4 sm:p-5">
@@ -134,7 +134,7 @@ function CarteAValider({ c, tx, maintenant }: { c: CorrigeAValider; tx: Tx; main
       {c.echeanceLe && (
         <span className="flex items-start gap-2 rounded-xl bg-orange-pale px-3 py-2 text-sm font-semibold leading-snug text-encre">
           <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-orange-fonce" aria-hidden />
-          {texteEcheance(tx, c.echeanceLe, maintenant)}
+          {texteEcheance(tx, c.echeanceLe, maintenant, duFormateur)}
         </span>
       )}
       {/* Toute la carte s'ouvre ; le « bouton » dit ce qu'on y fait (contour : plusieurs cartes, pas de bouton orange). */}

@@ -161,7 +161,7 @@ export default function PageCorrige({ devoirId: brut }: { devoirId: string }) {
         </p>
       </header>
 
-      <Etat c={c} tx={tx} maintenant={maintenant} />
+      <Etat c={c} tx={tx} maintenant={maintenant} duFormateur={lectureSeule} />
 
       {fait && suivant && (
         <LienBouton href={`/enseigner/corriges/${suivant.devoirId}`} taille="lg" className="min-h-[56px] w-full">
@@ -298,7 +298,7 @@ export default function PageCorrige({ devoirId: brut }: { devoirId: string }) {
 }
 
 /** Où en est le corrigé : à valider (et quand il sera tenu pour bon), validé, tacite ou en préparation. */
-function Etat({ c, tx, maintenant }: { c: CorrigeAValider; tx: Tx; maintenant: number }) {
+function Etat({ c, tx, maintenant, duFormateur }: { c: CorrigeAValider; tx: Tx; maintenant: number; duFormateur: boolean }) {
   if (c.statut === "propose") {
     return (
       <div className="flex flex-col gap-2 rounded-2xl border border-orange/60 bg-orange-pale p-4">
@@ -308,7 +308,7 @@ function Etat({ c, tx, maintenant }: { c: CorrigeAValider; tx: Tx; maintenant: n
         {c.echeanceLe && (
           <p className="flex items-start gap-2 text-[15px] font-semibold leading-snug">
             <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-orange-fonce" aria-hidden />
-            {texteEcheance(tx, c.echeanceLe, maintenant)}
+            {texteEcheance(tx, c.echeanceLe, maintenant, duFormateur)}
           </p>
         )}
         <p className="text-[17px] font-extrabold leading-snug">{tx("corrige.question")}</p>

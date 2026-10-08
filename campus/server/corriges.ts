@@ -12,6 +12,10 @@
 //   - Sans réponse, le corrigé est tenu pour bon à l'échéance (24 h, « tacite »), après un rappel unique.
 //   - Un corrigé validé ou tacite sert de barème au moteur de correction (correction-auto.ts) ; modifié, il
 //     remet en correction les copies notées par le campus (remettreEnFile).
+//   - Corrigé bloqué (resté en préparation 48 h, rédaction ratée trois fois) : ses copies redeviennent « à
+//     corriger » par le formateur, prévenu une fois (décision D-G de la revue ; rappel_envoye_le, sur un corrigé
+//     en préparation, garde cette trace). Seuls le formateur du cours et la direction écrivent ou valident un
+//     corrigé, par toutes les entrées (D-F).
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -23,10 +27,10 @@ import { notifier, estHeureCalme } from "./notifications";
 import { emailCorrigesDuJour, emailDisponible, envoyerEmail, type CorrigeDuJourEmail } from "./mail";
 import { lireContenuFichier } from "./fichiers";
 import { demanderJsonCout, travailDeFondPermis, travailDeFondPossible } from "./ia";
-import { avecOrigine, estIaDuSoir, iaDuSoir } from "./ia-soir";
+import { avecOrigine, estIaDuSoir, iaDuSoir, supprimerDemandesDe } from "./ia-soir";
 import { chaine, objet } from "./etude";
 import { planifier } from "./taches";
-import { echeanceValidation, lireCorrige, remettreEnFile } from "./corrections-socle";
+import { DELAI_CORRIGE_BLOQUE_HEURES, echeanceValidation, lireCorrige, remettreEnFile } from "./corrections-socle";
 import type { IssueEtude } from "./etude-cours";
 import {
   corrigesDevoirs,
@@ -100,28 +104,56 @@ export async function assurerCorrige(d: Pick<Devoir, "id" | "type" | "publie">):
 }
 
 /**
+ * Seuls le formateur (du cours : les routes le vérifient) et la direction écrivent ou valident un corrigé ;
+ * l'équipe (vie scolaire avec le droit « notes ») le lit sans agir, par toutes les entrées (décision D-F).
+ */
+export const peutEcrireCorrige = (u: Pick<Utilisateur, "role">) => u.role === "formateur" || u.role === "admin";
+
+/**
+ * Le corrigé lu dans l'éditeur (version « versionLue ») a-t-il changé depuis (page des corrigés, autre onglet,
+ * co-formateur) ? 409 avec la version actuelle, avant tout enregistrement. Sans version (ancien client) ou sur un
+ * corrigé que le campus rédige encore : rien à comparer.
+ */
+export async function verifierVersionCorrige(devoirId: number, versionLue: number | null | undefined): Promise<void> {
+  if (versionLue === undefined || versionLue === null) return;
+  const c = await lireCorrige(devoirId);
+  if (c && c.statut !== "en_preparation" && c.version !== versionLue) throw versionPerimee(c);
+}
+
+/**
  * Corrigé écrit par le formateur dans l'éditeur du devoir (création ou modification) : il vaut validation par
  * lui (« formateur », « valide »). Un texte vide ou identique au corrigé actuel ne change rien (l'éditeur le
  * renvoie tel quel à chaque enregistrement). Modifié : version + 1, et les copies notées par le campus sont
- * corrigées de nouveau.
+ * corrigées de nouveau. « versionLue » : la version que l'éditeur a lue (409 si elle a changé depuis).
  */
-export async function corrigeEcritParLeFormateur(u: Utilisateur, devoirId: number, contenu: string): Promise<{ change: boolean; copiesRecorrigees: number }> {
+export async function corrigeEcritParLeFormateur(
+  u: Utilisateur,
+  devoirId: number,
+  contenu: string,
+  versionLue?: number | null,
+): Promise<{ change: boolean; copiesRecorrigees: number }> {
   const texte = contenu.trim();
   if (!texte) return { change: false, copiesRecorrigees: 0 };
+  // Les routes refusent avant tout enregistrement (D-F) ; ceci n'est qu'un garde-fou.
+  if (!peutEcrireCorrige(u)) throw interdit(t("corriges.erreur.ecrire", vous));
   if (texte.length > CORRIGE_MAX) throw invalide(t("corriges.erreur.long", { ...vous, v: { max: CORRIGE_MAX } }));
   const maintenant = new Date();
   const valeurs = { contenu: texte, source: "formateur" as const, statut: "valide" as const, valideLe: maintenant, valideParId: u.id, majLe: maintenant };
   const avant = await lireCorrige(devoirId);
   if (avant && avant.contenu === texte) return { change: false, copiesRecorrigees: 0 };
+  if (avant && versionLue !== undefined && versionLue !== null && avant.statut !== "en_preparation" && avant.version !== versionLue) throw versionPerimee(avant);
   if (!avant) {
     const [cree] = await db.insert(corrigesDevoirs).values({ devoirId, ...valeurs }).onConflictDoNothing().returning();
     // Créé au même instant par ailleurs (routine, autre onglet) : on repasse par la modification.
-    if (!cree) return corrigeEcritParLeFormateur(u, devoirId, contenu);
+    if (!cree) return corrigeEcritParLeFormateur(u, devoirId, contenu, versionLue);
   } else {
-    await db
+    // Seulement sur la version lue à l'instant : modifié entre-temps (page des corrigés), 409 plutôt qu'écraser.
+    const [maj] = await db
       .update(corrigesDevoirs)
       .set({ ...valeurs, version: sql`${corrigesDevoirs.version} + 1` })
-      .where(eq(corrigesDevoirs.devoirId, devoirId));
+      .where(and(eq(corrigesDevoirs.devoirId, devoirId), eq(corrigesDevoirs.version, avant.version)))
+      .returning({ devoirId: corrigesDevoirs.devoirId });
+    if (!maj) throw versionPerimee((await lireCorrige(devoirId)) ?? avant);
   }
   await oublierDemandesEnAttente(devoirId);
   const copiesRecorrigees = avant ? await remettreEnFile(devoirId) : 0;
@@ -134,15 +166,40 @@ export async function corrigeEcritParLeFormateur(u: Utilisateur, devoirId: numbe
  * Les questions d'un QCM ont changé (bonne réponse, énoncé, points, question ajoutée ou retirée) : le
  * formateur a revu son corrigé, qui passe « valide » (version + 1). Les notes sont recalculées à part
  * (recalculerQuiz). Sans effet si le QCM n'a pas de ligne de corrigé (QCM écrit par un formateur).
+ * Quelqu'un d'autre que le formateur ou la direction (les routes des questions le refusent déjà, D-F) ne
+ * valide rien : la version change seulement (un lien d'e-mail déjà envoyé ne vaut plus).
  */
 export async function corrigeDuQcmModifie(u: Utilisateur, devoirId: number): Promise<void> {
   const maintenant = new Date();
+  const validation = peutEcrireCorrige(u) ? { statut: "valide" as const, valideLe: maintenant, valideParId: u.id } : {};
   const [maj] = await db
     .update(corrigesDevoirs)
-    .set({ statut: "valide", version: sql`${corrigesDevoirs.version} + 1`, valideLe: maintenant, valideParId: u.id, majLe: maintenant })
+    .set({ ...validation, version: sql`${corrigesDevoirs.version} + 1`, majLe: maintenant })
     .where(eq(corrigesDevoirs.devoirId, devoirId))
     .returning({ version: corrigesDevoirs.version });
-  if (maj) await tracer(u.id, "corrige_modifie", { devoirId, depuis: "questions", version: maj.version });
+  if (maj) await tracer(u.id, "corrige_modifie", { devoirId, depuis: "questions", version: maj.version, role: u.role });
+}
+
+/**
+ * Barème d'un dépôt changé : les notes du campus déjà publiées sont ramenées tout de suite au nouveau barème
+ * (18/20 devient 9/10), sans attendre leur nouvelle correction (sinon l'étudiant lirait 18/10, et ses moyennes
+ * compteraient 36/20). Les notes posées par un formateur ne sont jamais touchées ; aucun étudiant n'est prévenu
+ * (la note ne change pas sur 20). La note gardée pour l'écart (corrections_auto.note_campus) suit. Renvoie le
+ * nombre de notes ramenées.
+ */
+export async function notesDuCampusAuNouveauBareme(devoirId: number, ancien: number, nouveau: number): Promise<number> {
+  if (!(ancien > 0) || !(nouveau > 0) || ancien === nouveau) return 0;
+  const r = await db.execute<{ id: number }>(sql`
+    UPDATE campus.rendus SET note = LEAST(${nouveau}::real, round((note * ${nouveau} / ${ancien})::numeric, 2)::real), maj_le = now()
+    WHERE devoir_id = ${devoirId} AND origine_note = 'campus' AND note IS NOT NULL
+    RETURNING id`);
+  const ids = r.rows.map((l) => Number(l.id));
+  if (!ids.length) return 0;
+  await db.execute(sql`
+    UPDATE campus.corrections_auto SET note_campus = LEAST(${nouveau}::real, round((note_campus * ${nouveau} / ${ancien})::numeric, 2)::real), maj_le = now()
+    WHERE rendu_id = ANY(${tableauEntiers(ids)}) AND note_campus IS NOT NULL`);
+  await tracer(null, "notes_campus_bareme", { devoirId, ancien, nouveau, notes: ids.length });
+  return ids.length;
 }
 
 /**
@@ -219,11 +276,16 @@ export async function corrigesAValider(devoirIds: number[]): Promise<CorrigeAVal
       LEFT JOIN campus.seances s ON s.id = src.seance_id
       WHERE cd.devoir_id = ANY(${ids})`),
     db.select().from(questionsQuiz).where(inArray(questionsQuiz.devoirId, devoirIds)).orderBy(asc(questionsQuiz.ordre), asc(questionsQuiz.id)),
-    // Copies (dépôt) ou tentatives terminées (QCM) : rendues, note publiée, laissées au formateur par le campus.
-    db.execute<{ devoir_id: number; rendues: number; notees: number; a_revoir: number }>(sql`
+    // Copies (dépôt) ou tentatives terminées (QCM) : rendues ; notes publiées PAR LE CAMPUS ; laissées au formateur
+    // (« à revoir », y compris la recorrection d'une note du campus déjà publiée) ; en attente du campus (rendues,
+    // sans formateur qui a la main : même règle que copiesACorriger). Les copies notées ou commencées par un
+    // formateur ne comptent que dans « rendues ».
+    db.execute<{ devoir_id: number; rendues: number; notees: number; a_revoir: number; en_file: number }>(sql`
       SELECT r.devoir_id, count(*)::int AS rendues,
-             count(*) FILTER (WHERE r.statut = 'corrige')::int AS notees,
-             count(*) FILTER (WHERE r.statut = 'rendu' AND ca.etat = 'a_revoir')::int AS a_revoir
+             count(*) FILTER (WHERE r.statut = 'corrige' AND r.origine_note = 'campus' AND ca.etat IS DISTINCT FROM 'a_revoir')::int AS notees,
+             count(*) FILTER (WHERE ca.etat = 'a_revoir' AND (r.statut = 'rendu' OR r.origine_note = 'campus'))::int AS a_revoir,
+             count(*) FILTER (WHERE r.statut = 'rendu' AND ca.etat IS DISTINCT FROM 'a_revoir'
+               AND (r.correcteur_id IS NULL OR (r.corrige_le IS NOT NULL AND r.rendu_le IS NOT NULL AND r.corrige_le < r.rendu_le)))::int AS en_file
       FROM campus.rendus r
       LEFT JOIN campus.corrections_auto ca ON ca.rendu_id = r.id
       WHERE r.devoir_id = ANY(${ids}) AND r.statut <> 'brouillon'
@@ -260,7 +322,7 @@ export async function corrigesAValider(devoirIds: number[]): Promise<CorrigeAVal
       echeanceLe: iso(l.echeance_le),
       valideLe: iso(l.valide_le),
       validePar: l.v_prenom !== null ? { prenom: l.v_prenom, nom: l.v_nom ?? "" } : null,
-      copies: { rendues, notees, enFile: l.type === "depot" ? Math.max(0, rendues - notees - aRevoir) : 0, aRevoir },
+      copies: { rendues, notees, enFile: l.type === "depot" ? (c?.en_file ?? 0) : 0, aRevoir },
     });
   }
   return devoirIds.map((id) => parId.get(id)).filter((c): c is CorrigeAValider => Boolean(c));
@@ -533,32 +595,17 @@ async function emailsRestantsDuJour(maintenant: Date): Promise<number> {
 
 export type BilanMessageDuJour = { corriges: number; destinataires: number; emails: number };
 
+type IssueEmailCorriges = "envoye" | "sans_adresse" | "indisponible" | "plafond" | "echec";
+/** Un e-mail du jour en échec (Resend en panne, adresse refusée) est retenté au plus autant de fois. */
+const ESSAIS_EMAIL_CORRIGES = 3;
+
 /**
- * Tâche planifiée (toutes les 15 minutes) : les corrigés proposés et pas encore envoyés, de devoirs publiés
- * (cours publiés), partent à leurs formateurs (à défaut, à la direction), en un seul envoi par personne :
- * notification (priorité action, vers /enseigner/corriges) et e-mail. Chaque corrigé envoyé reçoit son heure
- * de proposition et son échéance (24 h). Entre 20 h et 7 h (heure d'Abidjan), rien ne part : tout part à 7 h.
- * « maintenant » se règle pour les essais (horloge simulée).
+ * L'e-mail du jour d'une personne (ses corrigés dans l'ordre, les CORRIGES_PAR_EMAIL premiers en détail, avec le
+ * lien signé « Tout est juste : valider »), envoyé tout de suite.
  */
-export async function envoyerCorrigesDuJour(maintenant = new Date()): Promise<BilanMessageDuJour> {
-  const bilan: BilanMessageDuJour = { corriges: 0, destinataires: 0, emails: 0 };
-  // Abidjan vit à l'heure GMT toute l'année : l'heure d'Abidjan est l'heure UTC.
-  const heure = maintenant.getUTCHours();
-  if (heure < HEURE_DEBUT_DELAI || heure >= HEURE_FIN_JOURNEE) return bilan;
-  const echeance = echeanceValidation(maintenant);
-  const a = maintenant.toISOString();
-  // Réservés d'abord (un passage qui en croiserait un autre ne les enverrait pas deux fois), puis envoyés.
-  const reserves = await db.execute<{ devoir_id: number }>(sql`
-    UPDATE campus.corriges_devoirs cd
-    SET message_envoye_le = ${a}::timestamptz, propose_le = ${a}::timestamptz, echeance_le = ${echeance.toISOString()}::timestamptz, maj_le = now()
-    FROM campus.devoirs d
-    JOIN campus.cours c ON c.id = d.cours_id
-    WHERE d.id = cd.devoir_id AND cd.statut = 'propose' AND cd.message_envoye_le IS NULL AND d.publie AND c.statut = 'publie'
-    RETURNING cd.devoir_id`);
-  if (!reserves.rows.length) return bilan;
-  const ids = reserves.rows.map((l) => Number(l.devoir_id));
-  const corriges = (await corrigesAValider(ids)).sort((x, y) => x.dateLimite.localeCompare(y.dateLimite) || x.devoirId - y.devoirId);
+async function envoyerEmailCorriges(d: Destinataire & { email: string }, siens: CorrigeAValider[], echeance: Date, maintenant: Date): Promise<"envoye" | "echec"> {
   // Le type de chaque question règle l'affichage de sa bonne réponse dans l'e-mail (vrai/faux, réponse courte).
+  const ids = siens.map((c) => c.devoirId);
   const types = new Map(
     (await db.select({ id: questionsQuiz.id, type: questionsQuiz.type }).from(questionsQuiz).where(inArray(questionsQuiz.devoirId, ids))).map((q) => [q.id, q.type]),
   );
@@ -574,45 +621,137 @@ export async function envoyerCorrigesDuJour(maintenant = new Date()): Promise<Bi
     questions: c.questions.map((q) => ({ type: types.get(q.id) ?? "qcm", enonce: q.enonce, options: q.options, bonnes: q.bonnes, explication: q.explication })),
     lien: `${config.urlCampus}/enseigner/corriges/${c.devoirId}`,
   });
+  const detailles = siens.slice(0, CORRIGES_PAR_EMAIL);
+  const jeton = jetonValidation(
+    d.id,
+    detailles.map((c) => ({ devoirId: c.devoirId, version: c.version })),
+    new Date(maintenant.getTime() + VALIDITE_LIEN_JOURS * JOUR_MS),
+  );
+  const m = emailCorrigesDuJour({
+    personne: d,
+    corriges: detailles.map(versEmail),
+    autres: siens.length - detailles.length,
+    quand: leJourHeure(echeance, d.fuseau),
+    date: formaterDate(maintenant, { style: "jour", fuseau: d.fuseau }),
+    lienValider: lienValidation(jeton),
+    lienVoir: `${config.urlCampus}/enseigner/corriges`,
+  });
+  return (await envoyerEmail({ a: d.email, sujet: m.sujet, texte: m.texte, html: m.html }).catch(() => false)) ? "envoye" : "echec";
+}
+
+/**
+ * E-mails du jour restés au plafond ou en échec depuis moins de 24 h (journal « corriges_du_jour ») : renvoyés
+ * seuls, sans nouvelle notification ni nouvelle échéance, pour les corrigés encore à valider, dès que le plafond
+ * le permet ; un échec est retenté au plus ESSAIS_EMAIL_CORRIGES fois. La ligne reprise passe « repris » et
+ * l'envoi en écrit une nouvelle (le plafond compte les e-mails partis le jour même). Renvoie les e-mails partis.
+ */
+async function reprendreEmailsCorriges(maintenant: Date): Promise<number> {
+  if (!emailDisponible()) return 0;
+  let restants = await emailsRestantsDuJour(maintenant);
+  if (restants <= 0) return 0;
+  // Réservées d'abord (« reprise ») : un passage qui en croiserait un autre ne renverrait pas le même e-mail.
+  const lignes = await db.execute<{ id: number; details: { destinataire: number; devoirs?: number[]; essais?: number } }>(sql`
+    UPDATE campus.journal j SET details = jsonb_set(j.details, '{email}', '"reprise"')
+    WHERE j.id IN (
+      SELECT id FROM campus.journal
+      WHERE action = 'corriges_du_jour' AND cree_le > ${new Date(maintenant.getTime() - JOUR_MS).toISOString()}::timestamptz
+        AND details->>'email' IN ('plafond', 'echec') AND COALESCE((details->>'essais')::int, 0) < ${ESSAIS_EMAIL_CORRIGES}
+      ORDER BY id
+      LIMIT ${restants}
+      FOR UPDATE SKIP LOCKED)
+    RETURNING j.id, j.details`);
+  let partis = 0;
+  for (const l of lignes.rows) {
+    const essais = Number(l.details.essais ?? 0);
+    let fin: "repris" | "abandonne" | "plafond" | "echec" = "abandonne";
+    try {
+      const [p] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, Number(l.details.destinataire)));
+      const encore = (await corrigesAValider((l.details.devoirs ?? []).map(Number))).filter(
+        (c) => c.statut === "propose" && c.echeanceLe !== null && Date.parse(c.echeanceLe) > maintenant.getTime(),
+      );
+      const adresse = p?.actif ? p.email?.trim() : null;
+      if (p && adresse && encore.length) {
+        if (restants <= 0) fin = "plafond";
+        else {
+          const echeance = new Date(Math.min(...encore.map((c) => Date.parse(c.echeanceLe!))));
+          const email = await envoyerEmailCorriges({ id: p.id, prenom: p.prenom, nom: p.nom, email: adresse, fuseau: p.fuseau }, encore, echeance, maintenant);
+          if (email === "envoye") {
+            restants--;
+            partis++;
+          }
+          await tracer(null, "corriges_du_jour", { destinataire: p.id, devoirs: encore.map((c) => c.devoirId), email, essais: essais + 1, reprise: l.id });
+          fin = "repris";
+        }
+      }
+    } catch (e) {
+      console.error(`[corrigés] reprise de l'e-mail du jour (journal ${l.id}) :`, (e as Error).message);
+      fin = "echec";
+    }
+    const apres = { email: fin, essais: essais + (fin === "echec" ? 1 : 0) };
+    await db.execute(sql`UPDATE campus.journal SET details = details || ${JSON.stringify(apres)}::jsonb WHERE id = ${l.id}`);
+  }
+  return partis;
+}
+
+/**
+ * Tâche planifiée (toutes les 15 minutes) : les corrigés proposés et pas encore envoyés, de devoirs publiés
+ * (cours publiés), partent à leurs formateurs (à défaut, à la direction), en un seul envoi par personne :
+ * notification (priorité action, vers /enseigner/corriges) et e-mail. Chaque corrigé envoyé reçoit son heure
+ * de proposition et son échéance (24 h). Entre 20 h et 7 h (heure d'Abidjan), rien ne part : tout part à 7 h.
+ * Les e-mails restés au plafond ou en échec repartent d'abord (reprendreEmailsCorriges).
+ * « maintenant » se règle pour les essais (horloge simulée).
+ */
+export async function envoyerCorrigesDuJour(maintenant = new Date()): Promise<BilanMessageDuJour> {
+  const bilan: BilanMessageDuJour = { corriges: 0, destinataires: 0, emails: 0 };
+  // Abidjan vit à l'heure GMT toute l'année : l'heure d'Abidjan est l'heure UTC.
+  const heure = maintenant.getUTCHours();
+  if (heure < HEURE_DEBUT_DELAI || heure >= HEURE_FIN_JOURNEE) return bilan;
+  bilan.emails += await reprendreEmailsCorriges(maintenant);
+  const echeance = echeanceValidation(maintenant);
+  const a = maintenant.toISOString();
+  // Réservés d'abord (un passage qui en croiserait un autre ne les enverrait pas deux fois), puis envoyés.
+  const reserves = await db.execute<{ devoir_id: number }>(sql`
+    UPDATE campus.corriges_devoirs cd
+    SET message_envoye_le = ${a}::timestamptz, propose_le = ${a}::timestamptz, echeance_le = ${echeance.toISOString()}::timestamptz, maj_le = now()
+    FROM campus.devoirs d
+    JOIN campus.cours c ON c.id = d.cours_id
+    WHERE d.id = cd.devoir_id AND cd.statut = 'propose' AND cd.message_envoye_le IS NULL AND d.publie AND c.statut = 'publie'
+    RETURNING cd.devoir_id`);
+  if (!reserves.rows.length) return bilan;
+  const ids = reserves.rows.map((l) => Number(l.devoir_id));
+  const corriges = (await corrigesAValider(ids)).sort((x, y) => x.dateLimite.localeCompare(y.dateLimite) || x.devoirId - y.devoirId);
   bilan.corriges = corriges.length;
   let restants = await emailsRestantsDuJour(maintenant);
   for (const { d, corriges: siens } of await parDestinataire(corriges)) {
     const n = siens.length;
-    const quand = leJourHeure(echeance, d.fuseau);
-    await notifier([d.id], {
-      type: "devoir",
-      priorite: "action",
-      titre: selonNombre(t, "corriges.notif.titre", n, vous),
-      corps: selonNombre(t, "corriges.notif.corps", n, { ...vous, v: { liste: listeCourte(siens), quand } }),
-      lien: "/enseigner/corriges",
-    });
-    bilan.destinataires++;
-    let email: "envoye" | "sans_adresse" | "indisponible" | "plafond" | "echec" = "sans_adresse";
-    if (d.email && !emailDisponible()) email = "indisponible";
-    else if (d.email && restants <= 0) email = "plafond";
-    else if (d.email) {
-      const detailles = siens.slice(0, CORRIGES_PAR_EMAIL);
-      const jeton = jetonValidation(
-        d.id,
-        detailles.map((c) => ({ devoirId: c.devoirId, version: c.version })),
-        new Date(maintenant.getTime() + VALIDITE_LIEN_JOURS * JOUR_MS),
-      );
-      const m = emailCorrigesDuJour({
-        personne: d,
-        corriges: detailles.map(versEmail),
-        autres: n - detailles.length,
-        quand,
-        date: formaterDate(maintenant, { style: "jour", fuseau: d.fuseau }),
-        lienValider: lienValidation(jeton),
-        lienVoir: `${config.urlCampus}/enseigner/corriges`,
+    // Chaque personne à part : une erreur (base, e-mail) n'empêche pas de prévenir les suivantes ; l'e-mail
+    // qui n'est pas parti sera repris (« echec »).
+    let email: IssueEmailCorriges = "sans_adresse";
+    try {
+      await notifier([d.id], {
+        type: "devoir",
+        priorite: "action",
+        titre: selonNombre(t, "corriges.notif.titre", n, vous),
+        corps: selonNombre(t, "corriges.notif.corps", n, { ...vous, v: { liste: listeCourte(siens), quand: leJourHeure(echeance, d.fuseau) } }),
+        lien: "/enseigner/corriges",
       });
-      email = (await envoyerEmail({ a: d.email, sujet: m.sujet, texte: m.texte, html: m.html }).catch(() => false)) ? "envoye" : "echec";
-      if (email === "envoye") {
-        restants--;
-        bilan.emails++;
+      bilan.destinataires++;
+      if (d.email && !emailDisponible()) email = "indisponible";
+      else if (d.email && restants <= 0) email = "plafond";
+      else if (d.email) {
+        email = await envoyerEmailCorriges({ ...d, email: d.email }, siens, echeance, maintenant);
+        if (email === "envoye") {
+          restants--;
+          bilan.emails++;
+        }
       }
+    } catch (e) {
+      console.error(`[corrigés] message du jour à ${d.id} :`, (e as Error).message);
+      if (d.email && email !== "envoye") email = "echec";
     }
-    await tracer(null, "corriges_du_jour", { destinataire: d.id, devoirs: siens.map((c) => c.devoirId), email });
+    await tracer(null, "corriges_du_jour", { destinataire: d.id, devoirs: siens.map((c) => c.devoirId), email }).catch((e) =>
+      console.error(`[corrigés] journal du message du jour à ${d.id} :`, (e as Error).message),
+    );
   }
   return bilan;
 }
@@ -671,9 +810,62 @@ export async function rappelerCorriges(maintenant = new Date()): Promise<number[
   return prevenus;
 }
 
+// ── Corrigés bloqués (décision D-G de la revue) ────────────────────────────
+
+/**
+ * Corrigé que le campus n'arrive pas à rédiger : resté en préparation plus de DELAI_CORRIGE_BLOQUE_HEURES
+ * (routine arrêtée, devoir sorti de la fenêtre de rédaction…) ou rédaction ratée ESSAIS_MAX_REDACTION fois. Ses
+ * copies redeviennent « à corriger » par le formateur (sqlCorrigeParLeCampus, corrections-socle.ts), et les
+ * formateurs du cours (à défaut, la direction) sont prévenus une seule fois : rappel_envoye_le, posé ici sur un
+ * corrigé encore en préparation, en garde la trace (et rend les copies au formateur même avant le délai). Personne
+ * n'est dérangé pour un devoir sans copie à noter ni à venir (date limite passée, copies déjà notées par un
+ * formateur). Le formateur peut écrire le corrigé (le campus s'en sert alors) ou noter les copies lui-même ; le
+ * campus continue d'essayer de le rédiger (proposé, il part dans le message du jour, marque effacée).
+ * « devoirIds » : ces corrigés-là, tout de suite (rédaction ratée) ; sinon, ceux qui ont dépassé le délai.
+ * Renvoie les personnes prévenues.
+ */
+async function prevenirCorrigesBloques(devoirIds: number[] | null): Promise<number[]> {
+  const cible = devoirIds
+    ? sql`cd.devoir_id = ANY(${tableauEntiers(devoirIds)})`
+    : sql`cd.maj_le <= now() - make_interval(hours => ${DELAI_CORRIGE_BLOQUE_HEURES})`;
+  const r = await db.execute<{ devoir_id: number; cours_id: number; titre: string; code: string }>(sql`
+    UPDATE campus.corriges_devoirs cd SET rappel_envoye_le = now()
+    FROM campus.devoirs d
+    JOIN campus.cours c ON c.id = d.cours_id
+    WHERE d.id = cd.devoir_id AND cd.statut = 'en_preparation' AND cd.rappel_envoye_le IS NULL AND d.type = 'depot' AND d.publie AND ${cible}
+      AND (d.date_limite > now() OR EXISTS (
+        SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.statut = 'rendu'
+          AND NOT (r.correcteur_id IS NOT NULL AND r.corrige_le IS NOT NULL AND (r.rendu_le IS NULL OR r.corrige_le >= r.rendu_le))))
+    RETURNING cd.devoir_id, d.cours_id, d.titre, c.code`);
+  if (!r.rows.length) return [];
+  const liste = r.rows.map((l) => ({ devoirId: Number(l.devoir_id), coursId: Number(l.cours_id), titre: l.titre, coursCode: l.code }));
+  await tracer(null, "corriges_bloques", { devoirs: liste.map((l) => l.devoirId), raison: devoirIds ? "echecs" : "delai" });
+  const prevenus: number[] = [];
+  for (const { d, corriges } of await parDestinataire(liste)) {
+    await notifier([d.id], {
+      type: "devoir",
+      priorite: "action",
+      titre: selonNombre(t, "corriges.bloque.titre", corriges.length, vous),
+      corps: selonNombre(t, "corriges.bloque.corps", corriges.length, { ...vous, v: { liste: listeCourte(corriges) } }),
+      // Un seul devoir : son éditeur (champ « Corrigé ») ; plusieurs : les copies à corriger.
+      lien: corriges.length === 1 ? `/enseigner/devoirs/${corriges[0].devoirId}` : "/corriger",
+    });
+    prevenus.push(d.id);
+  }
+  return prevenus;
+}
+
+/** Corrigés restés en préparation plus de DELAI_CORRIGE_BLOQUE_HEURES : copies rendues au formateur, qui est prévenu. */
+export async function signalerCorrigesBloques(): Promise<number[]> {
+  return prevenirCorrigesBloques(null);
+}
+
 // ── Rédaction des corrigés manquants ───────────────────────────────────────
 
-/** Échecs de rédaction par l'API (hors IA du soir) : trois essais, à six heures d'écart (remis à zéro au redémarrage). */
+/**
+ * Échecs de rédaction (erreur de l'API, ou réponse inutilisable de la routine du soir) : trois essais, à six heures
+ * d'écart (remis à zéro au redémarrage) ; au troisième, le formateur est prévenu (prevenirCorrigesBloques).
+ */
 const echecs = new Map<number, { essais: number; dernier: number }>();
 const ESSAIS_MAX_REDACTION = 3;
 const ECART_ESSAIS_MS = 6 * HEURE_MS;
@@ -829,11 +1021,17 @@ async function rediger(devoirId: number): Promise<IssueEtude> {
       sansQuota: true,
     });
     const corrige = (resultat.corrige ?? "").trim().slice(0, CORRIGE_MAX);
-    if (corrige.length < 40) throw new Error("corrigé vide ou trop court");
-    // Écrit entre-temps par le formateur : rien n'est écrasé.
+    if (corrige.length < 40) {
+      // Réponse inutilisable (refus, texte de remplissage) : supprimée, pour que l'essai suivant redemande le
+      // corrigé (la routine du soir ne revoit jamais une demande répondue) au lieu de relire la même réponse.
+      await supprimerDemandesDe(`corrige:${devoirId}`);
+      throw new Error("corrigé vide ou trop court");
+    }
+    // Écrit entre-temps par le formateur : rien n'est écrasé. Proposé, il n'est plus bloqué (marque effacée :
+    // rappel_envoye_le sert ensuite au rappel avant l'échéance).
     const [maj] = await db
       .update(corrigesDevoirs)
-      .set({ contenu: corrige, source: "campus", statut: "propose", majLe: new Date() })
+      .set({ contenu: corrige, source: "campus", statut: "propose", rappelEnvoyeLe: null, majLe: new Date() })
       .where(and(eq(corrigesDevoirs.devoirId, devoirId), eq(corrigesDevoirs.statut, "en_preparation")))
       .returning({ devoirId: corrigesDevoirs.devoirId });
     // La demande répondue (pièces jointes en base64 comprises) n'a plus d'usage.
@@ -844,22 +1042,29 @@ async function rediger(devoirId: number): Promise<IssueEtude> {
     return "prete";
   } catch (e) {
     if (estIaDuSoir(e)) return "soir";
-    const avant = echecs.get(devoirId);
-    echecs.set(devoirId, { essais: (avant?.essais ?? 0) + 1, dernier: Date.now() });
-    console.warn(`[corrigés] rédaction du corrigé du devoir ${devoirId} :`, (e as Error).message);
+    const essais = (echecs.get(devoirId)?.essais ?? 0) + 1;
+    echecs.set(devoirId, { essais, dernier: Date.now() });
+    console.warn(`[corrigés] rédaction du corrigé du devoir ${devoirId} (essai ${essais}) :`, (e as Error).message);
+    // Dernier essai raté : les copies reviennent au formateur, qui est prévenu (une seule fois).
+    if (essais >= ESSAIS_MAX_REDACTION) {
+      await prevenirCorrigesBloques([devoirId]).catch((err) => console.error(`[corrigés] corrigé bloqué du devoir ${devoirId} :`, (err as Error).message));
+    }
     return "erreur";
   }
 }
 
 // ── Tâches ─────────────────────────────────────────────────────────────────
 
-// Toutes les 15 minutes : corrigés tenus pour bons, rappels, puis message du jour (entre 7 h et 20 h).
+// Toutes les 15 minutes : corrigés tenus pour bons, rappels, corrigés bloqués, puis message du jour (entre 7 h et 20 h).
 planifier("corriges-du-jour", 15 * 60_000, async () => {
   const tacites = await passerCorrigesTacites();
   const rappeles = await rappelerCorriges();
+  const bloques = await signalerCorrigesBloques();
   const b = await envoyerCorrigesDuJour();
-  if (tacites.length || rappeles.length || b.corriges) {
-    console.log(`[corrigés] ${tacites.length} tenu(s) pour bon(s), ${rappeles.length} rappel(s), ${b.corriges} envoyé(s) à ${b.destinataires} personne(s) (${b.emails} e-mail(s)).`);
+  if (tacites.length || rappeles.length || bloques.length || b.corriges || b.emails) {
+    console.log(
+      `[corrigés] ${tacites.length} tenu(s) pour bon(s), ${rappeles.length} rappel(s), ${bloques.length} prévenu(s) d'un corrigé bloqué, ${b.corriges} envoyé(s) à ${b.destinataires} personne(s) (${b.emails} e-mail(s)).`,
+    );
   }
 });
 

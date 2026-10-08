@@ -89,7 +89,10 @@ UPDATE "campus"."rendus" r SET "origine_note" = 'campus'
 FROM "campus"."devoirs" d
 WHERE d."id" = r."devoir_id" AND d."type" = 'quiz' AND r."correcteur_id" IS NULL AND r."origine_note" = 'formateur';
 --> statement-breakpoint
--- Devoirs déjà ouverts (ou fermés depuis moins de 30 jours) : ils entrent dans le circuit.
+-- Devoirs qui entrent dans le circuit : encore ouverts, ou fermés depuis moins de 30 jours avec des copies rendues
+-- qu'aucun formateur n'a prises en main (même règle que formateurALaMain, server/correction-auto.ts). Un devoir
+-- fermé déjà noté par son formateur (ou un QCM fermé, noté à chaque tentative) reste dehors : ni corrigé à valider
+-- envoyé au formateur, ni corrigé rédigé après coup montré aux étudiants notés sans lui.
 -- Exercices et QCM de la routine du soir : corrigé du campus (devoirs_seances.corriges) à proposer au formateur
 -- (propose_le nul : le message du jour le fixera, avec l'échéance).
 INSERT INTO "campus"."corriges_devoirs" ("devoir_id", "contenu", "source", "statut")
@@ -99,6 +102,10 @@ CROSS JOIN LATERAL jsonb_array_elements_text(ds."devoir_ids") AS x(id)
 JOIN "campus"."devoirs" d ON d."id" = x.id::int
 WHERE d."publie" AND d."date_limite" > now() - interval '30 days'
   AND (d."type" = 'quiz' OR COALESCE(ds."corriges" ->> d."id"::text, '') <> '')
+  AND (d."date_limite" > now() OR EXISTS (
+    SELECT 1 FROM "campus"."rendus" r
+    WHERE r."devoir_id" = d."id" AND r."statut" = 'rendu'
+      AND NOT (r."correcteur_id" IS NOT NULL AND r."corrige_le" IS NOT NULL AND (r."rendu_le" IS NULL OR r."corrige_le" >= r."rendu_le"))))
 ON CONFLICT ("devoir_id") DO NOTHING;
 --> statement-breakpoint
 -- Autres devoirs à dépôt (écrits par un formateur, travaux de groupe) : le campus rédige leur corrigé.
@@ -106,4 +113,8 @@ INSERT INTO "campus"."corriges_devoirs" ("devoir_id", "source", "statut")
 SELECT d."id", 'campus', 'en_preparation'
 FROM "campus"."devoirs" d
 WHERE d."type" = 'depot' AND d."publie" AND d."date_limite" > now() - interval '30 days'
+  AND (d."date_limite" > now() OR EXISTS (
+    SELECT 1 FROM "campus"."rendus" r
+    WHERE r."devoir_id" = d."id" AND r."statut" = 'rendu'
+      AND NOT (r."correcteur_id" IS NOT NULL AND r."corrige_le" IS NOT NULL AND (r."rendu_le" IS NULL OR r."corrige_le" >= r."rendu_le"))))
 ON CONFLICT ("devoir_id") DO NOTHING;

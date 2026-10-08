@@ -75,8 +75,12 @@ export const REPETITIONS_LIEN = { fois: 2, jours: 7 } as const;
 export const DECROCHAGE = { joursRappel: 3, joursEmail: 7, joursSansEffet: 4, relancesAvantAppel: 2, heuresRetour: 48 } as const;
 /** Passage quotidien des décrocheurs, heure locale. */
 export const FENETRE_DECROCHEURS = { debut: 16 * H + 40, fin: 17 * H + 10 } as const;
-/** E-mail du lundi, heure locale ; ce qui dépasse le quota part les jours suivants, jusqu'au jeudi. */
-export const FENETRE_EMAIL_SEMAINE = { debut: 6 * H + 45, fin: 9 * H, joursDeReport: 3 } as const;
+/**
+ * E-mail du lundi, heure locale ; ce qui dépasse le quota part les jours suivants, jusqu'au jeudi. Il commence
+ * à 7 h 30, après le corrigé du jour des formateurs (7 h, server/corriges.ts) : le plafond commun laisse d'abord
+ * passer les corrigés, que les formateurs doivent recevoir par e-mail.
+ */
+export const FENETRE_EMAIL_SEMAINE = { debut: 7 * H + 30, fin: 9 * H, joursDeReport: 3 } as const;
 export const EMAILS_PAR_JOUR_DEFAUT = 40;
 export const EMAILS_PAR_JOUR_MAX = 500;
 /**
@@ -345,7 +349,7 @@ export function deciderDecrocheur(c: ContexteDecrocheur): DecisionDecrocheur {
   return { action: "rien", raison: "attendre" };
 }
 
-/** L'e-mail de la semaine peut-il partir à cet instant ? Lundi 6 h 45 – 9 h, et les jours suivants pour le reste du quota. */
+/** L'e-mail de la semaine peut-il partir à cet instant ? Lundi 7 h 30 – 9 h, et les jours suivants pour le reste du quota. */
 export function fenetreEmailSemaine(maintenant: Date | number, fuseau: string | null, jour: Jour, lundi: Jour): boolean {
   const m = minutesLocales(maintenant, fuseau);
   const rang = ecartJours(lundi, jour);

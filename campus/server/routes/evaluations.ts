@@ -13,8 +13,18 @@
 //     d'après un corrigé validé par le formateur ou tenu pour bon ; une copie
 //     douteuse n'est jamais notée seule, une note de formateur jamais écrasée.
 import { corrigeDuDevoir } from "../devoirs-auto";
-import { assurerCorrige, baremeDuDepotModifie, corrigeDuQcmModifie, corrigeEcritParLeFormateur, CORRIGE_MAX } from "../corriges";
-import { lireCorrige } from "../corrections-socle";
+import {
+  assurerCorrige,
+  baremeDuDepotModifie,
+  corrigeDuQcmModifie,
+  corrigeEcritParLeFormateur,
+  CORRIGE_MAX,
+  notesDuCampusAuNouveauBareme,
+  peutEcrireCorrige,
+  verifierVersionCorrige,
+} from "../corriges";
+import { lireCorrige, sqlCorrigeParLeCampus } from "../corrections-socle";
+import { t as tEnseigner } from "@shared/textes/enseigner";
 import type { Express, Request } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
@@ -274,11 +284,14 @@ const compteursVides = (): CompteursCopies => ({ inscrits: 0, rendus: 0, enRetar
 /**
  * Compteurs de copies par devoir, limités aux étudiants que la personne peut
  * voir : « à corriger » (rendues, sans note), « à publier » (notées, pas
- * encore publiées), « publiées ». Devoir corrigé par le campus (il a un
- * corrigé : décision du 8 octobre 2026) : une copie qui attend le campus n'est
- * pas « à corriger » ; seules le sont celles que le campus a mises « à revoir »
- * et celles qu'un formateur a commencé à corriger (même règle que l'accueil du
- * formateur, server/engagement/formateurs.ts).
+ * encore publiées), « publiées ». Devoir corrigé par le campus (son corrigé
+ * sert de barème ou y arrive : sqlCorrigeParLeCampus, décision du 8 octobre
+ * 2026) : une copie qui attend le campus n'est pas « à corriger » ; seules le
+ * sont celles que le campus a mises « à revoir » et celles qu'un formateur a
+ * commencé à corriger (même règle que l'accueil du formateur,
+ * server/engagement/formateurs.ts). Corrigé bloqué (en préparation depuis
+ * 48 h, rédaction abandonnée) : toutes ses copies sans note redeviennent « à
+ * corriger » (décision D-G).
  */
 async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<number, CompteursCopies>> {
   const resultat = new Map<number, CompteursCopies>();
@@ -302,7 +315,9 @@ async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<numbe
     })
     .from(rendus)
     .where(and(inArray(rendus.devoirId, devoirIds), ne(rendus.statut, "brouillon")));
-  const parLeCampus = new Set((await db.select({ id: corrigesDevoirs.devoirId }).from(corrigesDevoirs).where(inArray(corrigesDevoirs.devoirId, devoirIds))).map((l) => l.id));
+  const parLeCampus = new Set(
+    (await db.select({ id: devoirs.id }).from(devoirs).where(and(inArray(devoirs.id, devoirIds), sqlCorrigeParLeCampus("devoirs")))).map((l) => l.id),
+  );
   const aRevoir = new Set(
     parLeCampus.size
       ? (await db.select({ id: correctionsAuto.renduId }).from(correctionsAuto).where(and(inArray(correctionsAuto.devoirId, [...parLeCampus]), eq(correctionsAuto.etat, "a_revoir")))).map((l) => l.id)
@@ -627,8 +642,19 @@ const schemaDevoir = z.object({
    * rédige le corrigé d'un dépôt publié qui n'en a pas, et l'envoie au formateur pour validation).
    */
   corrige: z.string().max(CORRIGE_MAX + 2000).optional(),
+  /** Version du corrigé que l'éditeur a lue (DevoirDetailEnseignant.corrige.version) : modifié depuis, 409. */
+  corrigeVersion: z.number().int().nonnegative().nullable().optional(),
 });
 const schemaModifDevoir = schemaDevoir.omit({ coursId: true }).partial();
+
+/**
+ * Seuls le formateur du cours et la direction écrivent un corrigé (décision D-F) : un corrigé envoyé par
+ * l'équipe (vie scolaire avec le droit « notes ») est refusé AVANT tout enregistrement. Vide (l'éditeur
+ * l'envoie à chaque création) : rien à refuser.
+ */
+function exigerDroitCorrige(u: Utilisateur, corrige: string | undefined) {
+  if (corrige?.trim() && !peutEcrireCorrige(u)) throw interdit(tEnseigner("corriges.erreur.ecrire", { registre: "vous" }));
+}
 
 /** Cohérence d'un devoir complet (après fusion d'une modification). */
 function verifierDevoir(v: {
@@ -1244,8 +1270,9 @@ export function enregistrerEvaluations(app: Express) {
     droitSiEquipe("notes"),
     route(async (req, res) => {
       const u = moi(req);
-      const { corrige, ...v } = valider(schemaDevoir, req.body);
+      const { corrige, corrigeVersion: _versionLue, ...v } = valider(schemaDevoir, req.body);
       const c = await coursEnseigne(u, v.coursId);
+      exigerDroitCorrige(u, corrige);
       const ouvertureLe = v.ouvertureLe ? new Date(v.ouvertureLe) : null;
       // « Avant 23h59 » : enregistrée à 23:59:59.999 (règle de finEcheance).
       const dateLimite = finEcheance(new Date(v.dateLimite));
@@ -1303,7 +1330,10 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { d, c } = await devoirEnseigne(u, idParam(req));
-      const { corrige, ...v } = valider(schemaModifDevoir, req.body);
+      const { corrige, corrigeVersion, ...v } = valider(schemaModifDevoir, req.body);
+      exigerDroitCorrige(u, corrige);
+      // Corrigé modifié ailleurs depuis l'ouverture de l'éditeur (page des corrigés, co-formateur) : 409, rien d'enregistré.
+      if (corrige?.trim()) await verifierVersionCorrige(d.id, corrigeVersion);
       const detail = await detailEnseignant(u, d, c);
       if (v.type && v.type !== d.type && detail.aDesRendus) throw new ErreurHttp(409, "Des copies existent déjà : on ne peut plus changer le type de ce devoir.");
       const type = v.type ?? d.type;
@@ -1335,8 +1365,18 @@ export function enregistrerEvaluations(app: Express) {
       const baremeChange = maj.bareme !== d.bareme;
       const grilleChange = JSON.stringify(maj.grille) !== JSON.stringify(d.grille);
       if (maj.type === "depot") {
-        const ecrit = corrige?.trim() ? await corrigeEcritParLeFormateur(u, maj.id, corrige) : { change: false };
+        // Notes du campus déjà publiées : ramenées tout de suite au nouveau barème (en attendant leur recorrection).
+        if (baremeChange) await notesDuCampusAuNouveauBareme(maj.id, d.bareme, maj.bareme);
+        const ecrit = corrige?.trim() ? await corrigeEcritParLeFormateur(u, maj.id, corrige, corrigeVersion) : { change: false };
         if (!ecrit.change && (baremeChange || grilleChange)) await baremeDuDepotModifie(maj.id);
+        // Dépôt (re)publié : le délai de rédaction du campus part maintenant (un travail de groupe ouvert en brouillon
+        // il y a des jours ne passe pas « bloqué » à sa publication, décision D-G).
+        if (maj.publie && !d.publie) {
+          await db
+            .update(corrigesDevoirs)
+            .set({ majLe: new Date() })
+            .where(and(eq(corrigesDevoirs.devoirId, maj.id), eq(corrigesDevoirs.statut, "en_preparation"), isNull(corrigesDevoirs.rappelEnvoyeLe)));
+        }
         await assurerCorrige(maj);
       } else if (baremeChange) await recalculerQuiz(maj.id);
       if (maj.type === "depot" || (await questionsDe(maj.id)).length) await annoncerSiOuvert(maj, c);
@@ -1743,12 +1783,25 @@ export function enregistrerEvaluations(app: Express) {
   }
 
   /**
-   * Une question de l'interrogation a changé (ajout, modification, retrait) : le formateur a revu son corrigé
-   * (validé, version + 1, si le QCM est passé par le circuit des corrigés), et les notes des tentatives déjà
-   * faites sont recalculées ; les étudiants dont la note publiée change en sont prévenus.
+   * Les questions d'un QCM qui a un corrigé (circuit des corrigés : QCM préparé par le campus) sont ce corrigé :
+   * seuls le formateur du cours et la direction les ajoutent, les modifient ou les retirent (décision D-F). Un QCM
+   * hors du circuit (sans ligne de corrigé : écrit dans l'éditeur) reste modifiable par l'équipe, comme avant.
    */
-  async function corrigeDuQuizChange(u: Utilisateur, devoirId: number) {
+  async function exigerDroitQuestions(u: Utilisateur, devoirId: number) {
+    if (peutEcrireCorrige(u)) return;
+    if (await lireCorrige(devoirId)) throw interdit(tEnseigner("corriges.erreur.questions", { registre: "vous" }));
+  }
+
+  /**
+   * Une question de l'interrogation a changé (ajout, modification, retrait) : le formateur a revu son corrigé
+   * (validé, version + 1, si le QCM est passé par le circuit des corrigés). Modification ou retrait : les notes des
+   * tentatives déjà faites sont recalculées ; les étudiants dont la note publiée change en sont prévenus. Un ajout
+   * ne recalcule rien : la nouvelle question n'a pas été posée à ceux qui ont déjà composé (elle ne compte pas
+   * dans leur note, même lors d'un recalcul ultérieur : questionsDeLaTentative).
+   */
+  async function corrigeDuQuizChange(u: Utilisateur, devoirId: number, recalculer = true) {
     await corrigeDuQcmModifie(u, devoirId);
+    if (!recalculer) return;
     const { tentatives, etudiants } = await recalculerQuiz(devoirId);
     if (tentatives || etudiants.length) await tracer(u, "quiz_recalcule", { devoirId, tentatives, notesChangees: etudiants.length });
   }
@@ -1772,6 +1825,7 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
+      await exigerDroitQuestions(u, d.id);
       const liste = Array.isArray(req.body?.questions) ? req.body.questions : [req.body];
       if (!liste.length || liste.length > 50) throw invalide("Entre 1 et 50 questions à la fois.");
       const normalisees = liste.map((q: unknown, i: number) => {
@@ -1787,8 +1841,9 @@ export function enregistrerEvaluations(app: Express) {
         .insert(questionsQuiz)
         .values(normalisees.map((q: ReturnType<typeof normaliserQuestion>, i: number) => ({ ...q, devoirId: d.id, ordre: max + i + 1 })))
         .returning();
-      await tracer(u, "questions_ajoutees", { devoirId: d.id, nombre: creees.length });
-      await corrigeDuQuizChange(u, d.id);
+      // Les identifiants datent l'ajout (questionsAjoutees) : ces questions ne comptent pas pour les tentatives d'avant.
+      await tracer(u, "questions_ajoutees", { devoirId: d.id, nombre: creees.length, ids: creees.map((q) => q.id) });
+      await corrigeDuQuizChange(u, d.id, false);
       res.status(201).json(creees.map(versQuestionEnseignant));
     }),
   );
@@ -1800,6 +1855,7 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
+      await exigerDroitQuestions(u, d.id);
       const [q] = await db.select().from(questionsQuiz).where(and(eq(questionsQuiz.id, idParam(req, "questionId")), eq(questionsQuiz.devoirId, d.id)));
       if (!q) throw introuvable("Question");
       const v = valider(schemaQuestion.partial(), req.body);
@@ -1831,6 +1887,7 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { d } = await devoirQuizEnseigne(u, idParam(req));
+      await exigerDroitQuestions(u, d.id);
       const [supprimee] = await db
         .delete(questionsQuiz)
         .where(and(eq(questionsQuiz.id, idParam(req, "questionId")), eq(questionsQuiz.devoirId, d.id)))

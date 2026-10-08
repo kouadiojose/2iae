@@ -1,10 +1,12 @@
 // Devoirs préparés par le campus à partir du cours complet d'une séance :
 // - une interrogation en QCM, notée automatiquement (correction détaillée
 //   visible après la date limite) ;
-// - un exercice pratique à rendre en photo de la copie ou en fichier, corrigé
-//   par le campus d'après le corrigé que le formateur valide (correction
-//   automatique, décision de José du 8 octobre 2026 : server/corriges.ts) ; une
-//   vidéo seule est corrigée par le formateur.
+// - un exercice pratique à rendre en photos nettes de la copie ou en PDF,
+//   corrigé par le campus d'après le corrigé que le formateur valide (correction
+//   automatique, décision de José du 8 octobre 2026 : server/corriges.ts), après
+//   la date limite (décision D-A de la revue) : 7 jours, comme le QCM, pour que
+//   la note arrive vite ; une vidéo, ou un fichier que le campus ne sait pas
+//   lire, fait relire la copie par le formateur.
 // Chacun a sa ligne de corrigé (corriges_devoirs), proposée au formateur par le
 // message du jour. Le formateur du cours en est l'auteur : il peut les modifier,
 // les dépublier ou les supprimer comme les siens. DEVOIRS_AUTO=non coupe la
@@ -47,7 +49,7 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
 
   // 1. QCM noté automatiquement : jamais les questions du quiz d'entraînement, dont les réponses sont visibles.
   const questions = (d.interrogation ?? []).filter((q) => q.options.length >= 2 && q.options.length <= 10 && q.bonneReponse >= 0 && q.bonneReponse < q.options.length).slice(0, 15);
-  // 2. Exercice pratique à rendre (photo, fichier ou vidéo) : jamais un exercice d'entraînement, dont le corrigé est visible.
+  // 2. Exercice pratique à rendre (photos ou PDF) : jamais un exercice d'entraînement, dont le corrigé est visible.
   const exercice = d.devoirPratique;
 
   // Les deux devoirs et les questions ensemble, ou rien ; les annonces partent après.
@@ -95,14 +97,14 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
         { critere: "Compréhension du sujet", points: 4, description: "Le sujet et les notions du cours sont compris et bien utilisés." },
         { critere: "Démarche et raisonnement", points: 8, description: "Les étapes sont logiques, expliquées et appuyées sur le cours." },
         { critere: "Exactitude des résultats", points: 6, description: "Les réponses sont justes et complètes." },
-        { critere: "Présentation et clarté", points: 2, description: "Copie lisible, ordonnée, ou vidéo claire et audible." },
+        { critere: "Présentation et clarté", points: 2, description: "Copie lisible et ordonnée." },
       ];
       const consigne = [
         `## ${exercice.titre}`,
         exercice.enonce,
         exercice.consignes.length ? `**Ce que tu dois faire :**\n${exercice.consignes.map((x) => `- ${x}`).join("\n")}` : "",
-        "**Comment rendre ton travail :** prends ta copie en photo, page par page, bien nette et bien éclairée, ou dépose un fichier (PDF, Word, Excel…). Une vidéo seule n'est pas corrigée par le campus : c'est ton formateur qui la regarde, plus tard.",
-        `**Comment tu es noté :** le campus corrige ta copie d'après le corrigé validé par ton formateur. Tu reçois ta note sur 20 et des conseils critère par critère ; si une note te semble fausse, tu peux demander une relecture à ton formateur.`,
+        "**Comment rendre ton travail :** prends ta copie en photo, page par page, bien nette et bien éclairée, ou dépose un PDF. Une vidéo, ou un fichier que le campus ne sait pas lire, n'est pas corrigé par le campus : c'est ton formateur qui relit ta copie, plus tard.",
+        `**Comment tu es noté :** le campus corrige ta copie après la date limite, d'après le corrigé validé par ton formateur. Ta note sur 20 arrive le soir qui suit la date limite, avec des conseils critère par critère ; si une note te semble fausse, tu peux demander une relecture à ton formateur.`,
         `_Exercice préparé par le campus d'après le cours du ${jour}. Avant de rendre, vérifie ton travail avec la grille._`,
       ]
         .filter(Boolean)
@@ -115,7 +117,7 @@ export async function creerDevoirsDuCours(s: Seance, d: DossierCours): Promise<{
           type: "depot",
           titre: `Exercice : ${exercice.titre}`.slice(0, 200),
           consigne,
-          dateLimite: dansJours(10),
+          dateLimite: dansJours(7),
           bareme: 20,
           coefficient: 1,
           accepteRetard: true,

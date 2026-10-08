@@ -32,6 +32,8 @@ import { publier, utilisateursSur } from "../temps-reel";
 import { notifier, HEURES_CALMES } from "../notifications";
 import { planifier } from "../taches";
 import { sqlEtatPresence, type EtatPresence } from "../engagement/presence";
+import { cleCarte } from "../engagement/cartes";
+import { tableExiste } from "../engagement/tables";
 import { SQL_DUREE_REFERENCE, sqlAttendus } from "./admin";
 import { canal, seanceAnimee } from "./live";
 import { heureLocale } from "@shared/engagement/calendrier";
@@ -290,7 +292,16 @@ export function enregistrerParticipationDirect(app: Express) {
       const source = sources.rows[0];
       res.setHeader("Cache-Control", "private, no-cache");
       if (!source) return res.json({ source: null, questions: [] } satisfies QuestionsRappelDto);
-      const quiz = (Array.isArray(source.quiz) ? source.quiz : []).map(versSondage).filter((q): q is QuestionQuiz => q !== null);
+      const brut: unknown[] = Array.isArray(source.quiz) ? source.quiz : [];
+      // Une question que la révision a retirée (carte « à relire » : signalée ou trop souvent ratée) ne revient pas en classe.
+      const retirees = new Set<string>();
+      if (await tableExiste("cartes_revision")) {
+        const cles = brut.map((q) => (q && typeof q === "object" && typeof (q as { question?: unknown }).question === "string" ? cleCarte(source.seance_id, "quiz", (q as { question: string }).question) : ""));
+        const r = await db.execute<{ cle: string }>(sql`SELECT cle FROM campus.cartes_revision WHERE a_relire AND cle = ANY(${`{${cles.filter(Boolean).join(",")}}`}::text[])`);
+        for (const l of r.rows) retirees.add(l.cle);
+        for (let i = 0; i < brut.length; i++) if (cles[i] && retirees.has(cles[i])) brut[i] = null;
+      }
+      const quiz = brut.map(versSondage).filter((q): q is QuestionQuiz => q !== null);
       // À tour de rôle : d'abord les questions jamais lancées dans une autre séance du cours.
       const lancees = await db.execute<{ seance_id: number; question: string }>(sql`
         SELECT so.seance_id, so.question FROM campus.sondages so JOIN campus.seances x ON x.id = so.seance_id

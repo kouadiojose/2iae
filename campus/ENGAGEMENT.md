@@ -42,7 +42,7 @@ sans action du formateur.
 | `absent` | pointé absent par le responsable de salle |
 | `absent` | sans campus (`site_id` nul) : il ne peut suivre qu'en ligne |
 | `inconnu` | incident de la salle de son campus pendant la séance |
-| `absent` | la salle de son campus a été émargée (au moins un émargé ou un pointage) |
+| `absent` | la salle de son campus a été émargée (décision D1 : au moins 3 étudiants de ce campus émargés dans sa salle **et** au moins 25 % de ses attendus) |
 | `inconnu` | tout le reste : aucun émargement dans sa salle. Quelques minutes en ligne sous le seuil n'y changent rien (il a pu ouvrir le direct depuis la salle). |
 
 - `etatPresence(seanceId, etudiantId)` et `etatsPresence(seanceId, ids)` pour une séance ;
@@ -58,24 +58,49 @@ sans action du formateur.
   des QCM de l'IA est facultative. Un devoir automatique est proposé sans validation, une fois publié et
   créé depuis 8 h, soit le lendemain matin (`DELAI_DEVOIR_AUTO_HEURES`, voir § 4) ; le formateur peut seulement s'y opposer (C7).
 
+### Décisions de la revue (8 octobre 2026)
+
+- **D1, salle émargée** : au moins 3 étudiants du campus émargés dans sa salle **et** au moins 25 % des
+  étudiants de ce campus attendus à la séance (`SALLE_EMARGES_MINIMUM`, `SALLE_PART_MINIMUM` dans
+  `presence.ts`). En dessous, les autres restent `inconnu`.
+- **D2, exercices automatiques** : leurs copies ne relancent jamais le formateur ; elles sont comptées à
+  part pour la direction et leur correction reste facultative.
+- **D3, un seul rappel au démarrage du direct** (`rappelerDemarrage`, `participation-direct.ts`) : urgent,
+  il remplace « Dans 15 min ». Campus qui suit le cours : « en salle, scanne le QR de l'écran ; sinon,
+  rejoins le cours en ligne », vers `/emargement?seance=` ; déjà émargé : « tu es déjà compté présent » ;
+  sans campus : « En direct : entre maintenant ». La carte « live » de l'accueil mène aussi à l'émargement
+  tant que l'étudiant d'un campus qui suit le cours n'a pas émargé.
+- **D4, la révision paie l'effort** : chaque carte revue rapporte des points, juste ou non (une fois par
+  carte et par jour, plafond quotidien) ; la justesse ne pilote que les boîtes de répétition.
+- **D5, jamais de dernier désigné** : aucun classement, écran ni e-mail ne nomme une dernière place. Dans la
+  Coupe, un rang ne s'affiche que dans la moitié haute et jamais à 0 % (`rangVisible`) ; pendant le direct,
+  les campus se lisent en taux, sans rang ; l'e-mail « Ta semaine » ne donne aucun rang.
+
 ### Conséquences par chantier
 
 - **C6** devient d'abord « émargement et participation en salle » : l'écran de salle prend l'émargement en
   charge seul (QR plein écran au démarrage, puis vers +15 et +45 min pendant environ 60 s, compteur
-  « 34 émargés à Riviera » et classement des campus en direct) ; un rappel unique au démarrage du direct
-  (« Tu es en salle ? Scanne le QR de l'écran pour être compté présent », priorité `action`, jamais la nuit) ;
+  « 34 émargés à Riviera » et classement des campus en direct, en taux, sans rang) ; un rappel unique au
+  démarrage du direct (décision D3, voir plus bas) ;
   dans le Studio, « Afficher l'émargement » remet le QR sur toutes les salles ; après l'émargement, le
   téléphone passe en mode compagnon sans vidéo (« Tu es compté présent ✓ ») ; un mini-guide d'une page
   pour les chargés de cours (« vous n'avez rien à faire »), sur l'écran de salle avant le cours et dans le
   guide des salles. Le code serveur nouveau va dans `server/routes/participation-direct.ts` (tâche
   `planifier` qui repère les directs qui démarrent, par exemple) plutôt que dans `live.ts`.
 - **C2** : « Rattrape le cours manqué » seulement si l'état est `absent` ; sinon « Lis À retenir du dernier cours ».
+  Une séance n'est « rattrapée » qu'après un vrai travail (`sqlSeanceRattrapee` : replay suivi, quiz du cours
+  complet, quelques fiches ou cartes) ; l'ouvrir ne suffit pas. Le rappel du jour applique la même règle.
+  `ObjectifDuJour variante="grande"` remplace aussi, sur l'accueil, la carte d'un devoir non urgent : un seul
+  endroit dit quoi faire.
 - **C4** : un décrocheur se définit par l'absence d'**actes d'apprentissage** (révision, QCM, devoir, cours
   complet, émargement), jamais par des absences `inconnu`. Le motif `lives_manques` de `calculerAContacter`
   ne compte que des `absent` (après C8, ou filtré par `etatsPresence`).
 - **C5** : l'émargement rapporte des points ; la Coupe compte le taux d'émargement des séances et les actes
   d'apprentissage ; une séance sans aucun émargement dans un campus est neutre pour ce campus
-  (`sqlSalleEmargee`).
+  (`sqlSalleEmargee`). La présence ne peut que faire monter le taux d'un campus (le plus haut des deux
+  calculs est gardé). La semaine passée reste en clôture 48 h (recalculée, rien n'est annoncé) et n'est
+  figée qu'une fois, le mercredi à 1 h ; lundi et mardi, l'e-mail « Ta semaine » dit que les chiffres sont
+  provisoires.
 - **C7** : simplicité maximale ; « Après la séance » montre ce que la plateforme a fait (cours complet prêt,
   QCM envoyé, combien l'ont fait) au lieu de demander quelque chose.
 - **C8** : présence en trois états partout ; « à contacter » ne retient jamais une présence `inconnu` ;

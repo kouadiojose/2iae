@@ -370,7 +370,8 @@ export function enregistrerProgression(app: Express) {
         z.object({ jours: z.number().int().refine((n) => (OBJECTIFS_SEMAINE as readonly number[]).includes(n), "2, 3 ou 5 jours") }),
         req.body,
       );
-      // Les semaines terminées sont jugées avec l'ancien objectif ; le nouveau vaut dès cette semaine.
+      // Les semaines terminées sont jugées avec l'ancien objectif, sur un registre à jour ; le nouveau vaut dès cette semaine.
+      await rafraichirPersonne(u.id);
       await mettreAJourSemaines([u.id]);
       await db.execute(sql`
         INSERT INTO campus.objectifs_semaine (utilisateur_id, jours, maj_le) VALUES (${u.id}, ${jours}, now())

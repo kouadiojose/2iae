@@ -240,6 +240,20 @@ export function enregistrerAccueil(app: Express) {
         ),
       );
 
+      // Direct en cours suivi par une classe de son campus, et pas encore émargé : la carte mène à l'émargement
+      // (la page propose aussi de suivre en ligne). Les étudiants suivent d'abord le cours dans la salle de conférence.
+      const enDirect = lives.filter((l) => l.s.statut === "en_direct").map((l) => l.s);
+      const aEmarger = new Set<number>();
+      if (u.siteId !== null && enDirect.length) {
+        const r = await db.execute<{ id: number }>(sql`
+          SELECT s.id FROM campus.seances s
+          WHERE s.id = ANY(${`{${enDirect.map((x) => x.id).join(",")}}`}::int[])
+            AND EXISTS (SELECT 1 FROM campus.cours_classes cc JOIN campus.classes cl ON cl.id = cc.classe_id
+              WHERE cc.cours_id = s.cours_id AND cl.site_id = ${u.siteId})
+            AND NOT EXISTS (SELECT 1 FROM campus.presences p WHERE p.seance_id = s.id AND p.utilisateur_id = ${u.id} AND p.mode = 'salle')`);
+        for (const l of r.rows) aEmarger.add(Number(l.id));
+      }
+
       for (const { s, code, couleur, prenom, nom, localisation } of lives) {
         const i = intervenants.get(s.id);
         const lieu = i ? ville(i.id ? (lieuDe.get(i.id) ?? null) : null) : ville(localisation);
@@ -250,9 +264,9 @@ export function enregistrerAccueil(app: Express) {
             {
               type: "live",
               titre: s.titre,
-              detail: formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte.",
-              lien: `/live/${s.id}`,
-              bouton: "Rejoindre le live",
+              detail: `${formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte."}${aEmarger.has(s.id) ? " Tu es en salle ? Émarge pour être compté présent ; sinon, suis le cours en ligne." : ""}`,
+              lien: aEmarger.has(s.id) ? `/emargement?seance=${s.id}` : `/live/${s.id}`,
+              bouton: aEmarger.has(s.id) ? "Émarger ou suivre en ligne" : "Rejoindre le live",
               urgence: "haute",
               quand: (s.demarreeLe ?? s.debut).toISOString(),
               coursCode: code,

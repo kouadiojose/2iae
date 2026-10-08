@@ -263,11 +263,12 @@ const fr = {
   "email.semaine.section.cours_complets": "Cours complets à lire",
   "email.semaine.ligne.cours_complet": "{cours} : {titre}",
   "email.semaine.section.coupe": "Ta classe et ton campus",
-  "email.semaine.ligne.classe": "Ta classe : {rang} sur {total}, {taux} % de participation",
-  "email.semaine.ligne.campus": "Campus {campus} : {rang} sur {total}, {taux} % de participation",
-  // Hors de la moitié haute : jamais de rang (aucun « dernier »), seulement une progression positive. {n} points de pourcentage.
-  "email.semaine.ligne.classe.progres": "Ta classe progresse dans la Coupe : +{n} points de % sur la semaine d'avant",
-  "email.semaine.ligne.campus.progres": "Campus {campus} : en progrès dans la Coupe, +{n} points de % sur la semaine d'avant",
+  // Aucun rang dans l'e-mail (décision D5 : jamais « dernier ») : la participation, et « en progrès » si elle l'est.
+  "email.semaine.ligne.classe": "Ta classe : {taux} % de participation",
+  "email.semaine.ligne.classe.progres": "Ta classe : {taux} % de participation, en progrès dans la Coupe",
+  "email.semaine.ligne.campus": "Campus {campus} : {taux} % de participation",
+  "email.semaine.ligne.campus.progres": "Campus {campus} : {taux} % de participation, en progrès dans la Coupe",
+  "email.semaine.coupe.provisoire": "Chiffres provisoires : la Coupe de la semaine passée est arrêtée mercredi.",
   "email.semaine.rien": "Rien de prévu pour l'instant : profites-en pour relire un cours complet.",
   "email.semaine.bouton": "Ouvrir mon campus",
   "email.semaine.apres": "Tes rappels arrivent sur ton téléphone ; cet e-mail, une fois par semaine, le lundi matin.",

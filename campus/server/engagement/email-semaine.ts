@@ -5,7 +5,7 @@
 // Le lundi entre 6 h 45 et 9 h (heure locale), un e-mail par étudiant et par
 // semaine : ce qu'il a fait la semaine passée, les directs et les échéances
 // de la semaine qui commence, les cours complets qu'il n'a pas encore ouverts
-// et, si la Coupe existe (C5), la place de sa classe et de son campus. Un seul
+// et, si la Coupe existe (C5), la participation de sa classe et de son campus. Un seul
 // bouton, et « Ne plus recevoir ces e-mails », qui marche sans se connecter.
 //
 // Plafond : emails_par_jour (40 par défaut) pour tous les e-mails
@@ -14,8 +14,9 @@
 // de 16 h 40) : il ne les bloque jamais. Ce qui dépasse part les jours suivants
 // (jusqu'au jeudi), dans la même fenêtre ; ceux qui ne l'ont pas reçu la
 // semaine d'avant passent en premier (ce ne sont pas toujours les mêmes qui
-// attendent). La Coupe ne cite que la moitié haute des classés, jamais un
-// dernier (décision D5) : sinon, seulement une progression.
+// attendent). La Coupe n'y donne aucun rang (décision D5) : seulement la
+// participation de sa classe et de son campus, provisoire tant que la semaine
+// n'est pas figée.
 // En mode « essai » (par défaut), les lignes sont écrites en « simulation »
 // et rien ne part. Sans clé Resend, l'envoi est noté « echec », sans plantage.
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -27,9 +28,10 @@ import { envoyerEmail, gabaritEmail, type ContenuEmail } from "../mail";
 import { tableExiste } from "./tables";
 import { sqlDevoirProposable } from "./proposables";
 import { sqlEtatPresence } from "./presence";
+import { COUPE } from "./bareme";
 import { coursCompletsAOuvrir, coursCourt, decalageMinutes, entiers, lireReglage, quandEcheance, sqlActes, sqlCoursDe } from "./rappel-du-jour";
 import { ajouterJours, jourLocal, lundiDe, semaineIso, type Jour } from "@shared/engagement/calendrier";
-import { fenetreEmailSemaine, rangCitable, reserveRelances, type StatutRelance } from "@shared/engagement/relances";
+import { fenetreEmailSemaine, reserveRelances, type StatutRelance } from "@shared/engagement/relances";
 import { t, type CleRelances } from "@shared/textes/relances";
 import { formaterDate } from "@shared/textes";
 import { relancesEngagement } from "@shared/schema";
@@ -203,34 +205,30 @@ export async function composerEmailSemaine(e: EtudiantEmail, lundi: Jour, bouton
   );
   const lignesALire = (aLire.get(e.id) ?? []).map((x) => t("email.semaine.ligne.cours_complet", { ...tu, v: { cours: coursCourt(x.cours), titre: x.titre } }));
 
-  // La Coupe (C5) : place de sa classe et de son campus la semaine passée. Le rang n'est cité que
-  // dans la moitié haute des classés (total : les seuls classés de la ligue), jamais pour un dernier
-  // (D5) ; sinon une progression si elle est positive, sinon rien. Le taux est déjà en pourcentage.
+  // La Coupe (C5) : participation de sa classe et de son campus la semaine passée. Aucun rang
+  // (décision D5 : l'e-mail ne dit jamais à une classe ou à un campus qu'il est dernier) ; un taux
+  // seulement s'il n'est pas nul, et pour une classe d'au moins 5 inscrits (en dessous, le taux dirait
+  // ce qu'a fait un camarade). Le taux est déjà en pourcentage. Tant que la semaine n'est pas figée
+  // (le lundi et le mardi, avant mercredi 1 h), les chiffres sont dits provisoires et aucun « en
+  // progrès » n'est annoncé.
   const coupe = (await tableExiste("classements_semaine"))
     ? await facultatif(async () => {
         const semaine = semaineIso(ajouterJours(lundi, -7));
-        const r = await db.execute<{ portee: string; rang: number | null; total: number; rang_max: number | null; score: number; progression: number | null; taux: number | null }>(sql`
-          SELECT c.portee, c.rang, c.score, c.progression, round(c.taux_participation::numeric)::int AS taux,
-            x.total, x.rang_max
+        const r = await db.execute<{ portee: string; inscrits: number; progression: number | null; taux: number | null; figee: boolean }>(sql`
+          SELECT c.portee, c.inscrits, c.progression, round(c.taux_participation::numeric)::int AS taux, c.fige_le IS NOT NULL AS figee
           FROM campus.classements_semaine c
-          CROSS JOIN LATERAL (
-            SELECT count(*)::int AS total, max(k.rang)::int AS rang_max FROM campus.classements_semaine k
-            WHERE k.semaine = c.semaine AND k.portee = c.portee AND k.ligue IS NOT DISTINCT FROM c.ligue AND k.rang IS NOT NULL
-          ) x
           WHERE c.semaine::text = ${semaine} AND ((c.portee = 'classe' AND c.cible_id = ${e.classeId ?? -1}) OR (c.portee = 'campus' AND c.cible_id = ${e.siteId ?? -1}))`);
-        return r.rows
-          .filter((l) => l.rang)
-          .sort((x, y) => (x.portee === "classe" ? -1 : 1) - (y.portee === "classe" ? -1 : 1))
-          .map((l) => {
-            const classe = l.portee === "classe";
-            if (rangCitable({ rang: l.rang, total: l.total, rangMax: l.rang_max, score: Number(l.score) })) {
-              const v = { campus: e.site ?? "", rang: rangLisible(l.rang!), total: l.total, taux: l.taux ?? 0 };
-              return t(classe ? "email.semaine.ligne.classe" : "email.semaine.ligne.campus", { ...tu, v });
-            }
-            const progres = Math.round(Number(l.progression ?? 0));
-            return progres > 0 ? t(classe ? "email.semaine.ligne.classe.progres" : "email.semaine.ligne.campus.progres", { ...tu, v: { campus: e.site ?? "", n: progres } }) : null;
-          })
-          .filter((x): x is string => Boolean(x));
+        const montrees = r.rows
+          .filter((l) => (l.taux ?? 0) > 0 && (l.portee === "campus" ? l.inscrits > 0 : l.inscrits >= COUPE.tailleMinClasse))
+          .sort((x, y) => (x.portee === "classe" ? -1 : 1) - (y.portee === "classe" ? -1 : 1));
+        const lignes = montrees.map((l) => {
+          const classe = l.portee === "classe";
+          const progres = l.figee && Math.round(Number(l.progression ?? 0)) > 0;
+          const cle = classe ? (progres ? "email.semaine.ligne.classe.progres" : "email.semaine.ligne.classe") : progres ? "email.semaine.ligne.campus.progres" : "email.semaine.ligne.campus";
+          return t(cle, { ...tu, v: { campus: e.site ?? "", taux: l.taux ?? 0 } });
+        });
+        if (lignes.length && montrees.some((l) => !l.figee)) lignes.push(t("email.semaine.coupe.provisoire", tu));
+        return lignes;
       }, [] as string[])
     : [];
 
@@ -269,9 +267,6 @@ export async function composerEmailSemaine(e: EtudiantEmail, lundi: Jour, bouton
     },
   };
 }
-
-/** « 1er », « 2e », « 3e ». */
-const rangLisible = (n: number) => (n === 1 ? "1er" : `${n}e`);
 
 // ── Passage de l'e-mail du lundi ───────────────────────────────────────────
 

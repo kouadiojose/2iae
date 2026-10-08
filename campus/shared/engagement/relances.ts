@@ -345,16 +345,6 @@ export function deciderDecrocheur(c: ContexteDecrocheur): DecisionDecrocheur {
   return { action: "rien", raison: "attendre" };
 }
 
-/**
- * Décision D5 : l'e-mail de la semaine ne cite le rang d'une classe ou d'un campus que dans la
- * moitié haute des classés (même règle que la page /coupe), avec un taux non nul, et jamais à
- * égalité avec le dernier (seul de sa ligue, ou tous ex aequo). Sinon, seulement une progression.
- */
-export function rangCitable(l: { rang: number | null; total: number; rangMax: number | null; score: number }): boolean {
-  if (!l.rang || l.rangMax === null || l.score <= 0) return false;
-  return l.rang <= Math.ceil(l.total / 2) && l.rang < l.rangMax;
-}
-
 /** L'e-mail de la semaine peut-il partir à cet instant ? Lundi 6 h 45 – 9 h, et les jours suivants pour le reste du quota. */
 export function fenetreEmailSemaine(maintenant: Date | number, fuseau: string | null, jour: Jour, lundi: Jour): boolean {
   const m = minutesLocales(maintenant, fuseau);

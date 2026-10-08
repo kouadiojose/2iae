@@ -59,6 +59,7 @@ import {
   type TroisEtats,
 } from "@shared/engagement/indicateurs";
 import type { QuestionQuiz } from "@shared/schema";
+import { sqlCorrigeParLeCampus } from "../corrections-socle";
 
 export type Perimetre = number[] | null;
 export type FiltreEngagement = { jours: number; siteId: number | null; classeId: number | null };
@@ -944,15 +945,17 @@ async function blocRappels(f: FiltreEngagement, sites: Perimetre, debut: Jour, e
 
 // ── 5. Copies en attente par formateur ─────────────────────────────────────
 
-/** Le devoir « d » vient de la routine du soir (devoirs_seances.devoir_ids). */
-const sqlAutomatique = sql`EXISTS (SELECT 1 FROM campus.devoirs_seances ds WHERE ds.devoir_ids @> jsonb_build_array(d.id))`;
+/** Le devoir « d » est corrigé par le campus (correction automatique du 8 octobre 2026, D6). */
+const sqlAutomatique = sqlCorrigeParLeCampus("d");
+/** La copie « r » est retenue par le campus : le formateur doit la regarder. */
+const sqlARevoir = sql`EXISTS (SELECT 1 FROM campus.corrections_auto ca WHERE ca.rendu_id = r.id AND ca.etat = 'a_revoir')`;
 
 /**
- * Copies en attente de correction, par formateur : seulement les devoirs que
- * le formateur a lui-même donnés. Les copies des exercices automatiques de la
- * routine du soir n'y entrent jamais (décision D2 : leur correction est
- * facultative, jamais un retard reproché au formateur) ; copiesAutomatiques
- * les compte à part pour la direction.
+ * Copies en attente de correction, par formateur : les devoirs que le campus
+ * ne corrige pas, et les copies que le campus a retenues (« à revoir »). Les
+ * autres copies des devoirs corrigés par le campus n'y entrent jamais (D6 :
+ * jamais un retard reproché au formateur) ; copiesAutomatiques les compte à
+ * part pour la direction.
  */
 async function copiesParFormateur(f: FiltreEngagement, sites: Perimetre, debut: Jour): Promise<CopiesFormateur[]> {
   const r = await ex().execute<{
@@ -977,7 +980,7 @@ async function copiesParFormateur(f: FiltreEngagement, sites: Perimetre, debut: 
     JOIN campus.devoirs d ON d.id = r.devoir_id AND d.type = 'depot'
     JOIN campus.cours c ON c.id = d.cours_id
     LEFT JOIN campus.utilisateurs fo ON fo.id = c.formateur_id
-    WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige') AND NOT ${sqlAutomatique}
+    WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige') AND (NOT ${sqlAutomatique} OR ${sqlARevoir})
     GROUP BY c.formateur_id, fo.prenom, fo.nom
     HAVING count(*) FILTER (WHERE r.statut = 'rendu') > 0
       OR count(*) FILTER (WHERE r.statut = 'corrige' AND r.corrige_le >= ${`${debut}T00:00:00Z`}::timestamptz) > 0
@@ -993,7 +996,7 @@ async function copiesParFormateur(f: FiltreEngagement, sites: Perimetre, debut: 
   }));
 }
 
-/** Copies des exercices automatiques (correction facultative), tous formateurs confondus : ni retard, ni délai cible. */
+/** Copies des devoirs corrigés par le campus, tous formateurs confondus : ni retard, ni délai cible. */
 async function copiesAutomatiques(f: FiltreEngagement, sites: Perimetre, debut: Jour): Promise<CopiesAutomatiques> {
   const [l] = (
     await ex().execute<CopiesAutomatiques>(sql`
@@ -1003,7 +1006,7 @@ async function copiesAutomatiques(f: FiltreEngagement, sites: Perimetre, debut: 
       FROM campus.rendus r
       JOIN pop p ON p.uid = r.etudiant_id
       JOIN campus.devoirs d ON d.id = r.devoir_id AND d.type = 'depot'
-      WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige') AND ${sqlAutomatique}`)
+      WHERE r.rendu_le IS NOT NULL AND r.statut IN ('rendu', 'corrige') AND ${sqlAutomatique} AND NOT ${sqlARevoir}`)
   ).rows;
   return { enAttente: l?.enAttente ?? 0, corrigees: l?.corrigees ?? 0 };
 }

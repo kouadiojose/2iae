@@ -114,6 +114,7 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
         onRecu={recuArrive}
         onEnFile={setCleEnFile}
         onAnnuler={renduEnvoye ? () => setRemplacer(false) : undefined}
+        correctionCampus={Boolean(d.correctionCampus)}
       />
     );
   } else principal = null;

@@ -62,9 +62,12 @@ export function ZoneRendu({
   onRecu,
   onEnFile,
   onAnnuler,
+  correctionCampus = false,
 }: {
   utilisateurId: number;
   devoir: { id: number; titre: string };
+  /** Devoir corrigé par le campus : conseil pour une copie lisible (une vidéo seule va au formateur). */
+  correctionCampus?: boolean;
   /** Une copie est déjà rendue : l'envoi la remplacera. */
   remplacement: boolean;
   renduPrecedentLe: string | null;
@@ -194,11 +197,13 @@ export function ZoneRendu({
           {remplacement ? "Remplacer ma copie" : "Rendre mon devoir"}
         </h2>
         <p className="text-[15px] text-texte-pale">Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger.</p>
-        {/* Tous les dépôts sont corrigés par le campus (8 octobre 2026), sauf une vidéo seule. */}
-        <p className="mt-1.5 flex items-start gap-2 rounded-xl bg-orange-pale px-3 py-2.5 text-sm leading-snug text-texte-doux">
-          <Lightbulb className="mt-px h-4 w-4 shrink-0 text-orange-fonce" />
-          {tc("conseil.depot")}
-        </p>
+        {/* Dépôt corrigé par le campus (8 octobre 2026) : une copie lisible, une vidéo seule allant au formateur. */}
+        {correctionCampus && (
+          <p className="mt-1.5 flex items-start gap-2 rounded-xl bg-orange-pale px-3 py-2.5 text-sm leading-snug text-texte-doux">
+            <Lightbulb className="mt-px h-4 w-4 shrink-0 text-orange-fonce" />
+            {tc("conseil.depot")}
+          </p>
+        )}
       </div>
 
       <input ref={photo} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void ajouter(e.target.files)} />

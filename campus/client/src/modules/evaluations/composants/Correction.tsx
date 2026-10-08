@@ -1,5 +1,7 @@
 // Outils de la correction : visionneuse de copie (photos zoomables, PDF,
-// fichiers) et commentaire vocal (MediaRecorder, 60 s au plus).
+// vidéo et son lus sur place, autres fichiers) et commentaire vocal
+// (MediaRecorder, 60 s au plus). Le campus ne regarde pas les vidéos
+// (correction automatique) : le formateur doit pouvoir les lire ici.
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, RotateCcw, Trash2, ZoomIn, ZoomOut, RotateCw, FileText, Download } from "lucide-react";
 import { Bouton } from "@/components/ui/bouton";
@@ -10,14 +12,16 @@ import { duree } from "@/lib/dates";
 import { taille, cn } from "@/lib/utils";
 import type { PieceJointe } from "@shared/schema";
 
-/** Pages et fichiers d'une copie : photos en grand (zoom, rotation), PDF intégré, autres fichiers à télécharger. */
+/** Pages et fichiers d'une copie : photos en grand (zoom, rotation), PDF intégré, vidéo et son lus sur place, autres fichiers à télécharger. */
 export function Visionneuse({ fichiers, texte }: { fichiers: PieceJointe[]; texte: string }) {
   const [zoom, setZoom] = useState<PieceJointe | null>(null);
   const [grand, setGrand] = useState(false);
   const [rotation, setRotation] = useState(0);
   const images = fichiers.filter((f) => f.mime.startsWith("image/"));
   const pdfs = fichiers.filter((f) => f.mime === "application/pdf");
-  const autres = fichiers.filter((f) => !f.mime.startsWith("image/") && f.mime !== "application/pdf");
+  const videos = fichiers.filter((f) => f.mime.startsWith("video/"));
+  const sons = fichiers.filter((f) => f.mime.startsWith("audio/"));
+  const autres = fichiers.filter((f) => !f.mime.startsWith("image/") && f.mime !== "application/pdf" && !f.mime.startsWith("video/") && !f.mime.startsWith("audio/"));
 
   const ouvrir = (f: PieceJointe) => {
     setZoom(f);
@@ -46,6 +50,27 @@ export function Visionneuse({ fichiers, texte }: { fichiers: PieceJointe[]; text
             <span className="flex-1 truncate font-semibold">{f.nom}</span>
             <span className="font-mono text-xs text-texte-gris">{taille(f.taille)}</span>
           </a>
+        </div>
+      ))}
+      {videos.map((f) => (
+        <figure key={f.id} className="overflow-hidden rounded-2xl border border-ligne bg-encre">
+          {/* preload="metadata" : rien n'est téléchargé avant la lecture (4G). */}
+          <video controls playsInline preload="metadata" src={f.url} className="max-h-[70vh] w-full" aria-label={f.nom} />
+          <figcaption className="flex items-center justify-between gap-3 border-t border-ligne bg-white px-3 py-2 font-mono text-xs text-texte-gris">
+            <span className="truncate">{f.nom}</span>
+            <a href={`${f.url}?telecharger=1`} className="flex shrink-0 items-center gap-1 font-semibold">
+              <Download className="h-3.5 w-3.5" aria-hidden /> {taille(f.taille)}
+            </a>
+          </figcaption>
+        </figure>
+      ))}
+      {sons.map((f) => (
+        <div key={f.id} className="flex flex-col gap-1.5 rounded-2xl border border-ligne bg-creme p-3">
+          <audio controls preload="none" src={f.url} className="w-full" aria-label={f.nom} />
+          <span className="flex justify-between gap-3 font-mono text-xs text-texte-gris">
+            <span className="truncate">{f.nom}</span>
+            <span className="shrink-0">{taille(f.taille)}</span>
+          </span>
         </div>
       ))}
       {autres.map((f) => (

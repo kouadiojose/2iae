@@ -3,10 +3,17 @@
 // texte, fichiers), la notation par critère, le commentaire écrit et vocal,
 // la correction proposée par l'IA (brouillon à valider), les touches J/K pour
 // passer d'une copie à l'autre, et « Publier les notes ».
+//
+// Correction automatique (8 octobre 2026) : le campus note les copies avec le
+// corrigé validé et publie la note. Ici le formateur voit « Corrigé par le
+// campus », la justification critère par critère, les copies en cours de
+// correction ou retenues (et pourquoi), les relectures demandées ; il garde la
+// main et peut changer toute note. Une copie que le campus ne note pas
+// n'apparaît plus « à corriger » tant qu'il s'en occupe.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronLeft, ChevronRight, Send, Sparkles, AlertTriangle, CheckCheck, Upload, BookOpenCheck, PenLine, Keyboard, FileImage } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Send, Sparkles, AlertTriangle, CheckCheck, Upload, BookOpenCheck, PenLine, Keyboard, FileImage, School } from "lucide-react";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
@@ -15,25 +22,41 @@ import { Avatar, Badge, Chargement, EtatVide, Erreur } from "@/components/ui/div
 import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { useMoiConnecte, estEquipe } from "@/lib/auth";
+import { useTextes } from "@/lib/textes";
 import { useCanal } from "@/lib/flux";
 import { patch, post, televerser, ErreurApi } from "@/lib/api";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { jourLong, heure, heureDouble } from "@/lib/dates";
 import { cn, pluriel, taille } from "@/lib/utils";
-import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, RecuDepot } from "@shared/schema";
+import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, LigneNoteDetail, RecuDepot } from "@shared/schema";
+import type { CorrigeAValider } from "@shared/engagement/corrections";
+import { selonNombre, t as tc } from "@shared/textes/corrections";
 import { Visionneuse, EnregistreurVocal } from "./composants/Correction";
+import { EtatCorrectionCopie, JustificationCritere, TraiterRelecture, texteEcheance } from "./composants/CorrectionCampus";
 import { CorrectionQuiz } from "./composants/CorrectionQuiz";
 import { envoyeeEnDiffere, nombre } from "./outils";
 
-type Filtre = "toutes" | "a_corriger" | "rendues" | "retard" | "non_rendues";
+type Filtre = "toutes" | "a_corriger" | "a_revoir" | "rendues" | "retard" | "non_rendues";
+
+/** Le campus s'occupe de cette copie (correction en file, ou nouvel essai après un échec) : rien à faire. */
+const campusSenOccupe = (c: CopieResume) => c.correctionAuto?.etat === "en_file" || c.correctionAuto?.etat === "erreur";
 
 const FILTRES: Record<Filtre, (c: CopieResume) => boolean> = {
   toutes: () => true,
-  a_corriger: (c) => c.etat !== "non_rendu" && c.note === null,
+  // Hors du circuit du campus seulement : celles qu'il corrige ne sont pas à faire, celles qu'il retient sont « à revoir ».
+  a_corriger: (c) => c.etat !== "non_rendu" && c.note === null && !c.correctionAuto,
+  // Retenue par le campus, ou relecture demandée par l'étudiant : le formateur décide.
+  a_revoir: (c) => c.etat !== "non_rendu" && (c.correctionAuto?.etat === "a_revoir" || Boolean(c.relectureOuverte)),
   rendues: (c) => c.etat !== "non_rendu",
   retard: (c) => c.etat === "en_retard",
   non_rendues: (c) => c.etat === "non_rendu",
 };
+
+/** La ligne de note d'un critère : par son nom, sinon par son rang (même nombre de critères). */
+function ligneDuCritere(detail: LigneNoteDetail[] | null | undefined, critere: string, i: number, n: number): LigneNoteDetail | undefined {
+  if (!detail?.length) return undefined;
+  return detail.find((l) => l.critere === critere) ?? (detail.length === n ? detail[i] : undefined);
+}
 
 const quand = (iso: string) => `${jourLong(iso)} à ${heure(iso)}`;
 
@@ -43,6 +66,7 @@ export default function PageCopies({ id }: { id: string }) {
   const recherche = new URLSearchParams(useSearch());
   const [chemin, naviguer] = useLocation();
   const { data, isLoading, error, refetch } = useQuery<ListeCopies>({ queryKey: ["/api/devoirs", devoirId, "copies"], enabled: Number.isInteger(devoirId) });
+  const txc = useTextes(tc);
   const [filtre, setFiltre] = useState<Filtre>("toutes");
   const [publier, setPublier] = useState(false);
   const [publication, setPublication] = useState(false);
@@ -100,6 +124,12 @@ export default function PageCopies({ id }: { id: string }) {
   const { devoir, compteurs } = data;
   const quiz = devoir.type === "quiz";
   const nonRendues = copies.filter((c) => c.etat === "non_rendu").length;
+  // Correction automatique : ce qui reste vraiment au formateur, et ce que fait le campus.
+  const avecCampus = copies.some((c) => c.correctionAuto || c.origineNote === "campus");
+  const aCorriger = avecCampus ? copies.filter(FILTRES.a_corriger).length : compteurs.aCorriger;
+  const aRevoir = copies.filter(FILTRES.a_revoir).length;
+  const noteesCampus = copies.filter((c) => c.origineNote === "campus" && c.note !== null).length;
+  const enCoursCampus = copies.filter((c) => c.etat !== "non_rendu" && c.note === null && campusSenOccupe(c)).length;
 
   async function publierNotes() {
     setPublication(true);
@@ -150,9 +180,18 @@ export default function PageCopies({ id }: { id: string }) {
         </Badge>
         {compteurs.enRetard > 0 && <Badge ton="danger">{compteurs.enRetard} en retard</Badge>}
         <Badge ton="gris">{nonRendues} non {quiz ? "faite" : "rendue"}{nonRendues > 1 ? "s" : ""}</Badge>
-        {!quiz && <Badge ton="orange">{compteurs.aCorriger} à corriger</Badge>}
+        {!quiz && (aCorriger > 0 || !avecCampus) && <Badge ton="orange">{aCorriger} à corriger</Badge>}
+        {!quiz && aRevoir > 0 && <Badge ton="alerte">{aRevoir} à revoir</Badge>}
+        {!quiz && noteesCampus > 0 && (
+          <Badge ton="succes">
+            <School className="h-3 w-3" aria-hidden /> {selonNombre(txc, "copies.notees", noteesCampus)}
+          </Badge>
+        )}
+        {!quiz && enCoursCampus > 0 && <Badge ton="gris">{selonNombre(txc, "copies.enFile", enCoursCampus)}</Badge>}
         {!quiz && compteurs.publiees > 0 && <Badge ton="succes">{compteurs.publiees} publiée{compteurs.publiees > 1 ? "s" : ""}</Badge>}
       </div>
+
+      {!quiz && <BandeauCorrige devoirId={devoirId} />}
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* Liste des copies (sur téléphone : masquée quand une copie est ouverte). */}
@@ -162,6 +201,7 @@ export default function PageCopies({ id }: { id: string }) {
               [
                 { valeur: "toutes", libelle: "Toutes", n: copies.length },
                 ...(quiz ? [] : [{ valeur: "a_corriger" as Filtre, libelle: "À corriger", n: copies.filter(FILTRES.a_corriger).length }]),
+                ...(quiz || !aRevoir ? [] : [{ valeur: "a_revoir" as Filtre, libelle: txc("filtre.aRevoir"), n: aRevoir }]),
                 { valeur: "rendues", libelle: quiz ? "Terminées" : "Rendues", n: copies.filter(FILTRES.rendues).length },
                 ...(quiz ? [] : [{ valeur: "retard" as Filtre, libelle: "En retard", n: copies.filter(FILTRES.retard).length }]),
                 { valeur: "non_rendues", libelle: quiz ? "Pas faites" : "Non rendues", n: copies.filter(FILTRES.non_rendues).length },
@@ -210,17 +250,24 @@ export default function PageCopies({ id }: { id: string }) {
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1">
                       {c.note !== null ? (
-                        <span className={cn("text-[17px] font-black tabular-nums", c.noteBrouillon ? "text-texte-gris" : "text-encre")}>
+                        <span className={cn("flex items-center gap-1 text-[17px] font-black tabular-nums", c.noteBrouillon ? "text-texte-gris" : "text-encre")}>
+                          {c.origineNote === "campus" && <School className="h-3.5 w-3.5 text-succes" aria-label={txc("campus.badge")} />}
                           {nombre(c.note)}
                           <span className="text-[11px] font-normal">/{nombre(devoir.bareme)}</span>
                         </span>
                       ) : null}
                       {c.etat === "non_rendu" ? (
                         <Badge ton="gris" className="px-2 py-0.5 text-[10px]">Non rendu</Badge>
+                      ) : c.relectureOuverte ? (
+                        <Badge ton="orange" className="px-2 py-0.5 text-[10px]">{txc("liste.relecture")}</Badge>
+                      ) : c.correctionAuto?.etat === "a_revoir" && c.note === null ? (
+                        <Badge ton="alerte" className="px-2 py-0.5 text-[10px]">{txc("liste.aRevoir")}</Badge>
                       ) : c.etat === "en_retard" ? (
                         <Badge ton="danger" className="px-2 py-0.5 text-[10px]">En retard</Badge>
                       ) : c.noteBrouillon ? (
                         <Badge ton="alerte" className="px-2 py-0.5 text-[10px]">À publier</Badge>
+                      ) : c.note === null && campusSenOccupe(c) ? (
+                        <Badge ton="gris" className="px-2 py-0.5 text-[10px]">{txc("liste.enFile")}</Badge>
                       ) : c.note === null ? (
                         <Badge ton="orange" className="px-2 py-0.5 text-[10px]">À corriger</Badge>
                       ) : null}
@@ -230,7 +277,16 @@ export default function PageCopies({ id }: { id: string }) {
               ))}
             </ul>
           ) : (
-            <EtatVide titre="Aucune copie ici." texte={filtre === "a_corriger" ? "Toutes les copies rendues ont une note. Pensez à publier les notes." : "Changez de filtre pour voir les autres copies."} />
+            <EtatVide
+              titre="Aucune copie ici."
+              texte={
+                filtre === "a_corriger"
+                  ? avecCampus
+                    ? "Rien à corriger vous-même : le campus s'occupe des autres copies."
+                    : "Toutes les copies rendues ont une note. Pensez à publier les notes."
+                  : "Changez de filtre pour voir les autres copies."
+              }
+            />
           )}
           <p className="hidden items-center gap-2 text-xs text-texte-gris lg:flex">
             <Keyboard className="h-4 w-4" /> Touches J et K : copie suivante et précédente.
@@ -356,13 +412,18 @@ function CopieOuverte({
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
             {c.renduLe && (
-              <Badge ton={c.enRetard ? "danger" : "succes"}>
+              // Sur téléphone, la date complète passe à la ligne au lieu de dépasser l'écran.
+              <Badge ton={c.enRetard ? "danger" : "succes"} className="whitespace-normal">
                 {quiz ? "Terminée" : "Rendue"} {quand(c.renduLe)}
                 {!quiz && (c.enRetard ? " · en retard" : " · à l'heure")}
               </Badge>
             )}
             {c.recu && <Badge ton="gris">Reçu {c.recu}</Badge>}
-            {c.deposePar && <Badge ton="alerte">Copie papier déposée par {c.deposePar.prenom} {c.deposePar.nom}</Badge>}
+            {c.deposePar && (
+              <Badge ton="alerte" className="whitespace-normal">
+                Copie papier déposée par {c.deposePar.prenom} {c.deposePar.nom}
+              </Badge>
+            )}
           </div>
           {envoyeeEnDiffere(c.prepareLe, c.renduLe) && c.prepareLe && <p className="text-sm text-texte-pale">Préparée sur le téléphone à {heure(c.prepareLe)} (hors ligne), arrivée à {c.renduLe ? heure(c.renduLe) : "—"}. L'heure d'arrivée fait foi.</p>}
         </Carte>
@@ -396,6 +457,7 @@ function CopieOuverte({
               <span className="text-xl text-texte-gris">/{nombre(bareme)}</span>
             </span>
           )}
+          <EtatCorrectionCopie copie={c} bareme={bareme} />
           {c.commentaire && <p className="whitespace-pre-line text-[15px] text-texte-doux">{c.commentaire}</p>}
           <span className="text-sm text-texte-pale">Ce cours est suivi par plusieurs campus : seul son formateur le corrige et publie les notes.</span>
         </Carte>
@@ -407,7 +469,11 @@ function CopieOuverte({
   );
 }
 
-/** Notation par critère, commentaire écrit et vocal, proposition de l'IA. */
+/**
+ * Notation par critère, commentaire écrit et vocal, proposition de l'IA. Correction automatique : ce que
+ * le campus a fait de la copie (note publiée, en cours, retenue et pourquoi), sa justification sous chaque
+ * critère, la relecture demandée par l'étudiant ; le formateur peut toujours changer la note.
+ */
 function PanneauNotation({
   copie,
   bareme,
@@ -423,20 +489,36 @@ function PanneauNotation({
   onSuivante: () => void;
   derniere: boolean;
 }) {
+  const txc = useTextes(tc);
   const criteres = grille.length ? grille : null;
-  const initialDetail = () =>
-    criteres ? criteres.map((g) => copie.noteDetail?.find((l) => l.critere === g.critere)?.obtenu ?? null).map((v) => (v === null ? "" : String(v))) : [];
+  // Lignes de la note actuelle (celle du campus, avec sa justification, ou celle d'un formateur).
+  const lignes = criteres ? criteres.map((g, i) => ligneDuCritere(copie.noteDetail, g.critere, i, criteres.length)) : [];
+  const initialDetail = () => lignes.map((l) => (l ? String(l.obtenu) : ""));
   const [detail, setDetail] = useState<string[]>(initialDetail);
   const [globale, setGlobale] = useState(copie.note === null ? "" : String(copie.note));
   const [commentaire, setCommentaire] = useState(copie.commentaire ?? "");
   const [depuisIa, setDepuisIa] = useState(false);
-  const [envoi, setEnvoi] = useState(false);
+  const [envoi, setEnvoi] = useState<"enregistrer" | "envoyer" | null>(null);
   const [demandeIa, setDemandeIa] = useState(false);
   const proposition = copie.propositionIa;
+  // Une copie retenue pour une consigne cachée garde la proposition du campus (non publiée).
+  const propositionDuCampus = copie.correctionAuto?.etat === "a_revoir" && copie.correctionAuto.raison === "alerte";
 
   const valeurs = detail.map((v) => (v === "" ? null : Number(v.replace(",", "."))));
   const total = criteres ? (valeurs.every((v) => v === null) ? null : valeurs.reduce<number>((s, v) => s + (v ?? 0), 0)) : globale === "" ? null : Number(globale.replace(",", "."));
   const publiee = copie.statut === "corrige";
+  // Dans le circuit du campus, une note posée par le formateur part tout de suite chez l'étudiant (comme celles du campus).
+  const envoiDirect = !publiee && Boolean(copie.correctionAuto);
+  const relecture = copie.relecture?.statut === "ouverte" ? copie.relecture : null;
+
+  /** La justification d'un critère suit sa valeur : gardée tant que les points n'ont pas changé. */
+  function justificationGardee(i: number, valeur: number | null): string | undefined {
+    const l = lignes[i];
+    if (l?.justification && valeur !== null && l.obtenu === valeur) return l.justification;
+    const ia = depuisIa && proposition ? proposition.detail.find((x) => x.critere === criteres?.[i].critere) : undefined;
+    if (ia?.justification && valeur !== null && ia.obtenu === valeur) return ia.justification;
+    return undefined;
+  }
 
   function reprendreIa() {
     if (!proposition) return;
@@ -466,36 +548,58 @@ function PanneauNotation({
     if (e instanceof ErreurApi && e.statut === 409) void rafraichir("/api/rendus", "/api/devoirs");
   }
 
-  async function enregistrer(suivante: boolean, corpsEnPlus?: Record<string, unknown>) {
-    setEnvoi(true);
+  async function enregistrer(suivante: boolean, corpsEnPlus?: Record<string, unknown>, envoyer = false) {
+    setEnvoi(envoyer ? "envoyer" : "enregistrer");
     try {
       let corps: Record<string, unknown> = { commentaire, ...corpsEnPlus };
       if (!corpsEnPlus) {
         if (criteres) {
           if (valeurs.some((v, i) => v !== null && (Number.isNaN(v) || v < 0 || v > criteres[i].points))) throw new Error("Une note de critère est hors limites.");
-          corps = { ...corps, noteDetail: criteres.map((g, i) => ({ critere: g.critere, points: g.points, obtenu: valeurs[i] ?? 0 })), note: total };
+          corps = {
+            ...corps,
+            noteDetail: criteres.map((g, i) => {
+              const justification = justificationGardee(i, valeurs[i]);
+              return { critere: g.critere, points: g.points, obtenu: valeurs[i] ?? 0, ...(justification ? { justification } : {}) };
+            }),
+            note: total,
+          };
           if (valeurs.every((v) => v === null)) corps = { commentaire, note: null, noteDetail: null };
         } else {
           if (total !== null && (Number.isNaN(total) || total < 0 || total > bareme)) throw new Error(`La note doit être entre 0 et ${nombre(bareme)}.`);
           corps = { ...corps, note: total };
         }
       }
+      if (envoyer && (total === null || Number.isNaN(total))) throw new Error("Choisissez une note avant de l'envoyer.");
       // renduLe : la copie corrigée est bien celle affichée (pas une copie remplacée entre-temps).
-      const maj = await patch<CopieDetail>(`/api/rendus/${copie.id}/correction`, { ...corps, renduLe: copie.renduLe });
+      let maj = await patch<CopieDetail>(`/api/rendus/${copie.id}/correction`, { ...corps, renduLe: copie.renduLe });
+      if (envoyer) {
+        await post(`/api/enseigner/rendus/${copie.id}/envoyer`);
+        maj = { ...maj, statut: "corrige" };
+      }
       queryClient.setQueryData(["/api/rendus", copie.id], maj);
-      await rafraichir("/api/devoirs");
-      if (!corpsEnPlus) toast(publiee ? "Note mise à jour : l'étudiant est prévenu." : "Correction enregistrée (pas encore publiée).");
+      await rafraichir("/api/devoirs", ...(envoyer ? ["/api/rendus", "/api/enseigner"] : []));
+      if (!corpsEnPlus)
+        toast(envoyer ? txc("copie.envoyee", { v: { prenom: copie.etudiant.prenom } }) : publiee ? "Note mise à jour : l'étudiant est prévenu." : "Correction enregistrée (pas encore publiée).");
       if (suivante && !derniere) onSuivante();
     } catch (e) {
       toastErreur(e);
       copieRemplacee(e);
     } finally {
-      setEnvoi(false);
+      setEnvoi(null);
     }
   }
 
   return (
     <Carte className="flex flex-col gap-5 xl:sticky xl:top-24">
+      {relecture && (
+        <section aria-labelledby={`relecture-${copie.id}`} className="flex flex-col gap-2 rounded-2xl border border-orange/60 bg-orange-pale/50 p-3">
+          <h3 id={`relecture-${copie.id}`} className="text-[15px] font-extrabold">
+            {txc("relecture.titre")}
+          </h3>
+          <TraiterRelecture relecture={relecture} prenom={copie.etudiant.prenom} note={copie.note} bareme={bareme} />
+        </section>
+      )}
+
       <div className="flex items-end justify-between gap-3">
         <div>
           <span className="font-mono text-xs uppercase tracking-wider text-texte-gris">Note</span>
@@ -507,13 +611,16 @@ function PanneauNotation({
         {publiee ? <Badge ton="succes">Publiée</Badge> : copie.note !== null ? <Badge ton="alerte">Pas encore publiée</Badge> : <Badge ton="orange">À corriger</Badge>}
       </div>
 
+      <EtatCorrectionCopie copie={copie} bareme={bareme} className="-mt-2" />
+
       {proposition && (
         <div className="flex flex-col gap-2 rounded-2xl border border-orange/50 bg-orange-pale/60 p-3">
           <div className="flex items-center justify-between gap-2">
-            <Badge ton="orange">
-              <Sparkles className="h-3 w-3" /> Proposé par l'IA · {nombre(proposition.note)}/{nombre(bareme)}
+            <Badge ton="orange" className="whitespace-normal">
+              <Sparkles className="h-3 w-3 shrink-0" />{" "}
+              {txc(propositionDuCampus ? "campus.proposition" : "ia.proposition", { v: { note: nombre(proposition.note), bareme: nombre(bareme) } })}
             </Badge>
-            <Bouton variante="encre" taille="sm" onClick={reprendreIa}>
+            <Bouton variante="encre" taille="sm" onClick={reprendreIa} className="min-h-[40px] shrink-0">
               Reprendre
             </Bouton>
           </div>
@@ -523,7 +630,7 @@ function PanneauNotation({
             </p>
           )}
           <p className="text-sm text-texte-doux">{proposition.commentaire}</p>
-          <p className="text-xs text-texte-gris">Une proposition, jamais une note : c'est vous qui décidez.</p>
+          <p className="text-xs text-texte-gris">{txc(propositionDuCampus ? "campus.proposition.aide" : "ia.proposition.aide")}</p>
         </div>
       )}
 
@@ -531,6 +638,7 @@ function PanneauNotation({
         <ul className="flex flex-col gap-3">
           {criteres.map((g, i) => {
             const ia = proposition?.detail.find((l) => l.critere === g.critere);
+            const justification = lignes[i]?.justification && valeurs[i] === lignes[i]?.obtenu ? lignes[i]?.justification : undefined;
             return (
               <li key={g.critere} className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-3">
@@ -571,9 +679,13 @@ function PanneauNotation({
                     </button>
                   ))}
                 </div>
+                {justification && <JustificationCritere texte={justification} />}
                 {ia && (
                   <p className="text-[13px] text-texte-gris">
-                    <span className="font-semibold text-orange-fonce">IA : {nombre(ia.obtenu)}/{nombre(g.points)}</span> · {ia.justification}
+                    <span className="font-semibold text-orange-fonce">
+                      {propositionDuCampus ? "Campus" : "IA"} : {nombre(ia.obtenu)}/{nombre(g.points)}
+                    </span>{" "}
+                    · {ia.justification}
                   </p>
                 )}
               </li>
@@ -606,7 +718,7 @@ function PanneauNotation({
         value={commentaire}
         onChange={(e) => setCommentaire(e.target.value)}
         placeholder="Un point fort, un point à améliorer, un conseil."
-        aide={depuisIa ? "Repris de la proposition de l'IA : relisez et ajustez." : undefined}
+        aide={depuisIa ? "Repris de la proposition de l'IA : relisez et ajustez." : copie.origineNote === "campus" && publiee ? "Commentaire écrit par le campus : modifiez-le si besoin." : undefined}
       />
 
       <div className="flex flex-col gap-1.5">
@@ -615,9 +727,20 @@ function PanneauNotation({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Bouton taille="lg" pleineLargeur onClick={() => void enregistrer(true)} chargement={envoi} className="min-h-[56px]">
-          {derniere ? "Enregistrer" : "Enregistrer et copie suivante"}
-        </Bouton>
+        {envoiDirect ? (
+          <>
+            <Bouton taille="lg" pleineLargeur icone={<Send className="h-5 w-5" />} onClick={() => void enregistrer(true, undefined, true)} chargement={envoi === "envoyer"} className="min-h-[56px]">
+              {txc("copie.envoyer", { v: { prenom: copie.etudiant.prenom } })}
+            </Bouton>
+            <Bouton variante="fantome" pleineLargeur onClick={() => void enregistrer(false)} chargement={envoi === "enregistrer"} className="min-h-[48px]">
+              Enregistrer sans envoyer
+            </Bouton>
+          </>
+        ) : (
+          <Bouton taille="lg" pleineLargeur onClick={() => void enregistrer(true)} chargement={envoi === "enregistrer"} className="min-h-[56px]">
+            {derniere ? "Enregistrer" : "Enregistrer et copie suivante"}
+          </Bouton>
+        )}
         <div className="flex flex-col gap-1">
           <Bouton variante="doux" pleineLargeur icone={<Sparkles className="h-4 w-4 text-orange-fonce" />} onClick={() => void demanderIa()} chargement={demandeIa} disabled={!iaDisponible} className="min-h-[48px]">
             {proposition ? "Proposer à nouveau (IA)" : "Proposer une correction (IA)"}
@@ -626,6 +749,41 @@ function PanneauNotation({
         </div>
       </div>
     </Carte>
+  );
+}
+
+/** État du corrigé du devoir, au-dessus des copies : le campus corrige, ou attend la validation du corrigé. */
+function BandeauCorrige({ devoirId }: { devoirId: number }) {
+  const txc = useTextes(tc);
+  // Pas de corrigé (devoir hors du circuit) ou pas le droit de le lire : pas de bandeau, sans erreur.
+  const { data: c } = useQuery<CorrigeAValider>({ queryKey: ["/api/enseigner/corriges", devoirId], retry: false, staleTime: 60_000 });
+  if (!c) return null;
+  const lien = `/enseigner/corriges/${devoirId}`;
+  if (c.statut === "propose" || c.statut === "en_preparation") {
+    return (
+      <div className="flex flex-col gap-3 rounded-2xl bg-alerte-clair p-4 sm:flex-row sm:items-center">
+        <p className="flex-1 text-[15px] leading-snug text-encre">
+          {txc(c.statut === "propose" ? "bandeau.aValider" : "bandeau.enPreparation")}
+          {c.statut === "propose" && c.echeanceLe && <span className="block text-sm text-texte-pale">{texteEcheance(txc, c.echeanceLe)}</span>}
+        </p>
+        {c.statut === "propose" && (
+          <LienBouton href={lien} variante="contour" className="min-h-[48px] shrink-0">
+            {txc("bandeau.valider")}
+          </LienBouton>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-succes-clair/70 p-4 sm:flex-row sm:items-center sm:gap-4">
+      <p className="flex flex-1 items-start gap-2 text-[15px] leading-snug text-encre">
+        <School className="mt-0.5 h-4 w-4 shrink-0 text-succes" aria-hidden />
+        {txc("bandeau.campus")}
+      </p>
+      <Link href={lien} className="inline-flex min-h-[44px] shrink-0 items-center gap-1 self-start text-[15px] font-bold sm:self-center">
+        {txc("bandeau.voir")} <ChevronRight className="h-4 w-4" aria-hidden />
+      </Link>
+    </div>
   );
 }
 

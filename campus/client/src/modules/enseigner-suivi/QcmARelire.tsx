@@ -1,13 +1,14 @@
-// /enseigner/relire — relecture FACULTATIVE des devoirs écrits par l'IA
-// (QCM et exercice de la routine du soir). Ils partent aux étudiants sans le
-// formateur (amendement de José, VALIDATION_OBLIGATOIRE = false) ; ici, il
-// peut s'il le souhaite dire « C'est bon » (mis en avant tout de suite),
-// « Modifier » (éditeur existant) ou « Ne pas le mettre en avant » (il reste
-// dans « Devoirs », le campus ne le pousse plus). Rien n'y est obligatoire.
+// /enseigner/relire — les devoirs écrits par l'IA (QCM et exercice de la
+// routine du soir). Ils partent aux étudiants sans le formateur (amendement de
+// José, VALIDATION_OBLIGATOIRE = false). Depuis la correction automatique
+// (8 octobre 2026), ce qui compte est leur corrigé : chaque devoir mène à sa
+// page des corrigés du jour (/enseigner/corriges/:id), où le formateur le
+// valide ou le modifie. Reste ici, en action secondaire, « Ne pas le mettre en
+// avant » (il reste dans « Devoirs », le campus ne le pousse plus).
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronUp, PenLine, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { Page } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
@@ -19,12 +20,14 @@ import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { formaterDate } from "@shared/textes";
 import { selonNombre, t } from "@shared/textes/enseigner";
+import { t as tc } from "@shared/textes/corrections";
 import type { ARelireDto, CorpsValidation, DevoirARelire, StatutValidation } from "@shared/engagement/enseigner";
 
 const LETTRES = "ABCDEFGHIJ";
 
 export default function QcmARelire() {
   const tx = useTextes(t);
+  const txc = useTextes(tc);
   const { data, isLoading, error, refetch } = useQuery<ARelireDto>({ queryKey: ["/api/enseigner/a-relire"] });
 
   return (
@@ -33,9 +36,9 @@ export default function QcmARelire() {
         <ArrowLeft className="h-4 w-4" aria-hidden /> {tx("relire.retour")}
       </Link>
       <header className="flex flex-col gap-1.5">
-        <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-fonce">{tx("relire.etiquette")}</span>
+        <span className="font-mono text-xs uppercase tracking-[0.12em] text-orange-fonce">{txc("corriges.etiquette")}</span>
         <h1 className="titre-page">{tx("relire.titre")}</h1>
-        <p className="text-[15px] leading-relaxed text-texte-pale">{tx("relire.intro")}</p>
+        <p className="text-[15px] leading-relaxed text-texte-pale">{txc("relire.intro")}</p>
       </header>
       {isLoading ? (
         <Chargement lignes={3} />
@@ -58,6 +61,7 @@ export default function QcmARelire() {
 
 function CarteDevoir({ d }: { d: DevoirARelire }) {
   const tx = useTextes(t);
+  const txc = useTextes(tc);
   const [ouvert, setOuvert] = useState(false);
   const [envoi, setEnvoi] = useState<StatutValidation | "annule" | null>(null);
 
@@ -136,11 +140,9 @@ function CarteDevoir({ d }: { d: DevoirARelire }) {
       {d.consigne && <p className="line-clamp-6 whitespace-pre-line rounded-xl bg-creme p-3 text-sm leading-relaxed text-texte-doux">{d.consigne.replace(/[#*_]/g, "")}</p>}
 
       <div className="flex flex-wrap gap-2 pt-1">
-        <Bouton taille="sm" icone={<Check className="h-4 w-4" />} chargement={envoi === "valide"} onClick={() => void decider("valide")} className="min-h-[44px]">
-          {tx("relire.ok")}
-        </Bouton>
-        <LienBouton href={`/enseigner/devoirs/${d.id}`} variante="contour" taille="sm" icone={<PenLine className="h-4 w-4" />} className="min-h-[44px]">
-          {tx("relire.modifier")}
+        {/* Le corrigé se vérifie (et se valide) sur sa page : c'est lui qui sert de barème au campus. */}
+        <LienBouton href={`/enseigner/corriges/${d.id}`} taille="sm" className="min-h-[44px]">
+          {txc("relire.voirCorrige")} <ArrowRight className="h-4 w-4" aria-hidden />
         </LienBouton>
         {d.validation === "a_revoir" ? (
           <Bouton variante="fantome" taille="sm" chargement={envoi === "annule"} onClick={() => void decider(null)} className="min-h-[44px]">

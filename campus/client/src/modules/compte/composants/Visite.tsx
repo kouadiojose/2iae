@@ -74,7 +74,7 @@ export function useEcransVisite(role: Role): EcranVisite[] {
         cle: "corrections",
         etiquette: "2 · Corrections",
         titre: "Les copies arrivent ici",
-        texte: "Les copies rendues sont rangées par devoir. L'IA peut proposer une correction : elle reste un brouillon tant que vous ne l'avez pas validée.",
+        texte: "Chaque matin, vous recevez le corrigé des devoirs de vos cours : validez-le ou modifiez-le. Le campus s'en sert pour noter les copies, et vous pouvez changer toute note.",
         illustration: <IllustrationCorrections />,
       },
       {

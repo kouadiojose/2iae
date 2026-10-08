@@ -9,6 +9,12 @@
 // du campus (routine du soir) et la relecture des devoirs de l'IA restent des
 // liens discrets, facultatifs (décision D2).
 //
+// Correction automatique (8 octobre 2026) : le campus note les copies avec le
+// corrigé que le formateur valide. L'exercice corrigé par le campus dit où en
+// sont ses copies (notées, en attente, à revoir par vous), avec un lien vers
+// elles, et les corrigés à valider ont leurs propres cartes (CartesCorrections),
+// qui remplacent le lien « Relire les devoirs de l'IA ».
+//
 // C'est le seul bloc « copies » de /enseigner : l'ancienne section « Copies à
 // corriger » de la page faisait doublon (et comptait les exercices du campus).
 import { useQuery } from "@tanstack/react-query";
@@ -24,11 +30,21 @@ import { depuis, nombreFr } from "./outils";
 
 type Tx = Traducteur<CleEnseigner>;
 
+/**
+ * Exercice corrigé par le campus (chantier K1) : copies notées, en attente du campus, à revoir par le formateur.
+ * Champ facultatif de DevoirAutoApres, et clés « apres.depot.campus.* » de shared/textes/enseigner.ts, apportés
+ * par le serveur des corrigés ; absents, la ligne reste celle d'avant.
+ */
+type CorrectionApres = { notees: number; enAttente: number; aRevoir: number };
+type DevoirApres = DevoirAutoApres & { correction?: CorrectionApres | null };
+
 export function ApresSeance() {
   const tx = useTextes(t);
   const { data } = useQuery<ResumeEnseigner>({ queryKey: ["/api/enseigner/apres-seance"], staleTime: 60_000 });
   if (!data) return null;
   const { apres, copies, aRelire } = data;
+  // Serveur de la correction automatique : les corrigés passent par leurs cartes, plus par la relecture.
+  const circuitCampus = data.corriges !== undefined;
   if (!apres && !copies.aCorriger && !copies.aPublier && !copies.facultatives) return null;
 
   return (
@@ -66,7 +82,7 @@ export function ApresSeance() {
         </Link>
       )}
 
-      {aRelire > 0 && (
+      {aRelire > 0 && !circuitCampus && (
         <Link href="/enseigner/relire" className="-my-1 flex min-h-[44px] items-center gap-2 text-sm font-semibold text-texte-pale no-underline hover:text-encre">
           <Sparkles className="h-4 w-4 shrink-0 text-orange-fonce" aria-hidden />
           <span className="flex-1">{selonNombre(tx, "apres.relire", aRelire)}</span>
@@ -149,11 +165,20 @@ function Suite({ apres, tx }: { apres: ApresSeanceDto; tx: Tx }) {
   );
 }
 
-function LigneDevoir({ d, tx }: { d: DevoirAutoApres; tx: Tx }) {
+function LigneDevoir({ d, tx }: { d: DevoirApres; tx: Tx }) {
   const quiz = d.type === "quiz";
+  // Correction automatique : les copies de l'exercice sont notées par le campus, plus « facultatives ».
+  const campus = quiz ? null : (d.correction ?? null);
   const morceaux = quiz
     ? [selonNombre(tx, "apres.quiz.faits", d.faits), d.moyenne !== null ? tx("apres.quiz.moyenne", { v: { note: nombreFr(d.moyenne), bareme: nombreFr(d.bareme) } }) : null]
-    : [selonNombre(tx, "apres.depot.rendus", d.faits), d.aCorriger > 0 ? tx("apres.depot.facultatif") : null];
+    : campus
+      ? [
+          selonNombre(tx, "apres.depot.rendus", d.faits),
+          d.faits > 0 ? selonNombre(tx, "apres.depot.campus.notees", campus.notees) : null,
+          campus.enAttente > 0 ? selonNombre(tx, "apres.depot.campus.attente", campus.enAttente) : null,
+          campus.aRevoir > 0 ? selonNombre(tx, "apres.depot.campus.revoir", campus.aRevoir) : null,
+        ]
+      : [selonNombre(tx, "apres.depot.rendus", d.faits), d.aCorriger > 0 ? tx("apres.depot.facultatif") : null];
   // Seuls les choix du formateur se signalent : l'envoi lui-même s'est fait sans lui.
   if (!d.publie) morceaux.push(tx("apres.devoir.masque"));
   else if (d.validation === "a_revoir") morceaux.push(tx("apres.devoir.aRevoir"));
@@ -163,7 +188,17 @@ function LigneDevoir({ d, tx }: { d: DevoirAutoApres; tx: Tx }) {
       icone={quiz ? ListChecks : ClipboardList}
       titre={selonNombre(tx, quiz ? "apres.quiz.titre" : "apres.depot.titre", d.destinataires)}
       detail={morceaux.filter(Boolean).join(" · ")}
-      lien={!quiz && d.aCorriger > 0 ? { href: `/corriger?devoir=${d.id}`, libelle: tx("apres.ouvrir") } : undefined}
+      lien={
+        campus
+          ? campus.aRevoir > 0
+            ? { href: "/enseigner/a-revoir#copies", libelle: tx("apres.ouvrir") }
+            : d.faits > 0
+              ? { href: `/enseigner/devoirs/${d.id}/copies`, libelle: tx("apres.ouvrir") }
+              : undefined
+          : !quiz && d.aCorriger > 0
+            ? { href: `/corriger?devoir=${d.id}`, libelle: tx("apres.ouvrir") }
+            : undefined
+      }
     />
   );
 }

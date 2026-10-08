@@ -1,0 +1,405 @@
+// Objectif du jour de l'étudiant (chantier C2, campus/ENGAGEMENT.md).
+//
+// Au premier passage de la journée (jour local de l'étudiant, minuit à
+// Abidjan par défaut), le serveur choisit trois lignes au plus et les fige
+// dans objectifs_jours.elements jusqu'au lendemain :
+//   (a) la révision du jour, si des cartes actives existent dans ses cours
+//       (tables de C1) ; faite à 5 réponses dans la journée, ou dès qu'il a
+//       répondu et qu'aucune carte n'est plus due ;
+//   (b) le rattrapage de la dernière séance tenue de ses cours depuis 7 jours,
+//       où il était attendu, à laquelle sa présence est « absent » (jamais
+//       « inconnu » : amendement de José) et qu'il n'a pas encore rattrapée,
+//       quand il y a de quoi rattraper (cours complet prêt, replay ou fiche) ;
+//       sinon « À retenir » du dernier cours complet, à lire sur place ;
+//   (c) l'interrogation, sinon l'exercice à rendre, publié, ouvert, pas fait,
+//       dû sous 7 jours et proposable (sqlDevoirProposable : un devoir de la
+//       routine du soir attend le lendemain matin) ; à défaut « À retenir »,
+//       s'il n'est pas déjà proposé.
+// Rien à proposer : aucune ligne n'est écrite (la table ne garde que des
+// objectifs réellement proposés) et le choix est retenté 10 minutes plus tard.
+//
+// L'état « fait » est recalculé à chaque passage et seulement ajouté à
+// objectifs_jours.faits. Le jour est validé une seule fois (UPDATE … WHERE
+// valide_le IS NULL), même si l'accueil est rechargé dix fois.
+import { sql } from "drizzle-orm";
+import { db } from "../db";
+import { idsCoursAccessibles } from "../acces";
+import { sqlAttendus } from "../routes/admin";
+import { planifier } from "../taches";
+import { sqlEtatPresence } from "./presence";
+import { sqlDevoirProposable } from "./proposables";
+import { sqlSeanceRattrapee, tableUtilisable, tracesRevision } from "./progression-cours";
+import { jourLocal } from "@shared/engagement/calendrier";
+import {
+  CLE_OUVERTURE,
+  MINUTES_RATTRAPAGE,
+  MINUTES_RETENIR,
+  MINUTES_REVISION,
+  type ElementObjectif,
+  type ElementObjectifDto,
+  type ObjectifDuJourDto,
+} from "@shared/engagement/objectif";
+import type { Utilisateur } from "@shared/schema";
+
+const JOUR_MS = 86_400_000;
+const FENETRE_RATTRAPAGE_JOURS = 7;
+const FENETRE_DEVOIR_JOURS = 7;
+const FENETRE_RETENIR_JOURS = 30;
+/** Réponses de révision qui valident la ligne « Révision du jour ». */
+const REPONSES_REVISION = 5;
+/** Points « À retenir » renvoyés au plus, chacun raccourci : la réponse reste de quelques Ko. */
+const POINTS_MAX = 8;
+const POINT_LONGUEUR_MAX = 280;
+/** Rapport estimé entre le cours complet compressé (gzip) et son JSON brut. */
+const COMPRESSION = 0.35;
+/** Conservation des objectifs (même durée que l'activité quotidienne). */
+const CONSERVATION_JOURS = 400;
+
+/** Étudiants sans rien à proposer aujourd'hui : on ne refait pas le choix avant 10 minutes. */
+const RIEN_A_PROPOSER_MS = 10 * 60_000;
+const rienAProposer = new Map<string, number>();
+
+type Ligne = { elements: ElementObjectif[]; faits: string[]; valide_le: Date | string | null };
+
+const vide = (jour: string): ObjectifDuJourDto => ({ jour, elements: [], faits: 0, total: 0, valideLe: null });
+const iso = (d: Date | string | null) => (d === null ? null : new Date(d).toISOString());
+
+async function lireLigne(utilisateurId: number, jour: string): Promise<Ligne | null> {
+  const r = await db.execute<Ligne>(
+    sql`SELECT elements, faits, valide_le FROM campus.objectifs_jours WHERE utilisateur_id = ${utilisateurId} AND jour = ${jour}::date`,
+  );
+  return r.rows[0] ?? null;
+}
+
+// ── Choix du jour ──────────────────────────────────────────────────────────
+
+async function choisirRevision(coursIds: number[]): Promise<ElementObjectif | null> {
+  if (!coursIds.length || !(await tableUtilisable("cartes_revision", ["cours_id", "active"]))) return null;
+  const r = await db.execute<{ existe: boolean }>(
+    sql`SELECT EXISTS (SELECT 1 FROM campus.cartes_revision WHERE cours_id = ANY(${`{${coursIds.join(",")}}`}::int[]) AND active) AS existe`,
+  );
+  return r.rows[0]?.existe ? { cle: "revision", type: "revision", lien: "/reviser", minutes: MINUTES_REVISION } : null;
+}
+
+async function choisirRattrapage(u: Utilisateur, coursIds: number[], maintenant: Date): Promise<ElementObjectif | null> {
+  if (!coursIds.length) return null;
+  const traces = await tracesRevision();
+  const r = await db.execute<{ seance_id: number; debut: Date | string; code: string; titre: string; complet: boolean; taille: number | null }>(sql`
+    SELECT a.seance_id, a.debut, c.code, c.titre,
+      COALESCE(es.statut = 'prete' AND es.dossier IS NOT NULL, false) AS complet,
+      octet_length(es.dossier::text) AS taille
+    FROM (${sqlAttendus({ etudiantId: u.id, sites: null, depuis: new Date(maintenant.getTime() - FENETRE_RATTRAPAGE_JOURS * JOUR_MS) })}) a
+    JOIN campus.cours c ON c.id = a.cours_id
+    JOIN campus.seances se ON se.id = a.seance_id
+    LEFT JOIN campus.etudes_seances es ON es.seance_id = a.seance_id
+    WHERE a.cours_id = ANY(${`{${coursIds.join(",")}}`}::int[])
+      AND se.statut = 'terminee'
+      AND ((es.statut = 'prete' AND es.dossier IS NOT NULL) OR se.replay_url IS NOT NULL OR se.enregistrement_id IS NOT NULL
+        OR (se.resume_valide AND se.resume_ia IS NOT NULL))
+      AND ${sqlEtatPresence(sql`a.seance_id`, sql`a.uid`)} = 'absent'
+      AND NOT ${sqlSeanceRattrapee(sql`a.seance_id`, sql`a.uid`, traces)}
+    ORDER BY a.debut DESC
+    LIMIT 1`);
+  const l = r.rows[0];
+  if (!l) return null;
+  return {
+    cle: `rattrapage:${l.seance_id}`,
+    type: "rattrapage",
+    seanceId: l.seance_id,
+    coursCode: l.code,
+    coursTitre: l.titre,
+    debut: new Date(l.debut).toISOString(),
+    lien: l.complet ? `/mediatheque/cours/${l.seance_id}?depuis=accueil` : `/replays/${l.seance_id}`,
+    minutes: MINUTES_RATTRAPAGE,
+    ko: l.complet && l.taille ? Math.max(1, Math.round((l.taille * COMPRESSION) / 1024)) : null,
+  };
+}
+
+async function choisirDevoir(u: Utilisateur, coursIds: number[], maintenant: Date): Promise<ElementObjectif | null> {
+  if (!coursIds.length) return null;
+  const r = await db.execute<{
+    id: number;
+    type: "quiz" | "depot";
+    titre: string;
+    date_limite: Date | string;
+    duree_minutes: number | null;
+    code: string;
+    cours_titre: string;
+    questions: number;
+  }>(sql`
+    SELECT d.id, d.type, d.titre, d.date_limite, d.duree_minutes, c.code, c.titre AS cours_titre,
+      (SELECT count(*) FROM campus.questions_quiz q WHERE q.devoir_id = d.id)::int AS questions
+    FROM campus.devoirs d
+    JOIN campus.cours c ON c.id = d.cours_id
+    WHERE d.cours_id = ANY(${`{${coursIds.join(",")}}`}::int[])
+      AND d.publie
+      AND (d.ouverture_le IS NULL OR d.ouverture_le <= ${maintenant.toISOString()}::timestamptz)
+      AND d.date_limite > ${maintenant.toISOString()}::timestamptz
+      AND d.date_limite <= ${new Date(maintenant.getTime() + FENETRE_DEVOIR_JOURS * JOUR_MS).toISOString()}::timestamptz
+      AND ${sqlDevoirProposable("d")}
+      AND NOT EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.etudiant_id = ${u.id} AND r.statut <> 'brouillon')
+      AND NOT EXISTS (SELECT 1 FROM campus.tentatives_quiz t WHERE t.devoir_id = d.id AND t.etudiant_id = ${u.id} AND t.fin_le IS NOT NULL)
+      AND (d.type <> 'quiz' OR EXISTS (SELECT 1 FROM campus.questions_quiz q WHERE q.devoir_id = d.id))
+    ORDER BY (d.type = 'quiz') DESC, d.date_limite ASC, d.id ASC
+    LIMIT 1`);
+  const d = r.rows[0];
+  if (!d) return null;
+  const quiz = d.type === "quiz";
+  // Durée estimée : 8 minutes pour 10 questions, jamais plus que le chrono de l'interrogation.
+  const estimee = Math.max(3, Math.round(d.questions * 0.8));
+  return {
+    cle: `devoir:${d.id}`,
+    type: "devoir",
+    devoirId: d.id,
+    genre: d.type,
+    coursCode: d.code,
+    coursTitre: d.cours_titre,
+    titre: d.titre,
+    dateLimite: new Date(d.date_limite).toISOString(),
+    questions: quiz ? d.questions : null,
+    minutes: quiz ? Math.min(estimee, d.duree_minutes ?? estimee) : null,
+    lien: quiz ? `/quiz/${d.id}` : `/devoirs/${d.id}`,
+  };
+}
+
+/** « À retenir » du dernier cours complet de ses cours (30 jours), pas encore lu depuis l'objectif, hors séance exclue. */
+async function choisirRetenir(u: Utilisateur, coursIds: number[], maintenant: Date, sauf: number | null): Promise<ElementObjectif | null> {
+  if (!coursIds.length) return null;
+  const r = await db.execute<{ id: number; debut: Date | string; code: string; titre: string }>(sql`
+    SELECT s.id, s.debut, c.code, c.titre
+    FROM campus.etudes_seances es
+    JOIN campus.seances s ON s.id = es.seance_id
+    JOIN campus.cours c ON c.id = s.cours_id
+    WHERE s.cours_id = ANY(${`{${coursIds.join(",")}}`}::int[])
+      AND es.statut = 'prete'
+      AND s.statut = 'terminee'
+      AND s.debut >= ${new Date(maintenant.getTime() - FENETRE_RETENIR_JOURS * JOUR_MS).toISOString()}::timestamptz
+      AND s.id <> ${sauf ?? 0}
+      AND (CASE WHEN jsonb_typeof(es.dossier -> 'aRetenir') = 'array' THEN jsonb_array_length(es.dossier -> 'aRetenir') ELSE 0 END) > 0
+      AND NOT EXISTS (SELECT 1 FROM campus.objectifs_jours oj WHERE oj.utilisateur_id = ${u.id}
+        AND oj.faits @> jsonb_build_array('retenir:' || s.id::text))
+    ORDER BY s.debut DESC
+    LIMIT 1`);
+  const l = r.rows[0];
+  if (!l) return null;
+  return {
+    cle: `retenir:${l.id}`,
+    type: "retenir",
+    seanceId: l.id,
+    coursCode: l.code,
+    coursTitre: l.titre,
+    debut: new Date(l.debut).toISOString(),
+    lien: `/mediatheque/cours/${l.id}?depuis=accueil`,
+    minutes: MINUTES_RETENIR,
+  };
+}
+
+/** Les lignes du jour, dans l'ordre : révision, rattrapage (ou « À retenir »), devoir (ou « À retenir »). */
+export async function choisirElements(u: Utilisateur, coursIds: number[], maintenant: Date): Promise<ElementObjectif[]> {
+  const [revision, rattrapage, devoir] = await Promise.all([
+    choisirRevision(coursIds),
+    choisirRattrapage(u, coursIds, maintenant),
+    choisirDevoir(u, coursIds, maintenant),
+  ]);
+  // « À retenir » ne vient qu'une fois, et jamais pour la séance déjà proposée en rattrapage.
+  const retenir =
+    !rattrapage || !devoir ? await choisirRetenir(u, coursIds, maintenant, rattrapage?.type === "rattrapage" ? rattrapage.seanceId : null) : null;
+  const elements: ElementObjectif[] = [];
+  if (revision) elements.push(revision);
+  if (rattrapage) elements.push(rattrapage);
+  else if (retenir) elements.push(retenir);
+  if (devoir) elements.push(devoir);
+  else if (retenir && rattrapage) elements.push(retenir);
+  return elements;
+}
+
+// ── État du jour ───────────────────────────────────────────────────────────
+
+type Etat = { fait: boolean; retire?: boolean; points?: string[] };
+
+/** Ce que l'étudiant a fait de chaque ligne, d'après les traces existantes (et les ouvertures notées). */
+async function etatsElements(u: Utilisateur, jour: string, elements: ElementObjectif[], faitsConnus: Set<string>): Promise<Map<string, Etat>> {
+  const etats = new Map<string, Etat>();
+  const travaux: Promise<void>[] = [];
+
+  if (elements.some((e) => e.type === "revision")) {
+    travaux.push(
+      (async () => {
+        etats.set("revision", { fait: faitsConnus.has("revision") || (await revisionFaite(u, jour)) });
+      })(),
+    );
+  }
+
+  const devoirs = elements.flatMap((e) => (e.type === "devoir" ? [e.devoirId] : []));
+  if (devoirs.length) {
+    travaux.push(
+      (async () => {
+        const r = await db.execute<{ id: number; publie: boolean; fait: boolean }>(sql`
+          SELECT d.id, d.publie,
+            (EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id = d.id AND r.etudiant_id = ${u.id} AND r.statut <> 'brouillon')
+              OR EXISTS (SELECT 1 FROM campus.tentatives_quiz t WHERE t.devoir_id = d.id AND t.etudiant_id = ${u.id} AND t.fin_le IS NOT NULL)) AS fait
+          FROM campus.devoirs d WHERE d.id = ANY(${`{${devoirs.join(",")}}`}::int[])`);
+        const de = new Map(r.rows.map((l) => [l.id, l]));
+        for (const id of devoirs) {
+          const l = de.get(id);
+          const cle = `devoir:${id}`;
+          // Fait reste fait ; un devoir supprimé ou dépublié depuis ce matin sort de l'objectif.
+          if (faitsConnus.has(cle) || l?.fait) etats.set(cle, { fait: true });
+          else etats.set(cle, { fait: false, retire: !l || !l.publie });
+        }
+      })(),
+    );
+  }
+
+  const rattrapages = elements.flatMap((e) => (e.type === "rattrapage" ? [e.seanceId] : []));
+  if (rattrapages.length) {
+    travaux.push(
+      (async () => {
+        const traces = await tracesRevision();
+        const r = await db.execute<{ id: number; rattrapee: boolean }>(sql`
+          SELECT x.id, ${sqlSeanceRattrapee(sql`x.id`, sql`${u.id}::int`, traces)} AS rattrapee
+          FROM campus.seances x WHERE x.id = ANY(${`{${rattrapages.join(",")}}`}::int[])`);
+        const de = new Map(r.rows.map((l) => [l.id, l.rattrapee]));
+        for (const id of rattrapages) {
+          const cle = `rattrapage:${id}`;
+          if (faitsConnus.has(cle) || de.get(id)) etats.set(cle, { fait: true });
+          else etats.set(cle, { fait: false, retire: !de.has(id) });
+        }
+      })(),
+    );
+  }
+
+  const retenirs = elements.flatMap((e) => (e.type === "retenir" ? [e.seanceId] : []));
+  if (retenirs.length) {
+    travaux.push(
+      (async () => {
+        const r = await db.execute<{ seance_id: number; points: unknown }>(sql`
+          SELECT seance_id, dossier -> 'aRetenir' AS points FROM campus.etudes_seances
+          WHERE seance_id = ANY(${`{${retenirs.join(",")}}`}::int[]) AND statut = 'prete'`);
+        const de = new Map(r.rows.map((l) => [l.seance_id, l.points]));
+        for (const id of retenirs) {
+          const cle = `retenir:${id}`;
+          const points = Array.isArray(de.get(id))
+            ? (de.get(id) as unknown[])
+                .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+                .slice(0, POINTS_MAX)
+                .map((p) => (p.length > POINT_LONGUEUR_MAX ? `${p.slice(0, POINT_LONGUEUR_MAX - 1).trimEnd()}…` : p))
+            : [];
+          // Cours complet refait ou retiré : la ligne reste si elle est déjà lue, sinon elle sort.
+          etats.set(cle, { fait: faitsConnus.has(cle), retire: !faitsConnus.has(cle) && !points.length, points });
+        }
+      })(),
+    );
+  }
+
+  await Promise.all(travaux);
+  return etats;
+}
+
+/** Révision du jour faite : 5 réponses aujourd'hui, ou au moins une et plus aucune carte due (tables de C1). */
+async function revisionFaite(u: Utilisateur, jour: string): Promise<boolean> {
+  if (!(await tableUtilisable("reponses_revision", ["utilisateur_id", "jour"]))) return false;
+  const r = await db.execute<{ n: number }>(
+    sql`SELECT count(*)::int AS n FROM campus.reponses_revision WHERE utilisateur_id = ${u.id} AND jour = ${jour}`,
+  );
+  const reponses = r.rows[0]?.n ?? 0;
+  if (reponses >= REPONSES_REVISION) return true;
+  if (reponses === 0) return false;
+  const dues =
+    (await tableUtilisable("revisions_etudiants", ["utilisateur_id", "carte_id", "prochaine_le"])) &&
+    (await tableUtilisable("cartes_revision", ["id", "cours_id", "active"]));
+  if (!dues) return false;
+  const coursIds = await idsCoursAccessibles(u);
+  if (!coursIds.length) return true;
+  const d = await db.execute<{ due: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM campus.cartes_revision c
+      LEFT JOIN campus.revisions_etudiants re ON re.carte_id = c.id AND re.utilisateur_id = ${u.id}
+      WHERE c.cours_id = ANY(${`{${coursIds.join(",")}}`}::int[]) AND c.active AND (re.carte_id IS NULL OR re.prochaine_le <= ${jour})
+    ) AS due`);
+  return !d.rows[0]?.due;
+}
+
+// ── Objectif du jour ───────────────────────────────────────────────────────
+
+/** L'objectif du jour de l'étudiant : choisi et figé au premier passage, puis mis à jour. */
+export async function objectifDuJour(u: Utilisateur, maintenant: Date = new Date()): Promise<ObjectifDuJourDto> {
+  const jour = jourLocal(maintenant, u.fuseau);
+  let ligne = await lireLigne(u.id, jour);
+
+  if (!ligne) {
+    const cle = `${u.id}|${jour}`;
+    const dernier = rienAProposer.get(cle);
+    if (dernier && maintenant.getTime() - dernier < RIEN_A_PROPOSER_MS) return vide(jour);
+    const elements = await choisirElements(u, await idsCoursAccessibles(u), maintenant);
+    if (!elements.length) {
+      if (rienAProposer.size > 5000) rienAProposer.clear();
+      rienAProposer.set(cle, maintenant.getTime());
+      return vide(jour);
+    }
+    rienAProposer.delete(cle);
+    // Deux passages simultanés : le premier écrit, le second relit la même sélection.
+    await db.execute(sql`
+      INSERT INTO campus.objectifs_jours (utilisateur_id, jour, elements, site_id, classe_id)
+      VALUES (${u.id}, ${jour}::date, ${JSON.stringify(elements)}::jsonb, ${u.siteId}, ${u.classeId})
+      ON CONFLICT (utilisateur_id, jour) DO NOTHING`);
+    ligne = await lireLigne(u.id, jour);
+    if (!ligne) return vide(jour);
+  }
+
+  const elements = Array.isArray(ligne.elements) ? ligne.elements : [];
+  const faitsConnus = new Set(Array.isArray(ligne.faits) ? ligne.faits : []);
+  const etats = await etatsElements(u, jour, elements, faitsConnus);
+
+  const nouveaux = [...etats].filter(([cle, e]) => e.fait && !faitsConnus.has(cle)).map(([cle]) => cle);
+  if (nouveaux.length) {
+    // Ajout seulement, sans doublon, même si une ouverture arrive en même temps.
+    await db.execute(sql`
+      UPDATE campus.objectifs_jours SET faits = faits || COALESCE((
+        SELECT jsonb_agg(k) FROM jsonb_array_elements_text(${JSON.stringify(nouveaux)}::jsonb) k
+        WHERE NOT faits @> jsonb_build_array(k)), '[]'::jsonb)
+      WHERE utilisateur_id = ${u.id} AND jour = ${jour}::date`);
+  }
+
+  const visibles: ElementObjectifDto[] = elements
+    .filter((e) => !etats.get(e.cle)?.retire)
+    .map((e) => {
+      const etat = etats.get(e.cle);
+      return { ...e, fait: Boolean(etat?.fait), ...(e.type === "retenir" ? { points: etat?.points ?? [] } : {}) };
+    });
+  const faits = visibles.filter((e) => e.fait).length;
+
+  let valideLe = ligne.valide_le;
+  if (!valideLe && visibles.length && faits === visibles.length) {
+    // Écrit une seule fois : le premier passage qui voit tout fait gagne, les suivants relisent.
+    const r = await db.execute<{ valide_le: Date | string }>(sql`
+      UPDATE campus.objectifs_jours SET valide_le = now()
+      WHERE utilisateur_id = ${u.id} AND jour = ${jour}::date AND valide_le IS NULL
+      RETURNING valide_le`);
+    valideLe = r.rows[0]?.valide_le ?? (await lireLigne(u.id, jour))?.valide_le ?? null;
+  }
+
+  return { jour, elements: visibles, faits, total: visibles.length, valideLe: iso(valideLe) };
+}
+
+/**
+ * Note l'ouverture d'une ligne qui n'a pas d'autre trace : « À retenir » lu
+ * sur l'accueil, cours complet ouvert pour rattraper (tant que C1 ne le note
+ * pas lui-même). Faux si la clé ne fait pas partie de l'objectif du jour.
+ */
+export async function noterOuverture(u: Utilisateur, cle: string, maintenant: Date = new Date()): Promise<boolean> {
+  if (!CLE_OUVERTURE.test(cle)) return false;
+  const jour = jourLocal(maintenant, u.fuseau);
+  const r = await db.execute(sql`
+    UPDATE campus.objectifs_jours
+    SET faits = CASE WHEN faits @> jsonb_build_array(${cle}::text) THEN faits ELSE faits || jsonb_build_array(${cle}::text) END
+    WHERE utilisateur_id = ${u.id} AND jour = ${jour}::date
+      AND elements @> jsonb_build_array(jsonb_build_object('cle', ${cle}::text))
+    RETURNING 1`);
+  return (r.rowCount ?? r.rows.length) > 0;
+}
+
+// Ménage quotidien : les objectifs de plus de 400 jours.
+planifier("objectif-du-jour-menage", 24 * 3600_000, async () => {
+  await db.execute(sql`DELETE FROM campus.objectifs_jours WHERE jour < current_date - ${CONSERVATION_JOURS}::int`);
+});

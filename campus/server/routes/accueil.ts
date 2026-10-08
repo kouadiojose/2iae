@@ -5,6 +5,10 @@
 // rendu → live dans moins de 2 h → message non lu d'un formateur → devoir en
 // retard encore accepté → prochain devoir → « Tu es à jour ». Puis trois
 // lignes « Ensuite », ses cours avec leur progression et l'annonce importante.
+// La progression d'un cours est honnête (chantier C2, engagement/progression-cours.ts) :
+// leçons terminées et séances suivies ou rattrapées, rien quand il n'y a rien à compter.
+// Une interrogation préparée par la routine du soir rappelle l'entraînement fait
+// sur le cours complet (tables de C1, si elles sont là).
 //
 // Formateur : prochaine séance (studio, préparation), copies à corriger,
 // questions restées sans réponse au dernier live, ses cours, ses messages.
@@ -18,12 +22,14 @@ import { intervenantsDesSeances } from "../programme-outils";
 import { compterMessagesNonLus } from "../messages-outils";
 import { annoncesPour, extrait } from "./annonces";
 import { elementsAgenda, debutSemaine, numeroSemaine, jourFr, heureFr } from "./agenda";
+import { progressionsCours, tableUtilisable } from "../engagement/progression-cours";
+import { t as textes } from "@shared/textes/objectif";
+import { registreDe } from "@shared/textes";
+import type { AccueilEtudiantSuivi, CoursAccueilSuivi } from "@shared/engagement/objectif";
 import {
   cours,
   coursClasses,
   classes,
-  lecons,
-  progressions,
   seances,
   devoirs,
   rendus,
@@ -37,9 +43,7 @@ import {
   type Utilisateur,
   type Seance,
   type ElementAFaire,
-  type AccueilEtudiant,
   type AccueilFormateur,
-  type CoursAccueil,
   type SeanceFormateur,
   type AnnonceResume,
 } from "@shared/schema";
@@ -91,12 +95,14 @@ const RANGS: Record<ElementAFaire["type"], number> = {
 
 type Candidat = ElementAFaire & { rang: number; t: number };
 
+// Carte « À jour » : repli de l'objectif du jour quand il n'y a rien à proposer.
+// Elle ne promet plus de leçon à avancer (souvent, aucune n'est publiée).
 const A_JOUR: ElementAFaire = {
   type: "a_jour",
   titre: "Tu es à jour.",
-  detail: "Aucun devoir à rendre et aucun live en ce moment. Profite de ce calme pour avancer dans une leçon.",
+  detail: textes("aJour.detail", { registre: "tu" }),
   lien: "/cours",
-  bouton: "Continuer mes cours",
+  bouton: textes("aJour.bouton", { registre: "tu" }),
   urgence: "aucune",
 };
 
@@ -130,6 +136,37 @@ async function devoirsDeLEtudiant(u: Utilisateur, coursIds: number[], maintenant
     .where(and(eq(tentativesQuiz.etudiantId, u.id), inArray(tentativesQuiz.devoirId, ids), isNotNull(tentativesQuiz.finLe)));
   for (const q of mesQuiz) faits.add(q.devoirId);
   return liste.map((l) => ({ ...l, fait: faits.has(l.d.id) }));
+}
+
+/** Score d'entraînement à partir duquel l'étudiant est dit « prêt » pour l'interrogation (60 %). */
+const PRET_A_PARTIR_DE = 0.6;
+
+/**
+ * Phrase d'entraînement des interrogations préparées par la routine du soir
+ * (devoirs_seances) : « Tu t'es entraîné : 9/12. Tu es prêt (10 questions,
+ * elle compte dans ta moyenne). » Le meilleur score du quiz d'entraînement du
+ * cours complet de la séance est lu dans suivis_cours_complets (C1) ; sans
+ * cette table, rien n'est ajouté.
+ */
+async function entrainementsDesInterrogations(u: Utilisateur, quizIds: number[]): Promise<Map<number, string>> {
+  const phrases = new Map<number, string>();
+  if (!quizIds.length || !(await tableUtilisable("suivis_cours_complets", ["utilisateur_id", "seance_id", "quiz_meilleur", "quiz_total"]))) return phrases;
+  const ids = `{${quizIds.join(",")}}`;
+  const r = await db.execute<{ devoir_id: number; questions: number; meilleur: number | null; total: number | null }>(sql`
+    SELECT d.id AS devoir_id,
+      (SELECT count(*) FROM campus.questions_quiz q WHERE q.devoir_id = d.id)::int AS questions,
+      sc.quiz_meilleur::float8 AS meilleur, sc.quiz_total::float8 AS total
+    FROM unnest(${ids}::int[]) AS d(id)
+    JOIN campus.devoirs_seances ds ON ds.devoir_ids @> jsonb_build_array(d.id)
+    LEFT JOIN campus.suivis_cours_complets sc ON sc.seance_id = ds.seance_id AND sc.utilisateur_id = ${u.id}`);
+  const registre = registreDe(u.role);
+  for (const l of r.rows) {
+    if (!l.questions) continue;
+    const score = l.meilleur !== null && l.total ? { score: Math.round(l.meilleur), total: Math.round(l.total) } : null;
+    const cle = !score ? "interrogation.sansEntrainement" : score.score / score.total >= PRET_A_PARTIR_DE ? "interrogation.pret" : "interrogation.revoir";
+    phrases.set(l.devoir_id, textes(cle, { registre, v: { n: l.questions, ...(score ?? {}) } }));
+  }
+  return phrases;
 }
 
 /** Messages non lus écrits par un formateur dans les conversations de l'étudiant. */
@@ -262,6 +299,11 @@ export function enregistrerAccueil(app: Express) {
         );
       }
 
+      // Interrogations à venir : l'entraînement fait sur le cours complet de leur séance.
+      const entrainements = await entrainementsDesInterrogations(
+        u,
+        listeDevoirs.filter((l) => !l.fait && l.d.type === "quiz" && l.d.dateLimite.getTime() >= t0).map((l) => l.d.id),
+      );
       for (const { d, code, couleur, fait } of listeDevoirs) {
         if (fait) continue;
         const reste = d.dateLimite.getTime() - t0;
@@ -290,7 +332,7 @@ export function enregistrerAccueil(app: Express) {
             {
               type: urgent ? "devoir_urgent" : "devoir",
               titre: d.titre,
-              detail: `${estQuiz ? "Interrogation à faire" : "À rendre"} ${echeance}.`,
+              detail: [`${estQuiz ? "Interrogation à faire" : "À rendre"} ${echeance}.`, entrainements.get(d.id)].filter(Boolean).join(" "),
               lien,
               bouton: urgent ? (estQuiz ? "Commencer l'interrogation" : "Rendre mon devoir") : "Voir le devoir",
               urgence: urgent ? "haute" : "basse",
@@ -331,7 +373,10 @@ export function enregistrerAccueil(app: Express) {
         : prochainLive?.quand
           ? {
               ...A_JOUR,
-              detail: `Prochain rendez-vous : ${prochainLive.coursCode} en direct ${quand(new Date(prochainLive.quand), maintenant)} à ${heureFr(new Date(prochainLive.quand))}. D'ici là, avance dans une leçon.`,
+              detail: textes("aJour.prochain", {
+                registre: "tu",
+                v: { cours: prochainLive.coursCode ?? "", quand: quand(new Date(prochainLive.quand), maintenant), heure: heureFr(new Date(prochainLive.quand)) },
+              }),
             }
           : A_JOUR;
       // « Ensuite » : l'urgent restant, puis ce qui vient, dans l'ordre du temps.
@@ -350,37 +395,23 @@ export function enregistrerAccueil(app: Express) {
             .where(inArray(cours.id, coursIds))
             .orderBy(asc(cours.code))
         : [];
-      const totaux = coursIds.length
-        ? await db
-            .select({ coursId: lecons.coursId, n: sql<number>`count(*)::int` })
-            .from(lecons)
-            .where(and(inArray(lecons.coursId, coursIds), eq(lecons.publiee, true)))
-            .groupBy(lecons.coursId)
-        : [];
-      const terminees = coursIds.length
-        ? await db
-            .select({ coursId: lecons.coursId, n: sql<number>`count(*)::int` })
-            .from(progressions)
-            .innerJoin(lecons, eq(lecons.id, progressions.leconId))
-            .where(and(eq(progressions.utilisateurId, u.id), inArray(lecons.coursId, coursIds), eq(lecons.publiee, true)))
-            .groupBy(lecons.coursId)
-        : [];
-      const totalDe = new Map(totaux.map((t) => [t.coursId, t.n]));
-      const faitDe = new Map(terminees.map((t) => [t.coursId, t.n]));
+      // Progression honnête : leçons et séances suivies ou rattrapées, même calcul que « Mes cours ».
+      const progressions = await progressionsCours(u.id, coursIds);
       const prochaineDe = new Map<number, Seance>();
       for (const { s } of lives) if (!prochaineDe.has(s.coursId)) prochaineDe.set(s.coursId, s);
-      const mesCours: CoursAccueil[] = listeCours.map((c) => {
-        const total = totalDe.get(c.id) ?? 0;
-        const fait = faitDe.get(c.id) ?? 0;
+      const mesCours: CoursAccueilSuivi[] = listeCours.map((c) => {
+        const suivi = progressions.get(c.id) ?? { leconsTerminees: 0, leconsTotal: 0, seancesSuivies: 0, seancesTotal: 0, pourcentage: null };
         const p = prochaineDe.get(c.id);
         return {
           id: c.id,
           code: c.code,
           titre: c.titre,
           couleur: c.couleur,
-          progression: total ? Math.round((fait / total) * 100) : 0,
-          leconsTerminees: fait,
-          leconsTotal: total,
+          // Champ d'origine (leçons seulement), gardé pour les anciens écrans ; l'accueil affiche suivi.
+          progression: suivi.leconsTotal ? Math.round((suivi.leconsTerminees / suivi.leconsTotal) * 100) : 0,
+          leconsTerminees: suivi.leconsTerminees,
+          leconsTotal: suivi.leconsTotal,
+          suivi,
           formateur: c.prenom ? `${c.prenom} ${c.nom}` : null,
           prochaineSeance: p ? { id: p.id, titre: p.titre, debut: p.debut.toISOString(), statut: p.statut } : null,
         };
@@ -420,7 +451,7 @@ export function enregistrerAccueil(app: Express) {
             )
         : [{ n: 0 }];
 
-      const reponse: AccueilEtudiant = {
+      const reponse: AccueilEtudiantSuivi = {
         salutation: salutationPour(maintenant),
         prenom: u.prenom,
         contexte,

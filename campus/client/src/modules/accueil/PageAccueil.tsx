@@ -4,11 +4,15 @@
 // sous 24 h → live dans moins de 2 h → message d'un formateur → devoir) ;
 // l'écran la montre en grand avec un seul bouton, puis trois lignes au plus,
 // les cours avec leur progression et l'annonce importante. Tout doit tenir
-// et respirer sur un téléphone de 390 px.
+// et respirer sur un téléphone de 360 px.
+// Quand rien n'est urgent, l'objectif du jour (chantier C2) prend la place de
+// la carte « À jour ». La progression des cours est honnête : séances suivies
+// ou rattrapées et leçons terminées, rien tant qu'il n'y a rien à compter.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowRight, CalendarDays, Camera, CheckCircle2, ChevronRight, ClipboardList, Megaphone, MessageCircle, Radio, BookOpen, Library } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
+import { useTextes } from "@/lib/textes";
 import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
 import { jourLong, heure, pastilleDate, relatif } from "@/lib/dates";
@@ -27,12 +31,14 @@ import { ObjectifDuJour } from "@/modules/objectif/ObjectifDuJour";
 import { CarteRappels } from "@/modules/rappels/CarteRappels";
 import { BandeauCoupe } from "@/modules/progression/BandeauCoupe";
 import { PastilleSemaine } from "@/modules/progression/PastilleSemaine";
-import type { AccueilEtudiant, AnnonceResume, CoursAccueil, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
+import type { AnnonceResume, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
+import { libelleSuivi, type AccueilEtudiantSuivi, type CoursAccueilSuivi } from "@shared/engagement/objectif";
+import { t as textesObjectif } from "@shared/textes/objectif";
 import type { EnCours } from "@shared/api";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 
 export default function PageAccueil() {
-  const { data, isLoading, error, refetch } = useQuery<AccueilEtudiant>({
+  const { data, isLoading, error, refetch } = useQuery<AccueilEtudiantSuivi>({
     queryKey: ["/api/accueil"],
     // Les priorités changent avec l'heure (un live qui commence, une échéance qui approche).
     refetchInterval: 60_000,
@@ -75,9 +81,9 @@ export default function PageAccueil() {
         <LimiteSilencieuse nom="PastilleSemaine">
           <PastilleSemaine />
         </LimiteSilencieuse>
-        <div className="hidden gap-2 rounded-[14px] bg-creme p-1.5 sm:flex" aria-label="Ma semaine">
-          <span className="rounded-[10px] bg-white px-3.5 py-2 text-sm font-bold">Semaine {data.semaine.numero}</span>
-          <span className="px-3.5 py-2 text-sm text-texte-pale">
+        <div className="flex max-w-full items-center gap-1 rounded-[14px] bg-creme p-1 sm:gap-2 sm:p-1.5" aria-label="Ma semaine">
+          <span className="shrink-0 rounded-[10px] bg-white px-3 py-1.5 text-[13px] font-bold sm:px-3.5 sm:py-2 sm:text-sm">Semaine {data.semaine.numero}</span>
+          <span className="min-w-0 px-2 py-1.5 text-[13px] text-texte-pale sm:px-3.5 sm:py-2 sm:text-sm">
             {pluriel(data.semaine.lives, "live")} · {pluriel(data.semaine.devoirs, "devoir")} à rendre
           </span>
         </div>
@@ -329,16 +335,17 @@ function LienAnnonces({ nonLues, serre }: { nonLues: number; serre: boolean }) {
 
 // ── Mes cours ──────────────────────────────────────────────────────────────
 
-function metaCours(c: CoursAccueil) {
-  const lecons = c.leconsTotal ? `${c.leconsTerminees} leçon${c.leconsTerminees > 1 ? "s" : ""} sur ${c.leconsTotal}` : "Leçons bientôt en ligne";
-  if (!c.prochaineSeance) return c.formateur ? `${lecons} · ${c.formateur}` : lecons;
-  if (c.prochaineSeance.statut === "en_direct") return `${lecons} · En direct maintenant`;
-  return `${lecons} · Live ${jourRelatif(c.prochaineSeance.debut)} à ${heure(c.prochaineSeance.debut)}`;
+/** Formateur, ou prochain live du cours. */
+function metaCours(c: CoursAccueilSuivi) {
+  if (!c.prochaineSeance) return c.formateur ?? "";
+  if (c.prochaineSeance.statut === "en_direct") return "En direct maintenant";
+  return `Live ${jourRelatif(c.prochaineSeance.debut)} à ${heure(c.prochaineSeance.debut)}`;
 }
 
-function MesCours({ cours }: { cours: CoursAccueil[] }) {
+function MesCours({ cours }: { cours: CoursAccueilSuivi[] }) {
   const moi = useMoiConnecte();
   const aide = lienAide(moi);
+  const tx = useTextes(textesObjectif);
   return (
     <section aria-labelledby="titre-mes-cours">
       <TitreSection
@@ -353,25 +360,33 @@ function MesCours({ cours }: { cours: CoursAccueil[] }) {
       />
       {cours.length ? (
         <div className="flex flex-col gap-3">
-          {cours.map((c) => (
-            <CarteLien key={c.id} href={`/cours/${c.id}`} className="flex flex-col gap-3 px-5 py-[18px]">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <span className="flex items-center gap-2 font-mono text-[11px] font-semibold text-orange-fonce">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.couleur }} aria-hidden />
-                    {c.code}
-                    {c.prochaineSeance?.statut === "en_direct" && <BadgeDirect className="ml-1 px-2 py-0.5 text-[10px]" />}
-                  </span>
-                  <span className="text-[17px] font-bold leading-snug">{c.titre}</span>
-                  <span className="text-[13px] text-texte-gris">{metaCours(c)}</span>
+          {cours.map((c) => {
+            const pct = c.suivi.pourcentage;
+            const suivi = libelleSuivi(c.suivi, tx);
+            const meta = metaCours(c);
+            return (
+              <CarteLien key={c.id} href={`/cours/${c.id}`} className="flex flex-col gap-3 px-5 py-[18px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="flex items-center gap-2 font-mono text-[11px] font-semibold text-orange-fonce">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.couleur }} aria-hidden />
+                      {c.code}
+                      {c.prochaineSeance?.statut === "en_direct" && <BadgeDirect className="ml-1 px-2 py-0.5 text-[10px]" />}
+                    </span>
+                    <span className="text-[17px] font-bold leading-snug">{c.titre}</span>
+                    {suivi && <span className="text-[13px] leading-snug text-texte-pale">{suivi}</span>}
+                    {meta && <span className="text-[13px] text-texte-gris">{meta}</span>}
+                  </div>
+                  {pct !== null && (
+                    <span className="text-[22px] font-extrabold tabular-nums" aria-label={tx("progression.aria", { v: { pct } })}>
+                      {pct}%
+                    </span>
+                  )}
                 </div>
-                <span className="text-[22px] font-extrabold tabular-nums" aria-label={`Progression : ${c.progression} %`}>
-                  {c.progression}%
-                </span>
-              </div>
-              <BarreProgression valeur={c.progression} ton={c.progression === 100 ? "succes" : "orange"} />
-            </CarteLien>
-          ))}
+                {pct !== null && <BarreProgression valeur={pct} ton={pct === 100 ? "succes" : "orange"} />}
+              </CarteLien>
+            );
+          })}
         </div>
       ) : (
         <EtatVide

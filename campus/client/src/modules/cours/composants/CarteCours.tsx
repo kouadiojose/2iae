@@ -1,14 +1,20 @@
 // Carte d'un cours dans « Mes cours », à la maquette : code mono orange,
 // titre, méta, grand pourcentage et barre de progression. Côté formateur :
 // état de publication, leçons en brouillon, classes et site.
+// La progression de l'étudiant est honnête (chantier C2) : « 3 séances sur 4
+// suivies ou rattrapées · 1 leçon sur 2 terminée », et ni pourcentage ni
+// barre tant qu'il n'y a rien à compter.
 import { Link } from "wouter";
 import { Radio, PenLine, Globe } from "lucide-react";
 import { Badge, BarreProgression } from "@/components/ui/divers";
 import { LienBouton } from "@/components/ui/bouton";
 import { jourLong, heure, heureDouble } from "@/lib/dates";
 import { cn, pluriel } from "@/lib/utils";
+import { useTextes } from "@/lib/textes";
 import { LIBELLES_STATUT } from "../outils";
 import type { CoursResume } from "@shared/schema";
+import { libelleSuivi, type CoursResumeSuivi } from "@shared/engagement/objectif";
+import { t } from "@shared/textes/objectif";
 
 function LigneSeance({ cours, formateur }: { cours: CoursResume; formateur?: boolean }) {
   const s = cours.prochaineSeance;
@@ -30,15 +36,12 @@ function LigneSeance({ cours, formateur }: { cours: CoursResume; formateur?: boo
 }
 
 /** Carte étudiant : toute la carte mène au cours. */
-export function CarteCoursEtudiant({ cours }: { cours: CoursResume }) {
-  const pct = cours.progression ?? 0;
-  const fini = cours.nbLecons > 0 && pct === 100;
-  const meta = [
-    cours.formateur ? `${cours.formateur.prenom} ${cours.formateur.nom}${cours.formateur.ville ? ` · depuis ${cours.formateur.ville}` : ""}` : null,
-    cours.nbLecons ? pluriel(cours.nbLecons, "leçon") : "Leçons à venir",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+export function CarteCoursEtudiant({ cours }: { cours: CoursResumeSuivi }) {
+  const tx = useTextes(t);
+  const pct = cours.suivi?.pourcentage ?? null;
+  const fini = pct === 100;
+  const suivi = cours.suivi ? libelleSuivi(cours.suivi, tx) : "";
+  const meta = cours.formateur ? `${cours.formateur.prenom} ${cours.formateur.nom}${cours.formateur.ville ? ` · depuis ${cours.formateur.ville}` : ""}` : "";
   return (
     <Link
       href={`/cours/${cours.id}`}
@@ -48,13 +51,16 @@ export function CarteCoursEtudiant({ cours }: { cours: CoursResume }) {
         <div className="flex min-w-0 flex-col gap-1">
           <span className="font-mono text-[11px] font-semibold text-orange-fonce">{cours.code}</span>
           <span className="text-[17px] font-bold leading-snug">{cours.titre}</span>
-          <span className="text-[13px] text-texte-gris">{meta}</span>
+          {suivi && <span className="text-[13px] leading-snug text-texte-pale">{suivi}</span>}
+          {meta && <span className="text-[13px] text-texte-gris">{meta}</span>}
         </div>
-        <span className={cn("shrink-0 text-[22px] font-extrabold tabular-nums", fini && "text-succes")} aria-label={`${pct} % terminé`}>
-          {pct}%
-        </span>
+        {pct !== null && (
+          <span className={cn("shrink-0 text-[22px] font-extrabold tabular-nums", fini && "text-succes")} aria-label={tx("progression.aria", { v: { pct } })}>
+            {pct}%
+          </span>
+        )}
       </div>
-      <BarreProgression valeur={pct} ton={fini ? "succes" : "orange"} />
+      {pct !== null && <BarreProgression valeur={pct} ton={fini ? "succes" : "orange"} />}
       <LigneSeance cours={cours} />
     </Link>
   );

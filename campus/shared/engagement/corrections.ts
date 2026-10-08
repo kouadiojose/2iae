@@ -186,10 +186,12 @@ export type RelectureEtudiant = {
 
 /** POST /api/rendus/:id/relecture (étudiant, copie notée) */
 export type CorpsDemanderRelecture = { motif: string };
+/** Réponse de POST /api/rendus/:id/relecture : la demande enregistrée. */
+export type ReponseRelecture = { relecture: RelectureEtudiant };
 
 // ── Échanges : direction ───────────────────────────────────────────────────
 
-/** GET /api/pilotage/corrections : la correction automatique, en chiffres (périmètre de la personne). */
+/** GET /api/pilotage/corrections[?jours=7|30|90] : la correction automatique, en chiffres (périmètre de la personne). */
 export type BilanCorrections = {
   depuis: string;
   corriges: { enPreparation: number; aValider: number; valides: number; tacites: number };

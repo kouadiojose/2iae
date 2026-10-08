@@ -174,6 +174,8 @@ export type DevoirDetailEtudiant = {
   quiz: EtatQuizEtudiant | null;
   /** Corrigé validé du dépôt (Markdown), montré après la date limite à l'étudiant dont la copie est notée. */
   corrige?: string | null;
+  /** Dépôt corrigé par le campus (il a une ligne de corrigé) : conseils de dépôt et messages adaptés. */
+  correctionCampus?: boolean;
 };
 
 /** GET /api/devoirs/:id vu par le formateur ou l'équipe (éditeur). */
@@ -320,6 +322,8 @@ export type EvaluationNote = {
   /** Note ramenée sur 20. */
   sur20: number | null;
   etat: "note" | "en_correction" | "non_rendu" | "a_venir";
+  /** Qui a posé la note publiée (repère « corrigé par le campus » pour un dépôt). */
+  origineNote?: OrigineNote;
 };
 
 /** GET /api/notes (étudiant) : ses notes publiées, cours par cours. */

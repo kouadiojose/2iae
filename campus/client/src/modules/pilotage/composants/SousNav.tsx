@@ -21,6 +21,7 @@ const PAGES: ({ href: string; libelle: string; prefixes?: string[] } & Pick<Elem
   { href: "/emploi-du-temps", libelle: "Emploi du temps", sansDroit: "programme" },
   { href: "/pilotage/planning", libelle: "Planning" },
   { href: "/pilotage/presences", libelle: "Présences", droit: "presences_voir" },
+  { href: "/pilotage/engagement", libelle: "Engagement", droit: "presences_voir" },
   { href: "/pilotage/annonces", libelle: "Annonces", droit: "annonces" },
   { href: "/pilotage/site", libelle: "Site public", droit: "outils_campus" },
   { href: "/pilotage/formateurs", libelle: "Présentations", prefixes: ["/pilotage/formateurs"], direction: true },

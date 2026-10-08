@@ -12,6 +12,7 @@ import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db, pool } from "./db";
 import { config, estProduction } from "./config";
 import { ErreurHttp } from "./http";
+import { noterActivite, plateformeDe } from "./engagement/activite";
 import {
   utilisateurs,
   sites,
@@ -213,17 +214,10 @@ export const chargerUtilisateur: RequestHandler = async (req, _res, next) => {
       const u = await utilisateurParId(id);
       if (u?.actif) {
         req.utilisateur = u;
-        // Activité réelle (les sessions durent des semaines) : au plus une écriture par heure.
-        const derniere = u.derniereConnexion?.getTime() ?? 0;
-        if (Date.now() - derniere > 60 * 60 * 1000) {
-          const maintenant = new Date();
-          u.derniereConnexion = maintenant;
-          void db
-            .update(utilisateurs)
-            .set({ derniereConnexion: maintenant })
-            .where(eq(utilisateurs.id, u.id))
-            .catch(() => undefined);
-        }
+        // Activité réelle (les sessions durent des semaines) : derniere_connexion et l'activité du
+        // jour (activite_jours, plateforme), écrites sans attente au plus une fois par heure, et
+        // aussitôt quand le jour local change (server/engagement/activite.ts, chantier C8).
+        noterActivite(u, plateformeDe(req));
       } else req.session.utilisateurId = undefined;
     }
     next();

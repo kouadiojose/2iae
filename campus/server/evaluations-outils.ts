@@ -3,7 +3,7 @@
 // interrogation dont le corrigé change. Certains servent à d'autres modules
 // (interrogationEnCours met l'assistant IA en pause).
 import crypto from "crypto";
-import { and, asc, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, asc, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import { config } from "./config";
 import { publierUtilisateur } from "./temps-reel";
@@ -131,6 +131,38 @@ export function corrigerTentative(questions: QuestionQuiz[], reponses: Tentative
   return { score: arrondi(score), total: arrondi(total), note, detail };
 }
 
+// ── Questions ajoutées après coup ──────────────────────────────────────────
+// Une question ajoutée à une interrogation déjà commencée n'a pas été posée aux étudiants qui l'avaient
+// commencée : elle ne compte pas dans leur note (sinon une question jamais vue, comptée fausse, ferait baisser
+// toutes les notes). L'heure d'ajout vient du journal (« questions_ajoutees », avec les identifiants) : la
+// table des questions n'a pas de date.
+
+/** Questions de cette interrogation ajoutées depuis « depuis » : identifiant → heure d'ajout. */
+export async function questionsAjoutees(devoirId: number, depuis: Date): Promise<Map<number, Date>> {
+  const r = await db.execute<{ ids: unknown; cree_le: Date | string }>(sql`
+    SELECT details->'ids' AS ids, cree_le FROM campus.journal
+    WHERE cree_le >= ${depuis.toISOString()}::timestamptz AND action = 'questions_ajoutees'
+      AND details->>'devoirId' = ${String(devoirId)} AND jsonb_typeof(details->'ids') = 'array'`);
+  const ajouts = new Map<number, Date>();
+  for (const l of r.rows) for (const id of l.ids as number[]) ajouts.set(Number(id), new Date(l.cree_le));
+  return ajouts;
+}
+
+/**
+ * Les questions qu'une tentative a eues : toutes, sauf celles ajoutées après son début auxquelles l'étudiant n'a
+ * pas répondu (il ne les a pas vues ; s'il y a répondu, après un rechargement, elles comptent).
+ */
+export function questionsDeLaTentative<Q extends Pick<QuestionQuiz, "id">>(
+  questions: Q[],
+  t: Pick<TentativeQuiz, "debutLe" | "reponses">,
+  ajoutees: Map<number, Date>,
+): Q[] {
+  return questions.filter((q) => {
+    const ajoutee = ajoutees.get(q.id);
+    return !ajoutee || ajoutee.getTime() <= t.debutLe.getTime() || String(q.id) in t.reponses;
+  });
+}
+
 // ── Échéances ──────────────────────────────────────────────────────────────
 
 /**
@@ -212,6 +244,7 @@ export async function terminerTentative(tentativeId: number, horsDelai = false) 
   if (!ligne || ligne.t.finLe) return null;
   const { d } = ligne;
   const questions = await db.select().from(questionsQuiz).where(eq(questionsQuiz.devoirId, d.id)).orderBy(asc(questionsQuiz.ordre), asc(questionsQuiz.id));
+  const ajoutees = await questionsAjoutees(d.id, ligne.t.debutLe);
   const cloture = await db.transaction(async (tx) => {
     const [t] = await tx
       .select()
@@ -219,7 +252,7 @@ export async function terminerTentative(tentativeId: number, horsDelai = false) 
       .where(and(eq(tentativesQuiz.id, tentativeId), isNull(tentativesQuiz.finLe)))
       .for("update");
     if (!t) return null; // terminée entre-temps par une autre requête
-    const resultat = corrigerTentative(questions, t.reponses, d.bareme);
+    const resultat = corrigerTentative(questionsDeLaTentative(questions, t, ajoutees), t.reponses, d.bareme);
     // La fin retenue ne dépasse jamais la fin prévue (+ marge) : un « Terminer » tardif ne donne pas de temps en plus.
     const finMax = new Date(finDe(t, d).getTime() + MARGE_QUIZ_MS);
     const fin = new Date(Math.min(Date.now(), finMax.getTime()));
@@ -246,20 +279,24 @@ export async function terminerTentative(tentativeId: number, horsDelai = false) 
     .onConflictDoUpdate({
       target: [rendus.devoirId, rendus.etudiantId],
       set: { statut: "corrige", note: meilleure.note, origineNote: "campus", corrigeLe: new Date(), majLe: new Date() },
+      // Une note posée par un formateur (correcteur connu) n'est jamais remplacée, comme dans recalculerQuiz :
+      // la tentative reste enregistrée, la copie garde la note du formateur (aucune ligne n'est alors renvoyée).
+      setWhere: isNull(rendus.correcteurId),
     })
     .returning();
-  if (!rendu.recu) await db.update(rendus).set({ recu: recuPour(rendu.id) }).where(eq(rendus.id, rendu.id));
+  if (rendu && !rendu.recu) await db.update(rendus).set({ recu: recuPour(rendu.id) }).where(eq(rendus.id, rendu.id));
   publierUtilisateur(t.etudiantId, "quiz-termine", { devoirId: d.id, tentativeId: t.id });
   return { ...resultat, devoir: d, meilleureNote: meilleure.note ?? resultat.note, faites: meilleure.faites, horsDelai };
 }
 
 /**
  * Recalcule les notes d'une interrogation dont le corrigé a changé (bonne réponse corrigée, points, question
- * ajoutée ou retirée, barème) : chaque tentative terminée est corrigée de nouveau, puis la meilleure note de
- * chaque étudiant remplace celle de sa copie. Les étudiants dont la note publiée a changé sont prévenus
- * (« Note mise à jour », jamais la note). Sans aucune question, rien n'est recalculé : toutes les notes
- * tomberaient à zéro. Une note posée à la main par un formateur (correcteur connu) n'est jamais remplacée.
- * Les tentatives en cours seront corrigées à leur fin, avec les nouvelles réponses.
+ * retirée, barème) : chaque tentative terminée est corrigée de nouveau, sur les questions qu'elle a eues (une
+ * question ajoutée après son début n'y compte pas : questionsDeLaTentative), puis la meilleure note de chaque
+ * étudiant remplace celle de sa copie. Les étudiants dont la note publiée a changé sont prévenus (« Note mise à
+ * jour », jamais la note). Sans aucune question, rien n'est recalculé : toutes les notes tomberaient à zéro. Une
+ * note posée à la main par un formateur (correcteur connu) n'est jamais remplacée. Les tentatives en cours seront
+ * corrigées à leur fin, avec les nouvelles réponses.
  */
 export async function recalculerQuiz(devoirId: number): Promise<{ tentatives: number; etudiants: number[] }> {
   const [d] = await db.select().from(devoirs).where(eq(devoirs.id, devoirId));
@@ -270,9 +307,11 @@ export async function recalculerQuiz(devoirId: number): Promise<{ tentatives: nu
     .select()
     .from(tentativesQuiz)
     .where(and(eq(tentativesQuiz.devoirId, d.id), isNotNull(tentativesQuiz.finLe)));
+  const premiere = faites.reduce<Date | null>((min, t) => (!min || t.debutLe < min ? t.debutLe : min), null);
+  const ajoutees = premiere ? await questionsAjoutees(d.id, premiere) : new Map<number, Date>();
   let tentatives = 0;
   for (const t of faites) {
-    const r = corrigerTentative(questions, t.reponses, d.bareme);
+    const r = corrigerTentative(questionsDeLaTentative(questions, t, ajoutees), t.reponses, d.bareme);
     if (r.score === t.score && r.note === t.note) continue;
     await db.update(tentativesQuiz).set({ score: r.score, note: r.note }).where(eq(tentativesQuiz.id, t.id));
     tentatives++;

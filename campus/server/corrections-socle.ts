@@ -42,17 +42,49 @@ export function sqlCorrigeUtilisable(alias: string): SQL {
   return sql`EXISTS (SELECT 1 FROM campus.corriges_devoirs cdu WHERE cdu.devoir_id = ${d}.id AND cdu.statut IN ('valide', 'tacite'))`;
 }
 
-/** Expression SQL : le devoir (alias de campus.devoirs) est corrigé par le campus (il a une ligne de corrigé). */
+/**
+ * Un corrigé qui n'avance plus depuis ce délai (rédaction ratée, routine arrêtée, devoir masqué, cours non publié)
+ * ne retient plus les copies : elles redeviennent « à corriger » par le formateur (décision D-G de la revue).
+ */
+export const DELAI_CORRIGE_BLOQUE_HEURES = 48;
+
+/**
+ * Expression SQL : le campus s'occupe des copies de ce devoir (alias de campus.devoirs), qui ne sont donc pas « à
+ * corriger » par le formateur. Vrai pour un devoir publié dont le corrigé sert de barème (validé ou tacite), ou est
+ * en route vers lui : proposé au formateur (message du jour parti, l'échéance court), ou en préparation / proposé
+ * depuis moins de DELAI_CORRIGE_BLOQUE_HEURES. Faux dès que le corrigé est bloqué : en préparation depuis plus
+ * longtemps, ou rédaction abandonnée (rappel_envoye_le posé sur un corrigé en préparation : le formateur a été
+ * prévenu, server/corriges.ts) ; les copies reviennent alors au formateur jusqu'à ce qu'un corrigé avance.
+ * Même règle en TypeScript : corrigeChezLeCampus.
+ */
 export function sqlCorrigeParLeCampus(alias: string): SQL {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error(`sqlCorrigeParLeCampus : alias SQL invalide « ${alias} »`);
   const d = sql.raw(alias);
-  return sql`EXISTS (SELECT 1 FROM campus.corriges_devoirs cdc WHERE cdc.devoir_id = ${d}.id)`;
+  const recent = sql`cdc.maj_le > now() - make_interval(hours => ${DELAI_CORRIGE_BLOQUE_HEURES})`;
+  return sql`(${d}.publie AND EXISTS (SELECT 1 FROM campus.corriges_devoirs cdc WHERE cdc.devoir_id = ${d}.id AND (
+    cdc.statut IN ('valide', 'tacite')
+    OR (cdc.statut = 'propose' AND (cdc.message_envoye_le IS NOT NULL OR ${recent}))
+    OR (cdc.statut = 'en_preparation' AND cdc.rappel_envoye_le IS NULL AND ${recent}))))`;
+}
+
+/** Même règle que sqlCorrigeParLeCampus, pour une ligne déjà lue (null : devoir sans corrigé). */
+export function corrigeChezLeCampus(
+  cd: Pick<CorrigeDevoir, "statut" | "majLe" | "messageEnvoyeLe" | "rappelEnvoyeLe"> | null | undefined,
+  devoirPublie: boolean,
+  maintenant = new Date(),
+): boolean {
+  if (!cd || !devoirPublie) return false;
+  if (STATUTS_CORRIGE_UTILISABLES.includes(cd.statut)) return true;
+  const recent = cd.majLe.getTime() > maintenant.getTime() - DELAI_CORRIGE_BLOQUE_HEURES * HEURE_MS;
+  if (cd.statut === "propose") return cd.messageEnvoyeLe !== null || recent;
+  return cd.rappelEnvoyeLe === null && recent;
 }
 
 /**
  * Le corrigé a changé (version) : les copies dont la note publiée vient du campus, et celles qui attendaient,
  * repartent en correction. Les notes posées par un formateur ne sont jamais touchées. La note du campus déjà
- * publiée reste visible jusqu'à la nouvelle. Renvoie le nombre de copies remises en file.
+ * publiée reste visible jusqu'à la nouvelle (ramenée au nouveau barème s'il a changé : corriges.ts,
+ * notesDuCampusAuNouveauBareme). Renvoie le nombre de copies remises en file.
  */
 export async function remettreEnFile(devoirId: number): Promise<number> {
   const lignes = await db.execute<{ rendu_id: number }>(sql`

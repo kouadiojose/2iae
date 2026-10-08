@@ -28,7 +28,10 @@
 // « facultatives ». Le travail du formateur devient : valider les corrigés du
 // jour (server/corriges.ts), trancher les copies que le campus lui laisse
 // (« à revoir ») et répondre aux demandes de relecture ; le rappel du matin en
-// parle (plus des copies du campus).
+// parle (plus des copies du campus). Décision D-G de la revue : un corrigé
+// bloqué (en préparation depuis 48 h, rédaction abandonnée) rend ses copies
+// au formateur (« à corriger », rappel du matin) ; une copie qu'un formateur a
+// prise en main (commentaire, vocal, sans note) reste aussi la sienne.
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { enseigneCours, etudiantsDuCours, idsCoursAccessibles } from "../acces";
@@ -85,6 +88,12 @@ const vous = { registre: "vous" as const };
 
 /** Note posée sur la copie ACTUELLE (même règle que le module évaluations : correctionAJour). */
 const SQL_CORRECTION_A_JOUR = sql`(r.note IS NOT NULL AND r.corrige_le IS NOT NULL AND (r.rendu_le IS NULL OR r.corrige_le >= r.rendu_le))`;
+/** Un formateur a la main sur la copie ACTUELLE, note posée ou non (même règle que formateurALaMain, correction-auto.ts). */
+const SQL_FORMATEUR_A_LA_MAIN = sql`(r.correcteur_id IS NOT NULL AND r.corrige_le IS NOT NULL AND (r.rendu_le IS NULL OR r.corrige_le >= r.rendu_le))`;
+/** Le campus s'occupe de cette copie (alias r et d) : corrigé en route vers le barème, et aucun formateur n'a la main. */
+const sqlCopieDuCampus = () => sql`(${sqlCorrigeParLeCampus("d")} AND NOT ${SQL_FORMATEUR_A_LA_MAIN})`;
+/** Copie « à revoir » : laissée au formateur, ou recorrection d'une note du campus déjà publiée retenue (même règle que /enseigner/a-revoir). */
+const SQL_A_REVOIR = sql`(ca.etat = 'a_revoir' AND (r.statut = 'rendu' OR r.origine_note = 'campus'))`;
 
 async function tracer(utilisateurId: number, action: string, details: Record<string, unknown>) {
   await db.insert(journal).values({ utilisateurId, action, details });
@@ -256,12 +265,15 @@ export async function apresSeance(u: Utilisateur, s: Seance): Promise<ApresSeanc
   let devoirsApres: DevoirAutoApres[] = [];
   if (lignes.length) {
     const destinataires = (await etudiantsDuCours(s.coursId)).length;
-    const stats = await db.execute<{ devoir_id: number; faits: number; moyenne: number | null; a_corriger: number; notees: number; a_revoir: number }>(sql`
+    // Exercice du campus : notées PAR LE CAMPUS, à revoir, en attente du campus (rendues, sans formateur qui a la
+    // main) ; les copies notées ou commencées par un formateur ne comptent que dans « faits ».
+    const stats = await db.execute<{ devoir_id: number; faits: number; moyenne: number | null; a_corriger: number; notees: number; a_revoir: number; en_attente: number }>(sql`
       SELECT r.devoir_id, count(*)::int AS faits,
              avg(r.note) FILTER (WHERE r.statut = 'corrige') AS moyenne,
              count(*) FILTER (WHERE r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR})::int AS a_corriger,
-             count(*) FILTER (WHERE r.statut = 'corrige')::int AS notees,
-             count(*) FILTER (WHERE r.statut = 'rendu' AND ca.etat = 'a_revoir')::int AS a_revoir
+             count(*) FILTER (WHERE r.statut = 'corrige' AND r.origine_note = 'campus' AND ca.etat IS DISTINCT FROM 'a_revoir')::int AS notees,
+             count(*) FILTER (WHERE ${SQL_A_REVOIR})::int AS a_revoir,
+             count(*) FILTER (WHERE r.statut = 'rendu' AND ca.etat IS DISTINCT FROM 'a_revoir' AND NOT ${SQL_FORMATEUR_A_LA_MAIN})::int AS en_attente
       FROM campus.rendus r
       LEFT JOIN campus.corrections_auto ca ON ca.rendu_id = r.id
       WHERE r.devoir_id = ANY(${tableauEntiers(lignes.map((l) => l.id))}) AND r.statut <> 'brouillon'
@@ -279,7 +291,7 @@ export async function apresSeance(u: Utilisateur, s: Seance): Promise<ApresSeanc
         moyenne: l.type === "quiz" && st?.moyenne !== null && st?.moyenne !== undefined ? Math.round(Number(st.moyenne) * 10) / 10 : null,
         aCorriger: campus ? 0 : (st?.a_corriger ?? 0),
         correction: campus
-          ? { notees: st?.notees ?? 0, enAttente: Math.max(0, faits - (st?.notees ?? 0) - (st?.a_revoir ?? 0)), aRevoir: st?.a_revoir ?? 0 }
+          ? { notees: st?.notees ?? 0, enAttente: st?.en_attente ?? 0, aRevoir: st?.a_revoir ?? 0 }
           : null,
       };
     });
@@ -320,7 +332,7 @@ async function resumeCorriges(u: Utilisateur, coursIds: number[]): Promise<NonNu
           JOIN campus.rendus r ON r.id = ca.rendu_id
           JOIN campus.devoirs d ON d.id = r.devoir_id
           JOIN campus.utilisateurs e ON e.id = r.etudiant_id
-          WHERE d.cours_id = ANY(${ids}) AND ca.etat = 'a_revoir' AND r.statut = 'rendu' ${duSite}) AS a_revoir,
+          WHERE d.cours_id = ANY(${ids}) AND ${SQL_A_REVOIR} ${duSite}) AS a_revoir,
         (SELECT count(*)::int FROM campus.demandes_relecture dr
           JOIN campus.rendus r ON r.id = dr.rendu_id
           JOIN campus.devoirs d ON d.id = r.devoir_id
@@ -369,7 +381,10 @@ type LigneCopie = {
   ia: boolean;
   /** Exercice de la routine du soir : correction facultative (D2). */
   automatique: boolean;
-  /** Devoir corrigé par le campus (D6) : ses copies ne sont ni à corriger ni facultatives pour le formateur. */
+  /**
+   * Copie dont le campus s'occupe (D6) : ni à corriger ni facultative pour le formateur. Fausse quand le corrigé est
+   * bloqué (D-G) ou qu'un formateur a pris la copie en main.
+   */
   campus: boolean;
 };
 
@@ -386,7 +401,7 @@ async function lignesCopies(u: Utilisateur, coursIds: number[], devoirId?: numbe
            jsonb_array_length(d.grille) > 0 AS avec_grille,
            e.id AS etudiant_id, e.prenom, e.nom, e.site_id, si.nom_court AS site,
            r.rendu_le, r.en_retard, ${SQL_CORRECTION_A_JOUR} AS a_jour, r.proposition_ia IS NOT NULL AS ia,
-           ${sqlDevoirAutomatique("d")} AS automatique, ${sqlCorrigeParLeCampus("d")} AS campus
+           ${sqlDevoirAutomatique("d")} AS automatique, ${sqlCopieDuCampus()} AS campus
     FROM campus.rendus r
     JOIN campus.devoirs d ON d.id = r.devoir_id
     JOIN campus.cours c ON c.id = d.cours_id
@@ -795,7 +810,7 @@ export async function attenteFormateur(formateurId: number, maintenant = new Dat
       JOIN campus.devoirs d ON d.id = r.devoir_id
       JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
       WHERE d.cours_id IN ${mesCours} AND d.type = 'depot' AND r.statut = 'rendu' AND NOT ${SQL_CORRECTION_A_JOUR}
-        AND NOT ${sqlDevoirAutomatique("d")} AND NOT ${sqlCorrigeParLeCampus("d")}
+        AND NOT ${sqlDevoirAutomatique("d")} AND NOT ${sqlCopieDuCampus()}
         AND r.rendu_le < ${new Date(maintenant.getTime() - ATTENTE_COPIE_MS).toISOString()}::timestamptz`)
   ).rows;
   // Salon « Questions du cours » dont le dernier message (non supprimé) vient d'un étudiant.
@@ -817,10 +832,10 @@ export async function attenteFormateur(formateurId: number, maintenant = new Dat
       SELECT
         (SELECT count(*)::int FROM campus.corrections_auto ca JOIN campus.rendus r ON r.id = ca.rendu_id
           JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
-          WHERE d.cours_id IN ${mesCours} AND ca.etat = 'a_revoir' AND r.statut = 'rendu') AS a_revoir,
+          WHERE d.cours_id IN ${mesCours} AND ${SQL_A_REVOIR}) AS a_revoir,
         (SELECT max(ca.maj_le) FROM campus.corrections_auto ca JOIN campus.rendus r ON r.id = ca.rendu_id
           JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
-          WHERE d.cours_id IN ${mesCours} AND ca.etat = 'a_revoir' AND r.statut = 'rendu') AS revoir_recente,
+          WHERE d.cours_id IN ${mesCours} AND ${SQL_A_REVOIR}) AS revoir_recente,
         (SELECT count(*)::int FROM campus.demandes_relecture dr JOIN campus.rendus r ON r.id = dr.rendu_id
           JOIN campus.devoirs d ON d.id = r.devoir_id JOIN campus.cours co ON co.id = d.cours_id AND co.statut = 'publie'
           WHERE d.cours_id IN ${mesCours} AND dr.statut = 'ouverte') AS relectures,

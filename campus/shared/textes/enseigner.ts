@@ -176,7 +176,7 @@ const FR = {
   "groupe.devoir.roles": "**Les rôles dans le groupe :**",
   "groupe.devoir.livrable": "**À rendre :** {livrable}",
   "groupe.devoir.comment":
-    "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos nettes, fichier (PDF, Word, PowerPoint…) ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie. Le campus corrige le travail d'après le corrigé validé par ton formateur, avec des conseils critère par critère.",
+    "**Comment rendre :** forme ton groupe, répartissez-vous les rôles, puis rends le travail ici : photos nettes, PDF ou texte. Un seul membre peut rendre pour tout le groupe : si c'est toi, écris en tête les noms et matricules de chacun. Tu peux aussi rendre ta propre partie. Après la date limite, le campus corrige le travail d'après le corrigé validé par ton formateur, avec des conseils critère par critère.",
   "groupe.devoir.origine": "_Travail de groupe du cours résumé de la séance du {jour}._",
   "groupe.critere.contenu": "Contenu juste et appuyé sur le cours",
   "groupe.critere.roles": "Chaque rôle tenu",
@@ -224,6 +224,13 @@ const FR = {
   "corriges.rappel.titre.un": "Un corrigé sera tenu pour bon à {heure}",
   "corriges.rappel.titre.n": "{n} corrigés seront tenus pour bons à {heure}",
   "corriges.rappel.corps": "Sans réponse de votre part, le campus s'en servira pour noter les copies. Un coup d'œil suffit.",
+  // Corrigé que le campus n'a pas pu rédiger (resté en préparation, ou rédaction ratée) : les copies reviennent au formateur.
+  "corriges.bloque.titre.un": "Corrigé non rédigé : un devoir attend votre corrigé",
+  "corriges.bloque.titre.n": "Corrigés non rédigés : {n} devoirs attendent votre corrigé",
+  "corriges.bloque.corps.un":
+    "{liste}. Le campus n'a pas pu rédiger son corrigé. Écrivez-le dans le devoir : le campus s'en servira pour noter les copies. Vous pouvez aussi les noter vous-même : elles sont revenues dans vos copies à corriger.",
+  "corriges.bloque.corps.n":
+    "{liste}. Le campus n'a pas pu rédiger leur corrigé. Écrivez-les dans les devoirs : le campus s'en servira pour noter les copies. Vous pouvez aussi les noter vous-même : elles sont revenues dans vos copies à corriger.",
   // E-mail du jour.
   "corriges.email.sujet.un": "Corrigé du jour : 1 devoir à vérifier",
   "corriges.email.sujet.n": "Corrigés du jour : {n} devoirs à vérifier",
@@ -291,6 +298,9 @@ const FR = {
   "corriges.erreur.droit": "Seuls le formateur du cours et la direction peuvent valider ce corrigé.",
   "corriges.erreur.lecture": "Seuls le formateur du cours et la direction peuvent ouvrir ce corrigé.",
   "corriges.erreur.aucun": "Ce devoir n'a pas de corrigé.",
+  "corriges.erreur.ecrire": "Seuls le formateur du cours et la direction peuvent écrire ou modifier le corrigé d'un devoir. Enregistrez sans le corrigé.",
+  "corriges.erreur.questions":
+    "Les questions de ce QCM sont son corrigé : seuls le formateur du cours et la direction peuvent les modifier (le formateur les valide).",
 } satisfies Dictionnaire;
 
 export const t = creerTextes(FR);

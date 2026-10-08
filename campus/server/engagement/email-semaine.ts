@@ -2,7 +2,7 @@
 // tous les e-mails d'engagement : plafond quotidien, lien de désabonnement
 // signé, bouton suivi, en-têtes List-Unsubscribe.
 //
-// Le lundi entre 6 h 45 et 9 h (heure locale), un e-mail par étudiant et par
+// Le lundi entre 7 h 30 et 9 h (heure locale), un e-mail par étudiant et par
 // semaine : ce qu'il a fait la semaine passée, les directs et les échéances
 // de la semaine qui commence, les cours complets qu'il n'a pas encore ouverts
 // et, si la Coupe existe (C5), la participation de sa classe et de son campus. Un seul
@@ -11,8 +11,10 @@
 // Plafond : emails_par_jour (40 par défaut) pour tous les e-mails
 // d'engagement, car le compte Resend est partagé avec www.2iae.com. L'e-mail
 // de la semaine laisse un quart du plafond aux e-mails des décrocheurs (passage
-// de 16 h 40) : il ne les bloque jamais. Ce qui dépasse part les jours suivants
-// (jusqu'au jeudi), dans la même fenêtre ; ceux qui ne l'ont pas reçu la
+// de 16 h 40) : il ne les bloque jamais. Il part après le corrigé du jour des
+// formateurs (7 h, server/corriges.ts), compté dans le même plafond : les
+// formateurs reçoivent d'abord leurs corrigés par e-mail. Ce qui dépasse part
+// les jours suivants (jusqu'au jeudi), dans la même fenêtre ; ceux qui ne l'ont pas reçu la
 // semaine d'avant passent en premier (ce ne sont pas toujours les mêmes qui
 // attendent). La Coupe n'y donne aucun rang (décision D5) : seulement la
 // participation de sa classe et de son campus, provisoire tant que la semaine

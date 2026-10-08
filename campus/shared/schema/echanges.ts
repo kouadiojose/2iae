@@ -3,6 +3,7 @@
 import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, sites, classes, fichiers } from "./base";
 import { cours } from "./cours";
+import type { Marque, PlateformeRappels } from "../engagement/envois";
 
 /** direct : deux personnes · cours : salon de tous les inscrits d'un cours · classe : salon d'une classe. */
 export const TYPES_CONVERSATION = ["direct", "cours", "classe"] as const;
@@ -130,13 +131,27 @@ export const notifications = campusSchema.table(
 );
 
 /** Abonnements Web Push (PWA installée sur le téléphone). */
-export const abonnementsPush = campusSchema.table("abonnements_push", {
-  id: serial("id").primaryKey(),
-  utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
-  endpoint: text("endpoint").notNull().unique(),
-  cles: jsonb("cles").$type<{ p256dh: string; auth: string }>().notNull(),
-  creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
-});
+export const abonnementsPush = campusSchema.table(
+  "abonnements_push",
+  {
+    id: serial("id").primaryKey(),
+    utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    cles: jsonb("cles").$type<{ p256dh: string; auth: string }>().notNull(),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+    // Rappels vérifiés sur chaque téléphone (chantier C3, migration 0026_envois_push).
+    /** android, ios ou ordinateur, vu par le navigateur. */
+    plateforme: text("plateforme").$type<PlateformeRappels>(),
+    /** Marque choisie d'un toucher dans le guide (tecno, infinix, itel, samsung, autre) : jamais lue sur le téléphone. */
+    marque: text("marque").$type<Marque>(),
+    /** Réponse à « L'as-tu reçu ? » après le rappel d'essai, et sa date. Nul : pas encore répondu. */
+    recu: boolean("recu"),
+    verifieLe: timestamp("verifie_le", { withTimezone: true }),
+    /** Dernier rappel accepté par le service d'envoi pour cet appareil (mis à jour au plus une fois par jour). */
+    derniereReussiteLe: timestamp("derniere_reussite_le", { withTimezone: true }),
+  },
+  (t) => [index("abonnements_push_utilisateur_idx").on(t.utilisateurId)],
+);
 
 /** Événements de la vie scolaire (examens, réunions, journées) — les séances et devoirs ont leur propre table. */
 export const evenements = campusSchema.table(

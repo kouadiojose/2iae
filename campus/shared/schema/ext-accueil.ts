@@ -4,26 +4,30 @@
 import { serial, integer, text, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
 import { annonces, notifications, type Cible } from "./echanges";
+import type { Priorite } from "../engagement/envois";
 
 /**
  * Compteur de notifications envoyées sur le téléphone, par personne et par
- * jour (heure d'Abidjan) : au plus 3 par jour hors rappels de live.
+ * jour local (dans son fuseau, Abidjan par défaut) : au plus 3 par jour hors
+ * rappels urgents (politique d'envoi : shared/engagement/envois.ts).
  */
 export const compteursPush = campusSchema.table(
   "compteurs_push",
   {
     utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
-    /** Jour à Abidjan, « 2026-09-24 ». */
+    /** Jour local de la personne, « 2026-09-24 ». */
     jour: text("jour").notNull(),
     nombre: integer("nombre").notNull().default(0),
+    /** Rappels d'engagement partis ce jour-là : un seul par jour (chantier C3). */
+    engagements: integer("engagements").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.utilisateurId, t.jour] })],
 );
 
 /**
- * Notifications arrivées pendant les heures calmes (21 h – 6 h) : rien ne
- * sonne la nuit ; un seul rappel groupé part le matin pour celles qui sont
- * restées non lues.
+ * Notifications qui n'ont pas pu sonner : arrivées pendant les heures calmes
+ * (21 h – 6 h) ou au-delà du plafond du jour. Un seul résumé part le matin
+ * pour celles qui sont restées non lues.
  */
 export const pushDifferes = campusSchema.table(
   "push_differes",
@@ -32,6 +36,14 @@ export const pushDifferes = campusSchema.table(
     utilisateurId: integer("utilisateur_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
     notificationId: integer("notification_id").notNull().references(() => notifications.id, { onDelete: "cascade" }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Jour local (« AAAA-MM-JJ ») du résumé du matin qui l'emporte : le matin
+     * même pour une notification de la nuit, le lendemain pour une notification
+     * bloquée par le plafond. Nul (lignes d'avant C3) : le prochain résumé.
+     */
+    jour: text("jour"),
+    /** Priorité d'envoi (action ou contenu) : une action passe en tête du résumé. */
+    priorite: text("priorite").$type<Priorite>(),
   },
   (t) => [index("push_differes_utilisateur_idx").on(t.utilisateurId)],
 );

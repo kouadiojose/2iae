@@ -24,6 +24,7 @@ import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { cleDirect, FORMATS_DIAPOS, useEcranAllume, useEtatDirect } from "./outils";
 import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroupes } from "./groupes";
 import { BoutonLienInvite } from "./LienInvite";
+import { BoutonAfficherEmargement } from "./AfficherEmargement";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "campus";
@@ -127,6 +128,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                     Terminer
                   </Bouton>
                 )}
+                {enDirect && <BoutonAfficherEmargement seanceId={seance.id} etat={etat} />}
                 {enDirect && !groupes?.session && <BoutonGroupes onClick={() => setComposition(true)} />}
                 <BoutonLienInvite seance={seance} variante="nuit" />
                 <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>

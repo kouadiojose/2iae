@@ -2,6 +2,9 @@
 // (son + diapos, vidéo, ou compagnon dans la salle de conférence), scène,
 // questions votées, sondages, main levée, ressentis, présence par
 // battements et « Voici ce que tu as raté » après une coupure.
+// Émargé dans sa salle (QR ou code de l'écran), l'étudiant passe d'office en
+// mode salle, sans vidéo (CompagnonSalle). En ligne, une jauge montre sa
+// présence ; « Quitter » arrête vraiment le comptage (SortieDuLive).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Hand, LogOut, Radio, Video, Users, Mic, CalendarPlus, Signal } from "lucide-react";
 import { get, post, suppr } from "@/lib/api";
@@ -9,7 +12,8 @@ import { queryClient } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { dateEtHeure } from "@/lib/dates";
-import { Bouton, LienBouton } from "@/components/ui/bouton";
+import { lireLocal, ecrireLocal } from "@/modules/pwa/outils";
+import { Bouton } from "@/components/ui/bouton";
 import { CompteARebours } from "@/components/ui/compte-a-rebours";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { TestMicroCamera, useOptionsVisio } from "@/modules/visio";
@@ -18,28 +22,48 @@ import { PanneauQuestions, PanneauCampus, PanneauAssistant, SondageSuperpose, Vi
 import { ListeRessources } from "./ressources";
 import { EnTeteLive, FinDeSeance, ChampCode } from "./ui";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
-import { CONSOMMATION, cleDirect, estimationMo, formatMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
+import { CONSOMMATION, cleDirect, estimationMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
+import { CompagnonSalle } from "./CompagnonSalle";
+import { SortieDuLive } from "./SortieDuLive";
+import { JaugePresence } from "./JaugePresence";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
 
 type Panneau = "questions" | "discussion" | "campus" | "assistant" | "documents";
 
+/** Mode choisi pour une séance ; et, à part, le dernier mode en ligne choisi, repris pour tous les lives. */
 const cleMode = (id: number) => `campus:live:mode:${id}`;
+const CLE_MODE_GENERAL = "campus:live:mode";
+const estModeEnLigne = (m: string | null): m is "radio" | "video" => m === "radio" || m === "video";
+
+/**
+ * Mode de départ : celui de cette séance s'il a été choisi ; sinon le mode salle
+ * pour l'étudiant déjà émargé dans sa salle ; sinon le dernier mode en ligne
+ * (son + diapos ou vidéo) choisi pour un autre live. Jamais « compagnon » sans
+ * émargement : il faut être compté dans la salle pour suivre sur son écran.
+ * Stockage local protégé (navigation privée, stockage bloqué : on redemande).
+ */
+function modeDeDepart(seance: SeanceDetailDto): ModeSuivi | null {
+  const enSalle = seance.maPresence?.mode === "salle";
+  const garde = lireLocal(cleMode(seance.id));
+  if (garde === "compagnon") return enSalle ? "compagnon" : null;
+  if (estModeEnLigne(garde)) return garde;
+  if (enSalle) return "compagnon";
+  const general = lireLocal(CLE_MODE_GENERAL);
+  return estModeEnLigne(general) ? general : null;
+}
 
 export default function SalleEtudiant({ seance }: { seance: SeanceDetailDto }) {
-  const [mode, setMode] = useState<ModeSuivi | null>(() => {
-    const garde = localStorage.getItem(cleMode(seance.id)) as ModeSuivi | null;
-    if (garde === "compagnon" && seance.maPresence?.mode !== "salle") return null;
-    return garde;
-  });
+  const [mode, setMode] = useState<ModeSuivi | null>(() => modeDeDepart(seance));
   const choisir = (m: ModeSuivi | null) => {
     setMode(m);
-    if (m) localStorage.setItem(cleMode(seance.id), m);
-    else localStorage.removeItem(cleMode(seance.id));
+    ecrireLocal(cleMode(seance.id), m);
+    if (estModeEnLigne(m)) ecrireLocal(CLE_MODE_GENERAL, m);
   };
 
   if (seance.statut === "annulee" || seance.statut === "terminee") return <FinDeSeance seance={seance} />;
   if (!mode) return <ChoixMode seance={seance} onChoix={choisir} />;
+  if (mode === "compagnon") return <CompagnonSalle seance={seance} onChangerMode={choisir} />;
   return <SalleEnDirect seance={seance} mode={mode} onChangerMode={choisir} />;
 }
 
@@ -179,6 +203,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   const nonLus = useNonLusDiscussion(seance.id, false, moi.id, panneau === "discussion");
   const [rattrapage, setRattrapage] = useState<RattrapageDto | null>(null);
   const [sortie, setSortie] = useState<{ mo: number; mesure: boolean; minutes: number } | null>(null);
+  const [battement, setBattement] = useState<BattementPresenceDto | null>(null);
   const [octetsVisio, setOctetsVisio] = useState(0);
   const [octetsRadio, setOctetsRadio] = useState(0);
   const arrivee = useRef(Date.now());
@@ -203,12 +228,14 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   // Présence : un battement par minute pendant le direct. Au retour d'une coupure
   // de plus de 2 min, le serveur donne l'heure (la sienne) du battement précédent :
   // « Voici ce que tu as raté » part de là, jamais de l'horloge du téléphone.
+  // Dès l'écran de sortie, plus aucun battement : « Revenir dans la classe » relance le comptage.
   useEffect(() => {
-    if (!enDirect) return;
+    if (!enDirect || sortie) return;
     let actif = true;
     const battre = async () => {
       try {
         const b = await post<BattementPresenceDto>(`/api/seances/${seance.id}/presence`, { mode });
+        if (actif) setBattement(b);
         if (b.compte && b.absenceDepuis && actif) {
           const r = await get<RattrapageDto>(`/api/seances/${seance.id}/rattrapage?depuis=${encodeURIComponent(b.absenceDepuis)}`);
           if (actif) setRattrapage(r);
@@ -226,7 +253,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
       clearInterval(id);
       window.removeEventListener("online", auRetour);
     };
-  }, [enDirect, mode, seance.id]);
+  }, [enDirect, mode, seance.id, Boolean(sortie)]);
 
   const leverMain = async () => {
     try {
@@ -251,24 +278,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   const surRadio = useCallback((o: number) => setOctetsRadio(o), []);
 
   if (sortie) {
-    return (
-      <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
-        <div className="flex max-w-md flex-col items-center gap-4 text-center">
-          <span className="etiquette text-orange-peche">À bientôt</span>
-          <p className="text-3xl font-black tracking-serre">Ce cours t'a coûté {sortie.mo < 1 ? "moins de 1 Mo" : `environ ${formatMo(sortie.mo)}`}.</p>
-          <p className="text-[15px] text-nuit-doux">
-            {sortie.mesure ? "Consommation mesurée sur ton téléphone" : `Estimation pour le mode « ${CONSOMMATION[mode].titre} »`} · {sortie.minutes} min de cours.
-            {mode === "radio" && " En vidéo, c'est environ dix fois plus."}
-          </p>
-          <div className="flex flex-wrap justify-center gap-2">
-            <Bouton variante="nuit" onClick={() => setSortie(null)}>
-              Revenir dans la classe
-            </Bouton>
-            <LienBouton href="/direct">Retour à mes lives</LienBouton>
-          </div>
-        </div>
-      </div>
-    );
+    return <SortieDuLive seance={seance} mode={mode} minutes={sortie.minutes} mo={sortie.mo} mesure={sortie.mesure} enDirect={enDirect} onRevenir={() => setSortie(null)} />;
   }
 
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
@@ -307,6 +317,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
     <div className="relative min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
       <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
         <EnTeteLive seance={seance} etat={etat} mode={mode} />
+        {enDirect && <JaugePresence seanceId={seance.id} battement={battement} peutEmarger={Boolean(seance.monSite)} />}
         {rattrapage && <CarteRattrapage rattrapage={rattrapage} onFermer={() => setRattrapage(null)} />}
         {!enDirect && (
           <div className="flex flex-col gap-3 rounded-[22px] bg-nuit-panneau p-5">

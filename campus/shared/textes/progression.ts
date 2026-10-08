@@ -1,7 +1,10 @@
 // Textes du chantier C5 (progression et Coupe), pour la couche de textes
 // commune (shared/textes/index.ts) : étudiants tutoyés, personnel vouvoyé.
 // Les badges et « Ma progression » ne parlent qu'aux étudiants (tutoiement) ;
-// la Coupe parle à tous ; l'écran de salle s'adresse à la salle (vous).
+// la Coupe parle à tous ; l'écran de salle s'adresse aux étudiants (tu), comme
+// le QR d'émargement affiché à côté (C6). La progression de la Coupe est un
+// écart de taux (« +12 % »), jamais des points : elle ne se confond pas avec
+// les points des étudiants.
 import { creerTextes } from "./index";
 
 export const t = creerTextes({
@@ -81,6 +84,7 @@ export const t = creerTextes({
   "prog.serie.derniere.joker": "Semaine dernière sauvée par ton joker.",
   "prog.serie.derniere.neutre": "Semaine dernière sans cours ni devoir : ta série reste intacte.",
   "prog.serie.derniere.manquee": "Semaine dernière manquée. Nouvelle semaine, nouveau départ.",
+  "prog.serie.attente": "Bilan de la semaine dernière mercredi : tes révisions faites sans réseau ont jusque-là pour arriver et compter.",
   "prog.points.titre": "Mes points",
   "prog.points.semaine": "points cette semaine",
   "prog.points.total": "{n} points depuis la rentrée",
@@ -157,7 +161,8 @@ export const t = creerTextes({
     vous: "Les autres, par ordre alphabétique, avec leur progression :",
   },
   "coupe.bientot": "Bientôt dans la Coupe : {noms}",
-  "coupe.hausse": "+{n} pts",
+  "coupe.hausse": "+{n} %",
+  "coupe.baisse": "−{n} %",
   "coupe.relance": "Tout se joue cette semaine",
   "coupe.score": "{n} %",
   "coupe.participation": "participation {n} %",
@@ -175,12 +180,20 @@ export const t = creerTextes({
   "coupe.trophees.essai": "Pas de trophée pendant la semaine d'essai.",
   "coupe.precedente": "Semaine {n} : les lauréats",
   "coupe.precedente.aucun": "Semaine {n} : aucun trophée attribué.",
+  "coupe.precedente.cloture": "Semaine {n} : trophées attribués mercredi, le temps que les révisions faites sans réseau arrivent.",
   "coupe.comment.titre": "Comment ça marche ?",
   "coupe.comment.participer": {
     tu: "Tu participes quand tu fais au moins deux types d'actes dans la semaine : émarger au direct, rendre une copie, terminer un QCM, réviser…",
     vous: "Un étudiant participe quand il fait au moins deux types d'actes dans la semaine : émarger au direct, rendre une copie, terminer un QCM, réviser…",
   },
-  "coupe.comment.salle": "Les campus qui émargent en salle comptent aussi leur présence aux directs ; une séance sans aucun émargement ne compte ni pour ni contre.",
+  "coupe.comment.salle": {
+    tu: "Émarger ne fait jamais baisser le taux de ton campus : la présence en salle ne peut que le faire monter. Une séance compte quand au moins 3 étudiants du campus, et au moins un quart des attendus, ont émargé ; sinon, elle ne compte ni pour ni contre.",
+    vous: "Émarger ne fait jamais baisser le taux d'un campus : la présence en salle ne peut que le faire monter. Une séance compte quand au moins 3 étudiants du campus, et au moins un quart des attendus, ont émargé ; sinon, elle ne compte ni pour ni contre.",
+  },
+  "coupe.comment.progression": {
+    tu: "La progression compare la semaine en cours à la semaine précédente au même moment : un mardi midi à un mardi midi. Les trophées de la semaine sont attribués le mercredi suivant.",
+    vous: "La progression compare la semaine en cours à la semaine précédente au même moment : un mardi midi à un mardi midi. Les trophées sont attribués le mercredi suivant, une fois arrivées les révisions faites sans réseau.",
+  },
   "coupe.comment.classes": "Ligues de classes de 5 étudiants ou plus, par niveau, tous campus confondus.",
   "coupe.vide": "Le classement de la semaine arrive dans quelques minutes.",
   "coupe.erreur": { tu: "La Coupe n'a pas pu se charger.", vous: "La Coupe n'a pas pu se charger." },
@@ -208,22 +221,22 @@ export const t = creerTextes({
   "bandeau.coupe": "Coupe · semaine {n}",
   "bandeau.meneur": "{nom} mène",
   "bandeau.monCampus": "{nom} {rang}",
-  "bandeau.demarrage": "La semaine commence : chaque acte compte.",
-  "bandeau.classe.hausse": "Ta classe progresse de +{n} points.",
+  "bandeau.demarrage": "Aucun campus ne se détache encore cette semaine.",
+  "bandeau.classe.hausse": "Ta classe fait mieux que la semaine dernière à la même heure : +{n} %.",
   "bandeau.classe.relance": "Ta classe peut grimper : chaque acte compte.",
 
   // ── Écran de la salle de conférence ──
   "salle.titre": "Coupe des campus",
   "salle.semaine": "Semaine {n}",
   "salle.meneur": "{nom} mène cette semaine",
-  "salle.demarrage": "La semaine commence : chaque émargement compte.",
+  "salle.demarrage": "Aucun campus ne se détache encore cette semaine.",
   "salle.rang": "{nom} : {rang}",
-  "salle.progression": "{nom} progresse de +{n} points",
+  "salle.progression": "{nom} fait mieux que la semaine dernière : +{n} %",
   "salle.relance": "{nom} : chaque émargement compte cette semaine",
   "salle.bientot": "{nom} rejoindra la Coupe avec ses premiers étudiants.",
-  "salle.emarger": "Émargez avec le QR de l'écran : chaque présence fait gagner votre campus.",
+  "salle.emarger": "Scanne le QR de l'écran : chaque émargement compte pour ton campus.",
 
-  // ── Cloche du lundi (sans rappel sur le téléphone) ──
+  // ── Cloche du mercredi, à la clôture de la semaine (sans rappel sur le téléphone) ──
   "notif.titre": "Coupe · semaine {n} : bravo !",
   "notif.classe": "Ta classe {classe} remporte : {trophees}.",
   "notif.campus": "Ton campus {campus} remporte : {trophees}.",

@@ -147,6 +147,7 @@ function MaSerie({ data, tx }: { data: ProgressionMoi; tx: Tx }) {
         <span className="ml-auto self-start rounded-full bg-creme px-2.5 py-1 font-mono text-xs text-texte-pale">{tx("prog.serie.record", { v: { n: s.record } })}</span>
       </div>
       {s.derniere && <p className="text-[15px] text-texte-doux">{tx(`prog.serie.derniere.${s.derniere}`)}</p>}
+      {s.bilanEnAttente && <p className="text-[15px] text-texte-doux">{tx("prog.serie.attente")}</p>}
       <p className="flex items-start gap-2 text-sm text-texte-pale">
         {s.jokerDisponible ? <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-succes" aria-hidden /> : <Shield className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
         {s.jokerDisponible ? tx("prog.serie.joker.libre") : tx("prog.serie.joker.pris")}

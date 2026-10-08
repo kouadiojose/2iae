@@ -10,7 +10,10 @@
 //     quand il y a une série à protéger.
 //   - Le record est gardé.
 // Une présence « inconnue » au direct ne coûte jamais rien : seuls les actes
-// comptent, jamais les absences.
+// comptent, jamais les absences. Une semaine n'est jugée que le mercredi qui
+// suit (DELAI_BILAN_HEURES) : une révision faite hors ligne le dimanche compte
+// pour son jour si elle arrive dans les 48 h, la série ne casse pas pour une
+// connexion tardive.
 //
 // La première partie est faite de fonctions pures (essais sans base) ; la
 // seconde met à jour campus.objectifs_semaine, semaine terminée par semaine
@@ -19,6 +22,7 @@ import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { ajouterJours, jourLocal, lundiDe, semaineIso, FUSEAU_PAR_DEFAUT, type Jour, type SemaineIso } from "@shared/engagement/calendrier";
 import { OBJECTIF_PAR_DEFAUT, estObjectifSemaine, type ResultatSemaine } from "@shared/engagement/progression";
+import { DELAI_JOUR_REPONSE_MS } from "@shared/engagement/revision";
 import { RENTREE } from "./bareme";
 
 // ── Fonctions pures ────────────────────────────────────────────────────────
@@ -85,15 +89,21 @@ export function lundisAJuger(premierLundi: Jour, semaineEvaluee: SemaineIso | nu
 // ── Mise à jour en base ────────────────────────────────────────────────────
 
 /**
- * Une semaine n'est jugée qu'à partir du lundi midi qui la suit : les réponses
- * de révision faites hors ligne le dimanche ont le temps d'arriver.
+ * Délai de clôture d'une semaine, après le dimanche minuit : la série ne la
+ * juge (et la Coupe ne la fige) qu'ensuite. Une révision faite hors ligne
+ * garde son jour si elle arrive dans les 48 h (DELAI_JOUR_REPONSE_MS, C1),
+ * plus une heure pour que le registre (toutes les 5 minutes) l'ait inscrite :
+ * le mercredi à 1 h. Dérivé de la règle de C1 pour ne jamais s'en écarter.
  */
-export const DELAI_BILAN_HEURES = 12;
+export const DELAI_BILAN_HEURES = DELAI_JOUR_REPONSE_MS / 3_600_000 + 1;
 
 /** Tableau d'entiers PostgreSQL en un seul paramètre. */
 const entiers = (ids: number[]) => sql`${`{${ids.map((i) => Math.trunc(i)).join(",")}}`}::int[]`;
 
-/** Semaine dont le bilan est dû : la semaine en cours, décalée du délai de bilan. */
+/**
+ * Lundi de la première semaine pas encore jugeable : la semaine en cours,
+ * décalée du délai de clôture (lundi et mardi : encore celle d'avant).
+ */
 export const lundiCourantPourBilan = (maintenant: Date, fuseau: string | null) =>
   lundiDe(jourLocal(new Date(maintenant.getTime() - DELAI_BILAN_HEURES * 3600_000), fuseau || FUSEAU_PAR_DEFAUT));
 

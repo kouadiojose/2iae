@@ -123,9 +123,9 @@ export default function PageCorrections() {
       {mesCours && mesCours.length > 0 && (
         <section>
           <TitreSection titre="Carnets de notes" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {mesCours.map((c) => (
-              <CarteLien key={c.id} href={`/enseigner/notes/${c.id}`} className="flex min-h-[72px] items-center gap-3 p-4">
+              <CarteLien key={c.id} href={`/enseigner/notes/${c.id}`} className="flex min-h-[72px] min-w-0 items-center gap-3 p-4">
                 <BookOpenCheck className="h-6 w-6 shrink-0" style={{ color: c.couleur }} />
                 <span className="flex min-w-0 flex-col">
                   <span className="font-mono text-[11px] font-semibold text-orange-fonce">{c.code}</span>

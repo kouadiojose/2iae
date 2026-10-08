@@ -696,7 +696,7 @@ export async function ouvrirTravailDeGroupe(u: Utilisateur, s: Seance): Promise<
   if (!(await peutOuvrirTravail(u, s))) throw interdit("Seul le formateur du cours peut ouvrir ce travail de groupe en devoir.");
   const [etude] = await db.select().from(etudesSeances).where(eq(etudesSeances.seanceId, s.id));
   const g = etude?.statut === "prete" ? etude.dossier?.travailDeGroupe : undefined;
-  if (!g?.sujet) throw new ErreurHttp(409, "Le cours complet de cette séance n'est pas encore prêt.");
+  if (!g?.sujet) throw new ErreurHttp(409, "Le cours résumé de cette séance n'est pas encore prêt.");
   const grille: CritereGrille[] = [
     { critere: t("groupe.critere.contenu"), points: 8 },
     { critere: t("groupe.critere.roles"), points: 4 },

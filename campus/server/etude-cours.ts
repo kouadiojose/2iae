@@ -234,7 +234,7 @@ async function etudier(seanceId: number): Promise<IssueEtude> {
           })
         : Promise.resolve([] as (NotesDiapos | null)[]),
     ]);
-    await majEtude(seanceId, { etape: "Rédaction du cours complet", progression: 82 });
+    await majEtude(seanceId, { etape: "Rédaction du cours résumé", progression: 82 });
     const notesTexte = notes
       .map((n, i) => {
         if (!n) return `## Extrait ${i + 1} : illisible`;
@@ -316,7 +316,7 @@ async function etudier(seanceId: number): Promise<IssueEtude> {
       etape: null,
       coutMicro: compteur.coutMicro,
       fin: new Date(),
-      message: (e as Error).message.startsWith("La transcription") ? (e as Error).message : "La préparation du cours complet n'a pas abouti. Elle sera retentée.",
+      message: (e as Error).message.startsWith("La transcription") ? (e as Error).message : "La préparation du cours résumé n'a pas abouti. Elle sera retentée.",
     }).catch((err) => console.error(`[cours complet] séance ${seanceId}, état :`, (err as Error).message));
     return "erreur";
   } finally {
@@ -329,14 +329,14 @@ async function annoncer(s: Seance, code: string) {
   const etudiants = (await etudiantsDuCours(s.coursId)).map((e) => e.id);
   await notifier(etudiants, {
     type: "cours",
-    titre: `Cours complet disponible : ${s.titre}`,
+    titre: `Cours résumé disponible : ${s.titre}`,
     corps: `${code} · résumé, notions expliquées, quiz, exercices corrigés et fiches mémo pour bien maîtriser le cours.`,
     lien,
   });
   const formateurs = (await formateursDuCours(s.coursId)).filter((f) => f.actif).map((f) => f.id);
   await notifier(formateurs, {
     type: "cours",
-    titre: `Le cours complet de votre séance est prêt : ${s.titre}`,
+    titre: `Le cours résumé de votre séance est prêt : ${s.titre}`,
     corps: `${code} · préparé d'après l'enregistrement et vos diapositives. Vous pouvez le consulter et le faire refaire si besoin.`,
     lien,
   });
@@ -402,7 +402,7 @@ export async function etatCoursComplet(s: Seance): Promise<Pick<CoursCompletDto,
   if (e) {
     const coupee = e.statut === "en_cours" && enCours !== s.id;
     if (coupee && iaDuSoir()) return { statut: "a_venir", etape: "Préparation ce soir", progression: 0, dossier: null, message: null };
-    if (coupee && e.essais >= ESSAIS_MAX) return { statut: "erreur", etape: null, progression: 0, dossier: null, message: "La préparation du cours complet n'a pas abouti." };
+    if (coupee && e.essais >= ESSAIS_MAX) return { statut: "erreur", etape: null, progression: 0, dossier: null, message: "La préparation du cours résumé n'a pas abouti." };
     if (coupee) return { statut: "a_venir", etape: "Préparation reprise sous peu", progression: 0, dossier: null, message: null };
     return { statut: e.statut, etape: e.etape, progression: e.progression, dossier: e.statut === "prete" ? (e.dossier ?? null) : null, message: e.message };
   }

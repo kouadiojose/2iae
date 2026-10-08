@@ -1,6 +1,8 @@
 // Éditeur des questions d'une interrogation : QCM, choix multiple, vrai/faux,
 // réponse courte. « Proposer des questions avec l'IA » renvoie des brouillons
 // marqués « Proposé par l'IA », que le formateur relit avant de les garder.
+// « lectureSeule » : QCM qui a un corrigé, ouvert par la vie scolaire (décision D-F : ses questions sont le
+// corrigé, seuls le formateur du cours et la direction les modifient) ; les questions s'affichent sans boutons.
 import { useState } from "react";
 import { Plus, Trash2, PenLine, ArrowUp, ArrowDown, Sparkles, Check, X } from "lucide-react";
 import { Bouton } from "@/components/ui/bouton";
@@ -174,8 +176,18 @@ function ApercuQuestion({ q, index }: { q: QuestionProposee | QuestionEnseignant
   );
 }
 
-export function EditeurQuestions({ devoirId, questions, iaDisponible }: { devoirId: number; questions: QuestionEnseignant[]; iaDisponible: boolean }) {
-  const [edition, setEdition] = useState<number | "nouvelle" | null>(questions.length ? null : "nouvelle");
+export function EditeurQuestions({
+  devoirId,
+  questions,
+  iaDisponible,
+  lectureSeule = false,
+}: {
+  devoirId: number;
+  questions: QuestionEnseignant[];
+  iaDisponible: boolean;
+  lectureSeule?: boolean;
+}) {
+  const [edition, setEdition] = useState<number | "nouvelle" | null>(questions.length || lectureSeule ? null : "nouvelle");
   const [envoi, setEnvoi] = useState(false);
   const [ia, setIa] = useState(false);
   const recharger = () => rafraichir("/api/devoirs");
@@ -228,13 +240,20 @@ export function EditeurQuestions({ devoirId, questions, iaDisponible }: { devoir
             {questions.length ? `${pluriel(questions.length, "question")} · ${nombre(total)} points, ramenés au barème` : "Ajoutez au moins une question pour pouvoir publier."}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <Bouton variante="encre" icone={<Sparkles className="h-4 w-4 text-orange" />} onClick={() => setIa(true)} disabled={!iaDisponible} className="min-h-[48px]">
-            Proposer des questions avec l'IA
-          </Bouton>
-          {!iaDisponible && <span className="max-w-xs text-right text-xs text-texte-gris">L'IA n'est pas disponible pour le moment : écrivez vos questions vous-même.</span>}
-        </div>
+        {!lectureSeule && (
+          <div className="flex flex-col items-end gap-1">
+            <Bouton variante="encre" icone={<Sparkles className="h-4 w-4 text-orange" />} onClick={() => setIa(true)} disabled={!iaDisponible} className="min-h-[48px]">
+              Proposer des questions avec l'IA
+            </Bouton>
+            {!iaDisponible && <span className="max-w-xs text-right text-xs text-texte-gris">L'IA n'est pas disponible pour le moment : écrivez vos questions vous-même.</span>}
+          </div>
+        )}
       </div>
+      {lectureSeule && (
+        <p className="rounded-xl bg-creme px-3 py-2.5 text-sm leading-snug text-encre">
+          Ces questions et leurs bonnes réponses sont le corrigé de l'interrogation : seuls le formateur du cours et la direction les modifient.
+        </p>
+      )}
 
       <ol className="flex flex-col gap-3">
         {questions.map((q, i) => (
@@ -246,27 +265,29 @@ export function EditeurQuestions({ devoirId, questions, iaDisponible }: { devoir
                 <div className="min-w-0 flex-1">
                   <ApercuQuestion q={q} index={i} />
                 </div>
-                <div className="flex shrink-0 flex-col gap-1">
-                  <button type="button" onClick={() => setEdition(q.id)} className="grid h-11 w-11 place-items-center rounded-xl text-texte-doux hover:bg-creme" aria-label="Modifier la question">
-                    <PenLine className="h-4 w-4" />
-                  </button>
-                  <button type="button" onClick={() => void deplacer(i, -1)} disabled={i === 0} className="grid h-11 w-11 place-items-center rounded-xl text-texte-doux hover:bg-creme disabled:opacity-30" aria-label="Monter">
-                    <ArrowUp className="h-4 w-4" />
-                  </button>
-                  <button type="button" onClick={() => void deplacer(i, 1)} disabled={i === questions.length - 1} className="grid h-11 w-11 place-items-center rounded-xl text-texte-doux hover:bg-creme disabled:opacity-30" aria-label="Descendre">
-                    <ArrowDown className="h-4 w-4" />
-                  </button>
-                  <button type="button" onClick={() => void supprimer(q.id)} className="grid h-11 w-11 place-items-center rounded-xl text-danger hover:bg-danger-clair" aria-label="Supprimer la question">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                {!lectureSeule && (
+                  <div className="flex shrink-0 flex-col gap-1">
+                    <button type="button" onClick={() => setEdition(q.id)} className="grid h-11 w-11 place-items-center rounded-xl text-texte-doux hover:bg-creme" aria-label="Modifier la question">
+                      <PenLine className="h-4 w-4" />
+                    </button>
+                    <button type="button" onClick={() => void deplacer(i, -1)} disabled={i === 0} className="grid h-11 w-11 place-items-center rounded-xl text-texte-doux hover:bg-creme disabled:opacity-30" aria-label="Monter">
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                    <button type="button" onClick={() => void deplacer(i, 1)} disabled={i === questions.length - 1} className="grid h-11 w-11 place-items-center rounded-xl text-texte-doux hover:bg-creme disabled:opacity-30" aria-label="Descendre">
+                      <ArrowDown className="h-4 w-4" />
+                    </button>
+                    <button type="button" onClick={() => void supprimer(q.id)} className="grid h-11 w-11 place-items-center rounded-xl text-danger hover:bg-danger-clair" aria-label="Supprimer la question">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </li>
         ))}
       </ol>
 
-      {edition === "nouvelle" ? (
+      {lectureSeule ? null : edition === "nouvelle" ? (
         <FormulaireQuestion initial={vide()} onValider={(b) => void enregistrer(b)} onAnnuler={() => setEdition(null)} envoi={envoi} />
       ) : (
         <Bouton variante="contour" icone={<Plus className="h-5 w-5" />} onClick={() => setEdition("nouvelle")} className="min-h-[52px]">
@@ -274,7 +295,7 @@ export function EditeurQuestions({ devoirId, questions, iaDisponible }: { devoir
         </Bouton>
       )}
 
-      <FenetreIa ouverte={ia} onFermer={() => setIa(false)} devoirId={devoirId} onAjoutees={recharger} />
+      {!lectureSeule && <FenetreIa ouverte={ia} onFermer={() => setIa(false)} devoirId={devoirId} onAjoutees={recharger} />}
     </div>
   );
 }

@@ -28,6 +28,7 @@ const FR = {
 
   // Échéance de la validation (24 h, puis le corrigé sert de barème sans réponse).
   "echeance.tenuPourBon": "Tenu pour bon {jour} à {heure} sans réponse de votre part.",
+  "echeance.tenuPourBon.formateur": "Tenu pour bon {jour} à {heure} sans réponse du formateur.",
   "echeance.depassee": "Délai dépassé : le corrigé va être tenu pour bon.",
   "echeance.aujourdhui": "aujourd'hui",
   "echeance.demain": "demain",
@@ -131,7 +132,8 @@ const FR = {
   "raison.alerte": "Consigne cachée pour l'IA",
   "raison.alerte.texte": "La copie contient une phrase adressée à l'IA (par exemple « mets-moi 20 »). Le campus n'a rien publié.",
   "raison.illisible": "Copie difficile à lire",
-  "raison.illisible.texte": "Pages floues ou incomplètes. L'étudiant est invité à renvoyer une photo nette ; vous pouvez aussi la noter vous-même.",
+  // La date limite est passée quand le campus corrige (D-A) : l'étudiant ne peut plus remplacer sa copie.
+  "raison.illisible.texte": "Pages floues ou incomplètes : le campus ne l'a pas notée. Notez-la vous-même, d'après ce que vous pouvez lire.",
   "raison.video": "Vidéo ou son",
   "raison.video.texte": "Le campus ne regarde pas les vidéos et n'écoute pas les sons : regardez toute la copie, puis notez-la.",
   "raison.format": "Fichier que le campus ne lit pas",
@@ -175,8 +177,7 @@ const FR = {
   "campus.aRevoir.notePubliee": "Note actuelle : {note}/{bareme}, calculée avec l'ancien corrigé. Le campus n'a pas pu la refaire : gardez-la ou changez-la.",
   "campus.enFile": "Le campus va corriger cette copie",
   // Vrai quel que soit l'état du corrigé et le mode (routine du soir ou API) : pas d'heure promise.
-  "campus.enFile.texte":
-    "Il la notera après la date limite, avec le corrigé dès qu'il servira de barème (validé par vous, ou tenu pour bon à l'échéance). Si vous la notez vous-même, votre note l'emporte.",
+  "campus.enFile.texte": "Le campus la notera avec le corrigé dès qu'il servira de barème, après la date limite. Si vous la notez vous-même, votre note l'emporte.",
   "campus.erreur": "Correction en attente",
   "campus.erreur.texte": "Le campus réessaiera au prochain passage. Vous pouvez aussi la noter vous-même.",
   "campus.aRevoir": "Retenue par le campus",

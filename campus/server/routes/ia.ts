@@ -170,7 +170,7 @@ export function verifierDisponible(u: Utilisateur) {
     estEtudiant(u)
       ? "L'assistant est en pause pour le moment. Réessaie plus tard, ou pose ta question à ton formateur dans la messagerie du cours."
       : config.ia.soir
-        ? "L'assistant est en pause : aucun service d'IA n'est branché pour les questions en direct (les cours complets et les dossiers de lecture se préparent le soir)."
+        ? "L'assistant est en pause : aucun service d'IA n'est branché pour les questions en direct (les cours résumés et les dossiers de lecture se préparent le soir)."
         : raisonIndisponible() === "panne"
           ? "L'assistant est en pause : le service d'IA refuse les demandes (crédit ou clé à vérifier par la direction). Nouvel essai automatique dans quelques minutes."
         : "L'assistant est en pause pour le moment : le service d'IA n'est pas configuré sur ce campus.",

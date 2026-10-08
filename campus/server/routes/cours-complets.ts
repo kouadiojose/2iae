@@ -71,7 +71,7 @@ export function enregistrerCoursComplets(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceDuReplay(u, idParam(req));
-      if (!(await peutRefaire(u, s))) throw interdit("Seuls le formateur du cours et la direction peuvent refaire le cours complet.");
+      if (!(await peutRefaire(u, s))) throw interdit("Seuls le formateur du cours et la direction peuvent refaire le cours résumé.");
       // Transcription en échec : elle est redemandée ; le cours sera refait ensuite.
       if ((await etatTranscription(s.id)) === "erreur") await relancerTranscription(s.id);
       await refaireCoursComplet(s.id);

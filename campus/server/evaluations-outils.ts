@@ -225,6 +225,21 @@ export async function meilleureNoteQuiz(devoirId: number, etudiantId: number): P
 }
 
 /**
+ * La note gardée d'une interrogation, celle du carnet : la note qu'un formateur a posée sur la copie (correcteur
+ * connu : une nouvelle tentative ne la remplace jamais, terminerTentative), sinon la meilleure note des tentatives
+ * terminées. « faites » : nombre de tentatives terminées.
+ */
+export async function noteGardeeQuiz(devoirId: number, etudiantId: number): Promise<{ note: number | null; faites: number; parFormateur: boolean }> {
+  const meilleure = await meilleureNoteQuiz(devoirId, etudiantId);
+  const [copie] = await db
+    .select({ note: rendus.note, correcteurId: rendus.correcteurId })
+    .from(rendus)
+    .where(and(eq(rendus.devoirId, devoirId), eq(rendus.etudiantId, etudiantId)));
+  const parFormateur = Boolean(copie && copie.correcteurId !== null && copie.note !== null);
+  return { note: parFormateur ? copie!.note : meilleure.note, faites: meilleure.faites, parFormateur };
+}
+
+/**
  * Termine une tentative (bouton « Terminer » ou temps écoulé) : correction
  * automatique, puis la meilleure note devient la copie « corrigée » de
  * l'interrogation (une ligne de rendus, avec son reçu). Sans effet si la
@@ -286,7 +301,8 @@ export async function terminerTentative(tentativeId: number, horsDelai = false) 
     .returning();
   if (rendu && !rendu.recu) await db.update(rendus).set({ recu: recuPour(rendu.id) }).where(eq(rendus.id, rendu.id));
   publierUtilisateur(t.etudiantId, "quiz-termine", { devoirId: d.id, tentativeId: t.id });
-  return { ...resultat, devoir: d, meilleureNote: meilleure.note ?? resultat.note, faites: meilleure.faites, horsDelai };
+  // La note gardée (celle du formateur s'il en a posé une) se lit avec noteGardeeQuiz.
+  return { ...resultat, devoir: d, faites: meilleure.faites, horsDelai };
 }
 
 /**

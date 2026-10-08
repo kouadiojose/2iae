@@ -569,7 +569,7 @@ function listeCourte(corriges: { titre: string; coursCode: string }[], max = 3):
 export const consigneEssentielle = (consigne: string) =>
   consigne
     .split(/\n{2,}/)
-    .filter((p) => !/^(\*\*Comment (rendre|tu es noté)|_Exercice préparé par le campus|_Interrogation préparée par le campus|_Travail de groupe du cours complet)/.test(p.trim()))
+    .filter((p) => !/^(\*\*Comment (rendre|tu es noté)|_Exercice préparé par le campus|_Interrogation préparée par le campus|_Travail de groupe du cours (complet|résumé))/.test(p.trim()))
     .join("\n\n")
     .trim();
 

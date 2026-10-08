@@ -21,6 +21,8 @@ const FR = {
   "campus.illisible.titre": "Ta copie est difficile à lire",
   "campus.illisible.texte": "Remplace-la par une photo nette : une page par photo, à plat, bien éclairée, sans ombre.",
   "campus.illisible.bouton": "Envoyer une photo nette",
+  // Date limite passée (le campus corrige après, D-A) : la copie ne peut plus être remplacée, le formateur la lit.
+  "campus.illisible.formateur": "Ta copie est difficile à lire : ton formateur va la regarder.",
   "campus.video": "Ta vidéo sera regardée par ton formateur.",
   "campus.son": "Ton enregistrement sera écouté par ton formateur.",
   "campus.formateur": "Ton formateur va regarder ta copie.",

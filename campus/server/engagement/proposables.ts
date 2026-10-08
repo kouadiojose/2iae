@@ -3,7 +3,7 @@
 //
 // Un devoir créé par la routine du soir (son identifiant figure dans
 // devoirs_seances.devoir_ids, voir devoirs-auto.ts) n'a été relu par personne :
-// il n'est proposé qu'une fois publié et créé depuis plus de 24 h, le temps
+// il n'est proposé qu'une fois publié et créé depuis plus de 8 h (le lendemain matin), le temps
 // que le formateur le voie. Un devoir écrit par un formateur est toujours
 // proposable. La règle ne retire rien de la page « Devoirs » : elle ne règle
 // que ce que le campus met en avant.
@@ -11,8 +11,11 @@
 // Seul C7 modifie ce fichier ensuite (validation du formateur).
 import { sql, type SQL } from "drizzle-orm";
 
-/** Délai avant de proposer un devoir automatique que personne n'a validé. */
-export const DELAI_DEVOIR_AUTO_HEURES = 24;
+/**
+ * Délai avant de proposer un devoir automatique que personne n'a validé. La routine du soir les crée vers 21 h :
+ * 8 h plus tard, ils arrivent aux étudiants le lendemain matin (les formateurs ne les relisent pas : choix de José).
+ */
+export const DELAI_DEVOIR_AUTO_HEURES = 8;
 /**
  * Question 1 pour José. Vrai : seuls les devoirs automatiques validés par le
  * formateur seraient proposés (aucun tant que la validation de C7 n'existe pas).

@@ -56,7 +56,7 @@ sans action du formateur.
   (mode compagnon), jamais pour regarder la vidéo dans la salle.
 - **Aucun travail obligatoire pour le formateur.** `VALIDATION_OBLIGATOIRE` reste `false` : la relecture
   des QCM de l'IA est facultative. Un devoir automatique est proposé sans validation, une fois publié et
-  créé depuis 24 h (`DELAI_DEVOIR_AUTO_HEURES`, voir § 4) ; le formateur peut seulement s'y opposer (C7).
+  créé depuis 8 h, soit le lendemain matin (`DELAI_DEVOIR_AUTO_HEURES`, voir § 4) ; le formateur peut seulement s'y opposer (C7).
 
 ### Conséquences par chantier
 

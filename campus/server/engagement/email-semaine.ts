@@ -68,8 +68,10 @@ export async function emailsDuJour(enEssai: boolean, maintenant = Date.now()): P
   const minuit = new Date(maintenant);
   minuit.setUTCHours(0, 0, 0, 0);
   const statuts = enEssai ? sql`('envoye', 'simulation')` : sql`('envoye')`;
+  // Le plafond est commun : les e-mails du corrigé du jour aux formateurs (server/corriges.ts) comptent aussi.
   const r = await db.execute<{ n: number }>(
-    sql`SELECT count(*)::int AS n FROM campus.relances_engagement WHERE canal = 'email' AND statut IN ${statuts} AND cree_le >= ${minuit.toISOString()}::timestamptz`,
+    sql`SELECT (SELECT count(*)::int FROM campus.relances_engagement WHERE canal = 'email' AND statut IN ${statuts} AND cree_le >= ${minuit.toISOString()}::timestamptz)
+      + (SELECT count(*)::int FROM campus.journal WHERE action = 'corriges_du_jour' AND details->>'email' = 'envoye' AND cree_le >= ${minuit.toISOString()}::timestamptz) AS n`,
   );
   return r.rows[0]?.n ?? 0;
 }

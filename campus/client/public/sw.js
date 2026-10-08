@@ -197,7 +197,11 @@ self.addEventListener("fetch", (evenement) => {
 async function navigation(requete) {
   try {
     const reponse = await fetch(requete);
-    if (reponse.ok && (reponse.headers.get("Content-Type") || "").includes("text/html")) {
+    // Seule une page de l'application devient la coquille : jamais une page servie par l'API (lien signé d'un
+    // e-mail, par exemple) ni une réponse marquée no-store.
+    const pageApi = new URL(requete.url).pathname.startsWith("/api/");
+    const nonGardable = /no-store/i.test(reponse.headers.get("Cache-Control") || "");
+    if (reponse.ok && !pageApi && !nonGardable && (reponse.headers.get("Content-Type") || "").includes("text/html")) {
       const cache = await caches.open(CACHE_COQUILLE);
       await cache.put(CLE_COQUILLE, reponse.clone());
     }

@@ -1,7 +1,7 @@
 // Écran de reçu vert (la preuve à montrer : « Monsieur, je l'avais envoyé »)
 // et écran « En attente de réseau » quand la copie est rangée dans la file.
 import { useEffect, useRef } from "react";
-import { CheckCircle2, CloudUpload, FileText, Share2, Clock } from "lucide-react";
+import { CheckCircle2, CloudUpload, FileText, Share2, Clock, Hourglass } from "lucide-react";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 import { ProposerRappel } from "@/modules/rappels/ProposerRappel";
@@ -39,7 +39,11 @@ function useDansLaVue<T extends HTMLElement>() {
   return ref;
 }
 
-export function EcranRecu({ recu, onFermer }: { recu: RecuDepot; onFermer?: () => void }) {
+/**
+ * « noteAttendue » : la copie part en correction par le campus (« Le campus corrige ta copie : ta note
+ * arrive ce soir. »), dit tout de suite sur le reçu, au moment où l'étudiant le regarde.
+ */
+export function EcranRecu({ recu, onFermer, noteAttendue }: { recu: RecuDepot; onFermer?: () => void; noteAttendue?: string | null }) {
   const ref = useDansLaVue<HTMLElement>();
   const pages = recu.fichiers.filter((f) => f.mime.startsWith("image/")).length;
   const autres = recu.fichiers.length - pages;
@@ -75,7 +79,17 @@ export function EcranRecu({ recu, onFermer }: { recu: RecuDepot; onFermer?: () =
           </div>
         )}
       </div>
-      <p className="max-w-sm text-sm text-texte-pale">Garde ce numéro : il prouve que ton devoir est bien arrivé. Tu verras ✓✓ quand ton formateur l'ouvrira.</p>
+      {noteAttendue ? (
+        <>
+          <p className="flex w-full max-w-sm items-start gap-2.5 rounded-2xl bg-white/80 p-4 text-left text-[15px] font-bold leading-snug text-encre">
+            <Hourglass className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" />
+            {noteAttendue}
+          </p>
+          <p className="max-w-sm text-sm text-texte-pale">Garde ce numéro : il prouve que ton devoir est bien arrivé.</p>
+        </>
+      ) : (
+        <p className="max-w-sm text-sm text-texte-pale">Garde ce numéro : il prouve que ton devoir est bien arrivé. Tu verras ✓✓ quand ton formateur l'ouvrira.</p>
+      )}
       <div className="flex w-full max-w-sm flex-col gap-2.5">
         <Bouton variante="encre" taille="lg" pleineLargeur icone={<Share2 className="h-5 w-5" />} onClick={() => partager(recu)}>
           Partager le reçu

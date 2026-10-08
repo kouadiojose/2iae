@@ -25,6 +25,7 @@ import { SousNav } from "@/modules/pilotage/composants/SousNav";
 import { useReferences } from "@/modules/pilotage/outils";
 import { CourbeJours, ColonnesSemaines, BarreTroisEtats, BarrePlateformes, PasEncoreMesure, jourCourt } from "./Courbe";
 import { EntonnoirDirect } from "./EntonnoirDirect";
+import { BlocCorrections } from "./BlocCorrections";
 
 type Tx = Traducteur<CleEngagement>;
 
@@ -402,6 +403,8 @@ function Contenu({ d, tx }: { d: EngagementPilotage; tx: Tx }) {
       {d.travail && <BlocTravail d={d} tx={tx} />}
       {d.rappels && <BlocRappels d={d} tx={tx} />}
       <BlocCopies d={d} tx={tx} />
+      {/* Correction automatique (8 octobre 2026) : son propre périmètre, hors filtres de la page. */}
+      <BlocCorrections />
       <BlocAnomalies d={d} tx={tx} />
     </>
   );

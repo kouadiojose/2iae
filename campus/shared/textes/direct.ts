@@ -19,7 +19,6 @@ export const t = creerTextes({
   "salle.qr.emarges": "émargés à {site}",
   "salle.qr.classement": "Classement des campus en direct",
   "salle.qr.retrait": "Ce message se retire tout seul dans {n} s · le cours continue",
-  "salle.qr.chargement": "Chargement du code…",
 
   // ── Écran de salle : mini-guide du chargé de cours (avant le cours) ──────
   "guide.etiquette": "Chargé de cours",
@@ -37,7 +36,6 @@ export const t = creerTextes({
   "studio.afficher.auto": "Le QR s'affiche aussi tout seul dans les salles au début, à +15 et à +45 min.",
   "erreur.afficher.direct": "L'émargement s'affiche pendant le direct : avant le cours, l'écran de la salle montre déjà le QR.",
   "erreur.afficher.sondage": "Un sondage est en cours : fermez-le avant d'afficher l'émargement.",
-  "erreur.afficher.frequence": "Le QR vient d'être affiché : attendez la fin de la minute.",
 
   // ── Téléphone : page d'émargement ───────────────────────────────────────
   "emargement.saisie.titre": "Tu es en salle ?",
@@ -85,7 +83,7 @@ export const t = creerTextes({
   "sortie.ressenti": "Ce cours, pour toi ?",
   "sortie.ressenti.merci": "Merci : le formateur le voit, sans ton nom.",
   "sortie.suite": "Ce soir : le cours complet et ses questions. Demain : ta révision de 3 minutes.",
-  "sortie.cout": "Ce cours t'a coûté {mo}.",
+  "sortie.cout": "Ce cours t'a coûté environ {mo}.",
   "sortie.cout.moins": "Ce cours t'a coûté moins de 1 Mo.",
   "sortie.mesure": "Consommation mesurée sur ton téléphone · {minutes} min de cours.",
   "sortie.estimation": "Estimation pour le mode « {mode} » · {minutes} min de cours.",
@@ -126,4 +124,5 @@ export const t = creerTextes({
 
   // ── Erreurs du serveur ──────────────────────────────────────────────────
   "erreur.etudiant": "Cette page est réservée aux étudiants.",
+  "erreur.salle": "Cet état sert à l'écran de la salle et au Studio.",
 });

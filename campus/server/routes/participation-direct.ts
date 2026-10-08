@@ -183,7 +183,7 @@ export function enregistrerParticipationDirect(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      if (u.role === "etudiant") throw interdit("Cet état sert à l'écran de la salle.");
+      if (u.role === "etudiant") throw interdit(t("erreur.salle"));
       const s = await seanceVisible(u, idParam(req));
       const fin = demandeEnCours(s.id);
       res.setHeader("Cache-Control", "no-store");

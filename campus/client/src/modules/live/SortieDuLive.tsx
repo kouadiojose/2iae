@@ -106,7 +106,7 @@ export function SortieDuLive({
         </LimiteSilencieuse>
 
         <div className="flex flex-col gap-1">
-          <p className="text-[17px] font-extrabold">{mo < 1 ? tx("sortie.cout.moins") : tx("sortie.cout", { v: { mo: `environ ${formatMo(mo)}` } })}</p>
+          <p className="text-[17px] font-extrabold">{mo < 1 ? tx("sortie.cout.moins") : tx("sortie.cout", { v: { mo: formatMo(mo) } })}</p>
           <p className="text-[13px] text-nuit-doux">
             {mesure ? tx("sortie.mesure", { v: { minutes: Math.max(1, minutes) } }) : tx("sortie.estimation", { v: { mode: CONSOMMATION[mode].titre, minutes: Math.max(1, minutes) } })}
             {mode === "radio" && ` ${tx("sortie.radio")}`}

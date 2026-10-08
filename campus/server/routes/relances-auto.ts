@@ -90,6 +90,9 @@ async function reglagesDe(uid: number, fuseau: string | null): Promise<ReglagesR
   };
 }
 
+/** Le compte existe encore (un lien d'e-mail peut survivre à la suppression du compte). */
+const etudiantExiste = async (uid: number) => (await db.execute(sql`SELECT 1 FROM campus.utilisateurs WHERE id = ${uid}`)).rows.length > 0;
+
 /** Écrit les choix donnés (les autres gardent leur valeur) ; maj_le change toujours (lève la pause automatique). */
 async function ecrireReglages(uid: number, champs: { heureRappel?: number | null; rappelsActifs?: boolean; emailsActifs?: boolean; pauseJusquAu?: Jour | null }) {
   const has = (k: keyof typeof champs) => Object.prototype.hasOwnProperty.call(champs, k);
@@ -231,7 +234,7 @@ export function enregistrerRelancesAuto(app: Express) {
     route(async (req, res) => {
       const jeton = String(req.params.jeton);
       const uid = lireJetonDesabonnement(jeton);
-      if (!uid) return res.redirect(303, "/desabonnement?etat=invalide");
+      if (!uid || !(await etudiantExiste(uid))) return res.redirect(303, "/desabonnement?etat=invalide");
       await ecrireReglages(uid, { emailsActifs: false });
       res.redirect(303, `/desabonnement?etat=fait&j=${encodeURIComponent(jeton)}`);
     }),
@@ -242,7 +245,7 @@ export function enregistrerRelancesAuto(app: Express) {
     "/api/emails/desabonner/:jeton",
     route(async (req, res) => {
       const uid = lireJetonDesabonnement(String(req.params.jeton));
-      if (!uid) throw invalide("Lien de désabonnement invalide.");
+      if (!uid || !(await etudiantExiste(uid))) throw invalide("Lien de désabonnement invalide.");
       const reabonner = (req.body as { action?: unknown } | undefined)?.action === "reabonner";
       await ecrireReglages(uid, { emailsActifs: reabonner });
       res.json({ etat: reabonner ? "reabonne" : "fait" });

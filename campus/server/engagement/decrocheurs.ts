@@ -80,7 +80,7 @@ type Candidat = {
 };
 
 /** Ce qu'on propose à un décrocheur : motif, variables des textes, lien. */
-type Proposition = { motif: MotifDecrocheur; v: Record<string, string | number>; lien: string };
+export type Proposition = { motif: MotifDecrocheur; v: Record<string, string | number>; lien: string };
 
 /** Étudiants dont les cours vivent : une séance tenue depuis 14 jours ou un devoir proposable autour de cette semaine. */
 async function coursVivants(ids: number[], maintenant: number): Promise<Set<number>> {
@@ -177,7 +177,7 @@ async function propositions(candidats: Candidat[], maintenant: number): Promise<
 }
 
 /** E-mail du palier 2, au tutoiement : deux phrases, une aide, un bouton suivi. */
-function contenuEmailRelance(c: Candidat, p: Proposition, bouton: string) {
+export function contenuEmailRelance(c: Pick<Candidat, "prenom">, p: Proposition, bouton: string) {
   const tu = { registre: "tu" as const };
   const v = { ...p.v, prenom: c.prenom.trim() };
   return {

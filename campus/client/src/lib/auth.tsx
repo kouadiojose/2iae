@@ -3,6 +3,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ErreurApi, post } from "./api";
 import { queryClient } from "./queryClient";
+import { noterRappelsActives } from "@/modules/rappels/memoire";
 import { peut, type Droit, type Moi, type Role } from "@shared/schema";
 
 type ContexteAuth = { moi: Moi | null; chargement: boolean };
@@ -42,7 +43,31 @@ export async function seConnecter(identifiant: string, motDePasse: string): Prom
   return m;
 }
 
+/** La déconnexion n'attend pas plus longtemps le retrait des rappels (hors réseau, elle se fait quand même). */
+const DELAI_RETRAIT_RAPPELS_MS = 3000;
+
+/**
+ * Ce téléphone ne reçoit plus les rappels du compte qui se déconnecte (téléphone
+ * familial ou partagé : sinon le suivant lirait sur l'écran verrouillé les
+ * rappels du précédent). L'abonnement est retiré du campus pour ce compte, puis
+ * du navigateur ; le téléphone oublie qu'il recevait des rappels (le compte
+ * suivant se verra proposer de les activer, pas « tes rappels ne marchent plus »).
+ */
+async function retirerRappelsDeCeTelephone() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  const retrait = (async () => {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const abo = await reg?.pushManager?.getSubscription();
+    if (!abo) return;
+    await api("/api/push/abonnement", { methode: "DELETE", corps: { endpoint: abo.endpoint } }).catch(() => undefined);
+    await abo.unsubscribe().catch(() => false);
+    noterRappelsActives(false);
+  })().catch(() => undefined);
+  await Promise.race([retrait, new Promise((fini) => setTimeout(fini, DELAI_RETRAIT_RAPPELS_MS))]);
+}
+
 export async function seDeconnecter() {
+  await retirerRappelsDeCeTelephone();
   await post("/api/auth/deconnexion").catch(() => undefined);
   queryClient.clear();
   window.location.href = "/connexion";

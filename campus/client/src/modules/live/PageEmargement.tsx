@@ -2,9 +2,10 @@
 // émarge aussitôt et affiche « Tu es compté présent ✓ · Yopougon » en très
 // grand, puis ouvre le mode salle (compagnon léger, sans vidéo) ; ou une
 // erreur claire avec la possibilité de taper le nouveau code.
-// /emargement?seance=12 — ouverte par le rappel du démarrage du direct
-// (« Tu es en salle ? Scanne le QR de l'écran ») : invite à scanner le QR ou à
-// taper le code, et laisse suivre en ligne celui qui n'est pas dans la salle.
+// /emargement?seance=12 — ouverte par le rappel unique du démarrage du direct
+// (« Le cours commence : en salle, scanne le QR de l'écran ; sinon, rejoins le
+// cours en ligne ») : invite à scanner le QR ou à taper le code, et laisse
+// suivre en ligne celui qui n'est pas dans la salle (« Son + diapos » proposé).
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { CheckCircle2, CircleAlert, QrCode, WifiOff } from "lucide-react";
@@ -98,7 +99,7 @@ export default function PageEmargement({ code: codeUrl }: { code?: string }) {
               <p className="text-[16px] leading-relaxed text-texte-pale">{tx("emargement.saisie.texte")}</p>
             </div>
             {formulaire}
-            <LienBouton href={seanceRappel ? `/live/${seanceRappel}` : "/direct"} variante="fantome">
+            <LienBouton href={seanceRappel ? `/live/${seanceRappel}?enLigne=1` : "/direct"} variante="fantome">
               {tx("emargement.saisie.enLigne")}
             </LienBouton>
           </>

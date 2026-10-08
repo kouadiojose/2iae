@@ -35,7 +35,38 @@ export type EmargementSalleDto = {
   afficheJusqua: string | null;
   /** Campus dont une classe suit le cours : eux seuls entrent au classement des campus. */
   sitesDuCours: number[];
+  /** Étudiants attendus à la séance, par campus (dénominateur du taux d'émargement du classement). */
+  attendus: { siteId: number; attendus: number }[];
 };
+
+/** Un campus du classement projeté avec le QR : sa part d'étudiants émargés (en %), ou null sans attendus connus. */
+export type LigneClassementEmargement = { siteId: number; nomCourt: string; emarges: number; taux: number | null };
+
+/**
+ * Classement des campus projeté avec le QR d'émargement (écran de salle).
+ * Décision D5 : aucun classement ne désigne un dernier. Donc :
+ *   - en taux (émargés / attendus du campus), pas en totaux : un petit campus
+ *     peut passer devant un grand (comme la Coupe) ;
+ *   - seuls les campus qui ont au moins un émargé : un campus à 0 (salle
+ *     éteinte, ou pas encore commencé) n'est jamais projeté ;
+ *   - sans numéro de rang (l'écran montre l'ordre, jamais « 5e ») ;
+ *   - parmi les campus qui suivent le cours (sinon ceux dont l'écran est allumé).
+ * Fonction pure : l'écran la rappelle à chaque état des campus reçu.
+ */
+export function classementEmargement(
+  campus: { siteId: number; nomCourt: string; emarges: number; salleConnectee: boolean }[],
+  sitesDuCours: number[] | null,
+  attendus: { siteId: number; attendus: number }[] | null,
+): LigneClassementEmargement[] {
+  const attendusDe = new Map((attendus ?? []).map((a) => [a.siteId, a.attendus]));
+  return campus
+    .filter((c) => (sitesDuCours ? sitesDuCours.includes(c.siteId) : c.salleConnectee) && c.emarges > 0)
+    .map((c) => {
+      const n = attendusDe.get(c.siteId) ?? 0;
+      return { siteId: c.siteId, nomCourt: c.nomCourt, emarges: c.emarges, taux: n > 0 ? Math.min(100, Math.round((100 * c.emarges) / n)) : null };
+    })
+    .sort((a, b) => (b.taux ?? -1) - (a.taux ?? -1) || b.emarges - a.emarges || a.nomCourt.localeCompare(b.nomCourt, "fr"));
+}
 
 /** POST /api/seances/:id/afficher-emargement, et l'événement « emargement:afficher » du canal de la séance. */
 export type AfficherEmargementDto = { seanceId: number; afficheJusqua: string };

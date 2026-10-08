@@ -27,3 +27,11 @@ export * from "./libres";
 export * from "./ext-libres";
 export * from "./etudes";
 export * from "./ext-etudes";
+// Plan d'engagement (campus/ENGAGEMENT.md) : fichiers posés vides par le socle commun (C0).
+export * from "./envois"; // C3
+export * from "./activite"; // C8
+export * from "./revision"; // C1
+export * from "./objectif"; // C2
+export * from "./enseigner-suivi"; // C7
+export * from "./progression"; // C5
+export * from "./relances-auto"; // C4

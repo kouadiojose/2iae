@@ -302,7 +302,7 @@ function tenueDe(s: Pick<typeof seances.$inferSelect, "demarreeLe" | "statut">):
 }
 
 /** Même calcul en SQL (Math.round(x) = floor(x + 0,5) ; float8 = double JavaScript). */
-const SQL_DUREE_REFERENCE = sql`
+export const SQL_DUREE_REFERENCE = sql`
   CASE WHEN s.demarree_le IS NOT NULL AND s.terminee_le IS NOT NULL
       AND floor(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le)) / 60 + 0.5) > 0
     THEN LEAST(s.duree_minutes, floor(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le)) / 60 + 0.5)::int)
@@ -314,7 +314,7 @@ const SQL_DUREE_REFERENCE = sql`
  * incidentSurvenu / sitesEnIncident du live) : en cours, ou résolu après le
  * démarrage — sa résolution n'efface pas la cause des absences.
  */
-const SQL_INCIDENT_SALLE = sql`(NULLIF(e.incident, '') IS NOT NULL
+export const SQL_INCIDENT_SALLE = sql`(NULLIF(e.incident, '') IS NOT NULL
   OR (e.incident_le IS NOT NULL AND (e.incident_resolu_le IS NULL OR e.incident_resolu_le > COALESCE(s.demarree_le, s.debut))))`;
 
 /**
@@ -334,7 +334,7 @@ const SQL_CANDIDATS_COURS = sql`(
  * écrit par le PATCH des comptes), sinon sa classe actuelle. L'historique
  * n'est lu que pour les étudiants qui en ont un.
  */
-const sqlClasseA = (t: SQL) => sql`
+export const sqlClasseA = (t: SQL) => sql`
   LEFT JOIN (SELECT DISTINCT utilisateur_id FROM campus.passages_classes) hp ON hp.utilisateur_id = u.id
   CROSS JOIN LATERAL (
     SELECT CASE WHEN hp.utilisateur_id IS NULL THEN u.classe_id ELSE (
@@ -364,7 +364,7 @@ const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
  * Retard : arrivée EN SALLE (émargement) plus de 15 min après le DÉMARRAGE
  * réel (pas l'heure prévue), jamais pour un étudiant pointé par le responsable.
  */
-function sqlAttendus(f: FiltreAttendus): SQL {
+export function sqlAttendus(f: FiltreAttendus): SQL {
   const conds: SQL[] = [
     sql`s.statut <> 'annulee'`,
     sql`c.statut <> 'brouillon'`,
@@ -431,7 +431,7 @@ type LigneAttendu = {
 };
 
 /** Colonnes d'agrégat d'un résumé de présences (sur un sous-ensemble de sqlAttendus). */
-const COLONNES_RESUME = sql.raw(
+export const COLONNES_RESUME = sql.raw(
   [
     "count(*)::int AS attendus",
     ...STATUTS_PRESENCE_PILOTAGE.map((s) => `count(*) FILTER (WHERE statut = '${s}')::int AS ${s}`),
@@ -440,7 +440,7 @@ const COLONNES_RESUME = sql.raw(
 
 type LigneResume = { attendus: number } & Record<StatutPresencePilotage, number>;
 
-function versResume(l: Partial<LigneResume> | undefined): ResumePresences {
+export function versResume(l: Partial<LigneResume> | undefined): ResumePresences {
   const r = {
     attendus: l?.attendus ?? 0,
     emarge: l?.emarge ?? 0,
@@ -468,7 +468,7 @@ function resumeDe(lignes: { statut: StatutPresencePilotage }[]): ResumePresences
  * Comme pour les séances, un étudiant n'est attendu qu'aux devoirs échus
  * après son arrivée (compte, classe du cours ou inscription au cours).
  */
-function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: number }): SQL {
+export function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: number }): SQL {
   const conds: SQL[] = [
     sql`d.publie`,
     sql`c.statut <> 'brouillon'`,
@@ -497,7 +497,7 @@ function sqlDevoirsAttendus(f: { depuis: Date; sites: Perimetre; etudiantId?: nu
  * dernière présence à un live, copie rendue, message, leçon terminée,
  * annonce lue, interrogation, conversation avec l'assistant.
  */
-const SQL_DERNIERE_ACTIVITE = sql`
+export const SQL_DERNIERE_ACTIVITE = sql`
   SELECT uid, max(t) AS t FROM (
     SELECT id AS uid, derniere_connexion AS t FROM campus.utilisateurs WHERE role = 'etudiant'
     UNION ALL SELECT utilisateur_id, max(derniere_activite) FROM campus.presences WHERE minutes > 0 OR emarge_qr OR mode = 'salle' GROUP BY 1
@@ -509,7 +509,7 @@ const SQL_DERNIERE_ACTIVITE = sql`
     UNION ALL SELECT utilisateur_id, max(maj_le) FROM campus.conversations_ia GROUP BY 1
   ) x GROUP BY uid`;
 
-async function derniereActivite(ids: number[]): Promise<Map<number, Date>> {
+export async function derniereActivite(ids: number[]): Promise<Map<number, Date>> {
   if (!ids.length) return new Map();
   const r = await db.execute<{ uid: number; t: Date | null }>(
     sql`SELECT a.uid, a.t FROM (${SQL_DERNIERE_ACTIVITE}) a WHERE a.uid = ANY(${entiers(ids)})`,
@@ -606,7 +606,7 @@ function messageRelance(e: EtudiantResume, raisons: RaisonContact[], devoir?: { 
   }
 }
 
-async function calculerAContacter(u: Utilisateur): Promise<AContacter[]> {
+export async function calculerAContacter(u: Utilisateur): Promise<AContacter[]> {
   const p = perimetreSites(u);
   const maintenant = Date.now();
   const il7j = new Date(maintenant - 7 * JOUR_MS);

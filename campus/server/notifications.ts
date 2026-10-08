@@ -42,6 +42,11 @@ export type NouvelleNotification = {
    * annulé) suivent les règles normales.
    */
   urgent?: boolean;
+  /**
+   * Priorité d'envoi (plan d'engagement, chantier C3) : « engagement » pour un
+   * rappel d'entraînement ou une relance. Ignorée tant que C3 n'est pas fusionné.
+   */
+  priorite?: "urgent" | "action" | "contenu" | "engagement";
 };
 
 // ── Règles du téléphone ────────────────────────────────────────────────────

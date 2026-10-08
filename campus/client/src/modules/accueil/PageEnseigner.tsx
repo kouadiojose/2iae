@@ -38,6 +38,9 @@ import type { AccueilFormateur, CoursFormateur, ElementAgenda, SeanceFormateur }
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
 import { LigneReplay, useReplays } from "@/modules/live/replays";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+// Emplacement du plan d'engagement (campus/ENGAGEMENT.md), vide tant que C7 n'est pas là.
+import { ApresSeance } from "@/modules/enseigner-suivi/ApresSeance";
 
 const MINUTE = 60_000;
 
@@ -110,6 +113,9 @@ export default function PageEnseigner() {
           {data.enDirect && data.prochaineSeance && <LigneSeanceSuivante seance={data.prochaineSeance} />}
           {/* Module visio : essai de la visio, fuseau, diapos, plan minuté. */}
           {!data.enDirect && data.prochaineSeance && <CartePretClasse />}
+          <LimiteSilencieuse nom="ApresSeance">
+            <ApresSeance />
+          </LimiteSilencieuse>
           <CopiesACorriger data={data} />
           <QuestionsEnSuspens questions={data.questions} maintenant={maintenant} />
         </div>

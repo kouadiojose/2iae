@@ -21,6 +21,12 @@ import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { BandeauProchainLive } from "@/modules/live/BandeauProchainLive";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { LienMediatheque } from "@/modules/mediatheque/LienMediatheque";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+// Emplacements du plan d'engagement (campus/ENGAGEMENT.md), vides tant que leur chantier n'est pas là.
+import { ObjectifDuJour } from "@/modules/objectif/ObjectifDuJour";
+import { CarteRappels } from "@/modules/rappels/CarteRappels";
+import { BandeauCoupe } from "@/modules/progression/BandeauCoupe";
+import { PastilleSemaine } from "@/modules/progression/PastilleSemaine";
 import type { AccueilEtudiant, AnnonceResume, CoursAccueil, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
 import type { EnCours } from "@shared/api";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
@@ -66,6 +72,9 @@ export default function PageAccueil() {
           </h1>
           <p className="text-[15px] text-texte-pale">{majuscule(jourLong(maintenant))}</p>
         </div>
+        <LimiteSilencieuse nom="PastilleSemaine">
+          <PastilleSemaine />
+        </LimiteSilencieuse>
         <div className="hidden gap-2 rounded-[14px] bg-creme p-1.5 sm:flex" aria-label="Ma semaine">
           <span className="rounded-[10px] bg-white px-3.5 py-2 text-sm font-bold">Semaine {data.semaine.numero}</span>
           <span className="px-3.5 py-2 text-sm text-texte-pale">
@@ -76,12 +85,26 @@ export default function PageAccueil() {
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">
-          <CarteAFaire element={data.aFaire} />
+          {data.aFaire.type === "a_jour" ? (
+            <LimiteSilencieuse nom="ObjectifDuJour" repli={<CarteAFaire element={data.aFaire} />}>
+              <ObjectifDuJour variante="grande" repli={<CarteAFaire element={data.aFaire} />} />
+            </LimiteSilencieuse>
+          ) : (
+            <>
+              <CarteAFaire element={data.aFaire} />
+              <LimiteSilencieuse nom="ObjectifDuJour">
+                <ObjectifDuJour variante="ligne" />
+              </LimiteSilencieuse>
+            </>
+          )}
           {parcours && parcours.essai === null && <InviteDevoirEssai />}
           {!carteEstUnLive && <BandeauProchainLive />}
           <Ensuite elements={ensuite} />
         </div>
         <div className="flex min-w-0 flex-col gap-7">
+          <LimiteSilencieuse nom="BandeauCoupe">
+            <BandeauCoupe />
+          </LimiteSilencieuse>
           {data.annonceImportante && <AnnonceImportante annonce={data.annonceImportante} />}
           <LienAnnonces nonLues={data.annoncesNonLues} serre={Boolean(data.annonceImportante)} />
           <LienBibliotheque />
@@ -90,6 +113,9 @@ export default function PageAccueil() {
         </div>
       </div>
 
+      <LimiteSilencieuse nom="CarteRappels">
+        <CarteRappels />
+      </LimiteSilencieuse>
       <InviteInstallation />
     </Page>
   );

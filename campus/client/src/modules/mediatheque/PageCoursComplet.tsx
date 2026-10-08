@@ -19,6 +19,9 @@ import { Onglets } from "@/components/ui/onglets";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { QuizRevision } from "@/modules/ia/composants";
 import { cn } from "@/lib/utils";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+// Emplacement du plan d'engagement (campus/ENGAGEMENT.md), vide tant que C7 n'est pas là.
+import { TravailDeGroupeDevoir } from "@/modules/enseigner-suivi/TravailDeGroupeDevoir";
 import type { CoursCompletDto, DossierCours } from "@shared/schema/ext-etudes";
 
 type Onglet = "cours" | "quiz" | "exercices" | "cas" | "fiches" | "groupe";
@@ -156,7 +159,7 @@ export default function PageCoursComplet({ id }: { id: string }) {
           {onglet === "exercices" && <LesExercices d={d} etudiant={etudiant} />}
           {onglet === "cas" && <EtudeDeCas d={d} />}
           {onglet === "fiches" && <Fiches d={d} />}
-          {onglet === "groupe" && <TravailDeGroupe d={d} />}
+          {onglet === "groupe" && <TravailDeGroupe d={d} seanceId={s.id} etudiant={etudiant} />}
           <p className="text-sm text-texte-gris">Cours préparé par le campus d'après l'enregistrement de la séance et ses diapositives. En cas de doute, la parole du formateur fait foi.</p>
         </>
       )}
@@ -418,7 +421,7 @@ function Fiches({ d }: { d: DossierCours }) {
   );
 }
 
-function TravailDeGroupe({ d }: { d: DossierCours }) {
+function TravailDeGroupe({ d, seanceId, etudiant }: { d: DossierCours; seanceId: number; etudiant: boolean }) {
   const g = d.travailDeGroupe;
   return (
     <Carte className="flex flex-col gap-3">
@@ -437,6 +440,9 @@ function TravailDeGroupe({ d }: { d: DossierCours }) {
         <span className="font-bold">À rendre : </span>
         {g.livrable}
       </p>
+      <LimiteSilencieuse nom="TravailDeGroupeDevoir">
+        <TravailDeGroupeDevoir seanceId={seanceId} etudiant={etudiant} />
+      </LimiteSilencieuse>
     </Carte>
   );
 }

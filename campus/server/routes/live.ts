@@ -3574,7 +3574,7 @@ export function enregistrerLive(app: Express) {
 
 // ── Fonctions partagées par plusieurs routes et tâches ─────────────────────
 
-async function feuillePresence(u: Utilisateur, s: Seance): Promise<LignePresenceDto[]> {
+export async function feuillePresence(u: Utilisateur, s: Seance): Promise<LignePresenceDto[]> {
   if (seanceNonTenue(s)) return [];
   const perimetre = perimetreSites(u);
   const inscrits = (await etudiantsAttendusSeance(s)).filter((e) => !perimetre || (e.siteId !== null && perimetre.includes(e.siteId)));

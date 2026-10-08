@@ -16,6 +16,15 @@ import { enregistrerIa } from "./ia";
 import { enregistrerBibliotheque } from "./bibliotheque";
 import { enregistrerLibres } from "./libres";
 import { enregistrerCoursComplets } from "./cours-complets";
+// Plan d'engagement (campus/ENGAGEMENT.md) : fichiers posés vides par le socle commun (C0), un par chantier.
+import { enregistrerEnvois } from "./envois";
+import { enregistrerPilotageEngagement } from "./pilotage-engagement";
+import { enregistrerRevision } from "./revision";
+import { enregistrerObjectif } from "./objectif";
+import { enregistrerEnseignerSuivi } from "./enseigner-suivi";
+import { enregistrerProgression } from "./progression";
+import { enregistrerRelancesAuto } from "./relances-auto";
+import { enregistrerParticipationDirect } from "./participation-direct";
 import { enregistrerPublic } from "./public";
 import { enregistrerPush } from "./push";
 import { enregistrerProgramme } from "./programme";
@@ -54,6 +63,15 @@ export function enregistrerRoutes(app: Express) {
   enregistrerBibliotheque(app);
   enregistrerLibres(app);
   enregistrerCoursComplets(app);
+  // Plan d'engagement : chaque chantier remplit son fichier, l'index ne change plus.
+  enregistrerEnvois(app); // C3
+  enregistrerPilotageEngagement(app); // C8
+  enregistrerRevision(app); // C1
+  enregistrerObjectif(app); // C2
+  enregistrerEnseignerSuivi(app); // C7
+  enregistrerProgression(app); // C5
+  enregistrerRelancesAuto(app); // C4
+  enregistrerParticipationDirect(app); // C6
   enregistrerPush(app);
   enregistrerProgramme(app);
   enregistrerLancement(app);

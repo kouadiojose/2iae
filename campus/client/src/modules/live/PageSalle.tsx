@@ -24,6 +24,9 @@ import { ResultatsParCampus } from "./panneaux";
 import { CarteCoteIvoire } from "./CarteCoteIvoire";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
 import { VueGroupeSalle, monGroupe, useGroupes } from "./groupes";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+// Emplacement du plan d'engagement (campus/ENGAGEMENT.md) : sans cours et avant le cours, jamais pendant.
+import { CoupeSalle } from "@/modules/progression/CoupeSalle";
 import type { CodeSalleDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
 
@@ -157,6 +160,9 @@ function EcranSansCours({ siteId, enCours }: { siteId: number | null; enCours?: 
           ) : (
             <p className="text-2xl text-nuit-doux">Cet écran s'allumera tout seul avant le prochain live.</p>
           )}
+          <LimiteSilencieuse nom="CoupeSalle">
+            <CoupeSalle siteId={siteId} />
+          </LimiteSilencieuse>
         </div>
       </div>
     </>
@@ -443,6 +449,9 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
           <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
           <CompteursEmarges etat={etat} grand />
         </div>
+        <LimiteSilencieuse nom="CoupeSalle">
+          <CoupeSalle siteId={siteId} />
+        </LimiteSilencieuse>
         {seance.plan.length > 0 && (
           <div className="hidden min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:flex">
             <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Au programme</p>

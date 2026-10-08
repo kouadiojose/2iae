@@ -41,7 +41,6 @@ import {
   suiviDesCopies,
   versRelectureEtudiant,
 } from "../correction-auto";
-import { lireCorrige } from "../corrections-socle";
 import { ajouterJours, heureLocale, jourLocal } from "@shared/engagement/calendrier";
 import { FIL_ECHEANCES } from "@shared/engagement/envois";
 import { formaterDate } from "@shared/textes";

@@ -7,10 +7,17 @@
 //   node campus/scripts/travaux-ia.mjs repondre <id>     envoie campus/.travaux-ia/<id>/reponse.json
 //   node campus/scripts/travaux-ia.mjs etat              demandes en attente, sans rien lancer
 //
+// Le tour peut durer quelques minutes (lecture et conversion des copies) : l'outil attend sa réponse jusqu'à
+// 10 minutes ; un tour déjà en cours (409) est réessayé toutes les 30 secondes, 5 fois. Quand il ne reste aucune
+// demande mais encore des copies à préparer (aSuivre), l'outil relance le tour lui-même tant qu'il avance.
+// À lancer avec un délai d'au moins 10 minutes (outil Bash : timeout 600000).
+//
 // Clé : variable d'environnement TRAVAUX_IA_JETON (secret de l'environnement de la routine). À défaut, elle est
 // lue par le Railway CLI (variables du service campus), si celui-ci est connecté. Elle n'est jamais affichée.
 // Adresse : CAMPUS (par défaut https://campus.2iae.com).
 import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -31,20 +38,64 @@ function jeton() {
   process.exit(2);
 }
 
-async function appel(methode, chemin, corps) {
-  const r = await fetch(CAMPUS + chemin, {
-    method: methode,
-    headers: { Authorization: `Bearer ${jeton()}`, ...(corps ? { "Content-Type": "application/json" } : {}) },
-    body: corps ? JSON.stringify(corps) : undefined,
+const MINUTE = 60_000;
+const attendre = (ms) => new Promise((fini) => setTimeout(fini, ms));
+
+/**
+ * Appel au campus (http ou https du module de Node, pas fetch : fetch abandonne au bout de 5 minutes sans
+ * réponse, un tour chargé peut durer plus). « delai » : attente maximale de la réponse.
+ */
+function appel(methode, chemin, corps, delai = 2 * MINUTE) {
+  const url = new URL(CAMPUS + chemin);
+  const charge = corps ? JSON.stringify(corps) : null;
+  const module = url.protocol === "https:" ? https : http;
+  return new Promise((fini, echoue) => {
+    const req = module.request(
+      url,
+      {
+        method: methode,
+        headers: { Authorization: `Bearer ${jeton()}`, ...(charge ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(charge) } : {}) },
+      },
+      (rep) => {
+        const morceaux = [];
+        rep.on("data", (m) => morceaux.push(m));
+        rep.on("end", () => {
+          const texte = Buffer.concat(morceaux).toString("utf8");
+          let donnees;
+          try {
+            donnees = JSON.parse(texte);
+          } catch {
+            donnees = texte;
+          }
+          fini({ statut: rep.statusCode ?? 0, donnees });
+        });
+        rep.on("error", echoue);
+      },
+    );
+    req.setTimeout(delai, () => req.destroy(new Error(`pas de réponse du campus après ${Math.round(delai / 1000)} s`)));
+    req.on("error", echoue);
+    if (charge) req.write(charge);
+    req.end();
   });
-  const texte = await r.text();
-  let donnees;
-  try {
-    donnees = JSON.parse(texte);
-  } catch {
-    donnees = texte;
+}
+
+/**
+ * Lance un tour : jusqu'à 10 minutes d'attente ; un tour déjà en cours (409) ou une coupure du réseau est
+ * réessayé 5 fois, toutes les 30 secondes (le tour précédent finit son travail côté campus).
+ */
+async function lancerTour() {
+  for (let essai = 1; ; essai++) {
+    let t;
+    try {
+      t = await appel("POST", "/api/travaux-ia/tour", undefined, 10 * MINUTE);
+    } catch (e) {
+      t = { statut: 0, donnees: { message: e.message } };
+    }
+    const enCours = t.statut === 409 && t.donnees?.details?.code === "tour_en_cours";
+    if (t.statut === 200 || essai > 5 || !(enCours || t.statut === 0 || t.statut >= 502)) return t;
+    console.log(`  … ${enCours ? "un tour est déjà en cours" : `campus injoignable (${t.donnees?.message ?? t.statut})`} : nouvel essai dans 30 s (${essai}/5).`);
+    await attendre(30_000);
   }
-  return { statut: r.status, donnees };
 }
 
 const EXTENSIONS_IMAGE = { "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
@@ -111,27 +162,42 @@ function libelle(travail, issue) {
 const [commande, arg] = process.argv.slice(2);
 
 if (commande === "tour") {
-  const t = await appel("POST", "/api/travaux-ia/tour");
-  if (t.statut !== 200) {
-    console.error(`✗ Tour refusé (${t.statut}) :`, typeof t.donnees === "string" ? t.donnees.slice(0, 300) : t.donnees.message ?? t.donnees);
-    process.exit(1);
-  }
-  // Les copies peuvent être des centaines : un décompte par issue, puis le détail des autres travaux.
-  const copies = t.donnees.bilan.filter((b) => b.travail.startsWith("copie:"));
-  for (const b of t.donnees.bilan) if (!b.travail.startsWith("copie:")) console.log(`  ${b.travail} : ${libelle(b.travail, b.issue)}`);
-  if (copies.length) {
-    const parIssue = {};
-    for (const b of copies) (parIssue[b.issue] ??= []).push(b.travail.slice("copie:".length));
-    console.log(`  Copies à corriger (${copies.length}) :`);
-    for (const [issue, ids] of Object.entries(parIssue)) console.log(`    ${ids.length} ${libelle("copie:", issue)}${issue === "erreur" ? ` (copies ${ids.join(", ")})` : ""}`);
+  let precedent = Infinity;
+  let t;
+  for (let relance = 0; ; relance++) {
+    t = await lancerTour();
+    if (t.statut !== 200) {
+      console.error(`✗ Tour refusé (${t.statut}) :`, typeof t.donnees === "string" ? t.donnees.slice(0, 300) : t.donnees.message ?? t.donnees);
+      process.exit(1);
+    }
+    // Les copies peuvent être des centaines : un décompte par issue, puis le détail des autres travaux.
+    const copies = t.donnees.bilan.filter((b) => b.travail.startsWith("copie:"));
+    for (const b of t.donnees.bilan) if (!b.travail.startsWith("copie:")) console.log(`  ${b.travail} : ${libelle(b.travail, b.issue)}`);
+    if (copies.length) {
+      const parIssue = {};
+      for (const b of copies) (parIssue[b.issue] ??= []).push(b.travail.slice("copie:".length));
+      console.log(`  Copies (${copies.length}) :`);
+      for (const [issue, ids] of Object.entries(parIssue)) console.log(`    ${ids.length} ${libelle("copie:", issue)}${issue === "erreur" ? ` (copies ${ids.join(", ")})` : ""}`);
+    }
+    const aSuivre = Number(t.donnees.aSuivre ?? 0);
+    if (aSuivre) console.log(`  ${aSuivre} copie(s) encore à préparer (tours suivants).`);
+    if (t.donnees.demandes.length) break;
+    if (!aSuivre) {
+      console.log("✓ Aucune demande en attente et plus aucune copie à préparer : le travail du soir est fini.");
+      process.exit(0);
+    }
+    // Rien à répondre mais des copies restent à préparer (copies « à revoir », budget du tour épuisé) : nouveau
+    // tour tout de suite, tant que le nombre baisse.
+    if (aSuivre >= precedent || relance >= 30) {
+      console.error(`✗ ${aSuivre} copie(s) restent à préparer mais le tour n'avance plus : le dire dans le compte rendu.`);
+      process.exit(1);
+    }
+    precedent = aSuivre;
+    console.log("  Aucune demande à traiter : nouveau tour.");
   }
   const demandes = t.donnees.demandes;
-  if (!demandes.length) {
-    console.log("✓ Aucune demande en attente : le travail du soir est fini.");
-    process.exit(0);
-  }
   fs.mkdirSync(DOSSIER, { recursive: true });
-  console.log(`${demandes.length} demande(s) à traiter :`);
+  console.log(`${demandes.length} demande(s) à traiter${t.donnees.aSuivre ? " (puis relancer le tour)" : ""} :`);
   for (const resume of demandes) {
     const d = await appel("GET", `/api/travaux-ia/demandes/${resume.id}`);
     if (d.statut !== 200) {

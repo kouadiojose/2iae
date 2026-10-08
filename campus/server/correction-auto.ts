@@ -1,23 +1,32 @@
-// Moteur de correction automatique des copies (chantier K2, décision de José du 8 octobre 2026).
+// Moteur de correction automatique des copies (chantier K2, décision de José du 8 octobre 2026 ; corrections
+// de la revue du même soir, décisions D-A à D-E du coordinateur).
 //
-// Une copie de dépôt rendue est corrigée par le campus dès que le corrigé de son devoir sert de barème
-// (validé par le formateur, ou tacite au bout de 24 h : server/corrections-socle.ts). Le suivi de chaque copie
-// est dans corrections_auto : « en_file », « notee », « a_revoir » (avec sa raison) ou « erreur ».
+// Une copie de dépôt rendue est corrigée par le campus quand le corrigé de son devoir sert de barème (validé par
+// le formateur, ou tacite au bout de 24 h : server/corrections-socle.ts) ET que la date limite du devoir est
+// passée (D-A : une note, ses justifications et son commentaire tirés du corrigé ne partent jamais avant ; une
+// copie en retard, rendue après, est corrigée tout de suite). Le suivi de chaque copie est dans
+// corrections_auto : « en_file », « notee », « a_revoir » (avec sa raison) ou « erreur ».
 //
 //   - La copie est lue en pages (server/copies-pages.ts). Vidéo seule : « à revoir » (video), sans IA ; rien à
-//     lire : « vide » ; seulement des fichiers que le campus ne lit pas : « format ».
-//   - Sinon une demande part à l'IA (server/correction-ia.ts), sans quota, sous l'origine « copie:<id> ». En
-//     mode IA du soir, elle est gardée pour la routine : son identifiant est rangé dans corrections_auto
-//     (demande_id), et les passages suivants relisent la réponse par cet identifiant, SANS reconstruire la
-//     demande (lecture du bucket, conversions). Sans réponse : « soir ».
-//   - La réponse est contrôlée (critères rapprochés, points bornés au quart, total au plus le barème). Consigne
-//     cachée repérée (alerte), copie illisible, ou copie lue en partie : rien n'est publié, la copie est « à
-//     revoir » par le formateur (la proposition lui est gardée) ; l'étudiant qui peut encore remplacer une
-//     copie illisible est prévenu. Sinon la note est publiée comme une note de formateur (origine « campus »,
-//     sans correcteur, détail critère par critère AVEC justification, commentaire), seulement si la copie
-//     n'a pas changé entre-temps (même heure d'arrivée, encore « rendue » sans correction d'un formateur, ou
-//     déjà notée par le campus) : une note de formateur n'est jamais écrasée.
+//     lire : « vide » ; seulement des fichiers que le campus ne lit pas : « format ». Un fichier que le bucket
+//     ne rend pas : « erreur », réessayée.
+//   - Sinon une demande part à l'IA (server/correction-ia.ts), sans quota, sous l'origine « copie:<id> », avec
+//     la référence de la copie à recopier (D-C). En mode IA du soir, elle est gardée pour la routine : son
+//     identifiant est rangé dans corrections_auto (demande_id), et les passages suivants relisent la réponse
+//     par cet identifiant, SANS reconstruire la demande (lecture du bucket, conversions). Sans réponse : « soir ».
+//   - La réponse est contrôlée : référence de la copie, chaque critère par son nom, points de 0 au maximum par
+//     quarts. Un écart : la réponse est rejetée (« erreur », la demande est refaite), jamais ramenée en silence.
+//   - Copie douteuse ou lue en partie (D-B) : consigne cachée (alerte), lisibilité « illisible » ou « partielle »,
+//     vidéo ou son joints (même avec du texte ou des photos), fichier non lu, pages au-delà du maximum, texte
+//     coupé : rien n'est publié, la copie est « à revoir » par le formateur (la proposition lui est gardée).
+//     Une copie retenue pour elle-même ne repart jamais à l'IA sur un corrigé modifié, seulement si l'étudiant
+//     la remplace ; une copie « alerte » remplacée reste « à revoir » (l'étudiant n'apprend pas l'alerte).
+//   - Sinon la note est publiée comme une note de formateur (origine « campus », sans correcteur, détail
+//     critère par critère AVEC justification, commentaire), seulement si rien n'a changé entre-temps (même
+//     copie, encore « rendue » sans correction d'un formateur ou déjà notée par le campus, même version du
+//     corrigé, date limite passée) : une note de formateur n'est jamais écrasée.
 //   - Échec technique : « erreur », réessayée ; au bout de ESSAIS_MAX_CORRECTION essais, « à revoir » (echecs).
+//     Une panne de l'API elle-même (réseau, crédit épuisé, saturation) ne compte pas d'essai.
 // La tâche « correction-copies » (10 min) applique les réponses déjà données par la routine, et, hors mode IA
 // du soir, corrige directement par l'API, à petit débit.
 import Anthropic from "@anthropic-ai/sdk";
@@ -30,16 +39,19 @@ import { demanderJsonCout, ErreurIa, iaDisponible, travailDeFondPermis } from ".
 import { avecOrigine, estIaDuSoir, iaDuSoir, supprimerDemandesDe } from "./ia-soir";
 import { echeanceValidation } from "./corrections-socle";
 import { echeance } from "./evaluations-outils";
-import { copieLisible, lectureComplete, lireCopie, resumeNonLus } from "./copies-pages";
+import { apercuCopie, copieLisible, lectureComplete, lireCopie, resumeApercu, resumeNonLus, type ApercuCopie } from "./copies-pages";
 import {
-  SCHEMA_CORRECTION_CAMPUS,
   SYSTEME_CORRECTION_CAMPUS,
   LISIBILITES,
   contexteCorrection,
   grilleDe,
+  memeReference,
   messageCopie,
+  normaliser,
   noteDu,
   rapprocherCriteres,
+  referenceCopie,
+  schemaCorrectionCampus,
   type CorrectionCampusIa,
 } from "./correction-ia";
 import type { IssueEtude } from "./etude-cours";
@@ -107,9 +119,21 @@ const memeInstant = (a: Date | null | undefined, b: Date | null | undefined) => 
 export const corrigeUtilisableLigne = (cd: Pick<CorrigeDevoir, "statut" | "contenu"> | null | undefined): boolean =>
   Boolean(cd && STATUTS_CORRIGE_UTILISABLES.includes(cd.statut) && cd.contenu.trim());
 
+/**
+ * Copie retenue « à revoir » pour elle-même (consigne cachée, illisible, vidéo, format, vide) : un corrigé modifié
+ * n'y change rien, elle ne repart jamais à l'IA pour cela ; seul un remplacement par l'étudiant la relance.
+ * Seuls les échecs techniques (« echecs ») sont refaits sur un nouveau corrigé.
+ */
+const retenueSurLaCopie = (ca: Pick<CorrectionAuto, "etat" | "raison">) => ca.etat === "a_revoir" && ca.raison !== "echecs";
+/** Consigne cachée repérée : la copie reste « à revoir » jusqu'au formateur, même remplacée (alerte collante). */
+const sousAlerte = (ca: Pick<CorrectionAuto, "etat" | "raison"> | null | undefined) => ca?.etat === "a_revoir" && ca.raison === "alerte";
+
 /** La ligne de suivi vaut-elle pour cette copie et ce corrigé (sinon : copie remplacée ou corrigé modifié) ? */
 const ligneAJour = (ca: CorrectionAuto, r: Pick<Rendu, "renduLe">, cd: Pick<CorrigeDevoir, "version"> | null | undefined) =>
-  memeInstant(ca.renduLe, r.renduLe) && (!cd || ca.versionCorrige === cd.version);
+  memeInstant(ca.renduLe, r.renduLe) && (!cd || ca.versionCorrige === cd.version || retenueSurLaCopie(ca));
+
+/** La date limite du devoir est passée (fin d'échéance comprise) : le campus peut corriger (D-A). */
+const apresEcheance = (d: Pick<Devoir, "dateLimite">, maintenant = Date.now()) => maintenant > echeance(d).getTime();
 
 async function tracerCampus(action: string, details: Record<string, unknown>) {
   await db.insert(journal).values({ utilisateurId: null, action, details });
@@ -126,10 +150,30 @@ async function oublierDemandesOrphelines(): Promise<void> {
 }
 
 /**
- * Copies à corriger ce tour-ci, les plus anciennes d'abord, au plus « limite » : copies de dépôt de devoirs
- * publiés dont le corrigé sert de barème, sans correction d'un formateur sur la copie actuelle, et dont le suivi
- * est absent, en file, en erreur (essais restants) ou périmé (copie remplacée, corrigé modifié).
+ * Copies que le campus doit (encore) corriger (alias r, d, cd, ca) : copies de dépôt de devoirs publiés dont la
+ * date limite est passée (la minute couvre la fin d'échéance, finEcheance) et dont le corrigé sert de barème,
+ * sans correction d'un formateur sur la copie actuelle, hors consigne cachée repérée (le formateur décide), et
+ * dont le suivi est absent, en file, en erreur (essais restants) ou périmé (copie remplacée ; corrigé modifié,
+ * sauf pour une copie retenue « à revoir » pour elle-même).
  */
+const SQL_A_CORRIGER = sql`
+      d.type = 'depot' AND d.publie AND d.date_limite + interval '1 minute' <= now()
+      AND cd.statut IN ('valide', 'tacite') AND btrim(cd.contenu) <> ''
+      AND (
+        (r.statut = 'rendu' AND (r.correcteur_id IS NULL OR (r.corrige_le IS NOT NULL AND r.rendu_le IS NOT NULL AND r.corrige_le < r.rendu_le)))
+        OR (r.statut = 'corrige' AND r.origine_note = 'campus')
+      )
+      AND NOT (ca.etat IS NOT DISTINCT FROM 'a_revoir' AND ca.raison IS NOT DISTINCT FROM 'alerte')
+      AND (
+        (ca.rendu_id IS NULL AND r.statut = 'rendu')
+        OR ca.etat = 'en_file'
+        OR (ca.etat = 'erreur' AND ca.tentatives < ${ESSAIS_MAX_CORRECTION})
+        OR (ca.etat IN ('notee', 'a_revoir', 'erreur') AND (
+          date_trunc('milliseconds', ca.rendu_le) IS DISTINCT FROM date_trunc('milliseconds', r.rendu_le)
+          OR (ca.version_corrige IS DISTINCT FROM cd.version AND NOT (ca.etat = 'a_revoir' AND ca.raison IS DISTINCT FROM 'echecs'))))
+      )`;
+
+/** Copies à corriger ce tour-ci, les plus anciennes d'abord, au plus « limite » (voir SQL_A_CORRIGER). */
 export async function copiesACorriger(limite: number): Promise<number[]> {
   await oublierDemandesOrphelines();
   const { rows } = await db.execute<{ id: number }>(sql`
@@ -138,23 +182,27 @@ export async function copiesACorriger(limite: number): Promise<number[]> {
     JOIN campus.devoirs d ON d.id = r.devoir_id
     JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
     LEFT JOIN campus.corrections_auto ca ON ca.rendu_id = r.id
-    WHERE d.type = 'depot' AND d.publie
-      AND cd.statut IN ('valide', 'tacite') AND btrim(cd.contenu) <> ''
-      AND (
-        (r.statut = 'rendu' AND (r.correcteur_id IS NULL OR (r.corrige_le IS NOT NULL AND r.rendu_le IS NOT NULL AND r.corrige_le < r.rendu_le)))
-        OR (r.statut = 'corrige' AND r.origine_note = 'campus')
-      )
-      AND (
-        (ca.rendu_id IS NULL AND r.statut = 'rendu')
-        OR ca.etat = 'en_file'
-        OR (ca.etat = 'erreur' AND ca.tentatives < ${ESSAIS_MAX_CORRECTION})
-        OR (ca.etat IN ('notee', 'a_revoir', 'erreur') AND (
-          date_trunc('milliseconds', ca.rendu_le) IS DISTINCT FROM date_trunc('milliseconds', r.rendu_le)
-          OR ca.version_corrige IS DISTINCT FROM cd.version))
-      )
+    WHERE ${SQL_A_CORRIGER}
     ORDER BY r.rendu_le ASC NULLS FIRST, r.id ASC
     LIMIT ${Math.max(0, Math.trunc(limite))}`);
   return rows.map((l) => Number(l.id));
+}
+
+/**
+ * Copies encore à préparer pour la routine du soir : à corriger, sans demande qui attend déjà sa réponse (celles-là
+ * sont dans les demandes en attente). Le tour le dit (aSuivre) : la routine relance le tour tant qu'il en reste.
+ */
+export async function copiesAPreparer(): Promise<number> {
+  const { rows } = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n
+    FROM campus.rendus r
+    JOIN campus.devoirs d ON d.id = r.devoir_id
+    JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
+    LEFT JOIN campus.corrections_auto ca ON ca.rendu_id = r.id
+    WHERE ${SQL_A_CORRIGER}
+      AND NOT (ca.etat = 'en_file' AND ca.demande_id IS NOT NULL
+               AND EXISTS (SELECT 1 FROM campus.demandes_ia di WHERE di.id = ca.demande_id AND di.repondu_le IS NULL))`);
+  return Number(rows[0]?.n ?? 0);
 }
 
 // ── Corriger une copie ─────────────────────────────────────────────────────
@@ -173,13 +221,19 @@ async function charger(renduId: number): Promise<Contexte | null> {
   return l ?? null;
 }
 
-/** Le campus peut-il corriger cette copie maintenant ? */
+/**
+ * Le campus peut-il corriger cette copie maintenant ? Jamais avant la date limite (D-A) : c'est le garde-fou
+ * commun au tour de la routine, à la tâche de 10 minutes et à toute demande déjà gardée.
+ */
 function corrigeable({ r, d, cd }: Contexte): boolean {
-  if (d.type !== "depot" || !d.publie || !corrigeUtilisableLigne(cd)) return false;
+  if (d.type !== "depot" || !d.publie || !corrigeUtilisableLigne(cd) || !apresEcheance(d)) return false;
   return (r.statut === "rendu" && !formateurALaMain(r)) || (r.statut === "corrige" && r.origineNote === "campus");
 }
 
 const contexteDe = ({ d, c }: Contexte, cd: CorrigeDevoir) => contexteCorrection({ cours: c, devoir: d, corrige: cd.contenu, campus: true });
+
+/** Raison d'une copie à revoir qui contient ce que le campus ne lit pas : vidéo (le formateur la regarde) ou format. */
+const raisonNonLue = (a: Pick<ApercuCopie, "videos">): RaisonARevoir => (a.videos ? "video" : "format");
 
 /** Qui paie la correction par l'API (comptabilité du mois, jamais le quota du jour) : le formateur du cours, sinon la direction. */
 async function payeurDe(x: Contexte): Promise<number | undefined> {
@@ -245,47 +299,64 @@ async function corriger(renduId: number): Promise<IssueEtude> {
     }
     return "rien";
   }
+  // Consigne cachée repérée : la copie reste « à revoir », même remplacée ou sur un nouveau corrigé (alerte
+  // collante) ; seul le formateur la sort de là, en la prenant en main (copiePriseEnMain).
+  if (sousAlerte(ca)) {
+    if (!memeInstant(ca!.renduLe, r.renduLe)) await garderAlerte(r.id, r.renduLe);
+    return "rien";
+  }
   const aJour = ca ? ligneAJour(ca, r, cd) : false;
   // Déjà notée ou retenue pour cette copie et ce corrigé : rien à refaire (la décision revient au formateur).
   if (ca && aJour && (ca.etat === "notee" || ca.etat === "a_revoir")) return "rien";
 
   // 1. Une demande attend la routine du soir : sa réponse est relue par son identifiant, sans la reconstruire.
+  // Le contexte (lourd à relire : la demande porte les pages en images) n'est lu que d'une demande répondue.
   if (ca?.demandeId && aJour && ca.etat === "en_file") {
     const [dem] = await db
-      .select({ id: demandesIa.id, reponse: demandesIa.reponse, reponduLe: demandesIa.reponduLe, contexte: sql<string | null>`${demandesIa.requete} ->> 'contexte'` })
+      .select({
+        id: demandesIa.id,
+        reponse: demandesIa.reponse,
+        reponduLe: demandesIa.reponduLe,
+        contexte: sql<string | null>`case when ${demandesIa.reponduLe} is not null then ${demandesIa.requete} ->> 'contexte' end`,
+      })
       .from(demandesIa)
       .where(eq(demandesIa.id, ca.demandeId));
     if (dem && !dem.reponduLe && iaDuSoir()) return "soir";
     if (dem?.reponduLe && dem.contexte === contexteDe(x, cd)) return appliquer(x, cd, dem.reponse, ca.detail);
   }
   // Demande disparue, copie remplacée, devoir ou corrigé modifiés depuis (consigne, grille…), ou API revenue :
-  // l'ancienne demande ne sert plus, elle est refaite.
-  if (ca?.demandeId) {
-    await supprimerDemandesDe(origineDe(r.id));
-    await db.update(correctionsAuto).set({ demandeId: null, majLe: new Date() }).where(eq(correctionsAuto.renduId, r.id));
-  }
+  // toute demande déjà gardée pour cette copie ne sert plus (remettreEnFile oublie son identifiant sans la
+  // supprimer) : la routine ne la verra plus, elle est refaite.
+  await supprimerDemandesDe(origineDe(r.id));
+  if (ca?.demandeId) await db.update(correctionsAuto).set({ demandeId: null, majLe: new Date() }).where(eq(correctionsAuto.renduId, r.id));
 
   // 2. Lecture de la copie.
   const copie = await lireCopie(r.texte, await fichiersDe(r));
+  // Un fichier que le bucket (ou le volume) n'a pas rendu : panne passagère le plus souvent. Aucune demande ne
+  // part sur une copie incomplète, la copie est réessayée (« erreur ») ; au bout des essais, « à revoir » (echecs).
+  const indisponibles = copie.nonLus.filter((n) => n.raison === "indisponible");
+  if (indisponibles.length) return echec(x, cd, new Error(`fichier momentanément illisible (bucket) : ${indisponibles.map((n) => n.nom).join(", ")}`));
   const nonLus = resumeNonLus(copie);
   if (!copieLisible(copie)) {
     const raison: RaisonARevoir = copie.videos ? "video" : copie.nonLus.length || copie.audios || copie.pagesEnTrop ? "format" : "vide";
     const detail =
       raison === "video"
-        ? `Copie rendue en vidéo${copie.videos > 1 ? ` (${copie.videos} vidéos)` : ""} : le campus ne regarde pas les vidéos.`
+        ? `Copie rendue en vidéo, sans texte ni page à lire. ${nonLus ?? ""}`.trim()
         : raison === "vide"
           ? "Rien à lire : ni texte, ni page."
-          : (nonLus ?? (copie.audios ? "Copie rendue en enregistrement audio : le campus ne l'écoute pas." : "Fichiers que le campus ne sait pas lire."));
+          : (nonLus ?? "Fichiers que le campus ne sait pas lire.");
     return aRevoir(x, cd, raison, detail, null);
   }
 
-  // 3. Demande à l'IA (gardée pour la routine du soir, ou envoyée à l'API).
+  // 3. Demande à l'IA (gardée pour la routine du soir, ou envoyée à l'API). Une copie lue en partie (vidéo ou son
+  // joints, fichier non lu, pages en trop, texte coupé) part quand même : la proposition est gardée pour le
+  // formateur, la note n'est jamais publiée (« detail » de la ligne en file, puis appliquer).
   try {
     const { resultat } = await demanderJsonCout<CorrectionCampusIa>({
       systeme: SYSTEME_CORRECTION_CAMPUS,
       contexte: contexteDe(x, cd),
-      messages: [{ role: "user", content: messageCopie(copie, { campus: true, reference: r.id }) }],
-      schema: SCHEMA_CORRECTION_CAMPUS as unknown as Record<string, unknown>,
+      messages: [{ role: "user", content: messageCopie(copie, { campus: true, reference: referenceCopie(r) }) }],
+      schema: schemaCorrectionCampus(grilleDe(x.d)),
       effort: "medium",
       maxTokens: 4000,
       utilisateurId: await payeurDe(x),
@@ -313,15 +384,52 @@ async function corriger(renduId: number): Promise<IssueEtude> {
   }
 }
 
+/**
+ * Contrôle d'une réponse de l'IA pour une copie : référence de la copie, critères de la grille (chacun par son
+ * nom), points de 0 au maximum. Renvoie les écarts (vides si la réponse est recevable) ; le format général est
+ * contrôlé avant (schéma). Rien n'y est jamais « ramené » en silence : un écart rejette la réponse.
+ */
+function ecartsReponse(x: Pick<Contexte, "r" | "d">, ia: Partial<CorrectionCampusIa>): { ecarts: string[]; rapproche: ReturnType<typeof rapprocherCriteres> } {
+  const grille = grilleDe(x.d);
+  const rapproche = rapprocherCriteres(grille, Array.isArray(ia.detail) ? ia.detail : []);
+  const ecarts: string[] = [];
+  // Le message ne dit pas la référence attendue : une réponse rangée dans le mauvais dossier doit être refaite.
+  if (!memeReference(ia.reference, referenceCopie(x.r))) ecarts.push("réponse.reference : ce n'est pas la référence de la copie de cette demande (réponse écrite pour une autre copie ?) : relire la copie de cette demande et refaire la réponse");
+  const rappel = `${grille.length} ligne${grille.length > 1 ? "s" : ""}, dans l'ordre : ${grille.map((g) => `« ${g.critere} » (${g.points} points)`).join(" ; ")}`;
+  for (const c of rapproche.manquants) ecarts.push(`réponse.detail : critère « ${c} » absent (${rappel})`);
+  for (const c of rapproche.parRang) ecarts.push(`réponse.detail : critère « ${c} » mal nommé (${rappel})`);
+  for (const c of rapproche.horsBornes) {
+    const g = grille.find((l) => l.critere === c)!;
+    const brut = (ia.detail ?? []).find((l) => l && typeof l === "object" && normaliser(l.critere) === normaliser(c))?.obtenu;
+    ecarts.push(`réponse.detail : « ${c} » : ${brut ?? "?"} points, hors du barème (de 0 à ${g.points}, par quarts de point)`);
+  }
+  return { ecarts, rapproche };
+}
+
+/**
+ * Pour la route de la routine (POST /api/travaux-ia/demandes/:id/reponse) : écarts d'une réponse de copie, avant
+ * de la garder, pour que la routine la corrige tout de suite (sans perdre un essai ni une nuit). Rien pour une
+ * autre demande, une copie disparue, ou une demande devenue périmée (devoir ou corrigé modifiés : le moteur la
+ * refait de toute façon).
+ */
+export async function ecartsReponseCopie(origine: string, contexteDemande: string | undefined, reponse: unknown): Promise<string[]> {
+  const m = /^copie:(\d+)$/.exec(origine);
+  if (!m) return [];
+  const x = await charger(Number(m[1]));
+  if (!x?.cd || contexteDemande !== contexteDe(x, x.cd)) return [];
+  return ecartsReponse(x, (reponse ?? {}) as Partial<CorrectionCampusIa>).ecarts;
+}
+
 /** Contrôle la réponse de l'IA, puis publie la note ou met la copie « à revoir ». « nonLus » : lecture incomplète. */
 async function appliquer(x: Contexte, cd: CorrigeDevoir, reponse: unknown, nonLus: string | null): Promise<IssueEtude> {
   const ia = reponse as Partial<CorrectionCampusIa> | null;
   if (!ia || typeof ia !== "object" || !Array.isArray(ia.detail) || !(LISIBILITES as readonly unknown[]).includes(ia.lisibilite)) {
     return echec(x, cd, new Error("réponse de l'IA hors du format demandé"));
   }
-  const { lignes, manquants, horsBornes } = rapprocherCriteres(grilleDe(x.d), ia.detail);
-  if (manquants.length) return echec(x, cd, new Error(`critères non notés par l'IA : ${manquants.join(", ")}`));
-  if (horsBornes.length) console.warn(`[correction] copie ${x.r.id} : points ramenés dans les bornes (${horsBornes.join(", ")}).`);
+  // Référence fausse, critère absent ou mal nommé, points hors du barème : réponse rejetée, demande refaite.
+  const { ecarts, rapproche } = ecartsReponse(x, ia);
+  if (ecarts.length) return echec(x, cd, new Error(`réponse rejetée : ${ecarts.join(" ; ")}`));
+  const { lignes } = rapproche;
   const note = noteDu(lignes, x.d.bareme);
   const commentaire = String(ia.commentaire ?? "").trim().slice(0, 2000);
   const alerte = String(ia.alerte ?? "").trim().slice(0, 500);
@@ -329,9 +437,13 @@ async function appliquer(x: Contexte, cd: CorrigeDevoir, reponse: unknown, nonLu
   const proposition: PropositionIa = { note, detail: lignes, commentaire, alerte: alerte || null, creeLe: new Date().toISOString() };
   if (alerte) return aRevoir(x, cd, "alerte", `Consigne adressée à l'IA repérée dans la copie : ${alerte}`, proposition);
   if (ia.lisibilite === "illisible") return aRevoir(x, cd, "illisible", remarque || "Copie difficile à lire.", proposition);
-  if (nonLus) return aRevoir(x, cd, "format", nonLus, proposition);
-  const pourFormateur = [ia.lisibilite === "partielle" ? "Lecture partielle." : "", remarque].filter(Boolean).join(" ") || null;
-  return publier(x, cd, { note, lignes, commentaire, detail: pourFormateur });
+  if (ia.lisibilite === "partielle") return aRevoir(x, cd, "illisible", `Lecture partielle : ${remarque || "un passage de la copie est difficile à lire."}`, proposition);
+  // Lecture incomplète : celle de la lecture (ligne en file, ou lecture qui vient d'avoir lieu), et en dernier
+  // contrôle ce que les seuls types des fichiers disent (vidéo, son, format jamais lu, texte trop long).
+  const apercu = apercuCopie(x.r.texte, await fichiersDe(x.r));
+  const manque = nonLus ?? resumeApercu(apercu);
+  if (manque) return aRevoir(x, cd, raisonNonLue(apercu), manque, proposition);
+  return publier(x, cd, { note, lignes, commentaire, detail: remarque || null });
 }
 
 /** Publie la note du campus, si la copie n'a pas changé ; l'étudiant est prévenu (jamais la note dans la notification). */
@@ -344,6 +456,18 @@ async function publier(
   const maintenant = new Date();
   const dejaPubliee = r.statut === "corrige";
   const maj = await db.transaction(async (tx) => {
+    // Le corrigé employé est-il toujours le barème (même version, validé ou tacite), et la date limite passée ?
+    // Verrou partagé : une modification du corrigé attend la fin de la publication, puis la remet en file
+    // (remettreEnFile la voit « notee »). Sinon (corrigé, barème ou date limite changés pendant la correction) :
+    // rien n'est publié, la copie repart en file.
+    const [actuel] = await tx
+      .select({ version: corrigesDevoirs.version, statut: corrigesDevoirs.statut, contenu: corrigesDevoirs.contenu })
+      .from(corrigesDevoirs)
+      .where(eq(corrigesDevoirs.devoirId, d.id))
+      .for("share");
+    const [dv] = await tx.select({ dateLimite: devoirs.dateLimite, publie: devoirs.publie, bareme: devoirs.bareme }).from(devoirs).where(eq(devoirs.id, d.id));
+    if (!actuel || actuel.version !== cd.version || !corrigeUtilisableLigne(actuel)) return null;
+    if (!dv || !dv.publie || dv.bareme !== d.bareme || !apresEcheance(dv)) return null;
     const [ligne] = await tx
       .update(rendus)
       .set({ note: n.note, noteDetail: n.lignes, commentaire: n.commentaire || null, statut: "corrige", origineNote: "campus", correcteurId: null, corrigeLe: maintenant, majLe: maintenant })
@@ -410,11 +534,17 @@ async function aRevoir(x: Contexte, cd: CorrigeDevoir, raison: RaisonARevoir, de
   return "rien";
 }
 
-/** Panne de l'API elle-même (et non de la demande de cette copie) : réseau, clé, crédit, saturation, erreur du service. */
+/**
+ * Panne de l'API elle-même (et non de la demande de cette copie) : réseau, clé, crédit épuisé (402 « billing », ou
+ * 400 « credit balance is too low », comme le repère fetchSurveille dans ia.ts), saturation, erreur du service.
+ */
 function erreurGlobale(e: unknown): boolean {
   if (e instanceof ErreurIa) return e.statut === 503 || e.statut === 429;
   if (e instanceof Anthropic.APIConnectionError) return true;
-  if (e instanceof Anthropic.APIError) return e.status === undefined || [401, 403, 408, 429].includes(e.status) || e.status >= 500;
+  if (e instanceof Anthropic.APIError) {
+    if (e.status === 400) return /credit balance|billing/i.test(e.message);
+    return e.status === undefined || [401, 402, 403, 408, 429].includes(e.status) || e.status >= 500;
+  }
   return false;
 }
 
@@ -456,9 +586,37 @@ export async function copiePriseEnMain(renduId: number): Promise<void> {
   else await db.delete(correctionsAuto).where(eq(correctionsAuto.renduId, renduId));
 }
 
-/** L'étudiant (ou la vie scolaire) a remplacé la copie : elle repart en correction, la demande de l'ancienne est supprimée. */
+/**
+ * Copie « alerte » remplacée : elle reste « à revoir » pour la nouvelle copie (heure de remise mise à jour), avec
+ * la trace de l'alerte pour le formateur ; la proposition de l'ancienne copie n'est pas gardée.
+ */
+async function garderAlerte(renduId: number, renduLe: Date | null): Promise<void> {
+  await db
+    .update(correctionsAuto)
+    .set({
+      renduLe,
+      demandeId: null,
+      noteCampus: null,
+      detail: sql`left('Copie remplacée après une consigne adressée à l''IA. ' || coalesce(${correctionsAuto.detail}, ''), 1000)`,
+      majLe: new Date(),
+    })
+    .where(and(eq(correctionsAuto.renduId, renduId), eq(correctionsAuto.etat, "a_revoir"), eq(correctionsAuto.raison, "alerte")));
+}
+
+/**
+ * L'étudiant (ou la vie scolaire) a remplacé la copie : elle repart en correction, la demande de l'ancienne est
+ * supprimée. Sauf une copie où une consigne adressée à l'IA a été repérée : elle reste « à revoir » (alerte
+ * collante), le formateur décide ; l'étudiant n'en apprend rien de plus (raison générique).
+ */
 export async function copieRemplacee(renduId: number): Promise<void> {
   await supprimerDemandesDe(origineDe(renduId));
+  const [ca] = await db.select({ etat: correctionsAuto.etat, raison: correctionsAuto.raison }).from(correctionsAuto).where(eq(correctionsAuto.renduId, renduId));
+  if (sousAlerte(ca)) {
+    const [r] = await db.select({ renduLe: rendus.renduLe }).from(rendus).where(eq(rendus.id, renduId));
+    await garderAlerte(renduId, r?.renduLe ?? null);
+    await tracerCampus("copie_alerte_remplacee", { renduId });
+    return;
+  }
   await db
     .update(correctionsAuto)
     .set({ etat: "en_file", raison: null, detail: null, demandeId: null, tentatives: 0, noteCampus: null, majLe: new Date() })
@@ -503,35 +661,60 @@ function prochainSoir(apres: Date): Date {
 }
 
 /**
- * Quand l'étudiant peut attendre sa note : le prochain tour de la routine du soir si le corrigé sert déjà de
- * barème ; sinon le tour qui suit l'échéance du corrigé (tenu pour bon 24 h après le message du jour, qui part
- * à 7 h quand il est prêt la nuit). Hors mode IA du soir, l'API corrige dans le quart d'heure.
+ * Quand l'étudiant peut attendre sa note : le campus ne corrige qu'après la date limite du devoir (D-A), et
+ * quand le corrigé sert de barème. Donc le premier tour de la routine du soir qui suit à la fois la date limite
+ * et l'échéance du corrigé (tenu pour bon 24 h après le message du jour, qui part à 7 h quand il est prêt la
+ * nuit) : « le soir qui suit la date limite » d'ordinaire, « ce soir » pour une copie en retard. Hors mode IA
+ * du soir, l'API corrige dans le quart d'heure qui suit.
  */
-export function noteAttendueLe(cd: Pick<CorrigeDevoir, "statut" | "contenu" | "echeanceLe"> | null, maintenant = new Date()): Date | null {
+export function noteAttendueLe(
+  cd: Pick<CorrigeDevoir, "statut" | "contenu" | "echeanceLe"> | null,
+  d: Pick<Devoir, "dateLimite">,
+  maintenant = new Date(),
+): Date | null {
   if (!cd) return null;
   const apres = (t: Date) => (iaDuSoir() ? prochainSoir(t) : new Date(t.getTime() + 15 * MINUTE));
-  if (corrigeUtilisableLigne(cd)) return apres(maintenant);
-  if (cd.statut === "propose" && cd.echeanceLe) return apres(new Date(Math.max(cd.echeanceLe.getTime(), maintenant.getTime())));
+  const depart = (t: Date) => new Date(Math.max(t.getTime(), maintenant.getTime(), echeance(d).getTime()));
+  if (corrigeUtilisableLigne(cd)) return apres(depart(maintenant));
+  if (cd.statut === "propose" && cd.echeanceLe) return apres(depart(cd.echeanceLe));
   // Corrigé pas encore proposé au formateur : rédigé ce soir par la routine (en préparation), ou message du jour à venir.
   const propose = cd.statut === "en_preparation" && iaDuSoir() ? prochainSoir(maintenant) : maintenant;
-  return apres(echeanceValidation(propose));
+  return apres(depart(echeanceValidation(propose)));
 }
 
 /**
+ * Ce que l'aperçu d'une copie (types de fichiers, texte) dit déjà de sa correction, dès le dépôt : vidéo jointe
+ * (le formateur la regarde), rien à lire, ou ce que le campus ne lit jamais (son, format, texte trop long). Nul
+ * quand le campus pourra la corriger lui-même.
+ */
+export function raisonPrevue(a: ApercuCopie): RaisonARevoir | null {
+  if (a.videos) return "video";
+  if (!a.aLire && !a.audios && !a.jamaisLus) return "vide";
+  if (a.audios || a.jamaisLus || a.texteCoupe) return "format";
+  return null;
+}
+
+/** Raison montrée à l'étudiant : une consigne cachée repérée ne lui est pas dite (message générique). */
+const raisonPourEtudiant = (raison: RaisonARevoir | null): RaisonARevoir | null => (raison === "alerte" ? null : raison);
+
+/**
  * État de la correction par le campus, vu par l'étudiant (RenduEtudiant.correctionAuto), dès le dépôt : « en
- * file » avec l'heure à laquelle attendre la note, ou « à revoir » avec sa raison. Une note du campus déjà
- * publiée dont le corrigé a changé reste visible, la copie est « en file » (le campus la relit). Nul quand le
- * campus n'est pas concerné (devoir sans corrigé, formateur qui a la main) ou quand la note publiée est
- * définitive. Une erreur technique reste « en file » pour lui (elle sera réessayée).
+ * file » avec l'heure à laquelle attendre la note (après la date limite), ou « à revoir » avec sa raison (dès
+ * le dépôt pour une copie que le campus ne lira pas : vidéo, son, format, vide ; une consigne cachée repérée
+ * n'est pas dite). Une note du campus déjà publiée dont le corrigé a changé reste visible, la copie est « en
+ * file » (le campus la relit). Nul quand le campus n'est pas concerné (devoir sans corrigé, formateur qui a la
+ * main) ou quand la note publiée est définitive. Une erreur technique reste « en file » pour lui (réessayée).
  */
 export function etatPourEtudiant(
   r: Pick<Rendu, "statut" | "renduLe" | "correcteurId" | "corrigeLe" | "origineNote">,
   ca: CorrectionAuto | null | undefined,
   cd: Pick<CorrigeDevoir, "statut" | "contenu" | "echeanceLe" | "version"> | null | undefined,
+  d: Pick<Devoir, "dateLimite">,
   maintenant = new Date(),
+  apercu: ApercuCopie | null = null,
 ): EtatCorrectionEtudiant | null {
   if (!cd) return null;
-  const enFile = (): EtatCorrectionEtudiant => ({ etat: "en_file", raison: null, attendueLe: noteAttendueLe(cd, maintenant)?.toISOString() ?? null });
+  const enFile = (): EtatCorrectionEtudiant => ({ etat: "en_file", raison: null, attendueLe: noteAttendueLe(cd, d, maintenant)?.toISOString() ?? null });
   if (r.statut === "corrige") {
     // Recorrection d'une note du campus (corrigé modifié) : seulement tant qu'elle est à faire.
     if (r.origineNote !== "campus" || !ca) return null;
@@ -539,8 +722,13 @@ export function etatPourEtudiant(
     return aFaire && corrigeUtilisableLigne(cd) ? enFile() : null;
   }
   if (r.statut !== "rendu" || formateurALaMain(r)) return null;
+  // Alerte collante : même remplacée, la copie reste « à revoir » (sans dire pourquoi).
+  if (sousAlerte(ca)) return { etat: "a_revoir", raison: null, attendueLe: null };
   const valable = ca && ligneAJour(ca, r, cd) ? ca : null;
-  if (valable?.etat === "a_revoir") return { etat: "a_revoir", raison: valable.raison, attendueLe: null };
+  if (valable?.etat === "a_revoir") return { etat: "a_revoir", raison: raisonPourEtudiant(valable.raison), attendueLe: null };
+  // Avant le passage du campus : ce que l'aperçu dit déjà (pas « ta note arrive ce soir » pour une vidéo).
+  const prevue = apercu ? raisonPrevue(apercu) : null;
+  if (prevue) return { etat: "a_revoir", raison: prevue, attendueLe: null };
   return enFile();
 }
 
@@ -562,6 +750,8 @@ export function etatPourFormateur(
     return ligneAJour(ca, r, cd) && ca.etat === "a_revoir" ? { etat: "a_revoir", raison: ca.raison, detail: ca.detail, noteCampus: ca.noteCampus } : { etat: "en_file", raison: null, detail: null, noteCampus: ca.noteCampus };
   }
   if (r.statut !== "rendu" || formateurALaMain(r)) return null;
+  // Alerte collante (copie remplacée après une consigne adressée à l'IA) : toujours « à revoir ».
+  if (sousAlerte(ca)) return { etat: "a_revoir", raison: ca!.raison, detail: ca!.detail, noteCampus: ca!.noteCampus };
   if (!ca || !ligneAJour(ca, r, cd)) return { etat: "en_file", raison: null, detail: null, noteCampus: null };
   // Une erreur technique en cours de reprise reste « en file » pour le formateur.
   if (ca.etat === "erreur") return { etat: "en_file", raison: null, detail: null, noteCampus: null };
@@ -571,22 +761,33 @@ export function etatPourFormateur(
 // ── Tâche planifiée ────────────────────────────────────────────────────────
 
 /**
- * Toutes les 10 minutes : les réponses que la routine du soir a déjà données sont appliquées (la note part
- * sans attendre le tour suivant) ; hors mode IA du soir, quelques copies sont corrigées par l'API.
+ * Les réponses que la routine du soir a déjà données sont appliquées (note publiée ou copie à revoir). Appelé par
+ * la tâche de 10 minutes et au début de chaque tour : les places du tour vont alors à de nouvelles copies, et
+ * une réponse rejetée est redemandée le soir même.
  */
-export async function passerCorrections(): Promise<{ appliquees: number; corrigees: number }> {
+export async function appliquerReponsesCopies(limite = 300): Promise<{ id: number; issue: IssueEtude }[]> {
   await oublierDemandesOrphelines();
   const { rows } = await db.execute<{ rendu_id: number }>(sql`
     SELECT ca.rendu_id FROM campus.corrections_auto ca
     JOIN campus.demandes_ia di ON di.id = ca.demande_id
     WHERE ca.etat = 'en_file' AND di.repondu_le IS NOT NULL
-    ORDER BY di.repondu_le ASC LIMIT 300`);
-  let appliquees = 0;
-  for (const l of rows) if ((await corrigerCopie(Number(l.rendu_id))) !== "soir") appliquees++;
+    ORDER BY di.repondu_le ASC LIMIT ${Math.max(0, Math.trunc(limite))}`);
+  const issues: { id: number; issue: IssueEtude }[] = [];
+  for (const l of rows) issues.push({ id: Number(l.rendu_id), issue: await corrigerCopie(Number(l.rendu_id)) });
+  return issues;
+}
+
+/**
+ * Toutes les 10 minutes : les réponses que la routine du soir a déjà données sont appliquées (la note part
+ * sans attendre le tour suivant) ; hors mode IA du soir, quelques copies sont corrigées par l'API (le passage
+ * s'arrête dès que l'API refuse tout : crédit épuisé, clé refusée, panne).
+ */
+export async function passerCorrections(): Promise<{ appliquees: number; corrigees: number }> {
+  const appliquees = (await appliquerReponsesCopies()).filter((x) => x.issue !== "soir").length;
   let corrigees = 0;
   if (!iaDuSoir() && iaDisponible() && Date.now() >= pauseApiJusqua && (await travailDeFondPermis())) {
     for (const id of await copiesACorriger(COPIES_PAR_PASSAGE_API)) {
-      if (Date.now() < pauseApiJusqua) break;
+      if (Date.now() < pauseApiJusqua || !iaDisponible()) break;
       if ((await corrigerCopie(id)) === "prete") corrigees++;
     }
   }

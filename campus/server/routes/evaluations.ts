@@ -28,7 +28,8 @@ import { sqlDevoirProposable } from "../engagement/proposables";
 import { publierUtilisateur } from "../temps-reel";
 import { planifier } from "../taches";
 import { iaDisponible, demanderJson, verifierQuota } from "../ia";
-import { lireCopie } from "../copies-pages";
+import { iaDuSoir } from "../ia-soir";
+import { apercuCopie, lireCopie } from "../copies-pages";
 import { SCHEMA_CORRECTION, SYSTEME_CORRECTION, contexteCorrection, grilleDe, messageCopie, noteDu, rapprocherCriteres, type CorrectionIa } from "../correction-ia";
 import {
   copiePriseEnMain,
@@ -299,6 +300,7 @@ async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<numbe
       corrigeLe: rendus.corrigeLe,
       renduLe: rendus.renduLe,
       correcteurId: rendus.correcteurId,
+      origineNote: rendus.origineNote,
     })
     .from(rendus)
     .where(and(inArray(rendus.devoirId, devoirIds), ne(rendus.statut, "brouillon")));
@@ -316,7 +318,9 @@ async function compteursPour(u: Utilisateur, liste: Devoir[]): Promise<Map<numbe
     const c = resultat.get(l.devoirId)!;
     c.rendus++;
     if (l.enRetard) c.enRetard++;
-    if (l.statut === "corrige") c.publiees++;
+    // Note du campus publiée dont la recorrection (corrigé modifié) est retenue « à revoir » : à corriger.
+    if (l.statut === "corrige" && l.origineNote === "campus" && aRevoir.has(l.id)) c.aCorriger++;
+    else if (l.statut === "corrige") c.publiees++;
     else if (correctionAJour(l)) c.aPublier++;
     else if (!parLeCampus.has(l.devoirId) || aRevoir.has(l.id) || formateurALaMain(l)) c.aCorriger++;
   }
@@ -757,11 +761,14 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
     const [correcteur] = publie && rAJour.correcteurId
       ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, rAJour.correcteurId))
       : [];
+    const fichiersCopie = await piecesJointes(rAJour.fichierIds);
+    // Ce que les types des fichiers disent déjà (vidéo, son, format) : l'état vrai dès le dépôt, sans lire la copie.
+    const apercu = apercuCopie(rAJour.texte, fichiersCopie.map((f) => ({ mime: f.mime, nomOriginal: f.nom })));
     rendu = {
       id: rAJour.id,
       statut: rAJour.statut,
       texte: rAJour.texte,
-      fichiers: await piecesJointes(rAJour.fichierIds),
+      fichiers: fichiersCopie,
       renduLe: iso(rAJour.renduLe),
       prepareLe: iso(rAJour.prepareLe),
       enRetard: rAJour.enRetard,
@@ -777,13 +784,15 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
       correcteur: correcteur ?? null,
       // « Corrigé par le campus » : seulement une fois la note publiée (avant, l'origine ne dit rien).
       ...(publie ? { origineNote: rAJour.origineNote } : {}),
-      correctionAuto: etatPourEtudiant(rAJour, suivi, cd, maintenant),
+      correctionAuto: etatPourEtudiant(rAJour, suivi, cd, d, maintenant, apercu),
       relecture: relecture ? versRelectureEtudiant(relecture) : null,
     };
   }
 
-  // Le corrigé validé, après la date limite seulement, à l'étudiant dont la copie est notée (jamais avant).
-  const corrige = publie && cd && corrigeUtilisableLigne(cd) && maintenant.getTime() > echeance(d).getTime() ? cd.contenu : null;
+  // Le corrigé validé, après la date limite seulement, à l'étudiant dont la copie est notée (jamais avant), et
+  // seulement si le devoir n'accepte pas de retard (D-D) : sinon d'autres copies, rendues en retard et corrigées
+  // par le campus, pourraient le recopier.
+  const corrige = publie && cd && !d.accepteRetard && corrigeUtilisableLigne(cd) && maintenant.getTime() > echeance(d).getTime() ? cd.contenu : null;
 
   return {
     vue: "etudiant",
@@ -1507,7 +1516,8 @@ export function enregistrerEvaluations(app: Express) {
         },
         copies,
         compteurs: (await compteursPour(u, [d])).get(d.id) ?? compteursVides(),
-        iaDisponible: iaDisponible(),
+        // En mode IA du soir, l'aide à la correction n'envoie pas les copies à un autre service (voir proposition-ia).
+        iaDisponible: iaDisponible() && !iaDuSoir(),
         peutCorriger: await enseigneCours(u, d.coursId),
       };
       res.json(reponse);
@@ -1577,6 +1587,9 @@ export function enregistrerEvaluations(app: Express) {
       let note = v.note;
       if (note === undefined && noteDetail) note = arrondi(noteDetail.reduce((s, l) => s + l.obtenu, 0));
       if (note !== undefined && note !== null && note > d.bareme) throw invalide(`La note ne peut pas dépasser le barème (${d.bareme}).`);
+      // Note changée sans détail par critère (D-E) : l'ancien détail (celui du campus, justifications comprises) ne
+      // justifie plus la note, il est retiré ; l'étudiant ne voit jamais deux notes qui se contredisent.
+      if (noteDetail === undefined && note !== undefined && note !== r.note && r.noteDetail) noteDetail = null;
       if (v.commentaireAudioId && v.commentaireAudioId !== r.commentaireAudioId) {
         const [f] = await db.select().from(fichiers).where(eq(fichiers.id, v.commentaireAudioId));
         if (!f || f.proprietaireId !== u.id || f.usage !== "rendu" || !f.mime.startsWith("audio/")) throw invalide("Commentaire vocal introuvable. Enregistrez-le à nouveau.");
@@ -1642,6 +1655,14 @@ export function enregistrerEvaluations(app: Express) {
       const { r, d, e } = await renduEnseigne(u, idParam(req));
       if (r.statut === "brouillon") throw new ErreurHttp(409, "Cette copie n'a pas encore été rendue.");
       if (d.type !== "depot") throw invalide("Une interrogation est déjà corrigée automatiquement.");
+      // Mode IA du soir : seule l'offre gratuite d'un autre service répondrait tout de suite ; les copies (données
+      // personnelles, souvent avec le nom de l'étudiant) n'y partent pas. Le campus les corrige le soir.
+      if (iaDuSoir()) {
+        throw new ErreurHttp(
+          503,
+          "L'aide à la correction n'est pas disponible en ce moment : le campus corrige les copies le soir, d'après le corrigé du devoir. Vous pouvez corriger la copie vous-même avec la grille.",
+        );
+      }
       if (!iaDisponible()) {
         throw new ErreurHttp(503, "L'aide à la correction par l'IA n'est pas disponible pour le moment. Vous pouvez corriger la copie vous-même avec la grille.");
       }
@@ -1650,7 +1671,7 @@ export function enregistrerEvaluations(app: Express) {
       const listeFichiers = r.fichierIds.length ? await db.select().from(fichiers).where(inArray(fichiers.id, r.fichierIds)) : [];
       const ordre = new Map(r.fichierIds.map((id, i) => [id, i]));
       listeFichiers.sort((a, b) => (ordre.get(a.id) ?? 0) - (ordre.get(b.id) ?? 0));
-      // Photos, pages des PDF et des documents Word ou Excel en images (server/copies-pages.ts) : lisibles aussi par l'IA gratuite.
+      // Photos, pages des PDF et des documents Word ou Excel en images (server/copies-pages.ts).
       const copie = await lireCopie(r.texte, listeFichiers);
       if (!copie.pages.length && !copie.documents.length && !/[\p{L}\p{N}]/u.test(copie.texte)) {
         throw invalide("Cette copie ne contient rien que l'IA puisse lire (ni texte, ni photo, ni document lisible).");

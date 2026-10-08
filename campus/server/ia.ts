@@ -43,10 +43,13 @@ export const travailDeFondPossible = (): boolean => iaDuSoir() || iaDisponible()
 export const raisonIndisponible = (): "configuration" | "panne" | null =>
   iaDuSoir() ? (gratuiteConfiguree() ? null : "panne") : !config.ia.cle ? "configuration" : Date.now() < panneJusqua ? "panne" : null;
 
-/** Repère les refus qui viennent du compte (et non de la question) avant que le SDK ne lève l'erreur. */
+/**
+ * Repère les refus qui viennent du compte (et non de la question) avant que le SDK ne lève l'erreur : clé refusée
+ * (401, 403), paiement exigé (402) ou crédit épuisé (400 « credit balance »).
+ */
 const fetchSurveille: typeof fetch = async (entree, init) => {
   const r = await fetch(entree, init);
-  if (r.status === 401 || r.status === 403 || r.status === 400) {
+  if (r.status === 401 || r.status === 402 || r.status === 403 || r.status === 400) {
     const texte = await r.clone().text().catch(() => "");
     if (r.status !== 400 || /credit balance|billing/i.test(texte)) {
       if (Date.now() >= panneJusqua) console.error(`[ia] compte Anthropic indisponible (${r.status}) : crédit ou clé à vérifier. Assistant en pause 15 minutes.`);

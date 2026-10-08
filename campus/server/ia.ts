@@ -117,7 +117,9 @@ function avecCacheHistorique(messages: Anthropic.Beta.BetaMessageParam[]): Anthr
   return copie;
 }
 
-/** Haiku 4.5 ne connaît ni le réglage d'effort ni le repli automatique côté serveur. */
+/** Haiku 4.5 (et avant) ne connaît ni le réglage d'effort ni le repli automatique côté serveur. */
+const ancienHaiku = (modele: string) => /haiku-[34]|3-5-haiku|3-haiku/.test(modele);
+/** Haiku 5.5 règle son effort (pensée adaptative), sans repli automatique côté serveur. */
 const estHaiku = (modele: string) => modele.includes("haiku");
 
 function construireRequete(o: OptionsClaude): Anthropic.Beta.MessageCreateParamsNonStreaming {
@@ -127,7 +129,8 @@ function construireRequete(o: OptionsClaude): Anthropic.Beta.MessageCreateParams
   system[system.length - 1] = { ...system[system.length - 1], cache_control: { type: "ephemeral" } };
   const model = modeleDe(o.gamme);
   const base = { model, max_tokens: o.maxTokens ?? 8000, system, messages: avecCacheHistorique(o.messages) };
-  if (estHaiku(model)) return base;
+  if (ancienHaiku(model)) return base;
+  if (estHaiku(model)) return { ...base, output_config: { effort: o.effort ?? "medium" } };
   return {
     ...base,
     betas: ["server-side-fallback-2026-07-01"],

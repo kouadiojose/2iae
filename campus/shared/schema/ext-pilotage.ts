@@ -86,6 +86,8 @@ export const PRIX_IA = { entree: 5, sortie: 25 } as const;
  * motif qui correspond au modèle qui a répondu s'applique.
  */
 export const PRIX_MODELES_IA: { motif: string; nom: string; entree: number; sortie: number; lectureCache: number }[] = [
+  // Haiku 5.5 : prix des demandes de moins de 100 000 jetons (celles du campus) ; au-delà, cinq fois plus.
+  { motif: "haiku-5-5", nom: "Claude Haiku 5.5", entree: 0.1, sortie: 0.5, lectureCache: 0.01 },
   { motif: "haiku-4-5", nom: "Claude Haiku 4.5", entree: 1, sortie: 5, lectureCache: 0.1 },
   { motif: "sonnet-5", nom: "Claude Sonnet 5.5", entree: 2, sortie: 10, lectureCache: 0.2 },
   { motif: "opus-5-5", nom: "Claude Opus 5.5", entree: 4, sortie: 20, lectureCache: 0.2 },

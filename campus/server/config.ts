@@ -97,7 +97,7 @@ export const config = {
     /** Modèle des outils du personnel ; l'effort (low → high) règle la dépense selon la tâche. */
     modele: env("CAMPUS_IA_MODELE") || "claude-opus-5",
     /** Modèle des questions des étudiants sur leurs cours : rapide et économique. */
-    modeleEtudiant: env("CAMPUS_IA_MODELE_ETUDIANT") || "claude-haiku-4-5",
+    modeleEtudiant: env("CAMPUS_IA_MODELE_ETUDIANT") || "claude-haiku-5-5",
     /** Modèle de la bibliothèque (livres, fiches, exposés) : plus de culture générale. */
     modeleBibliotheque: env("CAMPUS_IA_MODELE_BIBLIOTHEQUE") || "claude-sonnet-5-5",
     /**

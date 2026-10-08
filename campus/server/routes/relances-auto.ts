@@ -18,13 +18,15 @@ import { db } from "../db";
 import { exigerRole, exigerDroit, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, invalide } from "../http";
 import { DIRECTION, journaliser, lienWhatsApp, entreeMessage } from "./admin";
-import { derniersActes, entiers, heuresHabituelles, lireReglage, oublierReglage, versDate } from "../engagement/rappel-du-jour";
+import { derniersActes, entiers, heuresHabituelles, lireReglage, oublierReglage, pausesAutomatiques, versDate, type ReglageGlobal } from "../engagement/rappel-du-jour";
 import { lireJetonDesabonnement, ouvertureValide } from "../engagement/email-semaine";
 import "../engagement/decrocheurs";
-import { ajouterJours, jourLocal, type Jour } from "@shared/engagement/calendrier";
+import { ajouterJours, jourLocal, lundiDe, type Jour } from "@shared/engagement/calendrier";
 import {
   heureChoisieValide,
   heureEffective,
+  reserveRelances,
+  simulationCaduque,
   EMAILS_PAR_JOUR_MAX,
   JOURS_PAUSE,
   MODES_EMAILS,
@@ -42,6 +44,7 @@ import {
   type ReglagesRappels,
   type CompteStatuts,
 } from "@shared/engagement/relances";
+import { t } from "@shared/textes/relances";
 
 const P = "/api/pilotage/relances-auto";
 const ETUDIANT = exigerRole("etudiant");
@@ -65,18 +68,10 @@ async function reglagesDe(uid: number, fuseau: string | null): Promise<ReglagesR
   const l = r.rows[0];
   const jour = jourLocal(Date.now(), fuseau);
   const habituelle = (await heuresHabituelles([{ id: uid, fuseau, jour }])).get(uid) ?? null;
-  // Pause automatique : le dernier rappel envoyé était le message de lassitude, sans retour ni réactivation depuis.
-  let pauseAutomatique = false;
-  const dernier = await db.execute<{ statut: string; cree_le: string }>(sql`
-    SELECT statut, cree_le FROM campus.relances_engagement
-    WHERE utilisateur_id = ${uid} AND motif = 'rappel_du_jour' AND statut IN ('envoye', 'pause_auto') ORDER BY cree_le DESC LIMIT 1`);
-  const d = dernier.rows[0];
-  if (d?.statut === "pause_auto") {
-    const le = new Date(d.cree_le);
-    const acte = (await derniersActes([uid], 60)).get(uid);
-    const majLe = versDate(l?.maj_le);
-    pauseAutomatique = !(acte && acte > le) && !(majLe && majLe > le);
-  }
+  // Pause automatique : le dernier rappel envoyé était le message de lassitude, sans retour ni réactivation depuis
+  // (même règle que les relances des décrocheurs, qui ne lui envoient alors aucun rappel).
+  const acte = (await derniersActes([uid], 60)).get(uid) ?? null;
+  const pauseAutomatique = (await pausesAutomatiques([{ id: uid, dernierActe: acte, reglageMajLe: versDate(l?.maj_le) }])).has(uid);
   const pause = l?.pause_jusqu_au && l.pause_jusqu_au >= jour ? l.pause_jusqu_au : null;
   return {
     heureRappel: l?.heure_rappel ?? null,
@@ -122,8 +117,12 @@ const versLigne = (l: LigneBrute): LigneRelance => ({
   revenuLe: l.revenu_le ? new Date(l.revenu_le).toISOString() : null,
 });
 
-/** Relances des décrocheurs et e-mails de la semaine des étudiants donnés (90 jours, 10 par étudiant), et leur état. */
-async function etatsDe(uids: number[]): Promise<Record<number, EtatRelanceEtudiant>> {
+/**
+ * Relances des décrocheurs et e-mails de la semaine des étudiants donnés (90 jours, 10 par étudiant),
+ * et leur état. Une simulation de l'essai sur un canal désormais en marche ne fait plus l'état (rien
+ * n'est parti) ; elle reste dans l'historique, marquée « essai ».
+ */
+async function etatsDe(uids: number[], reglage: ReglageGlobal): Promise<Record<number, EtatRelanceEtudiant>> {
   const etats: Record<number, EtatRelanceEtudiant> = {};
   if (!uids.length) return etats;
   const r = await db.execute<LigneBrute & { rang: number }>(sql`
@@ -134,14 +133,17 @@ async function etatsDe(uids: number[]): Promise<Record<number, EtatRelanceEtudia
       WHERE utilisateur_id = ANY(${entiers(uids)}) AND motif <> 'rappel_du_jour' AND cree_le > now() - interval '90 days'
     ) x WHERE rang <= 10 ORDER BY uid, cree_le DESC`);
   const actes = await derniersActes(uids, 90);
-  for (const uid of uids) etats[uid] = { etat: "aucune", derniere: null, historique: [] };
+  for (const uid of uids) etats[uid] = { etat: "aucune", derniere: null, relancesParties: 0, historique: [] };
   for (const l of r.rows) etats[l.uid].historique.push(versLigne(l));
   for (const uid of uids) {
     const e = etats[uid];
-    const derniere = e.historique.find((h) => (MOTIFS_DECROCHEUR as readonly string[]).includes(h.motif)) ?? null;
+    const acte = actes.get(uid);
+    const decrocheur = e.historique.filter((h) => (MOTIFS_DECROCHEUR as readonly string[]).includes(h.motif) && !simulationCaduque(h, reglage));
+    // Relances vraiment parties depuis son dernier acte : ce que la vie scolaire peut lui dire avoir reçu.
+    e.relancesParties = decrocheur.filter((h) => h.palier < 3 && h.statut === "envoye" && !(acte && acte > new Date(h.creeLe))).length;
+    const derniere = decrocheur[0] ?? null;
     e.derniere = derniere;
     if (!derniere) continue;
-    const acte = actes.get(uid);
     const revenu = Boolean(derniere.revenuLe) || Boolean(acte && acte > new Date(derniere.creeLe));
     e.etat = derniere.palier >= 3 && !revenu ? "a_appeler" : revenu ? "revenu" : "relance";
   }
@@ -150,9 +152,10 @@ async function etatsDe(uids: number[]): Promise<Record<number, EtatRelanceEtudia
 
 /**
  * Étudiants « à appeler » d'un périmètre : palier 3 atteint depuis 60 jours au
- * plus, et aucun acte d'apprentissage depuis (il serait revenu).
+ * plus, et aucun acte d'apprentissage depuis (il serait revenu). Relances en
+ * marche : un palier 3 seulement simulé pendant l'essai ne compte pas.
  */
-async function etudiantsAAppeler(p: number[] | null) {
+async function etudiantsAAppeler(p: number[] | null, reglage: ReglageGlobal) {
   const r = await db.execute<{
     uid: number;
     cree_le: string;
@@ -172,6 +175,7 @@ async function etudiantsAAppeler(p: number[] | null) {
     LEFT JOIN campus.classes c ON c.id = u.classe_id
     LEFT JOIN campus.sites s ON s.id = u.site_id
     WHERE r.palier = 3 AND r.cree_le > now() - interval '60 days' ${p ? sql`AND u.site_id = ANY(${entiers(p)})` : sql``}
+      ${simulationCaduque({ statut: "simulation", canal: "vie_scolaire" }, reglage) ? sql`AND r.statut <> 'simulation'` : sql``}
     ORDER BY r.utilisateur_id, r.cree_le DESC`);
   const actes = await derniersActes(
     r.rows.map((l) => l.uid),
@@ -228,15 +232,17 @@ export function enregistrerRelancesAuto(app: Express) {
 
   // ── Liens des e-mails (publics, sans connexion) ──────────────────────────
 
-  // Un geste depuis l'e-mail : le désabonnement est fait, la page du campus le confirme et propose de revenir.
+  // Le lien de l'e-mail n'écrit rien : une messagerie ou un antivirus qui ouvre tous les liens pour les
+  // analyser ne doit désabonner personne. La page du campus demande la confirmation (un bouton, sans
+  // connexion), qui fait le POST ci-dessous.
   app.get(
     "/api/emails/desabonner/:jeton",
     route(async (req, res) => {
       const jeton = String(req.params.jeton);
       const uid = lireJetonDesabonnement(jeton);
+      res.setHeader("Cache-Control", "no-store");
       if (!uid || !(await etudiantExiste(uid))) return res.redirect(303, "/desabonnement?etat=invalide");
-      await ecrireReglages(uid, { emailsActifs: false });
-      res.redirect(303, `/desabonnement?etat=fait&j=${encodeURIComponent(jeton)}`);
+      res.redirect(303, `/desabonnement?etat=confirmer&j=${encodeURIComponent(jeton)}`);
     }),
   );
 
@@ -284,6 +290,13 @@ export function enregistrerRelancesAuto(app: Express) {
         SELECT CASE WHEN motif = 'rappel_du_jour' THEN 'rappels' WHEN motif = 'semaine' THEN 'semaine' ELSE 'relances' END AS groupe, statut, count(*)::int AS n
         FROM campus.relances_engagement WHERE cree_le > now() - interval '7 days' GROUP BY 1, 2`);
       const groupe = (g: string) => compter(parGroupe.rows.filter((l) => l.groupe === g));
+      // « Ta semaine » : étudiants dont toutes les lignes de cette semaine sont des reports (plafond atteint).
+      const lundi = lundiDe(jourLocal(Date.now(), null));
+      const sansEmail = await db.execute<{ n: number }>(sql`
+        SELECT count(DISTINCT q.utilisateur_id)::int AS n FROM campus.relances_engagement q
+        WHERE q.motif = 'semaine' AND q.statut = 'quota' AND q.jour >= ${lundi}::date
+          AND NOT EXISTS (SELECT 1 FROM campus.relances_engagement o
+            WHERE o.utilisateur_id = q.utilisateur_id AND o.motif = 'semaine' AND o.statut <> 'quota' AND o.jour >= ${lundi}::date)`);
       const chiffres = await db.execute<{ emails: number; revenus: number; comptees: number }>(sql`
         SELECT
           (SELECT count(*) FROM campus.relances_engagement WHERE canal = 'email' AND statut = 'envoye' AND cree_le >= date_trunc('day', now()))::int AS emails,
@@ -291,7 +304,7 @@ export function enregistrerRelancesAuto(app: Express) {
           count(*)::int AS comptees
         FROM campus.relances_engagement
         WHERE motif IN ('inactif', 'devoir_non_rendu', 'lives_manques') AND palier < 3 AND statut IN ('envoye', 'simulation') AND cree_le > now() - interval '7 days'`);
-      const aAppeler = (await etudiantsAAppeler(null)).restants.length;
+      const aAppeler = (await etudiantsAAppeler(null, r)).restants.length;
       const c = chiffres.rows[0];
       const dto: ReglageRelancesDto = {
         mode: r.mode,
@@ -305,6 +318,8 @@ export function enregistrerRelancesAuto(app: Express) {
           relances: groupe("relances"),
           emailsSemaine: groupe("semaine"),
           emailsAujourdhui: c?.emails ?? 0,
+          reserveRelances: reserveRelances(r.emailsParJour),
+          semaineSansEmail: sansEmail.rows[0]?.n ?? 0,
           revenus: c?.revenus ?? 0,
           relancesComptees: c?.comptees ?? 0,
           aAppeler,
@@ -361,7 +376,7 @@ export function enregistrerRelancesAuto(app: Express) {
           ).rows.map((l) => l.id)
         : [];
       const r = await lireReglage();
-      const dto: EtatsRelances = { mode: r.mode, rappelsMode: r.rappelsMode, emailsMode: r.emailsMode, etudiants: await etatsDe(permis) };
+      const dto: EtatsRelances = { mode: r.mode, rappelsMode: r.rappelsMode, emailsMode: r.emailsMode, etudiants: await etatsDe(permis, r) };
       res.setHeader("Cache-Control", "private, no-cache");
       res.json(dto);
     }),
@@ -372,21 +387,19 @@ export function enregistrerRelancesAuto(app: Express) {
     `${P}/a-appeler`,
     exigerDroit("suivi"),
     route(async (req, res) => {
-      const { restants, actes } = await etudiantsAAppeler(perimetreSites(moi(req)));
-      const etats = await etatsDe(restants.map((l) => l.uid));
       const reglage = await lireReglage();
+      const { restants, actes } = await etudiantsAAppeler(perimetreSites(moi(req)), reglage);
+      const etats = await etatsDe(
+        restants.map((l) => l.uid),
+        reglage,
+      );
       const lignes: EtudiantAAppeler[] = restants
         .map((l) => ({
           etudiant: { id: l.uid, prenom: l.prenom, nom: l.nom, matricule: l.matricule, telephone: l.telephone, classe: l.classe, siteId: l.site_id, site: l.site },
           depuis: new Date(l.cree_le).toISOString(),
           dernierActe: actes.get(l.uid)?.toISOString() ?? null,
           essai: l.statut === "simulation",
-          whatsapp: l.telephone
-            ? lienWhatsApp(
-                l.telephone,
-                `${entreeMessage(l.prenom, l.site)} On ne t'a pas vu sur le campus numérique depuis quelques jours. Tout va bien ? Si quelque chose t'empêche de suivre (réseau, téléphone, code secret), dis-le-nous : on trouvera une solution.`,
-              )
-            : null,
+          whatsapp: l.telephone ? lienWhatsApp(l.telephone, t("pilotage.a_appeler.whatsapp", { registre: "tu", v: { entree: entreeMessage(l.prenom, l.site) } })) : null,
           etat: etats[l.uid],
         }))
         .sort((a, b) => a.depuis.localeCompare(b.depuis));

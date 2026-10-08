@@ -1,10 +1,11 @@
 // État des relances automatiques d'un étudiant, dans « Qui décroche ? » :
 // « Relancé le 9 oct. (rappel) · revenu le 10 ✓ » ou « 2 relances sans
 // effet : à appeler », et l'historique des relances à la demande (vouvoiement).
+// Le nombre de relances est celui qui est vraiment parti (le serveur le compte
+// depuis son dernier acte) : une simulation de l'essai n'en est pas une.
 import { useState } from "react";
 import { BellRing, ChevronDown, PhoneCall } from "lucide-react";
 import type { EtatRelanceEtudiant, LigneRelance } from "@shared/engagement/relances";
-import { STATUTS_TENTATIVE } from "@shared/engagement/relances";
 import { t } from "@shared/textes/relances";
 import { formaterDate } from "@shared/textes";
 import { cn } from "@/lib/utils";
@@ -33,11 +34,17 @@ export function EtatRelances({ etat }: { etat: EtatRelanceEtudiant }) {
   const d = etat.derniere;
   if (!d && !etat.historique.length) return null;
   const essai = d?.statut === "simulation";
-  const relancesSansEffet = etat.historique.filter((h) => h.palier < 3 && STATUTS_TENTATIVE.includes(h.statut)).length;
+  const n = etat.relancesParties ?? 0;
 
   let resume: string | null = null;
   if (d && etat.etat === "a_appeler") {
-    resume = essai ? t("etat.a_appeler.essai", vous) : t("etat.a_appeler", { ...vous, v: { n: Math.max(2, relancesSansEffet) } });
+    resume = essai
+      ? t("etat.a_appeler.essai", vous)
+      : n === 0
+        ? t("etat.a_appeler.aucune", vous)
+        : n === 1
+          ? t("etat.a_appeler.un", vous)
+          : t("etat.a_appeler", { ...vous, v: { n } });
   } else if (d) {
     const debut = t(essai ? "etat.relance.essai" : "etat.relance", { ...vous, v: { jour: jourCourt(d.jour), canal: t(`canal.${d.canal}`, vous) } });
     resume = `${debut} · ${d.revenuLe ? t("etat.revenu", { ...vous, v: { jour: court(d.revenuLe) } }) : etat.etat === "revenu" ? t("etat.revenu.depuis", vous) : t("etat.attente", vous)}`;

@@ -9,8 +9,13 @@
 // bouton, et « Ne plus recevoir ces e-mails », qui marche sans se connecter.
 //
 // Plafond : emails_par_jour (40 par défaut) pour tous les e-mails
-// d'engagement, car le compte Resend est partagé avec www.2iae.com. Ce qui
-// dépasse part les jours suivants (jusqu'au jeudi), dans la même fenêtre.
+// d'engagement, car le compte Resend est partagé avec www.2iae.com. L'e-mail
+// de la semaine laisse un quart du plafond aux e-mails des décrocheurs (passage
+// de 16 h 40) : il ne les bloque jamais. Ce qui dépasse part les jours suivants
+// (jusqu'au jeudi), dans la même fenêtre ; ceux qui ne l'ont pas reçu la
+// semaine d'avant passent en premier (ce ne sont pas toujours les mêmes qui
+// attendent). La Coupe ne cite que la moitié haute des classés, jamais un
+// dernier (décision D5) : sinon, seulement une progression.
 // En mode « essai » (par défaut), les lignes sont écrites en « simulation »
 // et rien ne part. Sans clé Resend, l'envoi est noté « echec », sans plantage.
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -24,7 +29,7 @@ import { sqlDevoirProposable } from "./proposables";
 import { sqlEtatPresence } from "./presence";
 import { coursCompletsAOuvrir, coursCourt, decalageMinutes, entiers, lireReglage, quandEcheance, sqlActes, sqlCoursDe } from "./rappel-du-jour";
 import { ajouterJours, jourLocal, lundiDe, semaineIso, type Jour } from "@shared/engagement/calendrier";
-import { fenetreEmailSemaine, type StatutRelance } from "@shared/engagement/relances";
+import { fenetreEmailSemaine, rangCitable, reserveRelances, type StatutRelance } from "@shared/engagement/relances";
 import { t, type CleRelances } from "@shared/textes/relances";
 import { formaterDate } from "@shared/textes";
 import { relancesEngagement } from "@shared/schema";
@@ -198,23 +203,34 @@ export async function composerEmailSemaine(e: EtudiantEmail, lundi: Jour, bouton
   );
   const lignesALire = (aLire.get(e.id) ?? []).map((x) => t("email.semaine.ligne.cours_complet", { ...tu, v: { cours: coursCourt(x.cours), titre: x.titre } }));
 
-  // La Coupe (C5) : place de sa classe et de son campus la semaine passée.
+  // La Coupe (C5) : place de sa classe et de son campus la semaine passée. Le rang n'est cité que
+  // dans la moitié haute des classés (total : les seuls classés de la ligue), jamais pour un dernier
+  // (D5) ; sinon une progression si elle est positive, sinon rien. Le taux est déjà en pourcentage.
   const coupe = (await tableExiste("classements_semaine"))
     ? await facultatif(async () => {
         const semaine = semaineIso(ajouterJours(lundi, -7));
-        const r = await db.execute<{ portee: string; rang: number | null; total: number; taux: number | null }>(sql`
-          SELECT c.portee, c.rang, (SELECT count(*) FROM campus.classements_semaine x WHERE x.semaine = c.semaine AND x.portee = c.portee AND x.ligue IS NOT DISTINCT FROM c.ligue)::int AS total,
-            round(c.taux_participation::numeric * (CASE WHEN c.taux_participation <= 1 THEN 100 ELSE 1 END))::int AS taux
+        const r = await db.execute<{ portee: string; rang: number | null; total: number; rang_max: number | null; score: number; progression: number | null; taux: number | null }>(sql`
+          SELECT c.portee, c.rang, c.score, c.progression, round(c.taux_participation::numeric)::int AS taux,
+            x.total, x.rang_max
           FROM campus.classements_semaine c
+          CROSS JOIN LATERAL (
+            SELECT count(*)::int AS total, max(k.rang)::int AS rang_max FROM campus.classements_semaine k
+            WHERE k.semaine = c.semaine AND k.portee = c.portee AND k.ligue IS NOT DISTINCT FROM c.ligue AND k.rang IS NOT NULL
+          ) x
           WHERE c.semaine::text = ${semaine} AND ((c.portee = 'classe' AND c.cible_id = ${e.classeId ?? -1}) OR (c.portee = 'campus' AND c.cible_id = ${e.siteId ?? -1}))`);
         return r.rows
           .filter((l) => l.rang)
           .sort((x, y) => (x.portee === "classe" ? -1 : 1) - (y.portee === "classe" ? -1 : 1))
-          .map((l) =>
-            l.portee === "classe"
-              ? t("email.semaine.ligne.classe", { ...tu, v: { rang: rangLisible(l.rang!), total: l.total, taux: l.taux ?? 0 } })
-              : t("email.semaine.ligne.campus", { ...tu, v: { campus: e.site ?? "", rang: rangLisible(l.rang!), total: l.total, taux: l.taux ?? 0 } }),
-          );
+          .map((l) => {
+            const classe = l.portee === "classe";
+            if (rangCitable({ rang: l.rang, total: l.total, rangMax: l.rang_max, score: Number(l.score) })) {
+              const v = { campus: e.site ?? "", rang: rangLisible(l.rang!), total: l.total, taux: l.taux ?? 0 };
+              return t(classe ? "email.semaine.ligne.classe" : "email.semaine.ligne.campus", { ...tu, v });
+            }
+            const progres = Math.round(Number(l.progression ?? 0));
+            return progres > 0 ? t(classe ? "email.semaine.ligne.classe.progres" : "email.semaine.ligne.campus.progres", { ...tu, v: { campus: e.site ?? "", n: progres } }) : null;
+          })
+          .filter((x): x is string => Boolean(x));
       }, [] as string[])
     : [];
 
@@ -259,7 +275,11 @@ const rangLisible = (n: number) => (n === 1 ? "1er" : `${n}e`);
 
 // ── Passage de l'e-mail du lundi ───────────────────────────────────────────
 
-/** Étudiants destinataires : comptes activés, adresse connue, e-mails acceptés, inscrits à au moins un cours. */
+/**
+ * Étudiants destinataires : comptes activés, adresse connue, e-mails acceptés, inscrits à au moins
+ * un cours. Ceux qui l'ont reçu le moins récemment d'abord (jamais reçu en tête) : quand le plafond
+ * ne suffit pas, ce ne sont pas toujours les mêmes qui attendent.
+ */
 async function destinataires(): Promise<(EtudiantEmail & { email: string })[]> {
   const r = await db.execute<{ id: number; prenom: string; email: string; fuseau: string | null; site_id: number | null; classe_id: number | null; site: string | null }>(sql`
     SELECT u.id, u.prenom, u.email, u.fuseau, u.site_id, u.classe_id, s.nom_court AS site
@@ -269,7 +289,8 @@ async function destinataires(): Promise<(EtudiantEmail & { email: string })[]> {
     WHERE u.role = 'etudiant' AND u.actif AND NOT u.doit_changer_mot_de_passe
       AND NULLIF(u.email, '') IS NOT NULL AND COALESCE(re.emails_actifs, true)
       AND (u.classe_id IS NOT NULL OR EXISTS (SELECT 1 FROM campus.inscriptions i WHERE i.utilisateur_id = u.id))
-    ORDER BY u.id`);
+    ORDER BY (SELECT max(r.cree_le) FROM campus.relances_engagement r
+        WHERE r.utilisateur_id = u.id AND r.motif = 'semaine' AND r.statut IN ('envoye', 'simulation')) ASC NULLS FIRST, u.id`);
   return r.rows.map((l) => ({ id: l.id, prenom: l.prenom, email: l.email, fuseau: l.fuseau, siteId: l.site_id, classeId: l.classe_id, site: l.site }));
 }
 
@@ -294,8 +315,10 @@ export async function passerEmailsSemaine(maintenant = Date.now()): Promise<Bila
   const faits = await db.execute<{ uid: number; jour: string }>(sql`
     SELECT utilisateur_id AS uid, jour::text AS jour FROM campus.relances_engagement
     WHERE motif = 'semaine' AND statut <> 'quota' AND jour >= ${ajouterJours(lundiDe(jourLocal(maintenant, null)), -1)}::date AND utilisateur_id = ANY(${entiers(dans.map((d) => d.id))})`);
-  const dejaFaits = new Set(faits.rows.filter((f) => dans.some((d) => d.id === f.uid && f.jour >= d.lundi)).map((f) => f.uid));
-  let restants = reglage.emailsParJour - (await emailsDuJour(enEssai, maintenant));
+  const lundiParId = new Map(dans.map((d) => [d.id, d.lundi]));
+  const dejaFaits = new Set(faits.rows.filter((f) => f.jour >= (lundiParId.get(f.uid) ?? "9999")).map((f) => f.uid));
+  // Une part du plafond reste aux e-mails des décrocheurs, qui passent l'après-midi.
+  let restants = reglage.emailsParJour - reserveRelances(reglage.emailsParJour) - (await emailsDuJour(enEssai, maintenant));
 
   for (const d of dans) {
     if (dejaFaits.has(d.id)) continue;

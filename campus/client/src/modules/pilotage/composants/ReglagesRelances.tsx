@@ -100,6 +100,11 @@ export function ReglagesRelances({ estDirection, etat }: { estDirection: boolean
         ))}
       </div>
       {etats.some(([, m]) => m === "essai") && <p className="mt-2 text-[13px] leading-snug text-texte-pale">{t("pilotage.note.essai", vous)}</p>}
+      {b && b.semaineSansEmail > 0 && (
+        <p className="mt-2 rounded-xl bg-alerte-clair px-3 py-2 text-[13px] leading-snug text-alerte">
+          {b.semaineSansEmail === 1 ? t("pilotage.semaine_sans_email.un", vous) : t("pilotage.semaine_sans_email", { ...vous, v: { n: b.semaineSansEmail } })}
+        </p>
+      )}
       {/* Les chiffres détaillés vivent dans le tableau « Engagement » (C8) ; ici, à la demande, pour régler en connaissance de cause. */}
       {ouvert && b && data && (
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">

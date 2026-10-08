@@ -1,7 +1,8 @@
 // Routine du soir (IA du soir) : elle fait le travail d'IA de fond sans crédit d'API.
 //
-//   POST /api/travaux-ia/tour                    fait avancer les travaux en attente (cours complets, lectures),
-//                                                puis liste les demandes gardées sans réponse
+//   POST /api/travaux-ia/tour                    fait avancer les travaux en attente (corrigés à rédiger, cours
+//                                                complets, lectures, copies à corriger), puis liste les demandes
+//                                                gardées sans réponse
 //   GET  /api/travaux-ia/demandes                ces demandes (sans leur contenu)
 //   GET  /api/travaux-ia/demandes/:id            une demande complète : consignes, messages, schéma
 //   POST /api/travaux-ia/demandes/:id/reponse    { reponse } : gardée si elle respecte le schéma, sinon les écarts
@@ -16,6 +17,9 @@ import { route, valider, idParam, introuvable, ErreurHttp } from "../http";
 import { iaDuSoir, demandesEnAttente, demande, repondre } from "../ia-soir";
 import { etudierSeance, seancesAPreparer } from "../etude-cours";
 import { livresAEtudier, reprendreLecture } from "../etude-livre";
+import { corrigesAPreparer, preparerCorrige } from "../corriges";
+import { copiesACorriger, corrigerCopie } from "../correction-auto";
+import { COPIES_PAR_TOUR } from "@shared/engagement/corrections";
 
 const exigerJeton: RequestHandler = (req, _res, next) => {
   const attendu = config.ia.jetonSoir;
@@ -41,8 +45,12 @@ export function enregistrerTravauxIa(app: Express) {
       const bilan: { travail: string; issue: string }[] = [];
       try {
         // Chaque travail avance jusqu'à sa prochaine demande sans réponse, ou jusqu'au bout (les étudiants sont alors prévenus).
+        // Corrigés d'abord (ceux des devoirs écrits par les formateurs), puis les cours complets (qui créent les devoirs
+        // automatiques et leurs corrigés), les lectures, et enfin les copies dont le corrigé sert déjà de barème.
+        for (const id of await corrigesAPreparer(30)) bilan.push({ travail: `corrige:${id}`, issue: await preparerCorrige(id) });
         for (const id of await seancesAPreparer(20, true)) bilan.push({ travail: `cours-complet:${id}`, issue: await etudierSeance(id) });
         for (const id of await livresAEtudier(10)) bilan.push({ travail: `livre:${id}`, issue: await reprendreLecture(id) });
+        for (const id of await copiesACorriger(COPIES_PAR_TOUR)) bilan.push({ travail: `copie:${id}`, issue: await corrigerCopie(id) });
       } finally {
         tourEnCours = false;
       }

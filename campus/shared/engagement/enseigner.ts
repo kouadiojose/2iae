@@ -88,6 +88,8 @@ export type ResumeEnseigner = {
    * aPublier : notes posées et pas encore envoyées, tous devoirs confondus.
    */
   copies: { aCorriger: number; aPublier: number; plusAncienne: string | null; facultatives: number };
+  /** Correction automatique (8 octobre 2026) : corrigés à valider, copies à revoir, relectures demandées. */
+  corriges?: { aValider: number; prochaineEcheance: string | null; aRevoir: number; relectures: number };
   /** Devoirs de la routine du soir que le formateur n'a pas regardés (relecture facultative). */
   aRelire: number;
 };

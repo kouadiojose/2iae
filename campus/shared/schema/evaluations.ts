@@ -74,7 +74,7 @@ export const rendus = campusSchema.table(
     enRetard: boolean("en_retard").notNull().default(false),
     note: real("note"),
     /** Détail par critère de la grille. */
-    noteDetail: jsonb("note_detail").$type<{ critere: string; points: number; obtenu: number }[]>(),
+    noteDetail: jsonb("note_detail").$type<{ critere: string; points: number; obtenu: number; justification?: string }[]>(),
     commentaire: text("commentaire"),
     /** Reçu de dépôt montré à l'étudiant (« 2IAE-4F7K »). */
     recu: text("recu"),
@@ -85,6 +85,11 @@ export const rendus = campusSchema.table(
     /** Correction proposée par l'IA, en attente de validation du formateur. */
     propositionIa: jsonb("proposition_ia").$type<PropositionIa>(),
     correcteurId: integer("correcteur_id").references(() => utilisateurs.id),
+    /**
+     * Qui a posé la note publiée (migration 0033) : « campus » pour une correction automatique (correcteur nul),
+     * « formateur » sinon. Le formateur qui change une note du campus la fait passer à « formateur ».
+     */
+    origineNote: text("origine_note").$type<"formateur" | "campus">().notNull().default("formateur"),
     corrigeLe: timestamp("corrige_le", { withTimezone: true }),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -46,9 +46,17 @@ de gamme en 4G prépayée.
 9. **La salle de conférence est un participant à part entière** : écran de
    salle en plein écran sans clic, code d'émargement tournant, main levée de
    salle, effectif déclaré, bouton « Incident ».
-10. **L'IA propose, l'humain décide.** Tout ce que l'IA produit pour noter,
-    publier ou annoncer reste un brouillon marqué « Proposé par l'IA » tant
-    qu'un humain ne l'a pas validé. L'IA ne met jamais une note seule.
+10. **L'IA propose, l'humain décide.** Tout ce que l'IA produit pour publier
+    ou annoncer reste un brouillon marqué « Proposé par l'IA » tant qu'un
+    humain ne l'a pas validé. **Exception décidée par José le 8 octobre 2026 :
+    la correction des copies.** Les formateurs n'ont pas le temps de corriger
+    des centaines de copies : le campus note seul les dépôts, à partir d'un
+    corrigé que le formateur valide (message du jour) ou qui est tenu pour bon
+    au bout de 24 h. La note compte comme une note de formateur, l'étudiant
+    voit « Corrigé par le campus » et peut demander une relecture, le
+    formateur peut changer toute note ; une copie douteuse (consigne cachée,
+    pages illisibles, vidéo seule) n'est jamais notée seule (voir
+    `shared/engagement/corrections.ts`).
     L'assistant fait apprendre (tuteur socratique sur les devoirs), se met
     en pause pendant les interrogations, cite ses sources (« Leçon 2.3 »),
     prend ses exemples en Côte d'Ivoire (FCFA, maquis d'Adjamé, cacao).
@@ -214,7 +222,7 @@ Chaque module possède ses fichiers ; il ne modifie pas ceux des autres.
 ### Devoirs, interrogations, notes
 - Devoirs : À rendre / Rendus / Corrigés. Rendre en **photo** (appareil photo du téléphone), texte ou fichier ; brouillon local ; **file d'envoi hors ligne** ; **reçu de dépôt** ; remplacer sa copie avant l'échéance ; retard accepté ou non ; ✓✓ quand le formateur a ouvert la copie.
 - Interrogations : une question par écran, gros boutons, chrono côté serveur, chaque réponse enregistrée aussitôt (reprise après coupure), correction automatique (QCM, choix multiple, vrai/faux, réponse courte), correction détaillée après l'échéance. **L'assistant IA est en pause pendant une interrogation.**
-- Formateur : création de devoirs et d'interrogations, **génération de questions par l'IA** (brouillon), grille de correction, copies à corriger (rendus / en retard / non rendus), correction par critère, **commentaire vocal**, **correction proposée par l'IA** (brouillon à valider, jamais automatique), publication des notes.
+- Formateur : création de devoirs et d'interrogations, **génération de questions par l'IA** (brouillon), grille de correction, copies à corriger (rendus / en retard / non rendus), correction par critère, **commentaire vocal**, **corrigé du jour** à valider (sans réponse, tenu pour bon au bout de 24 h), **correction automatique des dépôts par le campus** d'après ce corrigé (décision du 8 octobre 2026, §1.10), copies « à revoir » et demandes de relecture, publication des notes.
 - Carnet de notes : moyenne pondérée par cours pour l'étudiant ; vue par classe pour le formateur et l'équipe.
 
 ### Messages
@@ -278,7 +286,7 @@ Chaque module possède ses fichiers ; il ne modifie pas ceux des autres.
 12. **Retards** : l'heure de réception par le serveur fait foi ; l'heure « préparé hors ligne » est affichée à titre indicatif ; le formateur décide (retard accepté ou non par devoir). Chrono des interrogations tenu par le serveur.
 13. **Horloge** : toute logique horaire côté client utilise l'heure du serveur (`maintenantServeur()` dans `lib/horloge.ts`, déjà branché dans `useMaintenant`).
 14. **Consommation affichée honnêtement** : mode compagnon (en salle) < 5 Mo/h ; son + diapos (radio du cours, §10) ≈ 12 à 15 Mo/h ; vidéo 150 à 250 Mo/h. Afficher la consommation **mesurée** quand c'est possible (`getNetworkStats()` de Daily), jamais une promesse.
-15. **IA** : aucun nom d'étudiant dans les prompts ; supports et copies traités comme des données non fiables (injection de prompt) ; le modèle n'a aucun outil qui écrit en base ; tout résultat IA qui touche une note, une publication ou une annonce est un brouillon à valider. Sous-titres par la reconnaissance vocale du navigateur du formateur (option « bêta »), résumé à la demande et en fin de séance (pas en continu).
+15. **IA** : aucun nom d'étudiant dans les prompts ; supports et copies traités comme des données non fiables (injection de prompt) ; le modèle n'a aucun outil qui écrit en base ; tout résultat IA qui touche une publication ou une annonce est un brouillon à valider ; les notes des dépôts suivent la règle du §1.10 (corrigé validé ou tacite, copie douteuse jamais notée seule). Sous-titres par la reconnaissance vocale du navigateur du formateur (option « bêta »), résumé à la demande et en fin de séance (pas en continu).
 16. **Push** : 3 par jour au maximum hors rappels de live, heures calmes 21 h–6 h (Abidjan), contenu sensible masqué (« Nouvelle note disponible », jamais la note).
 17. **Données personnelles** : charte acceptée à l'activation (`charteAccepteeLe`), mention d'enregistrement affichée en salle, seuls des agrégats et des contenus validés partent vers le site. Déclaration ARTCI et accords de sous-traitance (hébergement, IA, visio hors Côte d'Ivoire) à engager par l'école.
 18. **Hors v1** (données captées dès maintenant, écrans en v1.1) : WhatsApp Business / SMS automatiques, replays audio compressés hors ligne, transcription serveur, pré-correction IA des copies manuscrites, carte de la semaine en image, TOTP, relevé d'heures des formateurs, bascule d'année scolaire.

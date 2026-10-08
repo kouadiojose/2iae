@@ -6,6 +6,7 @@
 import { integer, text, timestamp, primaryKey } from "drizzle-orm/pg-core";
 import { campusSchema } from "./base";
 import { devoirs, type TypeDevoir, type TypeQuestion, type StatutRendu, type CritereGrille, type PropositionIa } from "./evaluations";
+import type { EtatCorrection, EtatCorrectionEtudiant, OrigineNote, RaisonARevoir, RelectureEtudiant } from "../engagement/corrections";
 
 /**
  * Rappels déjà envoyés pour un devoir, pour ne jamais prévenir deux fois :
@@ -89,7 +90,8 @@ export type DevoirEnseignantResume = BaseDevoirResume & {
 /** GET /api/devoirs (et ?cours=<id>) : la vue dépend du rôle. */
 export type ListeDevoirs = { vue: "etudiant"; devoirs: DevoirEtudiantResume[] } | { vue: "enseignant"; devoirs: DevoirEnseignantResume[] };
 
-export type LigneNoteDetail = { critere: string; points: number; obtenu: number };
+/** Détail par critère ; « justification » : pourquoi ces points (note du campus, ou formateur qui l'a écrite). */
+export type LigneNoteDetail = { critere: string; points: number; obtenu: number; justification?: string };
 
 /** Copie de l'étudiant, vue par lui-même. La note n'apparaît qu'une fois publiée. */
 export type RenduEtudiant = {
@@ -109,6 +111,12 @@ export type RenduEtudiant = {
   commentaireAudio: PieceJointe | null;
   corrigeLe: string | null;
   correcteur: { prenom: string; nom: string } | null;
+  /** Qui a posé la note publiée : « campus » affiche « Corrigé par le campus » (correction automatique). */
+  origineNote?: OrigineNote;
+  /** Correction par le campus en cours ou retenue (dépôt) ; nul : pas concernée, ou note publiée. */
+  correctionAuto?: EtatCorrectionEtudiant | null;
+  /** Sa dernière demande de relecture de la note. */
+  relecture?: RelectureEtudiant | null;
 };
 
 /** Question d'interrogation vue par l'étudiant : jamais les bonnes réponses avant la correction. */
@@ -164,6 +172,8 @@ export type DevoirDetailEtudiant = {
   peutRemplacer: boolean;
   rendu: RenduEtudiant | null;
   quiz: EtatQuizEtudiant | null;
+  /** Corrigé validé du dépôt (Markdown), montré après la date limite à l'étudiant dont la copie est notée. */
+  corrige?: string | null;
 };
 
 /** GET /api/devoirs/:id vu par le formateur ou l'équipe (éditeur). */
@@ -217,6 +227,11 @@ export type CopieResume = {
   nbFichiers: number;
   aPropositionIa: boolean;
   deposeParEquipe: boolean;
+  origineNote?: OrigineNote;
+  /** Correction par le campus (dépôt) : état et raison s'il ne publie pas. */
+  correctionAuto?: { etat: EtatCorrection; raison: RaisonARevoir | null } | null;
+  /** L'étudiant demande une relecture de sa note. */
+  relectureOuverte?: boolean;
 };
 
 /** GET /api/devoirs/:id/copies */
@@ -265,6 +280,9 @@ export type CopieDetail = {
   deposePar: { prenom: string; nom: string } | null;
   /** Interrogation : réponses de la meilleure tentative, question par question. */
   reponsesQuiz: QuestionCorrigee[] | null;
+  origineNote?: OrigineNote;
+  correctionAuto?: { etat: EtatCorrection; raison: RaisonARevoir | null; detail: string | null; noteCampus: number | null } | null;
+  relecture?: RelectureEtudiant | null;
 };
 
 /** POST /api/quiz/:devoirId/commencer : la tentative (nouvelle ou reprise). */

@@ -35,3 +35,4 @@ export * from "./objectif"; // C2
 export * from "./enseigner-suivi"; // C7
 export * from "./progression"; // C5
 export * from "./relances-auto"; // C4
+export * from "./corrections"; // correction automatique des copies (8 octobre 2026)

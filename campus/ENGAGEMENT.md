@@ -65,8 +65,14 @@ sans action du formateur.
 - **D1, salle émargée** : au moins 3 étudiants du campus émargés dans sa salle **et** au moins 25 % des
   étudiants de ce campus attendus à la séance (`SALLE_EMARGES_MINIMUM`, `SALLE_PART_MINIMUM` dans
   `presence.ts`). En dessous, les autres restent `inconnu`.
-- **D2, exercices automatiques** : leurs copies ne relancent jamais le formateur ; elles sont comptées à
-  part pour la direction et leur correction reste facultative.
+- **D2, exercices automatiques** : leurs copies ne relancent jamais le formateur. **Remplacée le
+  8 octobre 2026 au soir (D6)** : le campus corrige lui-même toutes les copies de dépôt.
+- **D6, correction automatique** (`shared/engagement/corrections.ts`) : chaque jour le formateur reçoit le
+  corrigé des devoirs de ses cours (QCM et bonnes réponses, exercice et grille) et le valide ou le modifie ;
+  sans réponse, il est tenu pour bon au bout de 24 h. Le campus note alors les copies (routine du soir) et
+  publie la note, qui compte comme une note de formateur ; l'étudiant peut demander une relecture. Le seul
+  travail du formateur : lire le corrigé du jour (facultatif) et traiter les copies « à revoir » et les
+  relectures.
 - **D3, un seul rappel au démarrage du direct** (`rappelerDemarrage`, `participation-direct.ts`) : urgent,
   il remplace « Dans 15 min ». Campus qui suit le cours : « en salle, scanne le QR de l'écran ; sinon,
   rejoins le cours en ligne », vers `/emargement?seance=` ; déjà émargé : « tu es déjà compté présent » ;

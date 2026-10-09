@@ -4,7 +4,7 @@
 // contrat.
 import { serial, text, integer, bigint, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource } from "./live";
+import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource, type ZoneCopie, type RotationCopie } from "./live";
 import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
@@ -29,7 +29,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -134,6 +134,107 @@ export type RessourceSeanceDto = {
 /** Vidéo projetée dans les salles (position à l'instant horodatage, horloge du serveur), avec sa ressource. */
 export type ProjectionDto = ProjectionVideo & { ressource: RessourceSeanceDto };
 
+// ── Copies d'étudiants montrées à la classe pendant le direct ──────────────
+
+/**
+ * Page d'une copie projetée, telle que la reçoit toute la classe : aucun nom (sauf choix du formateur),
+ * aucune note, aucun identifiant de copie ni de fichier. L'image se lit à « url », valable tant que cette
+ * page est à l'écran (410 ensuite).
+ */
+export type CopieProjeteeDto = {
+  cle: string;
+  /** /api/seances/:id/projection/contenu/:cle */
+  url: string;
+  source: "copie" | "corrige";
+  devoirId: number;
+  contenu: "image" | "texte" | "markdown";
+  etiquette: string;
+  devoirTitre: string;
+  numero: number;
+  total: number;
+  zone: ZoneCopie;
+  rotation: RotationCopie;
+  nomVisible: boolean;
+  enteteMasque: boolean;
+  enteteDisponible: boolean;
+  horodatage: number;
+};
+
+/** Corps de POST /api/seances/:id/projection/copie. */
+export type CorpsProjectionCopie =
+  | { source: "copie"; renduId: number; page: string; nomVisible?: boolean; enteteMasque?: boolean; rotation?: RotationCopie; confirmerOuvert?: boolean }
+  | { source: "corrige"; devoirId: number; page: string };
+
+/** Corps de PATCH /api/seances/:id/projection/copie : page (numéro absolu) et réglages. */
+export type ReglageCopieDto = Partial<{ numero: number; zone: ZoneCopie; rotation: RotationCopie; nomVisible: boolean; enteteMasque: boolean }>;
+
+/** Un moment montré à la classe pendant le cours, repéré dans le replay (secondes depuis le démarrage). */
+export type MomentReplayDto = { t: number; libelle: string; dureeSecondes: number | null };
+
+export type RaisonCorrigeRetenu = "absent" | "non_valide" | "avant_limite" | "retards" | "notes";
+export type CorrigeDuDirectDto = { montrable: true; pages: number } | { montrable: false; raison: RaisonCorrigeRetenu; n?: number };
+
+export type DevoirDuDirectDto = {
+  id: number;
+  titre: string;
+  type: "depot" | "quiz";
+  dateLimite: string;
+  accepteRetard: boolean;
+  /** Copies rendues, dans le périmètre de la personne. */
+  copiesRendues: number;
+  /** Inscrits, dans le périmètre de la personne. */
+  inscrits: number;
+  /** Étudiants de toute la classe qui peuvent encore rendre ou remplacer leur copie. */
+  peuventEncoreRendre: number;
+  etat: "projetable" | "ouvert" | "retards" | "quiz" | "vide";
+  corrige: CorrigeDuDirectDto | null;
+};
+export type ListeDevoirsDuDirectDto = { coursCode: string; devoirs: DevoirDuDirectDto[]; suggestion: number | null };
+
+export type CopieDuDirectDto = {
+  renduId: number;
+  prenom: string;
+  /** « K. » */
+  initiale: string;
+  site: string | null;
+  renduLe: string;
+  enRetard: boolean;
+  resume: { texte: boolean; photos: number; pdf: number; documents: number; videos: number; sons: number; autres: number };
+};
+export type ListeCopiesDuDirectDto = { devoir: DevoirDuDirectDto; copies: CopieDuDirectDto[] };
+
+export type PageCopieDto = {
+  /** « t1 », « f418 », « f418p3 », « c1 » */
+  page: string;
+  numero: number;
+  /** « Texte saisi, page 1 sur 2 », « Photo 1 », « PDF 1, page 3 sur 5 » */
+  libelle: string;
+  contenu: "image" | "texte" | "markdown";
+  /** Orientation EXIF quand pdftoppm manque, sinon 0. */
+  rotation: RotationCopie;
+  enteteDisponible: boolean;
+  enteteParDefaut: boolean;
+};
+export type RaisonNonProjetable = "video" | "audio" | "heic" | "pdf" | "document" | "zip" | "format" | "erreur" | "taille" | "indisponible";
+export type NonProjetableDto = { libelle: string; raison: RaisonNonProjetable; fichierId: number | null };
+export type PlanCopieDto = {
+  source: "copie" | "corrige";
+  renduId: number | null;
+  devoirId: number;
+  version: string;
+  /** « Awa K. » (animateur seulement). */
+  nomCourt: string | null;
+  pages: PageCopieDto[];
+  nonProjetables: NonProjetableDto[];
+  pagesEnTrop: number;
+  /** Un document Office est en cours de conversion. */
+  enPreparation: boolean;
+};
+export type PlanCorrigeDto = PlanCopieDto & { montrable: CorrigeDuDirectDto };
+
+/** Ce que l'animateur sait en plus de la classe (surligner la copie projetée). */
+export type ProjectionCopieAnimateurDto = { source: "copie" | "corrige"; devoirId: number; renduId: number | null; page: string; numero: number; total: number; parId: number };
+
 export type SeanceDetailDto = {
   id: number;
   coursId: number;
@@ -172,6 +273,8 @@ export type SeanceDetailDto = {
    * un cours partagé : elle suit le bilan et la présence de son site.
    */
   peutModifier: boolean;
+  /** Voir les devoirs et les copies du cours dans le Studio, et en montrer une à la classe (formateur du cours, direction, vie scolaire avec « notes »). */
+  peutMontrerCopies: boolean;
   monSite: SiteLive | null;
   maPresence: { mode: ModePresence; minutes: number; emargeQr: boolean; statut: StatutPresence } | null;
   sites: SiteLive[];
@@ -356,6 +459,8 @@ export type EtatDirectDto = {
   diapo: { index: number; total: number; url: string | null; masquee?: boolean; disposition?: DispositionScene };
   /** Vidéo projetée à la place de la diapo, pilotée par le formateur. */
   projection: ProjectionDto | null;
+  /** Page d'une copie montrée à la classe à la place de la diapo (null : aucune). */
+  copie: CopieProjeteeDto | null;
   questions: QuestionDirectDto[];
   sondage: SondageDto | null;
   resultats: ResultatsSondageDto | null;
@@ -375,7 +480,7 @@ export type EtatDirectDto = {
  * GET /api/seances/:id/diapo — relecture légère (toutes les 2 s) quand le temps réel est coupé
  * ou retenu en route : la diapo et le statut suivent sans relire tout l'état du direct.
  */
-export type DiapoDirectDto = { statut: StatutSeance; planB: string | null; diapo: EtatDirectDto["diapo"]; projection: ProjectionDto | null };
+export type DiapoDirectDto = { statut: StatutSeance; planB: string | null; diapo: EtatDirectDto["diapo"]; projection: ProjectionDto | null; copie: CopieProjeteeDto | null };
 
 export type RejoindreDto = {
   fournisseur: FournisseurVisio;
@@ -508,6 +613,8 @@ export type ReplayDto = {
   questions: QuestionDirectDto[];
   diapos: DiapoDto[];
   ressources: RessourceSeanceDto[];
+  /** Copies montrées à la classe pendant le cours : le moment, pas la copie. */
+  moments: MomentReplayDto[];
   /** La personne anime ce cours (ou fait partie de l'équipe) : bilan et fiche à portée de clic. Faux pour un collègue formateur. */
   anime: boolean;
 };
@@ -594,4 +701,6 @@ export type InfoInviteDto = {
   sousTitre: string | null;
   /** Lien intervenant : vidéo avec micro et caméra. */
   intervenant: boolean;
+  /** Le formateur montre une copie d'étudiant à la classe (jamais montrée aux invités). */
+  copieMontree: boolean;
 };

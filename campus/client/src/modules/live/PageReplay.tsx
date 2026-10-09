@@ -4,7 +4,9 @@
 // questions posées, et la vidéo seulement si on la demande (poids affiché).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PlayCircle, Search, FileText, MessageSquare, Presentation, ExternalLink, GraduationCap } from "lucide-react";
+import { PlayCircle, Search, FileText, MessageSquare, Presentation, ExternalLink, GraduationCap, ClipboardList } from "lucide-react";
+import { useTextes } from "@/lib/textes";
+import { t as textesCopies } from "@shared/textes/copies-direct";
 import { Link } from "wouter";
 import { get, post } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
@@ -34,6 +36,7 @@ export default function PageReplay({ id }: { id: string }) {
   const [numeroVideo, setNumeroVideo] = useState(1);
   const [chargementVideo, setChargementVideo] = useState(false);
   const [recherche, setRecherche] = useState("");
+  const txCopies = useTextes(textesCopies);
   const lecteur = useRef<HTMLVideoElement>(null);
   const enseignant = moi.role === "formateur" || moi.role === "admin" || moi.role === "vie_scolaire";
 
@@ -162,6 +165,34 @@ export default function PageReplay({ id }: { id: string }) {
           </div>
         )}
       </div>
+
+      {/* Copies montrées pendant le cours : le moment seulement (la copie n'est pas dans la vidéo). */}
+      {r.moments?.length ? (
+        <section className="flex flex-col gap-2 rounded-[20px] border border-ligne p-4 sm:p-5" aria-label={txCopies("replay.titre")}>
+          <h2 className="flex items-center gap-2 text-base font-extrabold text-encre">
+            <ClipboardList className="h-5 w-5 text-orange" /> {txCopies("replay.titre")}
+          </h2>
+          <ol className="flex flex-col divide-y divide-ligne-douce">
+            {r.moments.map((m, i) => (
+              <li key={`${m.t}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                <span className="font-mono text-[13px] text-orange-fonce">{minutage(m.t)}</span>
+                <span className="min-w-0 flex-1 text-[15px]">{m.libelle}</span>
+                {m.dureeSecondes !== null && (
+                  <span className="text-[13px] text-texte-gris">
+                    {m.dureeSecondes < 60 ? txCopies("duree.secondes", { v: { n: m.dureeSecondes } }) : txCopies("duree.minutes", { v: { n: Math.round(m.dureeSecondes / 60) } })}
+                  </span>
+                )}
+                {r.video.disponible && (
+                  <Bouton variante="contour" taille="sm" onClick={() => void chargerVideo(m.t)}>
+                    {txCopies("replay.revoir")}
+                  </Bouton>
+                )}
+              </li>
+            ))}
+          </ol>
+          <p className="text-[13px] text-texte-gris">{txCopies("replay.note")}</p>
+        </section>
+      ) : null}
 
       <BandeauCoursComplet seanceId={seanceId} />
 

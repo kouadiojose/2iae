@@ -14,6 +14,7 @@ import {
   questionsQuiz,
   tentativesQuiz,
   type Devoir,
+  type Rendu,
   type QuestionQuiz,
   type TentativeQuiz,
   type QuestionCorrigee,
@@ -183,6 +184,22 @@ export function finEcheance(date: Date): Date {
 
 /** Échéance effective d'un devoir (voir finEcheance) : c'est elle qui décide du retard et de la clôture. */
 export const echeance = (d: Pick<Devoir, "dateLimite">) => finEcheance(d.dateLimite);
+
+/**
+ * L'étudiant peut-il encore rendre ou remplacer sa copie ? Même règle que le détail élève (routes/evaluations.ts) ;
+ * sert aussi au Studio, avant de montrer une copie à toute la classe (projection-copies.ts).
+ */
+export function peutEncoreRendre(
+  d: Pick<Devoir, "type" | "ouvertureLe" | "dateLimite" | "accepteRetard">,
+  statut: Rendu["statut"] | undefined,
+  maintenant = new Date(),
+): boolean {
+  if (d.type !== "depot") return false;
+  if (d.ouvertureLe && d.ouvertureLe.getTime() > maintenant.getTime()) return false;
+  if (statut === "corrige") return false;
+  const avantEcheance = maintenant.getTime() <= echeance(d).getTime();
+  return avantEcheance || (d.accepteRetard && statut !== "rendu");
+}
 
 // ── Tentatives ─────────────────────────────────────────────────────────────
 

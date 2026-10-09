@@ -31,6 +31,8 @@ import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../pr
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { copierRessources, projectionDe, ressourcesDe } from "./ressources-seance";
+import { arreterCopie, copieDe } from "../projection-copies";
+import { t as tCopies } from "@shared/textes/copies-direct";
 import { notifier } from "../notifications";
 import { rappelerDemarrage } from "./participation-direct";
 import { etatsPresence } from "../engagement/presence";
@@ -120,6 +122,8 @@ import {
   morceauxReplay,
   replaysStockes,
   DISPOSITIONS_SCENE,
+  estProjectionCopie,
+  type MomentReplayDto,
   type DemandeDirectImmediat,
   type RejoindreVisioDto,
   type AccesDaily,
@@ -1242,6 +1246,8 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     formateur: formateur ?? null,
     monRole: role,
     peutModifier: role === "formateur" || (role === "equipe" && (await enseigneCours(u, s.coursId))),
+    // Devoirs et copies dans le Studio : qui anime et lit les copies (la vie scolaire a aussi besoin de « notes »).
+    peutMontrerCopies: role === "formateur" && (u.role !== "vie_scolaire" || peut(u, "notes")),
     monSite: monSite ? versSiteLive(monSite) : null,
     maPresence,
     sites: sitesListe.map(versSiteLive),
@@ -1668,7 +1674,7 @@ export function enregistrerLive(app: Express) {
       const reprise = Boolean(s.demarreeLe);
       const [maj] = await db
         .update(seances)
-        .set({ statut: "en_direct", demarreeLe: s.demarreeLe ?? new Date(), termineeLe: null, ...(reprise ? {} : { projection: null }) })
+        .set({ statut: "en_direct", demarreeLe: s.demarreeLe ?? new Date(), termineeLe: null, ...(reprise && !estProjectionCopie(s.projection) ? {} : { projection: null }) })
         .where(and(eq(seances.id, s.id), inArray(seances.statut, ["planifiee", "terminee"])))
         .returning();
       if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
@@ -1716,6 +1722,7 @@ export function enregistrerLive(app: Express) {
         .returning();
       if (!maj) return res.json(await detailSeance(u, await chargerSeance(s.id)));
       await finirParole(s.id);
+      await arreterCopie(s.id, "annulation");
       await consigner(s.id, "annulation", { motif, par: u.id });
       publier(canal(s.id), "statut", { statut: "annulee", demarreeLe: iso(maj.demarreeLe), termineeLe: null, motif });
       annoncer(maj);
@@ -1828,6 +1835,8 @@ export function enregistrerLive(app: Express) {
       const cible = lien ?? s.lienSecours;
       if (!cible) throw invalide("Indiquez le lien de secours (Zoom, Meet, Teams, Jitsi…).");
       const [maj] = await db.update(seances).set({ lienSecours: cible, planBLe: new Date() }).where(eq(seances.id, s.id)).returning();
+      // La classe suit le lien de secours : une copie projetée ne s'y afficherait pas.
+      await arreterCopie(s.id, "plan_b");
       await consigner(s.id, "plan_b", { lien: cible, par: u.id });
       publier(canal(s.id), "planb", { lien: cible });
       res.json(await detailSeance(u, maj));
@@ -2207,7 +2216,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const s = await seanceAccessible(moi(req), idParam(req));
-      const r: DiapoDirectDto = { statut: s.statut, planB: s.planBLe ? s.lienSecours : null, diapo: diapoCourante(s), projection: await projectionDe(s) };
+      const r: DiapoDirectDto = { statut: s.statut, planB: s.planBLe ? s.lienSecours : null, diapo: diapoCourante(s), projection: await projectionDe(s), copie: copieDe(s) };
       res.setHeader("Cache-Control", "no-store");
       res.json(r);
     }),
@@ -2241,6 +2250,7 @@ export function enregistrerLive(app: Express) {
         chatMode: s.chatMode,
         diapo: diapoCourante(s),
         projection: await projectionDe(s),
+        copie: copieDe(s),
         questions,
         sondage: sondage ? versSondage(sondage, privilegie, choix) : null,
         resultats: sondage && voirResultats ? await resultatsSondage(sondage) : null,
@@ -2788,12 +2798,18 @@ export function enregistrerLive(app: Express) {
       );
       if (!s.diapos.length) throw invalide("Aucune diapo déposée pour cette séance.");
       const borne = Math.min(index, s.diapos.length - 1);
+      // Copie d'étudiant projetée : une autre diapo, la diapo masquée ou les caméras la retirent ; la même diapo
+      // en « diapo en grand » ou « côte à côte » la laisse (seule la mise en page change).
+      const actuelle = diapoCourante(s);
+      const memeVue = borne === actuelle.index && Boolean(masquer) === actuelle.masquee && (!disposition || disposition === "diapo" || disposition === "cote");
+      const arreter = estProjectionCopie(s.projection) && !memeVue;
       const [maj] = await db
         .update(seances)
         .set({ diapoCourante: masquer ? -borne - 1 : borne, ...(disposition && { disposition }) })
         .where(eq(seances.id, s.id))
         .returning();
       if (s.statut === "en_direct") await consigner(s.id, "diapo", { index: borne, masquee: Boolean(masquer), disposition: maj.disposition });
+      if (arreter) await arreterCopie(s.id, "diapos");
       const etat = diapoCourante(maj);
       publier(canal(s.id), "diapo", etat);
       res.json(etat);
@@ -3311,6 +3327,7 @@ export function enregistrerLive(app: Express) {
         questions,
         diapos: versDiapos(s),
         ressources: await ressourcesDe(s.id),
+        moments: await momentsDuReplay(s),
         anime: privilegie,
       };
       res.json(dto);
@@ -3639,9 +3656,46 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       return `Groupes de travail : ${Number(d.groupes ?? 0)} groupes, ${Number(d.personnes ?? 0)} participants`;
     case "groupes_fermes":
       return `Retour en classe après ${Math.round(Number(d.minutes ?? 0))} min de travail en groupes`;
+    case "copie": {
+      const devoir = String(d.devoirTitre ?? "");
+      if (d.source === "corrige") return tCopies("bilan.corrige", { v: { devoir } });
+      return tCopies(d.nomVisible ? "bilan.copieNom" : "bilan.copie", { v: { devoir } });
+    }
+    case "copie_fin": {
+      if (d.motif === "remplacee") return tCopies("bilan.remplacee");
+      const secondes = Math.max(0, Math.round(Number(d.secondes ?? 0)));
+      const duree = secondes < 60 ? tCopies("duree.secondes", { v: { n: secondes } }) : tCopies("duree.minutes", { v: { n: Math.round(secondes / 60) } });
+      return tCopies("bilan.fin", { v: { duree } });
+    }
     default:
       return type;
   }
+}
+
+/**
+ * Copies montrées pendant le cours, pour le replay : le moment (secondes depuis le démarrage, même base que la
+ * transcription), la durée jusqu'à la fin ou la copie suivante. Jamais la copie elle-même.
+ */
+async function momentsDuReplay(s: Seance): Promise<MomentReplayDto[]> {
+  if (!s.demarreeLe) return [];
+  const debut = s.demarreeLe.getTime();
+  const evts = await db
+    .select()
+    .from(evenementsSeances)
+    .where(and(eq(evenementsSeances.seanceId, s.id), inArray(evenementsSeances.type, ["copie", "copie_fin"])))
+    .orderBy(asc(evenementsSeances.creeLe), asc(evenementsSeances.id));
+  return evts.flatMap((e, i) => {
+    if (e.type !== "copie") return [];
+    const suivant = evts[i + 1];
+    const devoir = String(e.donnees.devoirTitre ?? "");
+    return [
+      {
+        t: Math.max(0, Math.round((e.creeLe.getTime() - debut) / 1000)),
+        libelle: e.donnees.source === "corrige" ? tCopies("replay.corrige", { v: { devoir } }) : tCopies("replay.copie", { v: { devoir } }),
+        dureeSecondes: suivant ? Math.max(0, Math.round((suivant.creeLe.getTime() - e.creeLe.getTime()) / 1000)) : null,
+      },
+    ];
+  });
 }
 
 async function marquerVu(seanceId: number, utilisateurId: number) {
@@ -3662,6 +3716,8 @@ async function terminerSeance(s: Seance, parId: number | null): Promise<Seance> 
     .returning();
   // Déjà terminée (double clic, fin automatique au même instant) : rien à refaire ni à annoncer.
   if (!maj) return chargerSeance(s.id);
+  // Copie d'étudiant projetée : retirée avant la fin (« copie_fin » précède « fin » dans le fil).
+  await arreterCopie(s.id, "fin");
   await finirParole(s.id);
   await db.update(sondages).set({ ouvert: false, fermeLe: new Date() }).where(and(eq(sondages.seanceId, s.id), eq(sondages.ouvert, true), isNotNull(sondages.ouvertLe)));
   await db.update(mainsLevees).set({ baisseeLe: new Date() }).where(and(eq(mainsLevees.seanceId, s.id), isNull(mainsLevees.baisseeLe)));

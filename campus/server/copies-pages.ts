@@ -29,7 +29,7 @@ import os from "node:os";
 import path from "node:path";
 import { lireContenuFichier } from "./fichiers";
 import { LARGEUR_PAGE_IA, PAGES_MAX_PAR_COPIE } from "@shared/engagement/corrections";
-import type { Fichier } from "@shared/schema";
+import type { Fichier, RaisonNonProjetable, RotationCopie } from "@shared/schema";
 
 const executer = promisify(execFile);
 
@@ -141,14 +141,43 @@ export function outilsDeLecture() {
   return outils;
 }
 
-/** Une conversion LibreOffice à la fois : il est gourmand en mémoire. */
-let fileOffice: Promise<unknown> = Promise.resolve();
+/**
+ * Une conversion LibreOffice à la fois : il est gourmand en mémoire. Une tâche du direct (copie montrée à la
+ * classe, projection-copies.ts) passe devant celles qui attendent, jamais devant celle qui tourne.
+ */
+type TacheOffice = { prioritaire: boolean; lancer: () => void };
+const attenteOffice: TacheOffice[] = [];
+let officeOccupe = false;
+function suivanteOffice() {
+  if (officeOccupe) return;
+  const i = attenteOffice.findIndex((x) => x.prioritaire);
+  const [tache] = attenteOffice.splice(i >= 0 ? i : 0, 1);
+  if (!tache) return;
+  officeOccupe = true;
+  tache.lancer();
+}
+/** Une conversion LibreOffice à la fois ; une tâche du direct passe devant celles qui attendent (jamais devant celle qui tourne). */
+export function dansFileOffice<T>(travail: () => Promise<T>, prioritaire = false): Promise<T> {
+  return new Promise<T>((ok, ko) => {
+    attenteOffice.push({
+      prioritaire,
+      lancer: () =>
+        void travail()
+          .then(ok, ko)
+          .finally(() => {
+            officeOccupe = false;
+            suivanteOffice();
+          }),
+    });
+    suivanteOffice();
+  });
+}
 
 /** Temps restant d'un budget (au moins une seconde, au plus « max ») ; 0 s'il est épuisé. */
 type Budget = (max: number) => number;
 
-async function versPdfParLibreOffice(source: string, dossier: string, budget: Budget): Promise<string | null> {
-  const tache = fileOffice.then(async () => {
+async function versPdfParLibreOffice(source: string, dossier: string, budget: Budget, o: { prioritaire?: boolean } = {}): Promise<string | null> {
+  return dansFileOffice(async () => {
     const delai = budget(DELAI_OFFICE_MS);
     if (!delai) throw new Error("budget de conversion épuisé");
     const sortie = path.join(dossier, "pdf");
@@ -164,9 +193,7 @@ async function versPdfParLibreOffice(source: string, dossier: string, budget: Bu
     });
     const pdf = (await fs.promises.readdir(sortie)).find((n) => n.endsWith(".pdf"));
     return pdf ? path.join(sortie, pdf) : null;
-  });
-  fileOffice = tache.catch(() => undefined);
-  return tache;
+  }, o.prioritaire);
 }
 
 /** Nombre de pages d'un PDF (pdfinfo), ou null s'il ne le dit pas. */
@@ -185,13 +212,24 @@ async function pagesDuPdf(chemin: string, budget: Budget): Promise<number | null
 /**
  * Pages premiere..derniere d'un PDF en JPEG (qualité 78). « reduire » : le plus grand côté ramené à
  * LARGEUR_PAGE_IA px ; sinon 72 points par pouce, soit un pixel par point (photo enveloppée, déjà assez petite).
+ * « recadrage » (en pixels de l'image rendue) : seule cette partie de la page est rendue (le haut d'une copie
+ * caché à la classe ne quitte jamais le serveur).
  */
-async function rendrePages(pdf: string, dossier: string, premiere: number, derniere: number, budget: Budget, reduire = true): Promise<Buffer[]> {
+async function rendrePages(
+  pdf: string,
+  dossier: string,
+  premiere: number,
+  derniere: number,
+  budget: Budget,
+  reduire = true,
+  recadrage?: { y: number; largeur: number; hauteur: number },
+): Promise<Buffer[]> {
   const delai = budget(120_000);
   if (!delai) throw new Error("budget de conversion épuisé");
   const sortie = await fs.promises.mkdtemp(path.join(dossier, `pages-${premiere}-`));
   const taille = reduire ? ["-scale-to", String(LARGEUR_PAGE_IA)] : ["-r", "72"];
-  await executer("pdftoppm", ["-jpeg", "-jpegopt", `quality=${QUALITE_JPEG}`, ...taille, "-f", String(premiere), "-l", String(derniere), pdf, path.join(sortie, "p")], {
+  const coupe = recadrage ? ["-x", "0", "-y", String(recadrage.y), "-W", String(recadrage.largeur), "-H", String(recadrage.hauteur)] : [];
+  await executer("pdftoppm", ["-jpeg", "-jpegopt", `quality=${QUALITE_JPEG}`, ...taille, ...coupe, "-f", String(premiere), "-l", String(derniere), pdf, path.join(sortie, "p")], {
     timeout: delai,
     env: environnementOutil(dossier),
   });
@@ -584,4 +622,433 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
   } finally {
     await fs.promises.rm(dossier, { recursive: true, force: true });
   }
+}
+
+// ── Copie montrée en direct (projection-copies.ts) ─────────────────────────
+//
+// Pendant le direct, le formateur montre UNE page d'une copie à toute la classe. Le serveur fabrique l'image de
+// cette seule page (sans métadonnées, remise droite, le haut caché si demandé) et la garde en mémoire
+// (projection-copies.ts). Ici : les outils. Rien n'est écrit dans le bucket ni en base : seulement un cache
+// disque jetable des PDF (fichier PDF lu dans le bucket, ou document converti par LibreOffice), vidé au
+// démarrage et toutes les 30 minutes (fichiers de plus de 3 h).
+
+/** Photo, PNG, WebP ou GIF servis sans pdftoppm : au-delà, « trop lourd ». */
+export const IMAGE_DIRECT_MAX_OCTETS = 3 * 1024 * 1024;
+/** Part de la hauteur cachée en haut de la première page d'un fichier (l'étudiant y écrit son nom). */
+export const PART_ENTETE = 0.12;
+/** Délai d'un rendu du direct (pdftoppm, heif-convert, pdfinfo). */
+const DELAI_RENDU_DIRECT_MS = 30_000;
+/** Échec d'une préparation : on ne la relance pas avant 10 minutes. */
+const DUREE_ECHEC_MS = 10 * 60_000;
+/** Fichier momentanément illisible (bucket muet) : nouvel essai possible après 15 s. */
+const DUREE_INDISPONIBLE_MS = 15_000;
+const CACHE_DISQUE_MAX_MS = 3 * 3600_000;
+
+const DOSSIER_DIRECT = path.join(os.tmpdir(), "copies-direct");
+try {
+  fs.rmSync(DOSSIER_DIRECT, { recursive: true, force: true });
+  fs.mkdirSync(DOSSIER_DIRECT, { recursive: true });
+} catch (e) {
+  console.warn("[copies] dossier du direct impossible à préparer :", (e as Error).message);
+}
+setInterval(() => {
+  void (async () => {
+    const limite = Date.now() - CACHE_DISQUE_MAX_MS;
+    for (const nom of await fs.promises.readdir(DOSSIER_DIRECT).catch(() => [] as string[])) {
+      const chemin = path.join(DOSSIER_DIRECT, nom);
+      const st = await fs.promises.stat(chemin).catch(() => null);
+      if (st && st.mtimeMs < limite) await fs.promises.rm(chemin, { recursive: true, force: true }).catch(() => undefined);
+    }
+  })();
+}, 30 * 60_000).unref();
+
+/** Budget simple d'un rendu du direct. */
+const budgetDe = (ms: number): Budget => {
+  const limite = Date.now() + ms;
+  return (max) => {
+    const restant = limite - Date.now();
+    return restant < 1000 ? 0 : Math.min(max, restant);
+  };
+};
+
+/** Au plus deux rendus du direct à la fois (pdftoppm, heif-convert) : le serveur sert aussi le reste du campus. */
+const RENDUS_SIMULTANES = 2;
+let rendusEnCours = 0;
+const attenteRendus: (() => void)[] = [];
+async function avecRendu<T>(travail: () => Promise<T>): Promise<T> {
+  if (rendusEnCours >= RENDUS_SIMULTANES) await new Promise<void>((ok) => attenteRendus.push(ok));
+  rendusEnCours++;
+  try {
+    return await travail();
+  } finally {
+    rendusEnCours--;
+    attenteRendus.shift()?.();
+  }
+}
+
+/** Dossier de travail jetable d'un rendu (effacé ensuite). */
+async function dansDossierJetable<T>(travail: (dossier: string) => Promise<T>): Promise<T> {
+  const dossier = await fs.promises.mkdtemp(path.join(os.tmpdir(), "copie-direct-"));
+  try {
+    return await travail(dossier);
+  } finally {
+    await fs.promises.rm(dossier, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** Orientation EXIF → rotation à appliquer à l'affichage (sens horaire). */
+export const rotationExif = (o: number): RotationCopie => (o === 3 ? 180 : o === 6 ? 90 : o === 8 ? 270 : 0);
+
+/**
+ * JPEG sans ses métadonnées : garde SOI, APP0 (JFIF), APP14 (Adobe), les tables et l'image ; retire APP1 à
+ * APP13, APP15 et les commentaires (EXIF, position GPS, XMP, appareil). Rend le tampon d'origine s'il ne se lit pas.
+ */
+export function jpegSansMetadonnees(b: Buffer): Buffer {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return b;
+  const morceaux: Buffer[] = [b.subarray(0, 2)];
+  let i = 2;
+  while (i + 4 <= b.length) {
+    if (b[i] !== 0xff) return b;
+    const m = b[i + 1];
+    if (m === 0xff) {
+      i++;
+      continue;
+    }
+    // Marqueurs sans longueur (TEM, RST) : recopiés.
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
+      morceaux.push(b.subarray(i, i + 2));
+      i += 2;
+      continue;
+    }
+    if (m === 0xd9) {
+      morceaux.push(b.subarray(i));
+      return Buffer.concat(morceaux);
+    }
+    // Début de l'image : tout le reste est recopié tel quel.
+    if (m === 0xda) {
+      morceaux.push(b.subarray(i));
+      return Buffer.concat(morceaux);
+    }
+    const longueur = b.readUInt16BE(i + 2);
+    if (longueur < 2 || i + 2 + longueur > b.length) return b;
+    const fin = i + 2 + longueur;
+    const metadonnee = (m >= 0xe1 && m <= 0xed) || m === 0xef || m === 0xfe;
+    if (!metadonnee) morceaux.push(b.subarray(i, fin));
+    i = fin;
+  }
+  return b;
+}
+
+/** PNG sans ses blocs de texte, d'EXIF ni de date (tEXt, zTXt, iTXt, eXIf, tIME) ; les autres blocs restent entiers. */
+export function pngSansMetadonnees(b: Buffer): Buffer {
+  if (b.length < 8 || b.readUInt32BE(0) !== 0x89504e47) return b;
+  const retires = new Set(["tEXt", "zTXt", "iTXt", "eXIf", "tIME"]);
+  const morceaux: Buffer[] = [b.subarray(0, 8)];
+  let i = 8;
+  while (i + 12 <= b.length) {
+    const longueur = b.readUInt32BE(i);
+    const type = b.toString("latin1", i + 4, i + 8);
+    const fin = i + 12 + longueur;
+    if (fin > b.length) return b;
+    if (!retires.has(type)) morceaux.push(b.subarray(i, fin));
+    i = fin;
+    if (type === "IEND") return Buffer.concat(morceaux);
+  }
+  return b;
+}
+
+/**
+ * Coupe un texte en pages d'au plus « max » caractères : aux paragraphes (lignes vides), puis aux fins de
+ * phrase, puis au dernier espace ; jamais au milieu d'un mot (sauf un « mot » plus long qu'une page).
+ */
+export function decouperTexte(texte: string, max = 700): string[] {
+  const propre = texte.replace(/\r\n?/g, "\n").replace(/\0/g, "").trim();
+  if (!propre) return [];
+  const pages: string[] = [];
+  let courante = "";
+  const pousser = () => {
+    if (courante.trim()) pages.push(courante.trim());
+    courante = "";
+  };
+  /** Coupe un morceau trop long : fin de phrase, puis espace, sinon coupe dure. */
+  const couperLong = (bloc: string): string[] => {
+    const sortie: string[] = [];
+    let reste = bloc;
+    while (reste.length > max) {
+      const fenetre = reste.slice(0, max + 1);
+      let coupe = -1;
+      const phrases = [...fenetre.matchAll(/[.!?…;:](?=\s)/g)];
+      if (phrases.length) coupe = (phrases[phrases.length - 1].index ?? -1) + 1;
+      if (coupe < max * 0.4) {
+        const espace = fenetre.lastIndexOf(" ");
+        const ligne = fenetre.lastIndexOf("\n");
+        coupe = Math.max(espace, ligne, coupe);
+      }
+      // Un « mot » plus long qu'une page (adresse, suite de caractères) : coupe dure, la page se remplit.
+      const motSuivant = /^\S*/.exec(reste.slice(Math.max(coupe, 0)).trimStart())?.[0].length ?? 0;
+      if (coupe <= 0 || (coupe < max * 0.4 && motSuivant > max)) coupe = max;
+      sortie.push(reste.slice(0, coupe).trim());
+      reste = reste.slice(coupe).trimStart();
+    }
+    if (reste.trim()) sortie.push(reste.trim());
+    return sortie;
+  };
+  for (const paragraphe of propre.split(/\n\s*\n/)) {
+    const p = paragraphe.trim();
+    if (!p) continue;
+    const ajout = courante ? `${courante}\n\n${p}` : p;
+    if (ajout.length <= max) {
+      courante = ajout;
+      continue;
+    }
+    pousser();
+    if (p.length <= max) courante = p;
+    else {
+      const morceaux = couperLong(p);
+      for (const m of morceaux.slice(0, -1)) pages.push(m);
+      courante = morceaux[morceaux.length - 1] ?? "";
+    }
+  }
+  pousser();
+  return pages;
+}
+
+// Cache des PDF (fichier PDF d'une copie, ou document Office converti) : une préparation à la fois par fichier.
+const pdfsPrets = new Map<number, string>();
+const preparationsPdf = new Map<number, Promise<string | null>>();
+const echecsPdf = new Map<number, { le: number; raison: "erreur" | "indisponible" }>();
+const pagesPdf = new Map<number, number>();
+
+/** Le PDF de ce fichier est déjà sur le disque. */
+export function pdfPret(fichierId: number): boolean {
+  const chemin = pdfsPrets.get(fichierId);
+  if (chemin && fs.existsSync(chemin)) return true;
+  if (chemin) pdfsPrets.delete(fichierId);
+  return false;
+}
+
+/** Raison d'un échec récent de préparation (10 min pour un fichier abîmé, 15 s pour un bucket muet), sinon null. */
+export function raisonEchecPdf(fichierId: number): "erreur" | "indisponible" | null {
+  const e = echecsPdf.get(fichierId);
+  if (!e) return null;
+  if (Date.now() - e.le > (e.raison === "erreur" ? DUREE_ECHEC_MS : DUREE_INDISPONIBLE_MS)) {
+    echecsPdf.delete(fichierId);
+    return null;
+  }
+  return e.raison;
+}
+/** Échec de moins de 10 minutes : on ne relance pas. */
+export const pdfEnEchec = (fichierId: number) => raisonEchecPdf(fichierId) === "erreur";
+
+/** PDF d'un fichier PDF ou Office, sur le disque (une seule préparation à la fois par fichier). null : outil absent ou échec. */
+export async function pdfDuFichier(f: Fichier, o: { prioritaire?: boolean } = {}): Promise<string | null> {
+  if (pdfPret(f.id)) return pdfsPrets.get(f.id)!;
+  if (raisonEchecPdf(f.id)) return null;
+  const enCours = preparationsPdf.get(f.id);
+  if (enCours) return enCours;
+  const genre = genreDe(f);
+  const preparation = (async (): Promise<string | null> => {
+    const cible = path.join(DOSSIER_DIRECT, `${f.id}.pdf`);
+    const contenu = await lireContenuFichier(f);
+    if (!contenu) {
+      echecsPdf.set(f.id, { le: Date.now(), raison: "indisponible" });
+      return null;
+    }
+    try {
+      if (genre === "pdf") {
+        await fs.promises.writeFile(cible, contenu);
+      } else if (genre === "office") {
+        const outilsServeur = await outilsDeLecture();
+        if (!outilsServeur.office) throw new Error("LibreOffice absent");
+        await dansDossierJetable(async (dossier) => {
+          const source = path.join(dossier, `copie${path.extname(f.nomOriginal).toLowerCase() || ".docx"}`);
+          await fs.promises.writeFile(source, contenu);
+          const pdf = await versPdfParLibreOffice(source, dossier, budgetDe(DELAI_OFFICE_MS + 5_000), { prioritaire: o.prioritaire });
+          if (!pdf) throw new Error("aucun PDF produit");
+          await fs.promises.copyFile(pdf, cible);
+        });
+      } else throw new Error("ni PDF ni document");
+      pdfsPrets.set(f.id, cible);
+      return cible;
+    } catch (e) {
+      console.warn(`[copies] fichier ${f.id} : préparation pour le direct impossible :`, (e as Error).message.slice(0, 200));
+      echecsPdf.set(f.id, { le: Date.now(), raison: "erreur" });
+      return null;
+    }
+  })().finally(() => preparationsPdf.delete(f.id));
+  preparationsPdf.set(f.id, preparation);
+  return preparation;
+}
+
+/** Nombre de pages du PDF d'un fichier (pdfinfo), gardé en mémoire ; null si inconnu. */
+export async function pagesDuFichierPdf(f: Fichier): Promise<number | null> {
+  const connu = pagesPdf.get(f.id);
+  if (connu && pdfPret(f.id)) return connu;
+  const chemin = await pdfDuFichier(f);
+  if (!chemin) return null;
+  const n = await pagesDuPdf(chemin, budgetDe(DELAI_RENDU_DIRECT_MS));
+  if (n) pagesPdf.set(f.id, n);
+  return n;
+}
+
+// Contenus de photos lus pour l'inventaire (orientation), gardés 10 minutes : le rendu les reprend.
+const contenusLus = new Map<number, { le: number; octets: Buffer }>();
+async function contenuGarde(f: Fichier): Promise<Buffer | null> {
+  const g = contenusLus.get(f.id);
+  if (g && Date.now() - g.le < 10 * 60_000) return g.octets;
+  const octets = await lireContenuFichier(f);
+  if (octets && octets.length <= IMAGE_DIRECT_MAX_OCTETS) {
+    if (contenusLus.size > 60) contenusLus.clear();
+    contenusLus.set(f.id, { le: Date.now(), octets });
+  }
+  return octets;
+}
+
+/** Le JPEG passe-t-il par pdfDuJpeg (8 bits, gris, RVB ou CMJN) ? Sinon, il est servi tel quel, sans métadonnées. */
+const jpegRendable = (j: InfosJpeg | null): j is InfosJpeg => Boolean(j && j.precision === 8 && [1, 3, 4].includes(j.composantes));
+
+/** JPEG d'une photo HEIC (heif-convert), gardé sur le disque. */
+async function jpegDuHeic(f: Fichier): Promise<Buffer | null> {
+  const cible = path.join(DOSSIER_DIRECT, `${f.id}.jpg`);
+  if (fs.existsSync(cible)) return fs.promises.readFile(cible);
+  const contenu = await lireContenuFichier(f);
+  if (!contenu) return null;
+  await avecRendu(() =>
+    dansDossierJetable(async (dossier) => {
+      const source = path.join(dossier, "photo.heic");
+      const sortie = path.join(dossier, "photo.jpg");
+      await fs.promises.writeFile(source, contenu);
+      await executer("heif-convert", ["-q", String(QUALITE_JPEG), source, sortie], { timeout: DELAI_RENDU_DIRECT_MS, env: environnementOutil(dossier) });
+      await fs.promises.copyFile(sortie, cible);
+    }),
+  );
+  return fs.promises.readFile(cible);
+}
+
+export type InventaireFichier =
+  | { fichierId: number; genre: "jpeg" | "heic" | "image"; pages: 1; rotation: RotationCopie; enteteDisponible: boolean }
+  | { fichierId: number; genre: "pdf" | "office"; pages: number; enteteDisponible: boolean }
+  | { fichierId: number; genre: "texte"; morceaux: string[] }
+  | { fichierId: number; genre: "office"; preparation: true }
+  | { fichierId: number; nonProjetable: RaisonNonProjetable };
+
+/**
+ * Ce qu'un fichier de copie donne en direct, vite : rien n'est converti, sauf la préparation d'un document
+ * Office lancée en arrière-plan (tâche prioritaire de LibreOffice).
+ */
+export async function inventaireFichier(f: Fichier): Promise<InventaireFichier> {
+  const o = await outilsDeLecture();
+  const genre = genreDe(f);
+  const non = (raison: RaisonNonProjetable): InventaireFichier => ({ fichierId: f.id, nonProjetable: raison });
+  if (genre === "video") return non("video");
+  if (genre === "audio") return non("audio");
+  if (genre === "autre") return non(/zip|compressed|x-7z|x-rar|x-tar|gzip/i.test(f.mime) || /\.(zip|rar|7z|tar|gz)$/i.test(f.nomOriginal) ? "zip" : "format");
+  if (genre === "heic" && !o.heic) return non("heic");
+  if (genre === "jpeg" || genre === "heic") {
+    // Photo : remise droite et ré-encodée par pdftoppm (le haut peut alors être caché) ; sinon servie sans
+    // ses métadonnées, son orientation EXIF devient la rotation diffusée.
+    if (genre === "jpeg" && !o.pdf && f.taille > IMAGE_DIRECT_MAX_OCTETS) return non("taille");
+    let jpeg: Buffer | null;
+    try {
+      jpeg = genre === "heic" ? await jpegDuHeic(f) : await contenuGarde(f);
+    } catch {
+      return non("erreur");
+    }
+    if (!jpeg) return non("indisponible");
+    const j = infosJpeg(jpeg);
+    if (!j) return non("erreur");
+    if (o.pdf && jpegRendable(j)) return { fichierId: f.id, genre, pages: 1, rotation: 0, enteteDisponible: true };
+    if (jpeg.length > IMAGE_DIRECT_MAX_OCTETS) return non("taille");
+    return { fichierId: f.id, genre, pages: 1, rotation: rotationExif(j.orientation), enteteDisponible: false };
+  }
+  if (genre === "image") {
+    if (f.taille > IMAGE_DIRECT_MAX_OCTETS) return non("taille");
+    return { fichierId: f.id, genre: "image", pages: 1, rotation: 0, enteteDisponible: false };
+  }
+  if (genre === "texte") {
+    const contenu = await lireContenuFichier(f);
+    if (!contenu) return non("indisponible");
+    return { fichierId: f.id, genre: "texte", morceaux: decouperTexte(contenu.toString("utf8"), 700) };
+  }
+  if (genre === "pdf") {
+    if (!o.pdf || !o.pdfinfo) return non("pdf");
+    const n = await pagesDuFichierPdf(f);
+    if (!n) return non(raisonEchecPdf(f.id) === "indisponible" ? "indisponible" : "erreur");
+    return { fichierId: f.id, genre: "pdf", pages: n, enteteDisponible: true };
+  }
+  // Document Office : converti en PDF une fois, en tâche prioritaire, puis comme un PDF.
+  if (!o.office || !o.pdf || !o.pdfinfo) return non("document");
+  if (pdfEnEchec(f.id)) return non("erreur");
+  if (pdfPret(f.id)) {
+    const n = await pagesDuFichierPdf(f);
+    return n ? { fichierId: f.id, genre: "office", pages: n, enteteDisponible: true } : non("erreur");
+  }
+  if (raisonEchecPdf(f.id) === "indisponible") return non("indisponible");
+  void pdfDuFichier(f, { prioritaire: true });
+  return { fichierId: f.id, genre: "office", preparation: true };
+}
+
+export type ImagePage = { mime: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; octets: Buffer; rotation: RotationCopie };
+
+/** Rend une page d'un PDF (1600 px), entière ou sans son haut. */
+async function rendrePagePdf(pdf: string, page: number, sansEntete: boolean, reduire = true): Promise<Buffer> {
+  return avecRendu(() =>
+    dansDossierJetable(async (dossier) => {
+      const budget = budgetDe(DELAI_RENDU_DIRECT_MS);
+      const [entiere] = await rendrePages(pdf, dossier, page, page, budget, reduire);
+      if (!entiere) throw new Error("page non rendue");
+      if (!sansEntete) return entiere;
+      const j = infosJpeg(entiere);
+      if (!j) throw new Error("page rendue illisible");
+      const y = Math.round(j.hauteur * PART_ENTETE);
+      const [coupee] = await rendrePages(pdf, dossier, page, page, budget, reduire, { y, largeur: j.largeur, hauteur: j.hauteur - y });
+      if (!coupee) throw new Error("page recadrée non rendue");
+      return coupee;
+    }),
+  );
+}
+
+/**
+ * Image d'une page prête à montrer à la classe (sans métadonnées), recadrée sans le haut si demandé et possible.
+ * « page » : numéro de page d'un PDF ou d'un document ; null pour une photo. Lève une erreur si le fichier ne se montre pas.
+ */
+export async function imageDePage(f: Fichier, page: number | null, o: { sansEntete: boolean }): Promise<ImagePage> {
+  const outilsServeur = await outilsDeLecture();
+  const genre = genreDe(f);
+  if (genre === "jpeg" || genre === "heic") {
+    const jpeg = genre === "heic" ? await jpegDuHeic(f) : await contenuGarde(f);
+    if (!jpeg) throw new Error("fichier indisponible");
+    const j = infosJpeg(jpeg);
+    if (!j) throw new Error("photo illisible");
+    if (outilsServeur.pdf && jpegRendable(j)) {
+      // Enveloppée dans un PDF d'une page, sans être décodée, puis rendue droite et ré-encodée par pdftoppm.
+      const petite = Math.max(j.largeur, j.hauteur) <= LARGEUR_PAGE_IA;
+      const octets = await dansDossierJetable(async (dossier) => {
+        const pdf = path.join(dossier, "photo.pdf");
+        await fs.promises.writeFile(pdf, pdfDuJpeg(jpeg, j));
+        return rendrePagePdf(pdf, 1, o.sansEntete, !petite);
+      });
+      return { mime: "image/jpeg", octets, rotation: 0 };
+    }
+    if (jpeg.length > IMAGE_DIRECT_MAX_OCTETS) throw new Error("photo trop lourde");
+    const propre = jpegSansMetadonnees(jpeg);
+    // Tampon rendu tel quel : JPEG illisible, ses métadonnées ne peuvent pas être retirées.
+    if (propre === jpeg) throw new Error("photo illisible");
+    return { mime: "image/jpeg", octets: propre, rotation: rotationExif(j.orientation) };
+  }
+  if (genre === "image") {
+    const contenu = await contenuGarde(f);
+    if (!contenu) throw new Error("fichier indisponible");
+    if (contenu.length > IMAGE_DIRECT_MAX_OCTETS) throw new Error("image trop lourde");
+    if (!dimensionsImage(contenu)) throw new Error("image illisible");
+    const mime = f.mime.toLowerCase() as ImagePage["mime"];
+    return { mime, octets: mime === "image/png" ? pngSansMetadonnees(contenu) : contenu, rotation: 0 };
+  }
+  if (genre === "pdf" || genre === "office") {
+    if (!outilsServeur.pdf) throw new Error("pdftoppm absent");
+    const pdf = await pdfDuFichier(f, { prioritaire: true });
+    if (!pdf) throw new Error("PDF indisponible");
+    return { mime: "image/jpeg", octets: await rendrePagePdf(pdf, page ?? 1, o.sansEntete), rotation: 0 };
+  }
+  throw new Error("fichier qui ne se projette pas");
 }

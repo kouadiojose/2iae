@@ -25,6 +25,10 @@ import { cleDirect, FORMATS_DIAPOS, useEcranAllume, useEtatDirect } from "./outi
 import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroupes } from "./groupes";
 import { BoutonLienInvite } from "./LienInvite";
 import { BoutonAfficherEmargement } from "./AfficherEmargement";
+import { BoutonDevoirs, PanneauCopieEnCours, VueDevoirs } from "./devoirs";
+import { dispositionAvecCopie, useAvisCopieRemplacee, useCopieDirect } from "./copie-projetee";
+import { t as textesCopies } from "@shared/textes/copies-direct";
+import { useTextes } from "@/lib/textes";
 import { QuestionsRappel } from "./QuestionsRappel";
 import { RappelInteraction } from "./RappelInteraction";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
@@ -70,9 +74,17 @@ export default function Studio({ seance, observation = false }: { seance: Seance
     }
   };
 
-  // Diapos : ← →, télécommande (PageUp / PageDown), vignettes ; mise en page : 1 à 4.
+  // Devoirs et copies : vue posée par-dessus le Studio (le direct continue dessous), copie montrée à la classe.
+  const txCopies = useTextes(textesCopies);
+  const [vueDevoirs, setVueDevoirs] = useState(false);
+  const [partageLocal, setPartageLocal] = useState(false);
+  const { revenirAuxDiapos } = useCopieDirect(seance.id);
+  useAvisCopieRemplacee(seance.id, !observation);
+
+  // Diapos : ← →, télécommande (PageUp / PageDown), vignettes ; mise en page : 1 à 4. Pendant une copie, ← →
+  // tournent ses pages puis ramènent les diapos ; coupés tant que la vue « Devoirs » est ouverte.
   const { aller: allerDiapo, changer: changerDiapo, disposer } = usePilotageDiapos(seance);
-  useClavierDiapos(changerDiapo, !observation, disposer);
+  useClavierDiapos(changerDiapo, !observation && !vueDevoirs, disposer);
 
   // Groupes de travail : composer, suivre, visiter. Pendant une visite, le micro de la classe est coupé.
   const { data: groupes } = useGroupes(seance.id, (type, d) => {
@@ -83,6 +95,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const microAvantVisite = useRef<boolean | null>(null);
   const visiter = useCallback(
     (id: number | null) => {
+      if (id !== null) setVueDevoirs(false);
       if (id !== null && microAvantVisite.current === null) {
         microAvantVisite.current = micro;
         setMicro(false);
@@ -99,6 +112,14 @@ export default function Studio({ seance, observation = false }: { seance: Seance
     if (visite !== null && groupes && !groupeVisite) visiter(null);
   }, [visite, groupes, groupeVisite, visiter]);
 
+  // Ce poste partage son écran dans la visio : il passe en grand chez tout le monde, la copie s'arrête.
+  const copieAffichee = Boolean(etat?.copie);
+  useEffect(() => {
+    if (!partageLocal || !copieAffichee || observation) return;
+    void revenirAuxDiapos({ silencieux: true });
+    toast(txCopies("toast.partage"), "info");
+  }, [partageLocal, copieAffichee]);
+
   if (statut === "annulee" || statut === "terminee") return <FinDeSeance seance={{ ...seance, statut }} />;
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
 
@@ -108,7 +129,12 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   // caméras seules). Avec des diapos, la scène prend toute la largeur : le plan passe dessous.
   const avecDiapos = !observation && seance.diapos.length > 0 && !(etat.planB ?? seance.planB);
   const mode: ModeScene = modeScene(etat);
-  const panneauDiapo = avecDiapos && mode !== "seules";
+  // Copie d'étudiant montrée : elle prend la place de la diapo dans le panneau présentateur, même sans diapos.
+  const copie = observation ? null : (etat.copie ?? null);
+  const presentation = avecDiapos || Boolean(copie);
+  const modeGrille: ModeScene = copie ? dispositionAvecCopie(etat) : mode;
+  const panneauDiapo = Boolean(copie) || (avecDiapos && mode !== "seules");
+  const planB = Boolean(etat.planB ?? seance.planB);
 
   return (
     <div className="min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
@@ -132,6 +158,15 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 )}
                 {enDirect && <BoutonAfficherEmargement seanceId={seance.id} etat={etat} />}
                 {enDirect && !groupes?.session && <BoutonGroupes onClick={() => setComposition(true)} />}
+                {seance.peutMontrerCopies && !planB && (
+                  <BoutonDevoirs
+                    actif={Boolean(etat.copie)}
+                    onClick={() => {
+                      visiter(null);
+                      setVueDevoirs(true);
+                    }}
+                  />
+                )}
                 <BoutonLienInvite seance={seance} variante="nuit" />
                 <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>
                   Plan B
@@ -145,21 +180,21 @@ export default function Studio({ seance, observation = false }: { seance: Seance
         />
 
         {/* Avec des diapos, la scène et la diapo prennent la largeur : le plan passe dessous. */}
-        <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !avecDiapos && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>
+        <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !presentation && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>
           {/* Colonne du plan (sous la scène sur les écrans moyens) */}
-          <div className={cn("order-3 flex flex-col gap-4", !avecDiapos && "xl:order-1")}>
+          <div className={cn("order-3 flex flex-col gap-4", !presentation && "xl:order-1")}>
             <ChronoPlan seance={seance} etat={etat} />
             {!observation && (
               <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={diffusion.flux} classe={diffusion.classe} />
             )}
           </div>
 
-          <div className={cn("order-1 flex min-w-0 flex-col gap-3", !avecDiapos && "xl:order-2")}>
+          <div className={cn("order-1 flex min-w-0 flex-col gap-3", !presentation && "xl:order-2")}>
             {groupes?.session && enDirect && <SuiviGroupes seance={seance} groupes={groupes} lectureSeule={observation} onVisiter={(g) => visiter(g.id)} />}
             {statut === "planifiee" && !observation && <Coulisses seance={seance} etat={etat} />}
             {avecDiapos && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-[18px] bg-nuit-panneau p-2">
-                <ChoixMiseEnPage mode={mode} onChoisir={(m) => void disposer(m)} />
+                <ChoixMiseEnPage mode={copie ? dispositionAvecCopie(etat) : mode} onChoisir={(m) => void disposer(m)} />
                 <div className="flex items-center gap-3 pr-1">
                   <span className="hidden text-[12px] leading-tight text-nuit-doux 2xl:inline">Les salles et les étudiants voient la même mise en page</span>
                   <button
@@ -181,14 +216,20 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 panneauDiapo
                   ? cn(
                       "grid items-start gap-3",
-                      mode === "diapo" && "md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
-                      mode === "cote" && "md:grid-cols-2",
-                      mode === "cameras" && "md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]",
+                      modeGrille === "diapo" && "md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
+                      modeGrille === "cote" && "md:grid-cols-2",
+                      modeGrille === "cameras" && "md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]",
                     )
                   : "contents"
               }
             >
-              {panneauDiapo ? <PanneauPresentateur seance={seance} etat={etat} onAller={(i) => void allerDiapo(i)} compact={mode === "cameras"} /> : null}
+              {panneauDiapo ? (
+                copie ? (
+                  <PanneauCopieEnCours seance={seance} etat={etat} />
+                ) : (
+                  <PanneauPresentateur seance={seance} etat={etat} onAller={(i) => void allerDiapo(i)} compact={modeGrille === "cameras"} />
+                )
+              ) : null}
               <Scene
                 seance={seance}
                 etat={etat}
@@ -197,6 +238,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 camera={(!observation || invite) && camera}
                 onFluxLocal={setFluxVisio}
                 onMicroDaily={observation ? undefined : setMicro}
+                onPartageLocal={observation ? undefined : setPartageLocal}
               />
             </div>
             {/* La bande des diapos juste sous la scène (on s'en sert sans cesse), les salles plus bas. */}
@@ -230,7 +272,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             />
           </div>
 
-          <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !avecDiapos && "xl:order-3")}>
+          <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !presentation && "xl:order-3")}>
             {!observation && <RappelInteraction seanceId={seance.id} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
             <OngletsPanneau
               valeur={onglet}
@@ -270,6 +312,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
       </div>
 
       {!observation && <CompositeurGroupes seance={seance} ouverte={composition} onFermer={() => setComposition(false)} />}
+      {vueDevoirs && !observation && <VueDevoirs seance={seance} etat={etat} partageLocal={partageLocal} onFermer={() => setVueDevoirs(false)} />}
       {groupes && groupeVisite && (
         <VisiteGroupe seance={seance} groupes={groupes} groupe={groupeVisite} role={observation ? "equipe" : "formateur"} moiId={moi.id} onFermer={() => visiter(null)} />
       )}
@@ -681,6 +724,9 @@ function BoutonAjouterDiapos({ seance, libelle, taille = "sm" }: { seance: Seanc
 }
 
 function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetailDto; etat: EtatDirectDto; onChanger: (delta: number) => void; onAller: (index: number) => void }) {
+  const txCopies = useTextes(textesCopies);
+  // Copie d'étudiant à l'écran : les flèches tournent ses pages (puis ramènent les diapos), une vignette ramène les diapos.
+  const copie = etat.copie ?? null;
   if (!seance.diapos.length) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-[18px] bg-nuit-panneau p-4 text-center text-[14px] text-nuit-doux sm:flex-row sm:justify-between sm:text-left">
@@ -692,21 +738,24 @@ function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetai
   return (
     <div className="flex flex-col gap-2 rounded-[18px] bg-nuit-panneau p-3">
       <div className="flex items-center justify-between gap-2">
-        <Bouton variante="nuit" taille="sm" onClick={() => onChanger(-1)} disabled={etat.diapo.index === 0} icone={<ChevronLeft className="h-5 w-5" />} aria-label="Diapo précédente" className="min-h-11 min-w-11" />
+        <Bouton variante="nuit" taille="sm" onClick={() => onChanger(-1)} disabled={!copie && etat.diapo.index === 0} icone={<ChevronLeft className="h-5 w-5" />} aria-label={copie ? txCopies("apercu.precedente") : "Diapo précédente"} className="min-h-11 min-w-11" />
         <span className="flex min-w-0 flex-col items-center gap-1 text-center sm:flex-row sm:flex-wrap sm:justify-center sm:gap-x-3 sm:gap-y-2">
           <span className="font-mono text-[12px] text-orange-peche">
-            Diapo {etat.diapo.index + 1} / {etat.diapo.total} · touches ← →
+            {copie ? txCopies("copie.bande", { v: { n: copie.numero, total: copie.total } }) : `Diapo ${etat.diapo.index + 1} / ${etat.diapo.total} · touches ← →`}
           </span>
           <BoutonAjouterDiapos seance={seance} libelle="Ajouter" />
         </span>
-        <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={etat.diapo.index >= etat.diapo.total - 1} icone={<ChevronRight className="h-5 w-5" />} aria-label="Diapo suivante" className="min-h-11 min-w-11" />
+        <Bouton variante="nuit-actif" taille="sm" onClick={() => onChanger(1)} disabled={!copie && etat.diapo.index >= etat.diapo.total - 1} icone={<ChevronRight className="h-5 w-5" />} aria-label={copie ? txCopies("apercu.suivante") : "Diapo suivante"} className="min-h-11 min-w-11" />
       </div>
       <div className="defile-fin flex gap-2 overflow-x-auto pb-1">
         {seance.diapos.map((d) => (
           <button
             key={d.fichierId}
             onClick={() => onAller(d.index)}
-            className={cn("relative h-14 w-24 shrink-0 overflow-hidden rounded-lg border-2", d.index === etat.diapo.index ? (etat.diapo.masquee ? "border-orange/40 opacity-60" : "border-orange") : d.index === etat.diapo.index + 1 ? "border-orange-peche/50" : "border-transparent")}
+            className={cn(
+              "relative h-14 w-24 shrink-0 overflow-hidden rounded-lg border-2",
+              d.index === etat.diapo.index ? (etat.diapo.masquee ? "border-orange/40 opacity-60" : copie ? "border-orange/40" : "border-orange") : d.index === etat.diapo.index + 1 ? "border-orange-peche/50" : "border-transparent",
+            )}
             aria-label={`Aller à la diapo ${d.index + 1}`}
           >
             <img src={d.url} alt="" loading="lazy" className="h-full w-full object-cover" />

@@ -19,7 +19,8 @@ import { canal, seanceAnimee, seanceDuReplay } from "./live";
 import { etudiantsDuCours } from "../acces";
 import { notifier } from "../notifications";
 import { planifier } from "../taches";
-import { cours, fichiers, ressourcesSeances, seances, type ProjectionDto, type ProjectionVideo, type RessourceSeance, type RessourceSeanceDto, type Seance } from "@shared/schema";
+import { finDeCopie, projectionChangee } from "../projection-copies";
+import { cours, fichiers, ressourcesSeances, seances, estProjectionCopie, type ProjectionDto, type ProjectionVideo, type RessourceSeance, type RessourceSeanceDto, type Seance } from "@shared/schema";
 
 /** Au-delà, la liste ne se lit plus : 40 ressources par séance. */
 const RESSOURCES_MAX = 40;
@@ -90,7 +91,8 @@ export async function ressourcesDe(seanceId: number): Promise<RessourceSeanceDto
 /** Vidéo projetée, avec sa ressource (null si la ressource a disparu). */
 export async function projectionDe(s: Pick<Seance, "id" | "projection">): Promise<ProjectionDto | null> {
   const p = s.projection;
-  if (!p) return null;
+  // Une copie d'étudiant projetée n'est pas une vidéo : la classe la reçoit par « copie » (projection-copies.ts).
+  if (!p || estProjectionCopie(p)) return null;
   const r = (await ressourcesDe(s.id)).find((x) => x.id === p.ressourceId && projetable(x));
   return r ? { ...p, ressource: r } : null;
 }
@@ -277,7 +279,7 @@ export function enregistrerRessourcesSeance(app: Express) {
       const s = await seanceAnimee(u, idParam(req));
       const r = await ressourceDeLaSeance(s.id, idParam(req, "rid"));
       await db.delete(ressourcesSeances).where(eq(ressourcesSeances.id, r.id));
-      if (s.projection?.ressourceId === r.id) {
+      if (!estProjectionCopie(s.projection) && s.projection?.ressourceId === r.id) {
         await db.update(seances).set({ projection: null }).where(eq(seances.id, s.id));
         publier(canal(s.id), "projection", null);
       }
@@ -303,7 +305,8 @@ export function enregistrerRessourcesSeance(app: Express) {
     }),
   );
 
-  // Projeter une vidéo dans les salles, la piloter, arrêter (ressourceId null).
+  // Projeter une vidéo dans les salles, la piloter, arrêter (ressourceId null). Arrête aussi une copie
+  // d'étudiant projetée (« Revenir aux diapos » passe par ici : un seul chemin pour tous les retours).
   app.post(
     "/api/seances/:id(\\d+)/projection",
     exigerConnexion,
@@ -323,8 +326,8 @@ export function enregistrerRessourcesSeance(app: Express) {
         const r = await ressourceDeLaSeance(s.id, d.ressourceId);
         if (r.type !== "youtube" && r.type !== "video") throw invalide("Seules les vidéos (YouTube ou fichier vidéo) se projettent.");
         // Nouvelle vidéo : elle part du début, en pause ; sinon on garde ce qui n'est pas précisé.
-        const memeVideo = s.projection?.ressourceId === r.id;
-        const actuelle = memeVideo && s.projection ? s.projection : null;
+        const memeVideo = !estProjectionCopie(s.projection) && s.projection?.ressourceId === r.id;
+        const actuelle: ProjectionVideo | null = memeVideo && s.projection && !estProjectionCopie(s.projection) ? s.projection : null;
         const positionActuelle = actuelle ? (actuelle.lecture ? actuelle.position + (Date.now() - actuelle.horodatage) / 1000 : actuelle.position) : 0;
         projection = {
           ressourceId: r.id,
@@ -333,7 +336,10 @@ export function enregistrerRessourcesSeance(app: Express) {
           horodatage: Date.now(),
         };
       }
+      // Une copie en cours de préparation ne s'écrira pas par-dessus ce geste.
+      projectionChangee(s.id);
       await db.update(seances).set({ projection }).where(eq(seances.id, s.id));
+      if (estProjectionCopie(s.projection)) await finDeCopie(s.id, s.projection, d.ressourceId === null ? "diapos" : "video");
       const dto = projection ? await projectionDe({ id: s.id, projection }) : null;
       publier(canal(s.id), "projection", dto);
       res.json(dto);

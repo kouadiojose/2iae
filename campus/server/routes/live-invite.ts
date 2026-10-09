@@ -33,7 +33,7 @@ import { enseigneCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
-import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
+import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
 
 const MINUTE = 60_000;
 /** Le lien marche encore 30 minutes après la fin prévue (débordement, retardataires). */
@@ -111,6 +111,8 @@ async function infoInvite(s: Seance, jeton: string, intervenant: boolean): Promi
     diapo: { index, total, masquee, url: total && !masquee ? `/api/invite/${jeton}/diapo/${index}` : null },
     sousTitre: st?.texte ?? null,
     intervenant,
+    // Une copie d'étudiant projetée reste réservée à la classe : l'invité lit seulement qu'elle est montrée.
+    copieMontree: estProjectionCopie(s.projection) && s.statut === "en_direct" && !s.planBLe,
   };
   if (cacheInfos.size > 2000) cacheInfos.clear();
   cacheInfos.set(cle, { exp: Date.now() + 1000, info });

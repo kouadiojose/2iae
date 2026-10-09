@@ -16,6 +16,10 @@ import { EtatVide } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toastErreur } from "@/components/ui/toast";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
+import { useAvisCopieRemplacee, useCopieDirect } from "./copie-projetee";
+import { PanneauCopieEnCours } from "./devoirs";
+import { useTextes } from "@/lib/textes";
+import { t as textesCopies } from "@shared/textes/copies-direct";
 import type { DispositionScene, EtatDirectDto, SeanceDetailDto } from "@shared/schema";
 
 // ── Mises en page de la scène ──────────────────────────────────────────────
@@ -37,15 +41,21 @@ export function modeScene(etat: EtatDirectDto): ModeScene {
 // ── Pilotage des diapos (Studio et fenêtre présentateur) ──────────────────
 
 export function usePilotageDiapos(seance: SeanceDetailDto) {
+  // Copie d'étudiant à l'écran (devoirs.tsx) : ← → tournent ses pages, puis ramènent les diapos aux deux bouts.
+  const { allerPage, revenirAuxDiapos } = useCopieDirect(seance.id);
   const aller = useCallback(
     async (index: number) => {
-      const actuel = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.diapo;
+      const etat = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id));
+      const actuel = etat?.diapo;
       if (!actuel?.total) return;
       const cible = Math.min(actuel.total - 1, Math.max(0, index));
+      // Clic sur la diapo courante pendant une copie : la copie s'arrête, la même diapo revient.
+      if (etat?.copie && cible === actuel.index && !actuel.masquee) return revenirAuxDiapos();
       // Changer de diapo la remontre aux salles si elle était masquée (« Caméra seule »).
       if (cible === actuel.index && !actuel.masquee) return;
+      // Une autre diapo : le serveur arrête la copie (POST /diapo), l'affichage suit tout de suite.
       queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) =>
-        x ? { ...x, diapo: { ...x.diapo, index: cible, masquee: false, url: seance.diapos[cible]?.url ?? x.diapo.url } } : x,
+        x ? { ...x, copie: null, diapo: { ...x.diapo, index: cible, masquee: false, url: seance.diapos[cible]?.url ?? x.diapo.url } } : x,
       );
       try {
         await post(`/api/seances/${seance.id}/diapo`, { index: cible });
@@ -53,15 +63,17 @@ export function usePilotageDiapos(seance: SeanceDetailDto) {
         toastErreur(e);
       }
     },
-    [seance.id, seance.diapos],
+    [seance.id, seance.diapos, revenirAuxDiapos],
   );
 
   const changer = useCallback(
     (delta: number) => {
-      const actuel = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.diapo;
+      const etat = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id));
+      if (etat?.copie) return allerPage(delta);
+      const actuel = etat?.diapo;
       if (actuel?.total) void aller(actuel.index + delta);
     },
-    [seance.id, aller],
+    [seance.id, aller, allerPage],
   );
 
   // Mise en page, identique pour tous : « seules » masque la diapo (caméras plein cadre) ;
@@ -72,10 +84,14 @@ export function usePilotageDiapos(seance: SeanceDetailDto) {
       if (!actuel?.total) return;
       const masquer = mode === "seules";
       const disposition = masquer ? undefined : mode;
+      // Pendant une copie : « caméras en grand », « caméras seules » ou une diapo masquée qui revient l'arrêtent
+      // (le serveur fait de même) ; « diapo en grand » et « côte à côte » la gardent.
+      const arreteCopie = mode === "cameras" || mode === "seules" || Boolean(actuel.masquee);
       queryClient.setQueryData<EtatDirectDto>(cleDirect(seance.id), (x) =>
         x
           ? {
               ...x,
+              ...(arreteCopie ? { copie: null } : {}),
               diapo: {
                 ...x.diapo,
                 masquee: masquer,
@@ -235,6 +251,15 @@ function DiapoEnCours({ seance, etat, grand }: { seance: SeanceDetailDto; etat: 
 
 /** « Vue par les salles · 3 / 12 », ou « Masquée aux salles » en « Caméras seules ». */
 function EtatDiapo({ etat, className }: { etat: EtatDirectDto; className?: string }) {
+  const txCopies = useTextes(textesCopies);
+  if (etat.copie) {
+    return (
+      <span className={cn("inline-flex items-center gap-2 font-mono text-xs font-bold text-orange-peche", className)}>
+        <span className="h-2 w-2 animate-pulse rounded-full bg-orange" />
+        {txCopies(etat.copie.source === "corrige" ? "copie.etatCorrige" : "copie.etat", { v: { n: etat.copie.numero, total: etat.copie.total } })}
+      </span>
+    );
+  }
   return (
     <span className={cn("inline-flex items-center gap-2 font-mono text-xs font-bold", etat.diapo.masquee ? "text-nuit-gris" : "text-orange-peche", className)}>
       {etat.diapo.masquee ? <EyeOff className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-orange" />}
@@ -316,6 +341,7 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
   const { aller, changer, disposer } = usePilotageDiapos(seance);
   useClavierDiapos(changer, true, disposer);
   useEcranAllume(true);
+  useAvisCopieRemplacee(seance.id, true);
   useEffect(() => {
     const avant = document.title;
     document.title = `Présentateur · ${seance.titre}`;
@@ -325,6 +351,24 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
   }, [seance.titre]);
 
   if (!etat) return <div className="min-h-dvh bg-nuit" aria-busy="true" />;
+  // Copie d'étudiant à l'écran : elle prend la place de la diapo, avec ses pages et « Revenir aux diapos ».
+  if (etat.copie) {
+    return (
+      <div className="flex h-dvh flex-col gap-3 bg-nuit p-3 text-white sm:p-4">
+        <header className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] uppercase tracking-wider text-orange-peche">Vue présentateur</p>
+            <h1 className="truncate font-sans text-base font-bold tracking-normal text-white">{seance.titre}</h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <EtatDiapo etat={etat} />
+            <Chrono seance={seance} etat={etat} />
+          </div>
+        </header>
+        <PanneauCopieEnCours seance={seance} etat={etat} grand />
+      </div>
+    );
+  }
   if (!seance.diapos.length) {
     return (
       <div className="grid min-h-dvh place-items-center bg-nuit px-4">

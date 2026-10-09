@@ -179,7 +179,10 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
     case "diapo":
       return { ...etat, diapo: d };
     case "projection":
-      return { ...etat, projection: d ?? null };
+      // Une vidéo projetée remplace la copie montrée (et inversement, ci-dessous).
+      return { ...etat, projection: d ?? null, ...(d ? { copie: null } : {}) };
+    case "copie":
+      return { ...etat, copie: d ?? null, ...(d ? { projection: null } : {}) };
     case "planb":
       return { ...etat, planB: d.lien };
     case "chat:mode":
@@ -220,9 +223,10 @@ export function useEtatDirect(seanceId: number, privilegie: boolean, surEvenemen
           const b = d.diapo;
           const pareil = a.index === b.index && a.url === b.url && a.total === b.total && Boolean(a.masquee) === Boolean(b.masquee) && a.disposition === b.disposition;
           const memeProjection = JSON.stringify(etat.projection ?? null) === JSON.stringify(d.projection ?? null);
+          const memeCopie = JSON.stringify(etat.copie ?? null) === JSON.stringify(d.copie ?? null);
           statutChange = etat.statut !== d.statut;
-          if (pareil && memeProjection && !statutChange && etat.planB === d.planB) return etat;
-          return { ...etat, diapo: d.diapo, projection: d.projection ?? null, statut: d.statut, planB: d.planB };
+          if (pareil && memeProjection && memeCopie && !statutChange && etat.planB === d.planB) return etat;
+          return { ...etat, diapo: d.diapo, projection: d.projection ?? null, copie: d.copie ?? null, statut: d.statut, planB: d.planB };
         });
         if (statutChange) void rafraichir(`/api/seances/${seanceId}`);
       } catch {

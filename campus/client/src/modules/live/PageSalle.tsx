@@ -372,7 +372,7 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
   const [visioDemandee, setVisioDemandee] = useState(false);
   const visioOuverte = visioPossible && (visioDemandee || avantDebutMin <= VISIO_AUTO_MIN);
   // Sans la diapo : la vidéo en grand, et la salle se voit elle-même pour régler sa caméra.
-  const etatReglages = useMemo(() => ({ ...etat, diapo: { ...etat.diapo, url: null }, projection: null }), [etat]);
+  const etatReglages = useMemo(() => ({ ...etat, diapo: { ...etat.diapo, url: null }, projection: null, copie: null }), [etat]);
   return (
     <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
@@ -473,7 +473,7 @@ function PendantLeCours({
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
   const sondage = etat.sondage;
   const commandes = useCommandesVisibles(presentation);
-  const cacheeParFormateur = etat.diapo.masquee || etat.diapo.disposition === "cameras";
+  const cacheeParFormateur = !etat.copie && (etat.diapo.masquee || etat.diapo.disposition === "cameras");
   return (
     <main
       className={
@@ -508,7 +508,7 @@ function PendantLeCours({
           />
         </div>
         {/* Téléphone : la vidéo est au-dessus de la diapo ; le bouton se range sous la scène. */}
-        {petit && !presentation && etat.diapo.url && !cacheeParFormateur && seance.fournisseur !== "demo" && (
+        {petit && !presentation && (etat.diapo.url || etat.copie) && !cacheeParFormateur && seance.fournisseur !== "demo" && (
           <button
             onClick={() => onVideoMasquee(!videoMasquee)}
             className="flex min-h-11 items-center justify-center gap-2 self-start rounded-full bg-nuit-carte px-4 text-[15px] font-bold text-white hover:bg-nuit-ligne"

@@ -9,7 +9,8 @@
 // peut entrer 30 minutes avant le début pour régler son micro.
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link2Off, Mic, MonitorPlay, Radio, UserRound } from "lucide-react";
+import { Link2Off, Mic, MonitorPlay, Presentation, Radio, UserRound } from "lucide-react";
+import { t as textesCopies } from "@shared/textes/copies-direct";
 import type { AccesDaily, InfoInviteDto } from "@shared/schema";
 import { post, ErreurApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -220,7 +221,15 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
       <div className="overflow-hidden rounded-[22px] border-2 border-nuit-ligne bg-nuit-carte">
         {mode === "video" && <p className="border-b border-nuit-ligne px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-nuit-doux">La diapo en cours</p>}
         <div className="relative aspect-video">
-          {info.diapo.url ? (
+          {info.copieMontree ? (
+            // Copie d'étudiant montrée à la classe : réservée aux étudiants du cours, jamais aux invités.
+            <div className="grid h-full place-items-center px-6 text-center text-nuit-doux">
+              <span className="flex max-w-md flex-col items-center gap-3">
+                <Presentation className="h-10 w-10 text-orange-peche" />
+                <span className="text-[15px] font-semibold text-white">{textesCopies("invite.carton")}</span>
+              </span>
+            </div>
+          ) : info.diapo.url ? (
             <img src={info.diapo.url} alt={`Diapo ${info.diapo.index + 1} sur ${info.diapo.total}`} className="h-full w-full object-contain" />
           ) : (
             <div className="grid h-full place-items-center px-6 text-center text-nuit-doux">
@@ -231,7 +240,7 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
               </span>
             </div>
           )}
-          {info.diapo.url && info.diapo.total > 0 && (
+          {!info.copieMontree && info.diapo.url && info.diapo.total > 0 && (
             <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2.5 py-1 font-mono text-[11px]">
               {info.diapo.index + 1} / {info.diapo.total}
             </span>

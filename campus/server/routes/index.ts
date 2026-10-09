@@ -8,6 +8,7 @@ import { enregistrerMediatheque } from "./mediatheque";
 import { enregistrerLive } from "./live";
 import { enregistrerRessourcesSeance } from "./ressources-seance";
 import { enregistrerEvaluations } from "./evaluations";
+import { enregistrerCopiesDirect } from "./copies-direct";
 import { enregistrerMessages } from "./messages";
 import { enregistrerAnnonces } from "./annonces";
 import { enregistrerAgenda } from "./agenda";
@@ -56,6 +57,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerRessourcesSeance(app);
   enregistrerInvite(app);
   enregistrerEvaluations(app);
+  enregistrerCopiesDirect(app); // devoirs et copies dans le Studio, copie montrée à la classe
   enregistrerMessages(app);
   enregistrerAnnonces(app);
   enregistrerAgenda(app);

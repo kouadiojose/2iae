@@ -53,7 +53,52 @@ export type TypeRessource = (typeof TYPES_RESSOURCE)[number];
  * à l'instant `horodatage` (millisecondes, horloge du serveur) ; en lecture,
  * chacun avance depuis : position + (maintenant − horodatage).
  */
-export type ProjectionVideo = { ressourceId: number; lecture: boolean; position: number; horodatage: number };
+export type ProjectionVideo = { genre?: "video"; ressourceId: number; lecture: boolean; position: number; horodatage: number };
+
+/** Partie de la page d'une copie agrandie dans les salles (zoom du formateur). */
+export const ZONES_COPIE = ["page", "haut", "milieu", "bas"] as const;
+export type ZoneCopie = (typeof ZONES_COPIE)[number];
+export type RotationCopie = 0 | 90 | 180 | 270;
+
+/**
+ * Page d'une copie d'étudiant (ou du corrigé) montrée à la classe à la place de la diapo, pendant le direct.
+ * Lue par le serveur seul : jamais envoyée telle quelle (la classe reçoit CopieProjeteeDto, sans renduId).
+ */
+export type ProjectionCopie = {
+  genre: "copie";
+  source: "copie" | "corrige";
+  devoirId: number;
+  /** null : le corrigé. */
+  renduId: number | null;
+  /** Version montrée : renduLe (ISO) de la copie, ou version du corrigé. */
+  version: string;
+  /** « t2 », « f418 », « f418p3 », « c1 » : jamais envoyée à la classe. */
+  page: string;
+  /** 1..total */
+  numero: number;
+  total: number;
+  contenu: "image" | "texte" | "markdown";
+  /** 24 caractères hexadécimaux, neuve à chaque page ou haut caché : l'adresse de l'image projetée. */
+  cle: string;
+  zone: ZoneCopie;
+  rotation: RotationCopie;
+  nomVisible: boolean;
+  enteteMasque: boolean;
+  enteteDisponible: boolean;
+  /** « Copie d'un étudiant », figée au moment de projeter. */
+  etiquette: string;
+  devoirTitre: string;
+  /** Utilisateur qui a projeté. */
+  par: number;
+  /** Millisecondes : début de cette copie à l'écran (durée du bilan). */
+  depuis: number;
+  /** Millisecondes : dernier changement. */
+  horodatage: number;
+};
+
+/** Ce que montre la séance à la place de la diapo : une vidéo, ou la page d'une copie. Une ligne sans « genre » vaut vidéo. */
+export type ProjectionSeance = ProjectionVideo | ProjectionCopie;
+export const estProjectionCopie = (p: ProjectionSeance | null | undefined): p is ProjectionCopie => p?.genre === "copie";
 
 export const seances = campusSchema.table(
   "seances",
@@ -88,8 +133,8 @@ export const seances = campusSchema.table(
     diapos: jsonb("diapos").$type<number[]>().notNull().default([]),
     diapoCourante: integer("diapo_courante").notNull().default(0),
     disposition: text("disposition").$type<DispositionScene>().notNull().default("diapo"),
-    /** Vidéo projetée en ce moment à la place de la diapo (null : pas de projection). */
-    projection: jsonb("projection").$type<ProjectionVideo>(),
+    /** Vidéo ou page de copie projetée en ce moment à la place de la diapo (null : pas de projection). */
+    projection: jsonb("projection").$type<ProjectionSeance>(),
     chatMode: text("chat_mode").$type<ModeChat>().notNull().default("tous"),
     proposeSurSite: boolean("propose_sur_site").notNull().default(false),
     publierSurSite: boolean("publier_sur_site").notNull().default(false),

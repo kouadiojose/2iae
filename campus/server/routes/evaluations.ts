@@ -40,6 +40,7 @@ import { planifier } from "../taches";
 import { iaDisponible, demanderJson, verifierQuota } from "../ia";
 import { iaDuSoir } from "../ia-soir";
 import { apercuCopie, lireCopie } from "../copies-pages";
+import { arreterCopieDuRendu } from "../projection-copies";
 import { SCHEMA_CORRECTION, SYSTEME_CORRECTION, contexteCorrection, grilleDe, messageCopie, noteDu, rapprocherCriteres, type CorrectionIa } from "../correction-ia";
 import {
   copiePriseEnMain,
@@ -61,6 +62,7 @@ import {
   recuPour,
   corrigerTentative,
   echeance,
+  peutEncoreRendre,
   finEcheance,
   finPrevuePour,
   finDe,
@@ -154,13 +156,13 @@ const selon = (u: Pick<Utilisateur, "role">, tu: string, vous: string) => (u.rol
 const ouvert = (d: Pick<Devoir, "ouvertureLe">, maintenant = new Date()) => !d.ouvertureLe || d.ouvertureLe.getTime() <= maintenant.getTime();
 
 /** La vie scolaire d'un campus n'agit que sur les étudiants de son site. */
-function dansPerimetre(u: Utilisateur, etudiant: Pick<Utilisateur, "siteId">): boolean {
+export function dansPerimetre(u: Utilisateur, etudiant: Pick<Utilisateur, "siteId">): boolean {
   const p = perimetreSites(u);
   return !p || (etudiant.siteId !== null && p.includes(etudiant.siteId));
 }
 
 /** Inscrits d'un cours que cette personne peut voir (tous pour le formateur, son campus pour la vie scolaire). */
-async function inscritsVisibles(u: Utilisateur, coursId: number): Promise<Utilisateur[]> {
+export async function inscritsVisibles(u: Utilisateur, coursId: number): Promise<Utilisateur[]> {
   const tous = await etudiantsDuCours(coursId);
   return tous.filter((e) => dansPerimetre(u, e));
 }
@@ -246,7 +248,7 @@ async function devoirEnseigne(u: Utilisateur, devoirId: number): Promise<{ d: De
 }
 
 /** Charge une copie que la personne peut corriger (formateur du cours, équipe de son campus) ; lecture seule : suivi par l'équipe. */
-async function renduEnseigne(u: Utilisateur, renduId: number, lecture = false) {
+export async function renduEnseigne(u: Utilisateur, renduId: number, lecture = false) {
   const [ligne] = await db
     .select({ r: rendus, d: devoirs, e: utilisateurs })
     .from(rendus)
@@ -787,9 +789,7 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
 
   const [rAJour] = d.type === "quiz" ? await db.select().from(rendus).where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, u.id))) : [r];
   const statut = statutEtudiant(d, rAJour, quizEnCours, maintenant);
-  const avantEcheance = maintenant.getTime() <= echeance(d).getTime();
-  const peutRendre =
-    d.type === "depot" && ouvert(d, maintenant) && rAJour?.statut !== "corrige" && (avantEcheance || (d.accepteRetard && rAJour?.statut !== "rendu"));
+  const peutRendre = peutEncoreRendre(d, rAJour?.statut, maintenant);
   const publie = rAJour?.statut === "corrige";
 
   // Correction par le campus (dépôt) : son état tant que la note n'est pas publiée, la relecture, puis le corrigé.
@@ -1026,6 +1026,8 @@ async function enregistrerRendu(
   const remplace = avant?.statut === "rendu";
   // Correction par le campus : la nouvelle copie repart en file, la demande gardée pour l'ancienne est supprimée.
   if (remplace) await copieRemplacee(r.id);
+  // Copie projetée en direct à ce moment : l'ancienne version quitte l'écran partout (projection-copies.ts).
+  if (remplace) await arreterCopieDuRendu(r.id);
   await tracer(auteur, auteur.id === etudiantId ? (remplace ? "rendu_remplace" : "rendu") : "rendu_pour", {
     devoirId: d.id,
     renduId: r.id,

@@ -13,6 +13,9 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { SceneVisioCampus, LecteurRadio, CadreDaily, type EtatVisio, type RoleCadre } from "@/modules/visio";
 import type { EtatDirectDto, SeanceDetailDto, RejoindreDto, RejoindreVisioDto, ModeSuivi, RoleSeance } from "@shared/schema";
 import { CarteVideoProjetee, VideoProjetee } from "./ressources";
+import { CopieProjetee, dispositionAvecCopie } from "./copie-projetee";
+import { useTextes } from "@/lib/textes";
+import { t as textesCopies } from "@shared/textes/copies-direct";
 
 export type PropsScene = {
   seance: SeanceDetailDto;
@@ -41,6 +44,8 @@ export type PropsScene = {
   videoMasquee?: boolean;
   /** Écran de salle : bouton « masquer la caméra » au-dessus de la vignette. */
   onVideoMasquee?: (masquee: boolean) => void;
+  /** Formateur (Daily) : ce poste partage (ou cesse de partager) son écran dans la visio. */
+  onPartageLocal?: (actif: boolean) => void;
   className?: string;
 };
 
@@ -92,10 +97,19 @@ export function Scene(p: PropsScene) {
   // en grand (diapo en vignette). Le Studio du formateur montre la même mise en page à sa façon. La visio
   // reste le MÊME élément dans toutes les mises en page : elle ne se recharge jamais.
   const visio = seance.fournisseur === "daily" || seance.fournisseur === "campus";
-  // Vidéo projetée par le formateur : elle prend la place de la diapo, dans la même mise en page.
-  const projection = etat.projection ?? null;
-  const avecDiapo = visio && !planB && !libre && role !== "formateur" && (Boolean(etat.diapo.url) || Boolean(projection)) && !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio);
-  const disposition = etat.diapo.disposition ?? "diapo";
+  // Vidéo projetée ou copie d'étudiant montrée par le formateur : elle prend la place de la diapo, dans la même
+  // mise en page. Une copie passe devant un partage d'écran ; en « caméras en grand », elle reste en grand (en
+  // vignette, une page serait illisible).
+  const copie = etat.copie ?? null;
+  const projection = copie ? null : (etat.projection ?? null);
+  const avecDiapo =
+    visio &&
+    !planB &&
+    !libre &&
+    role !== "formateur" &&
+    (Boolean(etat.diapo.url) || Boolean(projection) || Boolean(copie)) &&
+    (Boolean(copie) || !(ecranPartage && seance.fournisseur === "daily" && !secoursRadio));
+  const disposition = copie ? dispositionAvecCopie(etat) : (etat.diapo.disposition ?? "diapo");
   const vignette = p.grand ? "bottom-4 right-4 w-[30%] min-w-[260px]" : "bottom-2 right-2 w-[38%] min-w-[140px]";
   // Téléphone en vidéo (écran de salle compris) : une vignette sur la diapo ne se voit pas. La vidéo passe
   // au-dessus, en pleine largeur, et la diapo dessous (seules les classes changent : la visio ne se recharge pas).
@@ -126,7 +140,13 @@ export function Scene(p: PropsScene) {
                 // Au-dessus de tout ce que la visio pose sur son image (voiles, « Activer le son »).
                 disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
               );
-          return projection ? <VideoProjetee projection={projection} className={classe} /> : <DiapoCourante etat={etat} discrete={disposition === "cameras" && !empile} className={classe} />;
+          return copie ? (
+            <CopieProjetee copie={copie} grand={grand} className={classe} />
+          ) : projection ? (
+            <VideoProjetee projection={projection} className={classe} />
+          ) : (
+            <DiapoCourante etat={etat} discrete={disposition === "cameras" && !empile} className={classe} />
+          );
         })()}
       {/* Même structure dans toutes les mises en page (cadre > contenu) : la visio ne se recharge jamais. */}
       <div
@@ -243,7 +263,9 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
         </div>
       )}
       <div className="relative aspect-video">
-        {etat.projection ? (
+        {etat.copie ? (
+          <CopieProjetee copie={etat.copie} className="h-full w-full" />
+        ) : etat.projection ? (
           <CarteVideoProjetee projection={etat.projection} />
         ) : (
         <DiapoCourante
@@ -278,13 +300,20 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
 }
 
 function SceneCompagnon({ seance, etat }: PropsScene) {
+  const tx = useTextes(textesCopies);
   return (
     <div className="flex flex-col">
       <div className="bg-orange px-4 py-2 text-center text-sm font-bold text-encre">
         En salle{seance.monSite ? ` à ${seance.monSite.nomCourt}` : ""} · son coupé, suis sur l'écran de la salle
       </div>
       <div className="relative aspect-video">
-        {etat.projection ? (
+        {etat.copie ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-5 text-center text-white">
+            <Presentation className="h-9 w-9 text-orange" />
+            <p className="text-[15px] font-bold">{tx("classe.compagnon")}</p>
+            <p className="text-sm text-nuit-doux">{etat.copie.devoirTitre}</p>
+          </div>
+        ) : etat.projection ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-5 text-center text-white">
             <Presentation className="h-9 w-9 text-orange" />
             <p className="text-[15px] font-bold">Vidéo projetée sur l'écran de la salle</p>
@@ -314,6 +343,13 @@ function ScenePlanB({ lien, grand }: { lien: string; grand?: boolean }) {
 }
 
 function SceneDemo({ seance, etat }: PropsScene) {
+  if (etat.copie) {
+    return (
+      <div className="relative h-full">
+        <CopieProjetee copie={etat.copie} />
+      </div>
+    );
+  }
   return (
     <div className="relative h-full">
       <DiapoCourante
@@ -439,9 +475,27 @@ function SceneDaily({
   onSecoursRadio,
   onMicroDaily,
   onPartageEcran,
+  onPartageLocal,
 }: PropsScene & { onSecoursRadio: (raison: RaisonSecours) => void; onPartageEcran?: (actif: boolean) => void }) {
   const [call, setCall] = useState<DailyCall | null>(null);
   const [connecte, setConnecte] = useState(false);
+
+  // Formateur : son propre partage d'écran. Le Studio masque alors les noms de la vue « Devoirs » et arrête la
+  // copie montrée (le partage passe en grand chez tout le monde, et dans l'enregistrement).
+  useEffect(() => {
+    if (!call || role !== "formateur" || !onPartageLocal) return;
+    const actif = () => ["playable", "sendable", "loading"].includes(call.participants().local?.tracks?.screenVideo?.state ?? "off");
+    const debut = () => onPartageLocal(true);
+    const fin = () => onPartageLocal(false);
+    onPartageLocal(actif());
+    call.on("local-screen-share-started", debut);
+    call.on("local-screen-share-stopped", fin);
+    return () => {
+      call.off("local-screen-share-started", debut);
+      call.off("local-screen-share-stopped", fin);
+      onPartageLocal(false);
+    };
+  }, [call, role, onPartageLocal]);
 
   // Quelqu'un partage son écran dans la visio : la scène le montre en grand (la diapo s'efface le temps du partage).
   useEffect(() => {
@@ -564,7 +618,8 @@ function SceneDaily({
 
   // Écran de salle, diapo en grand : la vignette ne montre que le formateur, sans l'image de la salle
   // elle-même ni la barre des participants. Caméras en grand ou côte à côte : tout revient.
-  const vignetteSalle = role === "salle" && Boolean(etat.diapo.url) && !etat.diapo.masquee && (etat.diapo.disposition ?? "diapo") === "diapo";
+  const vignetteSalle =
+    role === "salle" && (etat.copie ? dispositionAvecCopie(etat) === "diapo" : Boolean(etat.diapo.url) && !etat.diapo.masquee && (etat.diapo.disposition ?? "diapo") === "diapo");
   useEffect(() => {
     if (!call || !connecte || role !== "salle") return;
     try {

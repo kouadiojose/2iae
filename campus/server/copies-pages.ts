@@ -636,6 +636,8 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
 export const IMAGE_DIRECT_MAX_OCTETS = 3 * 1024 * 1024;
 /** Part de la hauteur cachée en haut de chaque page (l'étudiant y écrit son nom, Word y répète son en-tête). */
 export const PART_ENTETE = 0.12;
+/** Part cachée en bas de chaque page, avec le haut (un nom ou une signature en pied de page ; José, 9 octobre). */
+export const PART_PIED = 0.08;
 /**
  * Texte par page en direct (texte saisi, fichier .txt) : assez court pour se lire de loin dans une salle, en
  * grands caractères, sans passer sous la vignette de la caméra (le cadre ajuste aussi la taille des lettres).
@@ -1011,17 +1013,18 @@ export async function inventaireFichier(f: Fichier): Promise<InventaireFichier> 
 export type ImagePage = { mime: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; octets: Buffer; rotation: RotationCopie };
 
 /**
- * Recadrage qui retire le haut de la page TELLE QUE LA CLASSE LA VERRA : l'image est tournée ensuite par le
- * navigateur (« Tourner », sens horaire), le bord coupé est donc celui qui arrivera en haut. 0 : le haut ;
- * 90 : le bord gauche ; 180 : le bas ; 270 : le bord droit. En pixels de l'image rendue (largeur l, hauteur h).
+ * Recadrage qui retire le haut et le bas de la page TELLE QUE LA CLASSE LA VERRA : l'image est tournée ensuite
+ * par le navigateur (« Tourner », sens horaire), le bord coupé de PART_ENTETE est donc celui qui arrivera en haut,
+ * et le bord opposé perd PART_PIED. Bord du haut : 0 : le haut ; 90 : le bord gauche ; 180 : le bas ; 270 : le bord
+ * droit. En pixels de l'image rendue (largeur l, hauteur h).
  */
 export function recadrageSansEntete(l: number, h: number, rotation: RotationCopie): { x: number; y: number; largeur: number; hauteur: number } {
   if (rotation === 90 || rotation === 270) {
-    const x = Math.round(l * PART_ENTETE);
-    return rotation === 90 ? { x, y: 0, largeur: l - x, hauteur: h } : { x: 0, y: 0, largeur: l - x, hauteur: h };
+    const haut = Math.round(l * PART_ENTETE), pied = Math.round(l * PART_PIED);
+    return { x: rotation === 90 ? haut : pied, y: 0, largeur: l - haut - pied, hauteur: h };
   }
-  const y = Math.round(h * PART_ENTETE);
-  return rotation === 180 ? { x: 0, y: 0, largeur: l, hauteur: h - y } : { x: 0, y, largeur: l, hauteur: h - y };
+  const haut = Math.round(h * PART_ENTETE), pied = Math.round(h * PART_PIED);
+  return { x: 0, y: rotation === 180 ? pied : haut, largeur: l, hauteur: h - haut - pied };
 }
 
 /** Rend une page d'un PDF (1600 px), entière ou sans le bord qui sera en haut une fois la page tournée. */

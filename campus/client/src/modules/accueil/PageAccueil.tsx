@@ -35,6 +35,7 @@ import { ObjectifDuJour } from "@/modules/objectif/ObjectifDuJour";
 import { CarteRappels } from "@/modules/rappels/CarteRappels";
 import { BandeauCoupe } from "@/modules/progression/BandeauCoupe";
 import { PastilleSemaine } from "@/modules/progression/PastilleSemaine";
+import { CarteVideoCampus } from "./CarteVideoCampus";
 import type { AnnonceResume, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
 import { libelleSuivi, type AccueilEtudiantSuivi, type CoursAccueilSuivi, type ObjectifDuJourDto } from "@shared/engagement/objectif";
 import { t as textesObjectif } from "@shared/textes/objectif";
@@ -122,6 +123,9 @@ export default function PageAccueil() {
           <Ensuite elements={ensuite} />
         </div>
         <div className="flex min-w-0 flex-col gap-7">
+          <LimiteSilencieuse nom="CarteVideoCampus">
+            <CarteVideoCampus />
+          </LimiteSilencieuse>
           <LimiteSilencieuse nom="BandeauCoupe">
             <BandeauCoupe />
           </LimiteSilencieuse>

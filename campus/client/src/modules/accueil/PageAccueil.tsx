@@ -104,6 +104,9 @@ export default function PageAccueil() {
         </div>
       </header>
 
+      {/* Annonce importante (ou épinglée) : tout en haut, avant le reste (demande de José, 9 octobre). */}
+      {data.annonceImportante && <AnnonceImportante annonce={data.annonceImportante} />}
+
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
         <div className="flex min-w-0 flex-col gap-7">
           {objectifEnGrand ? (
@@ -129,8 +132,7 @@ export default function PageAccueil() {
           <LimiteSilencieuse nom="BandeauCoupe">
             <BandeauCoupe />
           </LimiteSilencieuse>
-          {data.annonceImportante && <AnnonceImportante annonce={data.annonceImportante} />}
-          <LienAnnonces nonLues={data.annoncesNonLues} serre={Boolean(data.annonceImportante)} />
+          <LienAnnonces nonLues={data.annoncesNonLues} />
           {/* Ses cours d'abord, puis les deux bibliothèques (ressources à explorer quand on a le temps). */}
           <MesCours cours={data.cours} />
           <LienBibliotheque />
@@ -317,20 +319,20 @@ function AnnonceImportante({ annonce }: { annonce: AnnonceResume }) {
       href={`/annonces/${annonce.id}`}
       className={cn(
         "group flex flex-col gap-2 rounded-2xl p-5 text-encre no-underline hover:text-encre",
-        annonce.importante && !annonce.lue ? "border-[1.5px] border-orange bg-orange-pale" : "border border-ligne bg-creme",
+        annonce.importante ? "border-2 border-[#D92D20] bg-[#FEF3F2]" : "border border-ligne bg-creme",
       )}
     >
       <span className="flex flex-wrap items-center gap-2">
-        <Megaphone className="h-4 w-4 text-orange-fonce" aria-hidden />
-        <span className="etiquette">{annonce.importante ? "Annonce importante" : "Annonce épinglée"}</span>
-        {!annonce.lue && <Badge ton="orange">Nouveau</Badge>}
+        <Megaphone className={cn("h-4 w-4", annonce.importante ? "text-[#B42318]" : "text-orange-fonce")} aria-hidden />
+        <span className={cn("etiquette", annonce.importante && "!text-[#B42318]")}>{annonce.importante ? "Annonce importante" : "Annonce épinglée"}</span>
+        {!annonce.lue && (annonce.importante ? <span className="rounded-full bg-[#D92D20] px-2.5 py-0.5 text-xs font-bold text-white">Nouveau</span> : <Badge ton="orange">Nouveau</Badge>)}
       </span>
       <span className="text-lg font-extrabold leading-snug">{annonce.titre}</span>
       <span className="line-clamp-3 text-[15px] leading-relaxed text-texte-doux">{annonce.extrait}</span>
       <span className="font-mono text-xs text-texte-gris">
         {annonce.auteur} · {relatif(annonce.publieeLe, maintenant)}
       </span>
-      <span className="mt-1 flex items-center gap-1 text-[15px] font-bold text-orange-fonce group-hover:text-encre">
+      <span className={cn("mt-1 flex items-center gap-1 text-[15px] font-bold group-hover:text-encre", annonce.importante ? "text-[#B42318]" : "text-orange-fonce")}>
         Lire l'annonce <ArrowRight className="h-4 w-4" aria-hidden />
       </span>
     </Link>
@@ -338,9 +340,9 @@ function AnnonceImportante({ annonce }: { annonce: AnnonceResume }) {
 }
 
 /** Accès à toutes les annonces (elles n'ont pas d'onglet : on y arrive d'ici ou par la cloche). */
-function LienAnnonces({ nonLues, serre }: { nonLues: number; serre: boolean }) {
+function LienAnnonces({ nonLues }: { nonLues: number }) {
   return (
-    <Link href="/annonces" className={cn(serre && "-mt-4", "flex min-h-[56px] items-center gap-3 rounded-2xl border border-ligne px-4 py-3 text-encre no-underline hover:border-orange hover:text-encre")}>
+    <Link href="/annonces" className="flex min-h-[56px] items-center gap-3 rounded-2xl border border-ligne px-4 py-3 text-encre no-underline hover:border-orange hover:text-encre">
       <Megaphone className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="font-bold">Toutes les annonces</span>

@@ -19,7 +19,7 @@ import { canal, seanceAnimee, seanceDuReplay } from "./live";
 import { etudiantsDuCours } from "../acces";
 import { notifier } from "../notifications";
 import { planifier } from "../taches";
-import { finDeCopie, projectionChangee } from "../projection-copies";
+import { finDeCopie, remplacerProjection } from "../projection-copies";
 import { cours, fichiers, ressourcesSeances, seances, estProjectionCopie, type ProjectionDto, type ProjectionVideo, type RessourceSeance, type RessourceSeanceDto, type Seance } from "@shared/schema";
 
 /** Au-delà, la liste ne se lit plus : 40 ressources par séance. */
@@ -336,10 +336,10 @@ export function enregistrerRessourcesSeance(app: Express) {
           horodatage: Date.now(),
         };
       }
-      // Une copie en cours de préparation ne s'écrira pas par-dessus ce geste.
-      projectionChangee(s.id);
-      await db.update(seances).set({ projection }).where(eq(seances.id, s.id));
-      if (estProjectionCopie(s.projection)) await finDeCopie(s.id, s.projection, d.ressourceId === null ? "diapos" : "video");
+      // Une copie en cours de préparation ne s'écrira pas par-dessus ce geste ; la projection d'avant est lue
+      // dans la même transaction que l'écriture : une copie écrite juste avant est bien retirée (et annoncée).
+      const ancienne = await remplacerProjection(s.id, projection);
+      if (estProjectionCopie(ancienne)) await finDeCopie(s.id, ancienne, d.ressourceId === null ? "diapos" : "video");
       const dto = projection ? await projectionDe({ id: s.id, projection }) : null;
       publier(canal(s.id), "projection", dto);
       res.json(dto);

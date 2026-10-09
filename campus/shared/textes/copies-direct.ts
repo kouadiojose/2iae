@@ -7,7 +7,7 @@ import { creerTextes } from "./index";
 export const t = creerTextes({
   // ── Bouton d'en-tête du Studio ──
   "bouton": "Devoirs",
-  "bouton.actif": "Copie montrée",
+  "bouton.actif": "Devoirs · copie montrée",
   "bouton.aide": "Voir les devoirs et les copies du cours, et en montrer une à toute la classe, sans quitter le direct.",
 
   // ── Vue « Devoirs et copies » ──
@@ -69,7 +69,7 @@ export const t = creerTextes({
   "apercu.nom": "Montrer le prénom à la classe",
   "apercu.nom.aide": "La classe lira « {etiquette} ».",
   "apercu.entete": "Cacher le haut de la page",
-  "apercu.entete.aide": "L'étudiant y écrit souvent son nom. Décochez si la consigne y figure.",
+  "apercu.entete.aide": "L'étudiant y écrit souvent son nom. Désactivez si la consigne y figure.",
   "apercu.entete.indispo": "Vérifiez que le nom de l'étudiant n'est pas écrit sur la page avant de la montrer.",
   "apercu.preparation": "Préparation de la copie…",
   "apercu.preparationDoc": "Préparation du document (jusqu'à une minute)…",
@@ -81,6 +81,9 @@ export const t = creerTextes({
   "apercu.projeter.aide": "La page s'affiche à la place de la diapo dans les cinq salles et chez les étudiants en ligne.",
   "apercu.envoi": "Envoi à la classe…",
   "apercu.dejaProjetee": "La classe voit déjà cette page.",
+  "apercu.zoom": "Zoom de l'aperçu",
+  "apercu.lire": "Lire en grand",
+  "apercu.preparationProjeter": "Le document se prépare : ses pages s'ajoutent à la fin de la liste dès qu'il est prêt.",
 
   // ── Confirmation : devoir encore ouvert ──
   "ouvert.titre": "Des étudiants peuvent encore rendre ce devoir",
@@ -128,12 +131,17 @@ export const t = creerTextes({
   "toast.retourCameras": "Les salles revoient les caméras.",
   "toast.remplacee": "L'étudiant vient de remplacer sa copie : elle n'est plus montrée. Rouvrez « Devoirs » pour montrer la nouvelle version.",
   "toast.partage": "Votre partage d'écran passe en grand : la copie n'est plus montrée.",
+  "toast.corrigeModifie": "Le corrigé vient d'être modifié : il n'est plus montré. Rouvrez « Devoirs » pour montrer la nouvelle version.",
 
   // ── Écrans de la classe ──
   "classe.anonyme": "Copie d'un étudiant",
   "classe.nom": "Copie {de}{prenom} {initiale}",
   "classe.corrige": "Corrigé du devoir",
   "classe.legende": "{etiquette} · {devoir} · page {n} / {total}",
+  "classe.legendeCourte": "{etiquette} · p. {n}/{total}",
+  "classe.agrandir": "Agrandir",
+  "lecteur.fermer": "Fermer",
+  "lecteur.aide": { vous: "Faites défiler pour lire toute la page.", tu: "Fais défiler pour lire toute la page." },
   "classe.chargement": "La copie arrive…",
   "classe.compagnon": "Regarde l'écran de la salle : le formateur montre une copie.",
   "invite.carton": "Le formateur montre une copie d'étudiant à la classe. Elle reste réservée aux étudiants du cours.",
@@ -149,6 +157,9 @@ export const t = creerTextes({
   "bilan.corrige": "Corrigé du devoir « {devoir} » montré à la classe",
   "bilan.fin": "Fin de la copie montrée ({duree})",
   "bilan.remplacee": "Copie retirée de l'écran : l'étudiant l'a remplacée",
+  "bilan.corrigeModifie": "Corrigé retiré de l'écran : il a été modifié",
+  "bilan.nomAffiche": "Prénom de l'étudiant affiché à la classe (devoir « {devoir} »)",
+  "bilan.nomMasque": "Prénom de l'étudiant de nouveau masqué (devoir « {devoir} »)",
   "duree.secondes": "{n} s",
   "duree.minutes": "{n} min",
 
@@ -166,10 +177,13 @@ export const t = creerTextes({
   "erreur.changee": "La projection a changé pendant la préparation : réessayez.",
   "erreur.ouvert": "Des étudiants peuvent encore rendre ce devoir : confirmez avant de montrer une copie.",
   "erreur.plusMontree": "Cette copie n'est plus montrée à la classe.",
+  "erreur.copieChangee": "L'étudiant vient de remplacer sa copie : regardez la nouvelle version avant de la montrer.",
+  "erreur.copieRemplacee": "L'étudiant vient de remplacer sa copie : elle n'est plus montrée. Rouvrez « Devoirs » pour montrer la nouvelle version.",
+  "erreur.corrigeModifie": "Le corrigé vient d'être modifié : il n'est plus montré. Rouvrez « Devoirs » pour montrer la nouvelle version.",
 
   // ── Corrigé (lot 5) ──
   "corrige.titre": "Corrigé du devoir",
-  "corrige.projeter": "Projeter le corrigé",
+  "corrige.projeter": "Voir le corrigé",
   "corrige.montrable": "Peut être montré à la classe",
   "corrige.absent": "Pas encore de corrigé pour ce devoir.",
   "corrige.nonValide": "Le corrigé n'est pas encore validé : il ne se montre pas à la classe.",
@@ -178,3 +192,12 @@ export const t = creerTextes({
   "corrige.notes.une": "Encore une copie à noter ou à publier : le corrigé se montre une fois toutes les notes publiées.",
   "corrige.notes": "Encore {n} copies à noter ou à publier : le corrigé se montre une fois toutes les notes publiées.",
 });
+
+/**
+ * « d' » devant une voyelle, un h ou un « y » suivi d'une consonne (Yves), sinon « de » : « Copie d'Awa K. »,
+ * « Copie de Yao K. », « Copie d'Hervé T. ». Même règle sur le serveur et dans le Studio.
+ */
+export function deDevant(prenom: string): string {
+  const s = prenom.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /^[aeiouh]/.test(s) || /^y[^aeiouy]/.test(s) ? "d'" : "de ";
+}

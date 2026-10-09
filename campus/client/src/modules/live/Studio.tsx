@@ -3,7 +3,7 @@
 // sondages éclair et question éclair IA, baromètre, présences par salle,
 // chrono et plan, diapos (← →), sous-titres du navigateur, radio, Plan B.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Hand, Mic, MicOff, Play, Square, LifeBuoy, Ban, Sparkles, Captions, Radio, Plus, Trash2, Clock, Video, VideoOff, Check, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Hand, Mic, MicOff, Play, Square, LifeBuoy, Ban, Sparkles, Captions, Radio, Plus, Trash2, Clock, Video, VideoOff, Check, ExternalLink, Presentation } from "lucide-react";
 import { alleger, api, post, suppr } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
@@ -112,13 +112,18 @@ export default function Studio({ seance, observation = false }: { seance: Seance
     if (visite !== null && groupes && !groupeVisite) visiter(null);
   }, [visite, groupes, groupeVisite, visiter]);
 
-  // Ce poste partage son écran dans la visio : il passe en grand chez tout le monde, la copie s'arrête.
-  const copieAffichee = Boolean(etat?.copie);
+  // Ce poste COMMENCE à partager son écran dans la visio : le partage passe en grand chez tout le monde, la copie
+  // montrée s'arrête. Seul le début du partage compte : une copie projetée pendant un partage reste à l'écran
+  // (elle passe devant le partage dans les salles), et celle d'un autre animateur n'est pas retirée après coup.
+  const partageAvant = useRef(false);
   useEffect(() => {
-    if (!partageLocal || !copieAffichee || observation) return;
+    const commence = partageLocal && !partageAvant.current;
+    partageAvant.current = partageLocal;
+    if (!commence || observation) return;
+    if (!queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id))?.copie) return;
     void revenirAuxDiapos({ silencieux: true });
     toast(txCopies("toast.partage"), "info");
-  }, [partageLocal, copieAffichee]);
+  }, [partageLocal]);
 
   if (statut === "annulee" || statut === "terminee") return <FinDeSeance seance={{ ...seance, statut }} />;
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
@@ -158,6 +163,12 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                 )}
                 {enDirect && <BoutonAfficherEmargement seanceId={seance.id} etat={etat} />}
                 {enDirect && !groupes?.session && <BoutonGroupes onClick={() => setComposition(true)} />}
+                {/* Copie montrée : « Revenir aux diapos » en haut du Studio, visible sans défiler sur tous les écrans. */}
+                {etat.copie && !planB && (
+                  <Bouton variante="nuit-actif" icone={<Presentation className="h-4 w-4" />} onClick={() => void revenirAuxDiapos()}>
+                    {seance.diapos.length ? txCopies("copie.revenir") : txCopies("copie.arreter")}
+                  </Bouton>
+                )}
                 {seance.peutMontrerCopies && !planB && (
                   <BoutonDevoirs
                     actif={Boolean(etat.copie)}

@@ -69,11 +69,12 @@ export function usePilotageDiapos(seance: SeanceDetailDto) {
   const changer = useCallback(
     (delta: number) => {
       const etat = queryClient.getQueryData<EtatDirectDto>(cleDirect(seance.id));
-      if (etat?.copie) return allerPage(delta);
+      // Un animateur qui ne lit pas les copies (vie scolaire sans « notes ») : les flèches ramènent les diapos.
+      if (etat?.copie) return seance.peutMontrerCopies ? allerPage(delta) : void revenirAuxDiapos();
       const actuel = etat?.diapo;
       if (actuel?.total) void aller(actuel.index + delta);
     },
-    [seance.id, aller, allerPage],
+    [seance.id, seance.peutMontrerCopies, aller, allerPage, revenirAuxDiapos],
   );
 
   // Mise en page, identique pour tous : « seules » masque la diapo (caméras plein cadre) ;

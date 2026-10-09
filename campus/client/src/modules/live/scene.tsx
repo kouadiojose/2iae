@@ -141,7 +141,15 @@ export function Scene(p: PropsScene) {
                 disposition === "cameras" && cn("absolute z-30 aspect-video h-auto overflow-hidden rounded-xl border-2 border-orange shadow-2xl", vignette),
               );
           return copie ? (
-            <CopieProjetee copie={copie} grand={grand} className={classe} />
+            <CopieProjetee
+              copie={copie}
+              grand={grand}
+              className={classe}
+              // Diapo en grand : la vignette de la caméra est posée sur la copie, un texte la contourne.
+              vignette={!empile && disposition === "diapo" && !diapoSeule ? { grand: Boolean(p.grand), bouton: Boolean(p.onVideoMasquee) } : null}
+              // Étudiants (et équipe) : un toucher ouvre la page en grand, lisible au téléphone.
+              agrandissable={role === "etudiant" || role === "equipe"}
+            />
           ) : projection ? (
             <VideoProjetee projection={projection} className={classe} />
           ) : (
@@ -264,7 +272,7 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
       )}
       <div className="relative aspect-video">
         {etat.copie ? (
-          <CopieProjetee copie={etat.copie} className="h-full w-full" />
+          <CopieProjetee copie={etat.copie} className="h-full w-full" agrandissable={role === "etudiant"} />
         ) : etat.projection ? (
           <CarteVideoProjetee projection={etat.projection} />
         ) : (

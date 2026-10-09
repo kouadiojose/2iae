@@ -222,13 +222,13 @@ async function rendrePages(
   derniere: number,
   budget: Budget,
   reduire = true,
-  recadrage?: { y: number; largeur: number; hauteur: number },
+  recadrage?: { x: number; y: number; largeur: number; hauteur: number },
 ): Promise<Buffer[]> {
   const delai = budget(120_000);
   if (!delai) throw new Error("budget de conversion épuisé");
   const sortie = await fs.promises.mkdtemp(path.join(dossier, `pages-${premiere}-`));
   const taille = reduire ? ["-scale-to", String(LARGEUR_PAGE_IA)] : ["-r", "72"];
-  const coupe = recadrage ? ["-x", "0", "-y", String(recadrage.y), "-W", String(recadrage.largeur), "-H", String(recadrage.hauteur)] : [];
+  const coupe = recadrage ? ["-x", String(recadrage.x), "-y", String(recadrage.y), "-W", String(recadrage.largeur), "-H", String(recadrage.hauteur)] : [];
   await executer("pdftoppm", ["-jpeg", "-jpegopt", `quality=${QUALITE_JPEG}`, ...taille, ...coupe, "-f", String(premiere), "-l", String(derniere), pdf, path.join(sortie, "p")], {
     timeout: delai,
     env: environnementOutil(dossier),
@@ -634,8 +634,13 @@ export async function lireCopie(texteSaisi: string, liste: Fichier[]): Promise<C
 
 /** Photo, PNG, WebP ou GIF servis sans pdftoppm : au-delà, « trop lourd ». */
 export const IMAGE_DIRECT_MAX_OCTETS = 3 * 1024 * 1024;
-/** Part de la hauteur cachée en haut de la première page d'un fichier (l'étudiant y écrit son nom). */
+/** Part de la hauteur cachée en haut de chaque page (l'étudiant y écrit son nom, Word y répète son en-tête). */
 export const PART_ENTETE = 0.12;
+/**
+ * Texte par page en direct (texte saisi, fichier .txt) : assez court pour se lire de loin dans une salle, en
+ * grands caractères, sans passer sous la vignette de la caméra (le cadre ajuste aussi la taille des lettres).
+ */
+export const TEXTE_PAR_PAGE = 380;
 /** Délai d'un rendu du direct (pdftoppm, heif-convert, pdfinfo). */
 const DELAI_RENDU_DIRECT_MS = 30_000;
 /** Échec d'une préparation : on ne la relance pas avant 10 minutes. */
@@ -761,7 +766,7 @@ export function pngSansMetadonnees(b: Buffer): Buffer {
  * Coupe un texte en pages d'au plus « max » caractères : aux paragraphes (lignes vides), puis aux fins de
  * phrase, puis au dernier espace ; jamais au milieu d'un mot (sauf un « mot » plus long qu'une page).
  */
-export function decouperTexte(texte: string, max = 700): string[] {
+export function decouperTexte(texte: string, max = TEXTE_PAR_PAGE): string[] {
   const propre = texte.replace(/\r\n?/g, "\n").replace(/\0/g, "").trim();
   if (!propre) return [];
   const pages: string[] = [];
@@ -891,15 +896,30 @@ export async function pagesDuFichierPdf(f: Fichier): Promise<number | null> {
   return n;
 }
 
-// Contenus de photos lus pour l'inventaire (orientation), gardés 10 minutes : le rendu les reprend.
+// Contenus de photos lus pour l'inventaire (orientation), gardés 10 minutes : le rendu les reprend. Bornés en
+// octets (les plus anciens partent d'abord) : la mémoire du serveur ne gonfle pas pendant un long direct.
 const contenusLus = new Map<number, { le: number; octets: Buffer }>();
+const CONTENUS_LUS_MAX_OCTETS = 24 * 1024 * 1024;
+let octetsLus = 0;
 async function contenuGarde(f: Fichier): Promise<Buffer | null> {
   const g = contenusLus.get(f.id);
   if (g && Date.now() - g.le < 10 * 60_000) return g.octets;
+  if (g) {
+    contenusLus.delete(f.id);
+    octetsLus -= g.octets.length;
+  }
   const octets = await lireContenuFichier(f);
   if (octets && octets.length <= IMAGE_DIRECT_MAX_OCTETS) {
-    if (contenusLus.size > 60) contenusLus.clear();
+    const deja = contenusLus.get(f.id);
+    if (deja) octetsLus -= deja.octets.length;
     contenusLus.set(f.id, { le: Date.now(), octets });
+    octetsLus += octets.length;
+    for (const [id, e] of contenusLus) {
+      if (octetsLus <= CONTENUS_LUS_MAX_OCTETS) break;
+      if (id === f.id) continue;
+      contenusLus.delete(id);
+      octetsLus -= e.octets.length;
+    }
   }
   return octets;
 }
@@ -968,7 +988,7 @@ export async function inventaireFichier(f: Fichier): Promise<InventaireFichier> 
   if (genre === "texte") {
     const contenu = await lireContenuFichier(f);
     if (!contenu) return non("indisponible");
-    return { fichierId: f.id, genre: "texte", morceaux: decouperTexte(contenu.toString("utf8"), 700) };
+    return { fichierId: f.id, genre: "texte", morceaux: decouperTexte(contenu.toString("utf8"), TEXTE_PAR_PAGE) };
   }
   if (genre === "pdf") {
     if (!o.pdf || !o.pdfinfo) return non("pdf");
@@ -990,8 +1010,22 @@ export async function inventaireFichier(f: Fichier): Promise<InventaireFichier> 
 
 export type ImagePage = { mime: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; octets: Buffer; rotation: RotationCopie };
 
-/** Rend une page d'un PDF (1600 px), entière ou sans son haut. */
-async function rendrePagePdf(pdf: string, page: number, sansEntete: boolean, reduire = true): Promise<Buffer> {
+/**
+ * Recadrage qui retire le haut de la page TELLE QUE LA CLASSE LA VERRA : l'image est tournée ensuite par le
+ * navigateur (« Tourner », sens horaire), le bord coupé est donc celui qui arrivera en haut. 0 : le haut ;
+ * 90 : le bord gauche ; 180 : le bas ; 270 : le bord droit. En pixels de l'image rendue (largeur l, hauteur h).
+ */
+export function recadrageSansEntete(l: number, h: number, rotation: RotationCopie): { x: number; y: number; largeur: number; hauteur: number } {
+  if (rotation === 90 || rotation === 270) {
+    const x = Math.round(l * PART_ENTETE);
+    return rotation === 90 ? { x, y: 0, largeur: l - x, hauteur: h } : { x: 0, y: 0, largeur: l - x, hauteur: h };
+  }
+  const y = Math.round(h * PART_ENTETE);
+  return rotation === 180 ? { x: 0, y: 0, largeur: l, hauteur: h - y } : { x: 0, y, largeur: l, hauteur: h - y };
+}
+
+/** Rend une page d'un PDF (1600 px), entière ou sans le bord qui sera en haut une fois la page tournée. */
+async function rendrePagePdf(pdf: string, page: number, sansEntete: boolean, reduire = true, rotation: RotationCopie = 0): Promise<Buffer> {
   return avecRendu(() =>
     dansDossierJetable(async (dossier) => {
       const budget = budgetDe(DELAI_RENDU_DIRECT_MS);
@@ -1000,8 +1034,7 @@ async function rendrePagePdf(pdf: string, page: number, sansEntete: boolean, red
       if (!sansEntete) return entiere;
       const j = infosJpeg(entiere);
       if (!j) throw new Error("page rendue illisible");
-      const y = Math.round(j.hauteur * PART_ENTETE);
-      const [coupee] = await rendrePages(pdf, dossier, page, page, budget, reduire, { y, largeur: j.largeur, hauteur: j.hauteur - y });
+      const [coupee] = await rendrePages(pdf, dossier, page, page, budget, reduire, recadrageSansEntete(j.largeur, j.hauteur, rotation));
       if (!coupee) throw new Error("page recadrée non rendue");
       return coupee;
     }),
@@ -1012,7 +1045,7 @@ async function rendrePagePdf(pdf: string, page: number, sansEntete: boolean, red
  * Image d'une page prête à montrer à la classe (sans métadonnées), recadrée sans le haut si demandé et possible.
  * « page » : numéro de page d'un PDF ou d'un document ; null pour une photo. Lève une erreur si le fichier ne se montre pas.
  */
-export async function imageDePage(f: Fichier, page: number | null, o: { sansEntete: boolean }): Promise<ImagePage> {
+export async function imageDePage(f: Fichier, page: number | null, o: { sansEntete: boolean; rotation?: RotationCopie }): Promise<ImagePage> {
   const outilsServeur = await outilsDeLecture();
   const genre = genreDe(f);
   if (genre === "jpeg" || genre === "heic") {
@@ -1026,7 +1059,7 @@ export async function imageDePage(f: Fichier, page: number | null, o: { sansEnte
       const octets = await dansDossierJetable(async (dossier) => {
         const pdf = path.join(dossier, "photo.pdf");
         await fs.promises.writeFile(pdf, pdfDuJpeg(jpeg, j));
-        return rendrePagePdf(pdf, 1, o.sansEntete, !petite);
+        return rendrePagePdf(pdf, 1, o.sansEntete, !petite, o.rotation ?? 0);
       });
       return { mime: "image/jpeg", octets, rotation: 0 };
     }
@@ -1048,7 +1081,7 @@ export async function imageDePage(f: Fichier, page: number | null, o: { sansEnte
     if (!outilsServeur.pdf) throw new Error("pdftoppm absent");
     const pdf = await pdfDuFichier(f, { prioritaire: true });
     if (!pdf) throw new Error("PDF indisponible");
-    return { mime: "image/jpeg", octets: await rendrePagePdf(pdf, page ?? 1, o.sansEntete), rotation: 0 };
+    return { mime: "image/jpeg", octets: await rendrePagePdf(pdf, page ?? 1, o.sansEntete, true, o.rotation ?? 0), rotation: 0 };
   }
   throw new Error("fichier qui ne se projette pas");
 }

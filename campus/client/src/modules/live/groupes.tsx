@@ -14,6 +14,7 @@ import { post, put } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { useCanal, useFluxConnecte } from "@/lib/flux";
 import { cn } from "@/lib/utils";
+import { useVueSuperposee } from "@/lib/vue-superposee";
 import { Bouton } from "@/components/ui/bouton";
 import { Fenetre } from "@/components/ui/fenetre";
 import { ZoneTexte, Selection, CaseACocher } from "@/components/ui/champs";
@@ -510,13 +511,11 @@ function CarteGroupe({
 
 /** Visite d'un groupe par le formateur : visio du groupe et sa discussion, par-dessus le Studio. */
 export function VisiteGroupe({ seance, groupes, groupe, role, moiId, onFermer }: { seance: SeanceDetailDto; groupes: GroupesDto; groupe: GroupeTravailDto; role: RoleSeance; moiId: number; onFermer: () => void }) {
-  useEffect(() => {
-    const touche = (e: KeyboardEvent) => e.key === "Escape" && onFermer();
-    window.addEventListener("keydown", touche);
-    return () => window.removeEventListener("keydown", touche);
-  }, [onFermer]);
+  // Geste retour du téléphone, Échap, focus : la visite se referme sans quitter le Studio (ni le direct).
+  const vue = useRef<HTMLDivElement>(null);
+  useVueSuperposee(vue, onFermer);
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex flex-col bg-nuit text-white" role="dialog" aria-modal="true" aria-label={`Visite du ${groupe.nom}`}>
+    <div ref={vue} tabIndex={-1} className="fixed inset-0 z-[60] flex flex-col bg-nuit text-white outline-none" role="dialog" aria-modal="true" aria-label={`Visite du ${groupe.nom}`}>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-nuit-ligne px-4 py-3">
         <span className="text-lg font-black">Visite · {groupe.nom}</span>
         <span className="min-w-0 max-w-full truncate text-[13px] text-nuit-doux">{groupe.membres.map((m) => m.nom).join(", ") || "Personne pour l'instant"}</span>

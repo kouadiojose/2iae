@@ -2802,7 +2802,9 @@ export function enregistrerLive(app: Express) {
       // en « diapo en grand » ou « côte à côte » la laisse (seule la mise en page change).
       const actuelle = diapoCourante(s);
       const memeVue = borne === actuelle.index && Boolean(masquer) === actuelle.masquee && (!disposition || disposition === "diapo" || disposition === "cote");
-      const arreter = estProjectionCopie(s.projection) && !memeVue;
+      // L'arrêt relit la projection (une copie écrite juste avant cette demande est retirée aussi) ; sans copie,
+      // il ne fait rien.
+      const arreter = !memeVue;
       const [maj] = await db
         .update(seances)
         .set({ diapoCourante: masquer ? -borne - 1 : borne, ...(disposition && { disposition }) })
@@ -3661,8 +3663,11 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       if (d.source === "corrige") return tCopies("bilan.corrige", { v: { devoir } });
       return tCopies(d.nomVisible ? "bilan.copieNom" : "bilan.copie", { v: { devoir } });
     }
+    case "copie_nom":
+      return tCopies(d.nomVisible ? "bilan.nomAffiche" : "bilan.nomMasque", { v: { devoir: String(d.devoirTitre ?? "") } });
     case "copie_fin": {
       if (d.motif === "remplacee") return tCopies("bilan.remplacee");
+      if (d.motif === "modifie") return tCopies("bilan.corrigeModifie");
       const secondes = Math.max(0, Math.round(Number(d.secondes ?? 0)));
       const duree = secondes < 60 ? tCopies("duree.secondes", { v: { n: secondes } }) : tCopies("duree.minutes", { v: { n: Math.round(secondes / 60) } });
       return tCopies("bilan.fin", { v: { duree } });

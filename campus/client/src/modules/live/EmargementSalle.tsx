@@ -108,7 +108,8 @@ function useFenetreEmargement(seance: SeanceDetailDto, etat: EtatDirectDto, site
   const sondage = etat.sondage;
   const resultatsCommentes = Boolean(sondage && !sondage.ouvert && sondage.fermeLe && maintenant - new Date(sondage.fermeLe).getTime() < PAUSE_APRES_SONDAGE_MS);
   const aLaParole = etat.parole?.type === "salle" && etat.parole.siteId === siteId;
-  const occupe = Boolean(sondage?.ouvert) || resultatsCommentes || aLaParole || enGroupe;
+  // Une copie d'étudiant montrée à la classe compte comme une activité : le QR ne vient pas la recouvrir.
+  const occupe = Boolean(sondage?.ouvert) || resultatsCommentes || aLaParole || enGroupe || Boolean(etat.copie);
   const demarreeLe = etat.demarreeLe ?? seance.demarreeLe;
   useEffect(() => {
     if (!enDirect) return;

@@ -29,7 +29,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -162,7 +162,7 @@ export type CopieProjeteeDto = {
 
 /** Corps de POST /api/seances/:id/projection/copie. */
 export type CorpsProjectionCopie =
-  | { source: "copie"; renduId: number; page: string; nomVisible?: boolean; enteteMasque?: boolean; rotation?: RotationCopie; confirmerOuvert?: boolean }
+  | { source: "copie"; renduId: number; page: string; nomVisible?: boolean; enteteMasque?: boolean; rotation?: RotationCopie; confirmerOuvert?: boolean; version?: string }
   | { source: "corrige"; devoirId: number; page: string };
 
 /** Corps de PATCH /api/seances/:id/projection/copie : page (numéro absolu) et réglages. */

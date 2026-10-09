@@ -21,6 +21,7 @@ import { echeance, peutEncoreRendre } from "../evaluations-outils";
 import { seanceAnimee } from "./live";
 import { inscritsVisibles, renduEnseigne } from "./evaluations";
 import {
+  arreterCopie,
   CLE_PAGE,
   contenuDePage,
   contenuProjete,
@@ -30,6 +31,7 @@ import {
   corrigeMontrableEnClasse,
   devoirsPubliesDuCours,
   copiesDesDevoirs,
+  DelaiDepasse,
   ecrireSiInchangee,
   enSerie,
   etiquetteCopie,
@@ -41,6 +43,7 @@ import {
   prechauffer,
   retenirContenu,
   sourceDeCopie,
+  versionToujoursMontree,
   type ContenuPage,
   type SourcePages,
 } from "../projection-copies";
@@ -66,6 +69,7 @@ import {
   type ProjectionCopie,
   type ProjectionCopieAnimateurDto,
   type Rendu,
+  type RotationCopie,
   type Seance,
   type Utilisateur,
 } from "@shared/schema";
@@ -105,6 +109,19 @@ async function avecDelai<T>(travail: Promise<T>, ms = DELAI_FABRICATION_MS): Pro
     if (minuteur) clearTimeout(minuteur);
   }
 }
+
+/** File de la séance bornée : au-delà de 35 s (bucket muet…), le geste échoue proprement et les suivants passent. */
+async function dansLaFile<T>(seanceId: number, travail: (garde: { abandonne: boolean }) => Promise<T>): Promise<T> {
+  try {
+    return await enSerie(seanceId, travail);
+  } catch (e) {
+    if (e instanceof DelaiDepasse) throw new ErreurHttp(503, t("erreur.echec"));
+    throw e;
+  }
+}
+
+const ROTATIONS: RotationCopie[] = [0, 90, 180, 270];
+const rotationDe = (v: unknown): RotationCopie => (ROTATIONS.includes(Number(v) as RotationCopie) ? (Number(v) as RotationCopie) : 0);
 
 /** Remet une page : image (sans cache, sans deviner le type) ou texte en JSON. */
 function envoyerContenu(res: Response, c: ContenuPage) {
@@ -172,6 +189,30 @@ async function devoirDuDirect(d: Devoir, inscrits: Utilisateur[], copies: Rendu[
     etat: d.type === "quiz" ? "quiz" : !rendues ? "vide" : peuvent > 0 ? (avant ? "ouvert" : "retards") : "projetable",
     corrige: await corrigeDuDirect(d),
   };
+}
+
+/**
+ * Prénom montré (ou masqué de nouveau), haut de la page découvert (ou caché) sur une copie déjà à l'écran : une
+ * ligne de journal à chaque changement, et le fil de la séance pour le prénom (le bilan le dit).
+ */
+async function tracerReglage(u: Utilisateur, seanceId: number, avant: ProjectionCopie, apres: ProjectionCopie) {
+  await db.insert(journal).values({
+    utilisateurId: u.id,
+    action: "copie_montree",
+    details: {
+      seanceId,
+      devoirId: apres.devoirId,
+      renduId: apres.renduId,
+      source: apres.source,
+      page: apres.numero,
+      nomVisible: apres.nomVisible,
+      enteteMasque: apres.enteteMasque,
+      reglage: apres.nomVisible !== avant.nomVisible ? "prenom" : "haut",
+    },
+  });
+  if (apres.nomVisible !== avant.nomVisible) {
+    await db.insert(evenementsSeances).values({ seanceId, type: "copie_nom", donnees: { nomVisible: apres.nomVisible, devoirTitre: apres.devoirTitre, par: u.id } });
+  }
 }
 
 export function enregistrerCopiesDirect(app: Express) {
@@ -295,7 +336,7 @@ export function enregistrerCopiesDirect(app: Express) {
       }
       let contenu: ContenuPage;
       try {
-        contenu = await avecDelai(contenuDePage(await sourceDeCopie(r), plan, page, { enteteMasque: req.query.entete === "1" }));
+        contenu = await avecDelai(contenuDePage(await sourceDeCopie(r), plan, page, { enteteMasque: req.query.entete === "1", rotation: rotationDe(req.query.rotation) }));
       } catch (err) {
         console.warn(`[copies-direct] aperçu de la copie ${r.id} impossible :`, (err as Error).message.slice(0, 200));
         throw new ErreurHttp(422, t("erreur.echec"));
@@ -351,6 +392,8 @@ export function enregistrerCopiesDirect(app: Express) {
       enteteMasque: z.boolean().optional(),
       rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
       confirmerOuvert: z.boolean().default(false),
+      /** Version de la copie vue dans l'aperçu : si l'étudiant l'a remplacée depuis, 409 « copie_changee ». */
+      version: z.string().max(40).optional(),
     }),
     z.object({ source: z.literal("corrige"), devoirId: z.number().int().positive(), page: z.string().regex(/^c\d{1,3}$/) }),
   ]);
@@ -362,8 +405,9 @@ export function enregistrerCopiesDirect(app: Express) {
       const u = moi(req);
       const id = idParam(req);
       const corps = valider(corpsProjection, req.body);
-      const dto = await enSerie(id, async () => {
-        const generation = generationDe(id);
+      // Lue à l'arrivée de la demande (avant la file) : un « Revenir aux diapos » envoyé après l'emporte.
+      const generation = generationDe(id);
+      const dto = await dansLaFile(id, async (garde) => {
         // 1-2. Séance relue : état frais, en direct, hors Plan B.
         const s = await animateurCopies(u, id);
         exigerDirect(s);
@@ -378,8 +422,9 @@ export function enregistrerCopiesDirect(app: Express) {
           const c = await copieDuCours(u, s, corps.renduId);
           d = c.d;
           etudiant = c.e;
-          // 4. La page est dans le plan.
+          // 4. La page est dans le plan, et la copie est celle que le formateur a regardée.
           plan = await planDeCopie(c.r, c.e);
+          if (corps.version && corps.version !== plan.version) throw new ErreurHttp(409, t("erreur.copieChangee"), { code: "copie_changee" });
           src = await sourceDeCopie(c.r);
         } else {
           d = await devoirDuCours(s, corps.devoirId);
@@ -408,9 +453,11 @@ export function enregistrerCopiesDirect(app: Express) {
         // 6. L'image est prête avant d'être annoncée : la classe ne voit jamais une page qui n'arrive pas.
         const nomVisible = corps.source === "copie" ? corps.nomVisible : false;
         const enteteMasque = page.enteteDisponible && (corps.source === "copie" && corps.enteteMasque !== undefined ? corps.enteteMasque : page.enteteParDefaut);
+        const rotation: RotationCopie = corps.source === "copie" && corps.rotation !== undefined ? corps.rotation : page.rotation;
         let contenu: ContenuPage;
         try {
-          contenu = await avecDelai(contenuDePage(src, plan, page.page, { enteteMasque }));
+          // Haut caché : le serveur coupe le bord qui arrivera en haut une fois la page tournée.
+          contenu = await avecDelai(contenuDePage(src, plan, page.page, { enteteMasque, rotation }));
         } catch (err) {
           console.warn(`[copies-direct] séance ${s.id} : page non préparée :`, (err as Error).message.slice(0, 200));
           throw new ErreurHttp(422, t("erreur.echec"));
@@ -431,7 +478,7 @@ export function enregistrerCopiesDirect(app: Express) {
           contenu: page.contenu,
           cle: nouvelleCle(),
           zone: "page",
-          rotation: corps.source === "copie" && corps.rotation !== undefined ? corps.rotation : page.rotation,
+          rotation,
           nomVisible,
           enteteMasque,
           enteteDisponible: page.enteteDisponible,
@@ -441,15 +488,28 @@ export function enregistrerCopiesDirect(app: Express) {
           depuis: memeCopie ? ancienneCopie.depuis : Date.now(),
           horodatage: Date.now(),
         };
-        // 8. Écriture conditionnelle : un « Revenir aux diapos » passé pendant la préparation l'emporte.
-        retenirContenu(nouvelle.cle, contenu);
-        const maj = await ecrireSiInchangee(s.id, avant, nouvelle, generation);
-        if (!maj) throw new ErreurHttp(409, t("erreur.changee"), { code: "projection_changee" });
+        // 8. Écriture conditionnelle : un « Revenir aux diapos » passé pendant la préparation l'emporte, une copie
+        // remplacée entre-temps par l'étudiant ne monte pas à l'écran.
+        if (garde.abandonne) throw new ErreurHttp(503, t("erreur.echec"));
+        const ecrit = await ecrireSiInchangee(s.id, avant, nouvelle, {
+          generation,
+          copie: nouvelle.renduId ? { renduId: nouvelle.renduId, version: nouvelle.version } : undefined,
+        });
+        if ("refus" in ecrit) {
+          if (ecrit.refus === "copie_changee") throw new ErreurHttp(409, t("erreur.copieChangee"), { code: "copie_changee" });
+          throw new ErreurHttp(409, t("erreur.changee"), { code: "projection_changee" });
+        }
+        const maj = ecrit.seance;
+        retenirContenu(s.id, nouvelle.cle, contenu);
         // 9-10. Une vidéo projetée s'arrête ; la copie part chez tout le monde.
         if (avant && !estProjectionCopie(avant)) publier(`seance:${s.id}`, "projection", null);
         const dto = copieDe(maj);
         publier(`seance:${s.id}`, "copie", dto);
-        // 11. Trace : fil de la séance (bilan, replay) et journal, à chaque nouvelle copie.
+        // 11. Trace : fil de la séance (bilan, replay) et journal, à chaque nouvelle copie ; prénom montré ou haut
+        // découvert après coup sur la même copie : une ligne de journal (et le fil, pour le prénom).
+        if (memeCopie && (ancienneCopie.nomVisible !== nomVisible || ancienneCopie.enteteMasque !== enteteMasque)) {
+          await tracerReglage(u, s.id, ancienneCopie, nouvelle);
+        }
         if (!memeCopie) {
           await db.insert(evenementsSeances).values({
             seanceId: s.id,
@@ -499,24 +559,32 @@ export function enregistrerCopiesDirect(app: Express) {
       const u = moi(req);
       const id = idParam(req);
       const corps = valider(corpsReglage, req.body);
-      const dto = await enSerie(id, async () => {
-        const generation = generationDe(id);
+      // Lue à l'arrivée de la demande (avant la file) : un « Revenir aux diapos » envoyé après l'emporte.
+      const generation = generationDe(id);
+      const dto = await dansLaFile(id, async (garde) => {
         const s = await animateurCopies(u, id);
         exigerDirect(s);
         const p = s.projection;
-        if (!estProjectionCopie(p)) throw new ErreurHttp(409, t("erreur.aucune"));
+        if (!estProjectionCopie(p)) throw new ErreurHttp(409, t("erreur.aucune"), { code: "aucune" });
         let src: SourcePages;
         let plan: PlanCopieDto;
         let etudiant: Pick<Utilisateur, "prenom" | "nom"> | null = null;
         if (p.source === "copie" && p.renduId) {
           const c = await copieDuCours(u, s, p.renduId);
-          if ((c.r.renduLe ? c.r.renduLe.toISOString() : "0") !== p.version) throw new ErreurHttp(409, t("erreur.plusMontree"));
+          // Copie remplacée par l'étudiant : l'ancienne version quitte l'écran partout, le formateur le lit.
+          if ((c.r.renduLe ? c.r.renduLe.toISOString() : "0") !== p.version) {
+            await arreterCopie(s.id, "remplacee");
+            throw new ErreurHttp(409, t("erreur.copieRemplacee"), { code: "plus_montree" });
+          }
           etudiant = c.e;
           plan = await planDeCopie(c.r, c.e);
           src = await sourceDeCopie(c.r);
         } else {
           const cd = await corrigeDuDevoir(p.devoirId);
-          if (!cd || String(cd.version) !== p.version) throw new ErreurHttp(409, t("erreur.plusMontree"));
+          if (!cd || String(cd.version) !== p.version) {
+            await arreterCopie(s.id, "modifie");
+            throw new ErreurHttp(409, t("erreur.corrigeModifie"), { code: "plus_montree" });
+          }
           plan = planDuCorrige({ id: p.devoirId }, cd);
           src = { source: "corrige", devoirId: p.devoirId, version: plan.version, contenu: cd.contenu };
         }
@@ -526,7 +594,10 @@ export function enregistrerCopiesDirect(app: Express) {
         const changePage = page.page !== p.page;
         const enteteMasque = page.enteteDisponible && (corps.enteteMasque ?? (changePage ? page.enteteParDefaut : p.enteteMasque));
         const nomVisible = p.source === "copie" ? (corps.nomVisible ?? p.nomVisible) : false;
-        const nouvelleImage = changePage || enteteMasque !== p.enteteMasque;
+        const rotation: RotationCopie = corps.rotation ?? (changePage ? page.rotation : p.rotation);
+        // Nouvelle image : autre page, haut caché ou découvert, ou rotation d'une page au haut caché (le bord
+        // coupé suit la rotation : celui qui arrive en haut).
+        const nouvelleImage = changePage || enteteMasque !== p.enteteMasque || (enteteMasque && rotation !== p.rotation);
         const nouvelle: ProjectionCopie = {
           ...p,
           page: page.page,
@@ -535,23 +606,34 @@ export function enregistrerCopiesDirect(app: Express) {
           contenu: page.contenu,
           cle: nouvelleImage ? nouvelleCle() : p.cle,
           zone: corps.zone ?? (changePage ? "page" : p.zone),
-          rotation: corps.rotation ?? (changePage ? page.rotation : p.rotation),
+          rotation,
           nomVisible,
           enteteMasque,
           enteteDisponible: page.enteteDisponible,
           etiquette: p.source === "corrige" ? p.etiquette : nomVisible !== p.nomVisible && etudiant ? etiquetteCopie(nomVisible, etudiant.prenom, etudiant.nom) : p.etiquette,
           horodatage: Date.now(),
         };
+        let contenu: ContenuPage | null = null;
         if (nouvelleImage) {
           try {
-            retenirContenu(nouvelle.cle, await avecDelai(contenuDePage(src, plan, page.page, { enteteMasque })));
+            contenu = await avecDelai(contenuDePage(src, plan, page.page, { enteteMasque, rotation }));
           } catch (err) {
             console.warn(`[copies-direct] séance ${s.id} : page ${numero} non préparée :`, (err as Error).message.slice(0, 200));
             throw new ErreurHttp(422, t("erreur.echec"));
           }
         }
-        const maj = await ecrireSiInchangee(s.id, p, nouvelle, generation);
-        if (!maj) throw new ErreurHttp(409, t("erreur.changee"), { code: "projection_changee" });
+        if (garde.abandonne) throw new ErreurHttp(503, t("erreur.echec"));
+        const ecrit = await ecrireSiInchangee(s.id, p, nouvelle, { generation, copie: p.renduId ? { renduId: p.renduId, version: p.version } : undefined });
+        if ("refus" in ecrit) {
+          if (ecrit.refus === "copie_changee") {
+            await arreterCopie(s.id, "remplacee");
+            throw new ErreurHttp(409, t("erreur.copieRemplacee"), { code: "plus_montree" });
+          }
+          throw new ErreurHttp(409, t("erreur.changee"), { code: "projection_changee" });
+        }
+        const maj = ecrit.seance;
+        if (contenu) retenirContenu(s.id, nouvelle.cle, contenu);
+        if (nomVisible !== p.nomVisible || enteteMasque !== p.enteteMasque) await tracerReglage(u, s.id, p, nouvelle);
         const dto = copieDe(maj);
         publier(`seance:${s.id}`, "copie", dto);
         prechauffer(src, plan, page.numero);
@@ -588,11 +670,12 @@ export function enregistrerCopiesDirect(app: Express) {
         res.status(410).json({ message: t("erreur.plusMontree") });
       };
       if (!estProjectionCopie(p) || p.cle !== req.params.cle || !copieDe(s)) return plusMontree();
-      // Corrigé modifié pendant qu'il est montré : la page n'est plus la bonne, le formateur la reprojette.
-      if (p.source === "corrige" && String((await corrigeDuDevoir(p.devoirId))?.version ?? "") !== p.version) return plusMontree();
+      // Copie remplacée par l'étudiant, corrigé modifié pendant qu'il est montré : la page quitte l'écran partout
+      // (personne ne reste devant une ancienne version ni devant un sablier), le formateur reprojette.
+      if (!(await versionToujoursMontree(s.id, p))) return plusMontree();
       let contenu: ContenuPage | null;
       try {
-        contenu = await avecDelai(contenuProjete(p));
+        contenu = await avecDelai(contenuProjete(s.id, p));
       } catch {
         res.setHeader("Retry-After", "2");
         res.setHeader("Cache-Control", "private, no-store");

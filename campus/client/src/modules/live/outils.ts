@@ -179,8 +179,9 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
     case "diapo":
       return { ...etat, diapo: d };
     case "projection":
-      // Une vidéo projetée remplace la copie montrée (et inversement, ci-dessous).
-      return { ...etat, projection: d ?? null, ...(d ? { copie: null } : {}) };
+      // Une seule projection à la fois (une colonne en base) : tout événement « projection » (vidéo ou arrêt,
+      // dont « Revenir aux diapos ») retire la copie montrée ; « copie » fait l'inverse, ci-dessous.
+      return { ...etat, projection: d ?? null, copie: null };
     case "copie":
       return { ...etat, copie: d ?? null, ...(d ? { projection: null } : {}) };
     case "planb":

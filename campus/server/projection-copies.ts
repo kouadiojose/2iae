@@ -13,11 +13,11 @@ import crypto from "crypto";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "./db";
 import { publier } from "./temps-reel";
-import { decouperTexte, genreDe, imageDePage, inventaireFichier, PART_ENTETE as PART_ENTETE_PAGES, type ImagePage } from "./copies-pages";
+import { decouperTexte, genreDe, imageDePage, inventaireFichier, PART_ENTETE as PART_ENTETE_PAGES, TEXTE_PAR_PAGE as TEXTE_PAR_PAGE_PAGES, type ImagePage } from "./copies-pages";
 import { lireContenuFichier } from "./fichiers";
 import { corrigeUtilisableLigne } from "./correction-auto";
 import { echeance } from "./evaluations-outils";
-import { t } from "@shared/textes/copies-direct";
+import { deDevant, t } from "@shared/textes/copies-direct";
 import {
   corrigesDevoirs,
   devoirs,
@@ -36,8 +36,10 @@ import {
   type PlanCopieDto,
   type ProjectionCopie,
   type ProjectionSeance,
+  type ProjectionVideo,
   type RaisonCorrigeRetenu,
   type Rendu,
+  type RotationCopie,
   type Seance,
   type Utilisateur,
 } from "@shared/schema";
@@ -46,7 +48,7 @@ export { decouperTexte };
 
 /** Au-delà, les pages suivantes ne se montrent pas en direct (« Seules les 30 premières pages… »). */
 export const PAGES_MAX_PROJECTION = 30;
-export const TEXTE_PAR_PAGE = 700;
+export const TEXTE_PAR_PAGE = TEXTE_PAR_PAGE_PAGES;
 export const MARKDOWN_PAR_PAGE = 900;
 export const PART_ENTETE = PART_ENTETE_PAGES;
 /** Clé de l'adresse de l'image projetée : 24 caractères hexadécimaux, neuve à chaque page ou haut caché. */
@@ -144,12 +146,11 @@ function couperAuxLignes(texte: string, max: number): string[] {
 
 // ── Étiquette ───────────────────────────────────────────────────────────────
 
-/** « Copie d'un étudiant », « Copie d'Awa K. », « Copie de Konan Y. » (élision devant une voyelle ou un h). */
+/** « Copie d'un étudiant », « Copie d'Awa K. », « Copie de Yao K. », « Copie de Konan Y. » (élision : deDevant). */
 export function etiquetteCopie(nomVisible: boolean, prenom: string, nom: string): string {
   if (!nomVisible) return t("classe.anonyme");
   const p = prenom.trim();
-  const premiere = p.normalize("NFD").charAt(0).toLowerCase();
-  const de = /[aeiouyh]/.test(premiere) ? "d'" : "de ";
+  const de = deDevant(p);
   const initiale = nom.trim() ? `${nom.trim().charAt(0).toUpperCase()}.` : "";
   return t("classe.nom", { v: { de, prenom: p, initiale } }).trim();
 }
@@ -175,6 +176,9 @@ export async function planDeCopie(r: Pick<Rendu, "id" | "devoirId" | "texte" | "
   const garde = plansGardes.get(cle);
   if (garde && garde.exp > Date.now()) return garde.plan;
   const pages: Omit<PageCopieDto, "numero">[] = [];
+  // Documents Office (convertis en PDF) à la fin : prêts ou non, ils ne décalent jamais les numéros des autres
+  // pages (une copie projetée pendant la conversion garde ses numéros quand le document arrive).
+  const pagesOffice: Omit<PageCopieDto, "numero">[] = [];
   const nonProjetables: NonProjetableDto[] = [];
   let enPreparation = false;
   const morceauxTexte = decouperTexte(r.texte, TEXTE_PAR_PAGE);
@@ -228,20 +232,24 @@ export async function planDeCopie(r: Pick<Rendu, "id" | "devoirId" | "texte" | "
       return;
     }
     if (!("rotation" in inv)) {
+      // Haut caché par défaut sur CHAQUE page : un nom écrit en haut de chaque feuille, ou l'en-tête d'un
+      // document Word répété sur toutes les pages, ne se montre jamais sans que le formateur le décide.
+      const cible = inv.genre === "office" ? pagesOffice : pages;
       for (let n = 1; n <= inv.pages; n++) {
-        pages.push({
+        cible.push({
           page: `f${f.id}p${n}`,
           libelle: inv.pages > 1 ? `${libelle}, page ${n} sur ${inv.pages}` : libelle,
           contenu: "image",
           rotation: 0,
           enteteDisponible: inv.enteteDisponible,
-          enteteParDefaut: inv.enteteDisponible && n === 1,
+          enteteParDefaut: inv.enteteDisponible,
         });
       }
       return;
     }
     pages.push({ page: `f${f.id}`, libelle, contenu: "image", rotation: inv.rotation, enteteDisponible: inv.enteteDisponible, enteteParDefaut: inv.enteteDisponible });
   });
+  pages.push(...pagesOffice);
   const plan: PlanCopieDto = {
     source: "copie",
     renduId: r.id,
@@ -337,19 +345,25 @@ export const pageDuPlan = (plan: PlanCopieDto, page: string) => plan.pages.find(
  * Contenu d'une page du plan. Cache LRU en mémoire (40 Mo au plus, 3 h) ; fabrications en cours dédoublonnées :
  * 300 écrans qui demandent la même page en même temps ne lancent qu'une conversion.
  */
-export async function contenuDePage(src: SourcePages, plan: PlanCopieDto, page: string, o: { enteteMasque: boolean }): Promise<ContenuPage> {
+export async function contenuDePage(src: SourcePages, plan: PlanCopieDto, page: string, o: { enteteMasque: boolean; rotation?: RotationCopie }): Promise<ContenuPage> {
   const p = pageDuPlan(plan, page);
   if (!p) throw new Error("page absente du plan");
   const sansEntete = o.enteteMasque && p.enteteDisponible;
+  // Haut caché : le bord coupé dépend de la rotation (celui qui arrivera en haut), elle entre dans la clé.
+  const rotation: RotationCopie = sansEntete ? (o.rotation ?? 0) : 0;
   const cle =
-    src.source === "corrige" ? `d${src.devoirId}@${src.version}:${page}` : page.startsWith("t") ? `r${src.renduId}@${src.version}:${page}` : `${page}:e${sansEntete ? 1 : 0}`;
+    src.source === "corrige"
+      ? `d${src.devoirId}@${src.version}:${page}`
+      : page.startsWith("t")
+        ? `r${src.renduId}@${src.version}:${page}`
+        : `${page}:e${sansEntete ? 1 : 0}:r${rotation}`;
   const garde = lireCache(cle);
   if (garde) return garde;
   const enCours = fabrications.get(cle);
   if (enCours) return enCours;
   const fabrication = (async (): Promise<ContenuPage> => {
     pagesFabriquees++;
-    const contenu = await fabriquer(src, page, sansEntete);
+    const contenu = await fabriquer(src, page, sansEntete, rotation);
     ecrireCache(cle, contenu);
     return contenu;
   })().finally(() => fabrications.delete(cle));
@@ -357,7 +371,7 @@ export async function contenuDePage(src: SourcePages, plan: PlanCopieDto, page: 
   return fabrication;
 }
 
-async function fabriquer(src: SourcePages, page: string, sansEntete: boolean): Promise<ContenuPage> {
+async function fabriquer(src: SourcePages, page: string, sansEntete: boolean, rotation: RotationCopie): Promise<ContenuPage> {
   if (src.source === "corrige") {
     const n = Number(/^c(\d+)$/.exec(page)?.[1] ?? 0);
     const texte = decouperMarkdown(src.contenu, MARKDOWN_PAR_PAGE)[n - 1];
@@ -382,14 +396,14 @@ async function fabriquer(src: SourcePages, page: string, sansEntete: boolean): P
     if (texte === undefined) throw new Error("page du fichier texte absente");
     return { genre: "texte", texte };
   }
-  return { genre: "image", ...(await imageDePage(f, numero, { sansEntete })) };
+  return { genre: "image", ...(await imageDePage(f, numero, { sansEntete, rotation })) };
 }
 
 /** Fabrique en tâche de fond la page qui suit « numero » (sans attendre) : la page suivante s'affiche aussitôt. */
 export function prechauffer(src: SourcePages, plan: PlanCopieDto, numero: number): void {
   const suivante = plan.pages[numero];
   if (!suivante) return;
-  void contenuDePage(src, plan, suivante.page, { enteteMasque: suivante.enteteParDefaut }).catch(() => undefined);
+  void contenuDePage(src, plan, suivante.page, { enteteMasque: suivante.enteteParDefaut, rotation: suivante.rotation }).catch(() => undefined);
 }
 
 /** Copie et fichiers d'une copie, prêts pour contenuDePage. */
@@ -421,36 +435,74 @@ export async function sourceDeProjection(p: ProjectionCopie): Promise<{ src: Sou
   return { src: await sourceDeCopie(ligne.r), plan: await planDeCopie(ligne.r, ligne.e) };
 }
 
-// Contenu de la page à l'écran, par clé : la classe le relit sans requête ni recherche dans le plan.
-const parCle = new Map<string, { le: number; contenu: Promise<ContenuPage | null> }>();
+// Contenu de la page à l'écran, UNE entrée par séance (la clé à l'écran) : la classe le relit sans requête ni
+// recherche dans le plan. Retiré à la fin de la copie et remplacé à chaque changement de page : la mémoire ne
+// garde jamais que les pages réellement à l'écran (une par direct, 3 Mo au plus chacune).
+const aLEcran = new Map<number, { cle: string; contenu: Promise<ContenuPage | null> }>();
 
-/** Retient le contenu fabriqué pour cette clé (POST et PATCH, qui l'attendent avant de publier). */
-export function retenirContenu(cle: string, contenu: ContenuPage) {
-  if (parCle.size > 200) {
-    const limite = Date.now() - CACHE_DUREE_MS;
-    for (const [k, v] of parCle) if (v.le < limite || parCle.size > 200) parCle.delete(k);
-  }
-  parCle.set(cle, { le: Date.now(), contenu: Promise.resolve(contenu) });
+/** Retient le contenu de la page qui vient d'être écrite à l'écran (POST et PATCH, après l'écriture). */
+export function retenirContenu(seanceId: number, cle: string, contenu: ContenuPage) {
+  aLEcran.set(seanceId, { cle, contenu: Promise.resolve(contenu) });
+}
+
+/** La copie a quitté l'écran : sa page n'est plus gardée. */
+export function oublierContenu(seanceId: number) {
+  aLEcran.delete(seanceId);
 }
 
 /**
  * Contenu de la page projetée. Retenu à la projection ; après un redémarrage (mémoire vide), refabriqué depuis
  * l'état en base, une seule fois pour tous les écrans. null : la copie ou le corrigé ont changé depuis.
  */
-export function contenuProjete(p: ProjectionCopie): Promise<ContenuPage | null> {
-  const garde = parCle.get(p.cle);
-  if (garde) return garde.contenu;
+export function contenuProjete(seanceId: number, p: ProjectionCopie): Promise<ContenuPage | null> {
+  const garde = aLEcran.get(seanceId);
+  if (garde?.cle === p.cle) return garde.contenu;
   const contenu = (async () => {
     const sp = await sourceDeProjection(p);
     if (!sp) return null;
-    return contenuDePage(sp.src, sp.plan, p.page, { enteteMasque: p.enteteMasque });
+    return contenuDePage(sp.src, sp.plan, p.page, { enteteMasque: p.enteteMasque, rotation: p.rotation });
   })().catch((e) => {
     // Échec : oublié, pour qu'une demande suivante réessaie.
-    parCle.delete(p.cle);
+    if (aLEcran.get(seanceId)?.cle === p.cle) aLEcran.delete(seanceId);
     throw e;
   });
-  parCle.set(p.cle, { le: Date.now(), contenu });
+  aLEcran.set(seanceId, { cle: p.cle, contenu });
   return contenu;
+}
+
+/** Version actuelle de ce qui est projeté (renduLe de la copie, ou version du corrigé) ; null si disparu. */
+async function versionActuelle(p: Pick<ProjectionCopie, "source" | "renduId" | "devoirId">): Promise<string | null> {
+  if (p.source === "corrige") {
+    const [cd] = await db.select({ version: corrigesDevoirs.version }).from(corrigesDevoirs).where(eq(corrigesDevoirs.devoirId, p.devoirId));
+    return cd ? String(cd.version) : null;
+  }
+  if (!p.renduId) return null;
+  const [r] = await db.select({ renduLe: rendus.renduLe, statut: rendus.statut }).from(rendus).where(eq(rendus.id, p.renduId));
+  if (!r || r.statut === "brouillon") return null;
+  return r.renduLe ? r.renduLe.toISOString() : "0";
+}
+
+// Vérifications récentes de la version, par clé : 300 écrans qui chargent la même page ne font qu'une requête.
+const versionsVerifiees = new Map<string, { exp: number; ok: Promise<boolean> }>();
+
+/**
+ * La page à l'écran montre-t-elle encore la version actuelle (copie non remplacée, corrigé non modifié) ?
+ * Sinon, la projection s'arrête partout (motif « remplacee » ou « modifie ») : personne ne reste devant une
+ * ancienne version ni devant un sablier.
+ */
+export function versionToujoursMontree(seanceId: number, p: ProjectionCopie): Promise<boolean> {
+  const garde = versionsVerifiees.get(p.cle);
+  if (garde && garde.exp > Date.now()) return garde.ok;
+  const ok = (async () => {
+    const v = await versionActuelle(p);
+    if (v === p.version) return true;
+    await arreterCopie(seanceId, p.source === "corrige" ? "modifie" : "remplacee");
+    return false;
+  })();
+  if (versionsVerifiees.size > 500) versionsVerifiees.clear();
+  versionsVerifiees.set(p.cle, { exp: Date.now() + 3000, ok });
+  ok.catch(() => versionsVerifiees.delete(p.cle));
+  return ok;
 }
 
 // ── État diffusé ────────────────────────────────────────────────────────────
@@ -482,22 +534,44 @@ export function copieDe(s: Pick<Seance, "id" | "projection" | "statut" | "planBL
 
 const files = new Map<number, Promise<unknown>>();
 
-/** File d'écriture par séance : POST et PATCH d'une même séance passent l'un après l'autre (ordre d'arrivée). */
-export function enSerie<T>(seanceId: number, travail: () => Promise<T>): Promise<T> {
+/** Une écriture de la séance a dépassé son délai : la file passe à la suivante, celle-ci n'écrira plus rien. */
+export class DelaiDepasse extends Error {}
+/** Délai d'une écriture dans la file (lecture du bucket, plan, fabrication de la page) : au-delà, on abandonne. */
+const DELAI_FILE_MS = 35_000;
+
+/**
+ * File d'écriture par séance : POST et PATCH d'une même séance passent l'un après l'autre (ordre d'arrivée).
+ * Chaque tâche est bornée (35 s) : un bucket qui ne répond plus ne bloque pas les gestes suivants. Une tâche
+ * abandonnée voit « garde.abandonne » et n'écrit plus rien (le formateur a déjà reçu une erreur).
+ */
+export function enSerie<T>(seanceId: number, travail: (garde: { abandonne: boolean }) => Promise<T>, delaiMs = DELAI_FILE_MS): Promise<T> {
   const avant = files.get(seanceId) ?? Promise.resolve();
-  const suite = avant.then(travail, travail);
-  const garde = suite.catch(() => undefined);
-  files.set(seanceId, garde);
-  void garde.then(() => {
-    if (files.get(seanceId) === garde) files.delete(seanceId);
+  const garde = { abandonne: false };
+  const suite = avant.then(() => {
+    let minuteur: NodeJS.Timeout | undefined;
+    return Promise.race([
+      travail(garde),
+      new Promise<never>((_ok, ko) => {
+        minuteur = setTimeout(() => {
+          garde.abandonne = true;
+          ko(new DelaiDepasse("délai dépassé"));
+        }, delaiMs);
+      }),
+    ]).finally(() => clearTimeout(minuteur));
+  });
+  const fin = suite.catch(() => undefined);
+  files.set(seanceId, fin);
+  void fin.then(() => {
+    if (files.get(seanceId) === fin) files.delete(seanceId);
   });
   return suite;
 }
 
 /**
  * Générations de la projection, par séance : chaque arrêt ou changement venu d'ailleurs (« Revenir aux diapos »,
- * vidéo, diapo) l'augmente. Une copie préparée pendant ce temps ne s'écrit pas, même si la projection était
- * vide avant et l'est encore (l'écriture conditionnelle seule ne verrait rien).
+ * vidéo, diapo) l'augmente. Une copie demandée AVANT ce geste ne s'écrit pas, même si la projection était vide
+ * avant et l'est encore (l'écriture conditionnelle seule ne verrait rien). Les routes lisent la génération à
+ * l'arrivée de la demande, avant la file : « Revenir aux diapos » envoyé en dernier l'emporte toujours.
  */
 const generations = new Map<number, number>();
 export const generationDe = (seanceId: number) => generations.get(seanceId) ?? 0;
@@ -505,35 +579,78 @@ export function projectionChangee(seanceId: number) {
   generations.set(seanceId, generationDe(seanceId) + 1);
 }
 
+export type ResultatEcriture = { seance: Seance } | { refus: "projection_changee" | "copie_changee" };
+
+/** La copie est-elle toujours dans cette version (l'étudiant ne l'a pas remplacée) ? Condition SQL. */
+const copieToujoursLa = (c: { renduId: number; version: string }) =>
+  c.version === "0"
+    ? sql`EXISTS (SELECT 1 FROM ${rendus} WHERE ${rendus.id} = ${c.renduId} AND ${rendus.renduLe} IS NULL AND ${rendus.statut} <> 'brouillon')`
+    : sql`EXISTS (SELECT 1 FROM ${rendus} WHERE ${rendus.id} = ${c.renduId} AND date_trunc('milliseconds', ${rendus.renduLe}) = ${c.version}::timestamptz AND ${rendus.statut} <> 'brouillon')`;
+
 /**
- * Écrit la projection seulement si elle n'a pas changé depuis la lecture (« Revenir aux diapos », une vidéo ou un autre
- * poste sont passés entre-temps). null si elle a changé.
+ * Écrit la projection seulement si elle n'a pas changé depuis la lecture (« Revenir aux diapos », une vidéo ou un
+ * autre poste sont passés entre-temps), si aucun arrêt n'est arrivé depuis la demande (« generation ») et, pour une
+ * copie (« copie »), si l'étudiant ne l'a pas remplacée entre-temps : la condition est dans l'UPDATE, puis
+ * relue juste après (un remplacement validé pendant l'écriture est vu : la projection revient à l'état d'avant).
  */
-export async function ecrireSiInchangee(seanceId: number, avant: ProjectionSeance | null, apres: ProjectionSeance | null, generation?: number): Promise<Seance | null> {
-  if (generation !== undefined && generation !== generationDe(seanceId)) return null;
+export async function ecrireSiInchangee(
+  seanceId: number,
+  avant: ProjectionSeance | null,
+  apres: ProjectionSeance | null,
+  o: { generation?: number; copie?: { renduId: number; version: string } } = {},
+): Promise<ResultatEcriture> {
+  if (o.generation !== undefined && o.generation !== generationDe(seanceId)) return { refus: "projection_changee" };
+  const conditions = [eq(seances.id, seanceId), sql`${seances.projection} IS NOT DISTINCT FROM ${avant === null ? null : JSON.stringify(avant)}::jsonb`];
+  if (o.copie) conditions.push(copieToujoursLa(o.copie));
   const [maj] = await db
     .update(seances)
     .set({ projection: apres })
-    .where(and(eq(seances.id, seanceId), sql`${seances.projection} IS NOT DISTINCT FROM ${avant === null ? null : JSON.stringify(avant)}::jsonb`))
+    .where(and(...conditions))
     .returning();
-  if (!maj) return null;
-  // Un arrêt est passé entre la vérification et l'écriture : la page écrite est retirée aussitôt (l'arrêt l'emporte).
-  if (generation !== undefined && generation !== generationDe(seanceId)) {
+  if (!maj) {
+    if (o.copie && (await versionActuelle({ source: "copie", renduId: o.copie.renduId, devoirId: 0 })) !== o.copie.version) return { refus: "copie_changee" };
+    return { refus: "projection_changee" };
+  }
+  const annuler = async () => {
     await db
       .update(seances)
-      .set({ projection: null })
+      .set({ projection: avant })
       .where(and(eq(seances.id, seanceId), sql`${seances.projection} IS NOT DISTINCT FROM ${JSON.stringify(apres)}::jsonb`));
-    return null;
+  };
+  // Un arrêt est passé entre la vérification et l'écriture : la page écrite est retirée aussitôt (l'arrêt l'emporte).
+  if (o.generation !== undefined && o.generation !== generationDe(seanceId)) {
+    await annuler();
+    return { refus: "projection_changee" };
   }
-  return maj;
+  // Remplacement de la copie validé pendant l'écriture : relu ici, la projection revient à l'état d'avant.
+  if (o.copie && (await versionActuelle({ source: "copie", renduId: o.copie.renduId, devoirId: 0 })) !== o.copie.version) {
+    await annuler();
+    return { refus: "copie_changee" };
+  }
+  return { seance: maj };
 }
 
-type MotifFin = "diapos" | "video" | "fin" | "plan_b" | "annulation" | "remplacee" | "partage";
+/**
+ * Remplace la projection (vidéo ou rien) et rend celle d'avant, lue dans la même transaction : « Revenir aux
+ * diapos » et une vidéo savent toujours quelle copie elles retirent, même si elle a été écrite juste avant.
+ */
+export async function remplacerProjection(seanceId: number, apres: ProjectionVideo | null): Promise<ProjectionSeance | null> {
+  projectionChangee(seanceId);
+  return db.transaction(async (tx) => {
+    const [s] = await tx.select({ projection: seances.projection }).from(seances).where(eq(seances.id, seanceId)).for("update");
+    await tx.update(seances).set({ projection: apres }).where(eq(seances.id, seanceId));
+    return s?.projection ?? null;
+  });
+}
+
+type MotifFin = "diapos" | "video" | "fin" | "plan_b" | "annulation" | "remplacee" | "modifie" | "partage";
 
 /** Après qu'une copie a quitté l'écran (déjà écrit en base) : publie « copie » null et consigne « copie_fin ». */
 export async function finDeCopie(seanceId: number, ancienne: ProjectionCopie, motif: MotifFin): Promise<void> {
+  oublierContenu(seanceId);
   publier(canal(seanceId), "copie", null);
-  if (motif === "remplacee") publier(canal(seanceId), "copie:arretee", { motif });
+  // Copie remplacée par l'étudiant, corrigé modifié : les Studios disent pourquoi la page a quitté l'écran.
+  if (motif === "remplacee" || motif === "modifie") publier(canal(seanceId), "copie:arretee", { motif });
   await db.insert(evenementsSeances).values({
     seanceId,
     type: "copie_fin",
@@ -548,7 +665,7 @@ export async function arreterCopie(seanceId: number, motif: MotifFin): Promise<b
     const [s] = await db.select({ projection: seances.projection }).from(seances).where(eq(seances.id, seanceId));
     const p = s?.projection ?? null;
     if (!estProjectionCopie(p)) return false;
-    if (await ecrireSiInchangee(seanceId, p, null)) {
+    if ("seance" in (await ecrireSiInchangee(seanceId, p, null))) {
       await finDeCopie(seanceId, p, motif);
       return true;
     }

@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown, Repeat, LayoutGrid } from "lucide-react";
+import { Bell, BookImage, LogOut, User, WifiOff, Settings2, HelpCircle, MessageCircleQuestion, CloudUpload, ChevronDown, Repeat, LayoutGrid } from "lucide-react";
 import { useMoiConnecte, seDeconnecter, basculerCasquette } from "@/lib/auth";
 import { useTousEvenements } from "@/lib/flux";
 import { queryClient, rafraichir } from "@/lib/queryClient";
@@ -16,6 +16,9 @@ import { PanneauNotifications } from "./notifications";
 import { useFileEnvoi, relancerEnvoi, abandonnerEnvoi } from "@/lib/file-envoi";
 import { toast } from "@/components/ui/toast";
 import { InstallationMobile } from "@/modules/pwa/InstallationMobile";
+import { manuelsDuRole } from "@/modules/manuels/manuels";
+import { useTextes } from "@/lib/textes";
+import { t as textesManuels } from "@shared/textes/manuels";
 import { LIBELLES_ROLES } from "@shared/schema";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
@@ -154,6 +157,8 @@ function MenuPlusTelephone({ elements, chemin }: { elements: ElementNav[]; chemi
 function MenuProfil() {
   const moi = useMoiConnecte();
   const [, naviguer] = useLocation();
+  const txManuels = useTextes(textesManuels);
+  const manuels = manuelsDuRole(moi.role);
   return (
     <Menu
       declencheur={
@@ -187,6 +192,12 @@ function MenuProfil() {
       <ElementMenu icone={<HelpCircle className="h-4 w-4" />} onSelect={() => naviguer("/bienvenue?visite=1")}>
         Revoir la visite guidée
       </ElementMenu>
+      {/* Le manuel illustré (PDF public) de chacun, dans un nouvel onglet ; les deux pour la vie scolaire et la direction. */}
+      {manuels.map((m) => (
+        <ElementMenu key={m.id} icone={<BookImage className="h-4 w-4" />} onSelect={() => window.open(m.pdf, "_blank", "noopener")}>
+          {manuels.length > 1 ? txManuels(m.id === "etudiants" ? "menu.etudiants" : "menu.formateurs") : txManuels("menu.mien")}
+        </ElementMenu>
+      ))}
       {lienAide(moi) && (
         <ElementMenu icone={<MessageCircleQuestion className="h-4 w-4" />} onSelect={() => window.open(lienAide(moi)!, "_blank", "noopener")}>
           Besoin d'aide ? (WhatsApp)

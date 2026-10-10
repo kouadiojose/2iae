@@ -67,6 +67,10 @@ const FR = {
   "liens.emploi": "Mon emploi du temps",
   "liens.annonces": "Annonces",
   "liens.questions": "Questions en suspens",
+  // Le manuel illustré du formateur (PDF, client/src/modules/manuels/manuels.ts) : en tête des liens.
+  "liens.manuel": "Le manuel illustré",
+  "liens.manuel.detail": "Le campus pas à pas, en images.",
+  "liens.manuel.infos": "PDF · {pages} pages · {poids}",
 
   // ── Carte d'une séance (CarteSeance) ───────────────────────────────────────
   "carte.direct": "En direct",

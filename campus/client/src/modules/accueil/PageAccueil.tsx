@@ -36,6 +36,7 @@ import { CarteRappels } from "@/modules/rappels/CarteRappels";
 import { BandeauCoupe } from "@/modules/progression/BandeauCoupe";
 import { PastilleSemaine } from "@/modules/progression/PastilleSemaine";
 import { CarteVideoCampus } from "./CarteVideoCampus";
+import { CarteManuel } from "@/modules/manuels/CarteManuel";
 import type { AnnonceResume, ElementAFaire, ParcoursBienvenue } from "@shared/schema";
 import { libelleSuivi, type AccueilEtudiantSuivi, type CoursAccueilSuivi, type ObjectifDuJourDto } from "@shared/engagement/objectif";
 import { t as textesObjectif } from "@shared/textes/objectif";
@@ -128,6 +129,10 @@ export default function PageAccueil() {
         <div className="flex min-w-0 flex-col gap-7">
           <LimiteSilencieuse nom="CarteVideoCampus">
             <CarteVideoCampus />
+          </LimiteSilencieuse>
+          {/* Le manuel illustré, toujours là (la carte des vidéos, elle, peut être masquée). */}
+          <LimiteSilencieuse nom="CarteManuel">
+            <CarteManuel />
           </LimiteSilencieuse>
           <LimiteSilencieuse nom="BandeauCoupe">
             <BandeauCoupe />

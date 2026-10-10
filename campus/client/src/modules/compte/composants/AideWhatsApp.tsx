@@ -1,13 +1,18 @@
 // « Besoin d'aide ? » avant d'être connecté : la vie scolaire de chaque
 // campus sur WhatsApp, message déjà rédigé. On ne sait pas encore qui écrit,
 // donc on ne révèle aucun compte : la personne choisit son campus.
+// Dessous, les deux manuels illustrés (PDF publics) : on ne sait pas qui lit,
+// la personne choisit le sien.
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, MapPin } from "lucide-react";
+import { BookImage, MessageCircle, MapPin } from "lucide-react";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Squelette } from "@/components/ui/divers";
 import { cn } from "@/lib/utils";
 import type { ContactSite } from "@shared/schema";
 import { lienWhatsApp, ressembleMatricule } from "../outils";
+import { useTextes } from "@/lib/textes";
+import { MANUELS } from "@/modules/manuels/manuels";
+import { t } from "@shared/textes/manuels";
 
 export function useContactsSites() {
   return useQuery<ContactSite[]>({ queryKey: ["/api/compte/contacts-sites"], staleTime: 5 * 60_000 });
@@ -77,7 +82,43 @@ export function ListeContactsSites({ identifiant, className }: { identifiant?: s
 export function AideWhatsApp({ ouverte, onFermer, identifiant }: { ouverte: boolean; onFermer: () => void; identifiant?: string }) {
   return (
     <Fenetre ouverte={ouverte} onFermer={onFermer} titre="Besoin d'aide ?" description="Choisir son campus : la vie scolaire répond sur WhatsApp.">
-      <ListeContactsSites identifiant={identifiant} className="pb-3" />
+      <ListeContactsSites identifiant={identifiant} />
+      <LiensManuels />
     </Fenetre>
+  );
+}
+
+/** Les deux manuels illustrés (PDF publics, lisibles sans compte) : se connecter, la première fois, le code oublié. */
+function LiensManuels() {
+  const tx = useTextes(t);
+  const manuels = [
+    { ...MANUELS.etudiants, libelle: tx("aide.etudiants") },
+    { ...MANUELS.formateurs, libelle: tx("aide.formateurs") },
+  ];
+  return (
+    <section aria-labelledby="titre-aide-manuels" className="mt-4 flex flex-col gap-2 border-t border-ligne pb-3 pt-4">
+      <h3 id="titre-aide-manuels" className="text-[15px] font-extrabold">
+        {tx("aide.titre")}
+      </h3>
+      <p className="text-sm leading-snug text-texte-pale">{tx("aide.texte")}</p>
+      <ul className="grid grid-cols-2 gap-2">
+        {manuels.map((m) => (
+          <li key={m.id}>
+            <a
+              href={m.pdf}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[56px] items-center gap-2.5 rounded-2xl border border-ligne bg-white px-3 py-2 text-encre no-underline transition-colors hover:border-orange hover:text-encre"
+            >
+              <BookImage className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+              <span className="flex min-w-0 flex-col">
+                <span className="text-sm font-bold leading-snug">{m.libelle}</span>
+                <span className="font-mono text-[11px] text-texte-gris">{tx("aide.infos", { v: { poids: m.poids } })}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

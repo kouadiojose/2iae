@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   ArrowRight,
+  ArrowUpRight,
   BookOpen,
   CalendarRange,
   ChevronDown,
@@ -53,6 +54,7 @@ import { selonNombre, t, type CleTravail } from "@shared/textes/travail";
 import type { Traducteur } from "@shared/textes";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
+import { MANUELS } from "@/modules/manuels/manuels";
 
 type Tx = Traducteur<CleTravail>;
 
@@ -332,6 +334,9 @@ function LiensSimples({ data, tx }: { data: AccueilFormateur; tx: Tx }) {
         {tx("liens.titre")}
       </h2>
       <ul className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2 lg:grid-cols-3">
+        <li className="col-span-full">
+          <LienManuel tx={tx} />
+        </li>
         {liens.map((l) => (
           <li key={l.href}>
             <CarteLien href={l.href} className="flex min-h-[60px] items-center gap-3 px-4 py-3">
@@ -344,5 +349,29 @@ function LiensSimples({ data, tx }: { data: AccueilFormateur; tx: Tx }) {
         ))}
       </ul>
     </nav>
+  );
+}
+
+/**
+ * Le manuel illustré du formateur, en tête des liens : la couverture et le PDF, ouvert dans un nouvel onglet
+ * (un vrai lien, hors du routeur du campus ; le service worker ne le garde pas).
+ */
+function LienManuel({ tx }: { tx: Tx }) {
+  const m = MANUELS.formateurs;
+  return (
+    <a
+      href={m.pdf}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex min-h-[76px] items-center gap-3.5 rounded-2xl border border-orange bg-orange-pale px-4 py-3 text-encre no-underline transition-colors hover:border-orange-fonce hover:text-encre"
+    >
+      <img src={m.couverture} alt="" width={300} height={425} loading="lazy" className="h-[60px] w-[42px] shrink-0 rounded-md border border-ligne object-cover" />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[17px] font-extrabold leading-snug">{tx("liens.manuel")}</span>
+        <span className="text-[14px] leading-snug text-texte-pale">{tx("liens.manuel.detail")}</span>
+        <span className="font-mono text-[12px] font-semibold text-orange-fonce">{tx("liens.manuel.infos", { v: { pages: m.pages, poids: m.poids } })}</span>
+      </span>
+      <ArrowUpRight className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+    </a>
   );
 }

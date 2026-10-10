@@ -59,7 +59,7 @@ function Bienvenue({ r }: { r: InscriptionFormateurFaite }) {
             </span>
           </p>
         ) : (
-          <p className="text-base leading-relaxed text-texte-pale">Gardez le guide du formateur sous la main : il explique tout, pas à pas.</p>
+          <p className="text-base leading-relaxed text-texte-pale">Gardez le manuel illustré du formateur sous la main : tout y est, pas à pas, en images.</p>
         )}
         <p className="text-[15px] leading-relaxed text-texte-pale">
           Pour vous reconnecter : <strong className="text-encre">{r.email}</strong> et le mot de passe que vous venez de choisir.
@@ -73,7 +73,7 @@ function Bienvenue({ r }: { r: InscriptionFormateurFaite }) {
           rel="noopener noreferrer"
           className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-xl border border-ligne px-4 text-[15px] font-bold text-encre no-underline hover:bg-creme"
         >
-          <BookOpenCheck className="h-5 w-5 text-orange-fonce" /> Le guide complet du formateur (PDF)
+          <BookOpenCheck className="h-5 w-5 text-orange-fonce" /> Le manuel illustré du formateur (PDF)
         </a>
       </div>
     </CadrePublic>

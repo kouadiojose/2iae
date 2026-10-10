@@ -88,7 +88,7 @@ export function AideWhatsApp({ ouverte, onFermer, identifiant }: { ouverte: bool
   );
 }
 
-/** Les deux manuels illustrés (PDF publics, lisibles sans compte) : se connecter, la première fois, le code oublié. */
+/** Les deux manuels illustrés (PDF publics, lisibles sans compte) : se connecter, suivre un cours, les devoirs. */
 function LiensManuels() {
   const tx = useTextes(t);
   const manuels = [
@@ -113,7 +113,7 @@ function LiensManuels() {
               <BookImage className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
               <span className="flex min-w-0 flex-col">
                 <span className="text-sm font-bold leading-snug">{m.libelle}</span>
-                <span className="font-mono text-[11px] text-texte-gris">{tx("aide.infos", { v: { poids: m.poids } })}</span>
+                <span className="font-mono text-[13px] text-texte-pale">{tx("aide.infos", { v: { poids: m.poids } })}</span>
               </span>
             </a>
           </li>

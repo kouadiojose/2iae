@@ -55,6 +55,7 @@ import type { Traducteur } from "@shared/textes";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
 import { MANUELS } from "@/modules/manuels/manuels";
+import { t as textesManuels } from "@shared/textes/manuels";
 
 type Tx = Traducteur<CleTravail>;
 
@@ -335,7 +336,7 @@ function LiensSimples({ data, tx }: { data: AccueilFormateur; tx: Tx }) {
       </h2>
       <ul className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2 lg:grid-cols-3">
         <li className="col-span-full">
-          <LienManuel tx={tx} />
+          <LienManuel />
         </li>
         {liens.map((l) => (
           <li key={l.href}>
@@ -354,24 +355,27 @@ function LiensSimples({ data, tx }: { data: AccueilFormateur; tx: Tx }) {
 
 /**
  * Le manuel illustré du formateur, en tête des liens : la couverture et le PDF, ouvert dans un nouvel onglet
- * (un vrai lien, hors du routeur du campus ; le service worker ne le garde pas).
+ * (un vrai lien, hors du routeur du campus ; le service worker ne le garde pas). Même carte blanche que les autres
+ * liens : l'orange reste à la chose à faire de « À faire » (un document de référence n'est pas urgent).
+ * Textes : shared/textes/manuels.ts, avec ceux des autres écrans des manuels.
  */
-function LienManuel({ tx }: { tx: Tx }) {
+function LienManuel() {
+  const tx = useTextes(textesManuels);
   const m = MANUELS.formateurs;
   return (
     <a
       href={m.pdf}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex min-h-[76px] items-center gap-3.5 rounded-2xl border border-orange bg-orange-pale px-4 py-3 text-encre no-underline transition-colors hover:border-orange-fonce hover:text-encre"
+      className="flex min-h-[76px] items-center gap-3.5 rounded-2xl border border-ligne bg-white px-4 py-3 text-encre no-underline transition-colors hover:border-orange hover:text-encre focus-visible:border-orange"
     >
       <img src={m.couverture} alt="" width={300} height={425} loading="lazy" className="h-[60px] w-[42px] shrink-0 rounded-md border border-ligne object-cover" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[17px] font-extrabold leading-snug">{tx("liens.manuel")}</span>
-        <span className="text-[14px] leading-snug text-texte-pale">{tx("liens.manuel.detail")}</span>
-        <span className="font-mono text-[12px] font-semibold text-orange-fonce">{tx("liens.manuel.infos", { v: { pages: m.pages, poids: m.poids } })}</span>
+        <span className="text-[17px] font-extrabold leading-snug">{tx("formateur.titre")}</span>
+        <span className="text-[14px] leading-snug text-texte-pale">{tx("formateur.detail")}</span>
+        <span className="font-mono text-[13px] font-semibold text-orange-fonce">{tx("infos", { v: { pages: m.pages, poids: m.poids } })}</span>
       </span>
-      <ArrowUpRight className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+      <ArrowUpRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
     </a>
   );
 }

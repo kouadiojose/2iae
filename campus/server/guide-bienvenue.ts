@@ -1,6 +1,8 @@
 // Guide de bienvenue : dès qu'un formateur (ou un membre de l'équipe) a créé
 // son compte, il reçoit par e-mail ses identifiants et le campus pas à pas,
-// avec le guide complet en PDF joint (celui de client/public/guides).
+// avec en PDF joint (client/public/guides) son manuel illustré : celui du
+// formateur ou de l'étudiant (client/src/modules/manuels/manuels.ts), le guide
+// de l'administration pour l'équipe.
 import fs from "fs/promises";
 import path from "path";
 import { config, estProduction } from "./config";
@@ -12,9 +14,9 @@ const TAILLE_MAX_PDF = 8 * 1024 * 1024;
 
 const guideDuRole = (role: Utilisateur["role"]) =>
   role === "formateur"
-    ? { fichier: "guide-formateurs.pdf", nom: "Guide du formateur · Campus 2IAE.pdf" }
+    ? { fichier: "manuel-formateurs.pdf", nom: "Manuel du formateur · Campus 2IAE.pdf" }
     : role === "etudiant"
-      ? { fichier: "guide-etudiants.pdf", nom: "Guide de l'étudiant · Campus 2IAE.pdf" }
+      ? { fichier: "manuel-etudiants.pdf", nom: "Manuel de l'étudiant · Campus 2IAE.pdf" }
       : { fichier: "guide-administration.pdf", nom: "Guide de l'administration · Campus 2IAE.pdf" };
 
 const enMemoire = new Map<string, Buffer | null>();

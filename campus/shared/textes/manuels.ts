@@ -1,20 +1,22 @@
 // Textes des manuels illustrés (PDF de client/public/guides/, voir client/src/modules/manuels/manuels.ts) :
-// la carte « Mon manuel illustré » de l'accueil étudiant, les entrées du menu du compte et les liens de la
-// fenêtre « Besoin d'aide ? » de la page de connexion. Le lien de l'accueil du formateur est dans
-// travail.ts (liens.manuel), avec les autres liens de cet accueil.
-// Étudiants tutoyés, personnel vouvoyé ; variables {pages} et {poids}.
+// la carte « Mon manuel illustré » de l'accueil étudiant, le lien de l'accueil du formateur, les entrées du menu
+// du compte et les liens de la fenêtre « Besoin d'aide ? » de la page de connexion. Tous les textes des manuels
+// sont ici : un manuel refait, un seul fichier à relire. Variables {pages} et {poids}.
 import { creerTextes } from "./index";
 
 export const t = creerTextes({
-  // ── Carte de l'accueil étudiant ──────────────────────────────────────────
-  "carte.titre": { tu: "Mon manuel illustré", vous: "Le manuel illustré" },
-  "carte.texte": {
-    tu: "Te connecter, suivre un cours, rendre un devoir, lire ta note : un geste par page, en images.",
-    vous: "Se connecter, suivre un cours, rendre un devoir, lire sa note : un geste par page, en images.",
-  },
-  "carte.infos": "PDF · {pages} pages · {poids}",
-  "carte.ouvrir": "Ouvrir le manuel",
-  "carte.forfait": { tu: "En Wi-Fi si ton forfait est petit.", vous: "En Wi-Fi si votre forfait est petit." },
+  // Ligne d'informations sous le titre d'un manuel (le poids est affiché avant le téléchargement : petits forfaits).
+  infos: "PDF · {pages} pages · {poids}",
+
+  // ── Carte de l'accueil étudiant (seuls les étudiants la voient : tutoiement) ──
+  "carte.titre": "Mon manuel illustré",
+  "carte.forfait": "En Wi-Fi si ton forfait est petit.",
+  // Le fichier reste dans les téléchargements du téléphone. La couverture du manuel des étudiants cite ce libellé.
+  "carte.telecharger": "Télécharger le manuel",
+
+  // ── Lien de l'accueil du formateur (vouvoiement) ──────────────────────────
+  "formateur.titre": "Le manuel illustré",
+  "formateur.detail": "Le campus pas à pas, en images.",
 
   // ── Menu du compte (photo en haut à droite), sur toutes les pages ────────
   "menu.mien": "Mon manuel illustré (PDF)",
@@ -23,7 +25,7 @@ export const t = creerTextes({
 
   // ── « Besoin d'aide ? » de la page de connexion (personne encore inconnue) ──
   "aide.titre": "Les manuels illustrés",
-  "aide.texte": "Se connecter, la première fois, le code oublié : tout est expliqué en images.",
+  "aide.texte": "Se connecter, suivre un cours, les devoirs : tout est expliqué en images.",
   "aide.etudiants": "Manuel de l'étudiant",
   "aide.formateurs": "Manuel du formateur",
   "aide.infos": "PDF · {poids}",

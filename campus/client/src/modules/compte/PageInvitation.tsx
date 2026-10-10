@@ -13,11 +13,13 @@ import { Champ } from "@/components/ui/champs";
 import type { InfoInvitation, InvitationAcceptee } from "@shared/lancement";
 import { CadrePublic } from "./composants/CadrePublic";
 import { installerMoi } from "./outils";
+import { MANUELS } from "@/modules/manuels/manuels";
 
 /** « M. », « Mme » : prénom encore inconnu, la personne le tape. */
 const prenomInconnu = (p: string) => /^(m|mme|mlle|dr|pr)\.?$/i.test(p.trim());
 
-const guidePdf = (role: InfoInvitation["role"]) => (role === "formateur" ? "/guides/guide-formateurs.pdf" : "/guides/guide-administration.pdf");
+/** Le formateur reçoit son manuel illustré ; l'équipe, le guide de l'administration (pas de manuel pour elle). */
+const guidePdf = (role: InfoInvitation["role"]) => (role === "formateur" ? MANUELS.formateurs.pdf : "/guides/guide-administration.pdf");
 
 export default function PageInvitation({ jeton }: { jeton: string }) {
   const { data, error, isLoading } = useQuery<InfoInvitation>({ queryKey: [`/api/invitation/${encodeURIComponent(jeton)}`], retry: false, staleTime: Infinity });

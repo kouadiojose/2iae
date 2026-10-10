@@ -14,6 +14,7 @@ import { Champ, Selection } from "@/components/ui/champs";
 import type { InfoInscriptionEtudiantDto, InscriptionEtudiantFaite } from "@shared/schema";
 import { CadrePublic } from "./composants/CadrePublic";
 import { installerMoi } from "./outils";
+import { MANUELS } from "@/modules/manuels/manuels";
 
 type ClasseInscription = InfoInscriptionEtudiantDto["classes"][number];
 
@@ -266,13 +267,12 @@ function CompteCree({ resultat }: { resultat: InscriptionEtudiantFaite }) {
         </Bouton>
         <p className="text-center text-[13px] text-texte-gris">Tu vas choisir comment suivre les cours et autoriser les alertes : tu en reçois une dès qu'un cours commence.</p>
         <a
-          href="/guides/guide-etudiants.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
+          href={MANUELS.etudiants.pdf}
+          download
           className="flex min-h-[48px] items-center justify-center gap-2 text-[15px] font-bold text-orange-fonce hover:text-encre"
         >
           <FileDown className="h-5 w-5" />
-          Télécharger le guide de l'étudiant (PDF)
+          Télécharger le manuel illustré (PDF · {MANUELS.etudiants.poids})
         </a>
       </div>
     </CadrePublic>

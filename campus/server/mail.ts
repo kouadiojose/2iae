@@ -324,7 +324,7 @@ export function emailGuideBienvenue(o: {
     ? [
         {
           titre: "Se connecter",
-          texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Code oublié ? » : un lien vous arrive par e-mail.`,
+          texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Mot de passe oublié ? » : un lien vous arrive par e-mail.`,
         },
         {
           titre: "Installer l'application",
@@ -358,7 +358,7 @@ export function emailGuideBienvenue(o: {
     : [
         {
           titre: "Se connecter",
-          texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Code oublié ? ».`,
+          texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Mot de passe oublié ? ».`,
         },
         {
           titre: "Installer l'application",
@@ -373,7 +373,7 @@ export function emailGuideBienvenue(o: {
           texte: "« **Live** » : les cours en cours, les salles prêtes, et le replay de chaque séance terminée.",
         },
       ];
-  const pdf = formateur ? "Le **guide du formateur** complet (16 pages, PDF) est joint à cet e-mail." : "Le **guide de l'administration** complet (PDF) est joint à cet e-mail.";
+  const pdf = formateur ? "Le **manuel illustré du formateur** (PDF, en images) est joint à cet e-mail." : "Le **guide de l'administration** complet (PDF) est joint à cet e-mail.";
   const { html, texte } = gabaritEmail({
     etiquette: formateur ? "Bienvenue · Guide du formateur" : "Bienvenue · Campus numérique",
     titre: `Bienvenue, ${appel} !`,
@@ -384,7 +384,7 @@ export function emailGuideBienvenue(o: {
       ...(o.premierCours ? [`Votre prochain cours : **${o.premierCours}**.`] : []),
     ],
     bouton: { libelle: "Entrer dans mon campus", lien: `${config.urlCampus}/connexion` },
-    apresBouton: [o.pdfJoint ? pdf : `Le guide complet (PDF) se télécharge ici : ${o.lienPdf}`],
+    apresBouton: [o.pdfJoint ? pdf : `${formateur ? "Le manuel illustré du formateur" : "Le guide complet"} (PDF) se télécharge ici : ${o.lienPdf}`],
     encadre: [
       { libelle: "Adresse du campus", valeur: hote },
       { libelle: "Votre identifiant", valeur: o.email, mono: true },
@@ -418,7 +418,7 @@ export function emailGuideEtudiant(o: {
       ...(o.premierCours ? [`Ton prochain cours : **${o.premierCours}**.`] : []),
     ],
     bouton: { libelle: "Entrer dans mon campus", lien: `${config.urlCampus}/connexion` },
-    apresBouton: [o.pdfJoint ? "Le **guide de l'étudiant** complet (PDF) est joint à cet e-mail." : `Le guide de l'étudiant complet (PDF) se télécharge ici : ${o.lienPdf}`],
+    apresBouton: [o.pdfJoint ? "Ton **manuel illustré** (PDF, en images) est joint à cet e-mail." : `Ton manuel illustré (PDF) se télécharge ici : ${o.lienPdf}`],
     encadre: [
       { libelle: "Adresse du campus", valeur: hote },
       { libelle: "Ton matricule (ton identifiant)", valeur: o.matricule, mono: true },
@@ -480,8 +480,8 @@ export function emailReinitialisation(o: { prenom: string; etudiant: boolean; li
   return { sujet: tu ? "Ton nouveau code secret · Campus 2IAE" : "Votre nouveau mot de passe · Campus 2IAE", html, texte };
 }
 
-/** Guide complet du formateur (PDF servi par le campus). */
-export const guideFormateurUrl = () => `${config.urlCampus}/guides/guide-formateurs.pdf`;
+/** Manuel illustré du formateur (PDF servi par le campus, client/src/modules/manuels/manuels.ts). */
+export const guideFormateurUrl = () => `${config.urlCampus}/guides/manuel-formateurs.pdf`;
 
 /** Lien personnel d'inscription d'un formateur, envoyé par e-mail depuis le pilotage. */
 export function emailLienFormateur(o: { pour: string; lien: string; expireLe: Date }): { sujet: string; html: string; texte: string } {

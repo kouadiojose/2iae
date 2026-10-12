@@ -6,22 +6,31 @@
 //   GET  /api/enseigner/a-revoir               copies que le campus n'a pas publiées, et relectures ouvertes
 //   POST /api/enseigner/relectures/:id         { note?, reponse } le formateur garde ou change la note, et répond
 //   GET  /api/pilotage/corrections[?jours=30]  la correction automatique en chiffres (direction, périmètre)
+//   POST /api/pilotage/corrections/relire-non-lues  remet en correction les copies que le campus ne savait pas lire
 //
 // Une relecture traitée fait de la note une note de formateur (origine « formateur », même gardée) : le campus
 // ne la reprend plus, même si le corrigé change ensuite. Les listes portent des noms d'étudiants et des notes :
 // réponses en « no-store » (postes partagés), comme /api/enseigner/copies.
 import type { Express } from "express";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { exigerDroit, exigerRole, droitSiEquipe, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { enseigneCours, formateursDuCours, idsCoursAccessibles } from "../acces";
 import { notifier } from "../notifications";
 import { publierUtilisateur } from "../temps-reel";
-import { copiePriseEnMain, versRelectureEtudiant } from "../correction-auto";
+import { SQL_NON_LUE_A_RELIRE, copiePriseEnMain, relireCopiesNonLues, versRelectureEtudiant } from "../correction-auto";
 import { cours, demandesRelecture, devoirs, journal, rendus, utilisateurs, type Utilisateur } from "@shared/schema";
-import { MOTIF_RELECTURE_MAX, type BilanCorrections, type CopieARevoir, type ListeARevoir, type RaisonARevoir, type ReponseRelecture } from "@shared/engagement/corrections";
+import {
+  MOTIF_RELECTURE_MAX,
+  type BilanCorrections,
+  type CopieARevoir,
+  type ListeARevoir,
+  type RaisonARevoir,
+  type ReponseRelecture,
+  type ReponseRelireNonLues,
+} from "@shared/engagement/corrections";
 import { PERIODES } from "@shared/engagement/indicateurs";
 
 const ENSEIGNANTS = ["formateur", "admin", "vie_scolaire"] as const;
@@ -125,23 +134,33 @@ async function copiesARevoir(u: Utilisateur, coursIds: number[]): Promise<ListeA
 
 // ── Bilan pour la direction ────────────────────────────────────────────────
 
+/**
+ * Périmètre de la direction pour la correction automatique : ses cours (ids, à comparer à d.cours_id) et, pour
+ * la vie scolaire d'un campus, les étudiants de son campus (site, à ajouter après une condition, alias e). Nul :
+ * aucun cours. Le même pour le bilan et pour les copies que la direction remet en correction.
+ */
+async function perimetreCorrections(u: Utilisateur): Promise<{ ids: SQL; site: SQL } | null> {
+  const coursIds = await idsCoursAccessibles(u);
+  if (!coursIds.length) return null;
+  const perimetre = perimetreSites(u);
+  return { ids: tableauEntiers(coursIds), site: perimetre ? sql`AND e.site_id = ANY(${tableauEntiers(perimetre)})` : sql`` };
+}
+
 async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCorrections> {
   const depuis = new Date(Date.now() - jours * 24 * 3600_000);
-  const coursIds = await idsCoursAccessibles(u);
   const vide: BilanCorrections = {
     depuis: depuis.toISOString(),
     corriges: { enPreparation: 0, aValider: 0, valides: 0, tacites: 0 },
-    copies: { enFile: 0, notees: 0, aRevoir: 0, erreurs: 0 },
+    copies: { enFile: 0, notees: 0, aRevoir: 0, erreurs: 0, nonLues: 0 },
     noteesPeriode: 0,
     relectures: { ouvertes: 0, traitees: 0 },
     changees: { n: 0, ecartMoyen: null },
     parFormateur: [],
   };
-  if (!coursIds.length) return vide;
-  const ids = tableauEntiers(coursIds);
-  const perimetre = perimetreSites(u);
+  const p = await perimetreCorrections(u);
+  if (!p) return vide;
   // Copies, relectures et notes : les étudiants du périmètre (la vie scolaire d'un campus : les siens).
-  const site = perimetre ? sql`AND e.site_id = ANY(${tableauEntiers(perimetre)})` : sql``;
+  const { ids, site } = p;
   const d0 = depuis.toISOString();
   const n = (v: unknown) => Number(v ?? 0);
 
@@ -154,11 +173,13 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
       FROM campus.corriges_devoirs cd JOIN campus.devoirs d ON d.id = cd.devoir_id
       WHERE d.publie AND d.cours_id = ANY(${ids})`),
     // « En file » : suivies en file, et copies rendues d'un devoir corrigé par le campus pas encore prises en charge.
-    db.execute<{ en_file: number; notees: number; a_revoir: number; erreurs: number }>(sql`
+    // « Non lues » : copies que la direction peut remettre en correction (mêmes conditions que la route).
+    db.execute<{ en_file: number; notees: number; a_revoir: number; erreurs: number; non_lues: number }>(sql`
       SELECT count(*) FILTER (WHERE ca.etat = 'en_file' OR (ca.rendu_id IS NULL AND r.statut = 'rendu' AND r.correcteur_id IS NULL)) AS en_file,
              count(*) FILTER (WHERE ca.etat = 'notee') AS notees,
              count(*) FILTER (WHERE ca.etat = 'a_revoir' AND (r.statut = 'rendu' OR (r.statut = 'corrige' AND r.origine_note = 'campus'))) AS a_revoir,
-             count(*) FILTER (WHERE ca.etat = 'erreur') AS erreurs
+             count(*) FILTER (WHERE ca.etat = 'erreur') AS erreurs,
+             count(*) FILTER (WHERE ${SQL_NON_LUE_A_RELIRE}) AS non_lues
       FROM campus.rendus r
       JOIN campus.devoirs d ON d.id = r.devoir_id
       JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
@@ -224,7 +245,7 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
   return {
     depuis: depuis.toISOString(),
     corriges: { enPreparation: n(c?.en_preparation), aValider: n(c?.a_valider), valides: n(c?.valides), tacites: n(c?.tacites) },
-    copies: { enFile: n(k?.en_file), notees: n(k?.notees), aRevoir: n(k?.a_revoir), erreurs: n(k?.erreurs) },
+    copies: { enFile: n(k?.en_file), notees: n(k?.notees), aRevoir: n(k?.a_revoir), erreurs: n(k?.erreurs), nonLues: n(k?.non_lues) },
     noteesPeriode: n(notees.rows[0]?.n),
     relectures: { ouvertes: n(rl?.ouvertes), traitees: n(rl?.traitees) },
     changees: { n: n(ch?.n), ecartMoyen: ch?.ecart === null || ch?.ecart === undefined ? null : arrondi(Number(ch.ecart)) },
@@ -373,6 +394,21 @@ export function enregistrerCorrectionsCopies(app: Express) {
       const { jours } = valider(schemaBilan, req.query);
       res.setHeader("Cache-Control", "private, no-store");
       res.json(await bilanCorrections(u, jours));
+    }),
+  );
+
+  // La direction remet en correction les copies que le campus ne savait pas lire (un format devenu lisible) :
+  // même garde et même périmètre que le bilan ; jamais une copie « alerte » ni une copie notée par un formateur.
+  app.post(
+    "/api/pilotage/corrections/relire-non-lues",
+    exigerDroit("notes"),
+    route(async (req, res) => {
+      const u = moi(req);
+      const p = await perimetreCorrections(u);
+      const reponse: ReponseRelireNonLues = p
+        ? await relireCopiesNonLues(sql`d.cours_id = ANY(${p.ids}) ${p.site}`, u.id)
+        : { remises: 0, quand: "bientot" };
+      res.json(reponse);
     }),
   );
 }

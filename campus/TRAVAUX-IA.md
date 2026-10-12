@@ -65,6 +65,12 @@ par sa **référence** (« Voici la copie à corriger (référence K7Q2M9XD) »)
 publie la note à l'étudiant comme une note de formateur, ou met la copie « à revoir » par le formateur. Une
 note publiée par erreur est une faute grave : toute la prudence va vers « à revoir ».
 
+Une copie retenue « à revoir » parce qu'un fichier n'a pas pu être lu (raison « format », par exemple un .docx
+avant l'installation du module Writer de LibreOffice) ne repart jamais seule : quand le format devient lisible, la
+direction la remet en correction avec le bouton « Relire ces copies » (tableau Engagement, bloc « Correction
+automatique »), et le tour suivant la prépare comme les autres copies (jamais une copie « alerte » ni une copie
+déjà notée par un formateur).
+
 - **Un sous-agent par copie, jamais un lot** : le tour écrit jusqu'à 150 dossiers. Pour chaque dossier
   `campus/.travaux-ia/<id>/`, lancer un sous-agent neuf (sous-agent général, sans autre contexte), avec cette
   consigne : lire seulement `consignes.md`, `schema.json` et les images de CE dossier ; écrire seulement

@@ -201,7 +201,12 @@ export type ReponseRelecture = { relecture: RelectureEtudiant };
 export type BilanCorrections = {
   depuis: string;
   corriges: { enPreparation: number; aValider: number; valides: number; tacites: number };
-  copies: { enFile: number; notees: number; aRevoir: number; erreurs: number };
+  /**
+   * nonLues : parmi les copies « à revoir », celles que le campus ne savait pas lire (raison « format ») et qu'il
+   * doit encore corriger (copie toujours rendue, sans formateur, date limite passée, corrigé utilisable) : ce que
+   * POST /api/pilotage/corrections/relire-non-lues remettrait en correction. Absent d'un serveur plus ancien.
+   */
+  copies: { enFile: number; notees: number; aRevoir: number; erreurs: number; nonLues?: number };
   /** Copies notées par le campus pendant la période. */
   noteesPeriode: number;
   relectures: { ouvertes: number; traitees: number };
@@ -210,3 +215,11 @@ export type BilanCorrections = {
   /** Par formateur : corrigés validés lui-même / tacites (pour voir qui répond). */
   parFormateur: { id: number; nom: string; valides: number; tacites: number; aValider: number }[];
 };
+
+/**
+ * POST /api/pilotage/corrections/relire-non-lues (direction, droit « notes », périmètre de la personne) : les
+ * copies que le campus ne savait pas lire sont remises en correction (BilanCorrections.copies.nonLues), par
+ * exemple quand un format devient lisible. « remises » : copies remises en file (0 si c'était déjà fait).
+ * « quand » : « bientot » (l'API, dans le quart d'heure), « ce_soir » ou « demain_soir » (routine du soir).
+ */
+export type ReponseRelireNonLues = { remises: number; quand: "bientot" | "ce_soir" | "demain_soir" };

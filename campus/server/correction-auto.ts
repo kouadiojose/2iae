@@ -29,10 +29,12 @@
 //     Une panne de l'API elle-même (réseau, crédit épuisé, saturation) ne compte pas d'essai.
 // La tâche « correction-copies » (10 min) applique les réponses déjà données par la routine, et, hors mode IA
 // du soir, corrige directement par l'API, à petit débit.
+// La direction remet en correction les copies que le campus ne savait pas lire (« format »), quand un format
+// devient lisible : relireCopiesNonLues (POST /api/pilotage/corrections/relire-non-lues).
 import Anthropic from "@anthropic-ai/sdk";
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
-import { planifier } from "./taches";
+import { planifier, reveiller } from "./taches";
 import { notifier } from "./notifications";
 import { publierUtilisateur } from "./temps-reel";
 import { demanderJsonCout, ErreurIa, iaDisponible, travailDeFondPermis } from "./ia";
@@ -82,6 +84,7 @@ import {
   type EtatCorrectionEtudiant,
   type RaisonARevoir,
   type RelectureEtudiant,
+  type ReponseRelireNonLues,
 } from "@shared/engagement/corrections";
 
 const MINUTE = 60_000;
@@ -150,6 +153,20 @@ async function oublierDemandesOrphelines(): Promise<void> {
 }
 
 /**
+ * Devoir dont le campus corrige les copies maintenant (alias d, cd) : devoir de dépôt publié dont la date limite
+ * est passée (la minute couvre la fin d'échéance, finEcheance) et dont le corrigé sert de barème (validé ou
+ * tacite, non vide). Même règle que corrigeable, en SQL.
+ */
+const SQL_DEVOIR_A_CORRIGER = sql`d.type = 'depot' AND d.publie AND d.date_limite + interval '1 minute' <= now()
+      AND cd.statut IN ('valide', 'tacite') AND btrim(cd.contenu) <> ''`;
+
+/** Copie encore « rendue », sans correction ni note d'un formateur sur la copie actuelle (alias r) : sansFormateurSql. */
+const SQL_RENDUE_SANS_FORMATEUR = sql`r.statut = 'rendu' AND (r.correcteur_id IS NULL OR (r.corrige_le IS NOT NULL AND r.rendu_le IS NOT NULL AND r.corrige_le < r.rendu_le))`;
+
+/** La ligne de suivi vaut pour la copie actuelle (alias r, ca) : même heure de remise, à la milliseconde. */
+const SQL_SUIVI_MEME_COPIE = sql`date_trunc('milliseconds', ca.rendu_le) IS NOT DISTINCT FROM date_trunc('milliseconds', r.rendu_le)`;
+
+/**
  * Copies que le campus doit (encore) corriger (alias r, d, cd, ca) : copies de dépôt de devoirs publiés dont la
  * date limite est passée (la minute couvre la fin d'échéance, finEcheance) et dont le corrigé sert de barème,
  * sans correction d'un formateur sur la copie actuelle, hors consigne cachée repérée (le formateur décide), et
@@ -157,21 +174,31 @@ async function oublierDemandesOrphelines(): Promise<void> {
  * sauf pour une copie retenue « à revoir » pour elle-même).
  */
 const SQL_A_CORRIGER = sql`
-      d.type = 'depot' AND d.publie AND d.date_limite + interval '1 minute' <= now()
-      AND cd.statut IN ('valide', 'tacite') AND btrim(cd.contenu) <> ''
-      AND (
-        (r.statut = 'rendu' AND (r.correcteur_id IS NULL OR (r.corrige_le IS NOT NULL AND r.rendu_le IS NOT NULL AND r.corrige_le < r.rendu_le)))
-        OR (r.statut = 'corrige' AND r.origine_note = 'campus')
-      )
+      ${SQL_DEVOIR_A_CORRIGER}
+      AND ((${SQL_RENDUE_SANS_FORMATEUR}) OR (r.statut = 'corrige' AND r.origine_note = 'campus'))
       AND NOT (ca.etat IS NOT DISTINCT FROM 'a_revoir' AND ca.raison IS NOT DISTINCT FROM 'alerte')
       AND (
         (ca.rendu_id IS NULL AND r.statut = 'rendu')
         OR ca.etat = 'en_file'
         OR (ca.etat = 'erreur' AND ca.tentatives < ${ESSAIS_MAX_CORRECTION})
         OR (ca.etat IN ('notee', 'a_revoir', 'erreur') AND (
-          date_trunc('milliseconds', ca.rendu_le) IS DISTINCT FROM date_trunc('milliseconds', r.rendu_le)
+          NOT (${SQL_SUIVI_MEME_COPIE})
           OR (ca.version_corrige IS DISTINCT FROM cd.version AND NOT (ca.etat = 'a_revoir' AND ca.raison IS DISTINCT FROM 'echecs'))))
       )`;
+
+/**
+ * Copies que le campus ne savait pas lire et qu'il doit encore corriger (alias r, d, cd, ca) : retenues « à
+ * revoir » pour un fichier non lu (raison « format », par exemple un .docx quand LibreOffice n'avait pas le module
+ * Writer), suivi qui vaut pour la copie actuelle, et mêmes conditions que SQL_A_CORRIGER pour le devoir, le
+ * corrigé et la copie : toujours « rendue », sans correction ni note d'un formateur. Jamais une copie « alerte »
+ * (autre raison), ni une copie notée par un formateur. Une copie retenue pour elle-même ne repart jamais seule
+ * (SQL_A_CORRIGER) : c'est la direction qui la remet en correction, quand le format devient lisible
+ * (relireCopiesNonLues). Le bilan de la direction les compte (routes/corrections-copies.ts).
+ */
+export const SQL_NON_LUE_A_RELIRE = sql`
+      ${SQL_DEVOIR_A_CORRIGER}
+      AND ${SQL_RENDUE_SANS_FORMATEUR}
+      AND ca.etat = 'a_revoir' AND ca.raison = 'format' AND ${SQL_SUIVI_MEME_COPIE}`;
 
 /** Copies à corriger ce tour-ci, les plus anciennes d'abord, au plus « limite » (voir SQL_A_CORRIGER). */
 export async function copiesACorriger(limite: number): Promise<number[]> {
@@ -621,6 +648,43 @@ export async function copieRemplacee(renduId: number): Promise<void> {
     .update(correctionsAuto)
     .set({ etat: "en_file", raison: null, detail: null, demandeId: null, tentatives: 0, noteCampus: null, majLe: new Date() })
     .where(eq(correctionsAuto.renduId, renduId));
+}
+
+/**
+ * La direction remet en correction les copies que le campus ne savait pas lire (SQL_NON_LUE_A_RELIRE), par
+ * exemple quand un format devient lisible (modules Word et Excel de LibreOffice installés le 12 octobre 2026).
+ * « portee » : condition SQL du périmètre de la personne (alias r, d, e : cours et campus des étudiants), comme
+ * son bilan. Idempotente : une copie déjà remise en file n'est plus « à revoir ». Dans une transaction, avec sa
+ * ligne de journal. Hors mode IA du soir, la tâche de correction est réveillée ; en mode IA du soir, le prochain
+ * tour de la routine les prépare (copiesACorriger prend les copies en file). Renvoie les copies remises en file,
+ * et quand le campus les relit.
+ */
+export async function relireCopiesNonLues(portee: SQL, utilisateurId: number): Promise<ReponseRelireNonLues> {
+  const maintenant = new Date();
+  const remises = await db.transaction(async (tx) => {
+    const { rows } = await tx.execute<{ rendu_id: number; devoir_id: number }>(sql`
+      UPDATE campus.corrections_auto ca
+      SET etat = 'en_file', raison = NULL, detail = NULL, demande_id = NULL, tentatives = 0, maj_le = now()
+      FROM campus.rendus r
+      JOIN campus.devoirs d ON d.id = r.devoir_id
+      JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
+      JOIN campus.utilisateurs e ON e.id = r.etudiant_id
+      WHERE r.id = ca.rendu_id AND ${SQL_NON_LUE_A_RELIRE} AND ${portee}
+      RETURNING ca.rendu_id, ca.devoir_id`);
+    const renduIds = rows.map((l) => Number(l.rendu_id)).sort((a, b) => a - b);
+    if (renduIds.length) {
+      await tx.insert(journal).values({
+        utilisateurId,
+        action: "copies_non_lues_relues",
+        details: { n: renduIds.length, renduIds, devoirIds: [...new Set(rows.map((l) => Number(l.devoir_id)))].sort((a, b) => a - b) },
+      });
+    }
+    return renduIds.length;
+  });
+  if (remises && !iaDuSoir()) reveiller("correction-copies");
+  // La routine du soir passe vers 21 h (heure d'Abidjan) : « ce soir » avant, « demain soir » après.
+  const quand = !iaDuSoir() ? "bientot" : prochainSoir(maintenant).getUTCDate() === maintenant.getUTCDate() ? "ce_soir" : "demain_soir";
+  return { remises, quand };
 }
 
 // ── Lecture pour les écrans (DTO de routes/evaluations.ts) ─────────────────

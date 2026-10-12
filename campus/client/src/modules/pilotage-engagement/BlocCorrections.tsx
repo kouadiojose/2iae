@@ -4,15 +4,22 @@
 // formateurs et écart moyen, et par formateur : qui répond au corrigé du jour. Vouvoiement.
 // Contrat : BilanCorrections (shared/engagement/corrections.ts), GET /api/pilotage/corrections, périmètre de
 // la personne. Une personne sans ce droit (403), ou un serveur qui n'a pas encore la route (404) : rien.
-import type { ReactNode } from "react";
+// Copies que le campus ne savait pas lire (un format devenu lisible depuis) : bouton secondaire « Relire ces
+// copies » (POST /api/pilotage/corrections/relire-non-lues), sans confirmation : l'action ne retire rien, elle
+// remet seulement ces copies en correction, comme « Recalculer » plus haut.
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { BilanCorrections } from "@shared/engagement/corrections";
+import { RotateCcw } from "lucide-react";
+import type { BilanCorrections, ReponseRelireNonLues } from "@shared/engagement/corrections";
 import { t, selonNombre, type CleEngagement } from "@shared/textes/engagement";
 import type { Traducteur } from "@shared/textes";
 import { useTextes } from "@/lib/textes";
-import { ErreurApi } from "@/lib/api";
+import { ErreurApi, post } from "@/lib/api";
+import { rafraichir } from "@/lib/queryClient";
 import { BarreProgression, Chargement, Erreur } from "@/components/ui/divers";
+import { Bouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
+import { toast, toastErreur } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 type Tx = Traducteur<CleEngagement>;
@@ -32,6 +39,39 @@ function Chiffre({ valeur, libelle, signal }: { valeur: number; libelle: string;
         {valeur}
       </span>
       <span className="text-[13px] leading-snug text-texte-pale">{libelle}</span>
+    </div>
+  );
+}
+
+/**
+ * Copies « à revoir » que le campus ne savait pas lire (raison « format ») : une ligne et le bouton secondaire
+ * qui les remet en correction, puis le bilan est relu. Rien quand il n'y en a pas.
+ */
+function CopiesNonLues({ n, tx }: { n: number; tx: Tx }) {
+  const [envoi, setEnvoi] = useState(false);
+  if (n <= 0) return null;
+  const relire = async () => {
+    setEnvoi(true);
+    try {
+      const r = await post<ReponseRelireNonLues>("/api/pilotage/corrections/relire-non-lues");
+      if (r.remises > 0) toast(selonNombre(tx, `corrections.nonLues.fait.${r.quand}`, r.remises));
+      else toast(tx("corrections.nonLues.rien"), "info");
+      await rafraichir("/api/pilotage/corrections");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-ligne p-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <p className="min-w-0 flex-1 basis-40 text-sm font-bold text-encre">{selonNombre(tx, "corrections.nonLues", n)}</p>
+        <Bouton variante="contour" taille="sm" onClick={relire} chargement={envoi} icone={<RotateCcw className="h-4 w-4" />} className="min-h-[44px] shrink-0">
+          {tx("corrections.nonLues.bouton")}
+        </Bouton>
+      </div>
+      <Lecture>{tx("corrections.nonLues.lecture")}</Lecture>
     </div>
   );
 }
@@ -78,6 +118,7 @@ function Contenu({ b, tx }: { b: BilanCorrections; tx: Tx }) {
             <Chiffre valeur={b.copies.erreurs} libelle={tx("corrections.copies.erreurs")} signal="danger" />
           </div>
           <p className="text-sm font-bold text-encre">{selonNombre(tx, "corrections.copies.periode", b.noteesPeriode)}</p>
+          <CopiesNonLues n={b.copies.nonLues ?? 0} tx={tx} />
           <Lecture>{tx("corrections.copies.lecture")}</Lecture>
         </Carte>
       </div>

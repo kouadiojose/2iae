@@ -8,18 +8,20 @@ import type { Express, Request } from "express";
 import { z } from "zod";
 import { and, asc, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
 import { db, pool } from "../db";
-import { exigerDroit, moi, perimetreSites, hacher, motDePasseProvisoire, jetonAleatoire, oublierUtilisateur, fermerAutresSessions } from "../auth";
+import { exigerDroit, moi, perimetreSites, hacher, motDePasseProvisoire, jetonAleatoire, oublierUtilisateur, fermerAutresSessions, utilisateurParId } from "../auth";
 import { route, valider, idParam, introuvable, invalide, ErreurHttp } from "../http";
-import { publierUtilisateur } from "../temps-reel";
+import { actualiserCompteConnecte, publierUtilisateur } from "../temps-reel";
 import { intervenantsDesSeances, libelleDate } from "../programme-outils";
 import { sallePasEncoreNommee } from "../amorcage";
-import { compteEcranSalle, coursDuSite, publicDe, sallesDuSite } from "../salles-outils";
+import { compteEcranSalle, publicDe, repartitionDuSite, sallesDuSite } from "../salles-outils";
 import { assurerCompteSalle1, installationEnPlace } from "./lancement";
 import { journaliser, lienWhatsApp, numeroWhatsApp } from "./admin";
 import { cours, directsImmediats, reinitialisations, seances, sites, utilisateurs, type Utilisateur } from "@shared/schema";
 import {
   PUBLICS_SALLE,
+  estCoursCommun,
   etiquetteSalle,
+  niveauDuCours,
   nomDeSalle,
   nomSalleParDefaut,
   type CampusDuJour,
@@ -74,9 +76,14 @@ async function sallesPourPilotage(s: Site): Promise<SallesDuSite> {
   return { siteId: s.id, campus: s.nomCourt, salles: await Promise.all(salles.map((x) => versSalle(s, x.numero, x.compte))) };
 }
 
-/** L'écran d'une salle relit son compte (nom, public) et ses cours aussitôt (PageSalle écoute « salle »). */
-function prevenirEcran(compteId: number) {
+/**
+ * L'écran d'une salle relit son compte (nom, public) et ses cours aussitôt (PageSalle écoute « salle ») ; le
+ * compte gardé par ses flux temps réel est remplacé (annonces des directs, nom de salle dans le Studio).
+ */
+async function prevenirEcran(compteId: number) {
   oublierUtilisateur(compteId);
+  const frais = await utilisateurParId(compteId);
+  if (frais) actualiserCompteConnecte(frais);
   publierUtilisateur(compteId, "salle", { maj: Date.now() });
 }
 
@@ -92,17 +99,19 @@ function heureCourte(d: Date): string {
   return m ? `${h}h${String(m).padStart(2, "0")}` : `${h}h`;
 }
 
-/** Message WhatsApp d'un campus : une ligne par salle (ses cours), puis le lien de son écran. */
-function messageCampus(s: Site, libelle: string, salles: (SalleDuJour & { code: string | null; adresse: string | null })[]): string {
+/** Message WhatsApp d'un campus : une ligne par salle (ses cours), puis le lien de son écran. Jamais le code d'écran. */
+function messageCampus(s: Site, libelle: string, salles: SalleDuJour[]): string {
   const lignes = [t("message.entete", { v: { campus: s.nomCourt, date: libelle } })];
   for (const salle of salles) {
     lignes.push("");
     const nom = [salle.public, salle.nom].filter(Boolean).join(" · ");
-    const seances = salle.seances.map((x) =>
-      x.intervenant
-        ? t("message.seance", { v: { heures: x.heures, cours: x.cours, intervenant: x.intervenant } })
-        : t("message.seance.sansIntervenant", { v: { heures: x.heures, cours: x.cours } }),
-    );
+    const seances = salle.seances.map((x) => {
+      // Cours commun dans une salle réglée en L1 ou L2 : on précise qu'il est pour les deux niveaux.
+      const coursNomme = x.commun && salle.public ? t("message.commun", { v: { cours: x.cours } }) : x.cours;
+      return x.intervenant
+        ? t("message.seance", { v: { heures: x.heures, cours: coursNomme, intervenant: x.intervenant } })
+        : t("message.seance.sansIntervenant", { v: { heures: x.heures, cours: coursNomme } });
+    });
     // Une salle sans cours ce jour-là : une ligne, sans lien (rien à afficher sur son écran).
     if (!seances.length) {
       lignes.push(t("message.aucun", { v: { salle: nom } }));
@@ -110,10 +119,7 @@ function messageCampus(s: Site, libelle: string, salles: (SalleDuJour & { code: 
     }
     if (seances.length === 1) lignes.push(t("message.salle", { v: { salle: nom, seance: seances[0] } }));
     else lignes.push(t("message.salle.plusieurs", { v: { salle: nom } }), ...seances);
-    if (salle.lien) {
-      lignes.push(t("message.ecran", { v: { lien: salle.lien } }));
-      if (salle.code && salle.adresse) lignes.push(t("message.code", { v: { adresse: salle.adresse, code: `${salle.code.slice(0, 4)} ${salle.code.slice(4)}` } }));
-    } else lignes.push(t("message.ecranAInstaller"));
+    lignes.push(salle.lien ? t("message.ecran", { v: { lien: salle.lien } }) : salle.ecranInstalle ? t("message.ecranInstalle") : t("message.ecranAInstaller"));
   }
   return lignes.join("\n");
 }
@@ -144,7 +150,7 @@ export function enregistrerSalles(app: Express) {
       const { compte: premiere } = await assurerCompteSalle1(s, u);
       if (!premiere.salleNom && sallePasEncoreNommee(s.salleConference)) {
         await db.update(utilisateurs).set({ salleNom: nomSalleParDefaut(1) }).where(eq(utilisateurs.id, premiere.id));
-        prevenirEcran(premiere.id);
+        await prevenirEcran(premiere.id);
       }
       let cree: Utilisateur | null = null;
       for (let essai = 0; essai < 3 && !cree; essai++) {
@@ -202,7 +208,7 @@ export function enregistrerSalles(app: Express) {
       if (d.public !== undefined) maj.sallePublic = d.public;
       if (Object.keys(maj).length) {
         [compte] = await db.update(utilisateurs).set(maj).where(eq(utilisateurs.id, compte.id)).returning();
-        prevenirEcran(compte.id);
+        await prevenirEcran(compte.id);
         await journaliser(u, "salle_reglee", { compteId: compte.id, siteId: s.id, salle: numero, champs: Object.keys(maj), public: compte.sallePublic });
       }
       res.json(await versSalle(s, numero, compte));
@@ -227,6 +233,8 @@ export function enregistrerSalles(app: Express) {
         .where(and(eq(reinitialisations.utilisateurId, compte.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
       await fermerAutresSessions(compte.id);
       oublierUtilisateur(compte.id);
+      // Ses cours reviennent à une autre salle du campus : leurs écrans relisent aussitôt.
+      for (const autre of await sallesDuSite(s.id)) if (autre.compte) publierUtilisateur(autre.compte.id, "salle", { maj: Date.now() });
       await journaliser(u, "salle_retiree", { compteId: compte.id, siteId: s.id, salle: numero });
       res.json({ ok: true });
     }),
@@ -272,7 +280,7 @@ export function enregistrerSalles(app: Express) {
           : []
         ).map((f) => [f.id, `${f.prenom} ${f.nom}`]),
       );
-      const versSeance = (l: (typeof duJour)[number]): SeanceDeSalle => {
+      const versSeance = (l: (typeof duJour)[number]): Omit<SeanceDeSalle, "commun"> => {
         const fin = new Date(l.s.debut.getTime() + l.s.dureeMinutes * 60_000);
         return {
           id: l.s.id,
@@ -287,34 +295,55 @@ export function enregistrerSalles(app: Express) {
 
       const campus: CampusDuJour[] = [];
       for (const s of await sitesDuPerimetre(req)) {
-        const salles = await sallesDuSite(s.id);
-        const avecLiens: (SalleDuJour & { code: string | null; adresse: string | null })[] = [];
-        for (const { numero, compte } of salles) {
-          const pub = publicDe(compte);
-          const montres = new Set(await coursDuSite(s.id, pub));
+        // Chaque cours du campus se tient dans une seule salle (shared/salles.ts : salleDuCours).
+        const { salles, annees, salleDe } = await repartitionDuSite(s.id);
+        const duSite = duJour.filter((l) => salleDe.has(l.s.coursId));
+        const versSeanceDuSite = (l: (typeof duJour)[number]): SeanceDeSalle => ({ ...versSeance(l), commun: estCoursCommun(annees.get(l.s.coursId) ?? []) });
+        const lignesSalles: SalleDuJour[] = [];
+        const alertes: string[] = [];
+        for (const { numero, compte, public: pub } of salles) {
           const inst = compte ? await installationEnPlace(s, compte) : null;
           const nom = nomDeSalle(compte, s);
-          avecLiens.push({
+          const seancesSalle = duSite.filter((l) => salleDe.get(l.s.coursId) === numero);
+          lignesSalles.push({
             numero,
             nom,
             public: pub,
             etiquette: etiquetteSalle(s.nomCourt, pub, nom),
             ecranInstalle: Boolean(compte && !compte.doitChangerMotDePasse),
             lien: inst?.lien ?? null,
-            seances: duJour.filter((l) => montres.has(l.s.coursId)).map(versSeance),
-            code: inst?.code ?? null,
-            adresse: inst?.adresseCourte ?? null,
+            seances: seancesSalle.map(versSeanceDuSite),
           });
+          // Deux cours à la même heure dans une même salle : son écran n'en montrera qu'un (séances terminées mises à part).
+          const aVenir = seancesSalle.filter((l) => l.s.statut !== "terminee");
+          for (let i = 0; i < aVenir.length; i++)
+            for (let j = i + 1; j < aVenir.length; j++) {
+              const a = aVenir[i];
+              const b = aVenir[j];
+              if (b.s.debut.getTime() < a.s.debut.getTime() + a.s.dureeMinutes * 60_000 && a.s.coursId !== b.s.coursId)
+                alertes.push(
+                  t("alerte.chevauchement", {
+                    v: { a: a.titreCours || a.s.titre, b: b.titreCours || b.s.titre, heure: heureCourte(b.s.debut), salle: nom },
+                  }),
+                );
+            }
         }
-        const message = messageCampus(s, libelle, avecLiens);
+        // Un cours du jour qu'aucune salle ne montre (cours de L2 alors que la seule salle est en L1).
+        for (const l of duSite.filter((x) => salleDe.get(x.s.coursId) === null && x.s.statut !== "terminee")) {
+          const niveau = niveauDuCours(annees.get(l.s.coursId) ?? []);
+          const v = { cours: l.titreCours || l.s.titre, niveau: niveau ?? "", heure: heureCourte(l.s.debut) };
+          alertes.push(niveau ? t("alerte.sansSalle", { v }) : t("alerte.sansSalle.autre", { v }));
+        }
+        const message = messageCampus(s, libelle, lignesSalles);
         campus.push({
           siteId: s.id,
           campus: s.nomCourt,
+          salleConference: s.salleConference,
           whatsapp: numeroWhatsApp(s.whatsappVieScolaire),
-          salles: avecLiens.map(({ code: _c, adresse: _a, ...x }) => x),
+          salles: lignesSalles,
           message,
           lienWhatsApp: lienWhatsApp(s.whatsappVieScolaire, message),
-          publicsAChoisir: salles.length > 1 && salles.some((x) => !publicDe(x.compte)),
+          alertes: [...new Set(alertes)],
         });
       }
       const r: SallesDuJour = { date, libelle, jour, campus };

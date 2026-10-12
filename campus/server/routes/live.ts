@@ -24,7 +24,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
-import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil } from "../auth";
+import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil, utilisateurParId } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
@@ -129,8 +129,8 @@ import {
   type AccesDaily,
 } from "@shared/schema";
 import type { SeanceResume, EnCours, DirectDuCampus } from "@shared/api";
-import { estPublicSalle, nomDeSalle, type PublicSalle } from "@shared/salles";
-import { coursDuSite, nomSalleDuCours, publicDe } from "../salles-outils";
+import { estPublicSalle, nomDeSalle } from "@shared/salles";
+import { coursDuSite, nomSalleDuCours, type RegardSalle } from "../salles-outils";
 
 const executer = promisify(execFile);
 
@@ -385,7 +385,7 @@ async function essaisParmi(ids: number[]): Promise<Set<number>> {
   return new Set(lignes.map((l) => l.id));
 }
 
-// coursDuSite(siteId, public) : cours que montre l'écran d'une salle (server/salles-outils.ts).
+// coursDuSite(siteId, salle) : cours que montre l'écran d'une salle (server/salles-outils.ts).
 
 /**
  * Qui regarde « en cours » :
@@ -439,29 +439,30 @@ function siteRegarde(u: Utilisateur, demande: unknown): number | null {
 }
 
 /**
- * Public de la salle regardée (shared/salles.ts) : celui de l'écran pour un écran de salle ; pour l'équipe
- * sur /salle?site=, celui qu'elle demande (?public=L1). Null : toutes les classes du campus, comme avant.
+ * Salle regardée (server/salles-outils.ts) : celle de l'écran pour un écran de salle (son compte, relu en base
+ * à chaque fois avec le nom et le public de sa salle) ; pour l'équipe sur /salle?site=, la salle du public
+ * qu'elle demande (?public=L1). Null : tous les cours du campus, comme avant les salles.
  */
-function publicRegarde(u: Utilisateur, demande: unknown): PublicSalle | null {
-  if (u.role === "salle") return publicDe(u);
-  return estEquipe(u) && estPublicSalle(demande) ? demande : null;
+function salleRegardee(u: Utilisateur, demande: unknown): RegardSalle | null {
+  if (u.role === "salle") return { compteId: u.id };
+  return estEquipe(u) && estPublicSalle(demande) ? { public: demande } : null;
 }
 
 /**
  * Cours à regarder pour « en cours » et les séances du jour : ceux de la personne, limités au campus de la
- * salle regardée et, si la salle a un public (L1 ou L2), aux cours de ce niveau et aux cours communs.
+ * salle regardée et, pour l'écran d'une salle, aux cours qui se tiennent dans cette salle.
  */
-async function coursRegardes(u: Utilisateur, siteId: number | null, publicSalle: PublicSalle | null = null): Promise<number[]> {
+async function coursRegardes(u: Utilisateur, siteId: number | null, salle: RegardSalle | null = null): Promise<number[]> {
   const ids = await idsCoursAccessibles(u);
   if (!siteId) return ids;
-  const duSite = new Set(await coursDuSite(siteId, publicSalle));
+  const duSite = new Set(await coursDuSite(siteId, salle));
   return ids.filter((id) => duSite.has(id));
 }
 
 /** « En cours » d'une personne (et, pour l'équipe sur /salle?site=, d'une salle). */
 async function enCoursDe(u: Utilisateur, siteDemande?: unknown, publicDemande?: unknown): Promise<EnCours> {
   const siteId = siteRegarde(u, siteDemande);
-  return enCoursPour(await coursRegardes(u, siteId, siteId ? publicRegarde(u, publicDemande) : null), {
+  return enCoursPour(await coursRegardes(u, siteId, siteId ? salleRegardee(u, publicDemande) : null), {
     etudiant: u.role === "etudiant",
     salle: u.role === "salle" || siteId !== null,
   });
@@ -515,8 +516,14 @@ async function annoncerLive(s: Pick<Seance, "id" | "coursId" | "statut">): Promi
   for (const f of await formateursDuCours(s.coursId)) if (estEnLigne(f.id)) autres.set(f.id, f);
   for (const role of ["admin", "vie_scolaire"] as const) for (const x of utilisateursSur(`role:${role}`)) autres.set(x.id, x);
   for (const x of autres.values()) ajouter(await idsCoursAccessibles(x), x.id);
-  // Écrans de salle : ceux dont le campus suit le cours (et dont la salle montre ce niveau), chacun avec son propre regard.
-  for (const x of utilisateursSur("role:salle")) ajouter(await coursRegardes(x, siteRegarde(x, null), publicDe(x)), x.id, { salle: true });
+  // Écrans de salle : ceux dont le campus suit le cours et dont la salle le montre, chacun avec son propre regard.
+  // Le compte gardé par la connexion temps réel date de son ouverture : on relit le compte (cache vidé à
+  // chaque réglage de salle) ; la salle et son public sont relus en base par coursDuSite.
+  for (const connecte of utilisateursSur("role:salle")) {
+    const x = (await utilisateurParId(connecte.id)) ?? connecte;
+    if (!x.actif) continue;
+    ajouter(await coursRegardes(x, siteRegarde(x, null), salleRegardee(x, null)), x.id, { salle: true });
+  }
   for (const g of groupes.values()) {
     const evt: EvenementLiveDto = { seanceId: s.id, statut: s.statut, enCours: await enCoursPour(g.ids, g.regard) };
     for (const id of g.personnes) publierUtilisateur(id, "live", evt);
@@ -1463,15 +1470,15 @@ export function enregistrerLive(app: Express) {
       const limite = Math.min(100, Math.max(1, Number(req.query.limite) || 50));
       // Écran de salle (et équipe sur /salle?site=) : seulement les cours que suit ce campus, et que montre sa salle (public L1, L2).
       const siteSalle = siteRegarde(u, req.query.site);
-      const publicSalle = siteSalle ? publicRegarde(u, req.query.public) : null;
+      const salleVue = siteSalle ? salleRegardee(u, req.query.public) : null;
       let ids: number[];
       if (coursId) {
         if (!Number.isInteger(coursId) || coursId <= 0) throw invalide("Paramètre cours invalide.");
         const accessibles = await idsCoursAccessibles(u);
         if (!accessibles.includes(coursId) && !estEquipe(u)) throw interdit("Tu n'es pas inscrit à ce cours.");
-        ids = siteSalle && !(await coursDuSite(siteSalle, publicSalle)).includes(coursId) ? [] : [coursId];
+        ids = siteSalle && !(await coursDuSite(siteSalle, salleVue)).includes(coursId) ? [] : [coursId];
       } else {
-        ids = await coursRegardes(u, siteSalle, publicSalle);
+        ids = await coursRegardes(u, siteSalle, salleVue);
       }
       if (!ids.length) return res.json([]);
       const maintenant = new Date();

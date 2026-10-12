@@ -884,6 +884,12 @@ function numeroSalle(req: Request): number {
 export async function assurerCompteSalle1(s: typeof sites.$inferSelect, u: Utilisateur): Promise<{ compte: Utilisateur; nouveau: boolean }> {
   let compte = await compteEcranSalle(s.id, 1);
   const nouveau = !compte;
+  // Un ancien écran de la salle 1 désactivé (page Comptes) garde son numéro : on le libère, sinon le nouveau
+  // compte de la salle 1 heurterait l'index unique (campus, numéro de salle).
+  await pool.query(`UPDATE campus.utilisateurs SET salle_numero = NULL WHERE site_id = $1 AND role = 'salle' AND salle_numero = 1 AND NOT actif AND id <> $2`, [
+    s.id,
+    compte?.id ?? 0,
+  ]);
   if (!compte) {
     [compte] = await db
       .insert(utilisateurs)
@@ -1145,7 +1151,7 @@ export function enregistrerLancement(app: Express) {
       const [c] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, idParam(req)));
       if (!c || !peutGerer(u, c)) throw introuvable("Compte");
       if (!ROLES_INVITABLES.includes(c.role)) {
-        throw invalide(c.role === "salle" ? "Un écran de salle s'installe avec « Installer l'écran de la salle »." : "Les étudiants reçoivent leur fiche de connexion.");
+        throw invalide(c.role === "salle" ? "Un écran de salle s'installe avec « Installer l'écran » (Pilotage, Classes et campus, section Les campus)." : "Les étudiants reçoivent leur fiche de connexion.");
       }
       if (c.id === u.id) throw invalide("Vous êtes déjà connecté avec ce compte.");
       if (!c.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");

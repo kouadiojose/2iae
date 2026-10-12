@@ -68,22 +68,51 @@ export function SallesDuCampus({ site, donnees, onEcran }: { site: Site; donnees
       <Bouton variante="fantome" taille="sm" className="min-h-[44px] self-start" icone={<Plus className="h-4 w-4" />} onClick={() => setFenetre("nouvelle")}>
         {tx("campus.ajouter")}
       </Bouton>
-      {fenetre && <FenetreSalle key={fenetre === "nouvelle" ? "nouvelle" : fenetre.numero} site={site} salle={fenetre} prochain={salles.length + 1} onFermer={() => setFenetre(null)} />}
+      {fenetre && (
+        <FenetreSalle
+          key={fenetre === "nouvelle" ? "nouvelle" : fenetre.numero}
+          site={site}
+          salle={fenetre}
+          prochain={Math.max(1, ...salles.map((x) => x.numero)) + 1}
+          publicPropose={publicManquant(salles)}
+          onFermer={() => setFenetre(null)}
+        />
+      )}
     </div>
   );
 }
 
-function FenetreSalle({ site, salle, prochain, onFermer }: { site: Site; salle: SalleCampus | "nouvelle"; prochain: number; onFermer: () => void }) {
+/** Public proposé pour une nouvelle salle : le niveau qui n'a pas encore de salle (L2 d'abord, la salle 1 accueillant souvent les L1). */
+function publicManquant(salles: SalleCampus[]): PublicSalle | null {
+  if (!salles.some((x) => x.public === "L2")) return "L2";
+  if (!salles.some((x) => x.public === "L1")) return "L1";
+  return null;
+}
+
+function FenetreSalle({
+  site,
+  salle,
+  prochain,
+  publicPropose,
+  onFermer,
+}: {
+  site: Site;
+  salle: SalleCampus | "nouvelle";
+  prochain: number;
+  publicPropose: PublicSalle | null;
+  onFermer: () => void;
+}) {
   const tx = useTextes(textesSalles);
   const publics = usePublics();
   const ajout = salle === "nouvelle";
   const [nom, setNom] = useState(ajout ? nomSalleParDefaut(prochain) : salle.numero === 1 && salle.nom === site.salleConference ? "" : salle.nom);
-  const [pub, setPub] = useState<PublicSalle | null>(ajout ? null : salle.public);
+  const [pub, setPub] = useState<PublicSalle | null>(ajout ? publicPropose : salle.public);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const premiere = !ajout && salle.numero === 1;
 
   const apres = async () => {
+    // Préfixe commun : « Les campus » (/api/pilotage/salles) et « Les salles du jour » (/api/pilotage/salles-du-jour).
     await rafraichir("/api/pilotage/salles", "/api/pilotage/rentree");
     onFermer();
   };

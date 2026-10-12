@@ -5,7 +5,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "./db";
 import { classes, cours, coursClasses, utilisateurs, type Utilisateur } from "@shared/schema";
-import { anneeDeClasse, estPublicSalle, nomDeSalle, salleMontreCours, type PublicSalle } from "@shared/salles";
+import { anneeDeClasse, estPublicSalle, nomDeSalle, salleDuCours, type PublicSalle } from "@shared/salles";
 
 /**
  * Un compte « salle » qui compte comme l'écran réel d'une salle : jamais un compte de la démonstration (ses
@@ -74,25 +74,49 @@ export async function anneesDesCoursDuSite(siteId: number, coursId?: number): Pr
   return carte;
 }
 
-/**
- * Cours publiés que suit un campus (une de ses classes y est rattachée) : ce que montre l'écran de sa salle.
- * Avec un public (salle L1 ou L2) : seulement ceux que suivent des classes de ce niveau, plus les cours
- * communs aux deux niveaux et ceux des autres niveaux (shared/salles.ts : salleMontreCours).
- */
-export async function coursDuSite(siteId: number, publicSalle?: PublicSalle | null): Promise<number[]> {
-  const annees = await anneesDesCoursDuSite(siteId);
-  return [...annees.entries()].filter(([, a]) => salleMontreCours(publicSalle, a)).map(([id]) => id);
-}
+/** Une salle d'un campus et son écran (compte null : salle 1 dont l'écran n'a jamais été préparé). */
+export type SalleDuSite = { numero: number; compte: Utilisateur | null; public: PublicSalle | null };
 
 /**
- * Nom de la salle où ce cours se tient sur ce campus (confirmation d'émargement, dont le code vaut pour
- * le campus) : la seule salle équipée dont le public correspond ; sinon (une seule salle, ou plusieurs
- * qui le montrent, comme un cours commun) le nom de la salle du campus, comme avant.
+ * Répartition des cours d'un campus entre ses salles (shared/salles.ts : salleDuCours), relue en base à
+ * chaque appel : le nom et le public des salles sont toujours ceux du moment, même pour un écran resté
+ * connecté pendant qu'on réglait sa salle.
  */
+export async function repartitionDuSite(siteId: number): Promise<{
+  salles: SalleDuSite[];
+  annees: Map<number, Set<PublicSalle | null>>;
+  /** Cours → numéro de la salle qui le montre (null : aucune salle ne convient). */
+  salleDe: Map<number, number | null>;
+}> {
+  const [liste, annees] = await Promise.all([sallesDuSite(siteId), anneesDesCoursDuSite(siteId)]);
+  const salles = liste.map((x) => ({ ...x, public: publicDe(x.compte) }));
+  const salleDe = new Map<number, number | null>();
+  for (const [id, a] of annees) salleDe.set(id, salleDuCours(salles, a));
+  return { salles, annees, salleDe };
+}
+
+/** Salle regardée : celle d'un écran (son compte), ou, pour l'équipe sur /salle?site=, la première salle d'un public. */
+export type RegardSalle = { compteId?: number | null; public?: PublicSalle | null };
+
+/**
+ * Cours publiés que suit un campus (une de ses classes y est rattachée). Sans salle précisée : tous (le code
+ * d'émargement vaut pour le campus). Pour l'écran d'une salle : seulement les cours qui se tiennent dans
+ * cette salle. Un écran qui n'est la salle de personne (ancien compte d'écran en double) garde la règle
+ * d'avant : tous les cours du campus.
+ */
+export async function coursDuSite(siteId: number, regard?: RegardSalle | null): Promise<number[]> {
+  if (!regard || (!regard.compteId && !regard.public)) return [...(await anneesDesCoursDuSite(siteId)).keys()];
+  const { salles, salleDe } = await repartitionDuSite(siteId);
+  const salle = regard.compteId ? salles.find((x) => x.compte?.id === regard.compteId) : salles.find((x) => x.public === regard.public);
+  if (!salle) return [...salleDe.keys()];
+  return [...salleDe.entries()].filter(([, n]) => n === salle.numero).map(([id]) => id);
+}
+
+/** Nom de la salle où ce cours se tient sur ce campus (confirmation d'émargement, Studio). */
 export async function nomSalleDuCours(site: { id: number; salleConference: string }, coursId: number): Promise<string> {
-  const salles = (await sallesDuSite(site.id)).filter((s): s is { numero: number; compte: Utilisateur } => Boolean(s.compte));
-  if (salles.length <= 1) return nomDeSalle(salles[0]?.compte, site);
-  const annees = (await anneesDesCoursDuSite(site.id, coursId)).get(coursId) ?? new Set<PublicSalle | null>();
-  const montrent = salles.filter((s) => salleMontreCours(publicDe(s.compte), annees));
-  return montrent.length === 1 ? nomDeSalle(montrent[0].compte, site) : site.salleConference;
+  const { salles, salleDe } = await repartitionDuSite(site.id);
+  const n = salleDe.get(coursId);
+  const salle = salles.find((x) => x.numero === n);
+  // Aucune salle qui convienne : le nom de la salle du campus, comme avant.
+  return salle ? nomDeSalle(salle.compte, site) : site.salleConference;
 }

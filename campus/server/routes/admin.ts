@@ -872,6 +872,8 @@ const colonnesCompte = {
   creeLe: utilisateurs.creeLe,
   compteLieId: utilisateurs.compteLieId,
   lieRole: compteLie.role,
+  salleNumero: utilisateurs.salleNumero,
+  salleNom: utilisateurs.salleNom,
 };
 
 type LigneCompteBrute = {
@@ -2093,7 +2095,7 @@ export function enregistrerAdmin(app: Express) {
       if (c.id === u.id) throw invalide("Pour changer votre propre code, passez par votre profil.");
       if (!c.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
       // Un nouveau code couperait l'écran de la salle : il se réinstalle avec son propre lien.
-      if (c.role === "salle") throw invalide("Un écran de salle ne reçoit pas de code : utilisez « Installer l'écran de la salle ».");
+      if (c.role === "salle") throw invalide("Un écran de salle ne reçoit pas de code : utilisez « Installer l'écran » (Pilotage, Classes et campus, section Les campus).");
       if (c.compteLieId && !c.matricule && !c.email && !c.telephone) {
         throw invalide("Ce compte est une double casquette : il s'ouvre depuis le compte formateur de la personne, sans code.");
       }

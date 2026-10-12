@@ -91,6 +91,14 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
           <p className="text-[15px] leading-relaxed text-texte-doux">
             Aucun lien d'installation n'est en place pour cette salle. Préparez-en un : il restera valable, sur autant d'ordinateurs que nécessaire.
           </p>
+          {etat.data?.derniereConnexion && (
+            // Écran déjà installé : un nouveau lien n'est utile que pour un autre ordinateur, et remplace les anciens.
+            <p className="flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              L'écran de cette salle est déjà installé (vu le {jourLong(etat.data.derniereConnexion)}) : il reste connecté. Un nouveau lien remplace les anciens liens et
+              codes d'installation qui circulent encore.
+            </p>
+          )}
           <Bouton taille="lg" chargement={envoi} onClick={() => void preparer()} icone={<MonitorSmartphone className="h-5 w-5" />}>
             Préparer le lien et le code
           </Bouton>

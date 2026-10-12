@@ -2,9 +2,11 @@
 // plusieurs salles, chacune avec son écran (un compte « salle ») et son lien d'installation.
 // Une salle a un nom (« Salle de conférence 2 ») et un public facultatif : « L1 » (classes de
 // 1re année : 1BTS, BTS 1, Licence 1), « L2 » (2e année : 2BTS, BTS 2, Licence 2), ou aucun
-// (toutes les classes, comme avant). L'écran d'une salle qui a un public ne montre que les
-// séances des cours suivis, sur son campus, par des classes de ce niveau ; un cours commun
-// aux deux niveaux, ou suivi par d'autres niveaux seulement, s'affiche dans toutes les salles.
+// (toutes les classes, comme avant). Chaque cours suivi par un campus se tient dans UNE salle
+// de ce campus (salleDuCours) : un cours de L1 dans la salle L1, un cours de L2 dans la salle L2,
+// un cours commun aux deux niveaux (ou d'un autre niveau) dans la salle sans public, sinon la
+// salle au plus petit numéro. Un seul écran par campus et par séance : la parole, l'effectif,
+// l'émargement et les groupes de travail, rangés par campus, restent justes.
 //
 // Stockage : colonnes salle_nom, salle_public et salle_numero du compte de l'écran
 // (migration 0034_salles_paralleles). L'écran de chaque campus d'avant devient la salle 1 :
@@ -40,15 +42,32 @@ export function anneeDeClasse(c: { niveau: string; nom: string }): PublicSalle |
   return anneeDuTexte(c.niveau) ?? anneeDuTexte(c.nom);
 }
 
-/**
- * Une salle de ce public montre-t-elle un cours suivi sur son campus par des classes de ces années ?
- * Sans public : oui (comme avant). Avec un public : si une classe de ce niveau le suit, ou si aucune
- * classe de 1re ni de 2e année ne le suit (cours d'un autre niveau : il reste visible partout).
- */
-export function salleMontreCours(publicSalle: PublicSalle | null | undefined, annees: Iterable<PublicSalle | null>): boolean {
-  if (!publicSalle) return true;
+/** Niveau d'un cours sur un campus : « L1 » ou « L2 » s'il n'est suivi que par ce niveau, sinon null (commun ou autre niveau). */
+export function niveauDuCours(annees: Iterable<PublicSalle | null>): PublicSalle | null {
   const a = new Set(annees);
-  return a.has(publicSalle) || (!a.has("L1") && !a.has("L2"));
+  if (a.has("L1") && !a.has("L2")) return "L1";
+  if (a.has("L2") && !a.has("L1")) return "L2";
+  return null;
+}
+
+/** Cours suivi sur ce campus par des classes de 1re ET de 2e année (« L1 et L2 » dans les messages). */
+export const estCoursCommun = (annees: Iterable<PublicSalle | null>) => {
+  const a = new Set(annees);
+  return a.has("L1") && a.has("L2");
+};
+
+/**
+ * Salle (numéro) d'un campus où se tient un cours suivi par des classes de ces années, ou null si aucune
+ * salle ne convient (cours de L2 alors que la seule salle est réglée en L1 : « Les salles du jour » le signale).
+ * Cours d'un seul niveau : la première salle de ce niveau, sinon la première salle sans public.
+ * Cours commun aux deux niveaux, ou d'un autre niveau : la première salle sans public, sinon la salle au plus
+ * petit numéro. Une seule salle sans public : tous les cours du campus, comme avant les salles.
+ */
+export function salleDuCours(salles: { numero: number; public: PublicSalle | null }[], annees: Iterable<PublicSalle | null>): number | null {
+  const tri = [...salles].sort((a, b) => a.numero - b.numero);
+  const niveau = niveauDuCours(annees);
+  if (niveau) return (tri.find((s) => s.public === niveau) ?? tri.find((s) => !s.public))?.numero ?? null;
+  return (tri.find((s) => !s.public) ?? tri[0])?.numero ?? null;
 }
 
 /** Nom affiché d'une salle : le sien, sinon celui de la salle du campus (l'écran d'avant, salle 1). */
@@ -94,6 +113,8 @@ export type SeanceDeSalle = {
   cours: string;
   intervenant: string | null;
   statut: string;
+  /** Cours suivi par des classes de L1 et de L2 de ce campus (« L1 et L2 » dans le message). */
+  commun: boolean;
 };
 
 export type SalleDuJour = {
@@ -111,6 +132,8 @@ export type SalleDuJour = {
 export type CampusDuJour = {
   siteId: number;
   campus: string;
+  /** Nom de la salle du campus (sites.salle_conference), repris par la salle 1 sans nom propre. */
+  salleConference: string;
   /** Numéro WhatsApp de la vie scolaire du campus (null : WhatsApp demandera à qui l'envoyer). */
   whatsapp: string | null;
   salles: SalleDuJour[];
@@ -118,8 +141,11 @@ export type CampusDuJour = {
   message: string;
   /** https://wa.me/<numéro>?text=… */
   lienWhatsApp: string;
-  /** Plusieurs salles dont au moins une sans public : elle montrera aussi les cours des autres. */
-  publicsAChoisir: boolean;
+  /**
+   * Ce qui empêche un cours du jour d'avoir son écran : un cours qu'aucune salle ne montre (« Projet (L2, 8h30)
+   * n'a pas de salle »), deux cours à la même heure dans une même salle. Vide : tout est en place.
+   */
+  alertes: string[];
 };
 
 /** GET /api/pilotage/salles-du-jour?jour=demain (réponse sans cache : elle contient les liens des écrans). */

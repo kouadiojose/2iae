@@ -1,7 +1,7 @@
 // /pilotage/classes : les classes de chaque campus (effectif, activation,
 // cours suivis), leur création et les fiches des non-activés ; puis les
 // campus eux-mêmes (salles de conférence et leurs écrans, WhatsApp de la vie scolaire).
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone, Layers, CalendarDays } from "lucide-react";
@@ -48,6 +48,12 @@ export default function PageClasses() {
   const txs = useTextes(textesSalles);
   const sites = refs.data?.sites ?? [];
   const [filieresEnCours, setFilieresEnCours] = useState(false);
+  // /pilotage/classes#campus (lien de « Les salles du jour ») : la section « Les campus » est sous toutes les classes.
+  useEffect(() => {
+    if (window.location.hash !== "#campus" || isLoading || !sites.length) return;
+    const t = window.setTimeout(() => document.getElementById("campus")?.scrollIntoView({ block: "start" }), 50);
+    return () => window.clearTimeout(t);
+  }, [isLoading, sites.length]);
 
   // Les classes des filières de 2iae.com : on montre d'abord ce qui sera créé, puis on crée.
   const creerFilieres = async () => {
@@ -93,6 +99,12 @@ export default function PageClasses() {
         }
       />
 
+      {peutEcran && (
+        <a href="#campus" className="inline-flex min-h-[44px] items-center gap-1.5 self-start text-[15px] font-bold">
+          <MonitorSmartphone className="h-4 w-4" /> {txs("campus.allerSalles")}
+        </a>
+      )}
+
       {isLoading ? (
         <Chargement lignes={3} />
       ) : error ? (
@@ -121,7 +133,7 @@ export default function PageClasses() {
         })
       )}
 
-      <section>
+      <section id="campus" className="scroll-mt-20">
         <TitreSection
           titre="Les campus"
           action={

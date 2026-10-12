@@ -14,6 +14,7 @@ import { accueilDuRole, seDeconnecter, useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { useTousEvenements } from "@/lib/flux";
 import { cn } from "@/lib/utils";
+import { useTextes } from "@/lib/textes";
 import { heure, dateEtHeure, decompte } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
@@ -31,7 +32,8 @@ import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 import { CoupeSalle } from "@/modules/progression/CoupeSalle";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
-import { nomDeSalle } from "@shared/salles";
+import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
+import { t as textesSalles } from "@shared/textes/salles";
 
 const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d'internet", "Salle bruyante"];
 
@@ -126,14 +128,22 @@ function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetail
   const site = seance?.sites.find((s) => s.id === siteId);
   // Plusieurs salles par campus : l'écran affiche le nom de SA salle (shared/salles.ts).
   const siteAffiche = site ?? (moi.role === "salle" ? moi.site : null);
-  const nomSalle = moi.role === "salle" ? nomDeSalle(moi, siteAffiche) : site?.salleConference;
+  const nomSalle = moi.role === "salle" ? nomDeSalle(moi, siteAffiche) : (site?.salleConference ?? "Salle de conférence");
+  // Salle réglée en L1 ou L2 : « Riviera · L2 · Salle de conférence 2 » et un repère lisible de loin.
+  const niveau = moi.role === "salle" && estPublicSalle(moi.sallePublic) ? moi.sallePublic : null;
+  const txSalles = useTextes(textesSalles);
   return (
     <header className="flex items-center justify-between gap-3 px-4 pt-4 sm:flex-wrap sm:gap-4 sm:px-6 sm:pt-5 lg:px-10">
       <div className="flex min-w-0 items-center gap-3 sm:gap-4">
         <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE International" className="h-9 w-auto shrink-0 sm:h-12" />
         <span className="min-w-0 font-mono text-[11px] uppercase leading-snug tracking-[0.12em] text-nuit-doux sm:text-sm sm:tracking-[0.14em] lg:text-base">
-          {siteAffiche ? `${nomSalle} · ${siteAffiche.nomCourt}` : "Salle de conférence"}
+          {siteAffiche ? etiquetteSalle(siteAffiche.nomCourt, niveau, nomSalle) : "Salle de conférence"}
         </span>
+        {niveau && (
+          <span className="shrink-0 rounded-full bg-white px-3 py-1 text-[13px] font-extrabold text-encre sm:text-base">
+            {txSalles(niveau === "L1" ? "public.L1" : "public.L2")}
+          </span>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-4">
         {seance && (

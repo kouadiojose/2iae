@@ -94,7 +94,8 @@ export function FenetreCompte({
   /** Formateur ou équipe pas encore activé : ouvrir la fenêtre « Inviter ». */
   onInviter?: (compte: CompteLigne) => void;
   /** Écran de salle : ouvrir la fenêtre « Installer l'écran ». */
-  onEcran?: (site: { id: number; nom: string }) => void;
+  /** Écran de salle : la salle de CE compte (numéro et nom), pour que FenetreEcran ouvre son lien à lui. */
+  onEcran?: (site: { id: number; nom: string; numero?: number; salle?: string }) => void;
 }) {
   const moi = useMoiConnecte();
   const refs = useReferences();
@@ -275,7 +276,7 @@ export function FenetreCompte({
                 </Bouton>
               )}
               {compte.role === "salle" && compte.actif && compte.siteId && onEcran && (
-                <Bouton taille="sm" className="min-h-[48px]" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => (onFermer(), onEcran({ id: compte.siteId!, nom: compte.site ?? "Campus" }))}>
+                <Bouton taille="sm" className="min-h-[48px]" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => (onFermer(), onEcran({ id: compte.siteId!, nom: compte.site ?? "Campus", numero: compte.salleNumero ?? 1, salle: compte.salleNom ?? undefined }))}>
                   {compte.active ? "Réinstaller l'écran" : "Installer l'écran"}
                 </Bouton>
               )}

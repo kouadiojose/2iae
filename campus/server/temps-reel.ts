@@ -66,6 +66,8 @@ async function verifierSessions() {
     }
     const u = await utilisateurParId(c.utilisateur.id);
     if (!u?.actif) fermer(c);
+    // Compte relu (nom ou public de la salle d'un écran changés depuis l'ouverture du flux).
+    else c.utilisateur = u;
   }
 }
 setInterval(() => void verifierSessions().catch((e) => console.error("[temps réel] vérification des sessions :", e.message)), 30_000).unref();
@@ -73,6 +75,11 @@ setInterval(() => void verifierSessions().catch((e) => console.error("[temps ré
 /** Ferme tout de suite les flux d'une personne (sauf celui de la session indiquée). */
 export function fermerFluxUtilisateur(utilisateurId: number, saufSession?: string) {
   for (const c of connexions.values()) if (c.utilisateur.id === utilisateurId && c.sessionId !== saufSession) fermer(c);
+}
+
+/** Remplace le compte gardé par les flux ouverts d'une personne (réglage de la salle d'un écran : routes/salles.ts). */
+export function actualiserCompteConnecte(u: Utilisateur) {
+  for (const c of connexions.values()) if (c.utilisateur.id === u.id) c.utilisateur = u;
 }
 
 /** Un module déclare qui peut écouter les canaux « prefixe:cle ». */

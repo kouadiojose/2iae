@@ -1,10 +1,10 @@
 // /pilotage/classes : les classes de chaque campus (effectif, activation,
 // cours suivis), leur création et les fiches des non-activés ; puis les
-// campus eux-mêmes (salle de conférence, WhatsApp de la vie scolaire).
+// campus eux-mêmes (salles de conférence et leurs écrans, WhatsApp de la vie scolaire).
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone, Layers } from "lucide-react";
+import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone, Layers, CalendarDays } from "lucide-react";
 import type { BilanClassesFilieres, ClasseLigne, PageComptes, SiteLigne } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { BarreProgression, Chargement, Erreur, EtatVide, Badge } from "@/components/ui/divers";
@@ -19,6 +19,10 @@ import { pluriel } from "@/lib/utils";
 import { useMoiConnecte, profilPermet } from "@/lib/auth";
 import { SousNav } from "./composants/SousNav";
 import { FenetreEcran } from "./composants/FenetreEcran";
+import { SallesDuCampus, type EcranDeSalle } from "./composants/SallesCampus";
+import type { SallesDuSite } from "@shared/salles";
+import { t as textesSalles } from "@shared/textes/salles";
+import { useTextes } from "@/lib/textes";
 import { useReferences, telephoneLisible, lienFiches, pourcent } from "./outils";
 
 type Formulaire = { nom: string; siteId: string; filiere: string; niveau: string; anneeScolaire: string };
@@ -38,7 +42,10 @@ export default function PageClasses() {
   const { data, isLoading, error, refetch } = useQuery<ClasseLigne[]>({ queryKey: ["/api/pilotage/classes"] });
   const [edition, setEdition] = useState<ClasseLigne | "nouvelle" | null>(null);
   const [site, setSite] = useState<SiteLigne | null>(null);
-  const [ecran, setEcran] = useState<{ id: number; nom: string } | null>(null);
+  const [ecran, setEcran] = useState<EcranDeSalle | null>(null);
+  // Les salles de chaque campus et l'état de leur écran (droit des écrans : outils_campus).
+  const salles = useQuery<SallesDuSite[]>({ queryKey: ["/api/pilotage/salles"], enabled: peutEcran });
+  const txs = useTextes(textesSalles);
   const sites = refs.data?.sites ?? [];
   const [filieresEnCours, setFilieresEnCours] = useState(false);
 
@@ -115,7 +122,16 @@ export default function PageClasses() {
       )}
 
       <section>
-        <TitreSection titre="Les campus" />
+        <TitreSection
+          titre="Les campus"
+          action={
+            peutEcran ? (
+              <Link href="/pilotage/salles" className="inline-flex min-h-[44px] items-center gap-1.5 text-sm font-bold">
+                <CalendarDays className="h-4 w-4" /> {txs("campus.lienJour")}
+              </Link>
+            ) : undefined
+          }
+        />
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {sites.map((s) => (
             <li key={s.id} className="flex flex-col gap-2 rounded-2xl border border-ligne bg-white p-5">
@@ -123,10 +139,12 @@ export default function PageClasses() {
                 <h3 className="text-lg font-extrabold">{s.nomCourt}</h3>
                 <span className="text-sm text-texte-gris">{s.ville}</span>
               </div>
-              <div className="text-[15px]">
-                Salle de conférence :{" "}
-                {s.salleConference === "Salle de conférence" ? <span className="text-texte-pale">nom à saisir</span> : <strong>{s.salleConference}</strong>}
-              </div>
+              {!peutEcran && (
+                <div className="text-[15px]">
+                  Salle de conférence :{" "}
+                  {s.salleConference === "Salle de conférence" ? <span className="text-texte-pale">nom à saisir</span> : <strong>{s.salleConference}</strong>}
+                </div>
+              )}
               <div className="flex items-center gap-2 text-[15px]">
                 <MessageCircle className="h-4 w-4 text-orange-fonce" />
                 {s.whatsappVieScolaire ? (
@@ -137,12 +155,8 @@ export default function PageClasses() {
                   <span className="text-danger">Pas de numéro WhatsApp : le bouton « Besoin d'aide ? » est masqué pour ce campus.</span>
                 )}
               </div>
+              {peutEcran && <SallesDuCampus site={s} donnees={salles.data?.find((x) => x.siteId === s.id)} onEcran={setEcran} />}
               <div className="mt-1 flex flex-wrap gap-2">
-                {peutEcran && (
-                  <Bouton variante="encre" taille="sm" icone={<MonitorSmartphone className="h-4 w-4" />} onClick={() => setEcran({ id: s.id, nom: s.nomCourt })} className="min-h-[48px]">
-                    Installer l'écran de la salle
-                  </Bouton>
-                )}
                 {refs.data?.estDirection && (
                   <Bouton variante="contour" taille="sm" icone={<Pencil className="h-4 w-4" />} onClick={() => setSite(s)} className="min-h-[48px]">
                     Modifier
@@ -197,7 +211,10 @@ function CarteClasse({ c, onModifier }: { c: ClasseLigne; onModifier: () => void
         <h3 className="text-[17px] font-extrabold leading-snug">{c.nom}</h3>
         <div className="mt-1 flex flex-wrap gap-1.5">
           <Badge ton="gris">{c.niveau}</Badge>
-          <Badge ton="gris">{c.filiere}</Badge>
+          {/* Filière longue (« Agriculture Tropicale option Production Animale ») : elle passe à la ligne sur téléphone. */}
+          <Badge ton="gris" className="max-w-full whitespace-normal">
+            {c.filiere}
+          </Badge>
           <Badge ton="gris">{c.anneeScolaire}</Badge>
         </div>
       </div>

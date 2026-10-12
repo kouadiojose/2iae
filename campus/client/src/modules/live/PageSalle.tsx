@@ -11,7 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft, Video } from "lucide-react";
 import { get, post, put, suppr } from "@/lib/api";
 import { accueilDuRole, seDeconnecter, useMoiConnecte } from "@/lib/auth";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, rafraichir } from "@/lib/queryClient";
+import { useTousEvenements } from "@/lib/flux";
 import { cn } from "@/lib/utils";
 import { heure, dateEtHeure, decompte } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
@@ -30,6 +31,7 @@ import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 import { CoupeSalle } from "@/modules/progression/CoupeSalle";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
+import { nomDeSalle } from "@shared/salles";
 
 const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d'internet", "Salle bruyante"];
 
@@ -42,10 +44,23 @@ export default function PageSalle() {
   // Seulement les cours que suit ce campus (le serveur l'impose à l'écran d'une salle ; l'équipe précise le site) :
   // un autre campus qui démarre, ou l'essai de visio d'un collègue, ne fait pas quitter la classe en cours.
   const site = siteId ? `site=${siteId}` : "";
-  const { data: enCours } = useQuery<EnCours>({ queryKey: [`/api/live/en-cours${site ? `?${site}` : ""}`], refetchInterval: 30_000 });
+  const cleEnCours = `/api/live/en-cours${site ? `?${site}` : ""}`;
+  const { data: enCours, isFetched: enCoursLu } = useQuery<EnCours>({ queryKey: [cleEnCours], refetchInterval: 30_000 });
+  // Écran d'une salle : le direct qui démarre ou finit arrive aussitôt (calculé par le serveur pour CETTE salle,
+  // avec son public L1 ou L2), et un changement de nom ou de public de la salle se relit tout de suite.
+  useTousEvenements((e) => {
+    if (moi.role !== "salle") return;
+    if (e.type === "live") {
+      if (e.data?.enCours) queryClient.setQueryData<EnCours>([cleEnCours], e.data.enCours);
+      else void rafraichir("/api/live/en-cours");
+    }
+    if (e.type === "salle") void rafraichir("/api/auth/moi", "/api/live/en-cours", "/api/seances");
+  });
   const { data: duJour } = useQuery<SeanceResume[]>({ queryKey: [`/api/seances?periode=jour${site ? `&${site}` : ""}`], refetchInterval: 60_000 });
   // Séance à afficher : celle en direct, sinon la prochaine, sinon la dernière du jour (annulée ou terminée).
-  const seanceId = enCours?.enDirect?.id ?? enCours?.prochaine?.id ?? duJour?.[duJour.length - 1]?.id ?? null;
+  // La dernière du jour attend la réponse « en cours » : sinon l'écran ouvrirait un instant une autre séance
+  // (celle d'une autre salle du campus, ou un cours commun du soir) avant la sienne.
+  const seanceId = enCours?.enDirect?.id ?? enCours?.prochaine?.id ?? (enCoursLu ? duJour?.[duJour.length - 1]?.id : null) ?? null;
 
   return (
     <div className="min-h-dvh bg-nuit text-white">
@@ -107,13 +122,17 @@ function BoutonQuitter() {
 
 function BandeauHaut({ seance, siteId, onPresentation }: { seance?: SeanceDetailDto; siteId: number | null; onPresentation?: () => void }) {
   const maintenant = useMaintenant(1000);
+  const moi = useMoiConnecte();
   const site = seance?.sites.find((s) => s.id === siteId);
+  // Plusieurs salles par campus : l'écran affiche le nom de SA salle (shared/salles.ts).
+  const siteAffiche = site ?? (moi.role === "salle" ? moi.site : null);
+  const nomSalle = moi.role === "salle" ? nomDeSalle(moi, siteAffiche) : site?.salleConference;
   return (
     <header className="flex items-center justify-between gap-3 px-4 pt-4 sm:flex-wrap sm:gap-4 sm:px-6 sm:pt-5 lg:px-10">
       <div className="flex min-w-0 items-center gap-3 sm:gap-4">
         <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE International" className="h-9 w-auto shrink-0 sm:h-12" />
         <span className="min-w-0 font-mono text-[11px] uppercase leading-snug tracking-[0.12em] text-nuit-doux sm:text-sm sm:tracking-[0.14em] lg:text-base">
-          {site ? `${site.salleConference} · ${site.nomCourt}` : "Salle de conférence"}
+          {siteAffiche ? `${nomSalle} · ${siteAffiche.nomCourt}` : "Salle de conférence"}
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-4">

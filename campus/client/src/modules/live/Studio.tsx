@@ -780,11 +780,15 @@ function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetai
 // ── Coulisses : avant le direct ────────────────────────────────────────────
 
 function Coulisses({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
-  const pretes = etat.campus.filter((c) => c.salleConnectee || c.prete).length;
+  // Salles attendues : celles des campus dont une classe suit ce cours (toutes, avant que le serveur ne le dise).
+  const attendues = etat.campus.filter((c) => c.attendue !== false);
+  const pretes = attendues.filter((c) => c.salleConnectee || c.prete).length;
   return (
     <div className="flex flex-col gap-3 rounded-[22px] bg-nuit-panneau p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-lg font-extrabold">Coulisses · {pretes}/5 salles prêtes</span>
+        <span className="text-lg font-extrabold">
+          Coulisses · {pretes}/{attendues.length || etat.campus.length} {attendues.length === 1 ? "salle prête" : "salles prêtes"}
+        </span>
         <span className="font-mono text-[12px] text-nuit-gris">Les étudiants entrent 30 min avant le début</span>
       </div>
       <div className="flex flex-wrap gap-2">

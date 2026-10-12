@@ -37,6 +37,7 @@ import {
   type TypeEvenementSeance,
   type AccesDaily,
 } from "@shared/schema";
+import { nomDeSalle } from "@shared/salles";
 
 /** Outils du module live (chargement, rôles, sites), fournis à l'enregistrement. */
 export type OutilsGroupes = {
@@ -146,7 +147,8 @@ async function rattacherCompagnon(u: Utilisateur, s: Seance, session: SessionGro
 }
 
 export function creerModuleGroupes(o: OutilsGroupes) {
-  const nomSalle = (site: Site | undefined) => `${site?.salleConference ?? "Salle de conférence"}${site ? ` · ${site.nomCourt}` : ""}`;
+  // Plusieurs salles par campus : le nom de la salle de l'écran (shared/salles.ts), sinon celui de la salle du campus.
+  const nomSalle = (site: Site | undefined, ecran?: { salleNom?: string | null } | null) => `${nomDeSalle(ecran, site)}${site ? ` · ${site.nomCourt}` : ""}`;
 
   /**
    * État des groupes vu par cette personne. Le formateur et l'équipe voient tout ; un
@@ -161,7 +163,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const [groupes, membres, sitesParId] = await Promise.all([
       db.select().from(groupesTravail).where(eq(groupesTravail.sessionId, session.id)).orderBy(asc(groupesTravail.numero)),
       db
-        .select({ groupeId: membresGroupes.groupeId, id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId })
+        .select({ groupeId: membresGroupes.groupeId, id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId, salleNom: utilisateurs.salleNom })
         .from(membresGroupes)
         .innerJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
         .where(eq(membresGroupes.sessionId, session.id))
@@ -172,7 +174,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const voitTout = privilegie(role);
     const versMembre = (m: (typeof membres)[number]): MembreGroupeDto => {
       const site = m.siteId ? sitesParId.get(m.siteId) : undefined;
-      if (m.role === "salle") return { id: m.id, nom: nomSalle(site), role: "salle", siteId: m.siteId, site: site?.nomCourt ?? null };
+      if (m.role === "salle") return { id: m.id, nom: nomSalle(site, m), role: "salle", siteId: m.siteId, site: site?.nomCourt ?? null };
       const nom = role === "salle" ? "Un étudiant" : voitTout ? `${m.prenom} ${m.nom}` : `${m.prenom} ${m.nom.charAt(0)}.`;
       return { id: m.id, nom, role: "etudiant", siteId: m.siteId, site: site?.nomCourt ?? null };
     };
@@ -220,7 +222,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
       const p = presence.get(x.id);
       const siteId = x.role === "etudiant" && p?.mode === "salle" && p.siteId ? p.siteId : x.siteId;
       const site = siteId ? sitesParId.get(siteId) : undefined;
-      if (x.role === "salle") return { id: x.id, nom: nomSalle(site), role: "salle", siteId, site: site?.nomCourt ?? null, mode: "salle" };
+      if (x.role === "salle") return { id: x.id, nom: nomSalle(site, x), role: "salle", siteId, site: site?.nomCourt ?? null, mode: "salle" };
       const suivi = modesSuivi.get(`${s.id}:${x.id}`)?.mode;
       const mode = p?.mode === "salle" || suivi === "compagnon" ? "salle" : suivi === "video" ? "video" : suivi === "radio" ? "radio" : null;
       return { id: x.id, nom: `${x.prenom} ${x.nom}`, role: "etudiant", siteId, site: site?.nomCourt ?? null, mode };
@@ -525,7 +527,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         const profil = privilegie(role) ? "formateur" : role === "salle" ? "salle" : "etudiant";
         const nomAffiche =
           role === "salle"
-            ? nomSalle(u.siteId ? sitesParId.get(u.siteId) : undefined)
+            ? nomSalle(u.siteId ? sitesParId.get(u.siteId) : undefined, u)
             : role === "etudiant"
               ? `${u.prenom} ${u.nom.charAt(0)}.`
               : `${u.prenom} ${u.nom}${role === "formateur" ? " · formateur" : ""}`;

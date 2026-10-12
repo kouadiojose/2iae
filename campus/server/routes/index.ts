@@ -33,6 +33,7 @@ import { enregistrerPublic } from "./public";
 import { enregistrerPush } from "./push";
 import { enregistrerProgramme } from "./programme";
 import { enregistrerLancement } from "./lancement";
+import { enregistrerSalles } from "./salles";
 import { enregistrerShowreel } from "./showreel";
 import { enregistrerEquipe } from "./equipe";
 import { enregistrerInscriptionEtudiants } from "./inscription-etudiants";
@@ -83,6 +84,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerPush(app);
   enregistrerProgramme(app);
   enregistrerLancement(app);
+  enregistrerSalles(app); // salles de conférence d'un campus, « Les salles du jour »
   enregistrerShowreel(app);
   enregistrerEquipe(app);
   enregistrerInscriptionEtudiants(app);

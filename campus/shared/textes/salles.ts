@@ -1,6 +1,7 @@
 // Textes des salles de conférence d'un campus (shared/salles.ts) : réglage des salles dans
-// « Les campus », page « Les salles du jour » et message WhatsApp envoyé chaque jour à la vie
-// scolaire. Couche commune : shared/textes/index.ts. Personnel vouvoyé ; pas de tiret long.
+// « Les campus », page « Les salles du jour », messages WhatsApp (un par salle et par jour, envoyés
+// au coordinateur des salles) et rappel du matin de la direction. Couche commune :
+// shared/textes/index.ts. Personnel vouvoyé ; pas de tiret long.
 import { creerTextes } from "./index";
 
 export const t = creerTextes({
@@ -45,15 +46,17 @@ export const t = creerTextes({
   // ── Page « Les salles du jour » ─────────────────────────────────────────
   "jour.etiquette": "Pilotage · Salles du jour",
   "jour.titre": "Les salles du jour",
-  "jour.sousTitre": "Pour chaque campus : les cours de chaque salle et le lien de son écran, à envoyer à la vie scolaire du campus.",
+  "jour.sousTitre": "Un message par salle : ses cours et le lien de son écran. Envoyez chaque message sur WhatsApp au coordinateur des salles, qui le transfère au responsable de la salle.",
   "jour.aujourdhui": "Aujourd'hui",
   "jour.demain": "Demain",
   "jour.envoyer": "Envoyer sur WhatsApp",
-  "jour.copier": "Copier le message",
+  "jour.copier": "Copier",
   "jour.copie": "Message copié",
   "jour.copieImpossible": "Copie impossible : sélectionnez le message à la main.",
-  "jour.vers": "Vers la vie scolaire du campus · {numero}",
-  "jour.sansNumero": "Pas de numéro WhatsApp pour ce campus : WhatsApp vous demandera à qui l'envoyer.",
+  "jour.compte.zero": "Aucun message à envoyer : pas de cours dans les salles ce jour-là.",
+  "jour.compte.un": "1 message à envoyer, un toucher par message.",
+  "jour.compte": "{n} messages à envoyer, un toucher par message.",
+  "jour.sansMessage": "Pas de cours dans cette salle ce jour-là : pas de message.",
   "jour.aucunCours": "Pas de cours",
   "jour.ecranAInstaller": "Écran à installer",
   "jour.ecranPret": "Lien de l'écran prêt",
@@ -62,7 +65,7 @@ export const t = creerTextes({
   "jour.alertes": "À régler avant d'envoyer",
   "jour.reglerSalles": "Régler les salles de ce campus",
   "jour.commun": "L1 et L2",
-  "jour.apercu": "Le message",
+  "jour.apercu": "Voir le message",
   "jour.vide": "Aucun campus dans votre périmètre.",
   "jour.campus": "Campus {campus}",
   "jour.envoye": "Envoyé",
@@ -70,17 +73,28 @@ export const t = creerTextes({
   "jour.lien": "Les salles du jour",
   "jour.lien.texte": "Les liens des écrans de chaque salle, à envoyer sur WhatsApp",
 
-  // ── Message WhatsApp (un par campus) ────────────────────────────────────
-  "message.entete": "Campus {campus} · {date}",
-  "message.salle": "{salle} : {seance}",
-  "message.salle.plusieurs": "{salle} :",
-  "message.seance": "{heures}, {cours}, {intervenant}",
-  "message.seance.sansIntervenant": "{heures}, {cours}",
-  "message.aucun": "{salle} : pas de cours",
+  // ── Numéro qui reçoit les liens (le coordinateur des salles) ────────────
+  "numero.libelle": "Numéro WhatsApp qui reçoit les liens",
+  "numero.changer": "Changer le numéro",
+  "numero.aide": "Le coordinateur des salles. Un numéro ivoirien s'écrit avec ou sans +225 ; un autre pays, avec son indicatif.",
+  "numero.enregistrer": "Enregistrer",
+  "numero.enregistre": "Numéro enregistré",
+  "numero.vers": "Les messages partent vers le {numero} (coordinateur des salles).",
+  "numero.invalide": "Ce numéro n'est pas valable : 10 chiffres pour la Côte d'Ivoire (07 07 72 09 40), ou le numéro complet avec l'indicatif du pays.",
+  "numero.reserve": "Seule la direction peut changer ce numéro.",
+
+  // ── Message WhatsApp (un par salle et par jour) ─────────────────────────
+  "message.seance": "{date}, {heures} : {cours}, {intervenant}",
+  "message.seance.sansIntervenant": "{date}, {heures} : {cours}",
   "message.ecran": "Écran de la salle : {lien}",
   "message.ecranInstalle": "Écran de la salle : déjà installé",
   "message.ecranAInstaller": "Écran de la salle : à installer",
   "message.commun": "{cours} (L1 et L2)",
+
+  // ── Rappel du matin de la direction (6 h 30, heure d'Abidjan) ───────────
+  "rappel.titre": "Les liens des salles du jour sont prêts",
+  "rappel.corps.un": "1 message à envoyer sur WhatsApp (salles des cinq campus).",
+  "rappel.corps": "{n} messages à envoyer sur WhatsApp (salles des cinq campus).",
 
   // ── Alertes de « Les salles du jour » ───────────────────────────────────
   "alerte.sansSalle": "{cours} ({niveau}, {heure}) n'a pas de salle : ajoutez une salle {niveau}, ou réglez une salle sur « Toutes les classes ».",

@@ -8,6 +8,12 @@
 // salle au plus petit numéro. Un seul écran par campus et par séance : la parole, l'effectif,
 // l'émargement et les groupes de travail, rangés par campus, restent justes.
 //
+// « Les salles du jour » (demande de José du 12 octobre 2026) : un message WhatsApp par salle et
+// par jour (« Riviera · L1 · Salle de conférence 1 », ses cours, le lien de son écran), envoyé d'un
+// toucher au coordinateur des salles, qui le transfère au responsable de la salle. Son numéro se
+// règle sur la page (par défaut NUMERO_COORDINATEUR_PAR_DEFAUT) ; chaque matin à 6 h 30 (Abidjan),
+// la direction reçoit un rappel quand il y a des messages à envoyer (server/routes/salles.ts).
+//
 // Stockage : colonnes salle_nom, salle_public et salle_numero du compte de l'écran
 // (migration 0034_salles_paralleles). L'écran de chaque campus d'avant devient la salle 1 :
 // sans nom propre, il garde le nom de la salle du campus (sites.salle_conference) ; sans public,
@@ -17,6 +23,9 @@ export const PUBLICS_SALLE = ["L1", "L2"] as const;
 export type PublicSalle = (typeof PUBLICS_SALLE)[number];
 
 export const estPublicSalle = (v: unknown): v is PublicSalle => v === "L1" || v === "L2";
+
+/** Numéro WhatsApp du coordinateur des salles tant que la direction n'en a pas réglé un autre (+225 07 07 72 09 40). */
+export const NUMERO_COORDINATEUR_PAR_DEFAUT = "2250707720940";
 
 /** Nom proposé pour la salle n : « Salle de conférence 2 ». */
 export const nomSalleParDefaut = (numero: number) => `Salle de conférence ${numero}`;
@@ -127,6 +136,13 @@ export type SalleDuJour = {
   /** Lien d'installation de l'écran de la salle ; null : écran à installer (aucun lien en place). */
   lien: string | null;
   seances: SeanceDeSalle[];
+  /**
+   * Le message WhatsApp de la salle pour ce jour (son étiquette, une ligne par cours, le lien de son écran ;
+   * jamais le code d'écran). null : pas de cours dans la salle ce jour-là, donc pas de message.
+   */
+  message: string | null;
+  /** https://wa.me/<numéro du coordinateur>?text=… (null avec le message). */
+  lienWhatsApp: string | null;
 };
 
 export type CampusDuJour = {
@@ -134,13 +150,8 @@ export type CampusDuJour = {
   campus: string;
   /** Nom de la salle du campus (sites.salle_conference), repris par la salle 1 sans nom propre. */
   salleConference: string;
-  /** Numéro WhatsApp de la vie scolaire du campus (null : WhatsApp demandera à qui l'envoyer). */
-  whatsapp: string | null;
+  /** Dans l'ordre : salle 1, puis salle 2… */
   salles: SalleDuJour[];
-  /** Le message prêt à envoyer (avec les liens des écrans). */
-  message: string;
-  /** https://wa.me/<numéro>?text=… */
-  lienWhatsApp: string;
   /**
    * Ce qui empêche un cours du jour d'avoir son écran : un cours qu'aucune salle ne montre (« Projet (L2, 8h30)
    * n'a pas de salle »), deux cours à la même heure dans une même salle. Vide : tout est en place.
@@ -155,5 +166,14 @@ export type SallesDuJour = {
   /** « mardi 13 octobre » */
   libelle: string;
   jour: "aujourdhui" | "demain";
+  /** Numéro WhatsApp (international, chiffres seuls) qui reçoit les messages : le coordinateur des salles. */
+  coordinateur: string;
+  /** La personne peut changer ce numéro (la direction). */
+  peutRegler: boolean;
+  /** Nombre de messages à envoyer ce jour-là (salles qui ont au moins un cours). */
+  messages: number;
   campus: CampusDuJour[];
 };
+
+/** PUT /api/pilotage/salles-du-jour/numero (direction) : le numéro qui reçoit les liens. */
+export type CorpsNumeroSalles = { numero: string };

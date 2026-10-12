@@ -240,7 +240,12 @@ function BandeauEnvois() {
   const elements = useFileEnvoi();
   useEffect(() => {
     const ok = (e: Event) => toast(`Envoyé automatiquement : ${(e as CustomEvent).detail.description}`);
-    const ko = (e: Event) => toast(`Envoi refusé : ${(e as CustomEvent).detail.description}. ${(e as CustomEvent).detail.message}`, "erreur");
+    // Description coupée (« … ») ou déjà ponctuée : pas de point en plus (« maquis…. »).
+    const ko = (e: Event) => {
+      const { description, message } = (e as CustomEvent<{ description: string; message: string }>).detail;
+      const d = String(description ?? "").trimEnd();
+      toast(`Envoi refusé : ${d}${/[.…!?]$/.test(d) ? "" : "."} ${message}`, "erreur");
+    };
     window.addEventListener("campus:envoi-reussi", ok);
     window.addEventListener("campus:envoi-refuse", ko);
     return () => {

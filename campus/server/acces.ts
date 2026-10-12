@@ -200,6 +200,29 @@ export async function etudiantsDuCours(coursId: number): Promise<Utilisateur[]> 
 }
 
 /**
+ * Parmi ces personnes, les étudiants actifs inscrits au cours (même règle qu'etudiantsDuCours), sans charger tout
+ * le cours : membres d'un groupe de travail pour un devoir en direct en groupe (devoirs-direct.ts).
+ */
+export async function inscritsParmi(coursId: number, ids: number[]): Promise<Set<number>> {
+  if (!ids.length) return new Set();
+  const lignes = await db
+    .select({ id: utilisateurs.id })
+    .from(utilisateurs)
+    .where(
+      and(
+        inArray(utilisateurs.id, ids),
+        eq(utilisateurs.role, "etudiant"),
+        eq(utilisateurs.actif, true),
+        or(
+          inArray(utilisateurs.classeId, db.select({ id: coursClasses.classeId }).from(coursClasses).where(eq(coursClasses.coursId, coursId))),
+          inArray(utilisateurs.id, db.select({ id: inscriptions.utilisateurId }).from(inscriptions).where(eq(inscriptions.coursId, coursId))),
+        ),
+      ),
+    );
+  return new Set(lignes.map((l) => l.id));
+}
+
+/**
  * Étudiants attendus à une séance, même règle que le pilotage (sqlAttendus) :
  * compte créé avant la fin prévue, et soit sa classe d'alors suit le cours
  * (dernier passage de classe avant la fin, sinon sa classe actuelle), soit il

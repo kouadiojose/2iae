@@ -29,7 +29,7 @@ import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { CONSOMMATION, cleDirect, estimationMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
 import { CompagnonSalle } from "./CompagnonSalle";
-import { DevoirEnDirect } from "./devoir-direct";
+import { DevoirEnDirect, devoirARendre } from "./devoir-direct";
 import { SortieDuLive } from "./SortieDuLive";
 import { JaugePresence } from "./JaugePresence";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, Moi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
@@ -379,10 +379,10 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
         )}
 
         {/* Devoir donné en direct : avant la vue du groupe, il reste visible pendant le travail en groupe. */}
-        {etat.devoirDirect && <DevoirEnDirect seance={seance} etat={etat} groupes={groupes} moi={moi} />}
+        {etat.devoirDirect && <DevoirEnDirect seance={seance} etat={etat} groupes={groupes} moi={moi} jaiLaParole={jaiLaParole} modeVideo={mode === "video"} />}
 
         {groupe && groupes ? (
-          <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode={mode} />
+          <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode={mode} appelDiscret={devoirARendre(etat)} />
         ) : (
         <>
         {enDirect && groupes?.session?.choixLibre && <ChoixGroupe seanceId={seance.id} groupes={groupes} />}

@@ -196,6 +196,9 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
       return { ...etat, devoirDirect: dd ? { ...dd, monRendu: etat.devoirDirect?.id === dd.id ? etat.devoirDirect.monRendu : null } : null };
     }
     case "devoir-direct:compteur": {
+      // Seul le Studio affiche ce compteur : sur le téléphone d'un étudiant, il referait le rendu de toute la classe
+      // jusqu'à deux fois par seconde pendant que les copies arrivent, sans rien montrer de nouveau.
+      if (!privilegie) return etat;
       const c = d as CompteurDevoirDirectDto;
       return etat.devoirDirect?.id === c.devoirId ? { ...etat, devoirDirect: { ...etat.devoirDirect, copies: c.copies, groupes: c.groupes, individuelles: c.individuelles } } : etat;
     }

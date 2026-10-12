@@ -1068,7 +1068,14 @@ async function enregistrerRendus(
   etudiants: Pick<Utilisateur, "id" | "prenom" | "nom">[],
   corps: CorpsRendu,
   pourGroupe: PourGroupe | null,
-  options: { journal?: "rendu_groupe" | "rendu_groupe_rejoint" } = {},
+  options: {
+    journal?: "rendu_groupe" | "rendu_groupe_rejoint";
+    /**
+     * L'auteur (un étudiant qui rend) doit avoir sa copie écrite : sinon (copie publiée entre-temps, ou déjà rendue
+     * après la date limite) toute la transaction est annulée, et personne d'autre n'est écrit.
+     */
+    auteurObligatoire?: boolean;
+  } = {},
 ): Promise<{ ecrites: CopieEcrite[]; ignores: Pick<Utilisateur, "id" | "prenom" | "nom">[]; enRetard: boolean; renduLe: Date }> {
   const maintenant = new Date();
   const renduLe = corps.renduLe ?? maintenant;
@@ -1077,7 +1084,20 @@ async function enregistrerRendus(
   const tries = [...new Map(etudiants.map((e) => [e.id, e])).values()].sort((a, b) => a.id - b.id);
   const ids = tries.map((e) => e.id);
   const deposeParId = (etudiantId: number) => (pourGroupe || auteur.id === etudiantId ? null : auteur.id);
+  const refusAuteur = (avant: Rendu | undefined) =>
+    new ErreurHttp(
+      409,
+      avant?.statut === "corrige" || !apresEcheance
+        ? "Ta copie vient d'être corrigée : elle ne peut plus être remplacée. Rien n'est parti."
+        : "La date limite est passée : ta copie déjà rendue est gardée, elle ne peut plus être remplacée. Rien n'est parti.",
+    );
   const { ecrites, ignores } = await db.transaction(async (tx) => {
+    // Réponse de groupe : la base borne elle-même la transaction (verrous, requêtes). Si elle dépasse, tout est
+    // annulé et l'étudiant lit, à juste titre, que sa réponse n'est pas partie (rendrePourGroupe).
+    if (pourGroupe) {
+      await tx.execute(sql`SET LOCAL lock_timeout = '15s'`);
+      await tx.execute(sql`SET LOCAL statement_timeout = '20s'`);
+    }
     // Copies existantes verrouillées (dans l'ordre des identifiants : deux réponses croisées ne s'attendent pas
     // l'une l'autre) : la correction archivée est la dernière enregistrée, et une correction en cours
     // d'enregistrement ne se pose pas sur la nouvelle copie.
@@ -1094,6 +1114,7 @@ async function enregistrerRendus(
       const avant = avantDe.get(e.id);
       // Réponse de groupe : copie publiée, ou déjà rendue après la date limite (elle ne se remplace plus).
       if (pourGroupe && (avant?.statut === "corrige" || (apresEcheance && avant?.statut === "rendu" && !memeReponseDeGroupe(avant, pourGroupe, renduLe)))) {
+        if (options.auteurObligatoire && e.id === auteur.id) throw refusAuteur(avant);
         ignores.push(e);
         continue;
       }
@@ -1137,6 +1158,7 @@ async function enregistrerRendus(
         })
         .returning();
       if (!r) {
+        if (options.auteurObligatoire && e.id === auteur.id) throw refusAuteur(avant);
         ignores.push(e);
         continue;
       }
@@ -1260,11 +1282,9 @@ async function rendrePourGroupe(
           [u],
           { texte: source.texte, fichierIds: source.fichierIds, prepareLe: null, renduLe: g.actuelle.renduLe, enRetard: source.enRetard },
           source.pourGroupe ?? { ...pourGroupe, parId: g.actuelle.parId, parNom: g.actuelle.parNom },
-          { journal: "rendu_groupe_rejoint" },
+          { journal: "rendu_groupe_rejoint", auteurObligatoire: true },
         );
-        const x = ecrites[0];
-        if (!x) throw new ErreurHttp(409, "Ta copie est déjà corrigée : elle ne peut plus être remplacée.");
-        return { statut: 201, recu: { ...(await recuDe(d, c, x)), groupe: { nom: g.nom, copies: 1, ignores: [] } } };
+        return { statut: 201, recu: { ...(await recuDe(d, c, ecrites[0])), groupe: { nom: g.nom, copies: 1, ignores: [] } } };
       }
 
       // Nouvelle réponse : refusée si une réponse du groupe est arrivée sans que l'étudiant la connaisse.
@@ -1273,16 +1293,26 @@ async function rendrePourGroupe(
         throw refusGroupe("erreur.groupeDejaRendu", "groupe_deja_rendu", { nom: g.actuelle.parNom }, { parNom: g.actuelle.parNom, renduLe: g.actuelle.renduLe.toISOString() });
       }
       if (!v.texte.trim() && !v.fichierIds.length) throw invalide("Ajoute au moins une photo, un fichier ou un texte avant d'envoyer.");
-      await verifierFichiers(u, v.fichierIds, "rendu", avant?.fichierIds ?? []);
+      // Fichiers déjà attachés acceptés : ceux de ma copie individuelle ou de la copie de CE groupe, jamais ceux
+      // d'une copie rendue pour un autre groupe (ils appartiennent à d'autres étudiants).
+      const attaches = avant && (!avant.pourGroupe || avant.pourGroupe.groupeId === g.groupeId) ? avant.fichierIds : [];
+      await verifierFichiers(u, v.fichierIds, "rendu", attaches);
       // L'auteur est toujours écrit (il peut rendre ce devoir), avec les membres inscrits de son groupe.
       const membres = g.membres.some((m) => m.id === u.id) ? g.membres : [...g.membres, u];
-      const { ecrites, ignores } = await enregistrerRendus(u, d, membres, { texte: v.texte, fichierIds: v.fichierIds, prepareLe }, pourGroupe, { journal: "rendu_groupe" });
-      const x = ecrites.find((e) => e.etudiantId === u.id);
-      if (!x) throw new ErreurHttp(409, "Ta copie est déjà corrigée : elle ne peut plus être remplacée.");
+      const { ecrites, ignores } = await enregistrerRendus(u, d, membres, { texte: v.texte, fichierIds: v.fichierIds, prepareLe }, pourGroupe, {
+        journal: "rendu_groupe",
+        auteurObligatoire: true,
+      });
+      const x = ecrites.find((e) => e.etudiantId === u.id)!;
       return { statut: 201, recu: { ...(await recuDe(d, c, x)), groupe: { nom: g.nom, copies: ecrites.length, ignores: ignores.map(prenomInitiale) } } };
     });
   } catch (e) {
-    if (e instanceof DelaiGroupeDepasse) throw new ErreurHttp(503, "Le campus est très occupé : ta réponse n'est pas partie. Renvoie-la dans un instant.");
+    // Rien n'a été écrit : la réponse n'a pas pu commencer (file du groupe), ou la base a annulé toute la transaction
+    // (verrou trop long : 55P03, requête trop longue : 57014).
+    const code = (e as { code?: string } | null)?.code;
+    if (e instanceof DelaiGroupeDepasse || code === "55P03" || code === "57014") {
+      throw new ErreurHttp(503, "Le campus est très occupé : ta réponse n'est pas partie. Renvoie-la dans un instant.");
+    }
     throw e;
   }
 }
@@ -1666,10 +1696,18 @@ export function enregistrerEvaluations(app: Express) {
       if (avant && avant.statut !== "brouillon") throw new ErreurHttp(409, "Ta copie est déjà rendue : pour la changer, utilise « Remplacer ma copie ».");
       await verifierFichiers(u, v.fichierIds, "rendu", avant?.fichierIds ?? []);
       const maintenant = new Date();
-      await db
+      // Seul un brouillon s'écrit ici : la copie a pu être rendue entre-temps (par l'étudiant ailleurs, ou par un
+      // camarade pour son groupe du live) ; elle n'est alors jamais écrasée par le brouillon.
+      const ecrit = await db
         .insert(rendus)
         .values({ devoirId: d.id, etudiantId: u.id, texte: v.texte, fichierIds: v.fichierIds, statut: "brouillon" })
-        .onConflictDoUpdate({ target: [rendus.devoirId, rendus.etudiantId], set: { texte: v.texte, fichierIds: v.fichierIds, majLe: maintenant } });
+        .onConflictDoUpdate({
+          target: [rendus.devoirId, rendus.etudiantId],
+          set: { texte: v.texte, fichierIds: v.fichierIds, majLe: maintenant },
+          setWhere: eq(rendus.statut, "brouillon"),
+        })
+        .returning({ id: rendus.id });
+      if (!ecrit.length) throw new ErreurHttp(409, "Ta copie est déjà rendue : pour la changer, utilise « Remplacer ma copie ».");
       res.json({ ok: true, enregistreLe: maintenant.toISOString() });
     }),
   );

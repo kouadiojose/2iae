@@ -37,6 +37,38 @@ import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, Resulta
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "devoir" | "campus";
 
+/**
+ * Sur ordinateur (lg et plus), le panneau de droite tient dans la fenêtre depuis sa place sur la page : ses onglets
+ * (formulaire et réponses du devoir, discussion…) défilent à l'intérieur, la page ne s'allonge pas avec eux (la scène
+ * et la visio restent à l'écran), et le pied du panneau (« Donner le devoir ») reste visible. Téléphone et tablette :
+ * rien ne change.
+ */
+function useHauteurPanneau(el: HTMLElement | null): number | undefined {
+  const [hauteur, setHauteur] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!el) return;
+    const ecran = window.matchMedia("(min-width: 1024px)");
+    const calculer = () => {
+      if (!ecran.matches) return setHauteur(undefined);
+      const haut = el.getBoundingClientRect().top + window.scrollY;
+      const h = Math.max(520, Math.round(window.innerHeight - haut - 16));
+      setHauteur((avant) => (avant !== undefined && Math.abs(avant - h) < 4 ? avant : h));
+    };
+    calculer();
+    // L'en-tête peut passer sur deux lignes (boutons qui apparaissent) : le haut du panneau bouge avec lui.
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(calculer) : null;
+    ro?.observe(document.body);
+    window.addEventListener("resize", calculer);
+    ecran.addEventListener("change", calculer);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", calculer);
+      ecran.removeEventListener("change", calculer);
+    };
+  }, [el]);
+  return hauteur;
+}
+
 export default function Studio({ seance, observation = false }: { seance: SeanceDetailDto; observation?: boolean }) {
   const moi = useMoiConnecte();
   const { data: etat } = useEtatDirect(seance.id, true);
@@ -86,6 +118,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   // Devoir donné en direct : le formulaire de l'onglet « Devoir » survit aux changements d'onglet.
   const txDirect = useTextes(textesDirect);
   const [formulaireDevoir, setFormulaireDevoir] = useState<FormulaireDevoirDirect>(formulaireVide);
+  const [aside, setAside] = useState<HTMLElement | null>(null);
+  const hauteurAside = useHauteurPanneau(aside);
   const [partageLocal, setPartageLocal] = useState(false);
   const { revenirAuxDiapos } = useCopieDirect(seance.id);
   useAvisCopieRemplacee(seance.id, !observation);
@@ -296,11 +330,17 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             />
           </div>
 
-          <aside className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !presentation && "xl:order-3")}>
+          <aside
+            ref={setAside}
+            style={hauteurAside ? { maxHeight: hauteurAside } : undefined}
+            className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !presentation && "xl:order-3")}
+          >
             {!observation && <RappelInteraction seanceId={seance.id} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
             <OngletsPanneau
               valeur={onglet}
               onChange={setOnglet}
+              // Six onglets : sur deux lignes au besoin, jamais de défilement qui cacherait « Mains » et ses mains levées.
+              aLaLigne
               options={[
                   { valeur: "mains", libelle: "Mains", compteur: nbMains || undefined },
                   { valeur: "questions", libelle: "Questions", compteur: etat.questions.filter((q) => !q.repondue && !q.masquee).length || undefined },

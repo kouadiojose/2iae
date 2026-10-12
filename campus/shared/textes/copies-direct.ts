@@ -18,6 +18,7 @@ export const t = creerTextes({
   "vue.mains": "{n} mains levées",
   "vue.partage": "Votre écran est partagé dans la visio : la classe et l'enregistrement voient cette page. Les noms sont masqués.",
   "vue.avantDirect": "Vous pourrez montrer une copie une fois le direct démarré. En attendant, vous pouvez tout regarder.",
+  "vue.planB": "Pendant le plan B, la classe ne peut pas voir de copie : vous pouvez la lire ici.",
   "vue.chargement": "Chargement…",
   "vue.erreur": "Impossible de charger les devoirs. Vérifiez votre connexion.",
   "vue.reessayer": "Réessayer",

@@ -26,20 +26,40 @@ const LETTRES = ["A", "B", "C", "D", "E"];
 // Sur un petit écran (360 px), les onglets ne se tassent plus : ils gardent leur
 // largeur et défilent d'un glissement (cran par cran), sans barre visible.
 
-export function OngletsPanneau<T extends string>({ valeur, onChange, options }: { valeur: T; onChange: (v: T) => void; options: { valeur: T; libelle: string; compteur?: number }[] }) {
-  // L'onglet choisi reste entier à l'écran quand les onglets défilent (six onglets dans le Studio) : seule la barre
-  // défile, jamais la page.
+export function OngletsPanneau<T extends string>({
+  valeur,
+  onChange,
+  options,
+  aLaLigne = false,
+}: {
+  valeur: T;
+  onChange: (v: T) => void;
+  options: { valeur: T; libelle: string; compteur?: number }[];
+  /**
+   * Les onglets passent à la ligne au lieu de défiler (Studio, six onglets) : tous restent visibles avec leur compteur
+   * (les mains levées ne se signalent que là).
+   */
+  aLaLigne?: boolean;
+}) {
+  // Barre qui défile (étudiant, petit écran) : l'onglet choisi reste entier à l'écran ; seule la barre défile.
   const barre = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const b = barre.current;
     const actif = b?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!b || !actif) return;
+    if (aLaLigne || !b || !actif) return;
     const gauche = actif.offsetLeft - b.offsetLeft;
     if (gauche < b.scrollLeft) b.scrollLeft = gauche - 8;
     else if (gauche + actif.offsetWidth > b.scrollLeft + b.clientWidth) b.scrollLeft = gauche + actif.offsetWidth - b.clientWidth + 8;
-  }, [valeur]);
+  }, [valeur, aLaLigne]);
   return (
-    <div ref={barre} role="tablist" className="flex snap-x snap-mandatory gap-1 overflow-x-auto border-b border-nuit-ligne p-2.5 [scrollbar-width:none]">
+    <div
+      ref={barre}
+      role="tablist"
+      className={cn(
+        "flex gap-1 border-b border-nuit-ligne p-2.5",
+        aLaLigne ? "flex-wrap" : "snap-x snap-mandatory overflow-x-auto [scrollbar-width:none]",
+      )}
+    >
       {options.map((o) => {
         const actif = o.valeur === valeur;
         return (

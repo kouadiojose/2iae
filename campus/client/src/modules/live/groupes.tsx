@@ -561,7 +561,23 @@ function SansVisio({ texte, grand }: { texte: string; grand?: boolean }) {
 // ── Côté étudiant et salle ─────────────────────────────────────────────────
 
 /** Bandeau du groupe : nom, membres, minuteur, consigne, message du formateur, actions. */
-function EnTeteGroupe({ seanceId, groupes, groupe, moiId, tu, grand }: { seanceId: number; groupes: GroupesDto; groupe: GroupeTravailDto; moiId: number; tu: boolean; grand?: boolean }) {
+function EnTeteGroupe({
+  seanceId,
+  groupes,
+  groupe,
+  moiId,
+  tu,
+  grand,
+  appelDiscret = false,
+}: {
+  seanceId: number;
+  groupes: GroupesDto;
+  groupe: GroupeTravailDto;
+  moiId: number;
+  tu: boolean;
+  grand?: boolean;
+  appelDiscret?: boolean;
+}) {
   const session = groupes.session!;
   const autres = groupe.membres.filter((m) => m.id !== moiId);
   const [appel, setAppel] = useState(false);
@@ -606,7 +622,13 @@ function EnTeteGroupe({ seanceId, groupes, groupe, moiId, tu, grand }: { seanceI
           </p>
         )}
         <div className="flex flex-wrap gap-2 pt-1">
-          <Bouton variante={groupe.aideDemandeeLe ? "nuit" : "nuit-actif"} icone={<BellRing className="h-4 w-4" />} onClick={() => void appeler()} chargement={appel} disabled={Boolean(groupe.aideDemandeeLe)}>
+          <Bouton
+            variante={groupe.aideDemandeeLe || appelDiscret ? "nuit" : "nuit-actif"}
+            icone={<BellRing className="h-4 w-4" />}
+            onClick={() => void appeler()}
+            chargement={appel}
+            disabled={Boolean(groupe.aideDemandeeLe)}
+          >
             {groupe.aideDemandeeLe ? "Le formateur est prévenu" : "Appeler le formateur"}
           </Bouton>
           {(session.retourLibre || session.choixLibre) && (
@@ -621,14 +643,29 @@ function EnTeteGroupe({ seanceId, groupes, groupe, moiId, tu, grand }: { seanceI
 }
 
 /** L'étudiant dans son groupe : visio du groupe (ou l'écran de sa salle), consigne et discussion. */
-export function VueGroupeEtudiant({ seance, groupes, groupe, moiId, mode }: { seance: SeanceDetailDto; groupes: GroupesDto; groupe: GroupeTravailDto; moiId: number; mode: ModeSuivi }) {
+export function VueGroupeEtudiant({
+  seance,
+  groupes,
+  groupe,
+  moiId,
+  mode,
+  appelDiscret = false,
+}: {
+  seance: SeanceDetailDto;
+  groupes: GroupesDto;
+  groupe: GroupeTravailDto;
+  moiId: number;
+  mode: ModeSuivi;
+  /** Un devoir en direct est à rendre : son bouton « Répondre » est le seul orange de l'écran (CONCEPTION §1.1). */
+  appelDiscret?: boolean;
+}) {
   const enSalle = mode === "compagnon";
   // Arrivée dans le groupe : on remonte en haut (consigne et visio), même si l'on lisait la discussion.
   useEffect(() => window.scrollTo({ top: 0, behavior: "smooth" }), [groupe.id]);
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
       <div className="flex min-w-0 flex-col gap-3">
-        <EnTeteGroupe seanceId={seance.id} groupes={groupes} groupe={groupe} moiId={moiId} tu />
+        <EnTeteGroupe seanceId={seance.id} groupes={groupes} groupe={groupe} moiId={moiId} tu appelDiscret={appelDiscret} />
         {enSalle ? (
           <div className="rounded-[22px] bg-nuit-panneau">
             <SansVisio texte="Tu es dans la salle de conférence : ton groupe se retrouve sur l'écran de la salle. Écris ici pour partager des idées ou des documents." />

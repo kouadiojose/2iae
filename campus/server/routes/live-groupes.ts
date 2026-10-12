@@ -15,7 +15,8 @@ import { seanceVisible } from "../acces";
 import { publier, utilisateursSur } from "../temps-reel";
 import { planifier } from "../taches";
 import * as visio from "../visio";
-import { groupeDevoirPour } from "../devoirs-direct";
+import { groupeDevoirPour, refusChangementGroupe } from "../devoirs-direct";
+import { t as tDirect } from "@shared/textes/devoir-direct";
 import {
   seances,
   utilisateurs,
@@ -391,6 +392,16 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         const g = await groupeDeLaSession(session.id, idParam(req, "gid"));
         o.limiter(`groupe-choix:${u.id}`, 1500, "Doucement.");
         const ancien = await monGroupe(session.id, u.id);
+        // Devoir en direct « une réponse par groupe » : pas d'entrée de soi-même dans un groupe qui a déjà rendu, ni
+        // dans un autre groupe quand on a déjà rendu avec le sien (devoirs-direct.ts, refusChangementGroupe).
+        if (role === "etudiant" && ancien !== g.id) {
+          const refus = await refusChangementGroupe(session.id, g.id, u.id);
+          if (refus) {
+            throw new ErreurHttp(409, tDirect(refus === "groupe_rendu" ? "erreur.changement.groupeRendu" : "erreur.changement.renduAilleurs", { registre: "tu" }), {
+              code: refus,
+            });
+          }
+        }
         await placer(session.id, u.id, g.id);
         if (u.role === "salle") await deplacerSalle(s, session.id, u, ancien, g.id);
         signaler(s.id, "membres");

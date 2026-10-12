@@ -122,7 +122,10 @@ export function VueDevoirs({
   const tx = useTextes(textesCopies);
   const txDirect = useTextes(textesDirect);
   const id = seance.id;
-  const enDirect = etat.statut === "en_direct" && !(etat.planB ?? seance.planB);
+  const planB = etat.statut === "en_direct" && Boolean(etat.planB ?? seance.planB);
+  const enDirect = etat.statut === "en_direct" && !planB;
+  // Pourquoi la classe ne peut pas voir de copie : direct pas encore démarré, ou plan B (le direct continue ailleurs).
+  const pasDeProjection = planB ? tx("vue.planB") : tx("vue.avantDirect");
   const { projeter, revenirAuxDiapos, envoi } = useCopieDirect(id);
   // Geste retour du téléphone, Échap, focus : la vue se referme sans quitter le Studio. Échap dans la recherche
   // la vide d'abord.
@@ -349,6 +352,12 @@ export function VueDevoirs({
           </span>
         )}
         <div className="ml-auto flex flex-wrap gap-2">
+          {/* Donner un devoir sans quitter le direct : visible dès l'ouverture de la vue, quel que soit le devoir choisi. */}
+          {onDonnerDevoir && (
+            <Bouton variante="nuit" taille="sm" icone={<ClipboardPen className="h-4 w-4" />} onClick={onDonnerDevoir}>
+              {txDirect("lien.donner")}
+            </Bouton>
+          )}
           {etat.copie && (
             <Bouton variante="nuit" taille="sm" icone={<Presentation className="h-4 w-4" />} onClick={() => void revenirAuxDiapos()}>
               {seance.diapos.length ? tx("copie.revenir") : tx("copie.arreter")}
@@ -364,7 +373,7 @@ export function VueDevoirs({
           <MonitorUp className="h-4 w-4 shrink-0" /> {tx("vue.partage")}
         </p>
       )}
-      {!enDirect && <p className="border-b border-nuit-ligne bg-nuit-panneau px-4 py-2 text-[14px] text-nuit-doux">{tx("vue.avantDirect")}</p>}
+      {!enDirect && <p className="border-b border-nuit-ligne bg-nuit-panneau px-4 py-2 text-[14px] text-nuit-doux">{pasDeProjection}</p>}
 
       <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3 lg:grid-cols-[360px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)] lg:content-stretch lg:overflow-hidden">
         {/* Colonne de gauche : 1. le devoir, 2. les copies */}
@@ -385,11 +394,6 @@ export function VueDevoirs({
             <>
               <section className={cn("flex-col gap-2 rounded-[18px] bg-nuit-panneau p-3", etape === "devoirs" ? "flex" : "hidden", changerDevoir || !devoir ? "lg:flex" : "lg:hidden")}>
                 <h2 className="px-1 font-mono text-[11px] uppercase tracking-wider text-orange-peche">{tx("devoirs.titre")}</h2>
-                {onDonnerDevoir && (
-                  <Bouton variante="nuit" taille="sm" className="min-h-11 self-start bg-nuit-carte" icone={<ClipboardPen className="h-4 w-4" />} onClick={onDonnerDevoir}>
-                    {txDirect("lien.donner")}
-                  </Bouton>
-                )}
                 {!liste.data?.devoirs.length && <p className="px-1 text-[14px] text-nuit-doux">{tx("devoirs.vide")}</p>}
                 {liste.data?.devoirs.map((d) => (
                   <CarteDevoir key={d.id} tx={tx} devoir={d} actif={d.id === devoirId} aLEcran={aLEcran?.devoirId === d.id} onChoisir={() => choisirDevoir(d)} />
@@ -630,7 +634,7 @@ export function VueDevoirs({
                       >
                         {envoi ? tx("apercu.envoi") : etat.copie && !memePage ? tx("apercu.projeterPlace") : tx("apercu.projeter")}
                       </Bouton>
-                      <p className="text-center text-[12px] text-nuit-gris">{!enDirect ? tx("vue.avantDirect") : memePage ? tx("apercu.dejaProjetee") : tx("apercu.projeter.aide")}</p>
+                      <p className="text-center text-[12px] text-nuit-gris">{!enDirect ? pasDeProjection : memePage ? tx("apercu.dejaProjetee") : tx("apercu.projeter.aide")}</p>
                     </>
                   )}
                 </div>

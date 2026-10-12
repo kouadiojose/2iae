@@ -226,7 +226,15 @@ export type CopieDuDirectDto = {
   /** Copie rendue pour un groupe du live (« auteur » : c'est la copie de qui a répondu pour le groupe). */
   groupe: { id: number; nom: string; parNom: string; auteur: boolean } | null;
 };
-export type ListeCopiesDuDirectDto = { devoir: DevoirDuDirectDto; copies: CopieDuDirectDto[] };
+export type ListeCopiesDuDirectDto = {
+  devoir: DevoirDuDirectDto;
+  copies: CopieDuDirectDto[];
+  /**
+   * Devoir en direct « une réponse par groupe » : les groupes de sa répartition qui peuvent répondre (sans écran de
+   * salle, avec au moins un étudiant du périmètre), gardés après la fermeture des groupes. Null : devoir individuel.
+   */
+  groupesAttendus?: { id: number; nom: string }[] | null;
+};
 
 export type PageCopieDto = {
   /** « t1 », « f418 », « f418p3 », « c1 » */

@@ -20,6 +20,7 @@ import { genreDe } from "../copies-pages";
 import { echeance, peutEncoreRendre } from "../evaluations-outils";
 import { seanceAnimee } from "./live";
 import { inscritsVisibles, renduEnseigne } from "./evaluations";
+import { dernierDevoirDirect, devoirDirectDe, groupesQuiRepondent } from "../devoirs-direct";
 import {
   arreterCopie,
   CLE_PAGE,
@@ -246,7 +247,11 @@ export function enregistrerCopiesDirect(app: Express) {
       const p = s.projection;
       const projete = estProjectionCopie(p) && s.statut === "en_direct" ? resumes.find((x) => x.id === p.devoirId) : undefined;
       const avecCopies = resumes.filter((x) => x.type === "depot" && x.copiesRendues > 0);
-      const suggestion = projete?.id ?? avecCopies.find(passe)?.id ?? [...avecCopies].sort((a, b) => b.dateLimite.localeCompare(a.dateLimite))[0]?.id ?? null;
+      // Devoir donné dans ce direct (le dernier), dès qu'il a des copies : c'est celui que le formateur vient voir.
+      const direct = await dernierDevoirDirect(s.id);
+      const duDirect = direct ? avecCopies.find((x) => x.id === direct.d.id) : undefined;
+      const suggestion =
+        projete?.id ?? duDirect?.id ?? avecCopies.find(passe)?.id ?? [...avecCopies].sort((a, b) => b.dateLimite.localeCompare(a.dateLimite))[0]?.id ?? null;
       const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
       const reponse: ListeDevoirsDuDirectDto = { coursCode: c?.code ?? "", devoirs: resumes, suggestion };
       sansCache(res);
@@ -299,7 +304,11 @@ export function enregistrerCopiesDirect(app: Express) {
           };
         })
         .sort((a, b) => a.prenom.localeCompare(b.prenom, "fr") || a.initiale.localeCompare(b.initiale, "fr"));
-      const reponse: ListeCopiesDuDirectDto = { devoir: await devoirDuDirect(d, inscrits, copies, tous, maintenant), copies: liste };
+      // Devoir en direct « une réponse par groupe » : les groupes de SA répartition qui peuvent répondre (le suivi du
+      // Studio en tire « 4 groupes sur 6 » et les groupes sans réponse, même après la fermeture des groupes).
+      const dd = await devoirDirectDe(d.id);
+      const groupesAttendus = dd?.enGroupe && dd.sessionGroupesId ? await groupesQuiRepondent(dd.sessionGroupesId, new Set(inscrits.map((e) => e.id))) : null;
+      const reponse: ListeCopiesDuDirectDto = { devoir: await devoirDuDirect(d, inscrits, copies, tous, maintenant), copies: liste, groupesAttendus };
       sansCache(res);
       res.json(reponse);
     }),

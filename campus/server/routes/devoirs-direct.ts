@@ -21,6 +21,7 @@ import { publier, utilisateursSur } from "../temps-reel";
 import { CORRIGE_MAX } from "../corriges";
 import { echeance, finEcheance } from "../evaluations-outils";
 import { dtoPublic, publierDevoirDirect } from "../devoirs-direct";
+import * as visio from "../visio";
 import { animateurCopies } from "./copies-direct";
 import { creerDevoir } from "./evaluations";
 import { canal, consigner } from "./live";
@@ -36,6 +37,8 @@ const texte = (u: Pick<Utilisateur, "role">, cle: Parameters<typeof t>[0], v?: R
 
 /** Arrondi à la minute supérieure (secondes et millisecondes à 0) : « à rendre avant 11h31 », jamais 11h30m12s. */
 const minuteSuperieure = (ms: number) => Math.ceil(ms / MINUTE) * MINUTE;
+/** Minute entamée : la fin du cours se dit comme le chrono du Studio (« Fin prévue 11h44 » pour 11:44:30). */
+const minuteInferieure = (ms: number) => Math.floor(ms / MINUTE) * MINUTE;
 
 /** 23:59 du jour d'Abidjan (GMT, sans heure d'été) : « Ce soir ». */
 function ceSoir(maintenant: Date): Date {
@@ -44,17 +47,18 @@ function ceSoir(maintenant: Date): Date {
 
 /**
  * Échéance calculée par le serveur (l'heure affichée dans le Studio n'est qu'indicative) : fin du cours prévue
- * (démarrage réel, sinon heure prévue, plus la durée ; moins de 5 minutes devant : dans 10 minutes), dans n minutes,
- * ou ce soir à 23h59. Arrondie à la minute supérieure, puis fin d'échéance (« 23h59 » vaut jusqu'à 23:59:59,999).
+ * (démarrage réel, sinon heure prévue, plus la durée, à la minute entamée ; moins de 5 minutes devant : dans
+ * 10 minutes), dans n minutes, ou ce soir à 23h59. Durées arrondies à la minute supérieure, puis fin d'échéance
+ * (« 23h59 » vaut jusqu'à 23:59:59,999).
  */
 function echeanceDemandee(s: Pick<Seance, "demarreeLe" | "debut" | "dureeMinutes">, choix: "fin" | "soir" | number, maintenant: Date): Date {
   const m = maintenant.getTime();
-  let cible: number;
   if (choix === "fin") {
-    const fin = (s.demarreeLe ?? s.debut).getTime() + s.dureeMinutes * MINUTE;
-    cible = fin - m < 5 * MINUTE ? m + 10 * MINUTE : fin;
-  } else if (choix === "soir") cible = ceSoir(maintenant).getTime();
-  else cible = m + choix * MINUTE;
+    // Fin prévue à la minute près, comme le chrono du Studio : la pastille, le chrono et la carte disent la même heure.
+    const fin = minuteInferieure((s.demarreeLe ?? s.debut).getTime() + s.dureeMinutes * MINUTE);
+    return finEcheance(new Date(fin - m < 5 * MINUTE ? minuteSuperieure(m + 10 * MINUTE) : fin));
+  }
+  const cible = choix === "soir" ? ceSoir(maintenant).getTime() : m + choix * MINUTE;
   return finEcheance(new Date(minuteSuperieure(cible)));
 }
 
@@ -95,6 +99,9 @@ export function enregistrerDevoirsDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await seanceEnDirect(u, idParam(req));
+      // Essai de visio (direct immédiat sans prévenir) : la classe n'en sait rien, et l'essai s'efface tout seul. Un
+      // devoir donné là deviendrait pourtant un vrai devoir publié, dans « Devoirs » et « Notes » de toute la classe.
+      if (await visio.estEssaiDirect(s.id)) throw new ErreurHttp(409, texte(u, "erreur.essai"), { code: "essai" });
       const v = valider(schemaDonner, req.body);
       const maintenant = new Date();
       const dateLimite = echeanceDemandee(s, v.echeance, maintenant);
@@ -133,10 +140,13 @@ export function enregistrerDevoirsDirect(app: Express) {
         .returning();
 
       // Inscrits absents de la classe en ce moment : prévenus dans la cloche du campus, sans rappel sur le téléphone.
+      // Pas avant l'heure prévue du cours : la classe n'est pas encore attendue (et un direct lancé en avance peut
+      // être un essai, remis à venir ensuite : le devoir disparaît alors, rien ne doit en avoir été annoncé).
       // La ligne « ouverture » est réservée pour tous : sans elle, une retouche du devoir dans l'éditeur
       // annoncerait « Nouveau devoir » à toute la classe (annoncerSiOuvert).
       const presents = new Set(utilisateursSur(canal(s.id)).map((x) => x.id));
-      const absents = (await etudiantsDuCours(s.coursId)).filter((e) => !presents.has(e.id)).map((e) => e.id);
+      const avantLHeure = s.debut.getTime() > maintenant.getTime();
+      const absents = avantLHeure ? [] : (await etudiantsDuCours(s.coursId)).filter((e) => !presents.has(e.id)).map((e) => e.id);
       await db.insert(rappelsDevoirs).values({ devoirId: d.id, type: "ouverture", echeance: d.dateLimite, destinataires: absents.length }).onConflictDoNothing();
       if (absents.length) {
         await notifier(absents, {

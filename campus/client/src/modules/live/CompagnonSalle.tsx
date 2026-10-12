@@ -25,7 +25,7 @@ import { EnTeteLive, FinDeSeance } from "./ui";
 import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
 import { cleDirect, estimationMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { SortieDuLive } from "./SortieDuLive";
-import { DevoirEnDirect } from "./devoir-direct";
+import { DevoirEnDirect, devoirARendre } from "./devoir-direct";
 import { t } from "@shared/textes/direct";
 import { classementEmargement, type EmargementSalleDto, type MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { EtatDirectDto, ModeSuivi, ResultatsSondageDto, SeanceDetailDto, SondageDto } from "@shared/schema";
@@ -126,7 +126,7 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
         {etat.devoirDirect && <DevoirEnDirect seance={seance} etat={etat} groupes={groupes} moi={moi} />}
 
         {groupe && groupes ? (
-          <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode="compagnon" />
+          <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode="compagnon" appelDiscret={devoirARendre(etat)} />
         ) : (
           <>
             {enDirect && groupes?.session?.choixLibre && <ChoixGroupe seanceId={seance.id} groupes={groupes} />}

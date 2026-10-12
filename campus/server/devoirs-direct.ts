@@ -12,7 +12,7 @@
 //   - un groupe qui contient un écran de salle ne répond pas en groupe (jusqu'à 40 étudiants émargés derrière).
 import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "./db";
-import { etudiantsDuCours } from "./acces";
+import { inscritsParmi } from "./acces";
 import { publier } from "./temps-reel";
 import { echeance } from "./evaluations-outils";
 import { CONSIGNE_DIRECT_MAX } from "@shared/devoir-direct";
@@ -178,7 +178,9 @@ export async function situationGroupe(d: Pick<Devoir, "id" | "coursId">, etudian
     .innerJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
     .where(eq(membresGroupes.groupeId, m.groupeId));
   if (personnes.some((p) => p.u.role === "salle")) return { etat: "salle", dd: ddg, groupeId: m.groupeId, nom: m.nom };
-  const inscrits = new Set((await etudiantsDuCours(d.coursId)).map((e) => e.id));
+  // Inscription vérifiée pour les seuls membres du groupe (pas tout le cours : chaque étudiant relit son groupe).
+  const candidats = personnes.filter((p) => p.u.role === "etudiant" && p.u.actif).map((p) => p.u.id);
+  const inscrits = await inscritsParmi(d.coursId, candidats);
   const membres = personnes
     .map((p) => p.u)
     .filter((u) => u.role === "etudiant" && u.actif && inscrits.has(u.id))
@@ -244,29 +246,92 @@ export function signalerRenduDirect(devoirId: number, delaiMs = 500) {
 
 export class DelaiGroupeDepasse extends Error {}
 const filesGroupes = new Map<string, Promise<unknown>>();
-const DELAI_FILE_GROUPE_MS = 35_000;
+const ATTENTE_FILE_GROUPE_MS = 35_000;
 
 /**
  * Réponses d'un même groupe pour un même devoir : l'une après l'autre (le serveur n'a qu'une instance, comme
- * enSerie de projection-copies.ts). Chaque tâche est bornée (35 s) : une base lente ne bloque pas les suivantes.
+ * enSerie de projection-copies.ts). Seule l'attente est bornée (35 s) : une réponse qui n'a pas pu commencer est
+ * refusée sans rien écrire (DelaiGroupeDepasse, « ta réponse n'est pas partie », et c'est vrai). Une réponse
+ * commencée va jusqu'au bout, la suivante l'attend : la transaction est bornée par la base elle-même
+ * (lock_timeout et statement_timeout dans enregistrerRendus), qui l'annule entièrement si elle dépasse.
  */
-export function enSerieGroupe<T>(cle: string, travail: () => Promise<T>, delaiMs = DELAI_FILE_GROUPE_MS): Promise<T> {
+export function enSerieGroupe<T>(cle: string, travail: () => Promise<T>, attenteMaxMs = ATTENTE_FILE_GROUPE_MS): Promise<T> {
   const avant = filesGroupes.get(cle) ?? Promise.resolve();
-  const suite = avant.then(() => {
-    let minuteur: NodeJS.Timeout | undefined;
-    return Promise.race([
-      travail(),
-      new Promise<never>((_ok, ko) => {
-        minuteur = setTimeout(() => ko(new DelaiGroupeDepasse("délai dépassé")), delaiMs);
-      }),
-    ]).finally(() => clearTimeout(minuteur));
+  let abandonnee = false;
+  let minuteur: NodeJS.Timeout | undefined;
+  const execution = avant.then(() => {
+    clearTimeout(minuteur);
+    if (abandonnee) throw new DelaiGroupeDepasse("attente dépassée");
+    return travail();
   });
-  const fin = suite.catch(() => undefined);
+  const attente = new Promise<never>((_ok, ko) => {
+    minuteur = setTimeout(() => {
+      abandonnee = true;
+      ko(new DelaiGroupeDepasse("attente dépassée"));
+    }, attenteMaxMs);
+  });
+  // La file avance à la fin réelle de cette tâche (ou de la précédente, si celle-ci n'a jamais commencé).
+  const fin = execution.then(
+    () => undefined,
+    () => undefined,
+  );
   filesGroupes.set(cle, fin);
   void fin.then(() => {
     if (filesGroupes.get(cle) === fin) filesGroupes.delete(cle);
   });
-  return suite;
+  return Promise.race([execution, attente]);
+}
+
+// ── Changer de groupe soi-même pendant un devoir en groupe ─────────────────
+
+/**
+ * Répartition « au choix des étudiants » : un étudiant change de groupe quand il veut. Pour qu'il ne puisse ni prendre
+ * la réponse d'un autre groupe (« Avoir la copie de mon groupe »), ni la remplacer pour tous ses membres, ni répondre
+ * pour deux groupes, il n'entre pas de lui-même dans un groupe qui a déjà rendu un devoir en direct de cette
+ * répartition, ni dans un autre groupe quand il a déjà une copie rendue avec le sien. Le formateur, lui, place qui il
+ * veut. Revenir en classe reste possible : il y répond seul, pour sa seule copie.
+ */
+export async function refusChangementGroupe(sessionId: number, cibleGroupeId: number, etudiantId: number): Promise<"groupe_rendu" | "rendu_ailleurs" | null> {
+  const { rows } = await db.execute<{ cible: boolean; ailleurs: boolean }>(sql`
+    WITH dd AS (
+      SELECT x.devoir_id FROM campus.devoirs_direct x JOIN campus.devoirs d ON d.id = x.devoir_id
+      WHERE x.session_groupes_id = ${sessionId} AND x.en_groupe AND d.publie
+    )
+    SELECT
+      EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id IN (SELECT devoir_id FROM dd) AND r.statut <> 'brouillon'
+              AND r.pour_groupe->>'groupeId' = ${String(cibleGroupeId)}) AS cible,
+      EXISTS (SELECT 1 FROM campus.rendus r WHERE r.devoir_id IN (SELECT devoir_id FROM dd) AND r.statut <> 'brouillon'
+              AND r.etudiant_id = ${etudiantId} AND r.pour_groupe IS NOT NULL
+              AND r.pour_groupe->>'groupeId' <> ${String(cibleGroupeId)}) AS ailleurs`);
+  const l = rows[0];
+  if (l?.cible) return "groupe_rendu";
+  if (l?.ailleurs) return "rendu_ailleurs";
+  return null;
+}
+
+// ── Groupes attendus (suivi du Studio) ─────────────────────────────────────
+
+/**
+ * Groupes de la répartition d'un devoir en groupe qui peuvent répondre : sans écran de salle, avec au moins un
+ * étudiant (parmi « visibles » : le périmètre de la personne qui regarde). Ils restent après la fermeture des groupes
+ * (finaliser ne pose que fermee_le) et ne se mêlent jamais à une répartition plus récente.
+ */
+export async function groupesQuiRepondent(sessionId: number, visibles: Set<number>): Promise<{ id: number; nom: string }[]> {
+  const lignes = await db
+    .select({ id: groupesTravail.id, nom: groupesTravail.nom, numero: groupesTravail.numero, membreId: membresGroupes.utilisateurId, role: utilisateurs.role })
+    .from(groupesTravail)
+    .leftJoin(membresGroupes, eq(membresGroupes.groupeId, groupesTravail.id))
+    .leftJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
+    .where(eq(groupesTravail.sessionId, sessionId))
+    .orderBy(asc(groupesTravail.numero), asc(groupesTravail.id));
+  const parGroupe = new Map<number, { nom: string; salle: boolean; etudiants: number }>();
+  for (const l of lignes) {
+    const g = parGroupe.get(l.id) ?? { nom: l.nom, salle: false, etudiants: 0 };
+    if (l.role === "salle") g.salle = true;
+    if (l.role === "etudiant" && l.membreId !== null && visibles.has(l.membreId)) g.etudiants++;
+    parGroupe.set(l.id, g);
+  }
+  return [...parGroupe.entries()].filter(([, g]) => !g.salle && g.etudiants > 0).map(([id, g]) => ({ id, nom: g.nom }));
 }
 
 /** Devoirs donnés en direct dans une séance (remise à venir d'un essai). */

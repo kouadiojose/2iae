@@ -415,6 +415,22 @@ export const lectureComplete = (c: CopieLue) => !c.nonLus.length && c.pagesEnTro
 
 const pluriel = (n: number, mot: string, mots = `${mot}s`) => `${n} ${n > 1 ? mots : mot}`;
 
+/**
+ * Raison d'un fichier non lu, dans le résumé pour le formateur (« nom (raison) ») : ce résumé est gardé dans
+ * corrections_auto.detail, et relu par relectureUtile (ne pas changer ces libellés sans elle).
+ */
+const LIBELLES_NON_LU: Record<RaisonNonLu, string> = {
+  format: "format non lu",
+  taille: "trop lourd ou trop long",
+  erreur: "illisible",
+  delai: "conversion trop longue",
+  indisponible: "momentanément illisible",
+};
+/** Fichier au format non lu, dans le résumé (« nom (format non lu) ») : SQL_NON_LUE_A_RELIRE le cherche dans le détail. */
+export const MARQUE_FORMAT_NON_LU = `(${LIBELLES_NON_LU.format})`;
+/** Fin de la phrase des pages en trop (resumeNonLus), relue par relectureUtile. */
+const PAGES_NON_LUES = /au-delà des \d+ que le campus lit/;
+
 /** Ce que le campus n'a pas lu, pour le formateur (avec les noms des fichiers) ; null si la copie est lue en entier. */
 export function resumeNonLus(c: CopieLue): string | null {
   const morceaux: string[] = [];
@@ -423,18 +439,33 @@ export function resumeNonLus(c: CopieLue): string | null {
   const texte = c.nonLus.find((n) => n.fichier === 0);
   if (texte) morceaux.push(`Texte saisi coupé après ${TEXTE_MAX.toLocaleString("fr-FR")} caractères.`);
   const fichiersNonLus = c.nonLus.filter((n) => n.fichier !== 0);
-  if (fichiersNonLus.length) {
-    const raisons: Record<RaisonNonLu, string> = {
-      format: "format non lu",
-      taille: "trop lourd ou trop long",
-      erreur: "illisible",
-      delai: "conversion trop longue",
-      indisponible: "momentanément illisible",
-    };
-    morceaux.push(`Fichiers non lus en entier : ${fichiersNonLus.map((n) => `${n.nom} (${raisons[n.raison]})`).join(", ")}.`);
-  }
+  if (fichiersNonLus.length) morceaux.push(`Fichiers non lus en entier : ${fichiersNonLus.map((n) => `${n.nom} (${LIBELLES_NON_LU[n.raison]})`).join(", ")}.`);
   if (c.pagesEnTrop) morceaux.push(`${pluriel(c.pagesEnTrop, "page")} au-delà des ${PAGES_MAX_PAR_COPIE} que le campus lit.`);
   return morceaux.length ? morceaux.join(" ") : null;
+}
+
+/** Outils de lecture du serveur (outilsDeLecture). */
+export type OutilsLecture = Awaited<ReturnType<typeof outilsDeLecture>>;
+
+/**
+ * Une copie retenue « à revoir » pour un fichier non lu (« detail » : le résumé de resumeNonLus) serait-elle lue
+ * en entier si le campus la relisait avec les outils de ce serveur ? Vrai seulement quand chaque fichier « format
+ * non lu » se convertit désormais (document Word, Excel, PowerPoint ou OpenDocument : LibreOffice et pdftoppm ;
+ * photo HEIC : heif-convert ; PDF : pdftoppm), et que rien d'autre ne l'empêche pour toujours : son ou vidéo
+ * joints, fichier d'un type que le campus ne lit jamais (zip…), texte trop long, fichier abîmé (« illisible ») ou
+ * trop lourd, pages au-delà de PAGES_MAX_PAR_COPIE. Une conversion trop longue n'empêche rien : elle peut passer
+ * cette fois. Sans ce tri, la direction relancerait sans fin des copies qui reviennent « à revoir ».
+ */
+export function relectureUtile(detail: string | null, texte: string, liste: Pick<Fichier, "mime" | "nomOriginal">[], o: OutilsLecture): boolean {
+  const a = apercuCopie(texte, liste);
+  if (!detail || a.videos || a.audios || a.jamaisLus || a.texteCoupe) return false;
+  if (detail.includes(`(${LIBELLES_NON_LU.erreur})`) || detail.includes(`(${LIBELLES_NON_LU.taille})`) || PAGES_NON_LUES.test(detail)) return false;
+  const enFormat = liste.filter((f) => detail.includes(`${f.nomOriginal} ${MARQUE_FORMAT_NON_LU}`));
+  const convertible = (f: Pick<Fichier, "mime" | "nomOriginal">) => {
+    const genre = genreDe(f);
+    return genre === "office" ? o.office && o.pdf : genre === "heic" ? o.heic : genre === "pdf" ? o.pdf : false;
+  };
+  return enFormat.length > 0 && enFormat.every(convertible);
 }
 
 /** Ce que les seules informations des fichiers (type, nom) disent d'une copie, sans la lire. */

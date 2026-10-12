@@ -66,10 +66,13 @@ publie la note à l'étudiant comme une note de formateur, ou met la copie « à
 note publiée par erreur est une faute grave : toute la prudence va vers « à revoir ».
 
 Une copie retenue « à revoir » parce qu'un fichier n'a pas pu être lu (raison « format », par exemple un .docx
-avant l'installation du module Writer de LibreOffice) ne repart jamais seule : quand le format devient lisible, la
-direction la remet en correction avec le bouton « Relire ces copies » (tableau Engagement, bloc « Correction
-automatique »), et le tour suivant la prépare comme les autres copies (jamais une copie « alerte » ni une copie
-déjà notée par un formateur).
+avant l'installation du module Writer de LibreOffice) ne repart jamais seule : quand le format devient lisible (une
+nouvelle version du campus avec l'outil), la direction la remet en correction avec le bouton « Relire ces copies »
+(tableau Engagement, bloc « Correction automatique »), et le tour suivant la prépare comme les autres copies. Le
+bouton ne propose que les copies qu'une nouvelle lecture peut débloquer : chaque fichier « format non lu » se
+convertit désormais, sans son, vidéo, zip, pages en trop, texte trop long ni fichier abîmé ou trop lourd, lues par
+une version précédente du serveur ; jamais une copie « alerte », ni une copie qu'un formateur a notée ou commencé à
+corriger (proposition de l'IA demandée par lui comprise).
 
 - **Un sous-agent par copie, jamais un lot** : le tour écrit jusqu'à 150 dossiers. Pour chaque dossier
   `campus/.travaux-ia/<id>/`, lancer un sous-agent neuf (sous-agent général, sans autre contexte), avec cette

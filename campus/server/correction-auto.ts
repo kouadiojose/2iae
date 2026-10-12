@@ -30,7 +30,8 @@
 // La tâche « correction-copies » (10 min) applique les réponses déjà données par la routine, et, hors mode IA
 // du soir, corrige directement par l'API, à petit débit.
 // La direction remet en correction les copies que le campus ne savait pas lire (« format »), quand un format
-// devient lisible : relireCopiesNonLues (POST /api/pilotage/corrections/relire-non-lues).
+// devient lisible : relireCopiesNonLues (POST /api/pilotage/corrections/relire-non-lues), seulement celles qu'une
+// nouvelle lecture peut débloquer (copiesNonLuesARelire).
 import Anthropic from "@anthropic-ai/sdk";
 import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
@@ -41,7 +42,18 @@ import { demanderJsonCout, ErreurIa, iaDisponible, travailDeFondPermis } from ".
 import { avecOrigine, estIaDuSoir, iaDuSoir, supprimerDemandesDe } from "./ia-soir";
 import { corrigeChezLeCampus, echeanceValidation } from "./corrections-socle";
 import { echeance } from "./evaluations-outils";
-import { apercuCopie, copieLisible, lectureComplete, lireCopie, resumeApercu, resumeNonLus, type ApercuCopie } from "./copies-pages";
+import {
+  MARQUE_FORMAT_NON_LU,
+  apercuCopie,
+  copieLisible,
+  lectureComplete,
+  lireCopie,
+  outilsDeLecture,
+  relectureUtile,
+  resumeApercu,
+  resumeNonLus,
+  type ApercuCopie,
+} from "./copies-pages";
 import {
   SYSTEME_CORRECTION_CAMPUS,
   LISIBILITES,
@@ -187,18 +199,71 @@ const SQL_A_CORRIGER = sql`
       )`;
 
 /**
- * Copies que le campus ne savait pas lire et qu'il doit encore corriger (alias r, d, cd, ca) : retenues « à
- * revoir » pour un fichier non lu (raison « format », par exemple un .docx quand LibreOffice n'avait pas le module
- * Writer), suivi qui vaut pour la copie actuelle, et mêmes conditions que SQL_A_CORRIGER pour le devoir, le
- * corrigé et la copie : toujours « rendue », sans correction ni note d'un formateur. Jamais une copie « alerte »
- * (autre raison), ni une copie notée par un formateur. Une copie retenue pour elle-même ne repart jamais seule
- * (SQL_A_CORRIGER) : c'est la direction qui la remet en correction, quand le format devient lisible
- * (relireCopiesNonLues). Le bilan de la direction les compte (routes/corrections-copies.ts).
+ * Démarrage de ce serveur. Un outil de lecture (module de LibreOffice, heif-convert…) ne s'installe qu'avec une
+ * nouvelle version du campus : une copie lue depuis ce démarrage l'a été avec les outils d'aujourd'hui, la relire
+ * ne changerait rien (copiesNonLuesARelire).
  */
-export const SQL_NON_LUE_A_RELIRE = sql`
+const DEMARRAGE = new Date();
+
+/**
+ * Copies que le campus ne savait pas lire et qu'il doit encore corriger (alias r, d, cd, ca) : retenues « à
+ * revoir » pour un fichier au format non lu (raison « format », détail « … (format non lu) », par exemple un .docx
+ * quand LibreOffice n'avait pas le module Writer), suivi qui vaut pour la copie actuelle, lue par une version
+ * précédente du serveur (DEMARRAGE), et mêmes conditions que SQL_A_CORRIGER pour le devoir, le corrigé et la
+ * copie : toujours « rendue », sans correction ni note d'un formateur. Jamais une copie « alerte » (autre raison),
+ * ni une copie notée par un formateur, ni une copie dont le formateur a demandé lui-même une proposition à l'IA
+ * (« Proposer une correction (IA) » : proposition qui n'est pas celle du campus, comme propositionDuCampus côté
+ * écran, ou qui signale une consigne cachée) : il a commencé à la corriger. Une copie retenue pour elle-même ne
+ * repart jamais seule (SQL_A_CORRIGER) : c'est la direction qui la remet en correction (relireCopiesNonLues),
+ * après le tri de copiesNonLuesARelire.
+ */
+const SQL_NON_LUE_A_RELIRE = sql`
       ${SQL_DEVOIR_A_CORRIGER}
       AND ${SQL_RENDUE_SANS_FORMATEUR}
-      AND ca.etat = 'a_revoir' AND ca.raison = 'format' AND ${SQL_SUIVI_MEME_COPIE}`;
+      AND ca.etat = 'a_revoir' AND ca.raison = 'format' AND ${SQL_SUIVI_MEME_COPIE}
+      AND ca.detail LIKE ${`%${MARQUE_FORMAT_NON_LU}%`} AND ca.maj_le < ${DEMARRAGE}
+      AND (r.proposition_ia IS NULL OR (
+        coalesce(r.proposition_ia->>'alerte', '') = ''
+        AND ca.note_campus IS NOT NULL AND (r.proposition_ia->>'note')::real = ca.note_campus))`;
+
+/**
+ * Copies que la direction peut remettre en correction (SQL_NON_LUE_A_RELIRE, dans le périmètre « portee » : alias
+ * r, d, e), triées par relectureUtile : seulement celles dont chaque fichier au format non lu se convertit
+ * désormais, sans son, vidéo, fichier jamais lu, texte trop long, fichier abîmé ou trop lourd, ni pages en trop.
+ * Le même tri pour le bilan de la direction (BilanCorrections.copies.nonLues) et pour la route. « verrou » : lignes
+ * de suivi verrouillées (dans la transaction de relireCopiesNonLues).
+ */
+export async function copiesNonLuesARelire(portee: SQL, ex: Pick<typeof db, "execute"> = db, verrou = false): Promise<{ renduId: number; devoirId: number }[]> {
+  const { rows } = await ex.execute<{ rendu_id: number; devoir_id: number; texte: string | null; fichier_ids: number[] | null; detail: string | null }>(sql`
+    SELECT r.id AS rendu_id, r.devoir_id, r.texte, r.fichier_ids, ca.detail
+    FROM campus.corrections_auto ca
+    JOIN campus.rendus r ON r.id = ca.rendu_id
+    JOIN campus.devoirs d ON d.id = r.devoir_id
+    JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
+    JOIN campus.utilisateurs e ON e.id = r.etudiant_id
+    WHERE ${SQL_NON_LUE_A_RELIRE} AND ${portee}
+    ORDER BY r.id ${verrou ? sql`FOR UPDATE OF ca` : sql``}`);
+  if (!rows.length) return [];
+  const ids = [...new Set(rows.flatMap((l) => l.fichier_ids ?? []))];
+  type F = { mime: string; nomOriginal: string };
+  const liste = ids.length
+    ? (
+        await ex.execute<{ id: number; mime: string; nom_original: string }>(sql`
+          SELECT id, mime, nom_original FROM campus.fichiers WHERE id IN (${sql.join(
+            ids.map((id) => sql`${Math.trunc(Number(id))}`),
+            sql`, `,
+          )})`)
+      ).rows
+    : [];
+  const parId = new Map<number, F>(liste.map((f) => [Number(f.id), { mime: f.mime, nomOriginal: f.nom_original }]));
+  const o = await outilsDeLecture();
+  return rows
+    .filter((l) => {
+      const sesFichiers = (l.fichier_ids ?? []).map((id) => parId.get(Number(id))).filter((f): f is F => Boolean(f));
+      return relectureUtile(l.detail, l.texte ?? "", sesFichiers, o);
+    })
+    .map((l) => ({ renduId: Number(l.rendu_id), devoirId: Number(l.devoir_id) }));
+}
 
 /** Copies à corriger ce tour-ci, les plus anciennes d'abord, au plus « limite » (voir SQL_A_CORRIGER). */
 export async function copiesACorriger(limite: number): Promise<number[]> {
@@ -651,17 +716,24 @@ export async function copieRemplacee(renduId: number): Promise<void> {
 }
 
 /**
- * La direction remet en correction les copies que le campus ne savait pas lire (SQL_NON_LUE_A_RELIRE), par
+ * La direction remet en correction les copies que le campus ne savait pas lire (copiesNonLuesARelire), par
  * exemple quand un format devient lisible (modules Word et Excel de LibreOffice installés le 12 octobre 2026).
  * « portee » : condition SQL du périmètre de la personne (alias r, d, e : cours et campus des étudiants), comme
- * son bilan. Idempotente : une copie déjà remise en file n'est plus « à revoir ». Dans une transaction, avec sa
- * ligne de journal. Hors mode IA du soir, la tâche de correction est réveillée ; en mode IA du soir, le prochain
- * tour de la routine les prépare (copiesACorriger prend les copies en file). Renvoie les copies remises en file,
- * et quand le campus les relit.
+ * son bilan. Idempotente : une copie remise en file n'est plus « à revoir », et une copie relue depuis le
+ * démarrage du serveur n'est plus proposée. Dans une transaction, avec sa ligne de journal. Hors mode IA du soir,
+ * la tâche de correction est réveillée ; en mode IA du soir, le prochain tour de la routine les prépare
+ * (copiesACorriger prend les copies en file). Renvoie les copies remises en file, et quand le campus les relit
+ * vraiment : « bientot » seulement si l'API corrigera au prochain passage (IA disponible, pas en pause, budget
+ * du mois permis : comme passerCorrections) et que ces copies y ont leur place (COPIES_PAR_PASSAGE_API).
  */
 export async function relireCopiesNonLues(portee: SQL, utilisateurId: number): Promise<ReponseRelireNonLues> {
   const maintenant = new Date();
+  // Outils détectés avant la transaction (LibreOffice met quelques secondes à répondre la première fois).
+  await outilsDeLecture();
   const remises = await db.transaction(async (tx) => {
+    const candidates = await copiesNonLuesARelire(portee, tx, true);
+    if (!candidates.length) return [];
+    // Conditions revérifiées dans la mise à jour (copie remplacée ou prise en main entre-temps : pas remise).
     const { rows } = await tx.execute<{ rendu_id: number; devoir_id: number }>(sql`
       UPDATE campus.corrections_auto ca
       SET etat = 'en_file', raison = NULL, detail = NULL, demande_id = NULL, tentatives = 0, maj_le = now()
@@ -669,7 +741,10 @@ export async function relireCopiesNonLues(portee: SQL, utilisateurId: number): P
       JOIN campus.devoirs d ON d.id = r.devoir_id
       JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
       JOIN campus.utilisateurs e ON e.id = r.etudiant_id
-      WHERE r.id = ca.rendu_id AND ${SQL_NON_LUE_A_RELIRE} AND ${portee}
+      WHERE r.id = ca.rendu_id AND ca.rendu_id IN (${sql.join(
+        candidates.map((c) => sql`${c.renduId}`),
+        sql`, `,
+      )}) AND ${SQL_NON_LUE_A_RELIRE} AND ${portee}
       RETURNING ca.rendu_id, ca.devoir_id`);
     const renduIds = rows.map((l) => Number(l.rendu_id)).sort((a, b) => a - b);
     if (renduIds.length) {
@@ -679,12 +754,22 @@ export async function relireCopiesNonLues(portee: SQL, utilisateurId: number): P
         details: { n: renduIds.length, renduIds, devoirIds: [...new Set(rows.map((l) => Number(l.devoir_id)))].sort((a, b) => a - b) },
       });
     }
-    return renduIds.length;
+    return renduIds;
   });
-  if (remises && !iaDuSoir()) reveiller("correction-copies");
-  // La routine du soir passe vers 21 h (heure d'Abidjan) : « ce soir » avant, « demain soir » après.
-  const quand = !iaDuSoir() ? "bientot" : prochainSoir(maintenant).getUTCDate() === maintenant.getUTCDate() ? "ce_soir" : "demain_soir";
-  return { remises, quand };
+  let quand: ReponseRelireNonLues["quand"];
+  if (iaDuSoir()) {
+    // La routine du soir passe vers 21 h (heure d'Abidjan) : « ce soir » avant, « demain soir » après.
+    quand = prochainSoir(maintenant).getUTCDate() === maintenant.getUTCDate() ? "ce_soir" : "demain_soir";
+  } else if (!iaDisponible() || Date.now() < pauseApiJusqua || !(await travailDeFondPermis())) {
+    // L'API ne corrigera rien au prochain passage (pas de clé, panne, budget du mois) : pas de promesse d'heure.
+    quand = "plus_tard";
+  } else if (remises.length) {
+    // Au prochain passage (lancé tout de suite) : les plus anciennes copies de la file, au plus COPIES_PAR_PASSAGE_API.
+    const prochaines = new Set(await copiesACorriger(COPIES_PAR_PASSAGE_API));
+    quand = remises.every((id) => prochaines.has(id)) ? "bientot" : "a_son_tour";
+  } else quand = "bientot";
+  if (remises.length && !iaDuSoir()) reveiller("correction-copies");
+  return { remises: remises.length, quand };
 }
 
 // ── Lecture pour les écrans (DTO de routes/evaluations.ts) ─────────────────

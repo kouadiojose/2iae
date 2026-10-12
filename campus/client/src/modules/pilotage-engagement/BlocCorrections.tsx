@@ -4,9 +4,10 @@
 // formateurs et écart moyen, et par formateur : qui répond au corrigé du jour. Vouvoiement.
 // Contrat : BilanCorrections (shared/engagement/corrections.ts), GET /api/pilotage/corrections, périmètre de
 // la personne. Une personne sans ce droit (403), ou un serveur qui n'a pas encore la route (404) : rien.
-// Copies que le campus ne savait pas lire (un format devenu lisible depuis) : bouton secondaire « Relire ces
-// copies » (POST /api/pilotage/corrections/relire-non-lues), sans confirmation : l'action ne retire rien, elle
-// remet seulement ces copies en correction, comme « Recalculer » plus haut.
+// Copies que le campus ne savait pas lire et qu'il sait lire maintenant (BilanCorrections.copies.nonLues) : bouton
+// secondaire « Relire ces copies » (POST /api/pilotage/corrections/relire-non-lues), sans confirmation : l'action
+// ne retire rien, elle remet seulement ces copies en correction, comme « Recalculer » plus haut. Le message dit
+// quand le campus les relit vraiment (réponse « quand » du serveur : API, file, IA indisponible, routine du soir).
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
@@ -44,8 +45,9 @@ function Chiffre({ valeur, libelle, signal }: { valeur: number; libelle: string;
 }
 
 /**
- * Copies « à revoir » que le campus ne savait pas lire (raison « format ») : une ligne et le bouton secondaire
- * qui les remet en correction, puis le bilan est relu. Rien quand il n'y en a pas.
+ * Copies « à revoir » que le campus ne savait pas lire (raison « format ») et qu'il sait lire maintenant : une
+ * ligne et le bouton secondaire qui les remet en correction, puis le bilan est relu. Rien quand il n'y en a pas.
+ * Singulier ou pluriel selon le nombre affiché.
  */
 function CopiesNonLues({ n, tx }: { n: number; tx: Tx }) {
   const [envoi, setEnvoi] = useState(false);
@@ -54,8 +56,8 @@ function CopiesNonLues({ n, tx }: { n: number; tx: Tx }) {
     setEnvoi(true);
     try {
       const r = await post<ReponseRelireNonLues>("/api/pilotage/corrections/relire-non-lues");
-      if (r.remises > 0) toast(selonNombre(tx, `corrections.nonLues.fait.${r.quand}`, r.remises));
-      else toast(tx("corrections.nonLues.rien"), "info");
+      if (r.remises > 0) toast(selonNombre(tx, `corrections.nonLues.fait.${r.quand}`, r.remises), r.quand === "plus_tard" ? "info" : "succes");
+      else toast(selonNombre(tx, "corrections.nonLues.rien", n), "info");
       await rafraichir("/api/pilotage/corrections");
     } catch (e) {
       toastErreur(e);
@@ -68,10 +70,10 @@ function CopiesNonLues({ n, tx }: { n: number; tx: Tx }) {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p className="min-w-0 flex-1 basis-40 text-sm font-bold text-encre">{selonNombre(tx, "corrections.nonLues", n)}</p>
         <Bouton variante="contour" taille="sm" onClick={relire} chargement={envoi} icone={<RotateCcw className="h-4 w-4" />} className="min-h-[44px] shrink-0">
-          {tx("corrections.nonLues.bouton")}
+          {selonNombre(tx, "corrections.nonLues.bouton", n)}
         </Bouton>
       </div>
-      <Lecture>{tx("corrections.nonLues.lecture")}</Lecture>
+      <Lecture>{selonNombre(tx, "corrections.nonLues.lecture", n)}</Lecture>
     </div>
   );
 }

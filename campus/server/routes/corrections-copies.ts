@@ -20,7 +20,7 @@ import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } 
 import { enseigneCours, formateursDuCours, idsCoursAccessibles } from "../acces";
 import { notifier } from "../notifications";
 import { publierUtilisateur } from "../temps-reel";
-import { SQL_NON_LUE_A_RELIRE, copiePriseEnMain, relireCopiesNonLues, versRelectureEtudiant } from "../correction-auto";
+import { copiePriseEnMain, copiesNonLuesARelire, relireCopiesNonLues, versRelectureEtudiant } from "../correction-auto";
 import { cours, demandesRelecture, devoirs, journal, rendus, utilisateurs, type Utilisateur } from "@shared/schema";
 import {
   MOTIF_RELECTURE_MAX,
@@ -136,14 +136,17 @@ async function copiesARevoir(u: Utilisateur, coursIds: number[]): Promise<ListeA
 
 /**
  * Périmètre de la direction pour la correction automatique : ses cours (ids, à comparer à d.cours_id) et, pour
- * la vie scolaire d'un campus, les étudiants de son campus (site, à ajouter après une condition, alias e). Nul :
- * aucun cours. Le même pour le bilan et pour les copies que la direction remet en correction.
+ * la vie scolaire d'un campus, les étudiants de son campus (site, à ajouter après une condition, alias e) ;
+ * « copies » : les deux ensemble (alias d, e). Nul : aucun cours. Le même pour le bilan et pour les copies que la
+ * direction remet en correction.
  */
-async function perimetreCorrections(u: Utilisateur): Promise<{ ids: SQL; site: SQL } | null> {
+async function perimetreCorrections(u: Utilisateur): Promise<{ ids: SQL; site: SQL; copies: SQL } | null> {
   const coursIds = await idsCoursAccessibles(u);
   if (!coursIds.length) return null;
   const perimetre = perimetreSites(u);
-  return { ids: tableauEntiers(coursIds), site: perimetre ? sql`AND e.site_id = ANY(${tableauEntiers(perimetre)})` : sql`` };
+  const ids = tableauEntiers(coursIds);
+  const site = perimetre ? sql`AND e.site_id = ANY(${tableauEntiers(perimetre)})` : sql``;
+  return { ids, site, copies: sql`d.cours_id = ANY(${ids}) ${site}` };
 }
 
 async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCorrections> {
@@ -164,7 +167,7 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
   const d0 = depuis.toISOString();
   const n = (v: unknown) => Number(v ?? 0);
 
-  const [corriges, copies, notees, relectures, changees, parCours, parValideur] = await Promise.all([
+  const [corriges, copies, notees, relectures, changees, parCours, parValideur, nonLues] = await Promise.all([
     db.execute<{ en_preparation: number; a_valider: number; valides: number; tacites: number }>(sql`
       SELECT count(*) FILTER (WHERE cd.statut = 'en_preparation') AS en_preparation,
              count(*) FILTER (WHERE cd.statut = 'propose') AS a_valider,
@@ -173,13 +176,11 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
       FROM campus.corriges_devoirs cd JOIN campus.devoirs d ON d.id = cd.devoir_id
       WHERE d.publie AND d.cours_id = ANY(${ids})`),
     // « En file » : suivies en file, et copies rendues d'un devoir corrigé par le campus pas encore prises en charge.
-    // « Non lues » : copies que la direction peut remettre en correction (mêmes conditions que la route).
-    db.execute<{ en_file: number; notees: number; a_revoir: number; erreurs: number; non_lues: number }>(sql`
+    db.execute<{ en_file: number; notees: number; a_revoir: number; erreurs: number }>(sql`
       SELECT count(*) FILTER (WHERE ca.etat = 'en_file' OR (ca.rendu_id IS NULL AND r.statut = 'rendu' AND r.correcteur_id IS NULL)) AS en_file,
              count(*) FILTER (WHERE ca.etat = 'notee') AS notees,
              count(*) FILTER (WHERE ca.etat = 'a_revoir' AND (r.statut = 'rendu' OR (r.statut = 'corrige' AND r.origine_note = 'campus'))) AS a_revoir,
-             count(*) FILTER (WHERE ca.etat = 'erreur') AS erreurs,
-             count(*) FILTER (WHERE ${SQL_NON_LUE_A_RELIRE}) AS non_lues
+             count(*) FILTER (WHERE ca.etat = 'erreur') AS erreurs
       FROM campus.rendus r
       JOIN campus.devoirs d ON d.id = r.devoir_id
       JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
@@ -227,6 +228,8 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
       JOIN campus.utilisateurs f ON f.id = cd.valide_par_id AND f.role = 'formateur'
       WHERE cd.statut = 'valide' AND cd.valide_le >= ${d0}::timestamptz AND d.cours_id = ANY(${ids})
       GROUP BY f.id, f.prenom, f.nom`),
+    // Copies que la direction peut remettre en correction : le même tri que la route (copiesNonLuesARelire).
+    copiesNonLuesARelire(p.copies),
   ]);
 
   const formateurs = new Map<number, BilanCorrections["parFormateur"][number]>();
@@ -245,7 +248,7 @@ async function bilanCorrections(u: Utilisateur, jours: number): Promise<BilanCor
   return {
     depuis: depuis.toISOString(),
     corriges: { enPreparation: n(c?.en_preparation), aValider: n(c?.a_valider), valides: n(c?.valides), tacites: n(c?.tacites) },
-    copies: { enFile: n(k?.en_file), notees: n(k?.notees), aRevoir: n(k?.a_revoir), erreurs: n(k?.erreurs), nonLues: n(k?.non_lues) },
+    copies: { enFile: n(k?.en_file), notees: n(k?.notees), aRevoir: n(k?.a_revoir), erreurs: n(k?.erreurs), nonLues: nonLues.length },
     noteesPeriode: n(notees.rows[0]?.n),
     relectures: { ouvertes: n(rl?.ouvertes), traitees: n(rl?.traitees) },
     changees: { n: n(ch?.n), ecartMoyen: ch?.ecart === null || ch?.ecart === undefined ? null : arrondi(Number(ch.ecart)) },
@@ -398,16 +401,15 @@ export function enregistrerCorrectionsCopies(app: Express) {
   );
 
   // La direction remet en correction les copies que le campus ne savait pas lire (un format devenu lisible) :
-  // même garde et même périmètre que le bilan ; jamais une copie « alerte » ni une copie notée par un formateur.
+  // même garde, même périmètre et même tri que le bilan (copiesNonLuesARelire) ; jamais une copie « alerte », ni
+  // une copie qu'un formateur a notée ou commencé à corriger.
   app.post(
     "/api/pilotage/corrections/relire-non-lues",
     exigerDroit("notes"),
     route(async (req, res) => {
       const u = moi(req);
       const p = await perimetreCorrections(u);
-      const reponse: ReponseRelireNonLues = p
-        ? await relireCopiesNonLues(sql`d.cours_id = ANY(${p.ids}) ${p.site}`, u.id)
-        : { remises: 0, quand: "bientot" };
+      const reponse: ReponseRelireNonLues = p ? await relireCopiesNonLues(p.copies, u.id) : { remises: 0, quand: "bientot" };
       res.json(reponse);
     }),
   );

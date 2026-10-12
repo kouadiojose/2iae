@@ -234,19 +234,27 @@ export const t = creerTextes({
   "corrections.copies.periode.n": "{n} copies notées par le campus sur la période",
   "corrections.copies.lecture":
     "En attente : notées au prochain passage (la routine du soir). À revoir : le campus n'a pas publié de note (consigne cachée pour l'IA, pages illisibles, vidéo seule, fichier illisible, copie vide, échecs répétés), le formateur décide. En erreur : échec technique, nouvel essai automatique.",
-  // Copies « à revoir » pour un fichier non lu : la direction les remet en correction quand le format devient lisible.
+  // Copies « à revoir » pour un fichier non lu, que le campus sait lire maintenant : la direction les remet en correction.
   "corrections.nonLues.un": "{n} copie que le campus ne savait pas lire",
   "corrections.nonLues.n": "{n} copies que le campus ne savait pas lire",
-  "corrections.nonLues.lecture":
-    "Comptées dans « À revoir » : un fichier de la copie n'a pas pu être lu (format). Quand le campus sait lire ce format, remettez-les en correction. Une copie déjà notée par un formateur n'est jamais reprise.",
-  "corrections.nonLues.bouton": "Relire ces copies",
+  "corrections.nonLues.lecture.un":
+    "Comptée dans « À revoir » : un fichier de cette copie (par exemple un document Word ou Excel) n'avait pas pu être lu, et le campus sait le lire maintenant. Remettez-la en correction. Une copie qu'un formateur a notée ou commencé à corriger n'est jamais reprise.",
+  "corrections.nonLues.lecture.n":
+    "Comptées dans « À revoir » : un fichier de ces copies (par exemple un document Word ou Excel) n'avait pas pu être lu, et le campus sait le lire maintenant. Remettez-les en correction. Une copie qu'un formateur a notée ou commencé à corriger n'est jamais reprise.",
+  "corrections.nonLues.bouton.un": "Relire cette copie",
+  "corrections.nonLues.bouton.n": "Relire ces copies",
   "corrections.nonLues.fait.bientot.un": "{n} copie remise en correction : le campus la relit dans le quart d'heure.",
   "corrections.nonLues.fait.bientot.n": "{n} copies remises en correction : le campus les relit dans le quart d'heure.",
+  "corrections.nonLues.fait.a_son_tour.un": "{n} copie remise en correction : le campus la relit à son tour, après les copies déjà en attente.",
+  "corrections.nonLues.fait.a_son_tour.n": "{n} copies remises en correction : le campus les relit à leur tour, après les copies déjà en attente.",
+  "corrections.nonLues.fait.plus_tard.un": "{n} copie remise en correction : le campus la relira dès que l'IA sera de nouveau disponible.",
+  "corrections.nonLues.fait.plus_tard.n": "{n} copies remises en correction : le campus les relira dès que l'IA sera de nouveau disponible.",
   "corrections.nonLues.fait.ce_soir.un": "{n} copie remise en correction : le campus la relit ce soir.",
   "corrections.nonLues.fait.ce_soir.n": "{n} copies remises en correction : le campus les relit ce soir.",
   "corrections.nonLues.fait.demain_soir.un": "{n} copie remise en correction : le campus la relit demain soir.",
   "corrections.nonLues.fait.demain_soir.n": "{n} copies remises en correction : le campus les relit demain soir.",
-  "corrections.nonLues.rien": "Ces copies sont déjà en correction, ou un formateur les a reprises.",
+  "corrections.nonLues.rien.un": "Cette copie est déjà en correction, ou un formateur l'a reprise.",
+  "corrections.nonLues.rien.n": "Ces copies sont déjà en correction, ou un formateur les a reprises.",
   "corrections.relectures": "Relectures demandées",
   "corrections.relectures.detail": "{o} en attente · {t} traitées",
   "corrections.relectures.lecture": "Demandes des étudiants qui contestent une note du campus ; le formateur garde la note ou la change, et leur répond.",

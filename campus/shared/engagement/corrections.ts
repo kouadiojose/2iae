@@ -202,9 +202,12 @@ export type BilanCorrections = {
   depuis: string;
   corriges: { enPreparation: number; aValider: number; valides: number; tacites: number };
   /**
-   * nonLues : parmi les copies « à revoir », celles que le campus ne savait pas lire (raison « format ») et qu'il
-   * doit encore corriger (copie toujours rendue, sans formateur, date limite passée, corrigé utilisable) : ce que
-   * POST /api/pilotage/corrections/relire-non-lues remettrait en correction. Absent d'un serveur plus ancien.
+   * nonLues : parmi les copies « à revoir », celles que le campus ne savait pas lire (raison « format ») et qu'une
+   * nouvelle lecture peut débloquer : chaque fichier au format non lu se convertit désormais (document Word,
+   * Excel…, photo HEIC), rien d'autre ne bloque (son, vidéo, fichier jamais lu, pages en trop, texte trop long,
+   * fichier abîmé ou trop lourd), copie lue par une version précédente du serveur, et qu'il doit encore corriger
+   * (copie toujours rendue, qu'aucun formateur n'a commencé à corriger, date limite passée, corrigé utilisable) :
+   * ce que POST /api/pilotage/corrections/relire-non-lues remettrait en correction. Absent d'un serveur plus ancien.
    */
   copies: { enFile: number; notees: number; aRevoir: number; erreurs: number; nonLues?: number };
   /** Copies notées par le campus pendant la période. */
@@ -220,6 +223,8 @@ export type BilanCorrections = {
  * POST /api/pilotage/corrections/relire-non-lues (direction, droit « notes », périmètre de la personne) : les
  * copies que le campus ne savait pas lire sont remises en correction (BilanCorrections.copies.nonLues), par
  * exemple quand un format devient lisible. « remises » : copies remises en file (0 si c'était déjà fait).
- * « quand » : « bientot » (l'API, dans le quart d'heure), « ce_soir » ou « demain_soir » (routine du soir).
+ * « quand » : « bientot » (l'API, au passage lancé tout de suite), « a_son_tour » (l'API, après des copies déjà
+ * en file), « plus_tard » (l'API ne corrige pas en ce moment : pas de clé, panne, budget du mois), « ce_soir » ou
+ * « demain_soir » (routine du soir).
  */
-export type ReponseRelireNonLues = { remises: number; quand: "bientot" | "ce_soir" | "demain_soir" };
+export type ReponseRelireNonLues = { remises: number; quand: "bientot" | "a_son_tour" | "plus_tard" | "ce_soir" | "demain_soir" };

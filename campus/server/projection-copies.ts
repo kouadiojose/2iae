@@ -38,6 +38,7 @@ import {
   type ProjectionSeance,
   type ProjectionVideo,
   type RaisonCorrigeRetenu,
+  type PourGroupe,
   type Rendu,
   type RotationCopie,
   type Seance,
@@ -153,6 +154,15 @@ export function etiquetteCopie(nomVisible: boolean, prenom: string, nom: string)
   const de = deDevant(p);
   const initiale = nom.trim() ? `${nom.trim().charAt(0).toUpperCase()}.` : "";
   return t("classe.nom", { v: { de, prenom: p, initiale } }).trim();
+}
+
+/**
+ * Étiquette d'une copie projetée : celle d'un étudiant (etiquetteCopie), ou, pour une copie rendue pour un groupe du
+ * live (devoir en direct), « Copie d'un groupe » (nom caché) ou « Copie de groupe · Groupe 2 » (nom montré).
+ */
+export function etiquetteDeCopie(nomVisible: boolean, etudiant: Pick<Utilisateur, "prenom" | "nom">, pourGroupe: Pick<PourGroupe, "nom"> | null | undefined): string {
+  if (pourGroupe) return nomVisible ? t("classe.groupeNom", { v: { nom: pourGroupe.nom } }) : t("classe.groupe");
+  return etiquetteCopie(nomVisible, etudiant.prenom, etudiant.nom);
 }
 
 const nomCourt = (e: Pick<Utilisateur, "prenom" | "nom">) => `${e.prenom} ${e.nom.charAt(0).toUpperCase()}.`;

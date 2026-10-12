@@ -21,6 +21,9 @@ import { Scene, usePetitEcran } from "./scene";
 import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { BoutonLienInvite } from "./LienInvite";
 import { ResultatsParCampus } from "./panneaux";
+import { Markdown } from "@/components/ui/markdown";
+import { useTextes } from "@/lib/textes";
+import { t as textesDirect } from "@shared/textes/devoir-direct";
 import { CarteCoteIvoire } from "./CarteCoteIvoire";
 import { cleDirect, useEcranAllume, useEtatDirect, useSeance } from "./outils";
 import { VueGroupeSalle, monGroupe, useGroupes } from "./groupes";
@@ -547,6 +550,8 @@ function PendantLeCours({
               {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
             </div>
           )}
+          {/* Devoir donné en direct : la consigne en grand, chacun répond sur son téléphone (aucun nom). */}
+          {!sondage && <DevoirSurEcran etat={etat} />}
           <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage)} />
           {!sondage && <CompteursEmarges etat={etat} liste />}
         </aside>
@@ -746,5 +751,23 @@ function ConsoleResponsable({ seance, etat, siteId, petit }: { seance: SeanceDet
           document.body,
         )}
     </footer>
+  );
+}
+
+/** Devoir en cours (donné en direct depuis le Studio), dans l'aside de l'écran de salle, tant que sa date limite n'est pas passée. */
+function DevoirSurEcran({ etat }: { etat: EtatDirectDto }) {
+  const maintenant = useMaintenant(30_000);
+  const tx = useTextes(textesDirect);
+  const dd = etat.devoirDirect;
+  if (!dd || new Date(dd.dateLimite).getTime() <= maintenant) return null;
+  return (
+    <div className="rounded-[24px] bg-nuit-panneau p-5">
+      <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{tx("salle.etiquette")}</p>
+      <p className="mt-2 text-[clamp(22px,1.8vw,34px)] font-black leading-tight">{dd.titre}</p>
+      <div className="mt-2 line-clamp-6 text-[clamp(16px,1.2vw,22px)] leading-snug text-nuit-texte">
+        <Markdown source={dd.consigne} nuit />
+      </div>
+      <p className="mt-3 font-mono text-base text-orange-peche">{tx("salle.limite", { v: { heure: heure(dd.dateLimite) } })}</p>
+    </div>
   );
 }

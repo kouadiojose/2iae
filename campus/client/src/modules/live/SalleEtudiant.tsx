@@ -9,6 +9,7 @@
 // proposé en premier, « Son + diapos » ensuite. En ligne, une jauge montre sa
 // présence ; « Quitter » arrête vraiment le comptage (SortieDuLive).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Hand, LogOut, Radio, Video, Users, Mic, CalendarPlus, Signal } from "lucide-react";
 import { get, post, suppr } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -28,6 +29,7 @@ import { PanneauDiscussion, useNonLusDiscussion } from "./discussion";
 import { CONSOMMATION, cleDirect, estimationMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
 import { CompagnonSalle } from "./CompagnonSalle";
+import { DevoirEnDirect } from "./devoir-direct";
 import { SortieDuLive } from "./SortieDuLive";
 import { JaugePresence } from "./JaugePresence";
 import type { EtatDirectDto, MainDirectDto, ModeSuivi, Moi, RattrapageDto, SeanceDetailDto, EmargementDto, BattementPresenceDto } from "@shared/schema";
@@ -88,8 +90,11 @@ export default function SalleEtudiant({ seance }: { seance: SeanceDetailDto }) {
     ecrireLocal(cleMode(seance.id), m);
     if (estModeEnLigne(m)) ecrireLocal(CLE_MODE_GENERAL, m);
   };
+  // Direct terminé : l'état du direct (déjà en cache pendant le cours, sinon lu une fois) dit si un devoir donné en
+  // direct reste à rendre (« Rendre mon devoir » sur l'écran de fin).
+  const { data: etatFin } = useQuery<EtatDirectDto>({ queryKey: cleDirect(seance.id), staleTime: 30_000, enabled: seance.statut === "terminee" });
 
-  if (seance.statut === "annulee" || seance.statut === "terminee") return <FinDeSeance seance={seance} />;
+  if (seance.statut === "annulee" || seance.statut === "terminee") return <FinDeSeance seance={seance} devoirDirect={etatFin?.devoirDirect} />;
   if (!mode) return <ChoixMode seance={seance} onChoix={choisir} />;
   if (mode === "compagnon") return <CompagnonSalle seance={seance} onChangerMode={choisir} />;
   return <SalleEnDirect seance={seance} mode={mode} onChangerMode={choisir} />;
@@ -315,7 +320,8 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   }
 
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
-  if (etat.statut === "terminee" || etat.statut === "annulee") return <FinDeSeance seance={{ ...seance, statut: etat.statut, motifAnnulation: etat.motifAnnulation }} />;
+  if (etat.statut === "terminee" || etat.statut === "annulee")
+    return <FinDeSeance seance={{ ...seance, statut: etat.statut, motifAnnulation: etat.motifAnnulation }} devoirDirect={etat.devoirDirect} />;
 
   const micro = jaiLaParole && mode === "video";
   const panneaux = (
@@ -371,6 +377,9 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
             )}
           </div>
         )}
+
+        {/* Devoir donné en direct : avant la vue du groupe, il reste visible pendant le travail en groupe. */}
+        {etat.devoirDirect && <DevoirEnDirect seance={seance} etat={etat} groupes={groupes} moi={moi} />}
 
         {groupe && groupes ? (
           <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode={mode} />

@@ -21,7 +21,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import QRCode from "qrcode";
 import { z } from "zod";
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil } from "../auth";
@@ -33,6 +33,8 @@ import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichie
 import { copierRessources, projectionDe, ressourcesDe } from "./ressources-seance";
 import { arreterCopie, copieDe } from "../projection-copies";
 import { t as tCopies } from "@shared/textes/copies-direct";
+import { t as tDirect } from "@shared/textes/devoir-direct";
+import { devoirDirectPour, devoirsDirectDeLaSeance } from "../devoirs-direct";
 import { notifier } from "../notifications";
 import { rappelerDemarrage } from "./participation-direct";
 import { etatsPresence } from "../engagement/presence";
@@ -72,6 +74,8 @@ import {
   groupesTravail,
   membresGroupes,
   fichiers,
+  devoirs,
+  rendus,
   MODES_CHAT,
   REACTIONS_CHAT,
   FOURNISSEURS_VISIO,
@@ -237,7 +241,7 @@ setInterval(() => {
 
 export const canal = (seanceId: number) => `seance:${seanceId}`;
 
-async function consigner(seanceId: number, type: TypeEvenementSeance, donnees: Record<string, unknown> = {}) {
+export async function consigner(seanceId: number, type: TypeEvenementSeance, donnees: Record<string, unknown> = {}) {
   await db.insert(evenementsSeances).values({ seanceId, type, donnees });
 }
 
@@ -1806,6 +1810,9 @@ export function enregistrerLive(app: Express) {
       await groupesTravailLive.effacerGroupes(s.id).catch((e) => console.error(`[live] essai séance ${s.id} : groupes non effacés`, e));
       await consigner(s.id, "remise_a_venir", { par: u.id, essai });
       await db.insert(journal).values({ utilisateurId: u.id, action: "live_remis_a_venir", details: { seanceId: s.id, ...essai } });
+      // Devoirs donnés pendant l'essai : supprimés sans copie, dépubliés sinon (une copie est une preuve). Sinon un
+      // devoir d'essai resterait un vrai devoir dans « Notes ».
+      await effacerDevoirsDirectEssai(u, s.id).catch((e) => console.error(`[live] essai séance ${s.id} : devoirs en direct non retirés`, e));
       publier(canal(s.id), "statut", { statut: "planifiee", demarreeLe: null, termineeLe: null, motif: null });
       annoncer(maj);
       if (s.publierSurSite) prevenirSite("live remis à venir");
@@ -2233,13 +2240,15 @@ export function enregistrerLive(app: Express) {
       const choix = sondage ? await monChoix(sondage.id, u.id) : null;
       const privilegie = role === "formateur" || role === "equipe";
       const voirResultats = sondage && (privilegie || role === "salle" || !sondage.ouvert || choix !== null);
-      const [questions, mains, campus, baro, derniersSousTitres, parole] = await Promise.all([
+      const [questions, mains, campus, baro, derniersSousTitres, parole, devoirDirect] = await Promise.all([
         questionsPour(u, role, s.id),
         mainsPour(u, role, s.id),
         campusDirect(s),
         barometre(s.id),
         db.select({ id: sousTitres.id, t: sousTitres.t, texte: sousTitres.texte }).from(sousTitres).where(eq(sousTitres.seanceId, s.id)).orderBy(desc(sousTitres.id)).limit(30),
         paroleCourante(s.id),
+        // Devoir donné en direct (dernier de la séance) : public, plus la copie de l'étudiant.
+        devoirDirectPour(u, role, s),
       ]);
       const etat: EtatDirectDto = {
         seanceId: s.id,
@@ -2260,6 +2269,7 @@ export function enregistrerLive(app: Express) {
         parole: versParolePublique(parole),
         sousTitres: derniersSousTitres.reverse(),
         mains,
+        devoirDirect,
       };
       res.json(etat);
     }),
@@ -3665,6 +3675,13 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
     }
     case "copie_nom":
       return tCopies(d.nomVisible ? "bilan.nomAffiche" : "bilan.nomMasque", { v: { devoir: String(d.devoirTitre ?? "") } });
+    case "devoir_direct": {
+      const titre = String(d.titre ?? "");
+      if (d.action === "prolonge") return tDirect("bilan.prolonge", { v: { titre } });
+      if (d.action === "clos") return tDirect("bilan.clos", { v: { titre } });
+      if (d.action === "supprime") return tDirect("bilan.supprime", { v: { titre } });
+      return tDirect(d.enGroupe ? "bilan.donneGroupe" : "bilan.donne", { v: { titre } });
+    }
     case "copie_fin": {
       if (d.motif === "remplacee") return tCopies("bilan.remplacee");
       if (d.motif === "modifie") return tCopies("bilan.corrigeModifie");
@@ -3708,6 +3725,24 @@ async function marquerVu(seanceId: number, utilisateurId: number) {
     .insert(vuesReplay)
     .values({ seanceId, utilisateurId })
     .onConflictDoUpdate({ target: [vuesReplay.seanceId, vuesReplay.utilisateurId], set: { derniereVue: new Date() } });
+}
+
+/**
+ * Essai effacé (remise à venir) : chaque devoir donné en direct pendant l'essai est supprimé s'il n'a aucune copie,
+ * sinon dépublié (les copies restent comme preuve) ; la classe ne voit plus de devoir en direct.
+ */
+async function effacerDevoirsDirectEssai(u: Utilisateur, seanceId: number): Promise<void> {
+  const ids = await devoirsDirectDeLaSeance(seanceId);
+  if (!ids.length) return;
+  const avecCopies = new Set(
+    (await db.selectDistinct({ id: rendus.devoirId }).from(rendus).where(and(inArray(rendus.devoirId, ids), ne(rendus.statut, "brouillon")))).map((l) => l.id),
+  );
+  const supprimes = ids.filter((id) => !avecCopies.has(id));
+  const depublies = ids.filter((id) => avecCopies.has(id));
+  if (supprimes.length) await db.delete(devoirs).where(inArray(devoirs.id, supprimes));
+  if (depublies.length) await db.update(devoirs).set({ publie: false }).where(inArray(devoirs.id, depublies));
+  await db.insert(journal).values({ utilisateurId: u.id, action: "devoirs_direct_essai", details: { seanceId, supprimes, depublies } });
+  publier(canal(seanceId), "devoir-direct", null);
 }
 
 /** Termine une séance : transcription assemblée, parole rendue, sondages fermés, tout le monde prévenu. */

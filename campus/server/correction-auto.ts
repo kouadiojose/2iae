@@ -179,16 +179,36 @@ const SQL_RENDUE_SANS_FORMATEUR = sql`r.statut = 'rendu' AND (r.correcteur_id IS
 const SQL_SUIVI_MEME_COPIE = sql`date_trunc('milliseconds', ca.rendu_le) IS NOT DISTINCT FROM date_trunc('milliseconds', r.rendu_le)`;
 
 /**
+ * Copie suivie (alias r ; devoir en direct rendu pour un groupe, 12 octobre 2026) : copie d'un groupe qui n'est pas
+ * celle de l'auteur de la réponse, dont la copie de l'auteur porte toujours la même réponse (même groupe, même heure)
+ * et reste dans les mains du campus (rendue sans formateur, ou notée par le campus). Elle ne part jamais à l'IA : la
+ * note (ou l'état « à revoir ») de la copie de l'auteur lui est recopiée (recopierAuGroupe), une seule correction
+ * pour tout le groupe, la même note pour tous. Si l'auteur a remplacé sa copie seul, ou si un formateur a pris sa
+ * copie en main, la condition tombe et chaque copie est corrigée pour elle-même (rien ne reste bloqué).
+ */
+const SQL_COPIE_SUIVIE = sql`(r.pour_groupe IS NOT NULL
+      AND (r.pour_groupe->>'parId')::int <> r.etudiant_id
+      AND EXISTS (
+        SELECT 1 FROM campus.rendus a
+        WHERE a.devoir_id = r.devoir_id
+          AND a.etudiant_id = (r.pour_groupe->>'parId')::int
+          AND a.pour_groupe->>'groupeId' = r.pour_groupe->>'groupeId'
+          AND date_trunc('milliseconds', a.rendu_le) = date_trunc('milliseconds', r.rendu_le)
+          AND ((a.statut = 'rendu' AND (a.correcteur_id IS NULL OR (a.corrige_le IS NOT NULL AND a.corrige_le < a.rendu_le)))
+               OR (a.statut = 'corrige' AND a.origine_note = 'campus'))))`;
+
+/**
  * Copies que le campus doit (encore) corriger (alias r, d, cd, ca) : copies de dépôt de devoirs publiés dont la
  * date limite est passée (la minute couvre la fin d'échéance, finEcheance) et dont le corrigé sert de barème,
  * sans correction d'un formateur sur la copie actuelle, hors consigne cachée repérée (le formateur décide), et
  * dont le suivi est absent, en file, en erreur (essais restants) ou périmé (copie remplacée ; corrigé modifié,
- * sauf pour une copie retenue « à revoir » pour elle-même).
+ * sauf pour une copie retenue « à revoir » pour elle-même). Jamais une copie suivie d'un groupe (SQL_COPIE_SUIVIE).
  */
 const SQL_A_CORRIGER = sql`
       ${SQL_DEVOIR_A_CORRIGER}
       AND ((${SQL_RENDUE_SANS_FORMATEUR}) OR (r.statut = 'corrige' AND r.origine_note = 'campus'))
       AND NOT (ca.etat IS NOT DISTINCT FROM 'a_revoir' AND ca.raison IS NOT DISTINCT FROM 'alerte')
+      AND NOT ${SQL_COPIE_SUIVIE}
       AND (
         (ca.rendu_id IS NULL AND r.statut = 'rendu')
         OR ca.etat = 'en_file'
@@ -584,6 +604,8 @@ async function publier(
   if (!dejaPubliee) await notifier([r.etudiantId], { type: "note", titre: "Nouvelle note disponible", corps: `${c.code} · « ${d.titre} »`, lien: `/devoirs/${d.id}` });
   else if (r.note !== n.note) await notifier([r.etudiantId], { type: "note", titre: "Note mise à jour", corps: `« ${d.titre} »`, lien: `/devoirs/${d.id}` });
   publierUtilisateur(r.etudiantId, "devoir-corrige", { devoirId: d.id });
+  // Réponse d'un groupe du live : la même note pour chaque copie suivie (une seule correction pour le groupe).
+  await recopierAuGroupe({ ...x, r: maj }, cd, { genre: "notee", note: n.note, lignes: n.lignes, commentaire: n.commentaire, detail: n.detail });
   return "prete";
 }
 
@@ -611,6 +633,8 @@ async function aRevoir(x: Contexte, cd: CorrigeDevoir, raison: RaisonARevoir, de
   });
   await supprimerDemandesDe(origineDe(r.id));
   await tracerCampus("copie_a_revoir", { renduId: r.id, devoirId: d.id, etudiantId: r.etudiantId, raison, noteProposee: proposition?.note ?? null });
+  // Réponse d'un groupe du live : les copies suivies sont « à revoir » avec elle (au lieu d'attendre le campus).
+  await recopierAuGroupe(x, cd, { genre: "a_revoir", raison, detail, proposition, tentatives });
   // Copie illisible que l'étudiant peut encore remplacer (avant l'échéance) : il est invité à renvoyer une photo nette.
   const fin = echeance(d);
   const maintenant = new Date();
@@ -661,6 +685,127 @@ async function echec(x: Contexte, cd: CorrigeDevoir, e: unknown): Promise<IssueE
   }
   await poserLigne(x, cd, { etat: "erreur", raison: null, detail: message.slice(0, 500), demandeId: null, tentatives });
   return "erreur";
+}
+
+// ── Copies d'un groupe du live : une seule correction, la même note pour tous ──
+
+type EtatRecopie =
+  | { genre: "notee"; note: number; lignes: NonNullable<Rendu["noteDetail"]>; commentaire: string; detail: string | null }
+  | { genre: "a_revoir"; raison: RaisonARevoir; detail: string; proposition: PropositionIa | null; tentatives: number };
+
+/**
+ * Recopie sur les copies suivies d'une réponse de groupe (même devoir, même groupe, écrite par l'auteur de cette
+ * copie, même heure de remise, encore dans les mains du campus) ce que le campus vient de décider pour la copie de
+ * l'auteur : la note publiée (même note, même détail, même commentaire ; chaque membre prévenu comme l'auteur), ou
+ * l'état « à revoir » (même raison, la proposition de l'IA gardée pour le formateur). Chaque mise à jour est
+ * conditionnée à la même copie : une copie remplacée entre-temps n'hérite de rien.
+ */
+async function recopierAuGroupe(x: Contexte, cd: CorrigeDevoir, etat: EtatRecopie): Promise<void> {
+  const { r, d, c } = x;
+  const pg = r.pourGroupe;
+  if (!pg || pg.parId !== r.etudiantId || !r.renduLe) return;
+  const suivies = await db
+    .select()
+    .from(rendus)
+    .where(
+      and(
+        eq(rendus.devoirId, d.id),
+        sql`${rendus.etudiantId} <> ${r.etudiantId}`,
+        sql`${rendus.pourGroupe}->>'groupeId' = ${String(pg.groupeId)}`,
+        sql`(${rendus.pourGroupe}->>'parId')::int = ${r.etudiantId}`,
+        sql`date_trunc('milliseconds', ${rendus.renduLe}) = ${r.renduLe}`,
+        corrigeableSql,
+      ),
+    );
+  const maintenant = new Date();
+  for (const f of suivies) {
+    if (etat.genre === "notee") {
+      const dejaPubliee = f.statut === "corrige";
+      const [ligne] = await db
+        .update(rendus)
+        .set({ note: etat.note, noteDetail: etat.lignes, commentaire: etat.commentaire || null, statut: "corrige", origineNote: "campus", correcteurId: null, corrigeLe: maintenant, majLe: maintenant })
+        .where(and(memeCopieSql(f), corrigeableSql))
+        .returning();
+      if (!ligne) continue;
+      const valeurs = { etat: "notee" as const, raison: null, detail: etat.detail, renduLe: f.renduLe, versionCorrige: cd.version, demandeId: null, tentatives: 0, noteCampus: etat.note, majLe: maintenant };
+      await db.insert(correctionsAuto).values({ renduId: f.id, devoirId: d.id, ...valeurs }).onConflictDoUpdate({ target: correctionsAuto.renduId, set: valeurs });
+      await supprimerDemandesDe(origineDe(f.id));
+      await tracerCampus(dejaPubliee ? "note_campus_modifiee" : "note_campus", {
+        renduId: f.id,
+        devoirId: d.id,
+        etudiantId: f.etudiantId,
+        note: etat.note,
+        ...(dejaPubliee ? { ancienneNote: f.note } : {}),
+        versionCorrige: cd.version,
+        recopieDe: r.id,
+      });
+      if (!dejaPubliee) await notifier([f.etudiantId], { type: "note", titre: "Nouvelle note disponible", corps: `${c.code} · « ${d.titre} »`, lien: `/devoirs/${d.id}` });
+      else if (f.note !== etat.note) await notifier([f.etudiantId], { type: "note", titre: "Note mise à jour", corps: `« ${d.titre} »`, lien: `/devoirs/${d.id}` });
+      publierUtilisateur(f.etudiantId, "devoir-corrige", { devoirId: d.id });
+    } else {
+      if (etat.proposition) {
+        const [maj] = await db
+          .update(rendus)
+          .set({ propositionIa: etat.proposition, majLe: maintenant })
+          .where(and(memeCopieSql(f), corrigeableSql))
+          .returning({ id: rendus.id });
+        if (!maj) continue;
+      }
+      const valeurs = {
+        etat: "a_revoir" as const,
+        raison: etat.raison,
+        detail: `Copie du groupe de ${pg.parNom} : ${etat.detail}`.slice(0, 1000),
+        renduLe: f.renduLe,
+        versionCorrige: cd.version,
+        demandeId: null,
+        noteCampus: f.statut === "corrige" ? f.note : (etat.proposition?.note ?? null),
+        tentatives: etat.tentatives,
+        majLe: maintenant,
+      };
+      await db.insert(correctionsAuto).values({ renduId: f.id, devoirId: d.id, ...valeurs }).onConflictDoUpdate({ target: correctionsAuto.renduId, set: valeurs });
+      await supprimerDemandesDe(origineDe(f.id));
+      await tracerCampus("copie_a_revoir", { renduId: f.id, devoirId: d.id, etudiantId: f.etudiantId, raison: etat.raison, recopieDe: r.id });
+    }
+  }
+}
+
+/**
+ * Copies suivies restées sans la décision du campus (membre qui a repris la copie de son groupe après coup, devoir
+ * rouvert) : la note ou l'état « à revoir » déjà décidé pour la copie de l'auteur, sur le corrigé actuel, leur est
+ * recopié. Appelé à chaque passage de la tâche ; ne demande rien à l'IA.
+ */
+export async function rattraperCopiesSuivies(): Promise<number> {
+  const { rows } = await db.execute<{ auteur_id: number }>(sql`
+    SELECT DISTINCT a.id AS auteur_id
+    FROM campus.rendus r
+    JOIN campus.devoirs d ON d.id = r.devoir_id
+    JOIN campus.corriges_devoirs cd ON cd.devoir_id = d.id
+    LEFT JOIN campus.corrections_auto ca ON ca.rendu_id = r.id
+    JOIN campus.rendus a ON a.devoir_id = r.devoir_id
+      AND a.etudiant_id = (r.pour_groupe->>'parId')::int
+      AND a.pour_groupe->>'groupeId' = r.pour_groupe->>'groupeId'
+      AND date_trunc('milliseconds', a.rendu_le) = date_trunc('milliseconds', r.rendu_le)
+    JOIN campus.corrections_auto caa ON caa.rendu_id = a.id
+    WHERE ${SQL_DEVOIR_A_CORRIGER}
+      AND ${SQL_COPIE_SUIVIE}
+      AND ((${SQL_RENDUE_SANS_FORMATEUR}) OR (r.statut = 'corrige' AND r.origine_note = 'campus'))
+      AND caa.etat IN ('notee', 'a_revoir') AND caa.version_corrige = cd.version
+      AND date_trunc('milliseconds', caa.rendu_le) IS NOT DISTINCT FROM date_trunc('milliseconds', a.rendu_le)
+      AND (ca.rendu_id IS NULL OR ca.version_corrige IS DISTINCT FROM cd.version OR NOT (${SQL_SUIVI_MEME_COPIE}) OR ca.etat NOT IN ('notee', 'a_revoir'))
+    LIMIT 50`);
+  let n = 0;
+  for (const l of rows) {
+    const x = await charger(Number(l.auteur_id));
+    if (!x?.cd || !x.ca) continue;
+    if (x.ca.etat === "notee" && x.r.statut === "corrige" && x.r.origineNote === "campus" && x.r.note !== null) {
+      await recopierAuGroupe(x, x.cd, { genre: "notee", note: x.r.note, lignes: x.r.noteDetail ?? [], commentaire: x.r.commentaire ?? "", detail: x.ca.detail });
+      n++;
+    } else if (x.ca.etat === "a_revoir" && x.ca.raison) {
+      await recopierAuGroupe(x, x.cd, { genre: "a_revoir", raison: x.ca.raison, detail: x.ca.detail ?? "", proposition: x.r.propositionIa, tentatives: x.ca.tentatives });
+      n++;
+    }
+  }
+  return n;
 }
 
 // ── Événements venus d'ailleurs (routes/evaluations.ts, routes/corrections-copies.ts) ──
@@ -954,6 +1099,8 @@ export async function appliquerReponsesCopies(limite = 300): Promise<{ id: numbe
  */
 export async function passerCorrections(): Promise<{ appliquees: number; corrigees: number }> {
   const appliquees = (await appliquerReponsesCopies()).filter((x) => x.issue !== "soir").length;
+  // Copies suivies d'un groupe du live restées sans la décision prise pour l'auteur (sans IA).
+  await rattraperCopiesSuivies().catch((e) => console.error("[correction] copies suivies :", (e as Error).message));
   let corrigees = 0;
   if (!iaDuSoir() && iaDisponible() && Date.now() >= pauseApiJusqua && (await travailDeFondPermis())) {
     for (const id of await copiesACorriger(COPIES_PAR_PASSAGE_API)) {

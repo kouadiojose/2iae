@@ -15,6 +15,7 @@ import { seanceVisible } from "../acces";
 import { publier, utilisateursSur } from "../temps-reel";
 import { planifier } from "../taches";
 import * as visio from "../visio";
+import { groupeDevoirPour } from "../devoirs-direct";
 import {
   seances,
   utilisateurs,
@@ -67,7 +68,7 @@ export function noterModeSuivi(seanceId: number, utilisateurId: number, mode: Mo
 
 // ── Lecture ────────────────────────────────────────────────────────────────
 
-async function sessionOuverte(seanceId: number): Promise<SessionGroupes | null> {
+export async function sessionOuverte(seanceId: number): Promise<SessionGroupes | null> {
   const [x] = await db
     .select()
     .from(sessionsGroupes)
@@ -156,7 +157,9 @@ export function creerModuleGroupes(o: OutilsGroupes) {
   async function etatGroupes(u: Utilisateur, s: Seance, role: RoleSeance): Promise<GroupesDto> {
     const visioDisponible = visio.dailyDisponible();
     const session = await sessionOuverte(s.id);
-    if (!session) return { session: null, groupes: [], monGroupeId: null, visioDisponible };
+    // Étudiant : son groupe pour le devoir en direct en groupe, aussi quand les groupes sont fermés (devoirs-direct.ts).
+    const groupeDevoir = role === "etudiant" ? await groupeDevoirPour(s.id, u) : null;
+    if (!session) return { session: null, groupes: [], monGroupeId: null, visioDisponible, groupeDevoir };
     await rattacherCompagnon(u, s, session);
     const [groupes, membres, sitesParId] = await Promise.all([
       db.select().from(groupesTravail).where(eq(groupesTravail.sessionId, session.id)).orderBy(asc(groupesTravail.numero)),
@@ -203,6 +206,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
       groupes: liste,
       monGroupeId,
       visioDisponible,
+      groupeDevoir,
     };
   }
 

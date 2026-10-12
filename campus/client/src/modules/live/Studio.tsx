@@ -26,6 +26,8 @@ import { BoutonGroupes, CompositeurGroupes, SuiviGroupes, VisiteGroupe, useGroup
 import { BoutonLienInvite } from "./LienInvite";
 import { BoutonAfficherEmargement } from "./AfficherEmargement";
 import { BoutonDevoirs, PanneauCopieEnCours, VueDevoirs } from "./devoirs";
+import { PanneauDevoirDirect, formulaireVide, type FormulaireDevoirDirect } from "./devoir-direct";
+import { t as textesDirect } from "@shared/textes/devoir-direct";
 import { dispositionAvecCopie, useAvisCopieRemplacee, useCopieDirect } from "./copie-projetee";
 import { t as textesCopies } from "@shared/textes/copies-direct";
 import { useTextes } from "@/lib/textes";
@@ -33,7 +35,7 @@ import { QuestionsRappel } from "./QuestionsRappel";
 import { RappelInteraction } from "./RappelInteraction";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
-type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "campus";
+type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "devoir" | "campus";
 
 export default function Studio({ seance, observation = false }: { seance: SeanceDetailDto; observation?: boolean }) {
   const moi = useMoiConnecte();
@@ -76,7 +78,14 @@ export default function Studio({ seance, observation = false }: { seance: Seance
 
   // Devoirs et copies : vue posée par-dessus le Studio (le direct continue dessous), copie montrée à la classe.
   const txCopies = useTextes(textesCopies);
-  const [vueDevoirs, setVueDevoirs] = useState(false);
+  // Vue « Devoirs et copies » : fermée, ouverte depuis l'en-tête ({}), ou sur une réponse du devoir en direct.
+  const [vueDevoirs, setVueDevoirs] = useState<false | { devoirId?: number; renduId?: number }>(false);
+  // « Des étudiants peuvent encore rendre ce devoir » : confirmé une fois par devoir pendant le direct, même si la vue
+  // est fermée puis rouverte (le serveur le redemande toujours avant la date limite).
+  const [confirmes, setConfirmes] = useState<Set<number>>(() => new Set());
+  // Devoir donné en direct : le formulaire de l'onglet « Devoir » survit aux changements d'onglet.
+  const txDirect = useTextes(textesDirect);
+  const [formulaireDevoir, setFormulaireDevoir] = useState<FormulaireDevoirDirect>(formulaireVide);
   const [partageLocal, setPartageLocal] = useState(false);
   const { revenirAuxDiapos } = useCopieDirect(seance.id);
   useAvisCopieRemplacee(seance.id, !observation);
@@ -140,6 +149,10 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const modeGrille: ModeScene = copie ? dispositionAvecCopie(etat) : mode;
   const panneauDiapo = Boolean(copie) || (avecDiapos && mode !== "seules");
   const planB = Boolean(etat.planB ?? seance.planB);
+  // Onglet « Devoir » : son compteur, tant que le devoir en direct est ouvert et qu'au moins une réponse est arrivée.
+  const devoirPermis = !observation && seance.peutMontrerCopies;
+  const dd = etat.devoirDirect;
+  const compteurDevoir = dd && new Date(dd.dateLimite).getTime() > Date.now() ? (dd.enGroupe ? dd.groupes + dd.individuelles : dd.copies) : 0;
 
   return (
     <div className="min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
@@ -174,7 +187,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                     actif={Boolean(etat.copie)}
                     onClick={() => {
                       visiter(null);
-                      setVueDevoirs(true);
+                      setVueDevoirs({});
                     }}
                   />
                 )}
@@ -293,6 +306,10 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                   { valeur: "questions", libelle: "Questions", compteur: etat.questions.filter((q) => !q.repondue && !q.masquee).length || undefined },
                   { valeur: "discussion", libelle: "Discussion", compteur: nonLus || undefined },
                   { valeur: "sondages", libelle: "Sondages" },
+                  // Devoir donné en direct : mêmes personnes que « Devoirs » (formateur du cours, direction, vie scolaire avec « notes »).
+                  ...(devoirPermis
+                    ? [{ valeur: "devoir" as const, libelle: txDirect("onglet"), compteur: compteurDevoir || undefined }]
+                    : []),
                   { valeur: "campus", libelle: "Campus" },
                 ]}
             />
@@ -309,6 +326,20 @@ export default function Studio({ seance, observation = false }: { seance: Seance
               />
             )}
             {onglet === "sondages" && <PanneauSondages seance={seance} etat={etat} lectureSeule={observation} />}
+            {onglet === "devoir" && devoirPermis && (
+              <PanneauDevoirDirect
+                seance={seance}
+                etat={etat}
+                groupes={groupes}
+                moi={moi}
+                formulaire={formulaireDevoir}
+                setFormulaire={setFormulaireDevoir}
+                onOuvrir={(devoirId, renduId) => {
+                  visiter(null);
+                  setVueDevoirs({ devoirId, renduId });
+                }}
+              />
+            )}
             {onglet === "campus" && (
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
                 <PanneauCampus etat={etat} detaille />
@@ -323,7 +354,25 @@ export default function Studio({ seance, observation = false }: { seance: Seance
       </div>
 
       {!observation && <CompositeurGroupes seance={seance} ouverte={composition} onFermer={() => setComposition(false)} />}
-      {vueDevoirs && !observation && <VueDevoirs seance={seance} etat={etat} partageLocal={partageLocal} onFermer={() => setVueDevoirs(false)} />}
+      {vueDevoirs && !observation && (
+        <VueDevoirs
+          seance={seance}
+          etat={etat}
+          partageLocal={partageLocal}
+          onFermer={() => setVueDevoirs(false)}
+          depart={vueDevoirs}
+          confirmes={confirmes}
+          onConfirmer={(id) => setConfirmes((x) => new Set(x).add(id))}
+          onDonnerDevoir={
+            devoirPermis
+              ? () => {
+                  setVueDevoirs(false);
+                  setOnglet("devoir");
+                }
+              : undefined
+          }
+        />
+      )}
       {groupes && groupeVisite && (
         <VisiteGroupe seance={seance} groupes={groupes} groupe={groupeVisite} role={observation ? "equipe" : "formateur"} moiId={moi.id} onFermer={() => visiter(null)} />
       )}

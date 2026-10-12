@@ -27,8 +27,19 @@ const LETTRES = ["A", "B", "C", "D", "E"];
 // largeur et défilent d'un glissement (cran par cran), sans barre visible.
 
 export function OngletsPanneau<T extends string>({ valeur, onChange, options }: { valeur: T; onChange: (v: T) => void; options: { valeur: T; libelle: string; compteur?: number }[] }) {
+  // L'onglet choisi reste entier à l'écran quand les onglets défilent (six onglets dans le Studio) : seule la barre
+  // défile, jamais la page.
+  const barre = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const b = barre.current;
+    const actif = b?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!b || !actif) return;
+    const gauche = actif.offsetLeft - b.offsetLeft;
+    if (gauche < b.scrollLeft) b.scrollLeft = gauche - 8;
+    else if (gauche + actif.offsetWidth > b.scrollLeft + b.clientWidth) b.scrollLeft = gauche + actif.offsetWidth - b.clientWidth + 8;
+  }, [valeur]);
   return (
-    <div role="tablist" className="flex snap-x snap-mandatory gap-1 overflow-x-auto border-b border-nuit-ligne p-2.5 [scrollbar-width:none]">
+    <div ref={barre} role="tablist" className="flex snap-x snap-mandatory gap-1 overflow-x-auto border-b border-nuit-ligne p-2.5 [scrollbar-width:none]">
       {options.map((o) => {
         const actif = o.valeur === valeur;
         return (

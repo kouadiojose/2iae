@@ -1,6 +1,6 @@
 // Petits composants partagés par les écrans du module live.
 import { useState, type ReactNode } from "react";
-import { CalendarPlus, PlayCircle, Ban, RotateCcw } from "lucide-react";
+import { CalendarPlus, PlayCircle, Ban, RotateCcw, ClipboardPen } from "lucide-react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -15,8 +15,9 @@ import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { useTextes } from "@/lib/textes";
 import { chrono, cleDirect, CONSOMMATION, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE } from "./outils";
 import { t } from "@shared/textes/direct";
+import { t as textesDirect } from "@shared/textes/devoir-direct";
 import type { MaPresenceDirectDto } from "@shared/engagement/direct";
-import type { EtatDirectDto, ModeSuivi, SeanceDetailDto } from "@shared/schema";
+import type { DevoirDirectDto, EtatDirectDto, ModeSuivi, SeanceDetailDto } from "@shared/schema";
 import type { SeanceResume } from "@shared/api";
 
 /** En-tête de la salle live : cours, formateur, direct, compteur de connectés. */
@@ -62,9 +63,16 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
 type SeanceFinie = Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> &
   Partial<Pick<SeanceDetailDto, "debut" | "peutModifier">>;
 
-export function FinDeSeance({ seance }: { seance: SeanceFinie }) {
+export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; devoirDirect?: DevoirDirectDto | null }) {
   const annulee = seance.statut === "annulee";
   const maintenant = useMaintenant(60_000);
+  const txd = useTextes(textesDirect);
+  // Devoir donné en direct que l'étudiant n'a pas rendu et peut encore rendre : la navigation est sans risque, le direct est fini.
+  const devoirOuvert =
+    seance.monRole === "etudiant" && devoirDirect && !devoirDirect.monRendu && (new Date(devoirDirect.dateLimite).getTime() > maintenant || devoirDirect.accepteRetard)
+      ? devoirDirect
+      : null;
+  const devoirEnRetard = Boolean(devoirOuvert && new Date(devoirOuvert.dateLimite).getTime() <= maintenant);
   // Lancé avant l'heure prévue : c'était un essai, que le formateur ou la direction peut effacer.
   const essai = seance.statut === "terminee" && Boolean(seance.peutModifier) && Boolean(seance.debut) && new Date(seance.debut!).getTime() > maintenant;
   if (essai) return <FinEssai seance={seance} />;
@@ -92,9 +100,21 @@ export function FinDeSeance({ seance }: { seance: SeanceFinie }) {
               ? "Le replay est prêt : fiche de révision, transcription et questions posées."
               : "Le replay, la transcription et la fiche de révision arrivent dans le cours."}
         </p>
+        {devoirOuvert && (
+          <div className="flex w-full flex-col items-center gap-3 rounded-2xl bg-nuit-carte px-5 py-4">
+            <p className="text-[15px] font-semibold text-white">
+              {devoirEnRetard
+                ? txd("fin.retard", { v: { titre: devoirOuvert.titre } })
+                : txd("fin.ouvert", { v: { titre: devoirOuvert.titre, heure: heure(devoirOuvert.dateLimite) } })}
+            </p>
+            <LienBouton href={`/devoirs/${devoirOuvert.id}`} icone={<ClipboardPen className="h-4 w-4" />}>
+              {txd("fin.rendre")}
+            </LienBouton>
+          </div>
+        )}
         <div className="flex flex-wrap justify-center gap-2">
           {!annulee && (
-            <LienBouton href={`/replays/${seance.id}`} icone={<PlayCircle className="h-4 w-4" />}>
+            <LienBouton href={`/replays/${seance.id}`} variante={devoirOuvert ? "nuit" : "principal"} icone={<PlayCircle className="h-4 w-4" />}>
               Revoir le cours
             </LienBouton>
           )}

@@ -6,6 +6,8 @@ import { queryClient, rafraichir } from "@/lib/queryClient";
 import { get } from "@/lib/api";
 import { useCanal, useFluxConnecte, useFluxSain, useTousEvenements, type EvenementFlux } from "@/lib/flux";
 import type {
+  CompteurDevoirDirectDto,
+  DevoirDirectDto,
   EtatDirectDto,
   DiapoDirectDto,
   QuestionDirectDto,
@@ -188,6 +190,15 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
       return { ...etat, planB: d.lien };
     case "chat:mode":
       return { ...etat, chatMode: d.mode };
+    case "devoir-direct": {
+      // Devoir donné en direct (public) : la copie de l'étudiant est gardée s'il s'agit du même devoir.
+      const dd = d as DevoirDirectDto | null;
+      return { ...etat, devoirDirect: dd ? { ...dd, monRendu: etat.devoirDirect?.id === dd.id ? etat.devoirDirect.monRendu : null } : null };
+    }
+    case "devoir-direct:compteur": {
+      const c = d as CompteurDevoirDirectDto;
+      return etat.devoirDirect?.id === c.devoirId ? { ...etat, devoirDirect: { ...etat.devoirDirect, copies: c.copies, groupes: c.groupes, individuelles: c.individuelles } } : etat;
+    }
     default:
       return etat;
   }

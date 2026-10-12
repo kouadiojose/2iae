@@ -10,6 +10,13 @@ export type TypeDevoir = (typeof TYPES_DEVOIR)[number];
 
 export type CritereGrille = { critere: string; points: number; description?: string };
 
+/**
+ * Pour quel groupe du live une copie a été rendue (devoir en direct, demande de José du 12 octobre 2026) : la même
+ * copie pour chaque membre, écrite par « parId » (« parNom » : « Awa K. »). Le nom du groupe est recopié : il reste
+ * après l'effacement des groupes (remise à venir d'un essai).
+ */
+export type PourGroupe = { seanceId: number; sessionId: number; groupeId: number; nom: string; parId: number; parNom: string };
+
 export const devoirs = campusSchema.table(
   "devoirs",
   {
@@ -91,6 +98,8 @@ export const rendus = campusSchema.table(
      */
     origineNote: text("origine_note").$type<"formateur" | "campus">().notNull().default("formateur"),
     corrigeLe: timestamp("corrige_le", { withTimezone: true }),
+    /** Copie rendue pour un groupe du live (devoir en direct) : la même pour chaque membre. Null : copie individuelle. */
+    pourGroupe: jsonb("pour_groupe").$type<PourGroupe>(),
     majLe: timestamp("maj_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("rendus_unique").on(t.devoirId, t.etudiantId)],

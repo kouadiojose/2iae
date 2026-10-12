@@ -25,6 +25,7 @@ import { EnTeteLive, FinDeSeance } from "./ui";
 import { ChoixGroupe, VueGroupeEtudiant, monGroupe, useGroupes } from "./groupes";
 import { cleDirect, estimationMo, octetsMesuresDepuis, useEtatDirect } from "./outils";
 import { SortieDuLive } from "./SortieDuLive";
+import { DevoirEnDirect } from "./devoir-direct";
 import { t } from "@shared/textes/direct";
 import { classementEmargement, type EmargementSalleDto, type MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { EtatDirectDto, ModeSuivi, ResultatsSondageDto, SeanceDetailDto, SondageDto } from "@shared/schema";
@@ -78,7 +79,8 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
     );
   }
   if (!etat) return <div className="min-h-[calc(100dvh-64px)] bg-nuit" aria-busy="true" />;
-  if (etat.statut === "terminee" || etat.statut === "annulee") return <FinDeSeance seance={{ ...seance, statut: etat.statut, motifAnnulation: etat.motifAnnulation }} />;
+  if (etat.statut === "terminee" || etat.statut === "annulee")
+    return <FinDeSeance seance={{ ...seance, statut: etat.statut, motifAnnulation: etat.motifAnnulation }} devoirDirect={etat.devoirDirect} />;
 
   const quitter = () => {
     const secondes = (Date.now() - arrivee.current) / 1000;
@@ -119,6 +121,9 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
             </ul>
           </div>
         )}
+
+        {/* Devoir donné en direct : avant la vue du groupe (il reste visible pendant le travail en groupe). */}
+        {etat.devoirDirect && <DevoirEnDirect seance={seance} etat={etat} groupes={groupes} moi={moi} />}
 
         {groupe && groupes ? (
           <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode="compagnon" />

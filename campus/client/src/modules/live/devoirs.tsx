@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, BookCheck, ChevronLeft, ChevronRight, ClipboardList, ExternalLink, Hand, Loader2, Maximize2, MonitorUp, Presentation, RotateCw, Search } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookCheck, ChevronLeft, ChevronRight, ClipboardList, ClipboardPen, UsersRound, ExternalLink, Hand, Loader2, Maximize2, MonitorUp, Presentation, RotateCw, Search } from "lucide-react";
 import { useTousEvenements } from "@/lib/flux";
 import { queryClient } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
@@ -21,6 +21,7 @@ import { Interrupteur } from "@/components/ui/champs";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { formaterDate, type Traducteur } from "@shared/textes";
 import { deDevant, t as textesCopies } from "@shared/textes/copies-direct";
+import { t as textesDirect } from "@shared/textes/devoir-direct";
 import type {
   CopieDuDirectDto,
   CorpsProjectionCopie,
@@ -37,8 +38,9 @@ import type {
   ZoneCopie,
 } from "@shared/schema";
 import { CadreCopie, CopieProjetee, LecteurCopie, codeErreur, useCibleCopie, useCopieDirect } from "./copie-projetee";
+import { regrouperReponses } from "./devoir-direct";
 
-type Tx = Traducteur<Parameters<typeof textesCopies>[0]>;
+export type Tx = Traducteur<Parameters<typeof textesCopies>[0]>;
 
 // ── Bouton d'en-tête ───────────────────────────────────────────────────────
 
@@ -57,13 +59,17 @@ export function BoutonDevoirs({ actif, onClick }: { actif: boolean; onClick: () 
 const dateCourte = (iso: string) => formaterDate(iso, { style: "court" });
 const dateLimite = (iso: string) => formaterDate(iso, { style: "jourHeure" });
 
-/** « Copie d'Awa K. », « Copie de Yao K. » : même règle que le serveur (deDevant). */
-function etiquetteLocale(tx: Tx, nomVisible: boolean, prenom: string, initiale: string) {
+/**
+ * « Copie d'Awa K. », « Copie de Yao K. » : même règle que le serveur (deDevant). Copie rendue pour un groupe du
+ * live : « Copie d'un groupe », ou « Copie de groupe · Groupe 2 » (etiquetteDeCopie, projection-copies.ts).
+ */
+function etiquetteLocale(tx: Tx, nomVisible: boolean, prenom: string, initiale: string, groupe?: string | null) {
+  if (groupe) return nomVisible ? tx("classe.groupeNom", { v: { nom: groupe } }) : tx("classe.groupe");
   if (!nomVisible) return tx("classe.anonyme");
   return tx("classe.nom", { v: { de: deDevant(prenom), prenom, initiale } }).trim();
 }
 
-function resumeCopie(tx: Tx, r: CopieDuDirectDto["resume"]): string {
+export function resumeCopie(tx: Tx, r: CopieDuDirectDto["resume"]): string {
   const morceaux: string[] = [];
   const compte = (n: number, un: Parameters<Tx>[0], plusieurs: Parameters<Tx>[0]) => {
     if (n === 1) morceaux.push(tx(un));
@@ -91,8 +97,30 @@ const memeChoix = (a: Choix | null, b: Choix | null) =>
 
 // ── Vue « Devoirs et copies » ──────────────────────────────────────────────
 
-export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: SeanceDetailDto; etat: EtatDirectDto; partageLocal: boolean; onFermer: () => void }) {
+export function VueDevoirs({
+  seance,
+  etat,
+  partageLocal,
+  onFermer,
+  depart: departDemande,
+  confirmes: confirmesStudio,
+  onConfirmer,
+  onDonnerDevoir,
+}: {
+  seance: SeanceDetailDto;
+  etat: EtatDirectDto;
+  partageLocal: boolean;
+  onFermer: () => void;
+  /** Ouvrir sur un devoir, voire sur l'aperçu d'une copie (réponse touchée dans l'onglet « Devoir » du Studio). */
+  depart?: { devoirId?: number; renduId?: number };
+  /** Devoirs dont le formateur a déjà confirmé la projection malgré des copies encore possibles (gardé par le Studio). */
+  confirmes?: Set<number>;
+  onConfirmer?: (devoirId: number) => void;
+  /** « Donner un devoir maintenant » : ferme la vue et ouvre l'onglet « Devoir » du Studio. */
+  onDonnerDevoir?: () => void;
+}) {
   const tx = useTextes(textesCopies);
+  const txDirect = useTextes(textesDirect);
   const id = seance.id;
   const enDirect = etat.statut === "en_direct" && !(etat.planB ?? seance.planB);
   const { projeter, revenirAuxDiapos, envoi } = useCopieDirect(id);
@@ -123,7 +151,10 @@ export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: S
   const [enteteChoisi, setEnteteChoisi] = useState<boolean | null>(null);
   const [zoneApercu, setZoneApercu] = useState<ZoneCopie>("page");
   const [lecture, setLecture] = useState(false);
-  const [confirmes, setConfirmes] = useState<Set<number>>(() => new Set());
+  // Sans le Studio pour la garder (fenêtre présentateur…), la confirmation vit le temps de la vue.
+  const [confirmesLocaux, setConfirmesLocaux] = useState<Set<number>>(() => new Set());
+  const confirmes = confirmesStudio ?? confirmesLocaux;
+  const confirmer = (devoirId: number) => (onConfirmer ? onConfirmer(devoirId) : setConfirmesLocaux((x) => new Set(x).add(devoirId)));
   const [demande, setDemande] = useState<{ peuventRendre: number; dateLimite: string } | null>(null);
   const [etape, setEtape] = useState<"devoirs" | "copies" | "apercu">("devoirs");
 
@@ -133,11 +164,20 @@ export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: S
     if (initialise.current || !liste.data || projete.isLoading) return;
     initialise.current = true;
     const p = etat.copie ? projete.data : null;
-    const depart = p?.devoirId ?? liste.data.suggestion;
+    // Départ demandé (une réponse du devoir en direct), puis la copie à l'écran, puis la suggestion du serveur.
+    const demande = departDemande?.devoirId && liste.data.devoirs.some((d) => d.id === departDemande.devoirId) ? departDemande.devoirId : undefined;
+    const depart = demande ?? p?.devoirId ?? liste.data.suggestion;
     if (depart === null || depart === undefined) return;
     setDevoirId(depart);
     setEtape("copies");
-    if (p) {
+    if (demande && departDemande?.renduId) {
+      const memeALEcran = p?.source === "copie" && p.renduId === departDemande.renduId;
+      setChoix({ genre: "copie", renduId: departDemande.renduId });
+      setNumero(memeALEcran ? p.numero : 1);
+      setEtape("apercu");
+      return;
+    }
+    if (p && p.devoirId === depart) {
       setChoix(p.source === "copie" && p.renduId ? { genre: "copie", renduId: p.renduId } : { genre: "corrige", devoirId: p.devoirId });
       setNumero(p.numero);
     }
@@ -220,7 +260,9 @@ export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: S
 
   const copieChoisie = choix?.genre === "copie" ? copies.data?.copies.find((c) => c.renduId === choix.renduId) : undefined;
   const etiquette =
-    choix?.genre === "corrige" ? tx("classe.corrige") : etiquetteLocale(tx, nomVisible && !partageLocal, copieChoisie?.prenom ?? "", copieChoisie?.initiale ?? "");
+    choix?.genre === "corrige"
+      ? tx("classe.corrige")
+      : etiquetteLocale(tx, nomVisible && !partageLocal, copieChoisie?.prenom ?? "", copieChoisie?.initiale ?? "", copieChoisie?.groupe?.nom);
   const vLegende = page && devoir ? { etiquette, devoir: devoir.titre, n: page.numero, total: pages.length } : null;
   const legende = vLegende ? tx("classe.legende", { v: vLegende }) : undefined;
 
@@ -343,6 +385,11 @@ export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: S
             <>
               <section className={cn("flex-col gap-2 rounded-[18px] bg-nuit-panneau p-3", etape === "devoirs" ? "flex" : "hidden", changerDevoir || !devoir ? "lg:flex" : "lg:hidden")}>
                 <h2 className="px-1 font-mono text-[11px] uppercase tracking-wider text-orange-peche">{tx("devoirs.titre")}</h2>
+                {onDonnerDevoir && (
+                  <Bouton variante="nuit" taille="sm" className="min-h-11 self-start bg-nuit-carte" icone={<ClipboardPen className="h-4 w-4" />} onClick={onDonnerDevoir}>
+                    {txDirect("lien.donner")}
+                  </Bouton>
+                )}
                 {!liste.data?.devoirs.length && <p className="px-1 text-[14px] text-nuit-doux">{tx("devoirs.vide")}</p>}
                 {liste.data?.devoirs.map((d) => (
                   <CarteDevoir key={d.id} tx={tx} devoir={d} actif={d.id === devoirId} aLEcran={aLEcran?.devoirId === d.id} onChoisir={() => choisirDevoir(d)} />
@@ -522,8 +569,12 @@ export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: S
                     )}
                     {choix.genre === "copie" && (
                       <Reglage
-                        libelle={tx("apercu.nom")}
-                        aide={partageLocal ? undefined : tx("apercu.nom.aide", { v: { etiquette: etiquetteLocale(tx, nomVisible, copieChoisie?.prenom ?? "", copieChoisie?.initiale ?? "") } })}
+                        libelle={copieChoisie?.groupe ? tx("apercu.nomGroupe") : tx("apercu.nom")}
+                        aide={
+                          partageLocal
+                            ? undefined
+                            : tx("apercu.nom.aide", { v: { etiquette: etiquetteLocale(tx, nomVisible, copieChoisie?.prenom ?? "", copieChoisie?.initiale ?? "", copieChoisie?.groupe?.nom) } })
+                        }
                         actif={nomVisible}
                         onChange={setNomVisible}
                       />
@@ -547,7 +598,7 @@ export function VueDevoirs({ seance, etat, partageLocal, onFermer }: { seance: S
                           variante="nuit-actif"
                           chargement={envoi}
                           onClick={() => {
-                            setConfirmes((s) => new Set(s).add(devoir.id));
+                            confirmer(devoir.id);
                             setDemande(null);
                             void lancer(true);
                           }}
@@ -717,18 +768,26 @@ function ListeCopies({
   onChoisir: (c: CopieDuDirectDto) => void;
 }) {
   const [recherche, setRecherche] = useState("");
+  // Copies d'une même réponse de groupe (devoir en direct) : une ligne, la copie de l'auteur sert à l'aperçu. Les
+  // lignes gardent l'ordre de la liste (prénoms) : un groupe prend la place de sa première copie.
+  const lignes = useMemo(() => {
+    const rang = new Map(copies.map((c, i) => [c.renduId, i]));
+    const premier = (l: ReturnType<typeof regrouperReponses>[number]) => Math.min(...l.copies.map((c) => rang.get(c.renduId) ?? 0));
+    return regrouperReponses(copies).sort((a, b) => premier(a) - premier(b));
+  }, [copies]);
   const filtrees = useMemo(() => {
     const q = recherche.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    if (!q || anonyme) return copies.map((c, i) => ({ c, n: i + 1 }));
-    return copies
-      .map((c, i) => ({ c, n: i + 1 }))
-      .filter(({ c }) => `${c.prenom} ${c.initiale}`.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q));
-  }, [copies, recherche, anonyme]);
+    const numerotees = lignes.map((l, i) => ({ l, c: l.representante, n: i + 1 }));
+    if (!q || anonyme) return numerotees;
+    // Un prénom trouve sa copie, le nom du groupe ou le prénom de l'auteur trouvent la ligne du groupe.
+    const cherche = (l: (typeof lignes)[number]) => [l.groupe?.nom ?? "", l.groupe?.parNom ?? "", ...l.copies.map((c) => `${c.prenom} ${c.initiale}`)].join(" ");
+    return numerotees.filter(({ l }) => cherche(l).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q));
+  }, [lignes, recherche, anonyme]);
   return (
     <section className="flex flex-col gap-2 rounded-[18px] bg-nuit-panneau p-3">
       <h2 className="px-1 font-mono text-[11px] uppercase tracking-wider text-orange-peche">{tx("copies.titre")}</h2>
       <p className="px-1 text-[12px] leading-snug text-nuit-gris">{tx("copies.info")}</p>
-      {copies.length > 12 && !anonyme && (
+      {lignes.length > 12 && !anonyme && (
         <label className="flex items-center gap-2 rounded-xl border border-nuit-ligne bg-nuit-carte px-3">
           <Search className="h-4 w-4 text-nuit-gris" />
           <input
@@ -754,28 +813,43 @@ function ListeCopies({
       {!chargement && !copies.length && <p className="px-1 text-[14px] text-nuit-doux">{tx("copies.vide")}</p>}
       {!chargement && copies.length > 0 && !filtrees.length && <p className="px-1 text-[14px] text-nuit-doux">{tx("copies.aucunResultat")}</p>}
       <ul className="flex flex-col gap-1.5">
-        {filtrees.map(({ c, n }) => (
-          <li key={c.renduId}>
-            <button
-              type="button"
-              onClick={() => onChoisir(c)}
-              aria-pressed={c.renduId === choisie}
-              className={cn(
-                "flex min-h-11 w-full flex-col gap-0.5 rounded-xl border px-3 py-2 text-left transition-colors",
-                c.renduId === choisie ? "border-orange bg-nuit-carte" : "border-nuit-ligne bg-nuit-carte hover:border-orange-peche/60",
-              )}
-            >
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-[15px] font-extrabold text-white">{anonyme ? tx("copies.anonyme", { v: { n } }) : `${c.prenom} ${c.initiale}`}</span>
-                {!anonyme && c.site && <span className="text-[13px] text-nuit-doux">· {c.site}</span>}
-                <span className="text-[13px] text-nuit-doux">· {tx("copies.rendueLe", { v: { date: dateCourte(c.renduLe) } })}</span>
-                {c.enRetard && <span className="rounded-full bg-direct/20 px-2 py-0.5 text-[11px] font-bold text-orange-peche">{tx("copies.retard")}</span>}
-                {c.renduId === aLEcran && <span className="rounded-full bg-orange px-2 py-0.5 text-[11px] font-black text-encre">{tx("copies.aLEcran")}</span>}
-              </span>
-              <span className="text-[12px] text-nuit-gris">{resumeCopie(tx, c.resume)}</span>
-            </button>
-          </li>
-        ))}
+        {filtrees.map(({ l, c, n }) => {
+          const estChoisie = l.copies.some((x) => x.renduId === choisie);
+          const estALEcran = l.copies.some((x) => x.renduId === aLEcran);
+          return (
+            <li key={l.cle}>
+              <button
+                type="button"
+                onClick={() => onChoisir(estALEcran && aLEcran !== null ? (l.copies.find((x) => x.renduId === aLEcran) ?? c) : c)}
+                aria-pressed={estChoisie}
+                className={cn(
+                  "flex min-h-11 w-full flex-col gap-0.5 rounded-xl border px-3 py-2 text-left transition-colors",
+                  estChoisie ? "border-orange bg-nuit-carte" : "border-nuit-ligne bg-nuit-carte hover:border-orange-peche/60",
+                )}
+              >
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {anonyme ? (
+                    <span className="text-[15px] font-extrabold text-white">{tx("copies.anonyme", { v: { n } })}</span>
+                  ) : l.groupe ? (
+                    <span className="flex items-center gap-1.5 text-[15px] font-extrabold text-white">
+                      <UsersRound className="h-4 w-4 text-orange" /> {tx("copies.groupe", { v: { groupe: l.groupe.nom, nom: l.groupe.parNom } })}
+                    </span>
+                  ) : (
+                    <span className="text-[15px] font-extrabold text-white">{`${c.prenom} ${c.initiale}`}</span>
+                  )}
+                  {!anonyme && !l.groupe && c.site && <span className="text-[13px] text-nuit-doux">· {c.site}</span>}
+                  {!anonyme && l.groupe && (
+                    <span className="text-[13px] text-nuit-doux">· {l.copies.length === 1 ? tx("copies.groupe.membre") : tx("copies.groupe.membres", { v: { n: l.copies.length } })}</span>
+                  )}
+                  <span className="text-[13px] text-nuit-doux">· {tx("copies.rendueLe", { v: { date: dateCourte(l.renduLe) } })}</span>
+                  {c.enRetard && <span className="rounded-full bg-direct/20 px-2 py-0.5 text-[11px] font-bold text-orange-peche">{tx("copies.retard")}</span>}
+                  {estALEcran && <span className="rounded-full bg-orange px-2 py-0.5 text-[11px] font-black text-encre">{tx("copies.aLEcran")}</span>}
+                </span>
+                <span className="text-[12px] text-nuit-gris">{resumeCopie(tx, c.resume)}</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

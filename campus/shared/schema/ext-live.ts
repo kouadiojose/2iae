@@ -2,9 +2,11 @@
 // pendant sa construction. Les types *Dto décrivent ce que l'API envoie au
 // client (dates en chaînes ISO) : serveur et client partagent ainsi le même
 // contrat.
-import { serial, text, integer, bigint, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
+import { serial, text, integer, bigint, boolean, timestamp, jsonb, primaryKey, index } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs } from "./base";
-import { seances, questionsLive, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource, type ZoneCopie, type RotationCopie } from "./live";
+import { devoirs } from "./evaluations";
+import type { PourGroupeDto } from "./ext-evaluations";
+import { seances, questionsLive, sessionsGroupes, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource, type ZoneCopie, type RotationCopie } from "./live";
 import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
@@ -29,7 +31,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom", "devoir_direct"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -101,6 +103,27 @@ export const replaysStockes = campusSchema.table(
   },
   (t) => [index("replays_stockes_seance_idx").on(t.seanceId)],
 );
+
+/**
+ * Devoir donné pendant le direct depuis le Studio (demande de José du 12 octobre 2026 : « je veux créer le devoir
+ * pendant le cours, en direct : ils répondent, moi, je vois directement »). Le devoir lui-même est une ligne
+ * ordinaire de « devoirs » (dépôt publié) ; cette table dit seulement dans quelle séance il a été donné, et, en
+ * groupe, pour quelle répartition des groupes de travail du live.
+ */
+export const devoirsDirect = campusSchema.table(
+  "devoirs_direct",
+  {
+    devoirId: integer("devoir_id").primaryKey().references(() => devoirs.id, { onDelete: "cascade" }),
+    seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
+    enGroupe: boolean("en_groupe").notNull().default(false),
+    /** Répartition dont les groupes répondent (null : individuel, ou répartition effacée). */
+    sessionGroupesId: integer("session_groupes_id").references(() => sessionsGroupes.id, { onDelete: "set null" }),
+    creeParId: integer("cree_par_id").references(() => utilisateurs.id, { onDelete: "set null" }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("devoirs_direct_seance_idx").on(t.seanceId, t.creeLe)],
+);
+export type DevoirDirect = typeof devoirsDirect.$inferSelect;
 
 // ── Contrats d'API du module live ──────────────────────────────────────────
 
@@ -200,6 +223,8 @@ export type CopieDuDirectDto = {
   renduLe: string;
   enRetard: boolean;
   resume: { texte: boolean; photos: number; pdf: number; documents: number; videos: number; sons: number; autres: number };
+  /** Copie rendue pour un groupe du live (« auteur » : c'est la copie de qui a répondu pour le groupe). */
+  groupe: { id: number; nom: string; parNom: string; auteur: boolean } | null;
 };
 export type ListeCopiesDuDirectDto = { devoir: DevoirDuDirectDto; copies: CopieDuDirectDto[] };
 
@@ -370,7 +395,60 @@ export type GroupesDto = {
   monGroupeId: number | null;
   /** Visio des groupes possible (Daily configuré) ; sinon, discussion écrite seulement. */
   visioDisponible: boolean;
+  /** Étudiant : son groupe pour le devoir en direct en groupe (même après la fermeture des groupes). */
+  groupeDevoir?: GroupeDevoirDto | null;
 };
+
+// ── Devoir donné en direct (12 octobre 2026) ───────────────────────────────
+
+/** Ma copie du devoir en direct (étudiant, GET /direct et événement « devoir-rendu »). */
+export type MonRenduDirectDto = {
+  statut: "rendu" | "corrige";
+  renduLe: string;
+  recu: string | null;
+  enRetard: boolean;
+  pourGroupe: PourGroupeDto | null;
+};
+
+/**
+ * Dernier devoir donné en direct dans la séance : public (canal seance:<id>, ouvert aux écrans de salle et aux
+ * formateurs invités : titre, consigne, date limite et compteurs seulement), plus la copie de l'étudiant.
+ */
+export type DevoirDirectDto = {
+  id: number;
+  titre: string;
+  /** Markdown, coupée à 2 000 caractères (« … ») si elle a été allongée dans l'éditeur. */
+  consigne: string;
+  /** Échéance effective (echeance(d)), ISO. */
+  dateLimite: string;
+  accepteRetard: boolean;
+  enGroupe: boolean;
+  creeLe: string;
+  /** Copies rendues (non brouillon), tous sites. */
+  copies: number;
+  /** Groupes distincts parmi elles, et copies rendues sans groupe. */
+  groupes: number;
+  individuelles: number;
+  /** Étudiant seulement (GET /direct) ; null ailleurs et dans les événements publics. */
+  monRendu: MonRenduDirectDto | null;
+};
+
+/** « devoir-direct:compteur » (canal de la séance) : le compteur public, regroupé (500 ms). */
+export type CompteurDevoirDirectDto = { devoirId: number; copies: number; groupes: number; individuelles: number };
+
+/** Mon groupe pour le devoir en direct en groupe (GET /api/seances/:id/groupes, étudiant seulement). */
+export type GroupeDevoirDto = {
+  devoirId: number;
+  groupeId: number;
+  nom: string;
+  /** Camarades inscrits (prénom et initiale), moi exclu. */
+  membres: string[];
+  /** Dernière réponse rendue pour ce groupe, même si je n'en ai pas la copie. */
+  copie: { parNom: string; parMoi: boolean; renduLe: string } | null;
+};
+
+/** Corps de POST /api/seances/:id/devoirs-direct. */
+export type CorpsDevoirDirect = { consigne: string; titre?: string; echeance: "fin" | "soir" | number; enGroupe?: boolean; corrige?: string };
 
 /** Participant présent, à répartir (formateur et équipe). */
 export type ParticipantGroupeDto = MembreGroupeDto & {
@@ -474,6 +552,8 @@ export type EtatDirectDto = {
   mains: MainDirectDto[];
   /** Qui écrit dans la discussion (réglage du formateur). */
   chatMode: ModeChat;
+  /** Dernier devoir donné en direct dans la séance (null : aucun). */
+  devoirDirect: DevoirDirectDto | null;
 };
 
 /**

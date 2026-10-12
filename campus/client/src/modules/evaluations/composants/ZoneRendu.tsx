@@ -67,6 +67,10 @@ export function ZoneRendu({
   onEnFile,
   onAnnuler,
   correctionCampus = false,
+  corpsEnPlus,
+  sansVideo = false,
+  libelles,
+  surErreur,
 }: {
   utilisateurId: number;
   devoir: { id: number; titre: string };
@@ -81,6 +85,17 @@ export function ZoneRendu({
   onRecu: (r: RecuDepot) => void;
   onEnFile: (cle: string) => void;
   onAnnuler?: () => void;
+  /**
+   * Champs ajoutés au corps de l'envoi (devoir en direct : { groupe: { seanceId, groupeId, dejaRenduLe } }). Ils
+   * restent dans la file d'envoi hors ligne : le serveur revérifie tout à l'arrivée.
+   */
+  corpsEnPlus?: Record<string, unknown>;
+  /** Cache « Filmer une vidéo » (dans le live : forfaits ; une vidéo enverrait la copie « à revoir » au formateur). */
+  sansVideo?: boolean;
+  /** Libellés remplacés (réponse pour un groupe du live) ; absents : ceux de la page Devoir. */
+  libelles?: Partial<Record<"titre" | "titreRemplacement" | "envoyer" | "envoyerRemplacement" | "confirmerTitre" | "confirmerTexte" | "garder", string>>;
+  /** Appelée sur un refus du serveur, avant le message d'erreur : rend vrai si l'erreur est traitée. */
+  surErreur?: (e: unknown) => boolean;
 }) {
   const [texte, setTexte] = useState(() => lireTexteBrouillon(utilisateurId, devoir.id) || texteServeur || "");
   const [pages, setPages] = useState<PageBrouillon[]>([]);
@@ -177,7 +192,7 @@ export function ZoneRendu({
         description: `Devoir · ${devoir.titre}`,
         url: `/api/devoirs/${devoir.id}/rendre`,
         methode: "POST",
-        corps: { texte, fichierIds: [], prepareLe: new Date(maintenantServeur()).toISOString() },
+        corps: { ...corpsEnPlus, texte, fichierIds: [], prepareLe: new Date(maintenantServeur()).toISOString() },
         fichiers: pages.map((p) => new File([p.blob], p.nom, { type: p.type })),
         usageFichiers: "rendu",
         champFichiers: "fichierIds",
@@ -190,7 +205,7 @@ export function ZoneRendu({
     } catch (e) {
       // Refus immédiat : rien n'est parti, le brouillon reste.
       oublierEnvoi(cle);
-      toastErreur(e);
+      if (!surErreur?.(e)) toastErreur(e);
     } finally {
       setEnvoi(false);
     }
@@ -200,10 +215,14 @@ export function ZoneRendu({
     <section className="flex flex-col gap-5 rounded-[24px] border border-ligne bg-white p-4 sm:p-6" aria-labelledby="titre-rendre">
       <div className="flex flex-col gap-1">
         <h2 id="titre-rendre" className="text-[22px] font-black tracking-serre">
-          {remplacement ? "Remplacer ma copie" : "Rendre mon devoir"}
+          {remplacement ? (libelles?.titreRemplacement ?? libelles?.titre ?? "Remplacer ma copie") : (libelles?.titre ?? "Rendre mon devoir")}
         </h2>
         <p className="text-[15px] text-texte-pale">
-          {correctionCampus ? tc("depot.intro.campus") : "Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger."}
+          {correctionCampus
+            ? tc("depot.intro.campus")
+            : sansVideo
+              ? "Photographie ton cahier page par page, ajoute un fichier ou écris ta réponse. Tu peux mélanger."
+              : "Photographie ton cahier page par page, ajoute un fichier, filme une courte vidéo ou écris ta réponse. Tu peux mélanger."}
         </p>
         {/* Dépôt corrigé par le campus (8 octobre 2026) : des photos nettes ou un PDF ; le reste va au formateur. */}
         {correctionCampus && (
@@ -237,7 +256,7 @@ export function ZoneRendu({
         ref={fichier}
         type="file"
         multiple
-        accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx,.txt"
+        accept={sansVideo ? "image/*,application/pdf,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx,.txt" : "image/*,video/*,audio/*,application/pdf,.doc,.docx,.odt,.xls,.xlsx,.ppt,.pptx,.txt"}
         className="hidden"
         onChange={(e) => void ajouter(e.target.files)}
       />
@@ -249,16 +268,18 @@ export function ZoneRendu({
         <Bouton variante="contour" pleineLargeur className="min-h-[52px]" icone={<Paperclip className="h-5 w-5" />} onClick={() => fichier.current?.click()} disabled={traitement}>
           Ajouter un fichier
         </Bouton>
-        <Bouton
-          variante="contour"
-          pleineLargeur
-          className="min-h-[52px]"
-          icone={<Video className="h-5 w-5" />}
-          onClick={() => (enregistreurDisponible() ? setEnregistreur(true) : filmer.current?.click())}
-          disabled={traitement}
-        >
-          Filmer une vidéo (3 min au plus)
-        </Bouton>
+        {!sansVideo && (
+          <Bouton
+            variante="contour"
+            pleineLargeur
+            className="min-h-[52px]"
+            icone={<Video className="h-5 w-5" />}
+            onClick={() => (enregistreurDisponible() ? setEnregistreur(true) : filmer.current?.click())}
+            disabled={traitement}
+          >
+            Filmer une vidéo (3 min au plus)
+          </Bouton>
+        )}
       </div>
 
       {pages.length > 0 && (
@@ -329,12 +350,12 @@ export function ZoneRendu({
           disabled={vide || traitement}
           onClick={() => (remplacement ? setConfirmer(true) : void envoyer())}
         >
-          {remplacement ? "Envoyer ma nouvelle copie" : "Envoyer mon devoir"}
+          {remplacement ? (libelles?.envoyerRemplacement ?? libelles?.envoyer ?? "Envoyer ma nouvelle copie") : (libelles?.envoyer ?? "Envoyer mon devoir")}
         </Bouton>
         {vide && <p className="text-center text-sm text-texte-gris">Ajoute une photo, un fichier ou un texte pour pouvoir envoyer.</p>}
         {onAnnuler && (
           <Bouton variante="fantome" pleineLargeur onClick={onAnnuler}>
-            Garder ma copie actuelle
+            {libelles?.garder ?? "Garder ma copie actuelle"}
           </Bouton>
         )}
       </div>
@@ -366,11 +387,12 @@ export function ZoneRendu({
       <Fenetre
         ouverte={confirmer}
         onFermer={() => setConfirmer(false)}
-        titre="Remplacer ta copie ?"
+        titre={libelles?.confirmerTitre ?? "Remplacer ta copie ?"}
         description={
-          renduPrecedentLe
+          libelles?.confirmerTexte ??
+          (renduPrecedentLe
             ? `Ta nouvelle copie remplacera celle envoyée le ${dateEtHeureCourte(renduPrecedentLe)}. Ton formateur ne verra que la nouvelle.`
-            : "Ta nouvelle copie remplacera la précédente. Ton formateur ne verra que la nouvelle."
+            : "Ta nouvelle copie remplacera la précédente. Ton formateur ne verra que la nouvelle.")
         }
         pied={
           <>

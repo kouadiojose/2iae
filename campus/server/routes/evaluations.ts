@@ -41,6 +41,17 @@ import { iaDisponible, demanderJson, verifierQuota } from "../ia";
 import { iaDuSoir } from "../ia-soir";
 import { apercuCopie, lireCopie } from "../copies-pages";
 import { arreterCopieDuRendu } from "../projection-copies";
+import {
+  DelaiGroupeDepasse,
+  devoirDirectDe,
+  enSerieGroupe,
+  prenomInitiale,
+  publierDevoirDirect,
+  signalerRenduDirect,
+  situationGroupe,
+  versPourGroupeDto,
+} from "../devoirs-direct";
+import { t as tDirect } from "@shared/textes/devoir-direct";
 import { SCHEMA_CORRECTION, SYSTEME_CORRECTION, contexteCorrection, grilleDe, messageCopie, noteDu, rapprocherCriteres, type CorrectionIa } from "../correction-ia";
 import {
   copiePriseEnMain,
@@ -128,6 +139,7 @@ import {
   type LigneNoteDetail,
   type CorrectionAuto,
   type DemandeRelecture,
+  type PourGroupe,
 } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -655,6 +667,8 @@ const schemaDevoir = z.object({
   corrigeVersion: z.number().int().nonnegative().nullable().optional(),
 });
 const schemaModifDevoir = schemaDevoir.omit({ coursId: true }).partial();
+/** Champs d'un devoir à créer (sans le corrigé, passé à part). */
+export type ValeursDevoir = Omit<z.output<typeof schemaDevoir>, "corrige" | "corrigeVersion">;
 
 /**
  * Seuls le formateur du cours et la direction écrivent un corrigé (décision D-F) : un corrigé envoyé par
@@ -680,6 +694,46 @@ function verifierDevoir(v: {
       throw invalide(`Le total de la grille (${total} points) doit être égal au barème (${v.bareme}).`);
     }
   }
+}
+
+/**
+ * Crée un devoir : éditeur (POST /api/devoirs) et devoir donné en direct depuis le Studio (routes/devoirs-direct.ts),
+ * par la même logique (aucune copie de code). Droits sur le cours, corrigé réservé au formateur et à la direction,
+ * fin d'échéance, cohérence, pièces jointes, journal ; corrigé du formateur (validé tout de suite) ou rédigé par le
+ * campus ; « Nouveau devoir » aux inscrits seulement si « annonce » (le devoir en direct prévient lui-même les
+ * absents). « journal » : détails ajoutés à la ligne « devoir_cree ».
+ */
+export async function creerDevoir(
+  u: Utilisateur,
+  v: ValeursDevoir,
+  { corrige, annonce = true, journal: enPlus = {} }: { corrige?: string; annonce?: boolean; journal?: Record<string, unknown> } = {},
+): Promise<{ d: Devoir; c: Cours }> {
+  const c = await coursEnseigne(u, v.coursId);
+  exigerDroitCorrige(u, corrige);
+  const ouvertureLe = v.ouvertureLe ? new Date(v.ouvertureLe) : null;
+  // « Avant 23h59 » : enregistrée à 23:59:59.999 (règle de finEcheance).
+  const dateLimite = finEcheance(new Date(v.dateLimite));
+  verifierDevoir({ ...v, ouvertureLe, dateLimite });
+  await verifierFichiers(u, v.fichierIds, "devoir");
+  const [d] = await db
+    .insert(devoirs)
+    .values({
+      ...v,
+      ouvertureLe,
+      dateLimite,
+      dureeMinutes: v.type === "quiz" ? v.dureeMinutes ?? null : null,
+      accepteRetard: v.type === "quiz" ? false : v.accepteRetard,
+      // Une interrogation naît en brouillon : elle sera publiée une fois ses questions écrites.
+      publie: v.type === "quiz" ? false : v.publie,
+      auteurId: u.id,
+    })
+    .returning();
+  await tracer(u, "devoir_cree", { devoirId: d.id, coursId: c.id, titre: d.titre, type: d.type, ...enPlus });
+  // Corrigé du dépôt : celui du formateur (validé par lui), sinon le campus le rédigera s'il est publié.
+  if (d.type === "depot" && corrige?.trim()) await corrigeEcritParLeFormateur(u, d.id, corrige);
+  else await assurerCorrige(d);
+  if (annonce) await annoncerSiOuvert(d, c);
+  return { d, c };
 }
 
 const schemaQuestion = z.object({
@@ -827,6 +881,7 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
       ...(publie ? { origineNote: rAJour.origineNote } : {}),
       correctionAuto: etatPourEtudiant(rAJour, suivi, cd, d, maintenant, apercu),
       relecture: relecture ? versRelectureEtudiant(relecture) : null,
+      pourGroupe: versPourGroupeDto(rAJour.pourGroupe, u.id),
     };
   }
 
@@ -929,6 +984,7 @@ async function copieDetail(r: Rendu, d: Devoir, e: Utilisateur): Promise<CopieDe
     origineNote: r.origineNote,
     correctionAuto: etatPourFormateur(r, suivi, cd, d),
     relecture: relecture ? versRelectureEtudiant(relecture) : null,
+    pourGroupe: versPourGroupeDto(r.pourGroupe, 0),
   };
 }
 
@@ -938,7 +994,21 @@ const schemaRendu = z.object({
   texte: z.string().max(50_000).default(""),
   fichierIds: z.array(z.number().int().positive()).max(30).default([]),
 });
-const schemaRendre = schemaRendu.extend({ prepareLe: dateIso.nullable().optional() });
+const schemaRendre = schemaRendu.extend({
+  prepareLe: dateIso.nullable().optional(),
+  /** Réponse pour un groupe du live (devoir en direct) : le groupe que l'étudiant voyait, jamais la liste des membres. */
+  groupe: z
+    .object({
+      seanceId: z.number().int().positive(),
+      groupeId: z.number().int().positive(),
+      /** renduLe de la réponse du groupe que l'étudiant connaissait (null : aucune). */
+      dejaRenduLe: dateIso.nullable(),
+      /** Prendre la dernière réponse du groupe telle quelle (membre arrivé après). */
+      rejoindre: z.boolean().default(false),
+    })
+    .optional(),
+});
+type CorpsRendre = z.output<typeof schemaRendre>;
 
 /**
  * La ligne porte toujours la copie lue : même heure d'arrivée (comparée à la
@@ -952,15 +1022,275 @@ const memeCopie = (r: Pick<Rendu, "id" | "renduLe">) =>
 const correctionCommencee = (r: Rendu) =>
   r.note !== null || r.noteDetail !== null || Boolean(r.commentaire) || r.commentaireAudioId !== null || r.propositionIa !== null || r.corrigeLe !== null;
 
+/** Contenu d'une copie à écrire. « renduLe » : heure gardée (copie d'un groupe reprise par un membre arrivé après). */
+type CorpsRendu = { texte: string; fichierIds: number[]; prepareLe?: Date | null; enRetard?: boolean; renduLe?: Date };
+type CopieEcrite = { etudiantId: number; r: Rendu; recu: string; remplace: boolean; avant: Rendu | undefined };
+
+/** Ce qu'une copie remplacée emporte au journal (la correction de l'ancienne ne vaut pas pour la nouvelle). */
+const archiveDe = (avant: Rendu) => ({
+  renduLe: iso(avant.renduLe),
+  fichierIds: avant.fichierIds,
+  longueurTexte: avant.texte.length,
+  ...(avant.pourGroupe ? { pourGroupe: avant.pourGroupe } : {}),
+  // Correction de la copie remplacée, archivée ici : elle ne s'applique pas à la nouvelle.
+  ...(correctionCommencee(avant)
+    ? {
+        correction: {
+          note: avant.note,
+          noteDetail: avant.noteDetail,
+          commentaire: avant.commentaire,
+          commentaireAudioId: avant.commentaireAudioId,
+          propositionIa: avant.propositionIa,
+          correcteurId: avant.correcteurId,
+          corrigeLe: iso(avant.corrigeLe),
+          vuLe: iso(avant.vuLe),
+        },
+      }
+    : {}),
+});
+
+/**
+ * Écrit la même copie pour un ou plusieurs étudiants, dans UNE transaction : copie rendue par l'étudiant, copie
+ * papier déposée par la vie scolaire, ou réponse d'un groupe du live (devoir en direct, 12 octobre 2026 : même
+ * texte, mêmes fichiers, même heure, même « en retard », pour_groupe rempli, depose_par_id toujours nul : chacun est
+ * coauteur). Les copies existantes sont verrouillées dans l'ordre des identifiants.
+ *
+ * Une copie qui en remplace une autre repart SANS correction : note, détail, commentaires, proposition de l'IA et
+ * ✓✓ de l'ancienne ne valent pas pour la nouvelle (le formateur doit la revoir). L'ancienne correction est archivée
+ * au journal avec la copie remplacée. Une copie déjà publiée (« corrigé ») n'est jamais remplacée, même par une
+ * requête arrivée en même temps. Réponse de groupe : les membres dont la copie est publiée, ou déjà rendue après la
+ * date limite, sont laissés de côté (« ignores ») ; on continue avec les autres. Copie individuelle : pour_groupe
+ * remis à NULL (une copie qui sort d'un groupe ne touche pas celles des autres membres).
+ */
+async function enregistrerRendus(
+  auteur: Utilisateur,
+  d: Devoir,
+  etudiants: Pick<Utilisateur, "id" | "prenom" | "nom">[],
+  corps: CorpsRendu,
+  pourGroupe: PourGroupe | null,
+  options: { journal?: "rendu_groupe" | "rendu_groupe_rejoint" } = {},
+): Promise<{ ecrites: CopieEcrite[]; ignores: Pick<Utilisateur, "id" | "prenom" | "nom">[]; enRetard: boolean; renduLe: Date }> {
+  const maintenant = new Date();
+  const renduLe = corps.renduLe ?? maintenant;
+  const enRetard = corps.enRetard ?? renduLe.getTime() > echeance(d).getTime();
+  const apresEcheance = maintenant.getTime() > echeance(d).getTime();
+  const tries = [...new Map(etudiants.map((e) => [e.id, e])).values()].sort((a, b) => a.id - b.id);
+  const ids = tries.map((e) => e.id);
+  const deposeParId = (etudiantId: number) => (pourGroupe || auteur.id === etudiantId ? null : auteur.id);
+  const { ecrites, ignores } = await db.transaction(async (tx) => {
+    // Copies existantes verrouillées (dans l'ordre des identifiants : deux réponses croisées ne s'attendent pas
+    // l'une l'autre) : la correction archivée est la dernière enregistrée, et une correction en cours
+    // d'enregistrement ne se pose pas sur la nouvelle copie.
+    const existantes = await tx
+      .select()
+      .from(rendus)
+      .where(and(eq(rendus.devoirId, d.id), inArray(rendus.etudiantId, ids)))
+      .orderBy(asc(rendus.etudiantId))
+      .for("update");
+    const avantDe = new Map(existantes.map((r) => [r.etudiantId, r]));
+    const ecrites: CopieEcrite[] = [];
+    const ignores: Pick<Utilisateur, "id" | "prenom" | "nom">[] = [];
+    for (const e of tries) {
+      const avant = avantDe.get(e.id);
+      // Réponse de groupe : copie publiée, ou déjà rendue après la date limite (elle ne se remplace plus).
+      if (pourGroupe && (avant?.statut === "corrige" || (apresEcheance && avant?.statut === "rendu" && !memeReponseDeGroupe(avant, pourGroupe, renduLe)))) {
+        ignores.push(e);
+        continue;
+      }
+      const [r] = await tx
+        .insert(rendus)
+        .values({
+          devoirId: d.id,
+          etudiantId: e.id,
+          texte: corps.texte,
+          fichierIds: corps.fichierIds,
+          statut: "rendu",
+          renduLe,
+          prepareLe: corps.prepareLe ?? null,
+          enRetard,
+          deposeParId: deposeParId(e.id),
+          pourGroupe,
+        })
+        .onConflictDoUpdate({
+          target: [rendus.devoirId, rendus.etudiantId],
+          set: {
+            texte: corps.texte,
+            fichierIds: corps.fichierIds,
+            statut: "rendu",
+            renduLe,
+            prepareLe: corps.prepareLe ?? null,
+            enRetard,
+            deposeParId: deposeParId(e.id),
+            pourGroupe,
+            // Une nouvelle copie n'a pas encore été ouverte ni corrigée par le formateur.
+            vuLe: null,
+            note: null,
+            noteDetail: null,
+            commentaire: null,
+            commentaireAudioId: null,
+            propositionIa: null,
+            correcteurId: null,
+            corrigeLe: null,
+            majLe: maintenant,
+          },
+          setWhere: ne(rendus.statut, "corrige"),
+        })
+        .returning();
+      if (!r) {
+        ignores.push(e);
+        continue;
+      }
+      const recu = r.recu ?? recuPour(r.id);
+      if (!r.recu) await tx.update(rendus).set({ recu }).where(eq(rendus.id, r.id));
+      ecrites.push({ etudiantId: e.id, r: { ...r, recu }, recu, remplace: avant?.statut === "rendu", avant });
+    }
+    return { ecrites, ignores };
+  });
+
+  // Effets de bord, par copie remplacée : correction par le campus (la nouvelle copie repart en file, la demande
+  // gardée pour l'ancienne est supprimée) ; copie projetée en direct à ce moment (l'ancienne version quitte l'écran
+  // partout, projection-copies.ts).
+  for (const x of ecrites) {
+    if (!x.remplace) continue;
+    await copieRemplacee(x.r.id);
+    await arreterCopieDuRendu(x.r.id);
+  }
+  const deAuteur = ecrites.find((x) => x.etudiantId === auteur.id);
+  if (pourGroupe && options.journal) {
+    await tracer(auteur, options.journal, {
+      devoirId: d.id,
+      seanceId: pourGroupe.seanceId,
+      sessionId: pourGroupe.sessionId,
+      groupeId: pourGroupe.groupeId,
+      nom: pourGroupe.nom,
+      auteurId: pourGroupe.parId,
+      membres: ecrites.map((x) => x.etudiantId),
+      renduIds: ecrites.map((x) => x.r.id),
+      recu: deAuteur?.recu ?? null,
+      enRetard,
+      fichierIds: corps.fichierIds,
+      ignores: ignores.map((e) => e.id),
+      precedents: ecrites.filter((x) => x.remplace && x.avant).map((x) => ({ etudiantId: x.etudiantId, renduId: x.r.id, ...archiveDe(x.avant!) })),
+    });
+  } else {
+    for (const x of ecrites) {
+      await tracer(auteur, auteur.id === x.etudiantId ? (x.remplace ? "rendu_remplace" : "rendu") : "rendu_pour", {
+        devoirId: d.id,
+        renduId: x.r.id,
+        etudiantId: x.etudiantId,
+        recu: x.recu,
+        enRetard,
+        fichierIds: corps.fichierIds,
+        prepareLe: iso(corps.prepareLe),
+        ...(x.remplace && x.avant ? { precedent: archiveDe(x.avant) } : {}),
+      });
+    }
+  }
+  if (ecrites.length) {
+    // Les formateurs du cours voient la copie arriver dans leur liste (une fois par réponse, même de groupe).
+    for (const f of await formateursDuCours(d.coursId)) publierUtilisateur(f.id, "copie-recue", { devoirId: d.id });
+    for (const x of ecrites) {
+      publierUtilisateur(x.etudiantId, "devoir-rendu", { devoirId: d.id, recu: x.recu, renduLe: renduLe.toISOString(), enRetard, statut: "rendu", pourGroupe });
+    }
+    // Devoir donné en direct : le compteur public de la classe (regroupé).
+    signalerRenduDirect(d.id);
+  }
+  return { ecrites, ignores, enRetard, renduLe };
+}
+
+/** La copie est déjà celle de cette réponse de groupe (même groupe, même heure). */
+const memeReponseDeGroupe = (r: Pick<Rendu, "pourGroupe" | "renduLe">, p: PourGroupe, renduLe: Date) =>
+  r.pourGroupe?.groupeId === p.groupeId && r.renduLe?.getTime() === renduLe.getTime();
+
+/** Reçu de dépôt à partir d'une copie écrite. */
+async function recuDe(d: Devoir, c: Pick<Cours, "code">, x: { r: Rendu; recu: string; remplace: boolean }): Promise<RecuDepot> {
+  return {
+    devoirId: d.id,
+    titre: d.titre,
+    coursCode: c.code,
+    recu: x.recu,
+    renduLe: (x.r.renduLe ?? x.r.majLe).toISOString(),
+    enRetard: x.r.enRetard,
+    remplace: x.remplace,
+    fichiers: await piecesJointes(x.r.fichierIds),
+    aDuTexte: Boolean(x.r.texte.trim()),
+  };
+}
+
+/** Refus d'une réponse de groupe : message au tutoiement (seuls les étudiants rendent), code lu par la carte du live. */
+const refusGroupe = (cle: Parameters<typeof tDirect>[0], code: string, v?: Record<string, string>, details: Record<string, unknown> = {}) =>
+  new ErreurHttp(409, tDirect(cle, { registre: "tu", v }), { code, ...details });
+
+/**
+ * Réponse d'un étudiant pour son groupe du live (devoir en direct, 12 octobre 2026), dans la file du groupe :
+ * contrôles du groupe (devoir en groupe de cette séance, ligne membres_groupes du groupe affiché, pas d'écran de
+ * salle), puis « rejoindre » (recopier la dernière réponse du groupe pour soi seul) ou une nouvelle réponse écrite
+ * pour chaque membre (refusée si une réponse est arrivée que l'étudiant ne connaissait pas).
+ */
+async function rendrePourGroupe(
+  u: Utilisateur,
+  d: Devoir,
+  c: Cours,
+  v: CorpsRendre,
+  groupe: NonNullable<CorpsRendre["groupe"]>,
+  avant: Rendu | undefined,
+  apresEcheance: boolean,
+  prepareLe: Date | null,
+): Promise<{ statut: 200 | 201; recu: RecuDepot }> {
+  try {
+    return await enSerieGroupe(`${d.id}:${groupe.groupeId}`, async () => {
+      const g = await situationGroupe(d, u.id);
+      if (g.etat === "pas_en_groupe" || g.dd.seanceId !== groupe.seanceId) throw refusGroupe("erreur.pasEnGroupe", "pas_en_groupe");
+      if (g.etat === "sans_groupe" || g.groupeId !== groupe.groupeId) throw refusGroupe("erreur.groupeChange", "groupe_change");
+      if (g.etat === "salle") throw refusGroupe("erreur.groupeSalle", "groupe_salle");
+      const pourGroupe: PourGroupe = { seanceId: g.dd.seanceId, sessionId: g.sessionId, groupeId: g.groupeId, nom: g.nom, parId: u.id, parNom: prenomInitiale(u) };
+
+      // Membre arrivé après la réponse : il prend la dernière réponse du groupe, pour lui seul.
+      if (groupe.rejoindre) {
+        if (!g.actuelle) throw refusGroupe("erreur.rejoindre.rien", "rejoindre_rien");
+        if (apresEcheance) throw refusGroupe("erreur.rejoindre.limite", "rejoindre_limite");
+        if (avant && avant.statut !== "brouillon" && avant.pourGroupe && memeReponseDeGroupe(avant, avant.pourGroupe, g.actuelle.renduLe) && avant.pourGroupe.groupeId === g.groupeId) {
+          const recu = await recuDe(d, c, { r: avant, recu: avant.recu ?? recuPour(avant.id), remplace: false });
+          return { statut: 200, recu: { ...recu, groupe: { nom: g.nom, copies: 0, ignores: [] } } };
+        }
+        const source = g.actuelle.rendu;
+        const { ecrites } = await enregistrerRendus(
+          u,
+          d,
+          [u],
+          { texte: source.texte, fichierIds: source.fichierIds, prepareLe: null, renduLe: g.actuelle.renduLe, enRetard: source.enRetard },
+          source.pourGroupe ?? { ...pourGroupe, parId: g.actuelle.parId, parNom: g.actuelle.parNom },
+          { journal: "rendu_groupe_rejoint" },
+        );
+        const x = ecrites[0];
+        if (!x) throw new ErreurHttp(409, "Ta copie est déjà corrigée : elle ne peut plus être remplacée.");
+        return { statut: 201, recu: { ...(await recuDe(d, c, x)), groupe: { nom: g.nom, copies: 1, ignores: [] } } };
+      }
+
+      // Nouvelle réponse : refusée si une réponse du groupe est arrivée sans que l'étudiant la connaisse.
+      const connue = groupe.dejaRenduLe ? new Date(groupe.dejaRenduLe).getTime() : null;
+      if (g.actuelle && connue !== g.actuelle.renduLe.getTime()) {
+        throw refusGroupe("erreur.groupeDejaRendu", "groupe_deja_rendu", { nom: g.actuelle.parNom }, { parNom: g.actuelle.parNom, renduLe: g.actuelle.renduLe.toISOString() });
+      }
+      if (!v.texte.trim() && !v.fichierIds.length) throw invalide("Ajoute au moins une photo, un fichier ou un texte avant d'envoyer.");
+      await verifierFichiers(u, v.fichierIds, "rendu", avant?.fichierIds ?? []);
+      // L'auteur est toujours écrit (il peut rendre ce devoir), avec les membres inscrits de son groupe.
+      const membres = g.membres.some((m) => m.id === u.id) ? g.membres : [...g.membres, u];
+      const { ecrites, ignores } = await enregistrerRendus(u, d, membres, { texte: v.texte, fichierIds: v.fichierIds, prepareLe }, pourGroupe, { journal: "rendu_groupe" });
+      const x = ecrites.find((e) => e.etudiantId === u.id);
+      if (!x) throw new ErreurHttp(409, "Ta copie est déjà corrigée : elle ne peut plus être remplacée.");
+      return { statut: 201, recu: { ...(await recuDe(d, c, x)), groupe: { nom: g.nom, copies: ecrites.length, ignores: ignores.map(prenomInitiale) } } };
+    });
+  } catch (e) {
+    if (e instanceof DelaiGroupeDepasse) throw new ErreurHttp(503, "Le campus est très occupé : ta réponse n'est pas partie. Renvoie-la dans un instant.");
+    throw e;
+  }
+}
+
 /**
  * Enregistre une copie rendue (par l'étudiant ou, pour une copie papier, par
- * la vie scolaire). Renvoie le reçu de dépôt.
- *
- * Une copie qui en remplace une autre repart SANS correction : note, détail,
- * commentaires, proposition de l'IA et ✓✓ de l'ancienne ne valent pas pour la
- * nouvelle (le formateur doit la revoir). L'ancienne correction est archivée
- * au journal avec la copie remplacée. Une copie déjà publiée (« corrigé »)
- * n'est jamais remplacée, même par une requête arrivée en même temps.
+ * la vie scolaire). Renvoie le reçu de dépôt. Copie individuelle : pour_groupe
+ * remis à NULL.
  */
 async function enregistrerRendu(
   auteur: Utilisateur,
@@ -969,113 +1299,14 @@ async function enregistrerRendu(
   etudiantId: number,
   corps: { texte: string; fichierIds: number[]; prepareLe?: Date | null; enRetard?: boolean },
 ): Promise<RecuDepot> {
-  const maintenant = new Date();
-  const enRetard = corps.enRetard ?? maintenant.getTime() > echeance(d).getTime();
-  const { avant, r } = await db.transaction(async (tx) => {
-    // Copie existante verrouillée : la correction archivée est la dernière enregistrée,
-    // et une correction en cours d'enregistrement ne se pose pas sur la nouvelle copie.
-    const [avant] = await tx
-      .select()
-      .from(rendus)
-      .where(and(eq(rendus.devoirId, d.id), eq(rendus.etudiantId, etudiantId)))
-      .for("update");
-    const [r] = await tx
-      .insert(rendus)
-      .values({
-        devoirId: d.id,
-        etudiantId,
-        texte: corps.texte,
-        fichierIds: corps.fichierIds,
-        statut: "rendu",
-        renduLe: maintenant,
-        prepareLe: corps.prepareLe ?? null,
-        enRetard,
-        deposeParId: auteur.id === etudiantId ? null : auteur.id,
-      })
-      .onConflictDoUpdate({
-        target: [rendus.devoirId, rendus.etudiantId],
-        set: {
-          texte: corps.texte,
-          fichierIds: corps.fichierIds,
-          statut: "rendu",
-          renduLe: maintenant,
-          prepareLe: corps.prepareLe ?? null,
-          enRetard,
-          deposeParId: auteur.id === etudiantId ? null : auteur.id,
-          // Une nouvelle copie n'a pas encore été ouverte ni corrigée par le formateur.
-          vuLe: null,
-          note: null,
-          noteDetail: null,
-          commentaire: null,
-          commentaireAudioId: null,
-          propositionIa: null,
-          correcteurId: null,
-          corrigeLe: null,
-          majLe: maintenant,
-        },
-        setWhere: ne(rendus.statut, "corrige"),
-      })
-      .returning();
-    return { avant, r };
-  });
-  if (!r) {
+  const { ecrites } = await enregistrerRendus(auteur, d, [{ id: etudiantId, prenom: "", nom: "" }], corps, null);
+  const x = ecrites[0];
+  if (!x) {
     throw new ErreurHttp(409, selon(auteur, "Ta copie vient d'être corrigée : elle ne peut plus être remplacée.", "Cette copie vient d'être corrigée : elle ne peut plus être remplacée."));
   }
-  const recu = r.recu ?? recuPour(r.id);
-  if (!r.recu) await db.update(rendus).set({ recu }).where(eq(rendus.id, r.id));
-  const remplace = avant?.statut === "rendu";
-  // Correction par le campus : la nouvelle copie repart en file, la demande gardée pour l'ancienne est supprimée.
-  if (remplace) await copieRemplacee(r.id);
-  // Copie projetée en direct à ce moment : l'ancienne version quitte l'écran partout (projection-copies.ts).
-  if (remplace) await arreterCopieDuRendu(r.id);
-  await tracer(auteur, auteur.id === etudiantId ? (remplace ? "rendu_remplace" : "rendu") : "rendu_pour", {
-    devoirId: d.id,
-    renduId: r.id,
-    etudiantId,
-    recu,
-    enRetard,
-    fichierIds: corps.fichierIds,
-    prepareLe: iso(corps.prepareLe),
-    ...(remplace
-      ? {
-          precedent: {
-            renduLe: iso(avant.renduLe),
-            fichierIds: avant.fichierIds,
-            longueurTexte: avant.texte.length,
-            // Correction de la copie remplacée, archivée ici : elle ne s'applique pas à la nouvelle.
-            ...(correctionCommencee(avant)
-              ? {
-                  correction: {
-                    note: avant.note,
-                    noteDetail: avant.noteDetail,
-                    commentaire: avant.commentaire,
-                    commentaireAudioId: avant.commentaireAudioId,
-                    propositionIa: avant.propositionIa,
-                    correcteurId: avant.correcteurId,
-                    corrigeLe: iso(avant.corrigeLe),
-                    vuLe: iso(avant.vuLe),
-                  },
-                }
-              : {}),
-          },
-        }
-      : {}),
-  });
-  // Les formateurs du cours voient la copie arriver dans leur liste.
-  for (const f of await formateursDuCours(d.coursId)) publierUtilisateur(f.id, "copie-recue", { devoirId: d.id });
-  publierUtilisateur(etudiantId, "devoir-rendu", { devoirId: d.id, recu });
-  return {
-    devoirId: d.id,
-    titre: d.titre,
-    coursCode: c.code,
-    recu,
-    renduLe: maintenant.toISOString(),
-    enRetard,
-    remplace,
-    fichiers: await piecesJointes(corps.fichierIds),
-    aDuTexte: Boolean(corps.texte.trim()),
-  };
+  return recuDe(d, c, x);
 }
+
 
 // ── IA ─────────────────────────────────────────────────────────────────────
 
@@ -1298,31 +1529,7 @@ export function enregistrerEvaluations(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const { corrige, corrigeVersion: _versionLue, ...v } = valider(schemaDevoir, req.body);
-      const c = await coursEnseigne(u, v.coursId);
-      exigerDroitCorrige(u, corrige);
-      const ouvertureLe = v.ouvertureLe ? new Date(v.ouvertureLe) : null;
-      // « Avant 23h59 » : enregistrée à 23:59:59.999 (règle de finEcheance).
-      const dateLimite = finEcheance(new Date(v.dateLimite));
-      verifierDevoir({ ...v, ouvertureLe, dateLimite });
-      await verifierFichiers(u, v.fichierIds, "devoir");
-      const [d] = await db
-        .insert(devoirs)
-        .values({
-          ...v,
-          ouvertureLe,
-          dateLimite,
-          dureeMinutes: v.type === "quiz" ? v.dureeMinutes ?? null : null,
-          accepteRetard: v.type === "quiz" ? false : v.accepteRetard,
-          // Une interrogation naît en brouillon : elle sera publiée une fois ses questions écrites.
-          publie: v.type === "quiz" ? false : v.publie,
-          auteurId: u.id,
-        })
-        .returning();
-      await tracer(u, "devoir_cree", { devoirId: d.id, coursId: c.id, titre: d.titre, type: d.type });
-      // Corrigé du dépôt : celui du formateur (validé par lui), sinon le campus le rédigera s'il est publié.
-      if (d.type === "depot" && corrige?.trim()) await corrigeEcritParLeFormateur(u, d.id, corrige);
-      else await assurerCorrige(d);
-      await annoncerSiOuvert(d, c);
+      const { d, c } = await creerDevoir(u, v, { corrige });
       res.status(201).json(await detailEnseignant(u, d, c));
     }),
   );
@@ -1407,6 +1614,9 @@ export function enregistrerEvaluations(app: Express) {
         await assurerCorrige(maj);
       } else if (baremeChange) await recalculerQuiz(maj.id);
       if (maj.type === "depot" || (await questionsDe(maj.id)).length) await annoncerSiOuvert(maj, c);
+      // Devoir donné en direct : titre, consigne, date limite ou publication changés se voient dans la classe.
+      const dd = await devoirDirectDe(maj.id);
+      if (dd) await publierDevoirDirect(dd.seanceId);
       res.json(await detailEnseignant(u, maj, c));
     }),
   );
@@ -1425,8 +1635,11 @@ export function enregistrerEvaluations(app: Express) {
       if (n > 0) {
         throw new ErreurHttp(409, `${n} copie${n > 1 ? "s ont" : " a"} déjà été rendue${n > 1 ? "s" : ""} : une copie est une preuve, on ne la supprime pas. Masquez plutôt le devoir (décochez « Publié »).`);
       }
+      // Devoir donné en direct : lu avant la suppression (le lien part avec le devoir), la classe ne le voit plus.
+      const dd = await devoirDirectDe(d.id);
       await db.delete(devoirs).where(eq(devoirs.id, d.id));
-      await tracer(u, "devoir_supprime", { devoirId: d.id, titre: d.titre, coursId: d.coursId });
+      await tracer(u, "devoir_supprime", { devoirId: d.id, titre: d.titre, coursId: d.coursId, ...(dd ? { direct: true } : {}) });
+      if (dd) await publierDevoirDirect(dd.seanceId);
       res.json({ ok: true });
     }),
   );
@@ -1478,10 +1691,15 @@ export function enregistrerEvaluations(app: Express) {
       if (apresEcheance && !d.accepteRetard) {
         throw new ErreurHttp(409, "La date limite est passée et ton formateur n'accepte pas les retards pour ce devoir. Écris-lui si tu as eu un problème.");
       }
-      if (!v.texte.trim() && !v.fichierIds.length) throw invalide("Ajoute au moins une photo, un fichier ou un texte avant d'envoyer.");
-      await verifierFichiers(u, v.fichierIds, "rendu", avant?.fichierIds ?? []);
       // L'heure « préparé hors ligne » n'est qu'indicative ; une heure dans le futur est ignorée.
       const prepareLe = v.prepareLe && new Date(v.prepareLe).getTime() <= maintenant.getTime() + 5 * MINUTE ? new Date(v.prepareLe) : null;
+      // Réponse pour un groupe du live (devoir en direct) : tout est revérifié à l'arrivée (la copie a pu attendre le réseau).
+      if (v.groupe) {
+        const r = await rendrePourGroupe(u, d, c, v, v.groupe, avant, apresEcheance, prepareLe);
+        return res.status(r.statut).json(r.recu);
+      }
+      if (!v.texte.trim() && !v.fichierIds.length) throw invalide("Ajoute au moins une photo, un fichier ou un texte avant d'envoyer.");
+      await verifierFichiers(u, v.fichierIds, "rendu", avant?.fichierIds ?? []);
       const recu = await enregistrerRendu(u, d, c, u.id, { texte: v.texte, fichierIds: v.fichierIds, prepareLe });
       res.status(201).json(recu);
     }),
@@ -1552,6 +1770,7 @@ export function enregistrerEvaluations(app: Express) {
             ...(r && noteValable ? { origineNote: r.origineNote } : {}),
             correctionAuto: r ? etatCampus(r) : null,
             relectureOuverte: Boolean(r && relectures.get(r.id)?.statut === "ouverte"),
+            pourGroupe: versPourGroupeDto(r?.pourGroupe, u.id),
           };
         })
         // Copies rendues d'abord (les plus anciennes en premier), puis les non-rendus par nom.

@@ -34,7 +34,7 @@ import {
   DelaiDepasse,
   ecrireSiInchangee,
   enSerie,
-  etiquetteCopie,
+  etiquetteDeCopie,
   generationDe,
   nouvelleCle,
   pageDuPlan,
@@ -79,14 +79,17 @@ const DELAI_FABRICATION_MS = 30_000;
 
 const sansCache = (res: Response) => res.setHeader("Cache-Control", "no-store");
 
-/** Formateur du cours ou co-formateur, direction, vie scolaire qui anime ce cours (programme) et lit les copies (notes). */
-async function animateurCopies(u: Utilisateur, seanceId: number): Promise<Seance> {
-  if (u.role !== "formateur" && u.role !== "admin" && u.role !== "vie_scolaire") throw interdit(t("erreur.droits"));
-  if (u.role === "vie_scolaire") exigerDroitDe(u, "notes");
+/**
+ * Formateur du cours ou co-formateur, direction, vie scolaire qui anime ce cours (programme) et lit les copies (notes).
+ * Aussi les droits du devoir donné en direct (routes/devoirs-direct.ts) : « message » remplace le refus par défaut.
+ */
+export async function animateurCopies(u: Utilisateur, seanceId: number, message: string = t("erreur.droits")): Promise<Seance> {
+  if (u.role !== "formateur" && u.role !== "admin" && u.role !== "vie_scolaire") throw interdit(message);
   try {
+    if (u.role === "vie_scolaire") exigerDroitDe(u, "notes");
     return await seanceAnimee(u, seanceId); // programme pour la vie scolaire, puis coursEnseigne
   } catch (e) {
-    if (e instanceof ErreurHttp && e.statut === 403) throw interdit(t("erreur.droits"));
+    if (e instanceof ErreurHttp && e.statut === 403) throw interdit(message);
     throw e;
   }
 }
@@ -291,6 +294,8 @@ export function enregistrerCopiesDirect(app: Express) {
             renduLe: (r.renduLe ?? r.majLe).toISOString(),
             enRetard: r.enRetard,
             resume,
+            // Copie rendue pour un groupe du live (devoir en direct) : le Studio regroupe les copies d'une même réponse.
+            groupe: r.pourGroupe ? { id: r.pourGroupe.groupeId, nom: r.pourGroupe.nom, parNom: r.pourGroupe.parNom, auteur: r.pourGroupe.parId === r.etudiantId } : null,
           };
         })
         .sort((a, b) => a.prenom.localeCompare(b.prenom, "fr") || a.initiale.localeCompare(b.initiale, "fr"));
@@ -416,12 +421,14 @@ export function enregistrerCopiesDirect(app: Express) {
         let plan: PlanCopieDto;
         let d: Devoir;
         let etudiant: Pick<Utilisateur, "prenom" | "nom"> | null = null;
+        let pourGroupe: Rendu["pourGroupe"] = null;
         let peuvent = 0;
         // 3. La copie (ou le corrigé) appartient à un devoir de ce cours.
         if (corps.source === "copie") {
           const c = await copieDuCours(u, s, corps.renduId);
           d = c.d;
           etudiant = c.e;
+          pourGroupe = c.r.pourGroupe;
           // 4. La page est dans le plan, et la copie est celle que le formateur a regardée.
           plan = await planDeCopie(c.r, c.e);
           if (corps.version && corps.version !== plan.version) throw new ErreurHttp(409, t("erreur.copieChangee"), { code: "copie_changee" });
@@ -482,7 +489,7 @@ export function enregistrerCopiesDirect(app: Express) {
           nomVisible,
           enteteMasque,
           enteteDisponible: page.enteteDisponible,
-          etiquette: corps.source === "corrige" ? t("classe.corrige") : etiquetteCopie(nomVisible, etudiant!.prenom, etudiant!.nom),
+          etiquette: corps.source === "corrige" ? t("classe.corrige") : etiquetteDeCopie(nomVisible, etudiant!, pourGroupe),
           devoirTitre: d.titre,
           par: u.id,
           depuis: memeCopie ? ancienneCopie.depuis : Date.now(),
@@ -569,6 +576,7 @@ export function enregistrerCopiesDirect(app: Express) {
         let src: SourcePages;
         let plan: PlanCopieDto;
         let etudiant: Pick<Utilisateur, "prenom" | "nom"> | null = null;
+        let pourGroupe: Rendu["pourGroupe"] = null;
         if (p.source === "copie" && p.renduId) {
           const c = await copieDuCours(u, s, p.renduId);
           // Copie remplacée par l'étudiant : l'ancienne version quitte l'écran partout, le formateur le lit.
@@ -577,6 +585,7 @@ export function enregistrerCopiesDirect(app: Express) {
             throw new ErreurHttp(409, t("erreur.copieRemplacee"), { code: "plus_montree" });
           }
           etudiant = c.e;
+          pourGroupe = c.r.pourGroupe;
           plan = await planDeCopie(c.r, c.e);
           src = await sourceDeCopie(c.r);
         } else {
@@ -610,7 +619,7 @@ export function enregistrerCopiesDirect(app: Express) {
           nomVisible,
           enteteMasque,
           enteteDisponible: page.enteteDisponible,
-          etiquette: p.source === "corrige" ? p.etiquette : nomVisible !== p.nomVisible && etudiant ? etiquetteCopie(nomVisible, etudiant.prenom, etudiant.nom) : p.etiquette,
+          etiquette: p.source === "corrige" ? p.etiquette : nomVisible !== p.nomVisible && etudiant ? etiquetteDeCopie(nomVisible, etudiant, pourGroupe) : p.etiquette,
           horodatage: Date.now(),
         };
         let contenu: ContenuPage | null = null;

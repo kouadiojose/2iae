@@ -26,6 +26,7 @@ import { taille, cn } from "@/lib/utils";
 import { BoutonAssistant } from "@/modules/ia/BoutonAssistant";
 import type { DevoirDetail, DevoirDetailEtudiant, RecuDepot } from "@shared/schema";
 import { t as textesCampus } from "@shared/textes/corrections-etudiant";
+import { t as textesDirect } from "@shared/textes/devoir-direct";
 import { ZoneRendu } from "./composants/ZoneRendu";
 import { EcranRecu, EcranEnAttente, ListePieces, Vignette } from "./composants/Recu";
 import { Coches } from "./composants/CarteDevoir";
@@ -76,6 +77,7 @@ export default function PageDevoir({ id }: { id: string }) {
 function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisateurId: number }) {
   const maintenant = useMaintenant(30_000);
   const tc = useTextes(textesCampus);
+  const txd = useTextes(textesDirect);
   const [remplacer, setRemplacer] = useState(false);
   const [recu, setRecu] = useState<RecuDepot | null>(null);
   const [cleEnFile, setCleEnFile] = useState<string | null>(null);
@@ -107,7 +109,10 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
   else if (enAttente || cleEnFile) principal = <EcranEnAttente cle={enAttente?.cle ?? cleEnFile ?? undefined} titre={devoir.titre} onRecu={recuArrive} />;
   else if (d.peutRendre && (!renduEnvoye || remplacer)) {
     principal = (
-      <ZoneRendu
+      <>
+        {/* Copie rendue pour un groupe du live : la nouvelle copie, rendue d'ici, ne compte plus que pour soi. */}
+        {renduEnvoye?.pourGroupe && <p className="rounded-xl bg-alerte-clair px-4 py-3 text-[15px] font-semibold text-texte-doux">{txd("copie.groupe.remplacer")}</p>}
+        <ZoneRendu
         utilisateurId={utilisateurId}
         devoir={{ id: devoir.id, titre: devoir.titre }}
         remplacement={Boolean(renduEnvoye)}
@@ -119,6 +124,7 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
         onAnnuler={renduEnvoye ? () => setRemplacer(false) : undefined}
         correctionCampus={Boolean(d.correctionCampus)}
       />
+      </>
     );
   } else principal = null;
 
@@ -214,6 +220,7 @@ function EtatCopie({
 }) {
   const { rendu, statut, devoir } = d;
   const tc = useTextes(textesCampus);
+  const txd = useTextes(textesDirect);
   const [voirCopie, setVoirCopie] = useState(false);
   if (enAttente) return null;
 
@@ -305,6 +312,14 @@ function EtatCopie({
               {rendu.deposeParEquipe ? " · copie papier déposée par la vie scolaire" : ""}
             </span>
             {envoyeeEnDiffere(rendu.prepareLe, rendu.renduLe) && rendu.prepareLe && <span className="text-sm text-texte-pale">Préparé sur ton téléphone à {heure(rendu.prepareLe)}, envoyé au retour du réseau.</span>}
+            {/* Devoir donné en direct, rendu pour un groupe : la même copie pour chaque membre. */}
+            {rendu.pourGroupe && (
+              <span className="text-[15px] font-semibold text-texte-doux">
+                {rendu.pourGroupe.parMoi
+                  ? txd("copie.groupe.moi", { v: { groupe: rendu.pourGroupe.nom } })
+                  : txd("copie.groupe", { v: { groupe: rendu.pourGroupe.nom, nom: rendu.pourGroupe.parNom } })}
+              </span>
+            )}
             {(!campus || statut === "vu") && (
               <span className="mt-1 flex items-center gap-1.5 text-[15px] font-semibold">
                 <Coches vu={statut === "vu"} className="h-5 w-5" />

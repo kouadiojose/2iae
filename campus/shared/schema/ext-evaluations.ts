@@ -28,6 +28,12 @@ export const rappelsDevoirs = campusSchema.table(
 
 // ── Contrats d'API ─────────────────────────────────────────────────────────
 
+/**
+ * Copie rendue pour un groupe du live (devoir en direct, 12 octobre 2026), telle que les écrans la montrent :
+ * « Rendu pour ton groupe (Groupe 2) par Awa K. ». « parMoi » : la personne qui lit est l'auteur de la réponse.
+ */
+export type PourGroupeDto = { groupeId: number; nom: string; parNom: string; parMoi: boolean };
+
 /** Fichier joint tel que le client le reçoit (lecture contrôlée par /api/fichiers/:id). */
 export type PieceJointe = { id: number; nom: string; mime: string; taille: number; url: string };
 
@@ -117,6 +123,8 @@ export type RenduEtudiant = {
   correctionAuto?: EtatCorrectionEtudiant | null;
   /** Sa dernière demande de relecture de la note. */
   relecture?: RelectureEtudiant | null;
+  /** Copie rendue pour un groupe du live (devoir en direct) ; null : copie individuelle. */
+  pourGroupe?: PourGroupeDto | null;
 };
 
 /** Question d'interrogation vue par l'étudiant : jamais les bonnes réponses avant la correction. */
@@ -217,6 +225,8 @@ export type RecuDepot = {
   remplace: boolean;
   fichiers: PieceJointe[];
   aDuTexte: boolean;
+  /** Réponse rendue pour un groupe du live : nom du groupe, copies écrites, membres laissés de côté (« Yao B. »). */
+  groupe?: { nom: string; copies: number; ignores: string[] };
 };
 
 export type EtudiantCopie = { id: number; prenom: string; nom: string; matricule: string | null; site: string | null };
@@ -240,6 +250,8 @@ export type CopieResume = {
   correctionAuto?: { etat: EtatCorrection; raison: RaisonARevoir | null } | null;
   /** L'étudiant demande une relecture de sa note. */
   relectureOuverte?: boolean;
+  /** Copie rendue pour un groupe du live (devoir en direct) ; null : copie individuelle. */
+  pourGroupe?: PourGroupeDto | null;
 };
 
 /** GET /api/devoirs/:id/copies */
@@ -291,6 +303,8 @@ export type CopieDetail = {
   origineNote?: OrigineNote;
   correctionAuto?: { etat: EtatCorrection; raison: RaisonARevoir | null; detail: string | null; noteCampus: number | null } | null;
   relecture?: RelectureEtudiant | null;
+  /** Copie rendue pour un groupe du live (devoir en direct) ; null : copie individuelle. */
+  pourGroupe?: PourGroupeDto | null;
 };
 
 /** POST /api/quiz/:devoirId/commencer : la tentative (nouvelle ou reprise). */

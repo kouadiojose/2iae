@@ -239,6 +239,13 @@
       "when": 1791479693251,
       "tag": "0033_correction_auto",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791840965446,
+      "tag": "0034_devoirs_direct",
+      "breakpoints": true
     }
   ]
 }

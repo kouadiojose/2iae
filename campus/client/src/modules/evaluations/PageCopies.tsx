@@ -31,6 +31,7 @@ import { cn, pluriel, taille } from "@/lib/utils";
 import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, LigneNoteDetail, RecuDepot } from "@shared/schema";
 import type { CorrigeAValider } from "@shared/engagement/corrections";
 import { selonNombre, t as tc } from "@shared/textes/corrections";
+import { t as textesDirect } from "@shared/textes/devoir-direct";
 import { Visionneuse, EnregistreurVocal } from "./composants/Correction";
 import { EtatCorrectionCopie, JustificationCritere, TraiterRelecture, propositionDuCampus, texteEcheance } from "./composants/CorrectionCampus";
 import { CorrectionQuiz } from "./composants/CorrectionQuiz";
@@ -387,6 +388,7 @@ function CopieOuverte({
   derniere: boolean;
 }) {
   const { data: c, isLoading, error, refetch } = useQuery<CopieDetail>({ queryKey: ["/api/rendus", renduId] });
+  const txd = useTextes(textesDirect);
 
   useEffect(() => {
     // L'ouverture a posé la deuxième coche : la liste la montre aussitôt.
@@ -423,6 +425,12 @@ function CopieOuverte({
             {c.deposePar && (
               <Badge ton="alerte" className="whitespace-normal">
                 Copie papier déposée par {c.deposePar.prenom} {c.deposePar.nom}
+              </Badge>
+            )}
+            {/* Devoir en direct : la même copie pour chaque membre du groupe, écrite par l'un d'eux. */}
+            {c.pourGroupe && (
+              <Badge ton="gris" className="whitespace-normal">
+                {txd("copie.groupe", { v: { groupe: c.pourGroupe.nom, nom: c.pourGroupe.parNom } })}
               </Badge>
             )}
           </div>

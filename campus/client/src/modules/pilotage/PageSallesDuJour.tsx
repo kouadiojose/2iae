@@ -7,7 +7,7 @@
 // page. Les liens donnent accès aux écrans : page réservée à la direction (droit des écrans),
 // réponse sans cache. Les réglages des salles (ajouter, nom, public, installer l'écran) sont dans
 // chaque carte : pas besoin d'aller chercher « Les campus ».
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Copy, MessageCircle, MonitorSmartphone, Phone, TriangleAlert } from "lucide-react";
 import type { CampusDuJour, SalleDuJour, SallesDuJour, SallesDuSite } from "@shared/salles";
@@ -36,6 +36,7 @@ export default function PageSallesDuJour() {
   // Réglages des salles de chaque campus (sans lien), pour les régler sans quitter la page.
   const reglages = useQuery<SallesDuSite[]>({ queryKey: ["/api/pilotage/salles"] });
   const [ecran, setEcran] = useState<EcranDeSalle | null>(null);
+  useEffect(oublierVieuxEnvois, []);
 
   return (
     <Page>
@@ -57,6 +58,11 @@ export default function PageSallesDuJour() {
           <p className="text-[16px] font-bold">
             {data.messages === 0 ? tx("jour.compte.zero") : data.messages === 1 ? tx("jour.compte.un") : tx("jour.compte", { v: { n: data.messages } })}
           </p>
+          {data.aPreparer > 0 && (
+            <p className="text-sm font-semibold text-alerte">
+              {data.aPreparer === 1 ? tx("jour.aPreparer.compte.un") : tx("jour.aPreparer.compte", { v: { n: data.aPreparer } })}
+            </p>
+          )}
           <NumeroCoordinateur numero={data.coordinateur} peutRegler={data.peutRegler} />
         </section>
       )}
@@ -144,19 +150,48 @@ function NumeroCoordinateur({ numero, peutRegler }: { numero: string; peutRegler
   );
 }
 
-/** Envoi déjà fait ce jour-là depuis ce navigateur (un repère pour soi, rien de plus). */
+const PREFIXE_ENVOI = "campus:salles-du-jour:";
+
+/** Empreinte courte d'un message (FNV-1a) : un message modifié (nouveau lien, cours ajouté ou déplacé) redevient « à envoyer ». */
+function empreinte(texte: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < texte.length; i++) {
+    h ^= texte.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** Les repères « Envoyé » d'avant-hier et plus anciens ne servent plus : on les retire de ce navigateur. */
+function oublierVieuxEnvois() {
+  try {
+    const limite = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const cle = localStorage.key(i);
+      if (cle?.startsWith(PREFIXE_ENVOI) && cle.slice(PREFIXE_ENVOI.length, PREFIXE_ENVOI.length + 10) < limite) localStorage.removeItem(cle);
+    }
+  } catch {
+    /* navigateur sans stockage */
+  }
+}
+
+/**
+ * Envoi de ce message (ce jour, cette salle, ce contenu) déjà fait depuis ce navigateur : un repère pour soi, rien
+ * de plus. Relu à chaque changement de clé (passage d'Aujourd'hui à Demain, message modifié).
+ */
 function useEnvoye(cle: string): [boolean, () => void] {
-  const [envoye, setEnvoye] = useState(() => {
+  const [notes, setNotes] = useState<Record<string, true>>({});
+  const lu = useMemo(() => {
     try {
       return localStorage.getItem(cle) === "1";
     } catch {
       return false;
     }
-  });
+  }, [cle]);
   return [
-    envoye,
+    Boolean(notes[cle]) || lu,
     () => {
-      setEnvoye(true);
+      setNotes((n) => ({ ...n, [cle]: true }));
       try {
         localStorage.setItem(cle, "1");
       } catch {
@@ -187,9 +222,10 @@ function CarteCampus({ c, date, reglages, onEcran }: { c: CampusDuJour; date: st
       )}
 
       <ul className="flex flex-col gap-4">
-        {c.salles.map((s) => (
-          <LigneSalle key={s.numero} s={s} cleEnvoi={`campus:salles-du-jour:${date}:${c.siteId}:${s.numero}`} onEcran={() => ecranDe(s)} />
-        ))}
+        {c.salles.map((s) => {
+          const cleEnvoi = `${PREFIXE_ENVOI}${date}:${c.siteId}:${s.numero}:${s.message ? empreinte(s.message) : "-"}`;
+          return <LigneSalle key={cleEnvoi} s={s} cleEnvoi={cleEnvoi} onEcran={() => ecranDe(s)} />;
+        })}
       </ul>
 
       <details className="group mt-auto rounded-xl border border-ligne-douce" open={c.alertes.length > 0}>
@@ -244,11 +280,15 @@ function LigneSalle({ s, cleEnvoi, onEcran }: { s: SalleDuJour; cleEnvoi: string
           </button>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-alerte">{tx("jour.ecranAInstaller")}</span>
-          <Bouton variante="doux" taille="sm" className="min-h-[44px]" onClick={onEcran} icone={<MonitorSmartphone className="h-4 w-4" />}>
-            {tx("jour.installer")}
-          </Bouton>
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-alerte">{tx("jour.ecranAInstaller")}</span>
+            <Bouton variante="doux" taille="sm" className="min-h-[44px]" onClick={onEcran} icone={<MonitorSmartphone className="h-4 w-4" />}>
+              {tx("jour.installer")}
+            </Bouton>
+          </div>
+          {/* Des cours, mais pas encore de lien : pas de message à envoyer (il ne permettrait pas d'afficher le cours). */}
+          {s.lienAPreparer && <p className="text-sm font-semibold text-alerte">{tx("jour.aPreparer")}</p>}
         </div>
       )}
       {s.message && s.lienWhatsApp && (

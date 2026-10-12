@@ -138,11 +138,14 @@ export type SalleDuJour = {
   seances: SeanceDeSalle[];
   /**
    * Le message WhatsApp de la salle pour ce jour (son étiquette, une ligne par cours, le lien de son écran ;
-   * jamais le code d'écran). null : pas de cours dans la salle ce jour-là, donc pas de message.
+   * jamais le code d'écran). null : pas de cours dans la salle ce jour-là, ou écran à installer sans lien en
+   * place (lienAPreparer), donc pas de message.
    */
   message: string | null;
   /** https://wa.me/<numéro du coordinateur>?text=… (null avec le message). */
   lienWhatsApp: string | null;
+  /** Des cours ce jour-là, mais un écran à installer sans lien en place : préparer d'abord le lien de l'écran. */
+  lienAPreparer: boolean;
 };
 
 export type CampusDuJour = {
@@ -157,6 +160,14 @@ export type CampusDuJour = {
    * n'a pas de salle »), deux cours à la même heure dans une même salle. Vide : tout est en place.
    */
   alertes: string[];
+  /**
+   * Compatibilité avec la page d'avant (un message par campus), restée ouverte dans une application lors de la
+   * mise en ligne : le numéro du coordinateur, les messages des salles du campus l'un après l'autre, et leur
+   * lien wa.me. La page actuelle ne les lit pas. À retirer après le 20 octobre 2026.
+   */
+  whatsapp: string;
+  message: string;
+  lienWhatsApp: string;
 };
 
 /** GET /api/pilotage/salles-du-jour?jour=demain (réponse sans cache : elle contient les liens des écrans). */
@@ -170,8 +181,10 @@ export type SallesDuJour = {
   coordinateur: string;
   /** La personne peut changer ce numéro (la direction). */
   peutRegler: boolean;
-  /** Nombre de messages à envoyer ce jour-là (salles qui ont au moins un cours). */
+  /** Nombre de messages à envoyer ce jour-là (salles qui ont au moins un cours et un écran prêt). */
   messages: number;
+  /** Salles qui ont cours ce jour-là mais dont il faut d'abord préparer le lien de l'écran (pas encore de message). */
+  aPreparer: number;
   campus: CampusDuJour[];
 };
 

@@ -57,6 +57,9 @@ export const t = creerTextes({
   "jour.compte.un": "1 message à envoyer, un toucher par message.",
   "jour.compte": "{n} messages à envoyer, un toucher par message.",
   "jour.sansMessage": "Pas de cours dans cette salle ce jour-là : pas de message.",
+  "jour.aPreparer": "Préparez d'abord le lien de l'écran : le message sera prêt ensuite.",
+  "jour.aPreparer.compte.un": "1 salle attend d'abord le lien de son écran (Installer l'écran).",
+  "jour.aPreparer.compte": "{n} salles attendent d'abord le lien de leur écran (Installer l'écran).",
   "jour.aucunCours": "Pas de cours",
   "jour.ecranAInstaller": "Écran à installer",
   "jour.ecranPret": "Lien de l'écran prêt",
@@ -88,13 +91,14 @@ export const t = creerTextes({
   "message.seance.sansIntervenant": "{date}, {heures} : {cours}",
   "message.ecran": "Écran de la salle : {lien}",
   "message.ecranInstalle": "Écran de la salle : déjà installé",
-  "message.ecranAInstaller": "Écran de la salle : à installer",
   "message.commun": "{cours} (L1 et L2)",
 
   // ── Rappel du matin de la direction (6 h 30, heure d'Abidjan) ───────────
   "rappel.titre": "Les liens des salles du jour sont prêts",
   "rappel.corps.un": "1 message à envoyer sur WhatsApp (salles des cinq campus).",
   "rappel.corps": "{n} messages à envoyer sur WhatsApp (salles des cinq campus).",
+  "rappel.aPreparer.un": "1 salle attend d'abord le lien de son écran.",
+  "rappel.aPreparer": "{n} salles attendent d'abord le lien de leur écran.",
 
   // ── Alertes de « Les salles du jour » ───────────────────────────────────
   "alerte.sansSalle": "{cours} ({niveau}, {heure}) n'a pas de salle : ajoutez une salle {niveau}, ou réglez une salle sur « Toutes les classes ».",

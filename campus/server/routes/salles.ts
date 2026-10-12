@@ -5,8 +5,9 @@
 // la salle. Le campus n'a pas accès à l'API WhatsApp : chaque matin à 6 h 30 (Abidjan), la
 // direction reçoit un rappel qui ouvre la page (rappelerSallesDuJour).
 // Droits : ceux de l'installation des écrans (outils_campus), dans le périmètre de la personne ;
-// le numéro du coordinateur, la direction seule. Réglage gardé dans contenus_site (clé
-// « pilotage.salles », jamais lue par le site public : public.ts n'y lit que ses propres clés).
+// le numéro du coordinateur, la direction seule. Réglage gardé dans contenus_site (clés
+// « pilotage.salles » et « pilotage.salles.rappel », que le site public écarte : lireContenus de
+// public.ts ne garde que ses propres clés, pour que la date de mise à jour du site n'en dépende pas).
 // Les réponses qui portent un lien d'écran ne sont jamais mises en cache ; aucun lien au journal.
 import type { Express, Request } from "express";
 import { z } from "zod";
@@ -111,8 +112,9 @@ function heureCourte(d: Date): string {
  * ligne par cours (« Mardi 13 octobre, 8h30-12h30 : Art oratoire, M. Dianda »), puis le lien de son écran.
  * null : pas de cours dans la salle ce jour-là. Jamais le code d'écran.
  */
-function messageSalle(salle: Omit<SalleDuJour, "message" | "lienWhatsApp">, libelle: string): string | null {
-  if (!salle.seances.length) return null;
+function messageSalle(salle: Omit<SalleDuJour, "message" | "lienWhatsApp" | "lienAPreparer">, libelle: string): string | null {
+  // Pas de cours, ou écran à installer sans lien en place : rien à envoyer (le message ne servirait à rien).
+  if (!salle.seances.length || (!salle.lien && !salle.ecranInstalle)) return null;
   const date = libelle.charAt(0).toUpperCase() + libelle.slice(1);
   const lignes = [salle.etiquette];
   for (const x of salle.seances) {
@@ -124,7 +126,7 @@ function messageSalle(salle: Omit<SalleDuJour, "message" | "lienWhatsApp">, libe
         : t("message.seance.sansIntervenant", { v: { date, heures: x.heures, cours: coursNomme } }),
     );
   }
-  lignes.push(salle.lien ? t("message.ecran", { v: { lien: salle.lien } }) : salle.ecranInstalle ? t("message.ecranInstalle") : t("message.ecranAInstaller"));
+  lignes.push(salle.lien ? t("message.ecran", { v: { lien: salle.lien } }) : t("message.ecranInstalle"));
   return lignes.join("\n");
 }
 
@@ -204,6 +206,7 @@ export async function calculerSallesDuJour(
 
   const campus: CampusDuJour[] = [];
   let messages = 0;
+  let aPreparer = 0;
   for (const s of listeSites) {
     // Chaque cours du campus se tient dans une seule salle (shared/salles.ts : salleDuCours).
     const { salles, annees, salleDe } = await repartitionDuSite(s.id);
@@ -225,8 +228,11 @@ export async function calculerSallesDuJour(
         seances: seancesSalle.map(versSeanceDuSite),
       };
       const message = messageSalle(salle, libelle);
+      // Des cours, mais un écran à installer sans lien en place : la direction prépare d'abord le lien.
+      const lienAPreparer = !message && salle.seances.length > 0;
       if (message) messages++;
-      lignesSalles.push({ ...salle, message, lienWhatsApp: message ? lienWhatsApp(coordinateur, message) : null });
+      if (lienAPreparer) aPreparer++;
+      lignesSalles.push({ ...salle, message, lienWhatsApp: message ? lienWhatsApp(coordinateur, message) : null, lienAPreparer });
       // Deux cours à la même heure dans une même salle : son écran n'en montrera qu'un (séances terminées mises à part).
       const aVenir = seancesSalle.filter((l) => l.s.statut !== "terminee");
       for (let i = 0; i < aVenir.length; i++)
@@ -247,9 +253,21 @@ export async function calculerSallesDuJour(
       const v = { cours: l.titreCours || l.s.titre, niveau: niveau ?? "", heure: heureCourte(l.s.debut) };
       alertes.push(niveau ? t("alerte.sansSalle", { v }) : t("alerte.sansSalle.autre", { v }));
     }
-    campus.push({ siteId: s.id, campus: s.nomCourt, salleConference: s.salleConference, salles: lignesSalles, alertes: [...new Set(alertes)] });
+    // Compatibilité avec la page d'avant (un message par campus), restée ouverte dans une application : les
+    // messages des salles du campus l'un après l'autre, vers le coordinateur. À retirer après le 20 octobre 2026.
+    const messageCompat = lignesSalles.flatMap((x) => (x.message ? [x.message] : [])).join("\n\n");
+    campus.push({
+      siteId: s.id,
+      campus: s.nomCourt,
+      salleConference: s.salleConference,
+      salles: lignesSalles,
+      alertes: [...new Set(alertes)],
+      whatsapp: coordinateur,
+      message: messageCompat,
+      lienWhatsApp: lienWhatsApp(coordinateur, messageCompat),
+    });
   }
-  return { date, libelle, jour, coordinateur, messages, campus };
+  return { date, libelle, jour, coordinateur, messages, aPreparer, campus };
 }
 
 // ── Rappel du matin de la direction ────────────────────────────────────────
@@ -264,9 +282,11 @@ let dernierRappel: string | null = null;
 
 /**
  * Chaque matin dès 6 h 30 : s'il y a au moins un cours dans une salle aujourd'hui, un rappel à chaque compte de
- * la direction (rôle admin actif) qui ouvre « Les salles du jour ». Une seule fois par jour : le jour est
- * réservé en base avant l'envoi (contenus_site, clé CLE_RAPPEL), même si le serveur redémarre ou si deux
- * passages se croisent. Renvoie ce qui a été envoyé (null : rien à faire). Aucun lien au journal.
+ * la direction (rôle admin actif) qui ouvre « Les salles du jour » (messages à envoyer, et salles dont il faut
+ * d'abord préparer le lien de l'écran). Une seule fois par jour : le jour est réservé en base avant l'envoi
+ * (contenus_site, clé CLE_RAPPEL), même si le serveur redémarre ou si deux passages se croisent ; si l'envoi
+ * échoue, le jour est rendu et le passage suivant réessaie. Renvoie ce qui a été envoyé (null : rien à faire).
+ * Aucun lien au journal.
  */
 export async function rappelerSallesDuJour(maintenant = new Date()): Promise<{ jour: string; messages: number; destinataires: number } | null> {
   const minutes = maintenant.getUTCHours() * 60 + maintenant.getUTCMinutes();
@@ -281,8 +301,8 @@ export async function rappelerSallesDuJour(maintenant = new Date()): Promise<{ j
     .where(and(gte(seances.debut, debut), lt(seances.debut, new Date(debut.getTime() + 86_400_000)), ne(seances.statut, "annulee")));
   if (!n) return null;
   const tous = await db.select().from(sites).orderBy(asc(sites.ordre), asc(sites.id));
-  const { messages } = await calculerSallesDuJour(tous, "aujourdhui", maintenant);
-  if (!messages) return null;
+  const { messages, aPreparer } = await calculerSallesDuJour(tous, "aujourdhui", maintenant);
+  if (!messages && !aPreparer) return null;
   const { rows } = await pool.query(
     `INSERT INTO campus.contenus_site (cle, valeur) VALUES ($1, jsonb_build_object('jour', $2::text))
      ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur, maj_le = now()
@@ -297,16 +317,30 @@ export async function rappelerSallesDuJour(maintenant = new Date()): Promise<{ j
     .from(utilisateurs)
     .where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));
   const ids = direction.map((d) => d.id);
-  await notifier(ids, {
-    type: "systeme",
-    titre: t("rappel.titre"),
-    corps: messages === 1 ? t("rappel.corps.un") : t("rappel.corps", { v: { n: messages } }),
-    lien: "/pilotage/salles",
-    priorite: "action",
-    // Un rappel retardé (heures calmes d'un fuseau lointain) ne passe pas au lendemain.
-    expireLe: new Date(debut.getTime() + 86_400_000),
-  });
-  await db.insert(journal).values({ utilisateurId: null, action: "salles_du_jour_rappel", details: { jour, messages, destinataires: ids.length } });
+  const corps = [
+    messages ? (messages === 1 ? t("rappel.corps.un") : t("rappel.corps", { v: { n: messages } })) : null,
+    aPreparer ? (aPreparer === 1 ? t("rappel.aPreparer.un") : t("rappel.aPreparer", { v: { n: aPreparer } })) : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  try {
+    // Une seule insertion (notifier) : elle réussit pour tous ou échoue pour tous ; le push part ensuite, sans l'attendre.
+    await notifier(ids, {
+      type: "systeme",
+      titre: t("rappel.titre"),
+      corps,
+      lien: "/pilotage/salles",
+      priorite: "action",
+      // Un rappel retardé (heures calmes d'un fuseau lointain) ne passe pas au lendemain.
+      expireLe: new Date(debut.getTime() + 86_400_000),
+    });
+  } catch (e) {
+    // Rappel non parti (erreur passagère de la base) : on rend le jour, le passage suivant réessaie.
+    dernierRappel = null;
+    await pool.query(`DELETE FROM campus.contenus_site WHERE cle = $1 AND valeur->>'jour' = $2`, [CLE_RAPPEL, jour]).catch(() => undefined);
+    throw e;
+  }
+  await db.insert(journal).values({ utilisateurId: null, action: "salles_du_jour_rappel", details: { jour, messages, aPreparer, destinataires: ids.length } });
   return { jour, messages, destinataires: ids.length };
 }
 
@@ -448,7 +482,9 @@ export function enregistrerSalles(app: Express) {
       if (u.role !== "admin") throw new ErreurHttp(403, t("numero.reserve"));
       const d = valider(corpsNumero, req.body ?? {});
       const numero = numeroWhatsApp(d.numero);
-      if (!numero) throw invalide(t("numero.invalide"));
+      // Un indicatif ne commence jamais par 0 (« 07 07 72 09 400 », un chiffre de trop, n'est pas international) ;
+      // un numéro ivoirien compte 10 chiffres après 225.
+      if (!numero || numero.startsWith("0") || (numero.startsWith("225") && !/^225[02]\d{9}$/.test(numero))) throw invalide(t("numero.invalide"));
       const valeur = { whatsapp: numero };
       await db
         .insert(contenusSite)

@@ -110,18 +110,23 @@ export const t = creerTextes({
   "action.texte": "Un toucher par salle : le message part sur WhatsApp au coordinateur des salles.",
   "action.aPreparer.un": "1 salle attend d'abord le lien de son écran.",
   "action.aPreparer": "{n} salles attendent d'abord le lien de leur écran.",
+  "action.aPreparer.court.un": "Et 1 écran à préparer",
+  "action.aPreparer.court": "Et {n} écrans à préparer",
   "action.bouton": "Envoyer les liens des salles",
   "action.bouton.aPreparer": "Préparer les écrans des salles",
 
   // ── Accueil du formateur dont l'autre casquette est la direction ────────
   "casquette.carte.titre": "Les liens des salles du jour",
   "casquette.carte.texte": "Passez en Direction pour les envoyer sur WhatsApp",
+  "casquette.carte.titre.aPreparer": "Les écrans des salles à préparer",
+  "casquette.carte.texte.aPreparer": "Passez en Direction pour les préparer",
   "casquette.carte.compte.un": "1 lien à envoyer aujourd'hui",
   "casquette.carte.compte": "{n} liens à envoyer aujourd'hui",
   "casquette.carte.aPreparer.un": "1 écran à préparer",
   "casquette.carte.aPreparer": "{n} écrans à préparer",
   "casquette.carte.bouton": "Passer en Direction",
   "casquette.reserve": "Réservé aux formateurs dont l'autre casquette est la direction.",
+  "envoi.inconnu": "Ce message a changé depuis l'ouverture de la page : rechargez la page.",
 
   // ── Page de l'autre casquette (lien du rappel ouvert depuis le compte formateur) ──
   "casquette.page.etiquette": "Votre autre casquette",

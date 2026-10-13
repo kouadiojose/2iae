@@ -191,6 +191,11 @@ export type SallesDuJour = {
   messages: number;
   /** Salles qui ont cours ce jour-là mais dont il faut d'abord préparer le lien de l'écran (pas encore de message). */
   aPreparer: number;
+  /**
+   * Repères « Envoyé » (cleEnvoiSalle) des messages de ce jour déjà envoyés, depuis n'importe quel appareil ou compte
+   * (POST /api/pilotage/salles-du-jour/envoi) : la page les montre « Envoyé », comme ceux de ce navigateur.
+   */
+  envoyes: string[];
   campus: CampusDuJour[];
 };
 
@@ -198,26 +203,35 @@ export type SallesDuJour = {
 export type CorpsNumeroSalles = { numero: string };
 
 /**
+ * POST /api/pilotage/salles-du-jour/envoi : « Envoyer sur WhatsApp » touché pour ce message (son repère cleEnvoiSalle,
+ * jamais le message ni le lien). Le repère est gardé sur le serveur pour le jour du message : tous les appareils et
+ * les deux casquettes savent qu'il est parti (le coordinateur ne le reçoit pas deux fois).
+ */
+export type CorpsEnvoiSalle = { cle: string };
+
+/**
  * Ce qu'il reste à faire aujourd'hui sur « Les salles du jour », sans aucun lien d'écran (13 octobre 2026 :
  * José ne trouvait pas la page). GET /api/pilotage/salles-du-jour/compte (tableau de la direction, mêmes droits
  * que la page) et GET /api/casquette/salles-du-jour (accueil d'un formateur dont l'autre casquette est la
- * direction). Réponses sans cache.
+ * direction). Réponses sans cache. Seules comptent les salles qui ont encore un cours à venir ou en cours : le soir,
+ * quand tout est fini, il n'y a plus rien à faire.
  */
 export type CompteSallesDuJour = {
   /** « 2026-10-13 » (jour d'Abidjan) */
   date: string;
-  /** Messages à envoyer aujourd'hui (salles qui ont cours et un écran prêt). */
+  /** Messages du jour encore utiles (salles qui ont un écran prêt et un cours à venir ou en cours). */
   messages: number;
-  /** Salles qui ont cours aujourd'hui mais dont il faut d'abord préparer le lien de l'écran. */
+  /** Salles qui ont encore un cours aujourd'hui mais dont il faut d'abord préparer le lien de l'écran. */
   aPreparer: number;
   /**
-   * Repère « Envoyé » de chaque message du jour (cleEnvoiSalle : jour, campus, salle, empreinte du message ; jamais
-   * le message ni le lien) : la page qui montre le compte retire les messages déjà envoyés depuis ce navigateur.
+   * Repère « Envoyé » (cleEnvoiSalle : jour, campus, salle, empreinte du message ; jamais le message ni le lien) de
+   * chaque message encore utile et pas encore envoyé (repères gardés sur le serveur) : la carte retire en plus ceux
+   * marqués « Envoyé » dans ce navigateur.
    */
   envois: string[];
 };
 
-/** Préfixe des repères « Envoyé » gardés dans le navigateur (localStorage), un par message envoyé. */
+/** Préfixe des repères « Envoyé », un par message envoyé : gardés dans le navigateur (localStorage) et sur le serveur. */
 export const PREFIXE_ENVOI_SALLES = "campus:salles-du-jour:";
 
 /** Empreinte courte d'un message (FNV-1a) : un message modifié (nouveau lien, cours ajouté ou déplacé) redevient « à envoyer ». */
@@ -233,3 +247,10 @@ export function empreinteMessage(texte: string): string {
 /** Repère « Envoyé » du message d'une salle pour un jour (même clé sur la page et sur le tableau). */
 export const cleEnvoiSalle = (date: string, siteId: number, numero: number, message: string | null) =>
   `${PREFIXE_ENVOI_SALLES}${date}:${siteId}:${numero}:${message ? empreinteMessage(message) : "-"}`;
+
+/** Jour d'un repère « Envoyé » bien formé (« 2026-10-13 »), sinon null (POST /api/pilotage/salles-du-jour/envoi). */
+export function jourDuRepere(cle: unknown): string | null {
+  if (typeof cle !== "string" || cle.length > 120 || !cle.startsWith(PREFIXE_ENVOI_SALLES)) return null;
+  const m = /^(\d{4}-\d{2}-\d{2}):\d{1,9}:\d{1,2}:[0-9a-z]{1,8}$/.exec(cle.slice(PREFIXE_ENVOI_SALLES.length));
+  return m ? m[1] : null;
+}

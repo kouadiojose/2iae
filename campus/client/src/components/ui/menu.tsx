@@ -19,13 +19,26 @@ export function Menu({ declencheur, children, align = "end" }: { declencheur: Re
   );
 }
 
-export function ElementMenu({ onSelect, children, danger, icone }: { onSelect?: () => void; children: ReactNode; danger?: boolean; icone?: ReactNode }) {
+export function ElementMenu({
+  onSelect,
+  children,
+  danger,
+  icone,
+  className,
+}: {
+  onSelect?: () => void;
+  children: ReactNode;
+  danger?: boolean;
+  icone?: ReactNode;
+  className?: string;
+}) {
   return (
     <DropdownMenu.Item
       onSelect={onSelect}
       className={cn(
         "flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-[15px] font-semibold outline-none data-[highlighted]:bg-creme",
         danger ? "text-danger" : "text-encre",
+        className,
       )}
     >
       {icone}

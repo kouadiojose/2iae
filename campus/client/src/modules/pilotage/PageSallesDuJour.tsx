@@ -2,13 +2,14 @@
 // ou demain (heure d'Abidjan), une carte par campus et, dans chaque carte, un message par salle
 // (« Riviera · L1 · Salle de conférence 1 », ses cours, le lien de son écran) : « Envoyer sur
 // WhatsApp » l'ouvre vers le coordinateur des salles avec le message déjà écrit, un toucher par
-// message, et le repère « Envoyé » reste dans ce navigateur. Le numéro du coordinateur se règle en
+// message, et le repère « Envoyé » reste dans ce navigateur et sur le serveur (13 octobre 2026 : les
+// autres appareils, l'autre casquette et les cartes du tableau le savent aussi). Le numéro du coordinateur se règle en
 // haut de la page (direction). Chaque matin à 6 h 30, la direction reçoit un rappel qui ouvre cette
 // page. Les liens donnent accès aux écrans : page réservée à la direction (droit des écrans),
 // réponse sans cache. Les réglages des salles (ajouter, nom, public, installer l'écran) sont dans
 // chaque carte : pas besoin d'aller chercher « Les campus ».
 // Sur téléphone (13 octobre 2026), à l'ouverture, la page descend juste assez pour que le premier « Envoyer sur
-// WhatsApp » soit visible au-dessus de la barre du bas : on n'a pas à le chercher.
+// WhatsApp » soit visible au-dessus de la barre du bas (pas seulement dans l'écran) : on n'a pas à le chercher.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Copy, MessageCircle, MonitorSmartphone, Phone, TriangleAlert } from "lucide-react";
@@ -20,8 +21,8 @@ import { Chargement, Erreur, EtatVide } from "@/components/ui/divers";
 import { Champ } from "@/components/ui/champs";
 import { Onglets } from "@/components/ui/onglets";
 import { toast } from "@/components/ui/toast";
-import { put, ErreurApi } from "@/lib/api";
-import { rafraichir } from "@/lib/queryClient";
+import { post, put, ErreurApi } from "@/lib/api";
+import { queryClient, rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
@@ -79,7 +80,14 @@ export default function PageSallesDuJour() {
       ) : (
         <ul className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {data.campus.map((c) => (
-            <CarteCampus key={c.siteId} c={c} date={data.date} reglages={reglages.data?.find((x) => x.siteId === c.siteId)} onEcran={setEcran} />
+            <CarteCampus
+              key={c.siteId}
+              c={c}
+              date={data.date}
+              envoyes={data.envoyes}
+              reglages={reglages.data?.find((x) => x.siteId === c.siteId)}
+              onEcran={setEcran}
+            />
           ))}
         </ul>
       )}
@@ -89,9 +97,10 @@ export default function PageSallesDuJour() {
 }
 
 /**
- * À l'ouverture de la page, une seule fois : si le premier « Envoyer sur WhatsApp » est sous le bas de l'écran (téléphone :
- * l'en-tête, le compte et le numéro le poussent sous la barre du bas), la page descend juste assez pour le montrer
- * au-dessus de la barre (marge de défilement du bouton). Rien si la personne a déjà fait défiler, ni au changement d'onglet.
+ * À l'ouverture de la page, une seule fois : si le premier « Envoyer sur WhatsApp » passe sous le haut de la barre du bas
+ * (téléphone : l'en-tête, le compte et le numéro le poussent dessous), ou sous le bas de l'écran sans barre (ordinateur),
+ * la page descend juste assez pour le montrer au-dessus (marge de défilement du bouton). Rien si la personne a déjà fait
+ * défiler, ni au changement d'onglet.
  */
 function usePremierEnvoiVisible(pret: boolean) {
   const fait = useRef(false);
@@ -101,7 +110,11 @@ function usePremierEnvoiVisible(pret: boolean) {
     const id = requestAnimationFrame(() => {
       const bouton = document.querySelector<HTMLElement>("[data-envoi-salle]");
       if (!bouton || window.scrollY > 40) return;
-      if (bouton.getBoundingClientRect().bottom > window.innerHeight) bouton.scrollIntoView({ block: "nearest" });
+      const barre = document.querySelector<HTMLElement>("nav[aria-label='Navigation']");
+      const limite = barre && getComputedStyle(barre).display !== "none" ? barre.getBoundingClientRect().top : window.innerHeight;
+      // « end » et non « nearest » : Chrome ne fait rien avec « nearest » tant que le bouton lui-même est dans l'écran,
+      // même sous la barre ; « end » le pose au-dessus, à sa marge de défilement (scroll-mb-32) du bas de l'écran.
+      if (bouton.getBoundingClientRect().bottom > limite) bouton.scrollIntoView({ block: "end" });
     });
     return () => cancelAnimationFrame(id);
   }, [pret]);
@@ -186,10 +199,12 @@ function oublierVieuxEnvois() {
 }
 
 /**
- * Envoi de ce message (ce jour, cette salle, ce contenu) déjà fait depuis ce navigateur : un repère pour soi, rien
- * de plus. Relu à chaque changement de clé (passage d'Aujourd'hui à Demain, message modifié).
+ * Envoi de ce message (ce jour, cette salle, ce contenu) déjà fait : depuis ce navigateur (localStorage), ou depuis un
+ * autre appareil ou l'autre casquette (repère gardé sur le serveur, surServeur). Relu à chaque changement de clé (passage
+ * d'Aujourd'hui à Demain, message modifié). Au toucher, le repère part aussi au serveur, sans attendre (un échec ne
+ * gêne pas l'envoi : le repère du navigateur reste), et le compte des cartes du tableau et de l'accueil est relu.
  */
-function useEnvoye(cle: string): [boolean, () => void] {
+function useEnvoye(cle: string, surServeur: boolean): [boolean, () => void] {
   const [notes, setNotes] = useState<Record<string, true>>({});
   const lu = useMemo(() => {
     try {
@@ -199,7 +214,7 @@ function useEnvoye(cle: string): [boolean, () => void] {
     }
   }, [cle]);
   return [
-    Boolean(notes[cle]) || lu,
+    Boolean(notes[cle]) || lu || surServeur,
     () => {
       setNotes((n) => ({ ...n, [cle]: true }));
       try {
@@ -207,11 +222,27 @@ function useEnvoye(cle: string): [boolean, () => void] {
       } catch {
         /* navigateur sans stockage : le repère vaut pour la page ouverte */
       }
+      post("/api/pilotage/salles-du-jour/envoi", { cle })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/pilotage/salles-du-jour/compte"] }))
+        .catch(() => undefined);
     },
   ];
 }
 
-function CarteCampus({ c, date, reglages, onEcran }: { c: CampusDuJour; date: string; reglages: SallesDuSite | undefined; onEcran: (e: EcranDeSalle) => void }) {
+function CarteCampus({
+  c,
+  date,
+  envoyes,
+  reglages,
+  onEcran,
+}: {
+  c: CampusDuJour;
+  date: string;
+  /** Repères « Envoyé » gardés sur le serveur (SallesDuJour.envoyes ; absent d'une ancienne réponse). */
+  envoyes: string[] | undefined;
+  reglages: SallesDuSite | undefined;
+  onEcran: (e: EcranDeSalle) => void;
+}) {
   const tx = useTextes(textesSalles);
   const ecranDe = (s: SalleDuJour) => onEcran({ id: c.siteId, nom: c.campus, numero: s.numero, salle: s.nom });
   return (
@@ -235,7 +266,7 @@ function CarteCampus({ c, date, reglages, onEcran }: { c: CampusDuJour; date: st
         {c.salles.map((s) => {
           // Même repère que le compte du tableau et de l'accueil (shared/salles.ts) : un message envoyé y est retiré.
           const cleEnvoi = cleEnvoiSalle(date, c.siteId, s.numero, s.message);
-          return <LigneSalle key={cleEnvoi} s={s} cleEnvoi={cleEnvoi} onEcran={() => ecranDe(s)} />;
+          return <LigneSalle key={cleEnvoi} s={s} cleEnvoi={cleEnvoi} envoyeAilleurs={Boolean(envoyes?.includes(cleEnvoi))} onEcran={() => ecranDe(s)} />;
         })}
       </ul>
 
@@ -250,9 +281,9 @@ function CarteCampus({ c, date, reglages, onEcran }: { c: CampusDuJour; date: st
 }
 
 /** Une salle : ses cours, l'état de son écran et, si elle a cours ce jour-là, son message à envoyer. */
-function LigneSalle({ s, cleEnvoi, onEcran }: { s: SalleDuJour; cleEnvoi: string; onEcran: () => void }) {
+function LigneSalle({ s, cleEnvoi, envoyeAilleurs, onEcran }: { s: SalleDuJour; cleEnvoi: string; envoyeAilleurs: boolean; onEcran: () => void }) {
   const tx = useTextes(textesSalles);
-  const [envoye, noterEnvoi] = useEnvoye(cleEnvoi);
+  const [envoye, noterEnvoi] = useEnvoye(cleEnvoi, envoyeAilleurs);
   return (
     <li className="flex min-w-0 flex-col gap-2 border-l-4 border-orange pl-3">
       <div className="flex items-baseline justify-between gap-2">

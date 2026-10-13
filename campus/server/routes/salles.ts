@@ -9,8 +9,10 @@
 // l'autre casquette est la direction (compterSallesDuJour).
 // Droits : ceux de l'installation des écrans (outils_campus), dans le périmètre de la personne ;
 // le numéro du coordinateur, la direction seule. Réglage gardé dans contenus_site (clés
-// « pilotage.salles » et « pilotage.salles.rappel », que le site public écarte : lireContenus de
-// public.ts ne garde que ses propres clés, pour que la date de mise à jour du site n'en dépende pas).
+// « pilotage.salles », « pilotage.salles.rappel » et « pilotage.salles.envois.<jour> », que le site public
+// écarte : lireContenus de public.ts ne garde que ses propres clés, pour que la date de mise à jour du site
+// n'en dépende pas). Le repère « Envoyé » d'un message est gardé sur le serveur (enregistrerEnvoi) : tous les
+// appareils et les deux casquettes savent qu'il est parti, le coordinateur ne le reçoit pas deux fois.
 // Les réponses qui portent un lien d'écran ne sont jamais mises en cache ; aucun lien au journal.
 import type { Express, Request } from "express";
 import { z } from "zod";
@@ -37,8 +39,10 @@ import {
   niveauDuCours,
   nomDeSalle,
   nomSalleParDefaut,
+  jourDuRepere,
   type CampusDuJour,
   type CompteSallesDuJour,
+  type CorpsEnvoiSalle,
   type SalleCampus,
   type SalleDuJour,
   type SallesDuJour,
@@ -142,6 +146,8 @@ function messageSalle(salle: Omit<SalleDuJour, "message" | "lienWhatsApp" | "lie
 const CLE_REGLAGES = "pilotage.salles";
 /** Jour du dernier rappel du matin envoyé (réservation : un seul rappel par jour, même après un redémarrage). */
 const CLE_RAPPEL = "pilotage.salles.rappel";
+/** Repères « Envoyé » d'un jour : « pilotage.salles.envois.2026-10-13 » → { cles: [cleEnvoiSalle…] } (jamais de message ni de lien). */
+const PREFIXE_CLE_ENVOIS = "pilotage.salles.envois.";
 
 /** Le numéro qui reçoit les messages (international, chiffres seuls) : celui réglé par la direction, sinon celui par défaut. */
 export async function numeroCoordinateur(): Promise<string> {
@@ -151,6 +157,33 @@ export async function numeroCoordinateur(): Promise<string> {
 }
 
 const corpsNumero = z.object({ numero: z.string().trim().min(1, t("numero.invalide")).max(30, t("numero.invalide")) });
+const corpsEnvoi = z.object({ cle: z.string().max(120) }) satisfies z.ZodType<CorpsEnvoiSalle>;
+
+// ── Repères « Envoyé », gardés sur le serveur ──────────────────────────────
+
+/** Les repères « Envoyé » d'un jour (« 2026-10-13 »), depuis tous les appareils et tous les comptes. */
+async function envoisDuJour(date: string): Promise<Set<string>> {
+  const [l] = await db.select({ valeur: contenusSite.valeur }).from(contenusSite).where(eq(contenusSite.cle, PREFIXE_CLE_ENVOIS + date));
+  const cles = l?.valeur?.cles;
+  return new Set(Array.isArray(cles) ? cles.filter((c): c is string => typeof c === "string") : []);
+}
+
+/**
+ * Note qu'un message est parti (repère cleEnvoiSalle, pour son jour) : ajout atomique (deux touchers au même instant
+ * ne s'effacent pas), puis on retire les jours d'avant-hier et plus anciens.
+ */
+async function enregistrerEnvoi(date: string, cle: string, maintenant = new Date()): Promise<void> {
+  await pool.query(
+    `INSERT INTO campus.contenus_site (cle, valeur) VALUES ($1, jsonb_build_object('cles', jsonb_build_array($2::text)))
+     ON CONFLICT (cle) DO UPDATE SET maj_le = now(), valeur = jsonb_build_object('cles', (
+       SELECT coalesce(jsonb_agg(DISTINCT x), '[]'::jsonb)
+       FROM jsonb_array_elements_text(coalesce(campus.contenus_site.valeur->'cles', '[]'::jsonb) || jsonb_build_array($2::text)) AS x
+     ))`,
+    [PREFIXE_CLE_ENVOIS + date, cle],
+  );
+  const avantHier = new Date(maintenant.getTime() - 2 * 86_400_000).toISOString().slice(0, 10);
+  await pool.query(`DELETE FROM campus.contenus_site WHERE cle LIKE $1 AND cle < $2`, [`${PREFIXE_CLE_ENVOIS}%`, PREFIXE_CLE_ENVOIS + avantHier]);
+}
 
 // ── « Les salles du jour » ─────────────────────────────────────────────────
 
@@ -168,7 +201,7 @@ export async function calculerSallesDuJour(
   const finJour = new Date(debutJour.getTime() + 86_400_000);
   const date = debutJour.toISOString().slice(0, 10);
   const libelle = libelleDate(date);
-  const coordinateur = await numeroCoordinateur();
+  const [coordinateur, dejaEnvoyes] = await Promise.all([numeroCoordinateur(), envoisDuJour(date)]);
 
   // Les séances du jour (hors annulées et hors essais de visio lancés sans prévenir).
   const lignes = await db
@@ -273,16 +306,41 @@ export async function calculerSallesDuJour(
       lienWhatsApp: lienWhatsApp(coordinateur, messageCompat),
     });
   }
-  return { date, libelle, jour, coordinateur, messages, aPreparer, campus };
+  // Repères « Envoyé » gardés sur le serveur, réduits aux messages de ce jour tels qu'ils sont maintenant (un message
+  // modifié, nouveau lien ou cours ajouté, redevient « à envoyer »).
+  const envoyes = campus.flatMap((c) =>
+    c.salles.flatMap((x) => {
+      const cle = x.message ? cleEnvoiSalle(date, c.siteId, x.numero, x.message) : null;
+      return cle && dejaEnvoyes.has(cle) ? [cle] : [];
+    }),
+  );
+  return { date, libelle, jour, coordinateur, messages, aPreparer, envoyes, campus };
 }
 
+/** Une salle a encore cours : une séance en direct, ou pas terminée et qui finit après maintenant. */
+const aEncoreCours = (salle: SalleDuJour, maintenant: Date) =>
+  salle.seances.some((x) => x.statut === "en_direct" || (x.statut !== "terminee" && new Date(x.fin).getTime() > maintenant.getTime()));
+
 /**
- * Ce qu'il reste à faire aujourd'hui (messages à envoyer, écrans à préparer) dans ces campus, sans aucun lien :
- * le même calcul que la page (les nombres sont les mêmes), réduit aux nombres et aux repères « Envoyé ».
+ * Ce qu'il reste à faire aujourd'hui (messages à envoyer, écrans à préparer) dans ces campus, sans aucun lien : le
+ * calcul de la page, réduit aux salles qui ont encore cours (le soir, tout est fini : plus rien à faire) et, pour les
+ * messages, à ceux qui ne sont pas encore partis (repères gardés sur le serveur).
  */
 export async function compterSallesDuJour(listeSites: Site[], maintenant = new Date()): Promise<CompteSallesDuJour> {
-  const { date, messages, aPreparer, campus } = await calculerSallesDuJour(listeSites, "aujourdhui", maintenant);
-  const envois = campus.flatMap((c) => c.salles.flatMap((s) => (s.message ? [cleEnvoiSalle(date, c.siteId, s.numero, s.message)] : [])));
+  const { date, campus, envoyes } = await calculerSallesDuJour(listeSites, "aujourdhui", maintenant);
+  const partis = new Set(envoyes);
+  let messages = 0;
+  let aPreparer = 0;
+  const envois: string[] = [];
+  for (const c of campus)
+    for (const s of c.salles) {
+      if (!aEncoreCours(s, maintenant)) continue;
+      if (s.lienAPreparer) aPreparer++;
+      if (!s.message) continue;
+      messages++;
+      const cle = cleEnvoiSalle(date, c.siteId, s.numero, s.message);
+      if (!partis.has(cle)) envois.push(cle);
+    }
   return { date, messages, aPreparer, envois };
 }
 
@@ -303,8 +361,10 @@ const compteLie = alias(utilisateurs, "compte_lie");
  * Qui reçoit le rappel : chaque compte actif de la direction, et chaque compte formateur (ou vie scolaire) actif dont
  * l'autre casquette est un compte actif de la direction lié en retour (casquetteDe) : la personne voit le rappel
  * quelle que soit la casquette sur laquelle elle est (José travaille surtout en formateur). Un compte une seule
- * fois ; un téléphone n'a qu'une adresse d'envoi, rattachée au compte qui l'a enregistrée en dernier
- * (abonnements_push.endpoint est unique) : il ne sonne qu'une fois.
+ * fois. Pour la personne, c'est un seul rappel : les deux lignes viennent de la même insertion, et lue sur une
+ * casquette, la notification l'est aussi sur l'autre (lireAussiSurLAutreCasquette, server/notifications.ts) ; un
+ * téléphone n'a qu'une adresse d'envoi, rattachée au compte qui l'a enregistrée en dernier (abonnements_push.endpoint
+ * est unique) : il ne sonne qu'une fois.
  */
 export async function destinatairesDuRappel(): Promise<number[]> {
   const lignes = await db
@@ -514,6 +574,28 @@ export function enregistrerSalles(app: Express) {
       const jour = req.query.jour === "demain" ? "demain" : "aujourdhui";
       const r: SallesDuJour = { ...(await calculerSallesDuJour(await sitesDuPerimetre(req), jour)), peutRegler: moi(req).role === "admin" };
       res.json(r);
+    }),
+  );
+
+  // « Envoyer sur WhatsApp » touché : le repère du message (jamais le message ni le lien) est gardé pour son jour, pour
+  // tous les appareils et les deux casquettes. Seulement un message du jour (ou du lendemain) tel qu'il est maintenant,
+  // dans le périmètre de la personne.
+  app.post(
+    `${P}/salles-du-jour/envoi`,
+    OUTILS,
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const { cle } = valider(corpsEnvoi, req.body ?? {});
+      const date = jourDuRepere(cle);
+      const maintenant = new Date();
+      const aujourdhui = maintenant.toISOString().slice(0, 10);
+      const demain = new Date(maintenant.getTime() + 86_400_000).toISOString().slice(0, 10);
+      if (!date || (date !== aujourdhui && date !== demain)) throw invalide(t("envoi.inconnu"));
+      const d = await calculerSallesDuJour(await sitesDuPerimetre(req), date === aujourdhui ? "aujourdhui" : "demain", maintenant);
+      const connu = d.campus.some((c) => c.salles.some((x) => x.message && cleEnvoiSalle(d.date, c.siteId, x.numero, x.message) === cle));
+      if (!connu) throw new ErreurHttp(409, t("envoi.inconnu"));
+      await enregistrerEnvoi(date, cle, maintenant);
+      res.json({ ok: true });
     }),
   );
 

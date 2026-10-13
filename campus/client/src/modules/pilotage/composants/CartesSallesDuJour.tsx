@@ -5,10 +5,12 @@
 //   - CarteLienSalles : la petite carte d'avant, à sa place, les autres jours ;
 //   - CarteCasquetteSalles : sur l'accueil du formateur dont l'autre casquette est la direction ; un toucher le fait
 //     passer en Direction et ouvre directement la page.
-// Les nombres viennent d'un compte léger, sans aucun lien d'écran (CompteSallesDuJour) ; les messages déjà marqués
-// « Envoyé » depuis ce navigateur (repères de la page) sont retirés du compte.
+// Les nombres viennent d'un compte léger, sans aucun lien d'écran (CompteSallesDuJour) : seulement les salles qui ont
+// encore cours, sans les messages déjà partis (repères « Envoyé » gardés sur le serveur) ; ceux marqués « Envoyé »
+// dans ce navigateur sont retirés en plus. Pour que rien ne saute à l'écran, la page attend ce compte avant de montrer
+// ses cartes (pret), au plus ATTENTE_MAX.
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { ArrowRight, MessageCircle, MonitorSmartphone, Repeat } from "lucide-react";
 import type { CompteSallesDuJour } from "@shared/salles";
@@ -29,17 +31,29 @@ function restantsAEnvoyer(c: CompteSallesDuJour): number {
   }
 }
 
-export type EtatSallesDuJour = { restants: number; aPreparer: number; aFaire: boolean; charge: boolean };
+export type EtatSallesDuJour = { restants: number; aPreparer: number; aFaire: boolean; charge: boolean; pret: boolean };
+
+/** Au-delà, la page s'affiche sans attendre le compte (réseau lent) : la carte viendra ensuite, si elle doit venir. */
+const ATTENTE_MAX = 1200;
 
 /**
  * Le compte du jour (url : /api/pilotage/salles-du-jour/compte pour l'équipe, /api/casquette/salles-du-jour pour un
- * formateur à double casquette). aFaire : des liens restent à envoyer, ou des écrans à préparer.
+ * formateur à double casquette). aFaire : des liens restent à envoyer, ou des écrans à préparer. pret : le compte est
+ * là (ou en échec, ou inutile), ou l'attente a assez duré ; la page montre alors ses cartes d'un coup.
  */
 export function useSallesDuJour(url: string, actif: boolean): EtatSallesDuJour {
-  const { data, isSuccess, isError } = useQuery<CompteSallesDuJour>({ queryKey: [url], enabled: actif, staleTime: 30_000, refetchInterval: 5 * 60_000 });
+  // Pas de nouvel essai : une carte en moins vaut mieux qu'une page qui attend (le compte revient toutes les 5 minutes).
+  const { data, isSuccess, isError } = useQuery<CompteSallesDuJour>({ queryKey: [url], enabled: actif, staleTime: 30_000, refetchInterval: 5 * 60_000, retry: false });
+  const [attenteFinie, setAttenteFinie] = useState(false);
+  useEffect(() => {
+    if (!actif) return;
+    const id = window.setTimeout(() => setAttenteFinie(true), ATTENTE_MAX);
+    return () => window.clearTimeout(id);
+  }, [actif]);
   const restants = data ? restantsAEnvoyer(data) : 0;
   const aPreparer = data?.aPreparer ?? 0;
-  return { restants, aPreparer, aFaire: restants + aPreparer > 0, charge: isSuccess || isError };
+  const charge = isSuccess || isError;
+  return { restants, aPreparer, aFaire: restants + aPreparer > 0, charge, pret: !actif || charge || attenteFinie };
 }
 
 /** Tableau de la direction, en haut : « 10 liens de salles à envoyer aujourd'hui ». */
@@ -56,24 +70,27 @@ export function CarteActionSalles({ restants, aPreparer }: { restants: number; a
     <Link
       href={PAGE_SALLES}
       aria-label={`${titre}. ${restants ? tx("action.bouton") : tx("action.bouton.aPreparer")}`}
-      className="group flex flex-col gap-4 rounded-[24px] border-2 border-orange bg-orange-pale p-5 text-encre no-underline transition-colors hover:bg-orange-clair hover:text-encre sm:flex-row sm:items-center sm:gap-6 sm:p-7"
+      // Téléphone : courte (le bouton reste au-dessus de la barre du bas en 360 x 640) ; la phrase d'explication dès 640 px.
+      className="group flex flex-col gap-3 rounded-[24px] border-2 border-orange bg-orange-pale p-4 text-encre no-underline transition-colors hover:bg-orange-clair hover:text-encre sm:flex-row sm:items-center sm:gap-6 sm:p-7"
     >
-      <span className="flex min-w-0 flex-1 items-start gap-4">
-        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-orange text-encre" aria-hidden>
-          {restants ? <MessageCircle className="h-7 w-7" /> : <MonitorSmartphone className="h-7 w-7" />}
+      <span className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-orange text-encre sm:h-14 sm:w-14 sm:rounded-2xl" aria-hidden>
+          {restants ? <MessageCircle className="h-6 w-6 sm:h-7 sm:w-7" /> : <MonitorSmartphone className="h-6 w-6 sm:h-7 sm:w-7" />}
         </span>
         <span className="flex min-w-0 flex-col gap-1">
           <span className="font-mono text-xs uppercase tracking-wider text-orange-profond">{tx("action.etiquette")}</span>
-          <span className="text-[22px] font-black leading-tight tracking-serre sm:text-[28px]">{titre}</span>
-          {restants > 0 && <span className="text-[16px] leading-snug text-texte-doux">{tx("action.texte")}</span>}
+          <span className="text-[20px] font-black leading-tight tracking-serre sm:text-[28px]">{titre}</span>
+          {restants > 0 && <span className="hidden text-[16px] leading-snug text-texte-doux sm:block">{tx("action.texte")}</span>}
           {restants > 0 && aPreparer > 0 && (
-            <span className="text-[15px] font-semibold leading-snug text-alerte">
-              {aPreparer === 1 ? tx("action.aPreparer.un") : tx("action.aPreparer", { v: { n: aPreparer } })}
+            <span className="text-[14px] font-semibold leading-snug text-alerte sm:text-[15px]">
+              {/* Téléphone : une ligne courte (le bouton reste au-dessus de la barre du bas) ; la phrase entière dès 640 px. */}
+              <span className="sm:hidden">{aPreparer === 1 ? tx("action.aPreparer.court.un") : tx("action.aPreparer.court", { v: { n: aPreparer } })}</span>
+              <span className="hidden sm:inline">{aPreparer === 1 ? tx("action.aPreparer.un") : tx("action.aPreparer", { v: { n: aPreparer } })}</span>
             </span>
           )}
         </span>
       </span>
-      <span className="inline-flex min-h-[56px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white transition-colors group-hover:bg-orange group-hover:text-encre min-[400px]:px-6 min-[400px]:text-[17px]">
+      <span className="inline-flex min-h-[52px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white transition-colors group-hover:bg-orange group-hover:text-encre min-[400px]:px-6 min-[400px]:text-[17px] sm:min-h-[56px]">
         {restants ? tx("action.bouton") : tx("action.bouton.aPreparer")} <ArrowRight className="h-5 w-5" aria-hidden />
       </span>
     </Link>
@@ -99,11 +116,14 @@ export function CarteLienSalles() {
 
 /**
  * Accueil du formateur dont l'autre casquette est la direction : « Les liens des salles du jour · Passez en Direction
- * pour les envoyer sur WhatsApp ». Un toucher : il passe en Direction et arrive sur la page (pas sur le tableau).
+ * pour les envoyer sur WhatsApp » ; plus rien à envoyer, seulement des écrans à préparer : « Les écrans des salles à
+ * préparer · Passez en Direction pour les préparer ». Un toucher : il passe en Direction et arrive sur la page (pas sur
+ * le tableau).
  */
 export function CarteCasquetteSalles({ restants, aPreparer }: { restants: number; aPreparer: number }) {
   const tx = useTextes(textesSalles);
   const [envoi, setEnvoi] = useState(false);
+  const ecransSeulement = restants === 0 && aPreparer > 0;
   const compte = [
     restants ? (restants === 1 ? tx("casquette.carte.compte.un") : tx("casquette.carte.compte", { v: { n: restants } })) : null,
     aPreparer ? (aPreparer === 1 ? tx("casquette.carte.aPreparer.un") : tx("casquette.carte.aPreparer", { v: { n: aPreparer } })) : null,
@@ -124,11 +144,11 @@ export function CarteCasquetteSalles({ restants, aPreparer }: { restants: number
       className="flex min-h-[76px] w-full items-center gap-3.5 rounded-2xl border-2 border-orange bg-orange-pale px-4 py-3.5 text-left text-encre transition-colors hover:bg-orange-clair disabled:opacity-60"
     >
       <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-orange text-encre" aria-hidden>
-        <MessageCircle className="h-6 w-6" />
+        {ecransSeulement ? <MonitorSmartphone className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-[17px] font-extrabold leading-snug">{tx("casquette.carte.titre")}</span>
-        <span className="text-[15px] leading-snug text-texte-doux">{tx("casquette.carte.texte")}</span>
+        <span className="text-[17px] font-extrabold leading-snug">{ecransSeulement ? tx("casquette.carte.titre.aPreparer") : tx("casquette.carte.titre")}</span>
+        <span className="text-[15px] leading-snug text-texte-doux">{ecransSeulement ? tx("casquette.carte.texte.aPreparer") : tx("casquette.carte.texte")}</span>
         {compte && <span className="text-[14px] font-bold leading-snug text-orange-profond">{compte}</span>}
       </span>
       <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-encre px-3 py-2.5 text-[15px] font-bold text-white" aria-hidden>

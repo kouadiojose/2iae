@@ -90,11 +90,17 @@ export function cheminInterne(vers: unknown): string | null {
 /**
  * Double casquette : passer sur l'autre compte de la personne, puis repartir de son accueil, ou aller tout de suite à
  * « vers » (chemin interne seulement : un lien du rappel, la page des salles du jour, la page où elle était).
+ * Toujours un vrai chargement de page : vers la page où l'on est déjà, ancre comprise (« /pilotage/comptes#formateurs »),
+ * location.assign ne ferait que suivre l'ancre, sans recharger ; on recharge donc la page, à la bonne adresse.
  */
 export async function basculerCasquette(vers?: string) {
   const m = await post<Moi>("/api/auth/casquette");
   queryClient.clear();
-  window.location.assign(cheminInterne(vers) ?? accueilDuRole(m.role));
+  const cible = cheminInterne(vers) ?? accueilDuRole(m.role);
+  const ici = window.location.pathname + window.location.search;
+  if (cible.split("#")[0] !== ici) return window.location.assign(cible);
+  if (cible !== ici + window.location.hash) window.history.replaceState(window.history.state, "", cible);
+  window.location.reload();
 }
 
 export function rechargerMoi() {

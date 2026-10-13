@@ -14,6 +14,7 @@ import { db } from "../db";
 import { exigerConnexion, moi } from "../auth";
 import { route, valider, idParam, introuvable } from "../http";
 import { publierUtilisateur } from "../temps-reel";
+import { lireAussiSurLAutreCasquette } from "../notifications";
 import { envoisPush, notifications } from "@shared/schema";
 
 const schemaOuvert = z.object({ resume: z.boolean().optional() }).default({});
@@ -37,6 +38,8 @@ export function enregistrerEnvois(app: Express) {
         // Les autres onglets ouverts rafraîchissent leur cloche.
         publierUtilisateur(u.id, "notification", { lues: 1 });
       }
+      // Double casquette : la même notification, reçue aussi sur l'autre compte, y est lue.
+      if (!resume) await lireAussiSurLAutreCasquette(u.id, [id]);
       // Seuls les rappels réellement partis sur le téléphone portent l'ouverture.
       await db
         .update(envoisPush)

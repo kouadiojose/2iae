@@ -105,9 +105,10 @@ function Cloche() {
 /**
  * Double casquette : la bascule reste visible dans l'en-tête (« ⇄ Direction »), libellé compris sur téléphone (13 octobre
  * 2026 : l'icône seule ne disait pas où elle menait). Libellé court du rôle ; le campus de la vie scolaire reste dans
- * l'infobulle et le nom annoncé.
+ * l'infobulle et le nom annoncé. Elle mène à l'accueil de l'autre casquette, sauf sur une page de l'autre casquette
+ * (« Cette page est dans votre espace Direction », resterSurPage) : comme le bouton de la page, elle rouvre cette page.
  */
-function BoutonCasquette() {
+function BoutonCasquette({ resterSurPage }: { resterSurPage: boolean }) {
   const moi = useMoiConnecte();
   const [envoi, setEnvoi] = useState(false);
   if (!moi.casquette) return null;
@@ -117,7 +118,7 @@ function BoutonCasquette() {
       disabled={envoi}
       onClick={() => {
         setEnvoi(true);
-        basculerCasquette().catch((e) => {
+        basculerCasquette(resterSurPage ? window.location.pathname + window.location.search + window.location.hash : undefined).catch((e) => {
           setEnvoi(false);
           toast((e as Error).message, "erreur");
         });
@@ -324,10 +325,12 @@ function EcouteGlobale() {
 
 /**
  * Entrées visibles dans l'en-tête (le reste va dans « Plus ») : l'équipe et le formateur ont des libellés plus longs ;
- * une de moins pendant un direct (« Rejoindre le live ») et une de moins avec la bascule de casquette.
+ * une de moins pendant un direct (« Rejoindre le live »). La bascule de casquette en retire une de plus, mais
+ * seulement entre 1024 et 1279 px (ENTREES_XL_SEULEMENT) : dès 1280 px, tout tient comme avant.
  */
-const navVisibles = (role: string, enDirect: boolean, casquette: boolean) =>
-  (role === "admin" || role === "vie_scolaire" || role === "formateur" ? 6 : 7) - (enDirect ? 1 : 0) - (casquette ? 1 : 0);
+const navVisibles = (role: string, enDirect: boolean) => (role === "admin" || role === "vie_scolaire" || role === "formateur" ? 6 : 7) - (enDirect ? 1 : 0);
+/** Avec la bascule de casquette : entrées de la barre de l'ordinateur visibles seulement dès 1280 px (dans « Plus » avant). */
+const ENTREES_XL_SEULEMENT = 1;
 
 /** « Ma classe » du formateur s'ouvre directement sur la classe à 45 minutes du début, comme le bouton de l'accueil. */
 const AVANT_CLASSE_MS = 45 * 60_000;
@@ -344,13 +347,19 @@ function lienEntree(el: ElementNav, role: string, enCours: EnCours | undefined):
   return el.href;
 }
 
-export function Coquille({ children, pleinEcran = false }: { children: ReactNode; pleinEcran?: boolean }) {
+/**
+ * autreCasquette : la page affichée est « Cette page est dans votre espace … » (App.tsx, PageAutreCasquette) ; la bascule
+ * de l'en-tête rouvre alors cette page au lieu de l'accueil de l'autre casquette.
+ */
+export function Coquille({ children, pleinEcran = false, autreCasquette = false }: { children: ReactNode; pleinEcran?: boolean; autreCasquette?: boolean }) {
   const moi = useMoiConnecte();
   const [chemin, naviguer] = useLocation();
   const nav = navigationDe(moi);
   const { onglets, plus } = ongletsTelephone(nav);
   const { data: enCours } = useEnCours();
-  const NAV_VISIBLES = navVisibles(moi.role, Boolean(enCours?.enDirect), Boolean(moi.casquette));
+  // Toutes les entrées visibles dès 1280 px ; avec la bascule de casquette, la ou les dernières passent dans « Plus » en dessous.
+  const NAV_XL = navVisibles(moi.role, Boolean(enCours?.enDirect));
+  const NAV_VISIBLES = NAV_XL - (moi.casquette ? ENTREES_XL_SEULEMENT : 0);
   const { data: compteur } = useCompteur();
 
   useEffect(() => {
@@ -368,7 +377,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
         <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-4 py-2.5 sm:px-7 sm:py-3">
           <Marque sousTitre={false} compacte />
           <nav className="hidden flex-1 justify-center gap-1 lg:flex" aria-label="Navigation principale">
-            {nav.slice(0, NAV_VISIBLES).map((el) => {
+            {nav.slice(0, NAV_XL).map((el, i) => {
               const actif = estActif(el, chemin);
               return (
                 <Link
@@ -378,6 +387,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
                   className={cn(
                     "whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold no-underline transition-colors",
                     actif ? "bg-encre text-white hover:text-white" : "text-texte-doux hover:bg-creme hover:text-encre",
+                    i >= NAV_VISIBLES && "hidden xl:block",
                   )}
                   aria-current={actif ? "page" : undefined}
                 >
@@ -395,19 +405,28 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
                   <button
                     className={cn(
                       "flex items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold transition-colors",
-                      nav.slice(NAV_VISIBLES).some((el) => estActif(el, chemin))
+                      // Seulement les entrées retirées pour la bascule : « Plus » disparaît dès 1280 px, où elles sont visibles.
+                      nav.length <= NAV_XL && "xl:hidden",
+                      nav.slice(NAV_XL).some((el) => estActif(el, chemin))
                         ? "bg-encre text-white"
-                        : "text-texte-doux hover:bg-creme hover:text-encre",
+                        : nav.slice(NAV_VISIBLES, NAV_XL).some((el) => estActif(el, chemin))
+                          ? "bg-encre text-white xl:bg-transparent xl:text-texte-doux xl:hover:bg-creme xl:hover:text-encre"
+                          : "text-texte-doux hover:bg-creme hover:text-encre",
                     )}
                   >
                     Plus <ChevronDown className="h-4 w-4" />
                   </button>
                 }
               >
-                {nav.slice(NAV_VISIBLES).map((el) => {
+                {nav.slice(NAV_VISIBLES).map((el, i) => {
                   const Icone = el.icone;
                   return (
-                    <ElementMenu key={el.href} icone={<Icone className="h-4 w-4" />} onSelect={() => naviguer(el.href)}>
+                    <ElementMenu
+                      key={el.href}
+                      icone={<Icone className="h-4 w-4" />}
+                      onSelect={() => naviguer(el.href)}
+                      className={NAV_VISIBLES + i < NAV_XL ? "xl:hidden" : undefined}
+                    >
                       <span className={cn(estActif(el, chemin) && "text-orange-fonce")}>{el.libelle}</span>
                     </ElementMenu>
                   );
@@ -426,7 +445,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
                 <BoutonDirect compact colonne={Boolean(moi.casquette)} />
               </div>
             )}
-            <BoutonCasquette />
+            <BoutonCasquette resterSurPage={autreCasquette} />
             <div className="lg:hidden">
               <MenuPlusTelephone elements={plus} chemin={chemin} />
             </div>

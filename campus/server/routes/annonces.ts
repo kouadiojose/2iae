@@ -19,7 +19,7 @@ import { db } from "../db";
 import { exigerConnexion, exigerRole, droitSiEquipe, moi, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { idsCoursAccessibles, enseigneCours, etudiantsDuCours, formateursDuCours } from "../acces";
-import { notifier, compterNonLues } from "../notifications";
+import { notifier, compterNonLues, lireAussiSurLAutreCasquette } from "../notifications";
 import { publier, publierUtilisateur } from "../temps-reel";
 import { prevenirSite } from "../site";
 import { compterMessagesNonLus } from "../messages-outils";
@@ -466,6 +466,8 @@ export function enregistrerAnnonces(app: Express) {
         .returning({ id: notifications.id });
       // Les autres onglets ouverts remettent leur cloche à zéro.
       publierUtilisateur(u.id, "notification", { lues: lues.length });
+      // Double casquette : les mêmes notifications, reçues aussi sur l'autre compte, y sont lues.
+      await lireAussiSurLAutreCasquette(u.id, lues.map((l) => l.id));
       res.json({ ok: true, lues: lues.length });
     }),
   );
@@ -482,6 +484,8 @@ export function enregistrerAnnonces(app: Express) {
         .where(and(eq(notifications.id, id), eq(notifications.utilisateurId, u.id)))
         .returning({ id: notifications.id });
       if (!n) throw introuvable("Notification");
+      // Double casquette : la même notification, reçue aussi sur l'autre compte, y est lue.
+      await lireAussiSurLAutreCasquette(u.id, [n.id]);
       res.json({ ok: true });
     }),
   );

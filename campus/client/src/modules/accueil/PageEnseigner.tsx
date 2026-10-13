@@ -15,7 +15,9 @@
 //
 // Double casquette avec la direction (José, 13 octobre 2026) : en haut, avant le reste, les jours où il reste des
 // liens de salles à envoyer, la carte « Les liens des salles du jour » ; un toucher le fait passer en Direction et
-// ouvre directement « Les salles du jour » (CartesSallesDuJour).
+// ouvre directement « Les salles du jour » (CartesSallesDuJour). Son compte part en même temps que l'accueil, qui
+// l'attend (au plus un instant) pour tout montrer d'un coup ; quand sa classe commence bientôt ou est en direct, la
+// carte passe sous la classe : rien ne repousse « Entrer dans ma classe ».
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -59,7 +61,7 @@ import type { Traducteur } from "@shared/textes";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
 import { MANUELS } from "@/modules/manuels/manuels";
-import { CarteCasquetteSalles, useSallesDuJour } from "@/modules/pilotage/composants/CartesSallesDuJour";
+import { CarteCasquetteSalles, useSallesDuJour, type EtatSallesDuJour } from "@/modules/pilotage/composants/CartesSallesDuJour";
 import { useMoiConnecte } from "@/lib/auth";
 import { t as textesManuels } from "@shared/textes/manuels";
 
@@ -73,6 +75,10 @@ export default function PageEnseigner() {
   const tx = useTextes(t);
   const { data, isLoading, error, refetch } = useQuery<AccueilFormateur>({ queryKey: ["/api/accueil/formateur"], refetchInterval: 60_000 });
   const maintenant = useMaintenant(30_000);
+  // Autre casquette : la direction. Le compte du jour (sans lien) dit s'il reste des liens de salles à envoyer ; il part
+  // avec l'accueil, et l'accueil l'attend (salles.pret) pour que la carte ne s'insère pas après coup.
+  const moi = useMoiConnecte();
+  const salles = useSallesDuJour("/api/casquette/salles-du-jour", moi.role === "formateur" && moi.casquette?.role === "admin");
 
   useTousEvenements((e) => {
     if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil/formateur", "/api/enseigner/apres-seance", "/api/fil");
@@ -85,7 +91,7 @@ export default function PageEnseigner() {
       </Page>
     );
   }
-  if (isLoading || !data) {
+  if (isLoading || !data || !salles.pret) {
     return (
       <Page className="gap-6">
         <div className="flex flex-col gap-2" aria-busy="true" aria-label="Chargement">
@@ -97,14 +103,34 @@ export default function PageEnseigner() {
     );
   }
 
-  return <ContenuAccueil data={data} seance={data.enDirect ?? data.prochaineSeance} maintenant={maintenant} tx={tx} />;
+  return <ContenuAccueil data={data} seance={data.enDirect ?? data.prochaineSeance} maintenant={maintenant} tx={tx} salles={salles} />;
 }
 
-function ContenuAccueil({ data, seance, maintenant, tx }: { data: AccueilFormateur; seance: SeanceFormateur | null; maintenant: number; tx: Tx }) {
+/** La classe commence dans 45 minutes ou moins, ou elle est en direct : le geste du moment est « Entrer dans ma classe ». */
+const classeImminente = (data: AccueilFormateur, maintenant: number) =>
+  Boolean(data.enDirect) || (data.prochaineSeance !== null && new Date(data.prochaineSeance.debut).getTime() - maintenant <= AVANT_CLASSE);
+
+function ContenuAccueil({
+  data,
+  seance,
+  maintenant,
+  tx,
+  salles,
+}: {
+  data: AccueilFormateur;
+  seance: SeanceFormateur | null;
+  maintenant: number;
+  tx: Tx;
+  salles: EtatSallesDuJour;
+}) {
   const choses = useChosesAFaire(data.messagesNonLus, tx);
-  // Autre casquette : la direction. Le compte du jour (sans lien) dit s'il reste des liens de salles à envoyer.
-  const moi = useMoiConnecte();
-  const salles = useSallesDuJour("/api/casquette/salles-du-jour", moi.role === "formateur" && moi.casquette?.role === "admin");
+  // Les liens des salles du jour (autre casquette : la direction) : en haut, sauf quand la classe commence ; alors sous elle.
+  const carteSalles = salles.aFaire ? (
+    <LimiteSilencieuse nom="CasquetteSalles">
+      <CarteCasquetteSalles restants={salles.restants} aPreparer={salles.aPreparer} />
+    </LimiteSilencieuse>
+  ) : null;
+  const sallesSousLaClasse = classeImminente(data, maintenant);
   return (
     <Page className="gap-6 sm:gap-8">
       <header className="flex flex-col gap-1">
@@ -114,16 +140,13 @@ function ContenuAccueil({ data, seance, maintenant, tx }: { data: AccueilFormate
         </h1>
       </header>
 
-      {salles.aFaire && (
-        <LimiteSilencieuse nom="CasquetteSalles">
-          <CarteCasquetteSalles restants={salles.restants} aPreparer={salles.aPreparer} />
-        </LimiteSilencieuse>
-      )}
+      {!sallesSousLaClasse && carteSalles}
 
       {/* Sur ordinateur, « À faire » se range à droite de la classe ; rien à faire : la classe seule. */}
       <div className={cn("grid gap-6 lg:items-start lg:gap-8", choses.length ? "lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]" : "lg:max-w-[760px]")}>
         <div className="flex min-w-0 flex-col gap-4">
           <CarteMaClasse data={data} maintenant={maintenant} tx={tx} />
+          {sallesSousLaClasse && carteSalles}
           {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois (sous le bouton, jamais au-dessus). */}
           <ConfirmationFuseau className="lg:flex-col lg:items-stretch" />
           {seance && (

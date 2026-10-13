@@ -146,7 +146,11 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
       <PageInterdite profil={autorise} />
     );
   if (def.coquille === "aucune") return contenu;
-  return <Coquille pleinEcran={def.coquille === "plein-ecran"}>{contenu}</Coquille>;
+  return (
+    <Coquille pleinEcran={def.coquille === "plein-ecran"} autreCasquette={Boolean(autreCasquette)}>
+      {contenu}
+    </Coquille>
+  );
 }
 
 function Routeur() {

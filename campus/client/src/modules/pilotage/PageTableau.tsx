@@ -73,20 +73,26 @@ export default function PageTableau() {
         }
       />
 
-      {/* Des liens de salles à envoyer aujourd'hui : avant tout le reste. */}
-      {actionSalles && <CarteActionSalles restants={salles.restants} aPreparer={salles.aPreparer} />}
+      {/* Les cartes du haut attendent le compte des salles du jour (au plus un instant) : la carte orange ne vient pas
+          repousser « Le travail du campus » déjà affiché, et la petite carte ne s'affiche pas pour disparaître aussitôt. */}
+      {salles.pret && (
+        <>
+          {/* Des liens de salles à envoyer aujourd'hui : avant tout le reste. */}
+          {actionSalles && <CarteActionSalles restants={salles.restants} aPreparer={salles.aPreparer} />}
 
-      {/* « Le travail du campus » d'abord : ce qui a été fait, avant les statistiques. */}
-      {profilPermet(moi, ["notes", "presences_voir"]) && (
-        <LimiteSilencieuse nom="CarteTravail">
-          <CarteTravail />
-        </LimiteSilencieuse>
+          {/* « Le travail du campus » d'abord : ce qui a été fait, avant les statistiques. */}
+          {profilPermet(moi, ["notes", "presences_voir"]) && (
+            <LimiteSilencieuse nom="CarteTravail">
+              <CarteTravail />
+            </LimiteSilencieuse>
+          )}
+
+          {outils && <CarteRentree />}
+
+          {/* Les liens des écrans de chaque salle, chaque jour, à envoyer sur WhatsApp au coordinateur des salles (rien à envoyer aujourd'hui). */}
+          {outils && !actionSalles && <CarteLienSalles />}
+        </>
       )}
-
-      {outils && <CarteRentree />}
-
-      {/* Les liens des écrans de chaque salle, chaque jour, à envoyer sur WhatsApp au coordinateur des salles (rien à envoyer aujourd'hui). */}
-      {outils && !actionSalles && <CarteLienSalles />}
 
       {tableau.isLoading && <Chargement lignes={2} />}
       {tableau.error && <Erreur message={(tableau.error as Error).message} reessayer={() => tableau.refetch()} />}

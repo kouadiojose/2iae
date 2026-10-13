@@ -31,7 +31,7 @@
 import { createHash } from "crypto";
 import webpush from "web-push";
 import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { config } from "./config";
 import { publierUtilisateur } from "./temps-reel";
 import { planifier } from "./taches";
@@ -372,6 +372,33 @@ export async function notifier(utilisateurIds: number[], n: NouvelleNotification
     const notificationDe = new Map(lignes.map((l) => [l.utilisateurId, l.id]));
     void envoyerPush(ids, n, notificationDe).catch((e) => console.error("[push]", (e as Error).message));
   }
+}
+
+/**
+ * Double casquette (formateur et direction, José) : une notification envoyée aux deux comptes d'une même personne
+ * dans le même envoi (le rappel des salles du jour de 6 h 30, une annonce à tous…) n'est qu'une notification pour
+ * elle. Les deux lignes ont le même type, le même titre, le même texte, le même lien et le même instant de création
+ * (une seule insertion, notifier) ; lue sur une casquette (cloche, « Tout marquer comme lu », toucher sur le
+ * téléphone), elle l'est aussi sur l'autre, dont les onglets ouverts rafraîchissent leur cloche. Seulement si les
+ * deux comptes sont liés l'un à l'autre (casquetteDe). Chaque téléphone ne sonne qu'une fois : son adresse d'envoi
+ * n'est rattachée qu'à un seul compte (abonnements_push.endpoint est unique).
+ */
+export async function lireAussiSurLAutreCasquette(utilisateurId: number, notificationIds: number[]): Promise<number> {
+  const ids = [...new Set(notificationIds)].filter((x) => Number.isInteger(x) && x > 0);
+  if (!ids.length) return 0;
+  const { rows } = await pool.query<{ utilisateur_id: number }>(
+    `UPDATE campus.notifications j SET lu_le = now()
+     FROM campus.notifications n, campus.utilisateurs moi, campus.utilisateurs autre
+     WHERE n.id = ANY($1::int[]) AND n.utilisateur_id = $2
+       AND moi.id = $2 AND autre.id = moi.compte_lie_id AND autre.compte_lie_id = moi.id
+       AND j.utilisateur_id = autre.id AND j.lu_le IS NULL
+       AND j.type = n.type AND j.titre = n.titre AND j.corps IS NOT DISTINCT FROM n.corps
+       AND j.lien IS NOT DISTINCT FROM n.lien AND j.cree_le = n.cree_le
+     RETURNING j.utilisateur_id`,
+    [ids, utilisateurId],
+  );
+  if (rows.length) publierUtilisateur(rows[0].utilisateur_id, "notification", { lues: rows.length });
+  return rows.length;
 }
 
 /**

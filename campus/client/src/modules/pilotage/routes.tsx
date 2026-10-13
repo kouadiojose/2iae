@@ -17,6 +17,8 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage/planning", page: lazy(() => import("./PagePlanning")), acces: EQUIPE },
   { chemin: "/pilotage/presences", page: lazy(() => import("./PagePresences")), acces: EQUIPE, droit: "presences_voir" },
   { chemin: "/pilotage/rentree", page: lazy(() => import("./PageRentree")), acces: EQUIPE, droit: "outils_campus" },
+  // « Les salles du jour » : les liens des écrans de chaque salle, à envoyer sur WhatsApp (droit des écrans).
+  { chemin: "/pilotage/salles", page: lazy(() => import("./PageSallesDuJour")), acces: EQUIPE, droit: "outils_campus" },
   { chemin: "/pilotage/site", page: lazy(() => import("./PageSite")), acces: EQUIPE },
   { chemin: "/pilotage/suivi", page: lazy(() => import("./PageSuivi")), acces: EQUIPE, droit: "suivi" },
   { chemin: "/pilotage/etudiants/nouveau", page: lazy(() => import("./PageNouvelEtudiant")), acces: EQUIPE, droit: "comptes_gerer" },

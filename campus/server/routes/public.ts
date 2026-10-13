@@ -514,7 +514,11 @@ let cacheContenus: EtatContenus | null = null;
 /** Tous les contenus, fusionnés avec les valeurs par défaut (en mémoire jusqu'à la prochaine modification). */
 async function lireContenus(): Promise<EtatContenus> {
   if (cacheContenus) return cacheContenus;
-  const lignes = await db.select().from(contenusSite);
+  // Seulement les clés du site public : d'autres réglages vivent dans la même table (« pilotage.salles »,
+  // « pilotage.salles.rappel », mis à jour chaque matin) et ne doivent pas changer la date du site ni le sitemap.
+  const lignes = (await db.select().from(contenusSite)).filter(
+    (l) => (CLES_CONTENUS as readonly string[]).includes(l.cle) || l.cle.startsWith("campus."),
+  );
   const parCle = new Map(lignes.map((l) => [l.cle, l]));
   const contenus = {} as Record<CleContenu, unknown>;
   for (const cle of CLES_CONTENUS) contenus[cle] = fusionner(SCHEMAS[cle], CONTENUS_PAR_DEFAUT[cle], parCle.get(cle)?.valeur);

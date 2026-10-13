@@ -50,6 +50,8 @@ import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
 import { invaliderJetons } from "./compte";
 import { sallePasEncoreNommee, SALLES_INVENTEES } from "../amorcage";
+import { compteEcranSalle, ECRAN_REEL } from "../salles-outils";
+import { nomDeSalle } from "@shared/salles";
 import { ACTION_JOURNAL_DEMO, adresseDeDemonstration } from "../demo-constantes";
 import { utilisateurs, sites, journal, reinitialisations, type Utilisateur, type Role } from "@shared/schema";
 import type {
@@ -147,13 +149,7 @@ async function existe(table: string, colonne?: string): Promise<boolean> {
   return oui;
 }
 
-/**
- * Un compte « salle » qui compte comme l'écran réel d'une salle : jamais un compte de la démonstration (ses
- * cinq écrans fictifs sont semés « installés » et « vus » récemment, et la purge les supprime), sauf si un
- * vrai écran y a été installé avant que l'installation ne crée toujours un compte réel (la purge le garde alors).
- */
-const ECRAN_REEL = (e: string) =>
-  `(coalesce(${e}.preferences->>'demo', 'false') <> 'true' OR EXISTS (SELECT 1 FROM campus.journal j WHERE j.action = 'ecran_installe' AND j.utilisateur_id = ${e}.id))`;
+// ECRAN_REEL (écran réel, jamais celui de la démonstration) : server/salles-outils.ts.
 
 /** Date du dernier essai visio réussi, lue dans les préférences (écrites par le module visio). */
 function essaiReussiLe(preferences: unknown): Date | null {
@@ -871,20 +867,53 @@ async function siteDuPerimetre(req: Request) {
   return s;
 }
 
-/** Le compte de l'écran d'un campus : le plus récemment vu. Jamais un compte « salle » de la démonstration. */
-async function compteEcran(siteId: number): Promise<Utilisateur | null> {
-  const { rows } = await pool.query<{ id: number }>(
-    `SELECT e.id FROM campus.utilisateurs e WHERE e.role = 'salle' AND e.site_id = $1 AND e.actif AND ${ECRAN_REEL("e")}
-      ORDER BY (NOT e.doit_changer_mot_de_passe) DESC, e.derniere_connexion DESC NULLS LAST, e.id LIMIT 1`,
-    [siteId],
-  );
-  if (!rows[0]) return null;
-  const [u] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, rows[0].id));
-  return u ?? null;
+/** Numéro de la salle demandée (?salle=2) ; sans paramètre, la salle 1 (l'écran d'origine du campus). */
+function numeroSalle(req: Request): number {
+  const brut = req.query.salle;
+  if (brut === undefined || brut === "") return 1;
+  const n = Number(brut);
+  if (!Number.isInteger(n) || n < 1 || n > 50) throw invalide("Salle inconnue.");
+  return n;
+}
+
+/**
+ * Le compte d'écran de la salle 1 d'un campus, créé s'il n'existe pas encore (sans identifiant ni code :
+ * l'écran s'installe par son lien), et marqué « salle 1 » : il le reste même si un autre compte d'écran
+ * du campus se connecte plus tard. Servi à l'installation et aux réglages des salles (routes/salles.ts).
+ */
+export async function assurerCompteSalle1(s: typeof sites.$inferSelect, u: Utilisateur): Promise<{ compte: Utilisateur; nouveau: boolean }> {
+  let compte = await compteEcranSalle(s.id, 1);
+  const nouveau = !compte;
+  // Un ancien écran de la salle 1 désactivé (page Comptes) garde son numéro : on le libère, sinon le nouveau
+  // compte de la salle 1 heurterait l'index unique (campus, numéro de salle).
+  await pool.query(`UPDATE campus.utilisateurs SET salle_numero = NULL WHERE site_id = $1 AND role = 'salle' AND salle_numero = 1 AND NOT actif AND id <> $2`, [
+    s.id,
+    compte?.id ?? 0,
+  ]);
+  if (!compte) {
+    [compte] = await db
+      .insert(utilisateurs)
+      .values({
+        role: "salle",
+        prenom: "Salle",
+        nom: s.nomCourt,
+        siteId: s.id,
+        salleNumero: 1,
+        // Mot de passe tiré au sort et jamais montré : l'écran s'installe par le lien ou le code.
+        motDePasseHash: await hacher(`${motDePasseProvisoire()}-${jetonAleatoire(12)}`),
+        doitChangerMotDePasse: true,
+      })
+      .returning();
+    await journaliser(u, "compte_cree", { compteId: compte.id, role: "salle", siteId: s.id });
+  } else if (compte.salleNumero !== 1) {
+    [compte] = await db.update(utilisateurs).set({ salleNumero: 1 }).where(eq(utilisateurs.id, compte.id)).returning();
+    oublierUtilisateur(compte.id);
+  }
+  return { compte, nouveau };
 }
 
 /** Le lien et le code en place, s'ils marchent encore (pas remplacés entre-temps). */
-async function installationEnPlace(s: typeof sites.$inferSelect, compte: Utilisateur): Promise<InstallationEcran | null> {
+export async function installationEnPlace(s: typeof sites.$inferSelect, compte: Utilisateur): Promise<InstallationEcran | null> {
   const garde = compte.preferences?.installationEcran;
   const clair = garde ? dechiffrer(garde.chiffre) : null;
   if (!garde || !clair) return null;
@@ -893,13 +922,15 @@ async function installationEnPlace(s: typeof sites.$inferSelect, compte: Utilisa
     .select({ id: reinitialisations.id })
     .from(reinitialisations)
     .where(and(eq(reinitialisations.jetonHash, hacherJeton(jeton)), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe), gt(reinitialisations.expireLe, new Date())));
-  return actif ? decrireInstallation(s, compte.id, jeton, code, new Date(garde.le), false) : null;
+  return actif ? decrireInstallation(s, compte, jeton, code, new Date(garde.le), false) : null;
 }
 
-function decrireInstallation(s: typeof sites.$inferSelect, compteId: number, jeton: string, code: string, le: Date, nouveau: boolean): InstallationEcran {
+function decrireInstallation(s: typeof sites.$inferSelect, compte: Utilisateur, jeton: string, code: string, le: Date, nouveau: boolean): InstallationEcran {
   const hote = config.urlCampus.replace(/^https?:\/\//, "");
   const lienTexte = `${config.urlCampus}/ecran/${jeton}`;
-  const salle = sallePasEncoreNommee(s.salleConference) ? "la salle de conférence" : s.salleConference;
+  const compteId = compte.id;
+  const nom = nomDeSalle(compte, s);
+  const salle = sallePasEncoreNommee(nom) ? "la salle de conférence" : nom;
   const message = [
     `Installation de l'écran de ${salle} · campus ${s.nomCourt}`,
     "",
@@ -913,6 +944,7 @@ function decrireInstallation(s: typeof sites.$inferSelect, compteId: number, jet
   return {
     siteId: s.id,
     compteId,
+    numero: compte.salleNumero ?? 1,
     site: s.nomCourt,
     salle,
     lien: lienTexte,
@@ -1119,7 +1151,7 @@ export function enregistrerLancement(app: Express) {
       const [c] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, idParam(req)));
       if (!c || !peutGerer(u, c)) throw introuvable("Compte");
       if (!ROLES_INVITABLES.includes(c.role)) {
-        throw invalide(c.role === "salle" ? "Un écran de salle s'installe avec « Installer l'écran de la salle »." : "Les étudiants reçoivent leur fiche de connexion.");
+        throw invalide(c.role === "salle" ? "Un écran de salle s'installe avec « Installer l'écran » (Pilotage, Classes et campus, section Les campus)." : "Les étudiants reçoivent leur fiche de connexion.");
       }
       if (c.id === u.id) throw invalide("Vous êtes déjà connecté avec ce compte.");
       if (!c.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
@@ -1198,13 +1230,14 @@ export function enregistrerLancement(app: Express) {
     }),
   );
 
-  // L'écran de la salle d'un campus : le lien et le code permanents en place (GET), ou de nouveaux (POST).
+  // L'écran d'une salle d'un campus (?salle=2 ; sans paramètre, la salle 1) : le lien et le code
+  // permanents en place (GET), ou de nouveaux (POST).
   app.get(
     `${P}/sites/:id(\\d+)/ecran`,
     exigerDroit("outils_campus"),
     route(async (req, res) => {
       const s = await siteDuPerimetre(req);
-      const compte = await compteEcran(s.id);
+      const compte = await compteEcranSalle(s.id, numeroSalle(req));
       const etat: EtatEcranSalle = {
         installation: compte ? await installationEnPlace(s, compte) : null,
         derniereConnexion: compte?.derniereConnexion?.toISOString() ?? null,
@@ -1220,24 +1253,17 @@ export function enregistrerLancement(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await siteDuPerimetre(req);
+      const numero = numeroSalle(req);
 
-      // Le compte de l'écran : celui qui existe déjà (le plus récemment vu), sinon un nouveau, sans identifiant.
-      let compte = await compteEcran(s.id);
-      const nouveau = !compte;
-      if (!compte) {
-        [compte] = await db
-          .insert(utilisateurs)
-          .values({
-            role: "salle",
-            prenom: "Salle",
-            nom: s.nomCourt,
-            siteId: s.id,
-            // Mot de passe tiré au sort et jamais montré : l'écran s'installe par le lien ou le code.
-            motDePasseHash: await hacher(`${motDePasseProvisoire()}-${jetonAleatoire(12)}`),
-            doitChangerMotDePasse: true,
-          })
-          .returning();
-        await journaliser(u, "compte_cree", { compteId: compte.id, role: "salle", siteId: s.id });
+      // Salle 1 : le compte qui existe déjà (le plus récemment vu), sinon un nouveau, sans identifiant.
+      // Salles suivantes : le compte créé par « Ajouter une salle ».
+      let compte: Utilisateur;
+      let nouveau = false;
+      if (numero === 1) ({ compte, nouveau } = await assurerCompteSalle1(s, u));
+      else {
+        const c = await compteEcranSalle(s.id, numero);
+        if (!c) throw introuvable("Salle");
+        compte = c;
       }
 
       // Anciens liens et codes d'installation : plus valables. Les ordinateurs déjà installés restent connectés.
@@ -1264,8 +1290,9 @@ export function enregistrerLancement(app: Express) {
         .update(utilisateurs)
         .set({ preferences: { ...compte.preferences, installationEcran: { chiffre: chiffrer(JSON.stringify({ jeton, code })), le: le.toISOString() } } })
         .where(eq(utilisateurs.id, compte.id));
-      await journaliser(u, "ecran_installation", { compteId: compte.id, siteId: s.id });
-      res.json(decrireInstallation(s, compte.id, jeton, code, le, nouveau));
+      await journaliser(u, "ecran_installation", { compteId: compte.id, siteId: s.id, salle: numero });
+      res.setHeader("Cache-Control", "no-store");
+      res.json(decrireInstallation(s, compte, jeton, code, le, nouveau));
     }),
   );
 

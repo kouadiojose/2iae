@@ -527,6 +527,8 @@ export type CampusDirectDto = {
   /** L'écran de la salle est connecté (le campus « s'allume » sur la carte). */
   salleConnectee: boolean;
   mainLevee: boolean;
+  /** Une classe de ce campus suit le cours : sa salle est attendue (absent : réponse d'avant les salles). */
+  attendue?: boolean;
 };
 
 export type SousTitreDto = { id: number; t: number; texte: string };

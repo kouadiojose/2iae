@@ -761,6 +761,24 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "salle_nom": {
+          "name": "salle_nom",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "salle_public": {
+          "name": "salle_public",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "salle_numero": {
+          "name": "salle_numero",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -805,6 +823,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "utilisateurs_salle_numero_unique": {
+          "name": "utilisateurs_salle_numero_unique",
+          "columns": [
+            {
+              "expression": "site_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "salle_numero",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"salle_numero\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

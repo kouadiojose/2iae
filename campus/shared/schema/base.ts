@@ -3,8 +3,10 @@
 // Toutes les tables vivent dans le schéma PostgreSQL « campus » (voir
 // drizzle.config.ts) : le campus peut partager la base du site sans
 // collision, ou disposer de sa propre base.
-import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, json, varchar, index, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgSchema, serial, text, integer, boolean, timestamp, jsonb, json, varchar, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { ProfilEquipe } from "./ext-profils";
+import type { PublicSalle } from "../salles";
 
 export const campusSchema = pgSchema("campus");
 
@@ -154,11 +156,21 @@ export const utilisateurs = campusSchema.table(
     compteLieId: integer("compte_lie_id").references((): AnyPgColumn => utilisateurs.id, { onDelete: "set null" }),
     derniereConnexion: timestamp("derniere_connexion", { withTimezone: true }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Écran de salle (rôle « salle ») : la salle de conférence qu'il équipe (shared/salles.ts,
+     * migration 0034). Nom propre de la salle (nul : celui de la salle du campus, sites.salle_conference),
+     * public (« L1 », « L2 » ; nul : toutes les classes) et numéro dans le campus (1 : l'écran d'origine,
+     * 2, 3… : salles ajoutées ; nul : écran d'avant les salles, qui reste la salle 1 de son campus).
+     */
+    salleNom: text("salle_nom"),
+    sallePublic: text("salle_public").$type<PublicSalle>(),
+    salleNumero: integer("salle_numero"),
   },
   (t) => [
     index("utilisateurs_classe_idx").on(t.classeId),
     index("utilisateurs_role_idx").on(t.role),
     index("utilisateurs_telephone_idx").on(t.telephone),
+    uniqueIndex("utilisateurs_salle_numero_unique").on(t.siteId, t.salleNumero).where(sql`"salle_numero" IS NOT NULL`),
   ],
 );
 

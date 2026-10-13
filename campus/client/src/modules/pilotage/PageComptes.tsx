@@ -44,7 +44,7 @@ export default function PageComptes() {
   const nomNouveau = depart.get("nom") ?? undefined;
   const [code, setCode] = useState<{ remis: CodeRemis; compte: CompteLigne; nouveau: boolean } | null>(null);
   const [invite, setInvite] = useState<PersonneAInviter | null>(null);
-  const [ecran, setEcran] = useState<{ id: number; nom: string } | null>(null);
+  const [ecran, setEcran] = useState<{ id: number; nom: string; numero?: number; salle?: string } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setQDiffere(q.trim()), 300);

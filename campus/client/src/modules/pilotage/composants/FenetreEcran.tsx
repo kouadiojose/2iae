@@ -4,6 +4,8 @@
 // Le lien et le code sont permanents et réutilisables (un ordinateur de salle
 // peut changer) : la fenêtre réaffiche ceux en place. « Changer le lien et le
 // code » en prépare de nouveaux ; les anciens ne marchent plus.
+// Un campus peut avoir plusieurs salles (shared/salles.ts) : « numero » choisit la salle (1 par défaut,
+// l'écran d'origine du campus), « salle » est son nom affiché dans le titre.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, MessageCircle, Link2, MonitorSmartphone, RefreshCw, TriangleAlert } from "lucide-react";
@@ -18,23 +20,25 @@ import { jourLong } from "@/lib/dates";
 import { Qr } from "./Qr";
 import { copier } from "../outils";
 
-export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: string } | null; onFermer: () => void }) {
-  const etat = useQuery<EtatEcranSalle>({ queryKey: [`/api/pilotage/sites/${site?.id}/ecran`], enabled: Boolean(site), staleTime: 0 });
+export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: string; numero?: number; salle?: string } | null; onFermer: () => void }) {
+  const numero = site?.numero ?? 1;
+  const adresse = `/api/pilotage/sites/${site?.id}/ecran${numero > 1 ? `?salle=${numero}` : ""}`;
+  const etat = useQuery<EtatEcranSalle>({ queryKey: [adresse], enabled: Boolean(site), staleTime: 0 });
   const [neuf, setNeuf] = useState<InstallationEcran | null>(null);
   const [confirmer, setConfirmer] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreurEnvoi, setErreurEnvoi] = useState<string | null>(null);
-  const inst = neuf && neuf.siteId === site?.id ? neuf : (etat.data?.installation ?? null);
+  const inst = neuf && neuf.siteId === site?.id && (neuf.numero ?? 1) === numero ? neuf : (etat.data?.installation ?? null);
 
   const preparer = async () => {
     if (!site) return;
     setEnvoi(true);
     setErreurEnvoi(null);
     try {
-      const r = await post<InstallationEcran>(`/api/pilotage/sites/${site.id}/ecran`);
+      const r = await post<InstallationEcran>(adresse);
       setNeuf(r);
       setConfirmer(false);
-      void rafraichir("/api/pilotage/rentree", "/api/pilotage/comptes", `/api/pilotage/sites/${site.id}/ecran`);
+      void rafraichir("/api/pilotage/rentree", "/api/pilotage/comptes", "/api/pilotage/salles", `/api/pilotage/sites/${site.id}/ecran`);
     } catch (e) {
       setErreurEnvoi(e instanceof ErreurApi ? e.message : "Une erreur est survenue. Réessayez dans un instant.");
     } finally {
@@ -54,7 +58,7 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
       ouverte
       onFermer={fermer}
       large
-      titre={`Installer l'écran · ${site.nom}`}
+      titre={`Installer l'écran · ${site.nom}${site.salle ? ` · ${site.salle}` : ""}`}
       description="Sur l'ordinateur branché à l'écran de la salle de conférence. Le lien et le code restent valables : ils réinstallent l'écran sur un nouvel ordinateur si besoin."
       pied={
         inst ? (
@@ -87,6 +91,14 @@ export function FenetreEcran({ site, onFermer }: { site: { id: number; nom: stri
           <p className="text-[15px] leading-relaxed text-texte-doux">
             Aucun lien d'installation n'est en place pour cette salle. Préparez-en un : il restera valable, sur autant d'ordinateurs que nécessaire.
           </p>
+          {etat.data?.derniereConnexion && (
+            // Écran déjà installé : un nouveau lien n'est utile que pour un autre ordinateur, et remplace les anciens.
+            <p className="flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              L'écran de cette salle est déjà installé (vu le {jourLong(etat.data.derniereConnexion)}) : il reste connecté. Un nouveau lien remplace les anciens liens et
+              codes d'installation qui circulent encore.
+            </p>
+          )}
           <Bouton taille="lg" chargement={envoi} onClick={() => void preparer()} icone={<MonitorSmartphone className="h-5 w-5" />}>
             Préparer le lien et le code
           </Bouton>

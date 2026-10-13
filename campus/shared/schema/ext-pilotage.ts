@@ -254,6 +254,9 @@ export type CompteLigne = {
   creeLe: string;
   /** Double casquette : l'autre compte de la personne. */
   casquette: { id: number; role: Role } | null;
+  /** Écran de salle : numéro de sa salle (null : l'écran d'origine du campus, salle 1) et nom propre (shared/salles.ts). */
+  salleNumero?: number | null;
+  salleNom?: string | null;
 };
 
 /** GET /api/pilotage/comptes */

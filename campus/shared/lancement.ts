@@ -117,14 +117,17 @@ export type InvitationAcceptee = {
 // ── Écran de la salle de conférence ────────────────────────────────────────
 
 /**
- * Le lien et le code d'installation de l'écran de la salle d'un campus :
+ * Le lien et le code d'installation de l'écran d'une salle d'un campus :
  * permanents et réutilisables (un ordinateur de salle peut changer), jusqu'à
  * ce que la direction ou la vie scolaire les change.
- * GET /api/pilotage/sites/:id/ecran : ceux en place · POST : de nouveaux (les anciens ne marchent plus).
+ * GET /api/pilotage/sites/:id/ecran?salle=n : ceux en place · POST : de nouveaux (les anciens ne marchent plus).
+ * Sans « salle », la salle 1 (l'écran d'origine du campus).
  */
 export type InstallationEcran = {
   siteId: number;
   compteId: number;
+  /** Numéro de la salle dans son campus (1 : l'écran d'origine). Voir shared/salles.ts. */
+  numero: number;
   site: string;
   salle: string;
   /** À ouvrir sur l'ordinateur de la salle : https://…/ecran/<jeton>. */

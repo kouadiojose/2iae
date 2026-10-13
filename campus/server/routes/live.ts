@@ -24,7 +24,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
-import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil } from "../auth";
+import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil, utilisateurParId } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
@@ -133,6 +133,8 @@ import {
   type AccesDaily,
 } from "@shared/schema";
 import type { SeanceResume, EnCours, DirectDuCampus } from "@shared/api";
+import { estPublicSalle, nomDeSalle } from "@shared/salles";
+import { coursDuSite, nomSalleDuCours, type RegardSalle } from "../salles-outils";
 
 const executer = promisify(execFile);
 
@@ -387,16 +389,7 @@ async function essaisParmi(ids: number[]): Promise<Set<number>> {
   return new Set(lignes.map((l) => l.id));
 }
 
-/** Cours publiés que suit un campus (une de ses classes y est rattachée) : ce que montre l'écran de sa salle. */
-async function coursDuSite(siteId: number): Promise<number[]> {
-  const lignes = await db
-    .selectDistinct({ id: coursClasses.coursId })
-    .from(coursClasses)
-    .innerJoin(classes, eq(classes.id, coursClasses.classeId))
-    .innerJoin(cours, eq(cours.id, coursClasses.coursId))
-    .where(and(eq(classes.siteId, siteId), eq(cours.statut, "publie")));
-  return lignes.map((l) => l.id);
-}
+// coursDuSite(siteId, salle) : cours que montre l'écran d'une salle (server/salles-outils.ts).
 
 /**
  * Qui regarde « en cours » :
@@ -449,18 +442,34 @@ function siteRegarde(u: Utilisateur, demande: unknown): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-/** Cours à regarder pour « en cours » et les séances du jour : ceux de la personne, limités au campus de la salle regardée. */
-async function coursRegardes(u: Utilisateur, siteId: number | null): Promise<number[]> {
+/**
+ * Salle regardée (server/salles-outils.ts) : celle de l'écran pour un écran de salle (son compte, relu en base
+ * à chaque fois avec le nom et le public de sa salle) ; pour l'équipe sur /salle?site=, la salle du public
+ * qu'elle demande (?public=L1). Null : tous les cours du campus, comme avant les salles.
+ */
+function salleRegardee(u: Utilisateur, demande: unknown): RegardSalle | null {
+  if (u.role === "salle") return { compteId: u.id };
+  return estEquipe(u) && estPublicSalle(demande) ? { public: demande } : null;
+}
+
+/**
+ * Cours à regarder pour « en cours » et les séances du jour : ceux de la personne, limités au campus de la
+ * salle regardée et, pour l'écran d'une salle, aux cours qui se tiennent dans cette salle.
+ */
+async function coursRegardes(u: Utilisateur, siteId: number | null, salle: RegardSalle | null = null): Promise<number[]> {
   const ids = await idsCoursAccessibles(u);
   if (!siteId) return ids;
-  const duSite = new Set(await coursDuSite(siteId));
+  const duSite = new Set(await coursDuSite(siteId, salle));
   return ids.filter((id) => duSite.has(id));
 }
 
 /** « En cours » d'une personne (et, pour l'équipe sur /salle?site=, d'une salle). */
-async function enCoursDe(u: Utilisateur, siteDemande?: unknown): Promise<EnCours> {
+async function enCoursDe(u: Utilisateur, siteDemande?: unknown, publicDemande?: unknown): Promise<EnCours> {
   const siteId = siteRegarde(u, siteDemande);
-  return enCoursPour(await coursRegardes(u, siteId), { etudiant: u.role === "etudiant", salle: u.role === "salle" || siteId !== null });
+  return enCoursPour(await coursRegardes(u, siteId, siteId ? salleRegardee(u, publicDemande) : null), {
+    etudiant: u.role === "etudiant",
+    salle: u.role === "salle" || siteId !== null,
+  });
 }
 
 /**
@@ -511,8 +520,14 @@ async function annoncerLive(s: Pick<Seance, "id" | "coursId" | "statut">): Promi
   for (const f of await formateursDuCours(s.coursId)) if (estEnLigne(f.id)) autres.set(f.id, f);
   for (const role of ["admin", "vie_scolaire"] as const) for (const x of utilisateursSur(`role:${role}`)) autres.set(x.id, x);
   for (const x of autres.values()) ajouter(await idsCoursAccessibles(x), x.id);
-  // Écrans de salle : ceux dont le campus suit le cours, chacun avec son propre regard.
-  for (const x of utilisateursSur("role:salle")) ajouter(await coursRegardes(x, siteRegarde(x, null)), x.id, { salle: true });
+  // Écrans de salle : ceux dont le campus suit le cours et dont la salle le montre, chacun avec son propre regard.
+  // Le compte gardé par la connexion temps réel date de son ouverture : on relit le compte (cache vidé à
+  // chaque réglage de salle) ; la salle et son public sont relus en base par coursDuSite.
+  for (const connecte of utilisateursSur("role:salle")) {
+    const x = (await utilisateurParId(connecte.id)) ?? connecte;
+    if (!x.actif) continue;
+    ajouter(await coursRegardes(x, siteRegarde(x, null), salleRegardee(x, null)), x.id, { salle: true });
+  }
   for (const g of groupes.values()) {
     const evt: EvenementLiveDto = { seanceId: s.id, statut: s.statut, enCours: await enCoursPour(g.ids, g.regard) };
     for (const id of g.personnes) publierUtilisateur(id, "live", evt);
@@ -719,7 +734,10 @@ async function versMessagesLive(lignes: MessageLive[], lecteur: RoleSeance, moiI
   const idsFichiers = [...new Set(lignes.map((m) => m.fichierId).filter((x): x is number => x !== null))];
   const idsMessages = lignes.map((m) => m.id);
   const [personnes, joints, sitesParId, reactions] = await Promise.all([
-    db.select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId }).from(utilisateurs).where(inArray(utilisateurs.id, idsPersonnes)),
+    db
+      .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId, salleNom: utilisateurs.salleNom })
+      .from(utilisateurs)
+      .where(inArray(utilisateurs.id, idsPersonnes)),
     idsFichiers.length ? db.select().from(fichiers).where(inArray(fichiers.id, idsFichiers)) : Promise.resolve([]),
     nomsSites(),
     db.select().from(reactionsMessagesLive).where(inArray(reactionsMessagesLive.messageId, idsMessages)),
@@ -730,7 +748,7 @@ async function versMessagesLive(lignes: MessageLive[], lecteur: RoleSeance, moiI
     const a = id ? parPersonne.get(id) : undefined;
     const site = siteId ? sitesParId.get(siteId) : a?.siteId ? sitesParId.get(a.siteId) : undefined;
     const role: MessageLiveDto["role"] = a?.role === "salle" ? "salle" : a?.role === "formateur" ? "formateur" : a?.role === "etudiant" ? "etudiant" : "equipe";
-    if (role === "salle") return { role, nom: `${site?.salleConference ?? "Salle de conférence"}${site ? ` · ${site.nomCourt}` : ""}` };
+    if (role === "salle") return { role, nom: `${nomDeSalle(a, site)}${site ? ` · ${site.nomCourt}` : ""}` };
     if (role === "etudiant") return { role, nom: lecteur === "salle" || !a ? "Un étudiant" : nomCourt(a) };
     return { role, nom: a ? `${a.prenom} ${a.nom}` : "Équipe du campus" };
   };
@@ -821,7 +839,7 @@ async function diffuserQuestion(q: QuestionLive) {
 
 async function mainsPour(u: Pick<Utilisateur, "id" | "role" | "siteId">, role: RoleSeance, seanceId: number): Promise<MainDirectDto[]> {
   const lignes = await db
-    .select({ m: mainsLevees, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role })
+    .select({ m: mainsLevees, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, salleNom: utilisateurs.salleNom })
     .from(mainsLevees)
     .innerJoin(utilisateurs, eq(utilisateurs.id, mainsLevees.utilisateurId))
     .where(and(eq(mainsLevees.seanceId, seanceId), isNull(mainsLevees.baisseeLe)))
@@ -837,7 +855,7 @@ async function mainsPour(u: Pick<Utilisateur, "id" | "role" | "siteId">, role: R
       if (role === "salle") return m.siteId === u.siteId && (r === "salle" || r === "vie_scolaire");
       return m.utilisateurId === u.id;
     })
-    .map(({ m, prenom, nom, role: r }) => {
+    .map(({ m, prenom, nom, role: r, salleNom }) => {
       const pourSalle = r === "salle" || r === "vie_scolaire";
       const site = m.siteId ? sitesParId.get(m.siteId) : undefined;
       const dto: MainDirectDto = {
@@ -845,7 +863,7 @@ async function mainsPour(u: Pick<Utilisateur, "id" | "role" | "siteId">, role: R
         siteId: m.siteId,
         site: site?.nomCourt ?? null,
         pourSalle,
-        nom: pourSalle ? site?.salleConference ?? "Salle" : privilegie || m.utilisateurId === u.id ? nomCourt({ prenom, nom }) : "Étudiant",
+        nom: pourSalle ? (r === "salle" ? nomDeSalle({ salleNom }, site) : (site?.salleConference ?? "Salle")) : privilegie || m.utilisateurId === u.id ? nomCourt({ prenom, nom }) : "Étudiant",
         leveeLe: m.leveeLe.toISOString(),
         paroleDonneeLe: iso(m.paroleDonneeLe),
         pasEncoreParle: pourSalle ? !deja.sites.has(m.siteId ?? -1) : !deja.utilisateurs.has(m.utilisateurId),
@@ -1012,7 +1030,7 @@ async function barometre(seanceId: number, depuis = new Date(Date.now() - FENETR
 // ── État des campus (carte, vignettes, présences par salle) ────────────────
 
 async function campusDirect(s: Pick<Seance, "id">): Promise<{ campus: CampusDirectDto[]; enLigne: number }> {
-  const [sitesListe, presencesSeance, effectifs, mains] = await Promise.all([
+  const [sitesListe, presencesSeance, effectifs, mains, attendus] = await Promise.all([
     listeSites(),
     db.select({ utilisateurId: presences.utilisateurId, siteId: presences.siteId, mode: presences.mode }).from(presences).where(eq(presences.seanceId, s.id)),
     db.select().from(effectifsSalles).where(eq(effectifsSalles.seanceId, s.id)),
@@ -1021,18 +1039,29 @@ async function campusDirect(s: Pick<Seance, "id">): Promise<{ campus: CampusDire
       .from(mainsLevees)
       .innerJoin(utilisateurs, eq(utilisateurs.id, mainsLevees.utilisateurId))
       .where(and(eq(mainsLevees.seanceId, s.id), isNull(mainsLevees.baisseeLe))),
+    // Campus attendus : ceux dont une classe suit le cours de la séance (le Studio compte leurs salles prêtes).
+    db
+      .selectDistinct({ siteId: classes.siteId })
+      .from(seances)
+      .innerJoin(coursClasses, eq(coursClasses.coursId, seances.coursId))
+      .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+      .where(eq(seances.id, s.id)),
   ]);
   const connectes = utilisateursSur(canal(s.id));
+  const sitesAttendus = new Set(attendus.map((a) => a.siteId));
   const enSalle = new Set(presencesSeance.filter((p) => p.mode === "salle").map((p) => p.utilisateurId));
   const etudiantsEnLigne = connectes.filter((u) => u.role === "etudiant" && !enSalle.has(u.id));
   const effectifDe = new Map(effectifs.map((e) => [e.siteId, e]));
   const campus = sitesListe.map((site): CampusDirectDto => {
     const e = effectifDe.get(site.id);
+    // Plusieurs salles par campus : la salle est celle de l'écran connecté à cette séance.
+    const ecran = connectes.find((u) => u.role === "salle" && u.siteId === site.id);
     return {
       siteId: site.id,
       nom: site.nom,
       nomCourt: site.nomCourt,
-      salle: site.salleConference,
+      salle: nomDeSalle(ecran, site),
+      attendue: sitesAttendus.has(site.id),
       emarges: presencesSeance.filter((p) => p.mode === "salle" && p.siteId === site.id).length,
       enLigne: etudiantsEnLigne.filter((u) => u.siteId === site.id).length,
       effectif: e ? e.nombre : null,
@@ -1391,7 +1420,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      res.json(await enCoursDe(u, req.query.site));
+      res.json(await enCoursDe(u, req.query.site, req.query.public));
     }),
   );
 
@@ -1443,16 +1472,17 @@ export function enregistrerLive(app: Express) {
       const coursId = req.query.cours ? Number(req.query.cours) : null;
       const periode = String(req.query.periode || "tout");
       const limite = Math.min(100, Math.max(1, Number(req.query.limite) || 50));
-      // Écran de salle (et équipe sur /salle?site=) : seulement les cours que suit ce campus.
+      // Écran de salle (et équipe sur /salle?site=) : seulement les cours que suit ce campus, et que montre sa salle (public L1, L2).
       const siteSalle = siteRegarde(u, req.query.site);
+      const salleVue = siteSalle ? salleRegardee(u, req.query.public) : null;
       let ids: number[];
       if (coursId) {
         if (!Number.isInteger(coursId) || coursId <= 0) throw invalide("Paramètre cours invalide.");
         const accessibles = await idsCoursAccessibles(u);
         if (!accessibles.includes(coursId) && !estEquipe(u)) throw interdit("Tu n'es pas inscrit à ce cours.");
-        ids = siteSalle && !(await coursDuSite(siteSalle)).includes(coursId) ? [] : [coursId];
+        ids = siteSalle && !(await coursDuSite(siteSalle, salleVue)).includes(coursId) ? [] : [coursId];
       } else {
-        ids = await coursRegardes(u, siteSalle);
+        ids = await coursRegardes(u, siteSalle, salleVue);
       }
       if (!ids.length) return res.json([]);
       const maintenant = new Date();
@@ -1886,7 +1916,7 @@ export function enregistrerLive(app: Express) {
         role === "formateur"
           ? `${u.prenom} ${u.nom} · ${u.role === "admin" ? "direction" : "formateur"}`
           : role === "salle"
-            ? `${site?.salleConference ?? "Salle"} · ${site?.nomCourt ?? ""}`
+            ? `${u.role === "salle" ? nomDeSalle(u, site) : (site?.salleConference ?? "Salle")} · ${site?.nomCourt ?? ""}`
             : role === "equipe"
               ? `${u.prenom} ${u.nom} · ${u.role === "formateur" ? "formateur invité" : "équipe 2IAE"}`
               : `${site?.nomCourt ?? "En ligne"} · ${nomCourt(u)}`;
@@ -2920,7 +2950,8 @@ export function enregistrerLive(app: Express) {
       const url = `${origineRequete(req)}/emargement/${code}`;
       const qrSvg = await QRCode.toString(url, { type: "svg", margin: 1, errorCorrectionLevel: "M", color: { dark: "#141414", light: "#FFFFFF" } });
       res.setHeader("Cache-Control", "no-store");
-      const dto: CodeSalleDto = { siteId, site: site.nomCourt, salle: site.salleConference, code, url, qrSvg, expireDansMs: MINUTE - (maintenant % MINUTE) };
+      const salle = u.role === "salle" ? nomDeSalle(u, site) : site.salleConference;
+      const dto: CodeSalleDto = { siteId, site: site.nomCourt, salle, code, url, qrSvg, expireDansMs: MINUTE - (maintenant % MINUTE) };
       res.json(dto);
     }),
   );
@@ -2989,7 +3020,7 @@ export function enregistrerLive(app: Express) {
         seanceId: s.id,
         titre: s.titre,
         site: site.nomCourt,
-        salle: site.salleConference,
+        salle: await nomSalleDuCours(site, s.coursId),
         heure: (dejaEmarge && p ? p.arriveeSalleLe ?? p.arriveeLe : quand).toISOString(),
         dejaEmarge,
         horsCampus: dejaEmarge && p ? p.horsCampus : horsCampus,

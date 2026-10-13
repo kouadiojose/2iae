@@ -32,6 +32,7 @@ import {
   type PreferencesUtilisateur,
   LIEUX_MAX,
 } from "@shared/schema";
+import { nomDeSalle } from "@shared/salles";
 
 const MINUTE = 60_000;
 
@@ -57,7 +58,7 @@ async function nomDansLaSalle(u: Utilisateur): Promise<string> {
     case "vie_scolaire":
       return `${u.prenom} ${u.nom} · vie scolaire`;
     case "salle":
-      return `${site?.salleConference ?? "Salle"} · ${site?.nomCourt ?? ""}`.trim();
+      return `${site ? nomDeSalle(u, site) : (u.salleNom ?? "Salle")} · ${site?.nomCourt ?? ""}`.trim();
     default:
       return `${site?.nomCourt ?? "En ligne"} · ${u.prenom} ${u.nom.charAt(0)}.`;
   }

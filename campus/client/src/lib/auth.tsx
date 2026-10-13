@@ -73,11 +73,28 @@ export async function seDeconnecter() {
   window.location.href = "/connexion";
 }
 
-/** Double casquette : passer sur l'autre compte de la personne, puis repartir de son accueil. */
-export async function basculerCasquette() {
+/**
+ * Chemin interne du campus (« /pilotage/salles?jour=demain »), sinon null : il commence par « / », jamais par « // »,
+ * sans barre oblique inverse ni espace ou caractère de contrôle (un navigateur lit « /\exemple.com » ou « /<tab>/exemple.com »
+ * comme « //exemple.com », une autre adresse), et reste sur le campus une fois résolu.
+ */
+export function cheminInterne(vers: unknown): string | null {
+  if (typeof vers !== "string" || !/^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/.test(vers)) return null;
+  try {
+    return new URL(vers, window.location.origin).origin === window.location.origin ? vers : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Double casquette : passer sur l'autre compte de la personne, puis repartir de son accueil, ou aller tout de suite à
+ * « vers » (chemin interne seulement : un lien du rappel, la page des salles du jour, la page où elle était).
+ */
+export async function basculerCasquette(vers?: string) {
   const m = await post<Moi>("/api/auth/casquette");
   queryClient.clear();
-  window.location.assign(accueilDuRole(m.role));
+  window.location.assign(cheminInterne(vers) ?? accueilDuRole(m.role));
 }
 
 export function rechargerMoi() {

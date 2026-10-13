@@ -3,7 +3,10 @@
 // page « Les salles du jour » : un message WhatsApp par salle et par jour (ses cours, le lien de
 // son écran), envoyé d'un toucher au coordinateur des salles, qui le transfère au responsable de
 // la salle. Le campus n'a pas accès à l'API WhatsApp : chaque matin à 6 h 30 (Abidjan), la
-// direction reçoit un rappel qui ouvre la page (rappelerSallesDuJour).
+// direction reçoit un rappel qui ouvre la page (rappelerSallesDuJour), sur ses deux casquettes quand
+// elle en a deux. Pour qu'on la trouve (13 octobre 2026), deux comptes légers, sans aucun lien : celui
+// du tableau de la direction (carte d'action en haut) et celui de l'accueil d'un formateur dont
+// l'autre casquette est la direction (compterSallesDuJour).
 // Droits : ceux de l'installation des écrans (outils_campus), dans le périmètre de la personne ;
 // le numéro du coordinateur, la direction seule. Réglage gardé dans contenus_site (clés
 // « pilotage.salles » et « pilotage.salles.rappel », que le site public écarte : lireContenus de
@@ -11,9 +14,10 @@
 // Les réponses qui portent un lien d'écran ne sont jamais mises en cache ; aucun lien au journal.
 import type { Express, Request } from "express";
 import { z } from "zod";
-import { and, asc, count, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, pool } from "../db";
-import { exigerDroit, moi, perimetreSites, hacher, motDePasseProvisoire, jetonAleatoire, oublierUtilisateur, fermerAutresSessions, utilisateurParId } from "../auth";
+import { exigerConnexion, exigerDroit, casquetteDe, moi, perimetreSites, hacher, motDePasseProvisoire, jetonAleatoire, oublierUtilisateur, fermerAutresSessions, utilisateurParId } from "../auth";
 import { route, valider, idParam, introuvable, invalide, ErreurHttp } from "../http";
 import { planifier } from "../taches";
 import { notifier } from "../notifications";
@@ -27,12 +31,14 @@ import { contenusSite, cours, directsImmediats, journal, reinitialisations, sean
 import {
   NUMERO_COORDINATEUR_PAR_DEFAUT,
   PUBLICS_SALLE,
+  cleEnvoiSalle,
   estCoursCommun,
   etiquetteSalle,
   niveauDuCours,
   nomDeSalle,
   nomSalleParDefaut,
   type CampusDuJour,
+  type CompteSallesDuJour,
   type SalleCampus,
   type SalleDuJour,
   type SallesDuJour,
@@ -270,6 +276,16 @@ export async function calculerSallesDuJour(
   return { date, libelle, jour, coordinateur, messages, aPreparer, campus };
 }
 
+/**
+ * Ce qu'il reste à faire aujourd'hui (messages à envoyer, écrans à préparer) dans ces campus, sans aucun lien :
+ * le même calcul que la page (les nombres sont les mêmes), réduit aux nombres et aux repères « Envoyé ».
+ */
+export async function compterSallesDuJour(listeSites: Site[], maintenant = new Date()): Promise<CompteSallesDuJour> {
+  const { date, messages, aPreparer, campus } = await calculerSallesDuJour(listeSites, "aujourdhui", maintenant);
+  const envois = campus.flatMap((c) => c.salles.flatMap((s) => (s.message ? [cleEnvoiSalle(date, c.siteId, s.numero, s.message)] : [])));
+  return { date, messages, aPreparer, envois };
+}
+
 // ── Rappel du matin de la direction ────────────────────────────────────────
 
 /**
@@ -280,10 +296,43 @@ export async function calculerSallesDuJour(
 export const RAPPEL_SALLES = { debutMinutes: 6 * 60 + 30, finMinutes: 12 * 60 } as const;
 let dernierRappel: string | null = null;
 
+/** L'autre compte d'une double casquette (alias de utilisateurs). */
+const compteLie = alias(utilisateurs, "compte_lie");
+
+/**
+ * Qui reçoit le rappel : chaque compte actif de la direction, et chaque compte formateur (ou vie scolaire) actif dont
+ * l'autre casquette est un compte actif de la direction lié en retour (casquetteDe) : la personne voit le rappel
+ * quelle que soit la casquette sur laquelle elle est (José travaille surtout en formateur). Un compte une seule
+ * fois ; un téléphone n'a qu'une adresse d'envoi, rattachée au compte qui l'a enregistrée en dernier
+ * (abonnements_push.endpoint est unique) : il ne sonne qu'une fois.
+ */
+export async function destinatairesDuRappel(): Promise<number[]> {
+  const lignes = await db
+    .select({ id: utilisateurs.id })
+    .from(utilisateurs)
+    .leftJoin(compteLie, eq(compteLie.id, utilisateurs.compteLieId))
+    .where(
+      and(
+        eq(utilisateurs.actif, true),
+        or(
+          eq(utilisateurs.role, "admin"),
+          and(
+            inArray(utilisateurs.role, ["formateur", "vie_scolaire"]),
+            eq(compteLie.role, "admin"),
+            eq(compteLie.actif, true),
+            eq(compteLie.compteLieId, utilisateurs.id),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(utilisateurs.id));
+  return [...new Set(lignes.map((l) => l.id))];
+}
+
 /**
  * Chaque matin dès 6 h 30 : s'il y a au moins un cours dans une salle aujourd'hui, un rappel à chaque compte de
- * la direction (rôle admin actif) qui ouvre « Les salles du jour » (messages à envoyer, et salles dont il faut
- * d'abord préparer le lien de l'écran). Une seule fois par jour : le jour est réservé en base avant l'envoi
+ * la direction (rôle admin actif) et à l'autre casquette de chacun (destinatairesDuRappel), qui ouvre « Les salles
+ * du jour » (messages à envoyer, et salles dont il faut d'abord préparer le lien de l'écran). Une seule fois par jour : le jour est réservé en base avant l'envoi
  * (contenus_site, clé CLE_RAPPEL), même si le serveur redémarre ou si deux passages se croisent ; si l'envoi
  * échoue, le jour est rendu et le passage suivant réessaie. Renvoie ce qui a été envoyé (null : rien à faire).
  * Aucun lien au journal.
@@ -312,11 +361,7 @@ export async function rappelerSallesDuJour(maintenant = new Date()): Promise<{ j
   );
   dernierRappel = jour;
   if (!rows.length) return null;
-  const direction = await db
-    .select({ id: utilisateurs.id })
-    .from(utilisateurs)
-    .where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));
-  const ids = direction.map((d) => d.id);
+  const ids = await destinatairesDuRappel();
   const corps = [
     messages ? (messages === 1 ? t("rappel.corps.un") : t("rappel.corps", { v: { n: messages } })) : null,
     aPreparer ? (aPreparer === 1 ? t("rappel.aPreparer.un") : t("rappel.aPreparer", { v: { n: aPreparer } })) : null,
@@ -472,6 +517,32 @@ export function enregistrerSalles(app: Express) {
     }),
   );
 
+  // Le compte du jour pour le tableau de la direction (carte d'action en haut) : mêmes droits et même périmètre que
+  // la page, mais aucun lien ni message (la réponse complète, qui porte les liens, reste sur la page).
+  app.get(
+    `${P}/salles-du-jour/compte`,
+    OUTILS,
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await compterSallesDuJour(await sitesDuPerimetre(req)));
+    }),
+  );
+
+  // Le même compte pour un formateur (ou une vie scolaire) dont l'autre casquette est la direction : la carte de son
+  // accueil ne s'affiche que les jours où il y a des liens à envoyer. Tous les campus (périmètre de la direction).
+  // Personne d'autre : la page reste à la direction et aux équipes qui ont le droit des écrans.
+  app.get(
+    "/api/casquette/salles-du-jour",
+    exigerConnexion,
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const u = moi(req);
+      const autre = u.role === "formateur" || u.role === "vie_scolaire" ? await casquetteDe(u) : null;
+      if (autre?.role !== "admin") throw new ErreurHttp(403, t("casquette.reserve"));
+      res.json(await compterSallesDuJour(await db.select().from(sites).orderBy(asc(sites.ordre), asc(sites.id))));
+    }),
+  );
+
   // Le numéro WhatsApp qui reçoit les messages (le coordinateur des salles) : la direction seule le change.
   app.put(
     `${P}/salles-du-jour/numero`,
@@ -498,6 +569,6 @@ export function enregistrerSalles(app: Express) {
   // Rappel du matin de la direction (6 h 30, heure d'Abidjan) : la tâche passe chaque minute, le rappel part une fois par jour.
   planifier("salles-du-jour-rappel", 60_000, async () => {
     const r = await rappelerSallesDuJour();
-    if (r) console.log(`[salles du jour] rappel du ${r.jour} : ${r.messages} message(s), ${r.destinataires} compte(s) de la direction.`);
+    if (r) console.log(`[salles du jour] rappel du ${r.jour} : ${r.messages} message(s), ${r.destinataires} compte(s) (direction et autres casquettes).`);
   });
 }

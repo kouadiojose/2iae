@@ -1,15 +1,18 @@
 // Application du campus : rassemble les routes de tous les modules,
 // applique les droits d'accès et la coquille de navigation.
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { FournisseurAuth, useMoi, accueilDuRole, profilPermet } from "@/lib/auth";
-import { libelleProfil } from "@shared/schema";
+import { FournisseurAuth, useMoi, accueilDuRole, profilPermet, basculerCasquette } from "@/lib/auth";
+import { libelleProfil, LIBELLES_ROLES, type Casquette, type Role } from "@shared/schema";
+import { t as textesSalles } from "@shared/textes/salles";
 import { FournisseurFlux } from "@/lib/flux";
 import { Coquille } from "@/components/layout/coquille";
-import { Toasts } from "@/components/ui/toast";
-import { LienBouton } from "@/components/ui/bouton";
+import { Toasts, toast } from "@/components/ui/toast";
+import { Bouton, LienBouton } from "@/components/ui/bouton";
+import { useTextes } from "@/lib/textes";
+import { Repeat } from "lucide-react";
 import type { DefRoute } from "@/routes-types";
 
 // Toutes les routes déclarées par les modules (modules/*/routes.tsx).
@@ -43,6 +46,42 @@ function PageInterdite({ profil = false }: { profil?: boolean }) {
             : "Elle est réservée à un autre profil du campus. Vous pouvez revenir à votre accueil."}
       </p>
       <LienBouton href={moi ? accueilDuRole(moi.role) : "/"}>Revenir à mon accueil</LienBouton>
+    </div>
+  );
+}
+
+/**
+ * Double casquette : la page demandée est réservée à l'autre casquette de la personne (le lien du rappel des salles
+ * du jour, /pilotage/salles, ouvert depuis le compte formateur). Plutôt qu'un refus, « Cette page est dans votre
+ * espace Direction » et un bouton qui bascule et rouvre la même page.
+ */
+function PageAutreCasquette({ actuel, casquette }: { actuel: Role; casquette: Casquette }) {
+  const tx = useTextes(textesSalles);
+  const [envoi, setEnvoi] = useState(false);
+  const v = { espace: LIBELLES_ROLES[casquette.role], actuel: LIBELLES_ROLES[actuel] };
+  return (
+    <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-6 py-20 text-center sm:py-24">
+      <span className="etiquette">{tx("casquette.page.etiquette")}</span>
+      <h1 className="text-3xl font-black">{tx("casquette.page.titre", { v })}</h1>
+      <p className="text-texte-pale">{tx("casquette.page.texte", { v })}</p>
+      <Bouton
+        taille="lg"
+        className="min-h-[56px] w-full sm:w-auto"
+        chargement={envoi}
+        icone={<Repeat className="h-5 w-5" />}
+        onClick={() => {
+          setEnvoi(true);
+          basculerCasquette(window.location.pathname + window.location.search + window.location.hash).catch((e) => {
+            setEnvoi(false);
+            toast((e as Error).message, "erreur");
+          });
+        }}
+      >
+        {tx("casquette.page.bouton", { v })}
+      </Bouton>
+      <LienBouton href={accueilDuRole(actuel)} variante="fantome" className="min-h-[48px]">
+        {tx("casquette.page.retour", { v })}
+      </LienBouton>
     </div>
   );
 }
@@ -90,11 +129,19 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
   const autorise = def.acces === "connecte" || def.acces.includes(moi.role);
   // Équipe : le profil doit aussi permettre la page (ext-profils.ts).
   const profilOk = profilPermet(moi, def.droit);
+  // Double casquette : page de l'autre casquette (la direction a tous les droits ; une vie scolaire, ceux de son
+  // profil, que le client ne connaît pas : seulement les pages sans droit particulier).
+  const autreCasquette =
+    !autorise && moi.casquette && def.acces !== "connecte" && def.acces.includes(moi.casquette.role) && (moi.casquette.role === "admin" || !def.droit)
+      ? moi.casquette
+      : null;
   const contenu =
     autorise && profilOk ? (
       <Suspense fallback={<EcranChargement />}>
         <Page {...params} />
       </Suspense>
+    ) : autreCasquette ? (
+      <PageAutreCasquette actuel={moi.role} casquette={autreCasquette} />
     ) : (
       <PageInterdite profil={autorise} />
     );

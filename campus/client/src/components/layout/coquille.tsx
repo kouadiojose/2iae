@@ -44,9 +44,27 @@ function useCompteur() {
   return useQuery<CompteurNotifications>({ queryKey: ["/api/notifications/compteur"], refetchInterval: 120_000 });
 }
 
-function BoutonDirect({ compact }: { compact?: boolean }) {
+/**
+ * « Rejoindre le live ». compact : « Live » (téléphone). colonne : le point rouge et « Live » dessous, comme « Plus »,
+ * quand la bascule de casquette prend aussi sa place dans l'en-tête d'un téléphone (360 px).
+ */
+function BoutonDirect({ compact, colonne }: { compact?: boolean; colonne?: boolean }) {
   const { data } = useEnCours();
   if (!data?.enDirect) return null;
+  if (colonne) {
+    return (
+      <Link
+        href={`/live/${data.enDirect.id}`}
+        aria-label="Rejoindre le live"
+        className="flex shrink-0 flex-col items-center rounded-xl px-1.5 py-1 text-direct no-underline hover:bg-creme hover:text-direct"
+      >
+        <span className="grid h-[22px] w-[22px] place-items-center rounded-full bg-encre">
+          <span className="point-direct" />
+        </span>
+        <span className="text-[11px] font-bold leading-tight">Live</span>
+      </Link>
+    );
+  }
   return (
     <Link
       href={`/live/${data.enDirect.id}`}
@@ -84,7 +102,11 @@ function Cloche() {
   );
 }
 
-/** Double casquette : la bascule reste visible dans l'en-tête (« Direction ⇄ »). */
+/**
+ * Double casquette : la bascule reste visible dans l'en-tête (« ⇄ Direction »), libellé compris sur téléphone (13 octobre
+ * 2026 : l'icône seule ne disait pas où elle menait). Libellé court du rôle ; le campus de la vie scolaire reste dans
+ * l'infobulle et le nom annoncé.
+ */
 function BoutonCasquette() {
   const moi = useMoiConnecte();
   const [envoi, setEnvoi] = useState(false);
@@ -100,12 +122,13 @@ function BoutonCasquette() {
           toast((e as Error).message, "erreur");
         });
       }}
-      className="flex items-center gap-1.5 rounded-full border border-ligne px-2.5 py-2 text-[13px] font-bold text-encre hover:border-orange hover:bg-orange-pale disabled:opacity-60 sm:px-3.5"
+      // Téléphone : l'icône et le libellé dessous, comme « Plus » à côté (la place manque pour une pastille) ; ordinateur : pastille.
+      className="flex shrink-0 flex-col items-center whitespace-nowrap rounded-xl bg-orange-pale px-1.5 py-1 text-encre hover:bg-orange-clair disabled:opacity-60 sm:flex-row sm:gap-1.5 sm:rounded-full sm:border sm:border-ligne sm:bg-transparent sm:px-3.5 sm:py-2 sm:hover:border-orange sm:hover:bg-orange-pale"
       title={`Passer en ${moi.casquette.libelle}`}
       aria-label={`Passer en ${moi.casquette.libelle}`}
     >
-      <Repeat className="h-4 w-4 text-orange-fonce" />
-      <span className="hidden sm:inline">{moi.casquette.role === "formateur" ? "Formateur" : moi.casquette.role === "admin" ? "Direction" : "Vie scolaire"}</span>
+      <Repeat className="h-[22px] w-[22px] shrink-0 text-orange-fonce sm:h-4 sm:w-4" />
+      <span className="text-[11px] font-bold leading-tight sm:text-[13px]">{LIBELLES_ROLES[moi.casquette.role]}</span>
     </button>
   );
 }
@@ -299,8 +322,12 @@ function EcouteGlobale() {
   return null;
 }
 
-/** Entrées visibles dans l'en-tête (le reste va dans « Plus ») : l'équipe et le formateur ont des libellés plus longs. */
-const navVisibles = (role: string, enDirect: boolean) => (role === "admin" || role === "vie_scolaire" || role === "formateur" ? 6 : 7) - (enDirect ? 1 : 0);
+/**
+ * Entrées visibles dans l'en-tête (le reste va dans « Plus ») : l'équipe et le formateur ont des libellés plus longs ;
+ * une de moins pendant un direct (« Rejoindre le live ») et une de moins avec la bascule de casquette.
+ */
+const navVisibles = (role: string, enDirect: boolean, casquette: boolean) =>
+  (role === "admin" || role === "vie_scolaire" || role === "formateur" ? 6 : 7) - (enDirect ? 1 : 0) - (casquette ? 1 : 0);
 
 /** « Ma classe » du formateur s'ouvre directement sur la classe à 45 minutes du début, comme le bouton de l'accueil. */
 const AVANT_CLASSE_MS = 45 * 60_000;
@@ -323,7 +350,7 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
   const nav = navigationDe(moi);
   const { onglets, plus } = ongletsTelephone(nav);
   const { data: enCours } = useEnCours();
-  const NAV_VISIBLES = navVisibles(moi.role, Boolean(enCours?.enDirect));
+  const NAV_VISIBLES = navVisibles(moi.role, Boolean(enCours?.enDirect), Boolean(moi.casquette));
   const { data: compteur } = useCompteur();
 
   useEffect(() => {
@@ -388,13 +415,17 @@ export function Coquille({ children, pleinEcran = false }: { children: ReactNode
               </Menu>
             )}
           </nav>
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-2 lg:ml-0">
+          {/* Double casquette sur téléphone : la bascule garde son libellé ; pour tenir en 360 px avec « Live », les boutons se
+              serrent, « Live » passe en colonne, et il quitte l'en-tête quand la barre du bas l'a déjà (onglet central « En direct »). */}
+          <div className={cn("ml-auto flex items-center gap-1.5 sm:gap-2 lg:ml-0", moi.casquette && "max-[399px]:gap-1")}>
             <div className="hidden sm:block">
               <BoutonDirect />
             </div>
-            <div className="sm:hidden">
-              <BoutonDirect compact />
-            </div>
+            {!(moi.casquette && onglets.some((el) => el.central)) && (
+              <div className="sm:hidden">
+                <BoutonDirect compact colonne={Boolean(moi.casquette)} />
+              </div>
+            )}
             <BoutonCasquette />
             <div className="lg:hidden">
               <MenuPlusTelephone elements={plus} chemin={chemin} />

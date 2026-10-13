@@ -12,7 +12,13 @@
 // par jour (« Riviera · L1 · Salle de conférence 1 », ses cours, le lien de son écran), envoyé d'un
 // toucher au coordinateur des salles, qui le transfère au responsable de la salle. Son numéro se
 // règle sur la page (par défaut NUMERO_COORDINATEUR_PAR_DEFAUT) ; chaque matin à 6 h 30 (Abidjan),
-// la direction reçoit un rappel quand il y a des messages à envoyer (server/routes/salles.ts).
+// la direction reçoit un rappel quand il y a des messages à envoyer (server/routes/salles.ts), sur
+// ses deux casquettes quand elle en a deux (formateur et direction).
+//
+// Pour qu'on la trouve (13 octobre 2026) : une carte orange en haut du tableau de la direction les
+// jours où il y a des messages à envoyer, une carte sur l'accueil du formateur dont l'autre
+// casquette est la direction (un toucher : il passe en Direction et arrive sur la page), et le
+// lien du rappel qui marche depuis l'une ou l'autre casquette (CompteSallesDuJour, plus bas).
 //
 // Stockage : colonnes salle_nom, salle_public et salle_numero du compte de l'écran
 // (migration 0034_salles_paralleles). L'écran de chaque campus d'avant devient la salle 1 :
@@ -190,3 +196,40 @@ export type SallesDuJour = {
 
 /** PUT /api/pilotage/salles-du-jour/numero (direction) : le numéro qui reçoit les liens. */
 export type CorpsNumeroSalles = { numero: string };
+
+/**
+ * Ce qu'il reste à faire aujourd'hui sur « Les salles du jour », sans aucun lien d'écran (13 octobre 2026 :
+ * José ne trouvait pas la page). GET /api/pilotage/salles-du-jour/compte (tableau de la direction, mêmes droits
+ * que la page) et GET /api/casquette/salles-du-jour (accueil d'un formateur dont l'autre casquette est la
+ * direction). Réponses sans cache.
+ */
+export type CompteSallesDuJour = {
+  /** « 2026-10-13 » (jour d'Abidjan) */
+  date: string;
+  /** Messages à envoyer aujourd'hui (salles qui ont cours et un écran prêt). */
+  messages: number;
+  /** Salles qui ont cours aujourd'hui mais dont il faut d'abord préparer le lien de l'écran. */
+  aPreparer: number;
+  /**
+   * Repère « Envoyé » de chaque message du jour (cleEnvoiSalle : jour, campus, salle, empreinte du message ; jamais
+   * le message ni le lien) : la page qui montre le compte retire les messages déjà envoyés depuis ce navigateur.
+   */
+  envois: string[];
+};
+
+/** Préfixe des repères « Envoyé » gardés dans le navigateur (localStorage), un par message envoyé. */
+export const PREFIXE_ENVOI_SALLES = "campus:salles-du-jour:";
+
+/** Empreinte courte d'un message (FNV-1a) : un message modifié (nouveau lien, cours ajouté ou déplacé) redevient « à envoyer ». */
+export function empreinteMessage(texte: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < texte.length; i++) {
+    h ^= texte.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/** Repère « Envoyé » du message d'une salle pour un jour (même clé sur la page et sur le tableau). */
+export const cleEnvoiSalle = (date: string, siteId: number, numero: number, message: string | null) =>
+  `${PREFIXE_ENVOI_SALLES}${date}:${siteId}:${numero}:${message ? empreinteMessage(message) : "-"}`;

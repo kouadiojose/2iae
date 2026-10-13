@@ -7,10 +7,12 @@
 // page. Les liens donnent accès aux écrans : page réservée à la direction (droit des écrans),
 // réponse sans cache. Les réglages des salles (ajouter, nom, public, installer l'écran) sont dans
 // chaque carte : pas besoin d'aller chercher « Les campus ».
-import { useEffect, useMemo, useState } from "react";
+// Sur téléphone (13 octobre 2026), à l'ouverture, la page descend juste assez pour que le premier « Envoyer sur
+// WhatsApp » soit visible au-dessus de la barre du bas : on n'a pas à le chercher.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Copy, MessageCircle, MonitorSmartphone, Phone, TriangleAlert } from "lucide-react";
-import type { CampusDuJour, SalleDuJour, SallesDuJour, SallesDuSite } from "@shared/salles";
+import { cleEnvoiSalle, PREFIXE_ENVOI_SALLES as PREFIXE_ENVOI, type CampusDuJour, type SalleDuJour, type SallesDuJour, type SallesDuSite } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton } from "@/components/ui/bouton";
@@ -37,6 +39,7 @@ export default function PageSallesDuJour() {
   const reglages = useQuery<SallesDuSite[]>({ queryKey: ["/api/pilotage/salles"] });
   const [ecran, setEcran] = useState<EcranDeSalle | null>(null);
   useEffect(oublierVieuxEnvois, []);
+  usePremierEnvoiVisible(Boolean(data));
 
   return (
     <Page>
@@ -83,6 +86,25 @@ export default function PageSallesDuJour() {
       <FenetreEcran site={ecran} onFermer={() => setEcran(null)} />
     </Page>
   );
+}
+
+/**
+ * À l'ouverture de la page, une seule fois : si le premier « Envoyer sur WhatsApp » est sous le bas de l'écran (téléphone :
+ * l'en-tête, le compte et le numéro le poussent sous la barre du bas), la page descend juste assez pour le montrer
+ * au-dessus de la barre (marge de défilement du bouton). Rien si la personne a déjà fait défiler, ni au changement d'onglet.
+ */
+function usePremierEnvoiVisible(pret: boolean) {
+  const fait = useRef(false);
+  useEffect(() => {
+    if (!pret || fait.current) return;
+    fait.current = true;
+    const id = requestAnimationFrame(() => {
+      const bouton = document.querySelector<HTMLElement>("[data-envoi-salle]");
+      if (!bouton || window.scrollY > 40) return;
+      if (bouton.getBoundingClientRect().bottom > window.innerHeight) bouton.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [pret]);
 }
 
 /** « +225 07 07 72 09 40 » ; un autre pays : « +33612345678 ». */
@@ -150,18 +172,6 @@ function NumeroCoordinateur({ numero, peutRegler }: { numero: string; peutRegler
   );
 }
 
-const PREFIXE_ENVOI = "campus:salles-du-jour:";
-
-/** Empreinte courte d'un message (FNV-1a) : un message modifié (nouveau lien, cours ajouté ou déplacé) redevient « à envoyer ». */
-function empreinte(texte: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < texte.length; i++) {
-    h ^= texte.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36);
-}
-
 /** Les repères « Envoyé » d'avant-hier et plus anciens ne servent plus : on les retire de ce navigateur. */
 function oublierVieuxEnvois() {
   try {
@@ -223,7 +233,8 @@ function CarteCampus({ c, date, reglages, onEcran }: { c: CampusDuJour; date: st
 
       <ul className="flex flex-col gap-4">
         {c.salles.map((s) => {
-          const cleEnvoi = `${PREFIXE_ENVOI}${date}:${c.siteId}:${s.numero}:${s.message ? empreinte(s.message) : "-"}`;
+          // Même repère que le compte du tableau et de l'accueil (shared/salles.ts) : un message envoyé y est retiré.
+          const cleEnvoi = cleEnvoiSalle(date, c.siteId, s.numero, s.message);
           return <LigneSalle key={cleEnvoi} s={s} cleEnvoi={cleEnvoi} onEcran={() => ecranDe(s)} />;
         })}
       </ul>
@@ -301,8 +312,10 @@ function LigneSalle({ s, cleEnvoi, onEcran }: { s: SalleDuJour; cleEnvoi: string
               rel="noopener noreferrer"
               onClick={noterEnvoi}
               aria-label={`${tx("jour.envoyer")} · ${s.etiquette}`}
+              data-envoi-salle=""
               className={cn(
-                "inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold no-underline",
+                // Marge de défilement : amené à l'écran (usePremierEnvoiVisible), il s'arrête au-dessus de la barre du bas.
+                "inline-flex min-h-[48px] scroll-mb-32 items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold no-underline lg:scroll-mb-6",
                 envoye
                   ? "border-[1.5px] border-encre bg-white text-encre hover:bg-orange-pale hover:text-encre"
                   : "bg-encre text-white hover:bg-orange hover:text-encre",

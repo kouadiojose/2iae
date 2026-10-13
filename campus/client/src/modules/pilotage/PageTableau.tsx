@@ -10,14 +10,16 @@
 // arrive avec le tableau ; le serveur garde le calcul 2 minutes par périmètre.
 //
 // En tête (8 octobre 2026 au soir) : la grande carte « Voir tout le travail du campus » (/pilotage/travail).
+// Avant elle (13 octobre 2026), pour la direction, les jours où il reste des liens de salles à envoyer : la carte
+// orange « 10 liens de salles à envoyer aujourd'hui » (CartesSallesDuJour) ; les autres jours, la petite carte
+// « Les salles du jour » reste à sa place.
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus, Activity, MonitorSmartphone } from "lucide-react";
+import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus, Activity } from "lucide-react";
 import type { Droit } from "@shared/schema";
 import type { IndicateursTableau, TableauPilotageEngagement } from "@shared/engagement/indicateurs";
 import { t as te, selonNombre } from "@shared/textes/engagement";
-import { t as textesSalles } from "@shared/textes/salles";
 import { useTextes } from "@/lib/textes";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Chiffre, BarreProgression, Chargement, Erreur, EtatVide } from "@/components/ui/divers";
@@ -32,6 +34,7 @@ import { LigneAContacter } from "./composants/LigneAContacter";
 import { FenetreSuivi } from "./composants/FenetreSuivi";
 import { CarteRentree } from "./composants/CarteRentree";
 import { CarteTravail } from "./composants/CarteTravail";
+import { CarteActionSalles, CarteLienSalles, useSallesDuJour } from "./composants/CartesSallesDuJour";
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 import { pourcent } from "./outils";
 
@@ -40,7 +43,11 @@ export default function PageTableau() {
   // Ce que le profil permet (ext-profils.ts) : le tableau ne montre que ce que la personne peut utiliser.
   const peutSuivre = profilPermet(moi, "suivi");
   const tx = useTextes(te);
-  const txs = useTextes(textesSalles);
+  // Les salles du jour : la carte d'action en haut est pour la direction (c'est elle qui envoie les liens et reçoit le
+  // rappel de 6 h 30) ; une équipe qui a le droit des écrans garde la petite carte.
+  const outils = profilPermet(moi, "outils_campus");
+  const salles = useSallesDuJour("/api/pilotage/salles-du-jour/compte", outils && moi.role === "admin");
+  const actionSalles = moi.role === "admin" && salles.aFaire;
   // Le tableau apporte aussi les 4 premiers « à contacter » (la liste complète, paginée, est sur /pilotage/suivi).
   const tableau = useQuery<TableauPilotageEngagement>({ queryKey: ["/api/pilotage/tableau"] });
   const [suivi, setSuivi] = useState<{ id: number; prenom: string; nom: string } | null>(null);
@@ -66,6 +73,9 @@ export default function PageTableau() {
         }
       />
 
+      {/* Des liens de salles à envoyer aujourd'hui : avant tout le reste. */}
+      {actionSalles && <CarteActionSalles restants={salles.restants} aPreparer={salles.aPreparer} />}
+
       {/* « Le travail du campus » d'abord : ce qui a été fait, avant les statistiques. */}
       {profilPermet(moi, ["notes", "presences_voir"]) && (
         <LimiteSilencieuse nom="CarteTravail">
@@ -73,21 +83,10 @@ export default function PageTableau() {
         </LimiteSilencieuse>
       )}
 
-      {profilPermet(moi, "outils_campus") && <CarteRentree />}
+      {outils && <CarteRentree />}
 
-      {/* Les liens des écrans de chaque salle, chaque jour, à envoyer sur WhatsApp à la vie scolaire des campus. */}
-      {profilPermet(moi, "outils_campus") && (
-        <CarteLien href="/pilotage/salles" className="flex min-h-[64px] items-center gap-3 p-4">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-clair text-orange-fonce">
-            <MonitorSmartphone className="h-5 w-5" />
-          </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="font-extrabold">{txs("jour.lien")}</span>
-            <span className="text-[13px] text-texte-gris">{txs("jour.lien.texte")}</span>
-          </span>
-          <ArrowRight className="ml-auto h-5 w-5 shrink-0" />
-        </CarteLien>
-      )}
+      {/* Les liens des écrans de chaque salle, chaque jour, à envoyer sur WhatsApp au coordinateur des salles (rien à envoyer aujourd'hui). */}
+      {outils && !actionSalles && <CarteLienSalles />}
 
       {tableau.isLoading && <Chargement lignes={2} />}
       {tableau.error && <Erreur message={(tableau.error as Error).message} reessayer={() => tableau.refetch()} />}

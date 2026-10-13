@@ -1,7 +1,8 @@
 // Textes des salles de conférence d'un campus (shared/salles.ts) : réglage des salles dans
 // « Les campus », page « Les salles du jour », messages WhatsApp (un par salle et par jour, envoyés
-// au coordinateur des salles) et rappel du matin de la direction. Couche commune :
-// shared/textes/index.ts. Personnel vouvoyé ; pas de tiret long.
+// au coordinateur des salles), rappel du matin de la direction, carte d'action du tableau, carte de
+// l'accueil du formateur à double casquette et page « Cette page est dans votre espace Direction ».
+// Couche commune : shared/textes/index.ts. Personnel vouvoyé ; pas de tiret long.
 import { creerTextes } from "./index";
 
 export const t = creerTextes({
@@ -99,6 +100,35 @@ export const t = creerTextes({
   "rappel.corps": "{n} messages à envoyer sur WhatsApp (salles des cinq campus).",
   "rappel.aPreparer.un": "1 salle attend d'abord le lien de son écran.",
   "rappel.aPreparer": "{n} salles attendent d'abord le lien de leur écran.",
+
+  // ── Tableau de la direction : carte d'action en haut, les jours où il y a des liens à envoyer ──
+  "action.etiquette": "À faire aujourd'hui",
+  "action.titre.un": "1 lien de salle à envoyer aujourd'hui",
+  "action.titre": "{n} liens de salles à envoyer aujourd'hui",
+  "action.titre.aPreparer.un": "1 écran de salle à préparer aujourd'hui",
+  "action.titre.aPreparer": "{n} écrans de salle à préparer aujourd'hui",
+  "action.texte": "Un toucher par salle : le message part sur WhatsApp au coordinateur des salles.",
+  "action.aPreparer.un": "1 salle attend d'abord le lien de son écran.",
+  "action.aPreparer": "{n} salles attendent d'abord le lien de leur écran.",
+  "action.bouton": "Envoyer les liens des salles",
+  "action.bouton.aPreparer": "Préparer les écrans des salles",
+
+  // ── Accueil du formateur dont l'autre casquette est la direction ────────
+  "casquette.carte.titre": "Les liens des salles du jour",
+  "casquette.carte.texte": "Passez en Direction pour les envoyer sur WhatsApp",
+  "casquette.carte.compte.un": "1 lien à envoyer aujourd'hui",
+  "casquette.carte.compte": "{n} liens à envoyer aujourd'hui",
+  "casquette.carte.aPreparer.un": "1 écran à préparer",
+  "casquette.carte.aPreparer": "{n} écrans à préparer",
+  "casquette.carte.bouton": "Passer en Direction",
+  "casquette.reserve": "Réservé aux formateurs dont l'autre casquette est la direction.",
+
+  // ── Page de l'autre casquette (lien du rappel ouvert depuis le compte formateur) ──
+  "casquette.page.etiquette": "Votre autre casquette",
+  "casquette.page.titre": "Cette page est dans votre espace {espace}",
+  "casquette.page.texte": "Vous êtes en ce moment dans votre espace {actuel}. Un toucher, et la page s'ouvre dans votre espace {espace}.",
+  "casquette.page.bouton": "Passer en {espace}",
+  "casquette.page.retour": "Rester dans mon espace {actuel}",
 
   // ── Alertes de « Les salles du jour » ───────────────────────────────────
   "alerte.sansSalle": "{cours} ({niveau}, {heure}) n'a pas de salle : ajoutez une salle {niveau}, ou réglez une salle sur « Toutes les classes ».",

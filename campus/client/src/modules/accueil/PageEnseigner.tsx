@@ -12,6 +12,10 @@
 //
 // Le reste (écrire aux étudiants, mes cours, vidéos des cours, emploi du temps, annonces, questions en
 // suspens) n'est plus qu'une rangée de liens simples en bas : rien ne disparaît du campus, seulement de l'accueil.
+//
+// Double casquette avec la direction (José, 13 octobre 2026) : en haut, avant le reste, les jours où il reste des
+// liens de salles à envoyer, la carte « Les liens des salles du jour » ; un toucher le fait passer en Direction et
+// ouvre directement « Les salles du jour » (CartesSallesDuJour).
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -55,6 +59,8 @@ import type { Traducteur } from "@shared/textes";
 import { EVENEMENTS_ACCUEIL, jourRelatif, majuscule } from "./outils";
 import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
 import { MANUELS } from "@/modules/manuels/manuels";
+import { CarteCasquetteSalles, useSallesDuJour } from "@/modules/pilotage/composants/CartesSallesDuJour";
+import { useMoiConnecte } from "@/lib/auth";
 import { t as textesManuels } from "@shared/textes/manuels";
 
 type Tx = Traducteur<CleTravail>;
@@ -96,6 +102,9 @@ export default function PageEnseigner() {
 
 function ContenuAccueil({ data, seance, maintenant, tx }: { data: AccueilFormateur; seance: SeanceFormateur | null; maintenant: number; tx: Tx }) {
   const choses = useChosesAFaire(data.messagesNonLus, tx);
+  // Autre casquette : la direction. Le compte du jour (sans lien) dit s'il reste des liens de salles à envoyer.
+  const moi = useMoiConnecte();
+  const salles = useSallesDuJour("/api/casquette/salles-du-jour", moi.role === "formateur" && moi.casquette?.role === "admin");
   return (
     <Page className="gap-6 sm:gap-8">
       <header className="flex flex-col gap-1">
@@ -104,6 +113,12 @@ function ContenuAccueil({ data, seance, maintenant, tx }: { data: AccueilFormate
           {data.salutation} {data.prenom}.
         </h1>
       </header>
+
+      {salles.aFaire && (
+        <LimiteSilencieuse nom="CasquetteSalles">
+          <CarteCasquetteSalles restants={salles.restants} aPreparer={salles.aPreparer} />
+        </LimiteSilencieuse>
+      )}
 
       {/* Sur ordinateur, « À faire » se range à droite de la classe ; rien à faire : la classe seule. */}
       <div className={cn("grid gap-6 lg:items-start lg:gap-8", choses.length ? "lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]" : "lg:max-w-[760px]")}>

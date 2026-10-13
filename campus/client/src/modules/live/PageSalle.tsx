@@ -32,7 +32,7 @@ import { EmargementPleinEcran, GuideChargeDeCours, cheminEmargement, useCodeSall
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 // Emplacement du plan d'engagement (campus/ENGAGEMENT.md) : sans cours et avant le cours, jamais pendant.
 import { CoupeSalle } from "@/modules/progression/CoupeSalle";
-import type { EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
+import type { DevoirDirectDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
 import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
@@ -295,11 +295,11 @@ function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; 
   }
   if (!code) return <div className="rounded-[28px] bg-nuit-panneau p-6 text-xl text-nuit-doux">{erreur ?? "Chargement du code…"}</div>;
   if (mini) {
-    // Pendant un sondage : le code reste visible pour les retardataires, sur une seule ligne.
+    // Pendant un sondage ou un devoir en direct : le code reste visible pour les retardataires, sur une seule ligne.
     return (
-      <div className="flex items-center justify-between gap-4 rounded-[20px] bg-nuit-panneau px-5 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-4 rounded-[20px] bg-nuit-panneau px-5 py-3">
         <span className="font-mono text-sm uppercase tracking-[0.12em] text-orange-peche">Émargement</span>
-        <span className="text-4xl font-black tabular-nums tracking-[0.08em]" aria-live="polite">
+        <span className="text-4xl font-black tabular-nums tracking-[0.08em]" aria-live="polite" aria-label={`Code d'émargement ${code.code.split("").join(" ")}`}>
           {code.code}
         </span>
       </div>
@@ -503,6 +503,8 @@ function PendantLeCours({
   const questionEnCours = etat.questions.find((q) => q.epinglee && !q.masquee);
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
   const sondage = etat.sondage;
+  const devoirEnCours = useDevoirEnCours(etat);
+  const devoir = sondage ? null : devoirEnCours;
   const commandes = useCommandesVisibles(presentation);
   const cacheeParFormateur = !etat.copie && (etat.diapo.masquee || etat.diapo.disposition === "cameras");
   return (
@@ -571,17 +573,20 @@ function PendantLeCours({
       </div>
       {!presentation && (
         <aside className="flex flex-col gap-4 lg:min-h-0 lg:overflow-hidden">
+          {/* Sur un écran bas, la carte du sondage se coupe par le bas plutôt que de pousser le code hors de la colonne. */}
           {sondage && (
-            <div className="rounded-[24px] bg-nuit-panneau p-5">
+            <div className="min-h-0 overflow-hidden rounded-[24px] bg-nuit-panneau p-5">
               <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{sondage.ouvert ? "Sondage en cours · réponds sur ton téléphone" : "Résultats du sondage"}</p>
               <p className="mb-4 mt-2 text-[clamp(22px,1.8vw,36px)] font-black leading-tight">{sondage.question}</p>
               {etat.resultats ? <ResultatsParCampus sondage={sondage} resultats={etat.resultats} grand /> : null}
             </div>
           )}
-          {/* Devoir donné en direct : la consigne en grand, chacun répond sur son téléphone (aucun nom). */}
-          {!sondage && <DevoirSurEcran etat={etat} />}
-          <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage)} />
-          {!sondage && <CompteursEmarges etat={etat} liste />}
+          {/* Devoir donné en direct : la consigne en grand, chacun répond sur son téléphone (aucun nom).
+              Comme pour un sondage, le code d'émargement passe sur une ligne, sous la carte, et reste visible
+              pour les retardataires : la colonne coupe ce qui dépasse, la consigne se raccourcit d'abord. */}
+          {devoir && <DevoirSurEcran devoir={devoir} />}
+          <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage || devoir)} />
+          {!sondage && !devoir && <CompteursEmarges etat={etat} liste />}
         </aside>
       )}
       {presentation && sondage?.ouvert && (
@@ -782,20 +787,40 @@ function ConsoleResponsable({ seance, etat, siteId, petit }: { seance: SeanceDet
   );
 }
 
-/** Devoir en cours (donné en direct depuis le Studio), dans l'aside de l'écran de salle, tant que sa date limite n'est pas passée. */
-function DevoirSurEcran({ etat }: { etat: EtatDirectDto }) {
-  const maintenant = useMaintenant(30_000);
-  const tx = useTextes(textesDirect);
+/**
+ * Devoir donné en direct depuis le Studio, tant que sa date limite n'est pas passée (sinon null). Un minuteur
+ * calé sur la date limite (plus une seconde : l'heure du serveur n'est connue qu'à la seconde près) retire la
+ * carte à l'heure dite, et juste après « Arrêter les réponses », sans attendre un tic périodique.
+ */
+function useDevoirEnCours(etat: EtatDirectDto): DevoirDirectDto | null {
   const dd = etat.devoirDirect;
-  if (!dd || new Date(dd.dateLimite).getTime() <= maintenant) return null;
+  const fin = dd ? new Date(dd.dateLimite).getTime() : null;
+  const [tic, relire] = useState(0);
+  useEffect(() => {
+    if (fin === null) return;
+    const reste = fin - maintenantServeur();
+    if (reste < 0) return;
+    const id = setTimeout(() => relire((n) => n + 1), Math.min(reste + 1000, 2_000_000_000));
+    return () => clearTimeout(id);
+  }, [fin, tic]);
+  return dd && fin !== null && fin > maintenantServeur() ? dd : null;
+}
+
+/**
+ * Devoir en cours, dans l'aside de l'écran de salle. Sur un écran bas (1280×720, 1366×768), le titre tient
+ * en deux lignes, la consigne en trois et, s'il le faut encore, la consigne se raccourcit seule : l'étiquette,
+ * le titre et l'heure limite restent lisibles, et le code d'émargement placé dessous ne sort pas de la colonne.
+ */
+function DevoirSurEcran({ devoir }: { devoir: DevoirDirectDto }) {
+  const tx = useTextes(textesDirect);
   return (
-    <div className="rounded-[24px] bg-nuit-panneau p-5">
-      <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{tx("salle.etiquette")}</p>
-      <p className="mt-2 text-[clamp(22px,1.8vw,34px)] font-black leading-tight">{dd.titre}</p>
-      <div className="mt-2 line-clamp-6 text-[clamp(16px,1.2vw,22px)] leading-snug text-nuit-texte">
-        <Markdown source={dd.consigne} nuit />
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-nuit-panneau p-5">
+      <p className="shrink-0 font-mono text-sm uppercase tracking-wider text-orange-peche">{tx("salle.etiquette")}</p>
+      <p className="mt-2 line-clamp-3 shrink-0 text-[clamp(22px,1.8vw,34px)] font-black leading-tight lg:[@media(max-height:820px)]:line-clamp-2">{devoir.titre}</p>
+      <div className="mt-2 line-clamp-6 min-h-0 text-[clamp(16px,1.2vw,22px)] leading-snug text-nuit-texte lg:[@media(max-height:820px)]:line-clamp-3">
+        <Markdown source={devoir.consigne} nuit />
       </div>
-      <p className="mt-3 font-mono text-base text-orange-peche">{tx("salle.limite", { v: { heure: heure(dd.dateLimite) } })}</p>
+      <p className="mt-3 shrink-0 font-mono text-base text-orange-peche">{tx("salle.limite", { v: { heure: heure(devoir.dateLimite) } })}</p>
     </div>
   );
 }

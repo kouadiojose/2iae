@@ -7,7 +7,7 @@
 import { eq, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
 import { contenusSite } from "@shared/schema";
-import { AVANCE_MAX_OUVERTURE_MIN, CLE_OUVERTURE_AUTO, OUVERTURE_AUTO_PAR_DEFAUT, reglageOuvertureValide, type ReglageOuvertureAuto, type ReglageOuvertureAutoDto } from "@shared/ouverture";
+import { CLE_OUVERTURE_AUTO, OUVERTURE_AUTO_PAR_DEFAUT, reglageOuvertureValide, type ReglageOuvertureAuto, type ReglageOuvertureAutoDto } from "@shared/ouverture";
 
 /**
  * Repère posé dans rappels_live (seance_id, type) : « cette séance ne s'ouvre plus d'elle-même à cet horaire ».
@@ -15,6 +15,13 @@ import { AVANCE_MAX_OUVERTURE_MIN, CLE_OUVERTURE_AUTO, OUVERTURE_AUTO_PAR_DEFAUT
  * l'heure qui précède le cours ; effacé avec les autres rappels quand la séance change d'horaire.
  */
 export const REPERE_OUVERTURE_AUTO = "ouverture-auto";
+
+/**
+ * Repère « les étudiants ont déjà reçu le rappel du démarrage pour cet horaire » : posé par « C'était un essai »
+ * après une ouverture automatique (ils ont lu « la classe est ouverte, le cours commence à 08h30 ») ; le
+ * démarrage suivant ne le renvoie pas (un seul rappel par étudiant, décision D3). Effacé au déplacement.
+ */
+export const REPERE_RAPPEL_DEMARRAGE = "rappel-demarrage";
 
 let cache: { reglage: ReglageOuvertureAuto; majLe: Date | null } | null = null;
 
@@ -49,11 +56,10 @@ export function oublierReglageOuverture() {
 
 /**
  * Début du cours en SQL, même règle que debutDuCours (shared/ouverture.ts), pour une séance d'alias `a`
- * (campus.seances) : l'heure prévue si la séance a été ouverte au plus une heure avant elle, sinon le démarrage
- * réel, sinon l'heure prévue. Jamais NULL.
+ * (campus.seances) : debut_cours quand il est posé (classe ouverte automatiquement), sinon le démarrage réel, sinon
+ * l'heure prévue. Jamais NULL.
  */
 export function sqlDebutCours(a = "s"): SQL {
   const s = sql.raw(a);
-  return sql`(CASE WHEN ${s}.demarree_le < ${s}.debut AND ${s}.demarree_le >= ${s}.debut - make_interval(mins => ${sql.raw(String(AVANCE_MAX_OUVERTURE_MIN))})
-    THEN ${s}.debut ELSE COALESCE(${s}.demarree_le, ${s}.debut) END)`;
+  return sql`COALESCE(${s}.debut_cours, ${s}.demarree_le, ${s}.debut)`;
 }

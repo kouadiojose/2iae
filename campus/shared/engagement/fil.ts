@@ -21,6 +21,8 @@ export type FilSeance = {
   /** Heure prévue, et heures réelles du direct. */
   debut: string;
   demarreeLe: string | null;
+  /** Début du cours quand il n'est pas le démarrage (classe ouverte automatiquement : debutDuCours, shared/ouverture.ts). */
+  debutCours: string | null;
   termineeLe: string | null;
   statut: StatutSeance;
   cours: { id: number; code: string; titre: string; couleur: string };

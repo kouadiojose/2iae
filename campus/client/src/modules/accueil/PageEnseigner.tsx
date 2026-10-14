@@ -206,8 +206,9 @@ function CarteClasse({ seance, enDirect = false, maintenant, ensuite, tx }: { se
   // UN bouton qui change seul : préparer longtemps avant, entrer dans la classe à 45 minutes et pendant le direct.
   const entrer = enDirect || dans <= AVANT_CLASSE;
   const attendent = !enDirect && dans <= 0;
-  // Classe ouverte avant l'heure (ouverture automatique) : « Votre classe est ouverte », et l'heure du cours reste dite.
-  const ouverteEnAvance = enDirect && dans > 0;
+  // Classe ouverte automatiquement avant l'heure : « Votre classe est ouverte », et l'heure du cours reste dite. Une
+  // classe démarrée à la main avant l'heure a commencé (debutCours : le démarrage).
+  const ouverteEnAvance = enDirect && seance.debutCours !== null && new Date(seance.debutCours).getTime() > maintenant;
   // « 08h30 » en gros ; dessous « heure d'Abidjan · 04h30 chez vous (Toronto) » pour un formateur à l'étranger.
   const sousHeure = heureDouble(seance.debut).replace(/^\d{2}h\d{2} Abidjan/, tx("classe.abidjan"));
   return (

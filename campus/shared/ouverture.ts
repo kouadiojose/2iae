@@ -7,11 +7,18 @@
 // classe déjà ouverte. La tâche est dans server/routes/live.ts (« live-ouverture-auto »), le réglage dans
 // server/ouverture-auto.ts (contenus_site, clé « pilotage.ouverture-auto », jamais servie au site public).
 //
-// Une classe ouverte en avance n'avance pas le cours : tout ce qui se compte depuis le début du cours (retards,
-// minutes de présence, seuil des 70 %, fin du cours, échéance « fin du cours » d'un devoir, chrono du Studio,
-// moments de l'émargement, transcription du replay, enregistrement) part de debutDuCours(), c'est-à-dire de
-// l'heure PRÉVUE quand la classe a été ouverte au plus une heure avant elle, et du démarrage réel sinon (cours
-// commencé en retard, ou séance d'une autre semaine lancée par erreur : le cas de la séance #26, chantier C8).
+// Une classe ouverte automatiquement n'avance pas le cours. La séance garde trois choses (migration 0036) :
+//   - ouverture_auto : ce démarrage est l'ouverture automatique (un « Démarrer » à la main ne l'est jamais) ;
+//   - debut_cours : le début du cours quand il n'est pas le démarrage. Ouverte avant l'heure, c'est l'heure
+//     PRÉVUE ; l'animateur peut commencer plus tôt (« Commencer le cours maintenant » dans le Studio : l'instant
+//     du clic) ; s'il arrive après l'heure, le cours commence à son arrivée (comme un « Démarrer » en retard) ;
+//   - animateur_le : l'arrivée du premier animateur (formateur du cours qui ouvre son Studio ou entre dans la
+//     visio ; direction ou vie scolaire seulement sur une action explicite : « Je prends la classe », « Commencer
+//     le cours maintenant », diapo, parole, sondage ; regarder le Studio ou l'écran d'une salle ne compte pas).
+// Tout ce qui se compte depuis le début du cours (retards, minutes de présence, seuil des 70 %, fin du cours,
+// échéance « fin du cours » d'un devoir, chrono du Studio, moments de l'émargement, transcription du replay,
+// enregistrement) part de debutDuCours(). Un « Démarrer » à la main, même 20 minutes avant l'heure, garde le
+// démarrage réel comme début du cours, comme avant l'ouverture automatique : le formateur a commencé.
 
 /** Clé du réglage dans contenus_site (les clés « pilotage.* » ne sont jamais servies au site public). */
 export const CLE_OUVERTURE_AUTO = "pilotage.ouverture-auto";
@@ -29,30 +36,40 @@ export const OUVERTURE_AUTO_PAR_DEFAUT: ReglageOuvertureAuto = { actif: true, mi
 export type ReglageOuvertureAutoDto = ReglageOuvertureAuto & { majLe: string | null };
 
 /**
- * Une séance démarrée au plus 60 minutes avant son heure l'a été pour CE créneau : le cours commence à l'heure
- * prévue. Au-delà, c'est un autre créneau (séance d'une autre semaine ouverte par erreur) : le démarrage réel fait
- * foi. Aussi la plus grande avance permise à l'ouverture automatique.
+ * La plus grande avance permise à l'ouverture automatique (60 min). Une séance démarrée plus tôt que cela avant son
+ * heure l'a été pour un autre créneau (séance d'une autre semaine ouverte par erreur : séance #26, chantier C8).
  */
 export const AVANCE_MAX_OUVERTURE_MIN = 60;
-const AVANCE_MAX_MS = AVANCE_MAX_OUVERTURE_MIN * 60_000;
 
 const temps = (d: Date | string) => (d instanceof Date ? d.getTime() : new Date(d).getTime());
 
 /**
- * Début du cours, pour tout ce qui se compte depuis lui : l'heure prévue si la séance a été ouverte (à la main ou
- * automatiquement) au plus une heure avant elle ; sinon le démarrage réel ; sinon l'heure prévue. Même règle en
- * SQL : sqlDebutCours (server/ouverture-auto.ts).
+ * Ce qu'il faut savoir d'une séance pour dater le début de son cours. debutCours est obligatoire (même null) :
+ * l'oublier ferait commencer une classe ouverte en avance à son ouverture.
  */
-export function debutDuCours(s: { debut: Date | string; demarreeLe?: Date | string | null }): Date {
-  const debut = temps(s.debut);
-  if (!s.demarreeLe) return new Date(debut);
-  const demarree = temps(s.demarreeLe);
-  return new Date(demarree < debut && debut - demarree <= AVANCE_MAX_MS ? debut : demarree);
+export type DatesSeance = { debut: Date | string; demarreeLe?: Date | string | null; debutCours: Date | string | null | undefined };
+
+/**
+ * Début du cours, pour tout ce qui se compte depuis lui : debut_cours quand il est posé (classe ouverte
+ * automatiquement : l'heure prévue, ou l'instant où l'animateur a commencé) ; sinon le démarrage réel ; sinon
+ * l'heure prévue. Même règle en SQL : sqlDebutCours (server/ouverture-auto.ts).
+ */
+export function debutDuCours(s: DatesSeance): Date {
+  if (s.debutCours) return new Date(temps(s.debutCours));
+  return new Date(temps(s.demarreeLe ?? s.debut));
 }
 
 /** La classe est ouverte mais le cours n'a pas encore commencé (« les salles s'installent »). */
-export function classeOuverteEnAvance(s: { statut: string; debut: Date | string; demarreeLe?: Date | string | null }, maintenant: number): boolean {
+export function classeOuverteEnAvance(s: DatesSeance & { statut: string }, maintenant: number): boolean {
   return s.statut === "en_direct" && Boolean(s.demarreeLe) && debutDuCours(s).getTime() > maintenant;
+}
+
+/**
+ * Classe ouverte automatiquement où aucun animateur n'est encore entré : avant l'heure, « les salles s'installent » ;
+ * après, « en attente du formateur » (ni chrono ni enregistrement), et sans arrivée elle finit « Séance non tenue ».
+ */
+export function enAttenteAnimateur(s: { statut: string; ouvertureAuto: boolean; animateurLe: Date | string | null }): boolean {
+  return s.statut === "en_direct" && s.ouvertureAuto && !s.animateurLe;
 }
 
 /** Réglage lu en base, ramené à une valeur permise (une valeur inconnue retombe sur le défaut). */

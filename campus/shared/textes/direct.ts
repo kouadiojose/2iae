@@ -19,6 +19,11 @@ export const t = creerTextes({
   "ouverture.salle.corps": "{code} · le cours commence à {heure} (heure d'Abidjan). En salle ? Scanne le QR de l'écran pour être compté présent. Sinon, rejoins le cours en ligne.",
   "ouverture.emarge.corps": "{code} · le cours commence à {heure} (heure d'Abidjan). Tu es déjà compté présent ✓",
   "ouverture.enLigne.corps": "{code} · le cours commence à {heure} (heure d'Abidjan). Tu peux entrer dès maintenant.",
+  // Classe ouverte automatiquement APRÈS l'heure (serveur relancé pendant le créneau, réglage réactivé, séance
+  // précédente qui déborde) : personne ne l'a ouverte à la main, le formateur n'est pas encore là.
+  "ouverture.retard.salle.corps": "{code} · le cours devait commencer à {heure} (heure d'Abidjan), le formateur arrive. En salle ? Scanne le QR de l'écran pour être compté présent. Sinon, rejoins le cours en ligne.",
+  "ouverture.retard.emarge.corps": "{code} · le cours devait commencer à {heure} (heure d'Abidjan), le formateur arrive. Tu es déjà compté présent ✓",
+  "ouverture.retard.enLigne.corps": "{code} · le cours devait commencer à {heure} (heure d'Abidjan), le formateur arrive. Tu peux entrer dès maintenant.",
   // Formateurs du cours, à l'ouverture automatique (vouvoiement ; l'heure d'Abidjan et celle de chez eux).
   "ouverture.formateur.titre": "Votre classe est ouverte : {titre}",
   "ouverture.formateur.corps": "{code} · les salles s'installent : le cours commence à {heure}.",
@@ -26,9 +31,21 @@ export const t = creerTextes({
 
   // ── Classe ouverte avant l'heure du cours (Studio, écran de salle, en-tête du direct) ──
   "ouverte.entete": "Classe ouverte · début {heure}",
-  "ouverte.studio": "Classe ouverte avant l'heure : les salles s'installent et règlent le son. Le cours commence à {heure} ; le chrono et l'enregistrement partent à ce moment-là.",
+  "ouverte.studio": "Classe ouverte avant l'heure : les salles s'installent et règlent le son. Le cours commence à {heure} ; le chrono et l'enregistrement partent à ce moment-là, ou dès que vous commencez.",
+  "ouverte.commencer": "Commencer le cours maintenant",
+  "ouverte.commencer.ok": "Le cours commence : le chrono et l'enregistrement démarrent.",
   "ouverte.salle.titre": "Classe ouverte · le cours commence à {heure}",
   "ouverte.salle.texte": "Réglez le son et l'image avec les autres salles : le formateur arrive.",
+
+  // ── Classe ouverte automatiquement que personne n'anime encore, l'heure du cours passée ──
+  "attente.entete": "En attente du formateur",
+  "attente.studio": "Le cours devait commencer à {heure} : personne n'anime encore cette classe ouverte automatiquement. Ni chrono ni enregistrement tant que personne ne l'anime.",
+  "attente.studio.direction": "Regarder la classe ne compte pas. Si le formateur ne vient pas, prenez la classe pour l'animer ; sinon, elle finira « Séance non tenue » (ni présents ni absents).",
+  "attente.prendre": "Je prends la classe",
+  "attente.prendre.ok": "Vous animez la classe : le cours commence, le chrono et l'enregistrement démarrent.",
+  "attente.salle.titre": "Le formateur arrive",
+  "attente.salle.texte": "Le cours devait commencer à {heure}. Restez connectés : il commence dès que le formateur entre dans la classe.",
+  "attente.liste": "En attente du formateur",
 
   // ── Écran de salle : QR plein écran ─────────────────────────────────────
   "salle.qr.etiquette": "Émargement · {salle} · {site}",

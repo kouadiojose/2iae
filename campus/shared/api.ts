@@ -38,7 +38,19 @@ export type SeanceResume = {
 
 /** GET /api/live/en-cours — séance en direct maintenant et prochaine séance de la personne. */
 /** Une classe en direct ailleurs dans le campus (onglet Studio : la rejoindre en invité ou la reprendre). */
-export type DirectDuCampus = { id: number; titre: string; coursCode: string; coursTitre: string; formateur: string | null; demarreeLe: string | null };
+export type DirectDuCampus = {
+  id: number;
+  titre: string;
+  coursCode: string;
+  coursTitre: string;
+  formateur: string | null;
+  demarreeLe: string | null;
+  /** Heure prévue, et début du cours quand il n'est pas le démarrage (classe ouverte automatiquement : shared/ouverture.ts). */
+  debut: string;
+  debutCours: string | null;
+  /** Classe ouverte automatiquement où aucun animateur n'est encore entré (« en attente du formateur »). */
+  attenteAnimateur: boolean;
+};
 
 export type EnCours = {
   enDirect: SeanceResume | null;

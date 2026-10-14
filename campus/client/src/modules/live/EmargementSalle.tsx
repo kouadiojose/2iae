@@ -114,7 +114,7 @@ function useFenetreEmargement(seance: SeanceDetailDto, etat: EtatDirectDto, site
   // Moments du QR (début, +15, +45 min) comptés depuis le début du cours : l'heure prévue pour une classe ouverte
   // en avance (ouverture automatique), le démarrage réel sinon (debutDuCours).
   const demarree = etat.demarreeLe ?? seance.demarreeLe;
-  const demarreeLe = demarree ? debutDuCours({ debut: seance.debut, demarreeLe: demarree }).toISOString() : null;
+  const demarreeLe = demarree ? debutDuCours({ debut: seance.debut, demarreeLe: demarree, debutCours: etat.debutCours ?? seance.debutCours }).toISOString() : null;
   useEffect(() => {
     if (!enDirect) return;
     const suivante = decisionEmargement(memoire, { maintenant, demarreeLe: demarreeLe ? new Date(demarreeLe).getTime() : null, occupe, demande });

@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Copy, MessageCircle, MonitorSmartphone, Phone, TriangleAlert } from "lucide-react";
 import { cleEnvoiSalle, PREFIXE_ENVOI_SALLES as PREFIXE_ENVOI, type CampusDuJour, type SalleDuJour, type SallesDuJour, type SallesDuSite } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
+import { t as textesOuverture } from "@shared/textes/direct";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton } from "@/components/ui/bouton";
 import { Chargement, Erreur, EtatVide } from "@/components/ui/divers";
@@ -283,6 +284,7 @@ function CarteCampus({
 /** Une salle : ses cours, l'état de son écran et, si elle a cours ce jour-là, son message à envoyer. */
 function LigneSalle({ s, cleEnvoi, envoyeAilleurs, onEcran }: { s: SalleDuJour; cleEnvoi: string; envoyeAilleurs: boolean; onEcran: () => void }) {
   const tx = useTextes(textesSalles);
+  const txOuverture = useTextes(textesOuverture);
   const [envoye, noterEnvoi] = useEnvoye(cleEnvoi, envoyeAilleurs);
   return (
     <li className="flex min-w-0 flex-col gap-2 border-l-4 border-orange pl-3">
@@ -301,6 +303,7 @@ function LigneSalle({ s, cleEnvoi, envoyeAilleurs, onEcran }: { s: SalleDuJour; 
               <span className="font-mono font-semibold tabular-nums">{x.heures}</span> · {x.cours}
               {x.commun && s.public ? <span className="font-semibold"> ({tx("jour.commun")})</span> : null}
               {x.intervenant ? <span className="text-texte-doux"> · {x.intervenant}</span> : null}
+              {x.attenteFormateur ? <span className="ml-1.5 rounded-full bg-orange-clair px-2 py-0.5 text-[13px] font-bold text-orange-fonce">{txOuverture("attente.liste")}</span> : null}
             </li>
           ))}
         </ul>

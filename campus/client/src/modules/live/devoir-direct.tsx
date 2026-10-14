@@ -228,7 +228,7 @@ function FormulaireDevoir({
   const changer = (champs: Partial<FormulaireDevoirDirect>) => setFormulaire((x) => ({ ...x, ...champs }));
 
   // Échéances proposées : fin du cours (même calcul que le chrono du Studio), 10, 15, 30 min, ce soir.
-  const finCours = (etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() : new Date(seance.debut).getTime()) + seance.dureeMinutes * MINUTE;
+  const finCours = (etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime() : new Date(seance.debut).getTime()) + seance.dureeMinutes * MINUTE;
   const finProposee = finCours >= maintenant + 10 * MINUTE;
   // Chaque pastille : son nom, puis l'heure d'Abidjan à laquelle les réponses s'arrêteront, comme le serveur la
   // calcule (fin du cours à la minute entamée, comme « Fin prévue » du chrono ; durées à la minute supérieure).

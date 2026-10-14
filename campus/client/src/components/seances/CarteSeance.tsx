@@ -30,7 +30,7 @@ const surBareme = (moyenne: number, bareme: number) => `${nombre(moyenne)}/${nom
 export function CarteSeance({ seance, avecFormateur = false, className }: { seance: FilSeance; avecFormateur?: boolean; className?: string }) {
   const tx = useTextes(t);
   // Le jour et l'heure du cours : l'heure prévue pour une classe ouverte en avance (debutDuCours).
-  const quand = seance.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: seance.demarreeLe }).toISOString() : seance.debut;
+  const quand = seance.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: seance.demarreeLe, debutCours: seance.debutCours }).toISOString() : seance.debut;
   const jour = formaterDate(quand, { style: "jour" });
   const heure = formaterDate(quand, { style: "heure" });
   // Les séances s'appellent souvent « Initiation à l'IA · lundi 5 octobre » : le nom du cours ne se répète pas.

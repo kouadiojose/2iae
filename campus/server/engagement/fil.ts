@@ -32,6 +32,8 @@ import { db } from "../db";
 import { peut, perimetreSites } from "../auth";
 import { COLONNES_RESUME, sqlAttendus, versResume } from "../routes/admin";
 import { coursEnseignes } from "./formateurs";
+import { sqlDebutCours } from "../ouverture-auto";
+import { debutDuCours } from "@shared/ouverture";
 import type { StatutSeance, Utilisateur } from "@shared/schema";
 import type { StatutCorrige } from "@shared/engagement/corrections";
 import type { EtatResume, FilSeance, FilSeances, ResumeTravail } from "@shared/engagement/fil";
@@ -159,6 +161,8 @@ type LignePage = {
   titre: string;
   debut: Date;
   demarree_le: Date;
+  /** Début du cours quand il n'est pas le démarrage (classe ouverte automatiquement : shared/ouverture.ts). */
+  debut_cours: Date | null;
   terminee_le: Date | null;
   statut: StatutSeance;
   cours_id: number;
@@ -220,7 +224,7 @@ async function calculerPage(k: Cadre, avant: string | null, limite: number): Pro
   if (avant) conds.push(sql`s.demarree_le < ${avant}::timestamptz`);
   // 1. La page : les séances tenues, de la plus récente à la plus ancienne (date réelle), une de plus pour savoir s'il y a une suite.
   const page = await db.execute<LignePage>(sql`
-    SELECT s.id, s.titre, s.debut, s.demarree_le, s.terminee_le, s.statut, s.cours_id,
+    SELECT s.id, s.titre, s.debut, s.demarree_le, s.debut_cours, s.terminee_le, s.statut, s.cours_id,
            c.code AS cours_code, c.titre AS cours_titre, c.couleur AS cours_couleur,
            (s.statut = 'terminee' AND (NULLIF(s.replay_url, '') IS NOT NULL OR NULLIF(s.enregistrement_id, '') IS NOT NULL)) AS video_prete,
            f.id AS formateur_id, f.prenom AS formateur_prenom, f.nom AS formateur_nom,
@@ -245,7 +249,10 @@ async function calculerPage(k: Cadre, avant: string | null, limite: number): Pro
 
   const ids = entiers(lignes.map((l) => l.id));
   const coursIds = entiers([...new Set(lignes.map((l) => l.cours_id))]);
-  const dates = lignes.map((l) => new Date(l.demarree_le).getTime());
+  // Fenêtre de la présence (sqlAttendus) : elle filtre sur la date RÉELLE du cours (sqlDebutCours), pas sur
+  // l'ouverture de la classe ; une classe ouverte 30 min avant son heure sortirait sinon de la fenêtre et perdrait
+  // ses présents (« Non comptés »). Même base pour depuis, jusqua et la date réelle.
+  const dates = lignes.map((l) => debutDuCours({ debut: l.debut, demarreeLe: l.demarree_le, debutCours: l.debut_cours }).getTime());
   const [details, presences] = await Promise.all([
     // 2. Le détail de toutes les séances de la page, en une requête.
     db.execute<LigneDetail>(sql`
@@ -330,6 +337,7 @@ function versFilSeance(l: LignePage, d: LigneDetail | undefined, p: LignePresenc
     titre: l.titre,
     debut: new Date(l.debut).toISOString(),
     demarreeLe: iso(l.demarree_le),
+    debutCours: iso(l.debut_cours),
     termineeLe: iso(l.terminee_le),
     statut: l.statut,
     cours: { id: l.cours_id, code: l.cours_code, titre: l.cours_titre, couleur: l.cours_couleur },
@@ -414,7 +422,7 @@ async function calculerResume(k: Cadre, jours: number): Promise<ResumeTravail> {
   const d0 = sql`${depuis.toISOString()}::timestamptz`;
   // Les séances tenues de la période (date réelle), mêmes règles que le fil.
   const tenues = sql`SELECT s.id FROM campus.seances s JOIN campus.cours c ON c.id = s.cours_id
-    WHERE ${et(conditionsSeances(k))} AND s.demarree_le >= ${d0}`;
+    WHERE ${et(conditionsSeances(k))} AND ${sqlDebutCours("s")} >= ${d0}`;
   const [chiffres, presence] = await Promise.all([
     db.execute<LigneChiffres>(sql`
       WITH tenues AS (${tenues}),

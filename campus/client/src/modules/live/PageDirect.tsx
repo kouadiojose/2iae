@@ -8,7 +8,9 @@ import { Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Radio, Plus, PlayCircle, CalendarPlus } from "lucide-react";
 import { useMoiConnecte, estEquipe } from "@/lib/auth";
-import { dateEtHeure, heureDouble } from "@/lib/dates";
+import { dateEtHeure, heure, heureDouble } from "@/lib/dates";
+import { useTextes } from "@/lib/textes";
+import { t as textesOuverture } from "@shared/textes/direct";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
@@ -254,6 +256,7 @@ function ChoixCoursNouvelleSeance({ ouverte, onFermer }: { ouverte: boolean; onF
 /** Les autres classes en direct en ce moment (rien quand il n'y en a pas). */
 function DirectsDuCampus({ equipe }: { equipe: boolean }) {
   const { data } = useQuery<DirectDuCampus[]>({ queryKey: ["/api/live/tous-en-direct"], refetchInterval: 30_000 });
+  const txOuverture = useTextes(textesOuverture);
   if (!data?.length) return null;
   return (
     <section className="flex flex-col gap-3 rounded-[20px] bg-encre p-5 text-white">
@@ -271,6 +274,13 @@ function DirectsDuCampus({ equipe }: { equipe: boolean }) {
               {d.coursCode} · {d.coursTitre}
               {d.formateur ? ` · ${d.formateur}` : ""}
             </span>
+            {/* Classe ouverte automatiquement, l'heure passée, que personne n'anime : la direction appelle le formateur
+                ou prend la classe (« Je prends la classe » dans le Studio). */}
+            {d.attenteAnimateur && new Date(d.debut).getTime() <= Date.now() && (
+              <span className="mt-1 self-start rounded-full bg-[#2A1510] px-2.5 py-1 font-mono text-[12px] font-bold text-[#FF8A6B]">
+                {txOuverture("attente.liste")} · {heure(d.debut)}
+              </span>
+            )}
           </span>
           <LienBouton href={`/live/${d.id}`} taille="sm">
             Rejoindre

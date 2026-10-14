@@ -50,6 +50,7 @@ import {
   type SeanceDeSalle,
 } from "@shared/salles";
 import { t } from "@shared/textes/salles";
+import { enAttenteAnimateur } from "@shared/ouverture";
 
 const P = "/api/pilotage";
 type Site = typeof sites.$inferSelect;
@@ -240,6 +241,8 @@ export async function calculerSallesDuJour(
       cours: l.titreCours || l.s.titre,
       intervenant: intervenants.get(l.s.id)?.nom ?? (l.formateurId ? (formateurs.get(l.formateurId) ?? null) : null),
       statut: l.s.statut,
+      // Classe ouverte automatiquement, l'heure passée, que personne n'anime encore (shared/ouverture.ts).
+      attenteFormateur: enAttenteAnimateur(l.s) && l.s.debut.getTime() <= Date.now(),
     };
   };
 

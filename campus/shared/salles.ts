@@ -128,6 +128,8 @@ export type SeanceDeSalle = {
   cours: string;
   intervenant: string | null;
   statut: string;
+  /** Classe ouverte automatiquement, l'heure du cours passée, que personne n'anime encore (« En attente du formateur »). */
+  attenteFormateur: boolean;
   /** Cours suivi par des classes de L1 et de L2 de ce campus (« L1 et L2 » dans le message). */
   commun: boolean;
 };

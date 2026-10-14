@@ -400,11 +400,11 @@ function SceneExterne({ seance, etat }: PropsScene) {
   );
 }
 
-function SceneJitsi({ seance }: PropsScene) {
+function SceneJitsi({ seance, role }: PropsScene) {
   const [infos, setInfos] = useState<RejoindreDto | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   useEffect(() => {
-    post<RejoindreDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" })
+    post<RejoindreDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video", ...(role === "salle" && { ecran: true }) })
       .then(setInfos)
       .catch((e: Error) => setErreur(e.message));
   }, [seance.id]);
@@ -429,7 +429,7 @@ function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVis
   const [nomAffiche, setNomAffiche] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   useEffect(() => {
-    post<RejoindreDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" })
+    post<RejoindreDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video", ...(role === "salle" && { ecran: true }) })
       .then((r) => setNomAffiche(r.nomAffiche))
       .catch((e: Error) => setErreur(e.message));
   }, [seance.id]);
@@ -564,14 +564,15 @@ function SceneDaily({
   }, [call]);
 
   // Replay : le formateur lance l'enregistrement dès que la séance passe en direct, pour toute la durée du
-  // cours et son débordement (sans durée, Daily coupe l'enregistrement au bout de 3 h). Classe ouverte avant
-  // l'heure (ouverture automatique, ou à la main au plus une heure avant) : pas avant l'heure du cours
-  // (debutDuCours, comme le serveur, qui le dit aussi dans enregistrementDes), pour que ni la salle d'attente ni
+  // cours et son débordement (sans durée, Daily coupe l'enregistrement au bout de 3 h). Classe ouverte
+  // automatiquement avant l'heure : pas avant le début du cours (debutDuCours : l'heure prévue, ou l'instant de
+  // « Commencer le cours maintenant », tenu à jour par l'événement « statut »), pour que ni la salle d'attente ni
   // les réglages de son n'entrent dans le replay, et que le replay parte de la même origine que la transcription.
-  const debutCours = etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() : null;
-  const enregistrementDes = Math.max(debutCours ?? 0, infos.current?.enregistrementDes ? new Date(infos.current.enregistrementDes).getTime() : 0) || null;
+  // Personne n'anime encore la classe (attenteAnimateur : la direction regarde) : rien. Un « Démarrer » à la main,
+  // même avant l'heure : tout de suite, comme avant.
+  const enregistrementDes = etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime() : null;
   useEffect(() => {
-    if (!call || !connecte || role !== "formateur" || etat.statut !== "en_direct" || !infos.current?.enregistrement) return;
+    if (!call || !connecte || role !== "formateur" || etat.statut !== "en_direct" || etat.attenteAnimateur || !infos.current?.enregistrement) return;
     const maxDuration = infos.current.enregistrementMaxS ?? seance.dureeMinutes * 60 + 2 * 3600;
     const attente = Math.max(4000, enregistrementDes !== null ? enregistrementDes - maintenantServeur() : 0);
     const id = setTimeout(() => {
@@ -583,7 +584,7 @@ function SceneDaily({
       }
     }, attente);
     return () => clearTimeout(id);
-  }, [call, connecte, role, etat.statut, relanceEnregistrement, enregistrementDes]);
+  }, [call, connecte, role, etat.statut, etat.attenteAnimateur, relanceEnregistrement, enregistrementDes]);
 
   // Formateur : micro coupé (ou rouvert) depuis l'interface de Daily elle-même. Le studio suit, et la radio avec lui.
   // Seuls les changements comptent (on part de l'état actuel du micro dans Daily) : un ancien événement ne défait pas un choix du studio.
@@ -699,7 +700,8 @@ function SceneDaily({
       cameraAuDepart={camera}
       relanceAuto
       obtenirAcces={async () => {
-        const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video" });
+        // Écran de salle (aussi celui que la direction ouvre pour regarder une salle) : il entre comme une salle.
+        const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video", ...(role === "salle" && { ecran: true }) });
         infos.current = r;
         return r;
       }}

@@ -23,7 +23,7 @@ export function RappelInteraction({ seanceId, debut, etat, masque, onVoir }: { s
   // Silence compté depuis le début du cours (classe ouverte en avance : depuis l'heure prévue, debutDuCours).
   const minutes = silenceDuDirect({
     maintenant,
-    demarreeLe: etat.demarreeLe ? debutDuCours({ debut, demarreeLe: etat.demarreeLe }).getTime() : null,
+    demarreeLe: etat.demarreeLe ? debutDuCours({ debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime() : null,
     sondages: [...(sondages ?? []), ...(etat.sondage ? [etat.sondage] : [])],
     questions: etat.questions,
     reporteLe,

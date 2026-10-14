@@ -28,9 +28,12 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
   const tx = useTextes(t);
   const statut = etat?.statut ?? seance.statut;
   // Le chrono part du début du cours : l'heure prévue pour une classe ouverte en avance (ouverture automatique).
+  // Classe ouverte automatiquement que personne n'anime encore, l'heure passée : « En attente du formateur », sans
+  // chrono ni « REC » (rien n'est enregistré tant que personne ne l'anime).
   const demarreeLe = etat?.demarreeLe ?? seance.demarreeLe;
-  const demarree = demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe }).getTime() : null;
+  const demarree = demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe, debutCours: etat ? etat.debutCours : seance.debutCours }).getTime() : null;
   const ouverteEnAvance = statut === "en_direct" && demarree !== null && demarree > maintenant;
+  const attenteFormateur = statut === "en_direct" && !ouverteEnAvance && (etat ? etat.attenteAnimateur : seance.attenteAnimateur);
   const ville = seance.formateur?.localisation?.split(",")[0];
   const connectes = etat ? etat.campus.reduce((a, c) => a + c.emarges, 0) + etat.enLigne : 0;
   return (
@@ -48,6 +51,11 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
           <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-3 py-2 font-mono text-xs text-[#FF8A6B]">
             <span className="point-direct" />
             {tx("ouverte.entete", { v: { heure: heure(seance.debut) } })}
+          </span>
+        ) : attenteFormateur ? (
+          <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-3 py-2 font-mono text-xs text-[#FF8A6B]">
+            <span className="point-direct" />
+            {tx("attente.entete")}
           </span>
         ) : statut === "en_direct" ? (
           <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-3 py-2 font-mono text-xs text-[#FF8A6B]">

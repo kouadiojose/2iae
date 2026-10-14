@@ -230,12 +230,12 @@ export async function inscritsParmi(coursId: number, ids: number[]): Promise<Set
  * y était déjà inscrit individuellement. Un étudiant arrivé en cours d'année
  * n'est donc pas compté absent aux séances d'avant son arrivée. Comme le
  * pilotage, la fin se compte depuis le début du cours (debutDuCours : le
- * démarrage réel quand la séance a été tenue, sauf une classe ouverte au plus
- * une heure avant son heure, qui garde son heure ; une séance démarrée une
- * semaine avant sa date n'attend pas les étudiants inscrits entre-temps).
+ * démarrage réel quand la séance a été tenue, sauf une classe ouverte
+ * automatiquement avant son heure, qui garde son heure ; une séance démarrée
+ * une semaine avant sa date n'attend pas les étudiants inscrits entre-temps).
  */
-export async function etudiantsAttendusSeance(s: { coursId: number; debut: Date; dureeMinutes: number; demarreeLe?: Date | null }): Promise<Utilisateur[]> {
-  const fin = new Date(debutDuCours(s).getTime() + s.dureeMinutes * 60_000).toISOString();
+export async function etudiantsAttendusSeance(s: { coursId: number; debut: Date; dureeMinutes: number; demarreeLe?: Date | null; debutCours?: Date | null }): Promise<Utilisateur[]> {
+  const fin = new Date(debutDuCours({ debut: s.debut, demarreeLe: s.demarreeLe, debutCours: s.debutCours }).getTime() + s.dureeMinutes * 60_000).toISOString();
   const { rows } = await db.execute<{ id: number }>(sql`
     SELECT u.id FROM campus.utilisateurs u
     WHERE u.role = 'etudiant' AND u.actif AND u.cree_le <= ${fin}::timestamptz

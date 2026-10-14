@@ -110,7 +110,7 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
         </div>
 
         {/* Avant le cours, y compris classe ouverte en avance (ouverture automatique) : l'heure du cours. */}
-        {(!enDirect || classeOuverteEnAvance({ statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe }, maintenantServeur())) && (
+        {(!enDirect || classeOuverteEnAvance({ statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }, maintenantServeur())) && (
           <p className="rounded-[18px] bg-nuit-panneau p-4 text-[15px] font-semibold">{tx("compagnon.aVenir", { v: { heure: heure(seance.debut) } })}</p>
         )}
 

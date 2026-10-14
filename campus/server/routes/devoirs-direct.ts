@@ -52,7 +52,7 @@ function ceSoir(maintenant: Date): Date {
  * 10 minutes), dans n minutes, ou ce soir à 23h59. Durées arrondies à la minute supérieure, puis fin d'échéance
  * (« 23h59 » vaut jusqu'à 23:59:59,999).
  */
-function echeanceDemandee(s: Pick<Seance, "demarreeLe" | "debut" | "dureeMinutes">, choix: "fin" | "soir" | number, maintenant: Date): Date {
+function echeanceDemandee(s: Pick<Seance, "demarreeLe" | "debutCours" | "debut" | "dureeMinutes">, choix: "fin" | "soir" | number, maintenant: Date): Date {
   const m = maintenant.getTime();
   if (choix === "fin") {
     // Fin prévue à la minute près, comme le chrono du Studio : la pastille, le chrono et la carte disent la même heure.

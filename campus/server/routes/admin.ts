@@ -283,7 +283,7 @@ type FiltreAttendus = {
  * (arrondie à la minute, depuis le début du cours : debutDuCours, l'heure
  * prévue pour une classe ouverte en avance) si elle est plus courte.
  */
-function dureeReference(s: Pick<typeof seances.$inferSelect, "dureeMinutes" | "debut" | "demarreeLe" | "termineeLe">): number {
+function dureeReference(s: Pick<typeof seances.$inferSelect, "dureeMinutes" | "debut" | "demarreeLe" | "debutCours" | "termineeLe">): number {
   let duree = s.dureeMinutes;
   if (s.demarreeLe && s.termineeLe) {
     const reelle = Math.round((s.termineeLe.getTime() - debutDuCours(s).getTime()) / 60_000);

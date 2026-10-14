@@ -430,8 +430,9 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
 
 function Chrono({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
   const maintenant = useMaintenant(1000);
-  // Début du cours (debutDuCours) : classe ouverte en avance, le chrono attend l'heure prévue.
-  const debutCours = etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() : null;
+  // Début du cours (debutDuCours) : classe ouverte en avance, le chrono attend l'heure prévue (ou « Commencer le
+  // cours maintenant ») ; personne n'anime encore une classe ouverte automatiquement : pas de chrono.
+  const debutCours = etat.demarreeLe && !etat.attenteAnimateur ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime() : null;
   const demarree = debutCours !== null && debutCours <= maintenant ? debutCours : null;
   const finPrevue = (debutCours ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
   const ecoule = demarree ? Math.max(0, Math.floor((maintenant - demarree) / 1000)) : 0;

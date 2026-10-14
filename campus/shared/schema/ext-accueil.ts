@@ -136,6 +136,8 @@ export type SeanceFormateur = {
   debut: string;
   dureeMinutes: number;
   statut: string;
+  /** Classe en direct : début du cours (debutDuCours, shared/ouverture.ts ; ouverte automatiquement en avance : l'heure prévue). */
+  debutCours: string | null;
   lienStudio: string;
   lienPreparation: string;
   lienAgenda: string;

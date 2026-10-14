@@ -118,6 +118,15 @@ export const seances = campusSchema.table(
     plan: jsonb("plan").$type<EtapePlan[]>().notNull().default([]),
     demarreeLe: timestamp("demarree_le", { withTimezone: true }),
     termineeLe: timestamp("terminee_le", { withTimezone: true }),
+    /** Ce démarrage est l'ouverture automatique de la classe (shared/ouverture.ts), pas un « Démarrer » à la main. */
+    ouvertureAuto: boolean("ouverture_auto").notNull().default(false),
+    /** Classe ouverte automatiquement : arrivée du premier animateur (null : personne ne l'anime encore). */
+    animateurLe: timestamp("animateur_le", { withTimezone: true }),
+    /**
+     * Début du cours quand il n'est pas le démarrage : l'heure prévue d'une classe ouverte en avance, ou l'instant
+     * où l'animateur a commencé (« Commencer le cours maintenant », arrivée après l'heure). Null : le démarrage.
+     */
+    debutCours: timestamp("debut_cours", { withTimezone: true }),
     replayUrl: text("replay_url"),
     replayDureeSecondes: integer("replay_duree_secondes"),
     /** Identifiant d'enregistrement chez le fournisseur (lien de lecture renouvelé à la demande). */

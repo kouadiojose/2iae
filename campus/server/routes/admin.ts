@@ -44,6 +44,8 @@ import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } 
 import { creerClassesFilieres } from "../classes-filieres";
 import { prevenirSite } from "../site";
 import { fuseauValide } from "../visio-daily";
+import { sqlDebutCours } from "../ouverture-auto";
+import { debutDuCours } from "@shared/ouverture";
 import { iaDisponible, reglagesIaActuels, budgetDuMois, oublierReglagesIa } from "../ia";
 import { adresseDeDemonstration, ADRESSE_DEMO_REFUSEE, DOMAINE_DEMO } from "../demo-constantes";
 import { lireVitrine, oublierVitrine } from "./public";
@@ -278,12 +280,13 @@ type FiltreAttendus = {
 /**
  * Durée de référence des 70 %, EXACTEMENT comme le live (seuilMinutes dans
  * server/routes/live.ts) : la durée prévue, ou la durée réellement tenue
- * (arrondie à la minute) si elle est plus courte.
+ * (arrondie à la minute, depuis le début du cours : debutDuCours, l'heure
+ * prévue pour une classe ouverte en avance) si elle est plus courte.
  */
-function dureeReference(s: Pick<typeof seances.$inferSelect, "dureeMinutes" | "demarreeLe" | "termineeLe">): number {
+function dureeReference(s: Pick<typeof seances.$inferSelect, "dureeMinutes" | "debut" | "demarreeLe" | "termineeLe">): number {
   let duree = s.dureeMinutes;
   if (s.demarreeLe && s.termineeLe) {
-    const reelle = Math.round((s.termineeLe.getTime() - s.demarreeLe.getTime()) / 60_000);
+    const reelle = Math.round((s.termineeLe.getTime() - debutDuCours(s).getTime()) / 60_000);
     if (reelle > 0) duree = Math.min(duree, reelle);
   }
   return duree;
@@ -305,18 +308,18 @@ function tenueDe(s: Pick<typeof seances.$inferSelect, "demarreeLe" | "statut">):
 /** Même calcul en SQL (Math.round(x) = floor(x + 0,5) ; float8 = double JavaScript). */
 export const SQL_DUREE_REFERENCE = sql`
   CASE WHEN s.demarree_le IS NOT NULL AND s.terminee_le IS NOT NULL
-      AND floor(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le)) / 60 + 0.5) > 0
-    THEN LEAST(s.duree_minutes, floor(EXTRACT(EPOCH FROM (s.terminee_le - s.demarree_le)) / 60 + 0.5)::int)
+      AND floor(EXTRACT(EPOCH FROM (s.terminee_le - ${sqlDebutCours("s")})) / 60 + 0.5) > 0
+    THEN LEAST(s.duree_minutes, floor(EXTRACT(EPOCH FROM (s.terminee_le - ${sqlDebutCours("s")})) / 60 + 0.5)::int)
     ELSE s.duree_minutes
   END`;
 
 /**
  * L'incident de la salle de l'étudiant a touché la séance (même règle que
  * incidentSurvenu / sitesEnIncident du live) : en cours, ou résolu après le
- * démarrage — sa résolution n'efface pas la cause des absences.
+ * début du cours (debutDuCours) — sa résolution n'efface pas la cause des absences.
  */
 export const SQL_INCIDENT_SALLE = sql`(NULLIF(e.incident, '') IS NOT NULL
-  OR (e.incident_le IS NOT NULL AND (e.incident_resolu_le IS NULL OR e.incident_resolu_le > COALESCE(s.demarree_le, s.debut))))`;
+  OR (e.incident_le IS NOT NULL AND (e.incident_resolu_le IS NULL OR e.incident_resolu_le > ${sqlDebutCours("s")})))`;
 
 /**
  * Étudiants qui PEUVENT être attendus à un cours (cours_id, uid) : par leur
@@ -378,15 +381,18 @@ export const sqlAttenduAuCours = (coursId: SQL, t: SQL) => sql`
  * séance jamais démarrée (terminée d'office par le live) n'a pas d'absents.
  * Un étudiant n'est attendu que s'il était déjà inscrit (compte créé, arrivé
  * dans la classe du cours, ou inscrit au cours) avant la fin prévue.
- * Retard : arrivée EN SALLE (émargement) plus de 15 min après le DÉMARRAGE
- * réel (pas l'heure prévue), jamais pour un étudiant pointé par le responsable.
+ * Retard : arrivée EN SALLE (émargement) plus de 15 min après le DÉBUT DU
+ * COURS (sqlDebutCours : le démarrage réel d'un cours commencé en retard, mais
+ * l'heure prévue d'une classe ouverte en avance, automatiquement ou à la main,
+ * au plus une heure avant), jamais pour un étudiant pointé par le responsable.
  *
  * Date RÉELLE (chantier C8) : une séance tenue se range à la date de son
- * démarrage, COALESCE(demarree_le, debut), pour la fenêtre (depuis, jusqua),
- * pour la fin qui décide qui était inscrit, et pour la colonne « debut »
- * renvoyée. La séance #26, datée du 14 octobre mais tenue le 7, compte donc
- * le 7 : elle n'est plus la « dernière séance » de chacun, et les étudiants
- * inscrits entre le 7 et le 14 n'y sont pas attendus.
+ * début (sqlDebutCours), pour la fenêtre (depuis, jusqua), pour la fin qui
+ * décide qui était inscrit, et pour la colonne « debut » renvoyée. La séance
+ * #26, datée du 14 octobre mais tenue le 7, compte donc le 7 : elle n'est plus
+ * la « dernière séance » de chacun, et les étudiants inscrits entre le 7 et le
+ * 14 n'y sont pas attendus. Une classe ouverte 30 min avant son heure garde
+ * son heure.
  */
 export function sqlAttendus(f: FiltreAttendus): SQL {
   const conds: SQL[] = [
@@ -444,7 +450,7 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
           ELSE 'absent'
         END AS statut_brut,
         COALESCE(NULLIF(p.justification, '') IS NULL AND p.mode = 'salle' AND p.pointe_par_id IS NULL
-          AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > COALESCE(s.demarree_le, s.debut) + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard,
+          AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > ${sqlDebutCours("s")} + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard,
         -- Ce que lit la règle des trois états (engagement/presence.ts, sqlCaseEtat).
         s.demarree_le IS NOT NULL AS tenue,
         NULLIF(p.justification, '') IS NOT NULL AS justifiee,
@@ -461,8 +467,8 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
       JOIN campus.cours c ON c.id = s.cours_id
       CROSS JOIN LATERAL (
         SELECT GREATEST(1, ceil(r.duree::float8 * ${SEUIL_PRESENCE_EN_LIGNE}::float8))::int AS seuil,
-          COALESCE(s.demarree_le, s.debut) AS reel,
-          COALESCE(s.demarree_le, s.debut) + make_interval(mins => s.duree_minutes) AS fin
+          ${sqlDebutCours("s")} AS reel,
+          ${sqlDebutCours("s")} + make_interval(mins => s.duree_minutes) AS fin
         FROM (SELECT ${SQL_DUREE_REFERENCE} AS duree) r
       ) d
       JOIN ${SQL_CANDIDATS_COURS} cand ON cand.cours_id = s.cours_id

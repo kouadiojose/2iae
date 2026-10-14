@@ -47,6 +47,7 @@ import {
   type SeanceFormateur,
   type AnnonceResume,
 } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
 
 const MINUTE = 60_000;
 const HEURE = 60 * MINUTE;
@@ -260,15 +261,17 @@ export function enregistrerAccueil(app: Express) {
         const nomAnimateur = i ? i.nom : prenom ? `${prenom} ${nom}` : null;
         const formateur = nomAnimateur ? `${nomAnimateur}${lieu ? ` depuis ${lieu}` : ""}` : null;
         if (s.statut === "en_direct") {
+          // Classe ouverte avant l'heure (ouverture automatique) : l'heure du cours est dite.
+          const avance = debutDuCours(s).getTime() > t0 ? ` Le cours commence à ${heureFr(s.debut)}.` : "";
           ajouter(
             {
               type: "live",
               titre: s.titre,
-              detail: `${formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte."}${aEmarger.has(s.id) ? " Tu es en salle ? Émarge pour être compté présent ; sinon, suis le cours en ligne." : ""}`,
+              detail: `${formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte."}${avance}${aEmarger.has(s.id) ? " Tu es en salle ? Émarge pour être compté présent ; sinon, suis le cours en ligne." : ""}`,
               lien: aEmarger.has(s.id) ? `/emargement?seance=${s.id}` : `/live/${s.id}`,
               bouton: aEmarger.has(s.id) ? "Émarger ou suivre en ligne" : "Rejoindre le live",
               urgence: "haute",
-              quand: (s.demarreeLe ?? s.debut).toISOString(),
+              quand: debutDuCours(s).toISOString(),
               coursCode: code,
               couleur,
             },

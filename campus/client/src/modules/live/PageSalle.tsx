@@ -36,6 +36,8 @@ import type { DevoirDirectDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } f
 import type { EnCours, SeanceResume } from "@shared/api";
 import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
+import { t as textesOuverture } from "@shared/textes/direct";
+import { classeOuverteEnAvance } from "@shared/ouverture";
 
 const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d'internet", "Salle bruyante"];
 
@@ -507,6 +509,10 @@ function PendantLeCours({
   const devoir = sondage ? null : devoirEnCours;
   const commandes = useCommandesVisibles(presentation);
   const cacheeParFormateur = !etat.copie && (etat.diapo.masquee || etat.diapo.disposition === "cameras");
+  // Classe ouverte avant l'heure (ouverture automatique) : les salles règlent le son et l'image, le cours n'a pas commencé.
+  const maintenant = useMaintenant(5000);
+  const ouverteEnAvance = classeOuverteEnAvance({ statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe ?? seance.demarreeLe }, maintenant);
+  const txOuverture = useTextes(textesOuverture);
   return (
     <main
       className={
@@ -516,6 +522,12 @@ function PendantLeCours({
       }
     >
       <div className={presentation ? "absolute inset-0" : "flex min-w-0 flex-col gap-4 lg:min-h-0"}>
+        {ouverteEnAvance && !presentation && (
+          <div className="shrink-0 rounded-[22px] bg-nuit-panneau px-6 py-3" role="status">
+            <p className="text-[clamp(20px,2vw,36px)] font-black leading-tight">{txOuverture("ouverte.salle.titre", { v: { heure: heure(seance.debut) } })}</p>
+            <p className="text-[clamp(15px,1.3vw,22px)] text-nuit-doux">{txOuverture("ouverte.salle.texte")}</p>
+          </div>
+        )}
         {aLaParole && (
           <div
             className={cn(

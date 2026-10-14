@@ -206,6 +206,8 @@ function CarteClasse({ seance, enDirect = false, maintenant, ensuite, tx }: { se
   // UN bouton qui change seul : préparer longtemps avant, entrer dans la classe à 45 minutes et pendant le direct.
   const entrer = enDirect || dans <= AVANT_CLASSE;
   const attendent = !enDirect && dans <= 0;
+  // Classe ouverte avant l'heure (ouverture automatique) : « Votre classe est ouverte », et l'heure du cours reste dite.
+  const ouverteEnAvance = enDirect && dans > 0;
   // « 08h30 » en gros ; dessous « heure d'Abidjan · 04h30 chez vous (Toronto) » pour un formateur à l'étranger.
   const sousHeure = heureDouble(seance.debut).replace(/^\d{2}h\d{2} Abidjan/, tx("classe.abidjan"));
   return (
@@ -219,7 +221,7 @@ function CarteClasse({ seance, enDirect = false, maintenant, ensuite, tx }: { se
       <h2 id="titre-classe" className="text-[26px] font-black leading-[1.08] sm:text-[32px]">
         {seance.coursTitre}
       </h2>
-      {!enDirect && (
+      {(!enDirect || ouverteEnAvance) && (
         <div className="flex flex-col gap-0.5">
           <span className="text-[28px] font-black leading-tight tabular-nums sm:text-[34px]">
             {majuscule(jourRelatif(seance.debut, maintenant))} · {heure(seance.debut)}
@@ -239,6 +241,7 @@ function CarteClasse({ seance, enDirect = false, maintenant, ensuite, tx }: { se
       )}
       <p className="text-[16px] leading-snug text-nuit-texte">{seance.titre}</p>
       {attendent && <p className="text-[16px] font-bold text-[#FF8A6B]">{tx("classe.attendent")}</p>}
+      {ouverteEnAvance && <p className="text-[16px] font-bold text-[#FF8A6B]">{tx("classe.ouverteAvance", { v: { heure: heure(seance.debut) } })}</p>}
       <LienBouton
         href={entrer ? seance.lienStudio : seance.lienPreparation}
         taille="lg"

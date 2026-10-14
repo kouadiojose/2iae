@@ -11,17 +11,19 @@ import { maintenantServeur } from "@/lib/horloge";
 import { t } from "@shared/textes/direct";
 import { silenceDuDirect } from "@shared/engagement/direct";
 import type { EtatDirectDto, SondageDto } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
 
-export function RappelInteraction({ seanceId, etat, masque, onVoir }: { seanceId: number; etat: EtatDirectDto; masque?: boolean; onVoir: () => void }) {
+export function RappelInteraction({ seanceId, debut, etat, masque, onVoir }: { seanceId: number; debut: string; etat: EtatDirectDto; masque?: boolean; onVoir: () => void }) {
   const tx = useTextes(t);
   // Même liste (et même cache) que l'onglet Sondages du Studio.
   const { data: sondages } = useQuery<SondageDto[]>({ queryKey: [`/api/seances/${seanceId}/sondages`], staleTime: 60_000, enabled: etat.statut === "en_direct" });
   const maintenant = useMaintenant(15_000);
   const [reporteLe, setReporteLe] = useState<number | null>(null);
   if (etat.statut !== "en_direct") return null;
+  // Silence compté depuis le début du cours (classe ouverte en avance : depuis l'heure prévue, debutDuCours).
   const minutes = silenceDuDirect({
     maintenant,
-    demarreeLe: etat.demarreeLe ? new Date(etat.demarreeLe).getTime() : null,
+    demarreeLe: etat.demarreeLe ? debutDuCours({ debut, demarreeLe: etat.demarreeLe }).getTime() : null,
     sondages: [...(sondages ?? []), ...(etat.sondage ? [etat.sondage] : [])],
     questions: etat.questions,
     reporteLe,

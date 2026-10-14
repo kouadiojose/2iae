@@ -29,6 +29,8 @@ import { DevoirEnDirect, devoirARendre } from "./devoir-direct";
 import { t } from "@shared/textes/direct";
 import { classementEmargement, type EmargementSalleDto, type MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { EtatDirectDto, ModeSuivi, ResultatsSondageDto, SeanceDetailDto, SondageDto } from "@shared/schema";
+import { classeOuverteEnAvance } from "@shared/ouverture";
+import { maintenantServeur } from "@/lib/horloge";
 
 type Onglet = "questions" | "discussion" | "campus";
 const LETTRES = ["A", "B", "C", "D", "E"];
@@ -107,7 +109,10 @@ export function CompagnonSalle({ seance, onChangerMode }: { seance: SeanceDetail
           </div>
         </div>
 
-        {!enDirect && <p className="rounded-[18px] bg-nuit-panneau p-4 text-[15px] font-semibold">{tx("compagnon.aVenir", { v: { heure: heure(seance.debut) } })}</p>}
+        {/* Avant le cours, y compris classe ouverte en avance (ouverture automatique) : l'heure du cours. */}
+        {(!enDirect || classeOuverteEnAvance({ statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe }, maintenantServeur())) && (
+          <p className="rounded-[18px] bg-nuit-panneau p-4 text-[15px] font-semibold">{tx("compagnon.aVenir", { v: { heure: heure(seance.debut) } })}</p>
+        )}
 
         {campusDuCours.length > 0 && (
           <div className="flex flex-col gap-1.5">

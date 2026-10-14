@@ -16,6 +16,8 @@ import { CarteVideoProjetee, VideoProjetee } from "./ressources";
 import { CopieProjetee, dispositionAvecCopie } from "./copie-projetee";
 import { useTextes } from "@/lib/textes";
 import { t as textesCopies } from "@shared/textes/copies-direct";
+import { maintenantServeur } from "@/lib/horloge";
+import { debutDuCours } from "@shared/ouverture";
 
 export type PropsScene = {
   seance: SeanceDetailDto;
@@ -562,10 +564,16 @@ function SceneDaily({
   }, [call]);
 
   // Replay : le formateur lance l'enregistrement dès que la séance passe en direct, pour toute la durée du
-  // cours et son débordement (sans durée, Daily coupe l'enregistrement au bout de 3 h).
+  // cours et son débordement (sans durée, Daily coupe l'enregistrement au bout de 3 h). Classe ouverte avant
+  // l'heure (ouverture automatique, ou à la main au plus une heure avant) : pas avant l'heure du cours
+  // (debutDuCours, comme le serveur, qui le dit aussi dans enregistrementDes), pour que ni la salle d'attente ni
+  // les réglages de son n'entrent dans le replay, et que le replay parte de la même origine que la transcription.
+  const debutCours = etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() : null;
+  const enregistrementDes = Math.max(debutCours ?? 0, infos.current?.enregistrementDes ? new Date(infos.current.enregistrementDes).getTime() : 0) || null;
   useEffect(() => {
     if (!call || !connecte || role !== "formateur" || etat.statut !== "en_direct" || !infos.current?.enregistrement) return;
     const maxDuration = infos.current.enregistrementMaxS ?? seance.dureeMinutes * 60 + 2 * 3600;
+    const attente = Math.max(4000, enregistrementDes !== null ? enregistrementDes - maintenantServeur() : 0);
     const id = setTimeout(() => {
       if (enregistre.current) return;
       try {
@@ -573,9 +581,9 @@ function SceneDaily({
       } catch {
         /* enregistrement indisponible : le cours continue */
       }
-    }, 4000);
+    }, attente);
     return () => clearTimeout(id);
-  }, [call, connecte, role, etat.statut, relanceEnregistrement]);
+  }, [call, connecte, role, etat.statut, relanceEnregistrement, enregistrementDes]);
 
   // Formateur : micro coupé (ou rouvert) depuis l'interface de Daily elle-même. Le studio suit, et la radio avec lui.
   // Seuls les changements comptent (on part de l'état actuel du micro dans Daily) : un ancien événement ne défait pas un choix du studio.

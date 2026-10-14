@@ -79,6 +79,7 @@ import {
 } from "@shared/schema";
 import type { Vitrine, VitrineCours, VitrineFormateur, VitrineLive, VitrineAnnonce } from "@shared/api";
 import { CAMPUS_PAR_DEFAUT, CAMPUS_VIERGE, CONTENUS_PAR_DEFAUT } from "@shared/vitrine-contenus";
+import { sqlDebutCours } from "../ouverture-auto";
 
 const JOUR = 86_400_000;
 /** Un cours reste annoncé jusqu'à 30 jours après son début. */
@@ -354,6 +355,8 @@ async function livesPublics(maintenant: Date, coursIds?: number[], intervenantId
         coursTitre: l.coursTitre,
         debut: l.debut.toISOString(),
         dureeMinutes: l.dureeMinutes,
+        // Une classe ouverte avant l'heure (ouverture automatique) compte déjà comme en direct : les salles y sont
+        // connectées (l'indicateur /api/public/en-direct, que lit aussi le script de mise en ligne, le dit).
         enDirect: l.statut === "en_direct",
         formateur: i
           ? { ...versPrenomNom(i.nom), localisation: i.id !== null ? (villes.get(i.id) ?? null) : null }
@@ -387,8 +390,8 @@ async function chiffres(): Promise<Vitrine["chiffres"]> {
       (select count(*)::int from ${utilisateurs} where ${utilisateurs.role} = 'formateur' and ${utilisateurs.actif}) as formateurs,
       (select count(*)::int from ${cours} where ${cours.statut} = 'publie') as cours,
       (select coalesce(floor(sum(
-         coalesce(extract(epoch from (${seances.termineeLe} - ${seances.demarreeLe})) / 3600.0, ${seances.dureeMinutes} / 60.0)
-       )), 0)::int from ${seances} where ${seances.statut} = 'terminee') as heures
+         greatest(0, coalesce(extract(epoch from (s.terminee_le - (CASE WHEN s.demarree_le IS NOT NULL THEN ${sqlDebutCours("s")} END))) / 3600.0, s.duree_minutes / 60.0))
+       )), 0)::int from campus.seances s where s.statut = 'terminee') as heures
   `,
     )
     .then((res) => res.rows);

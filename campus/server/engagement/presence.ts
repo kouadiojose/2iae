@@ -36,6 +36,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { SQL_DUREE_REFERENCE, SQL_INCIDENT_SALLE, sqlAttenduAuCours, sqlCandidatsDuCours, sqlClasseA } from "../routes/admin";
+import { sqlDebutCours } from "../ouverture-auto";
 import { SEUIL_PRESENCE_EN_LIGNE } from "@shared/schema";
 
 export type EtatPresence = "present" | "absent" | "inconnu";
@@ -99,7 +100,7 @@ export function sqlSalleEmargee(seanceId: SQL, siteId: SQL): SQL {
     END
     FROM (
       SELECT arg.seance_id, arg.site_id, sse.cours_id,
-        COALESCE(sse.demarree_le, sse.debut) + make_interval(mins => sse.duree_minutes) AS fin
+        ${sqlDebutCours("sse")} + make_interval(mins => sse.duree_minutes) AS fin
       FROM (SELECT (${seanceId})::int AS seance_id, (${siteId})::int AS site_id) arg
       JOIN campus.seances sse ON sse.id = arg.seance_id
     ) sx)`;

@@ -165,6 +165,11 @@ export type RejoindreVisioDto = {
   enregistrement?: boolean;
   /** Durée maximale de l'enregistrement du replay (secondes) : la durée du cours plus le débordement possible. */
   enregistrementMaxS?: number;
+  /**
+   * Classe ouverte avant l'heure du cours (ouverture automatique) : l'enregistrement ne part qu'à cette heure-là
+   * (ISO, le début du cours), pas à l'ouverture. Absent : dès l'entrée, comme avant.
+   */
+  enregistrementDes?: string;
   repetition?: boolean;
 };
 

@@ -8,7 +8,7 @@ import { alleger, api, post, suppr } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { heureDouble } from "@/lib/dates";
+import { heure, heureDouble } from "@/lib/dates";
 import { Bouton } from "@/components/ui/bouton";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Champ, ZoneTexte, Interrupteur } from "@/components/ui/champs";
@@ -34,6 +34,8 @@ import { useTextes } from "@/lib/textes";
 import { QuestionsRappel } from "./QuestionsRappel";
 import { RappelInteraction } from "./RappelInteraction";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
+import { t as textesOuverture } from "@shared/textes/direct";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "devoir" | "campus";
 
@@ -237,6 +239,9 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           }
         />
 
+        {/* Classe ouverte avant l'heure (ouverture automatique) : les salles s'installent, le cours n'a pas commencé. */}
+        {!observation && <BandeauClasseOuverte seance={seance} etat={etat} />}
+
         {/* Avec des diapos, la scène et la diapo prennent la largeur : le plan passe dessous. */}
         <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !presentation && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>
           {/* Colonne du plan (sous la scène sur les écrans moyens) */}
@@ -335,7 +340,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             style={hauteurAside ? { maxHeight: hauteurAside } : undefined}
             className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !presentation && "xl:order-3")}
           >
-            {!observation && <RappelInteraction seanceId={seance.id} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
+            {!observation && <RappelInteraction seanceId={seance.id} debut={seance.debut} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
             <OngletsPanneau
               valeur={onglet}
               onChange={setOnglet}
@@ -734,13 +739,32 @@ function PanneauSondages({ seance, etat, lectureSeule }: { seance: SeanceDetailD
   );
 }
 
+// ── Classe ouverte avant l'heure ───────────────────────────────────────────
+
+/** Bandeau du Studio tant que la classe est ouverte en avance : rien à démarrer, le cours commence à son heure. */
+function BandeauClasseOuverte({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
+  const maintenant = useMaintenant(5000);
+  const tx = useTextes(textesOuverture);
+  if (etat.statut !== "en_direct" || !etat.demarreeLe) return null;
+  if (debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() <= maintenant) return null;
+  return (
+    <p role="status" className="flex items-start gap-2 rounded-[18px] bg-nuit-panneau px-4 py-3 text-[14px] leading-snug text-nuit-texte">
+      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-orange-peche" aria-hidden />
+      {tx("ouverte.studio", { v: { heure: heure(seance.debut) } })}
+    </p>
+  );
+}
+
 // ── Chrono et plan de séance ───────────────────────────────────────────────
 
 function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
   const maintenant = useMaintenant(1000);
-  const demarree = etat.demarreeLe ? new Date(etat.demarreeLe).getTime() : null;
+  // Début du cours : l'heure prévue pour une classe ouverte en avance (ouverture automatique) ; d'ici là, compte à
+  // rebours jusqu'à elle, et la fin prévue reste la fin prévue.
+  const debutCours = etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() : null;
+  const demarree = debutCours !== null && debutCours <= maintenant ? debutCours : null;
   const ecouleMin = demarree ? (maintenant - demarree) / 60_000 : 0;
-  const finPrevue = (demarree ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
+  const finPrevue = (debutCours ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
   const resteMin = Math.round((finPrevue - maintenant) / 60_000);
   let cumul = 0;
   const etapes = seance.plan.map((e) => {

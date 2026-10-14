@@ -28,6 +28,7 @@ import {
   type MemoireEmargement,
 } from "@shared/engagement/direct";
 import type { CodeSalleDto, EtatDirectDto, SeanceDetailDto } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
 
 // ── Code d'émargement renouvelé chaque minute ──────────────────────────────
 
@@ -110,7 +111,10 @@ function useFenetreEmargement(seance: SeanceDetailDto, etat: EtatDirectDto, site
   const aLaParole = etat.parole?.type === "salle" && etat.parole.siteId === siteId;
   // Une copie d'étudiant montrée à la classe compte comme une activité : le QR ne vient pas la recouvrir.
   const occupe = Boolean(sondage?.ouvert) || resultatsCommentes || aLaParole || enGroupe || Boolean(etat.copie);
-  const demarreeLe = etat.demarreeLe ?? seance.demarreeLe;
+  // Moments du QR (début, +15, +45 min) comptés depuis le début du cours : l'heure prévue pour une classe ouverte
+  // en avance (ouverture automatique), le démarrage réel sinon (debutDuCours).
+  const demarree = etat.demarreeLe ?? seance.demarreeLe;
+  const demarreeLe = demarree ? debutDuCours({ debut: seance.debut, demarreeLe: demarree }).toISOString() : null;
   useEffect(() => {
     if (!enDirect) return;
     const suivante = decisionEmargement(memoire, { maintenant, demarreeLe: demarreeLe ? new Date(demarreeLe).getTime() : null, occupe, demande });

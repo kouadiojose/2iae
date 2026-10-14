@@ -21,6 +21,7 @@ import { PanneauCopieEnCours } from "./devoirs";
 import { useTextes } from "@/lib/textes";
 import { t as textesCopies } from "@shared/textes/copies-direct";
 import type { DispositionScene, EtatDirectDto, SeanceDetailDto } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
 
 // ── Mises en page de la scène ──────────────────────────────────────────────
 
@@ -429,8 +430,10 @@ function FenetrePresentateur({ seance }: { seance: SeanceDetailDto }) {
 
 function Chrono({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
   const maintenant = useMaintenant(1000);
-  const demarree = etat.demarreeLe ? new Date(etat.demarreeLe).getTime() : null;
-  const finPrevue = (demarree ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
+  // Début du cours (debutDuCours) : classe ouverte en avance, le chrono attend l'heure prévue.
+  const debutCours = etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe }).getTime() : null;
+  const demarree = debutCours !== null && debutCours <= maintenant ? debutCours : null;
+  const finPrevue = (debutCours ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
   const ecoule = demarree ? Math.max(0, Math.floor((maintenant - demarree) / 1000)) : 0;
   const resteMin = Math.round((finPrevue - maintenant) / 60_000);
   const mm = String(Math.floor(ecoule / 60)).padStart(2, "0");

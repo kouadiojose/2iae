@@ -13,6 +13,22 @@ export const t = creerTextes({
   // Étudiant sans campus, ou dont le campus ne suit pas ce cours : en ligne seulement.
   "demarrage.enLigne.titre": "En direct : {titre}",
   "demarrage.enLigne.corps": "{code} · le formateur a ouvert la classe. Entre maintenant.",
+  // Classe ouverte avant l'heure du cours (ouverture automatique, shared/ouverture.ts) : toujours UN rappel,
+  // qui dit l'heure du cours ; rien de plus à l'heure du cours.
+  "ouverture.titre": "La classe est ouverte : {titre}",
+  "ouverture.salle.corps": "{code} · le cours commence à {heure} (heure d'Abidjan). En salle ? Scanne le QR de l'écran pour être compté présent. Sinon, rejoins le cours en ligne.",
+  "ouverture.emarge.corps": "{code} · le cours commence à {heure} (heure d'Abidjan). Tu es déjà compté présent ✓",
+  "ouverture.enLigne.corps": "{code} · le cours commence à {heure} (heure d'Abidjan). Tu peux entrer dès maintenant.",
+  // Formateurs du cours, à l'ouverture automatique (vouvoiement ; l'heure d'Abidjan et celle de chez eux).
+  "ouverture.formateur.titre": "Votre classe est ouverte : {titre}",
+  "ouverture.formateur.corps": "{code} · les salles s'installent : le cours commence à {heure}.",
+  "ouverture.formateur.retard.corps": "{code} · le cours devait commencer à {heure} : les salles et les étudiants vous attendent.",
+
+  // ── Classe ouverte avant l'heure du cours (Studio, écran de salle, en-tête du direct) ──
+  "ouverte.entete": "Classe ouverte · début {heure}",
+  "ouverte.studio": "Classe ouverte avant l'heure : les salles s'installent et règlent le son. Le cours commence à {heure} ; le chrono et l'enregistrement partent à ce moment-là.",
+  "ouverte.salle.titre": "Classe ouverte · le cours commence à {heure}",
+  "ouverte.salle.texte": "Réglez le son et l'image avec les autres salles : le formateur arrive.",
 
   // ── Écran de salle : QR plein écran ─────────────────────────────────────
   "salle.qr.etiquette": "Émargement · {salle} · {site}",

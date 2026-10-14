@@ -30,6 +30,7 @@ import { CONSIGNE_DIRECT_MAX, titreDeConsigne } from "@shared/devoir-direct";
 import { formaterDate, registreDe } from "@shared/textes";
 import { t } from "@shared/textes/devoir-direct";
 import { devoirs, devoirsDirect, journal, rappelsDevoirs, rendus, type Seance, type Utilisateur } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
 
 const MINUTE = 60_000;
 const sansCache = (res: Response) => res.setHeader("Cache-Control", "no-store");
@@ -47,7 +48,7 @@ function ceSoir(maintenant: Date): Date {
 
 /**
  * Échéance calculée par le serveur (l'heure affichée dans le Studio n'est qu'indicative) : fin du cours prévue
- * (démarrage réel, sinon heure prévue, plus la durée, à la minute entamée ; moins de 5 minutes devant : dans
+ * (début du cours : debutDuCours, plus la durée, à la minute entamée ; moins de 5 minutes devant : dans
  * 10 minutes), dans n minutes, ou ce soir à 23h59. Durées arrondies à la minute supérieure, puis fin d'échéance
  * (« 23h59 » vaut jusqu'à 23:59:59,999).
  */
@@ -55,7 +56,8 @@ function echeanceDemandee(s: Pick<Seance, "demarreeLe" | "debut" | "dureeMinutes
   const m = maintenant.getTime();
   if (choix === "fin") {
     // Fin prévue à la minute près, comme le chrono du Studio : la pastille, le chrono et la carte disent la même heure.
-    const fin = minuteInferieure((s.demarreeLe ?? s.debut).getTime() + s.dureeMinutes * MINUTE);
+    // Début du cours : l'heure prévue pour une classe ouverte en avance (debutDuCours), sinon le démarrage réel.
+    const fin = minuteInferieure(debutDuCours(s).getTime() + s.dureeMinutes * MINUTE);
     return finEcheance(new Date(fin - m < 5 * MINUTE ? minuteSuperieure(m + 10 * MINUTE) : fin));
   }
   const cible = choix === "soir" ? ceSoir(maintenant).getTime() : m + choix * MINUTE;

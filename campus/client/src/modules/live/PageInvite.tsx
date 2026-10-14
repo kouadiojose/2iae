@@ -111,7 +111,7 @@ export default function PageInvite({ jeton }: { jeton: string }) {
                     <span className="flex flex-col gap-1">
                       <span className="text-[16px] font-bold">Vidéo, micro et caméra</span>
                       <span className="text-[14px] leading-relaxed text-nuit-doux">
-                        Vous entendez tout le cours (le formateur et les cinq salles) et vous pouvez parler et vous montrer. Prenez un ordinateur au Wi-Fi, avec des écouteurs ou un
+                        Vous entendez tout le cours (le formateur et les cinq salles) et vous pouvez parler, vous montrer et partager votre écran. Prenez un ordinateur au Wi-Fi, avec des écouteurs ou un
                         casque, et autorisez le micro et la caméra quand le navigateur le demande. La visio ouvre 30 minutes avant le début.
                       </span>
                     </span>
@@ -202,7 +202,8 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
       )}
       {info.intervenant && visioOuverte && (
         <p className="rounded-2xl border border-nuit-ligne px-4 py-3 text-[14px] leading-relaxed text-nuit-doux">
-          <strong className="text-white">Micro et caméra :</strong> les boutons en bas de la visio. Votre micro est coupé en entrant : ouvrez-le pour parler, coupez-le quand vous écoutez.
+          <strong className="text-white">Micro et caméra :</strong> les boutons en bas de la visio. Votre micro est coupé en entrant : ouvrez-le pour parler, coupez-le quand vous écoutez.{" "}
+          <strong className="text-white">Montrer votre écran</strong> (votre présentation, un site) : le bouton « Partager » en bas de la visio, sur un ordinateur avec Chrome. Il s'affiche en grand dans toutes les salles.
         </p>
       )}
       {mode === "video" && visioOuverte && (

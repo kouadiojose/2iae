@@ -10,7 +10,7 @@
 //
 // Lien INTERVENANT : même forme, autre signature (un lien invité ne se
 // transforme pas en lien intervenant). La même page, mais en vidéo avec micro
-// et caméra : un invité qui prend la parole pendant le cours. Il a sa place
+// et caméra (et partage d'écran) : un invité qui prend la parole pendant le cours. Il a sa place
 // dans la visio même quand les places des étudiants sont prises. Seuls la
 // direction, la vie scolaire et le formateur du cours reçoivent ce lien.
 //
@@ -230,6 +230,8 @@ export function enregistrerInvite(app: Express) {
         exp: visio.expirationJetonSeance(s),
         envoi: intervenant ? ["video", "audio"] : false,
         cameraAuDepart: intervenant,
+        // L'intervenant peut montrer son écran (sa présentation, un site) : il passe en grand dans les salles.
+        partageEcran: intervenant,
       });
       const acces: AccesDaily = { url: salle.url, jeton, nomAffiche, profil: "etudiant" };
       res.json(acces);

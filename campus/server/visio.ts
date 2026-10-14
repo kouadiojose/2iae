@@ -457,6 +457,7 @@ export type ProfilJeton = ProfilDaily;
  *  - étudiant : rien à l'entrée (micro et caméra coupés) ; le formateur lui
  *    ouvre le micro quand il lui donne la parole (pas de caméra étudiante, §9.8) ;
  *  - observateur (équipe) : regarde et écoute seulement.
+ * `partageEcran` ouvre le partage d'écran à un non-propriétaire (l'intervenant d'un lien intervenant).
  * `envoi` remplace les droits d'envoi (salle d'essai : l'étudiant y teste son micro).
  */
 export async function jetonDaily(o: {
@@ -477,6 +478,8 @@ export async function jetonDaily(o: {
   envoi?: ("audio" | "video")[] | false;
   /** Caméra ouverte dès l'entrée (un intervenant invité), quel que soit le profil. */
   cameraAuDepart?: boolean;
+  /** Partage d'écran permis sans être propriétaire (un intervenant invité qui montre sa présentation). */
+  partageEcran?: boolean;
   /** Micro et caméra coupés à l'entrée, même propriétaire (la direction qui reprend un cours, un formateur invité). */
   silencieux?: boolean;
   /** Participant invisible (ni vu ni compté par les autres) : l'écoute de la classe pour la radio. */
@@ -492,7 +495,7 @@ export async function jetonDaily(o: {
     lang: "fr",
     start_audio_off: !proprietaire || Boolean(o.silencieux),
     start_video_off: o.cameraAuDepart ? false : o.profil === "etudiant" || o.profil === "observateur" || Boolean(o.silencieux),
-    enable_screenshare: proprietaire,
+    enable_screenshare: proprietaire || Boolean(o.partageEcran),
     enable_prejoin_ui: false,
   };
   if (proprietaire) {
@@ -505,7 +508,10 @@ export async function jetonDaily(o: {
     }
   } else {
     const envoi = o.envoi !== undefined ? o.envoi : o.profil === "salle" ? (["video", "audio"] as const) : false;
-    proprietes.permissions = { canSend: envoi === false ? false : [...envoi], ...(o.invisible ? { hasPresence: false } : {}) };
+    // Partage d'écran : l'image et le son de l'écran partagé s'ajoutent à ce que la personne peut envoyer.
+    const ecran = o.partageEcran ? (["screenVideo", "screenAudio"] as const) : [];
+    const canSend = envoi === false ? (ecran.length ? [...ecran] : false) : [...envoi, ...ecran];
+    proprietes.permissions = { canSend, ...(o.invisible ? { hasPresence: false } : {}) };
   }
   if (o.ejecterApres) proprietes.eject_after_elapsed = o.ejecterApres;
   const r = await appelDaily<{ token: string }>("/meeting-tokens", { methode: "POST", corps: { properties: proprietes } });

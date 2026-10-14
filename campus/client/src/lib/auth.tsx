@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ErreurApi, post } from "./api";
 import { queryClient } from "./queryClient";
 import { noterRappelsActives } from "@/modules/rappels/memoire";
-import { peut, type Droit, type Moi, type Role } from "@shared/schema";
+import { estProfilRegie, peut, type Droit, type Moi, type Role } from "@shared/schema";
 
 type ContexteAuth = { moi: Moi | null; chargement: boolean };
 const Contexte = createContext<ContexteAuth>({ moi: null, chargement: true });
@@ -96,7 +96,7 @@ export function cheminInterne(vers: unknown): string | null {
 export async function basculerCasquette(vers?: string) {
   const m = await post<Moi>("/api/auth/casquette");
   queryClient.clear();
-  const cible = cheminInterne(vers) ?? accueilDuRole(m.role);
+  const cible = cheminInterne(vers) ?? accueilDe(m);
   const ici = window.location.pathname + window.location.search;
   if (cible.split("#")[0] !== ici) return window.location.assign(cible);
   if (cible !== ici + window.location.hash) window.history.replaceState(window.history.state, "", cible);
@@ -122,7 +122,15 @@ export function profilPermet(moi: Pick<Moi, "role" | "profil"> | null | undefine
   return (typeof droit === "string" ? [droit] : droit).some((d) => peut(moi, d));
 }
 
-/** Page d'arrivée de chaque rôle après connexion. */
+/**
+ * Page d'arrivée de la personne : celle de son rôle, sauf le Chargé de cours (profil de régie de l'équipe), qui
+ * arrive sur « Mon espace » (/regie) : les cours du jour à ouvrir et à préparer.
+ */
+export function accueilDe(moi: Pick<Moi, "role" | "profil">): string {
+  return estProfilRegie(moi) ? "/regie" : accueilDuRole(moi.role);
+}
+
+/** Page d'arrivée de chaque rôle après connexion (accueilDe quand on connaît la personne). */
 export function accueilDuRole(r: Role): string {
   switch (r) {
     case "formateur":

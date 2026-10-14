@@ -10,9 +10,14 @@
 //
 // Compte de l'équipe sans profil (profil NULL, comptes créés avant les
 // profils) : profil « vie_scolaire », comme avant.
+//
+// Chargé de cours (José, 14 octobre 2026) : la régie des cours en direct à la
+// place de la direction (ouvrir la classe, PowerPoint et vidéos, projection,
+// lien intervenant, parole), par le droit « animer », sans rien d'autre. Son
+// espace : « Mon espace » (/regie, routes/regie.ts), navigation réduite.
 import type { Role } from "./base";
 
-export const PROFILS_EQUIPE = ["scolarite", "vie_scolaire", "secretariat", "pedagogie"] as const;
+export const PROFILS_EQUIPE = ["scolarite", "vie_scolaire", "secretariat", "pedagogie", "charge_cours"] as const;
 export type ProfilEquipe = (typeof PROFILS_EQUIPE)[number];
 
 /** Profil appliqué à un compte de l'équipe qui n'en a pas (comptes d'avant les profils). */
@@ -33,6 +38,7 @@ export const DROITS = [
   "programme",
   "annonces",
   "outils_campus",
+  "animer",
 ] as const;
 export type Droit = (typeof DROITS)[number];
 
@@ -52,6 +58,8 @@ export const LIBELLES_DROITS: Record<Droit, string> = {
   programme: "Cours, programme et emploi du temps, séances en direct, formateurs",
   annonces: "Annonces et événements de l'agenda",
   outils_campus: "Écrans des salles, réglages et consommation de la visio, budget de l'assistant IA, liste de la rentrée",
+  animer:
+    "Régie des cours en direct : ouvrir et fermer la classe, PowerPoint et vidéos avant et pendant le cours, projection, lien intervenant, parole et mains levées, sondages, discussion (sans notes ni emploi du temps)",
 };
 
 export type DefinitionProfil = {
@@ -59,6 +67,8 @@ export type DefinitionProfil = {
   /** Une phrase, montrée à la direction quand elle choisit le profil. */
   description: string;
   droits: readonly Droit[];
+  /** « regie » : profil limité à la régie des cours (accueil « Mon espace », navigation réduite, messagerie sans les étudiants). */
+  espace?: "regie";
 };
 
 export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
@@ -72,7 +82,9 @@ export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
     libelle: "Vie scolaire",
     description:
       "Tout le travail de l'équipe sur son périmètre : présences et absences, suivi des étudiants, comptes et nouveau code, dossiers, frais, programme, annonces.",
-    droits: DROITS,
+    // Tous les droits SAUF « animer » : la vie scolaire anime déjà par « programme », sur les cours propres à son
+    // campus (enseigneCours) ; « animer » lui donnerait en plus les cours partagés, sans que personne l'ait demandé.
+    droits: DROITS.filter((d) => d !== "animer"),
   },
   secretariat: {
     libelle: "Secrétariat / accueil",
@@ -86,6 +98,13 @@ export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
       "Cours, programme et emploi du temps, formateurs, séances en direct et enregistrements, devoirs et notes ; présences et comptes des étudiants en lecture.",
     droits: ["comptes_voir", "presences_voir", "notes", "programme", "annonces"],
   },
+  charge_cours: {
+    libelle: "Chargé de cours",
+    description:
+      "Régie des cours en direct de tous les campus (ou d'un campus) : ouvrir et fermer la classe, ajouter le PowerPoint et les vidéos avant et pendant le cours, les projeter, envoyer le lien intervenant au formateur, donner la parole, sondages. Sans notes, ni dossiers, ni paiements, ni comptes, ni emploi du temps.",
+    droits: ["animer"],
+    espace: "regie",
+  },
 };
 
 export const LIBELLES_PROFILS: Record<ProfilEquipe, string> = {
@@ -93,6 +112,7 @@ export const LIBELLES_PROFILS: Record<ProfilEquipe, string> = {
   vie_scolaire: DROITS_PROFILS.vie_scolaire.libelle,
   secretariat: DROITS_PROFILS.secretariat.libelle,
   pedagogie: DROITS_PROFILS.pedagogie.libelle,
+  charge_cours: DROITS_PROFILS.charge_cours.libelle,
 };
 
 export const estProfilEquipe = (v: unknown): v is ProfilEquipe => typeof v === "string" && (PROFILS_EQUIPE as readonly string[]).includes(v);
@@ -113,6 +133,18 @@ export function peut(u: PersonneDroits | null | undefined, droit: Droit): boolea
   if (u.role === "admin") return true;
   const p = profilDe(u);
   return p !== null && DROITS_PROFILS[p].droits.includes(droit);
+}
+
+/** Droits qui donnent la régie d'une séance : « programme » (historique, avec le périmètre d'enseigneCours) ou « animer ». */
+export const DROITS_REGIE = ["programme", "animer"] as const satisfies readonly Droit[];
+
+/** La personne peut-elle faire la régie de cours (direction, profil « programme » ou « animer ») ? Le cours se vérifie à part (acces.ts : regieCours). */
+export const peutRegie = (u: PersonneDroits | null | undefined): boolean => DROITS_REGIE.some((d) => peut(u, d));
+
+/** Profil limité à la régie des cours (Chargé de cours) : accueil « Mon espace », navigation réduite. Faux pour la direction et les autres profils. */
+export function estProfilRegie(u: PersonneDroits | null | undefined): boolean {
+  const p = u ? profilDe(u) : null;
+  return p !== null && DROITS_PROFILS[p].espace === "regie";
 }
 
 /** Profils qui ont ce droit (pour une requête : qui prévenir, qui peut recevoir une tâche…). */
@@ -136,6 +168,9 @@ export function profilSuggere(fonction: string | null | undefined): ProfilEquipe
     .toLowerCase();
   if (!f.trim()) return null;
   if (/vie scolaire|\bcpe\b|surveill|educat|conseiller principal/.test(f)) return "vie_scolaire";
+  // Avant la pédagogie (« chargé de cours et coordination » doit donner la régie). Ailleurs, « chargé de cours »
+  // désigne aussi un enseignant vacataire : la description du profil le dit à la direction, qui valide.
+  if (/charge de cours|charges de cours|\bregie\b|regisseu/.test(f)) return "charge_cours";
   if (/pedago|des etudes|etudes|formation|coordinat|enseign|academ/.test(f)) return "pedagogie";
   if (/scolarite|inscription|caiss|comptab|econom|financ|admission/.test(f)) return "scolarite";
   if (/secretar|accueil|reception|standard|hotesse|assistant/.test(f)) return "secretariat";

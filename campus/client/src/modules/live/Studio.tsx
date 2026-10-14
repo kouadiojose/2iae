@@ -33,6 +33,9 @@ import { t as textesCopies } from "@shared/textes/copies-direct";
 import { useTextes } from "@/lib/textes";
 import { QuestionsRappel } from "./QuestionsRappel";
 import { RappelInteraction } from "./RappelInteraction";
+import { BandeauRegie } from "@/modules/regie/BandeauRegie";
+import { BoutonLienIntervenant } from "@/modules/regie/LienIntervenant";
+import { t as textesRegie } from "@shared/textes/regie";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "devoir" | "campus";
@@ -110,6 +113,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
 
   // Devoirs et copies : vue posée par-dessus le Studio (le direct continue dessous), copie montrée à la classe.
   const txCopies = useTextes(textesCopies);
+  const txRegie = useTextes(textesRegie);
   // Vue « Devoirs et copies » : fermée, ouverte depuis l'en-tête ({}), ou sur une réponse du devoir en direct.
   const [vueDevoirs, setVueDevoirs] = useState<false | { devoirId?: number; renduId?: number }>(false);
   // « Des étudiants peuvent encore rendre ce devoir » : confirmé une fois par devoir pendant le direct, même si la vue
@@ -184,13 +188,19 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const panneauDiapo = Boolean(copie) || (avecDiapos && mode !== "seules");
   const planB = Boolean(etat.planB ?? seance.planB);
   // Onglet « Devoir » : son compteur, tant que le devoir en direct est ouvert et qu'au moins une réponse est arrivée.
-  const devoirPermis = !observation && seance.peutMontrerCopies;
+  // Donner un devoir en direct (un vrai devoir noté) : jamais la régie seule (Chargé de cours), même s'il voit les copies.
+  const devoirPermis = !observation && (seance.peutDonnerDevoir ?? seance.peutMontrerCopies);
+  // Programmer (Empêchement) : pas la régie seule (l'annulation et la prévenance relèvent de l'emploi du temps).
+  const peutProgrammer = seance.peutProgrammer ?? seance.peutModifier;
+  const messageDemarrage = seance.regie ? txRegie("toast.ouverte") : "Vous êtes en direct dans les cinq campus.";
   const dd = etat.devoirDirect;
   const compteurDevoir = dd && new Date(dd.dateLimite).getTime() > Date.now() ? (dd.enGroupe ? dd.groupes + dd.individuelles : dd.copies) : 0;
 
   return (
     <div className="min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
       <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
+        {/* Régie (Chargé de cours, direction) : avant l'en-tête, qui garde sa place juste au-dessus du reste. */}
+        {!observation && seance.regie && <BandeauRegie seance={seance} />}
         <EnTeteLive
           seance={seance}
           etat={etat}
@@ -200,8 +210,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             ) : (
               <>
                 {statut === "planifiee" ? (
-                  <Bouton variante="nuit-actif" icone={<Play className="h-4 w-4" />} onClick={() => agir("demarrer", {}, "Vous êtes en direct dans les cinq campus.")}>
-                    Démarrer le direct
+                  <Bouton variante="nuit-actif" icone={<Play className="h-4 w-4" />} onClick={() => agir("demarrer", {}, messageDemarrage)}>
+                    {seance.regie ? txRegie("bouton.ouvrir") : "Démarrer le direct"}
                   </Bouton>
                 ) : (
                   <Bouton variante="danger" icone={<Square className="h-4 w-4" />} onClick={() => setConfirmation("terminer")}>
@@ -226,12 +236,16 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                   />
                 )}
                 <BoutonLienInvite seance={seance} variante="nuit" />
+                {/* Micro et caméra sans compte (un invité, un collègue) ; la régie l'a dans son bandeau, au-dessus. */}
+                {!seance.regie && <BoutonLienIntervenant seanceId={seance.id} variante="nuit" />}
                 <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>
                   Plan B
                 </Bouton>
-                <Bouton variante="nuit" icone={<Ban className="h-4 w-4" />} onClick={() => setConfirmation("empechement")}>
-                  Empêchement
-                </Bouton>
+                {peutProgrammer && (
+                  <Bouton variante="nuit" icone={<Ban className="h-4 w-4" />} onClick={() => setConfirmation("empechement")}>
+                    Empêchement
+                  </Bouton>
+                )}
               </>
             )
           }
@@ -417,11 +431,13 @@ export default function Studio({ seance, observation = false }: { seance: Seance
         <VisiteGroupe seance={seance} groupes={groupes} groupe={groupeVisite} role={observation ? "equipe" : "formateur"} moiId={moi.id} onFermer={() => visiter(null)} />
       )}
       {!observation && statut === "planifiee" && (
-        <FenetreDemarrage seance={seance} prenom={moi.prenom} onDemarrer={() => agir("demarrer", {}, "Vous êtes en direct dans les cinq campus.")} />
+        <FenetreDemarrage seance={seance} prenom={moi.prenom} onDemarrer={() => agir("demarrer", {}, messageDemarrage)} />
       )}
       <ConfirmationTerminer ouverte={confirmation === "terminer"} onFermer={() => setConfirmation(null)} onConfirmer={() => agir("terminer", {}, "Séance terminée. Le bilan est prêt.")} />
       <FenetrePlanB seance={seance} ouverte={confirmation === "planb"} onFermer={() => setConfirmation(null)} onConfirmer={(lien) => agir("plan-b", { lien }, "Tout le monde bascule sur le lien de secours.")} />
-      <FenetreEmpechement ouverte={confirmation === "empechement"} onFermer={() => setConfirmation(null)} onConfirmer={(motif) => agir("annuler", { motif }, "Les inscrits et les salles sont prévenus.")} />
+      {peutProgrammer && (
+        <FenetreEmpechement ouverte={confirmation === "empechement"} onFermer={() => setConfirmation(null)} onConfirmer={(motif) => agir("annuler", { motif }, "Les inscrits et les salles sont prévenus.")} />
+      )}
     </div>
   );
 }
@@ -1066,6 +1082,9 @@ function OutilsDiffusion({
  */
 function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetailDto; prenom: string; onDemarrer: () => Promise<boolean> }) {
   const maintenant = useMaintenant(15_000);
+  const txRegie = useTextes(textesRegie);
+  // Régie (Chargé de cours, direction) : on ouvre la classe d'un autre, micro et caméra coupés.
+  const formateur = seance.formateur ? `${seance.formateur.prenom} ${seance.formateur.nom}`.trim() : null;
   const cle = `studio-demarrage-${seance.id}`;
   const [fermee, setFermee] = useState(() => {
     try {
@@ -1086,7 +1105,12 @@ function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetail
     }
   };
   return (
-    <Fenetre ouverte={proche && !fermee} onFermer={fermer} titre={`Bonjour ${prenom}, prêt pour votre cours ?`} description={`« ${seance.titre} » · ${heureDouble(seance.debut)}`}>
+    <Fenetre
+      ouverte={proche && !fermee}
+      onFermer={fermer}
+      titre={seance.regie ? (formateur ? txRegie("demarrage.titre", { v: { formateur } }) : txRegie("demarrage.titre.sansFormateur")) : `Bonjour ${prenom}, prêt pour votre cours ?`}
+      description={`« ${seance.titre} » · ${heureDouble(seance.debut)}`}
+    >
       <div className="flex flex-col gap-4 pb-3">
         <Bouton
           taille="lg"
@@ -1101,14 +1125,20 @@ function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetail
             if (ok) fermer();
           }}
         >
-          Démarrer le direct
+          {seance.regie ? txRegie("demarrage.bouton") : "Démarrer le direct"}
         </Bouton>
-        <p className="text-[15px] text-texte-pale">
-          Les cinq salles et les étudiants en ligne vous voient et vous entendent dès que vous cliquez. Si le navigateur demande la caméra et le micro, cliquez sur « Autoriser ».
-        </p>
-        <p className="text-[14px] italic text-texte-gris" lang="en">
-          Click “Démarrer le direct” to start your class. If your browser asks for the camera and microphone, click “Allow”.
-        </p>
+        {seance.regie ? (
+          <p className="text-[15px] text-texte-pale">{txRegie("demarrage.texte")}</p>
+        ) : (
+          <>
+            <p className="text-[15px] text-texte-pale">
+              Les cinq salles et les étudiants en ligne vous voient et vous entendent dès que vous cliquez. Si le navigateur demande la caméra et le micro, cliquez sur « Autoriser ».
+            </p>
+            <p className="text-[14px] italic text-texte-gris" lang="en">
+              Click “Démarrer le direct” to start your class. If your browser asks for the camera and microphone, click “Allow”.
+            </p>
+          </>
+        )}
         <button type="button" onClick={fermer} className="min-h-[44px] self-center text-[15px] font-semibold text-texte-pale underline-offset-2 hover:text-encre hover:underline">
           Pas encore : voir le studio d'abord
         </button>

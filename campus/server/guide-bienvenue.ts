@@ -7,13 +7,14 @@ import fs from "fs/promises";
 import path from "path";
 import { config, estProduction } from "./config";
 import { emailDisponible, envoyerEmail, emailGuideBienvenue, emailGuideEtudiant, type PieceJointe } from "./mail";
-import type { Utilisateur } from "@shared/schema";
+import { estProfilRegie, type Utilisateur } from "@shared/schema";
 
 /** Au-delà, le PDF n'est pas joint (le lien suffit) : certaines messageries refusent les gros e-mails. */
 const TAILLE_MAX_PDF = 8 * 1024 * 1024;
 
-const guideDuRole = (role: Utilisateur["role"]) =>
-  role === "formateur"
+// Chargé de cours (profil de régie) : le manuel du formateur, qui décrit le Studio où il fait la régie.
+const guideDuRole = (role: Utilisateur["role"], profil?: string | null) =>
+  role === "formateur" || estProfilRegie({ role, profil })
     ? { fichier: "manuel-formateurs.pdf", nom: "Manuel du formateur · Campus 2IAE.pdf" }
     : role === "etudiant"
       ? { fichier: "manuel-etudiants.pdf", nom: "Manuel de l'étudiant · Campus 2IAE.pdf" }
@@ -43,12 +44,12 @@ async function lirePdf(fichier: string): Promise<Buffer | null> {
 
 /** Envoie le guide de bienvenue à l'adresse du compte. Ne lève jamais : renvoie vrai si l'e-mail est parti. */
 export async function envoyerGuideBienvenue(
-  u: Pick<Utilisateur, "prenom" | "nom" | "role" | "email"> & { matricule?: string | null; classeNom?: string | null },
+  u: Pick<Utilisateur, "prenom" | "nom" | "role" | "email"> & { matricule?: string | null; classeNom?: string | null; profil?: string | null },
   premierCours: string | null,
 ): Promise<boolean> {
   if (!u.email) return false;
   try {
-    const guide = guideDuRole(u.role);
+    const guide = guideDuRole(u.role, u.profil);
     const pdf = await lirePdf(guide.fichier);
     const pieces: PieceJointe[] = pdf ? [{ nom: guide.nom, contenu: pdf }] : [];
     const lienPdf = `${config.urlCampus}/guides/${guide.fichier}`;

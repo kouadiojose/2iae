@@ -26,7 +26,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil, utilisateurParId } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque } from "../acces";
+import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque, regieCours } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
@@ -131,6 +131,7 @@ import {
   type DemandeDirectImmediat,
   type RejoindreVisioDto,
   type AccesDaily,
+  peutRegie,
 } from "@shared/schema";
 import type { SeanceResume, EnCours, DirectDuCampus } from "@shared/api";
 import { estPublicSalle, nomDeSalle } from "@shared/salles";
@@ -278,9 +279,25 @@ export async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance
   return seanceAccessible(u, id);
 }
 
-/** Séance que la personne anime (formateur du cours ou équipe). */
+/**
+ * Séance dont la personne fait la RÉGIE : ouvrir et fermer la classe, diapos, vidéos, projection, parole, mains,
+ * sondages, discussion (formateur du cours, direction, équipe « programme » ou « animer » : acces.ts, regieCours).
+ * Ce qui touche à la programmation (horaire, publication, annulation, essai, fiche de révision) passe par
+ * seanceProgrammee : tout nouvel appelant choisit l'une ou l'autre. Garde « pas plus d'une heure avant » et journal
+ * du chargé de cours : routes/regie.ts.
+ */
 export async function seanceAnimee(u: Utilisateur, id: number): Promise<Seance> {
-  // Équipe : préparer ou animer une séance relève du profil « programme » (ext-profils.ts).
+  if (u.role === "vie_scolaire" && !peutRegie(u)) throw new ErreurHttp(403, messageProfil(u));
+  const s = await chargerSeance(id);
+  if (!(await regieCours(u, s.coursId))) {
+    throw new ErreurHttp(403, u.role === "etudiant" ? "Cette action est réservée au formateur du cours." : "Seul le formateur de ce cours peut faire cela.");
+  }
+  return s;
+}
+
+/** Séance que la personne programme (horaire, publication, annulation, essai, fiche de révision) : la règle d'avant la régie. */
+export async function seanceProgrammee(u: Utilisateur, id: number): Promise<Seance> {
+  // Équipe : programmer une séance relève du profil « programme » (ext-profils.ts).
   if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
   const s = await chargerSeance(id);
   await coursEnseigne(u, s.coursId);
@@ -306,7 +323,8 @@ async function roleDans(u: Utilisateur, s: Seance): Promise<RoleSeance> {
   // La direction a la main sur tous les cours (Studio complet, visio comme le formateur) : elle démarre, présente
   // ou reprend le cours d'un formateur en difficulté. De même la vie scolaire qui gère le programme de ce campus.
   if (u.role === "admin") return "formateur";
-  if (u.role === "vie_scolaire" && peut(u, "programme") && (await enseigneCours(u, s.coursId))) return "formateur";
+  // Chargé de cours (« animer ») : la régie de tous les cours que suit son périmètre (acces.ts : regieCours).
+  if (u.role === "vie_scolaire" && (await regieCours(u, s.coursId))) return "formateur";
   // Formateur d'un autre cours : il rejoint la classe en invité (micro et caméra, discussion), sans les commandes.
   if (u.role === "formateur") return "equipe";
   if (estEquipe(u)) return "equipe";
@@ -1279,8 +1297,16 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     formateur: formateur ?? null,
     monRole: role,
     peutModifier: role === "formateur" || (role === "equipe" && (await enseigneCours(u, s.coursId))),
-    // Devoirs et copies dans le Studio : qui anime et lit les copies (la vie scolaire a aussi besoin de « notes »).
-    peutMontrerCopies: role === "formateur" && (u.role !== "vie_scolaire" || peut(u, "notes")),
+    // Horaire, titre, plan, publication, Empêchement, Dupliquer, Supprimer, « C'était un essai », fiche de révision
+    // (seanceProgrammee) : pas la régie seule (Chargé de cours).
+    peutProgrammer: u.role === "vie_scolaire" ? peut(u, "programme") && (await enseigneCours(u, s.coursId)) : role === "formateur",
+    // Devoirs et copies dans le Studio : qui anime et lit les copies (la vie scolaire a aussi besoin de « notes »,
+    // ou de la régie « animer » : voir et projeter, sans note ; copies-direct.ts : animateurCopies).
+    peutMontrerCopies: role === "formateur" && (u.role !== "vie_scolaire" || peut(u, "notes") || peut(u, "animer")),
+    // Donner un devoir en direct (un vrai devoir noté) : jamais la régie seule.
+    peutDonnerDevoir: role === "formateur" && (u.role !== "vie_scolaire" || peut(u, "notes")),
+    // La personne anime le cours d'un autre (direction, équipe) : repère « Vous faites la régie » dans le Studio.
+    regie: role === "formateur" && u.role !== "formateur" && animateurId !== u.id && (animateurId == null || animateurId !== u.compteLieId),
     monSite: monSite ? versSiteLive(monSite) : null,
     maPresence,
     sites: sitesListe.map(versSiteLive),
@@ -1568,7 +1594,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       const d = valider(schemaModification, req.body);
       // Daily pour tous : seule la visio du campus reste permise, en secours quand Daily ne passe pas.
       if (d.fournisseur !== undefined && d.fournisseur !== s.fournisseur && d.fournisseur !== visio.fournisseurImpose() && d.fournisseur !== "campus") {
@@ -1629,7 +1655,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       if (s.statut === "en_direct" || s.statut === "terminee") {
         throw new ErreurHttp(409, "Cette séance a déjà eu lieu : elle ne peut plus être supprimée. Vous pouvez l'annuler.");
       }
@@ -1653,7 +1679,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       const d = valider(z.object({ debut: z.string().datetime({ offset: true }).optional() }), req.body);
       const debut = d.debut ? new Date(d.debut) : new Date(s.debut.getTime() + 7 * 86_400_000);
       const [copie] = await db
@@ -1745,7 +1771,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       exigerStatut(s, ["planifiee", "en_direct"], "Cette séance ne peut plus être annulée.");
       const { motif } = valider(z.object({ motif: z.string().trim().min(3, "indiquez un motif").max(300) }), req.body);
       // Une seule annulation compte (double clic) : une seule notification « Live annulé ».
@@ -1783,7 +1809,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       exigerStatut(s, ["terminee", "en_direct"], "Cette séance n'a pas été lancée : elle est déjà à venir.");
       if (s.debut.getTime() <= Date.now()) {
         throw new ErreurHttp(409, "L'heure prévue du cours est passée : ce n'était pas un essai. Dupliquez la séance pour la reprogrammer.");
@@ -3563,7 +3589,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       const lignes = await db.select({ t: sousTitres.t, texte: sousTitres.texte }).from(sousTitres).where(eq(sousTitres.seanceId, s.id)).orderBy(asc(sousTitres.t), asc(sousTitres.id));
       const qs = await db.select({ texte: questionsLive.texte, votes: questionsLive.votes, repondue: questionsLive.repondue }).from(questionsLive).where(and(eq(questionsLive.seanceId, s.id), eq(questionsLive.masquee, false))).orderBy(desc(questionsLive.votes)).limit(30);
       const [c] = await db.select({ code: cours.code, titre: cours.titre }).from(cours).where(eq(cours.id, s.coursId));
@@ -3615,7 +3641,7 @@ export function enregistrerLive(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      const s = await seanceAnimee(u, idParam(req));
+      const s = await seanceProgrammee(u, idParam(req));
       const d = valider(z.object({ contenu: z.string().trim().min(20, "la fiche est trop courte").max(40_000), valider: z.boolean().optional() }), req.body);
       const publiee = d.valider === true && !s.resumeValide;
       const [maj] = await db

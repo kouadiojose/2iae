@@ -9,6 +9,7 @@ import { Radio } from "lucide-react";
 import { cn, pluriel } from "@/lib/utils";
 import type { EtatRadio } from "@shared/schema";
 import { EmetteurRadioMoteur, type EtatEmission } from "./moteur/radio";
+import { t as tRegie } from "@shared/textes/regie";
 
 export function EmetteurRadio({
   seanceId,
@@ -47,7 +48,7 @@ export function EmetteurRadio({
     };
   }, [actif, piste, seanceId]);
 
-  const enCours = actif && etat !== "arret" && etat !== "indisponible";
+  const enCours = actif && etat !== "arret" && etat !== "indisponible" && etat !== "ailleurs";
   const { data } = useQuery<EtatRadio>({
     queryKey: ["/api/radio", seanceId, "etat"],
     enabled: enCours,
@@ -59,7 +60,9 @@ export function EmetteurRadio({
   const texte =
     etat === "indisponible"
       ? "Radio indisponible sur ce navigateur"
-      : muet && piste
+      : etat === "ailleurs"
+        ? tRegie("radio.ailleurs")
+        : muet && piste
         ? classe
           ? `Radio : la classe, sans votre micro · ${pluriel(auditeurs, "auditeur")}`
           : `Radio en silence : micro coupé · ${pluriel(auditeurs, "auditeur")}`
@@ -75,7 +78,7 @@ export function EmetteurRadio({
     <span
       className={cn(
         "inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-xs",
-        etat === "direct" ? "bg-nuit-carte text-nuit-doux" : etat === "indisponible" ? "bg-danger-clair text-danger" : "bg-nuit-carte text-orange-peche",
+        etat === "direct" || etat === "ailleurs" ? "bg-nuit-carte text-nuit-doux" : etat === "indisponible" ? "bg-danger-clair text-danger" : "bg-nuit-carte text-orange-peche",
       )}
       role="status"
       aria-live="polite"

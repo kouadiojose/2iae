@@ -22,6 +22,7 @@ import {
   coursClasses,
   classes,
   blocages,
+  estProfilRegie,
   type Utilisateur,
   type Conversation,
   type Role,
@@ -95,7 +96,9 @@ export function vieScolaireCouvre(vs: Pick<Utilisateur, "role" | "siteId">, etud
  *   - étudiant ↔ vie scolaire de son site (ou vie scolaire du groupe) ;
  *   - étudiant ↔ direction ;
  *   - formateurs ↔ équipe, équipe ↔ équipe ;
- *   - formateur ↔ formateur seulement s'ils enseignent un même cours.
+ *   - formateur ↔ formateur seulement s'ils enseignent un même cours ;
+ *   - jamais entre un étudiant et un Chargé de cours (profil de régie : il parle
+ *     aux étudiants dans la discussion du live, pas en privé).
  */
 export async function peuventSEcrire(a: Utilisateur, b: Utilisateur): Promise<boolean> {
   if (a.id === b.id || !a.actif || !b.actif || !aMessagerie(a) || !aMessagerie(b)) return false;
@@ -104,6 +107,7 @@ export async function peuventSEcrire(a: Utilisateur, b: Utilisateur): Promise<bo
     const etudiant = a.role === "etudiant" ? a : b;
     const autre = etudiant === a ? b : a;
     if (autre.role === "admin") return true;
+    if (estProfilRegie(autre)) return false;
     if (autre.role === "vie_scolaire") return vieScolaireCouvre(autre, etudiant);
     if (autre.role === "formateur") {
       const [suivis, enseignes] = await Promise.all([idsCoursAccessibles(etudiant), coursPubliesDuFormateur(autre.id)]);
@@ -183,7 +187,8 @@ export async function accesConversation(u: Utilisateur, conversationId: number):
     if (!p) throw introuvable("Conversation");
     return { conversation: c, participant: p, moderateur: false };
   }
-  if (!c.coursId || !(await peutVoirCours(u, c.coursId))) {
+  // Salon d'un cours : pas pour le Chargé de cours (profil de régie, sans messagerie avec les étudiants).
+  if (!c.coursId || estProfilRegie(u) || !(await peutVoirCours(u, c.coursId))) {
     throw new ErreurHttp(403, u.role === "etudiant" ? "Ce salon est réservé aux inscrits du cours." : "Ce salon ne vous est pas accessible.");
   }
   return { conversation: c, participant: p ?? null, moderateur: await modereSalon(u, c.coursId) };

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Link2Off } from "lucide-react";
 import { post, ErreurApi } from "@/lib/api";
-import { accueilDuRole } from "@/lib/auth";
+import { accueilDe } from "@/lib/auth";
 import { LienBouton } from "@/components/ui/bouton";
 import { Squelette } from "@/components/ui/divers";
 import { toast } from "@/components/ui/toast";
@@ -30,7 +30,7 @@ export default function PageReinitialiser({ jeton }: { jeton: string }) {
     const m = await post<Moi>("/api/compte/reinitialiser", { jeton, nouveau });
     installerMoi(m, true);
     toast(m.role === "etudiant" ? "Nouveau code enregistré. Te voilà connecté." : "Nouveau mot de passe enregistré.");
-    naviguer(doitPasserParBienvenue(m) ? "/bienvenue" : accueilDuRole(m.role), { replace: true });
+    naviguer(doitPasserParBienvenue(m) ? "/bienvenue" : accueilDe(m), { replace: true });
   }
 
   async function depuisPave(code: string) {

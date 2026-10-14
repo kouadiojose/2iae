@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { FournisseurAuth, useMoi, accueilDuRole, profilPermet, basculerCasquette } from "@/lib/auth";
+import { FournisseurAuth, useMoi, accueilDe, accueilDuRole, profilPermet, basculerCasquette } from "@/lib/auth";
 import { libelleProfil, LIBELLES_ROLES, type Casquette, type Role } from "@shared/schema";
 import { t as textesSalles } from "@shared/textes/salles";
 import { FournisseurFlux } from "@/lib/flux";
@@ -45,7 +45,7 @@ function PageInterdite({ profil = false }: { profil?: boolean }) {
             ? "Elle est réservée à un autre profil du campus. Tu peux revenir à ton accueil."
             : "Elle est réservée à un autre profil du campus. Vous pouvez revenir à votre accueil."}
       </p>
-      <LienBouton href={moi ? accueilDuRole(moi.role) : "/"}>Revenir à mon accueil</LienBouton>
+      <LienBouton href={moi ? accueilDe(moi) : "/"}>Revenir à mon accueil</LienBouton>
     </div>
   );
 }
@@ -93,7 +93,7 @@ function PageIntrouvable() {
       <span className="etiquette">Erreur 404</span>
       <h1 className="text-3xl font-black">Page introuvable.</h1>
       <p className="text-texte-pale">Le lien est peut-être incomplet ou la page a été déplacée.</p>
-      <LienBouton href={moi ? accueilDuRole(moi.role) : "/"}>Revenir à l'accueil</LienBouton>
+      <LienBouton href={moi ? accueilDe(moi) : "/"}>Revenir à l'accueil</LienBouton>
     </div>
   );
 }
@@ -110,7 +110,7 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
   if (chargement) return <EcranChargement />;
 
   if (def.acces === "public") {
-    if (moi && def.redirigerSiConnecte) return <Redirect to={accueilDuRole(moi.role)} replace />;
+    if (moi && def.redirigerSiConnecte) return <Redirect to={accueilDe(moi)} replace />;
     return (
       <Suspense fallback={<EcranChargement />}>
         <Page {...params} />

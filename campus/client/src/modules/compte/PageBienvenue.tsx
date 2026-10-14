@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { ArrowLeft, BellRing, Check, CheckCircle2, MessageCircleQuestion, Signal, Wifi } from "lucide-react";
-import { useMoiConnecte, accueilDuRole, seDeconnecter } from "@/lib/auth";
+import { useMoiConnecte, accueilDe, seDeconnecter } from "@/lib/auth";
 import { post, patch, ErreurApi } from "@/lib/api";
 import { Bouton } from "@/components/ui/bouton";
 import { Avatar, BarreProgression, Erreur, Squelette } from "@/components/ui/divers";
@@ -97,7 +97,7 @@ export default function PageBienvenue() {
     if (parcours && isFetchedAfterMount && !etapes) setEtapes(etapesDuParcours(moi, parcours, mode));
   }, [parcours, isFetchedAfterMount, etapes, moi, mode]);
 
-  const destination = retour ?? accueilDuRole(moi.role);
+  const destination = retour ?? accueilDe(moi);
   const premiereFois = Boolean(etapes?.includes("rappels"));
 
   function terminer() {

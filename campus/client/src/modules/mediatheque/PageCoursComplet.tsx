@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, BookOpenCheck, Briefcase, Dumbbell, Layers, ListChecks, PlayCircle, Printer, RotateCcw, Users } from "lucide-react";
-import { useMoiConnecte, accueilDuRole } from "@/lib/auth";
+import { useMoiConnecte, accueilDe } from "@/lib/auth";
 import { post } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { dateCourte } from "@/lib/dates";
@@ -97,7 +97,7 @@ export default function PageCoursComplet({ id }: { id: string }) {
   // Le lien retour ramène à la page d'origine (?depuis=accueil, cours, reviser, replay).
   const retour =
     depuis === "accueil"
-      ? { href: accueilDuRole(moi.role), libelle: tx("cc.retour.accueil") }
+      ? { href: accueilDe(moi), libelle: tx("cc.retour.accueil") }
       : depuis === "cours"
         ? { href: `/cours/${s.coursId}?onglet=reviser`, libelle: tx("cc.retour.cours") }
         : depuis === "reviser" && etudiant

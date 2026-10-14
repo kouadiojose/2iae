@@ -6,6 +6,7 @@ import { enregistrerAccueil } from "./accueil";
 import { enregistrerCours } from "./cours";
 import { enregistrerMediatheque } from "./mediatheque";
 import { enregistrerLive } from "./live";
+import { enregistrerRegie } from "./regie";
 import { enregistrerRessourcesSeance } from "./ressources-seance";
 import { enregistrerEvaluations } from "./evaluations";
 import { enregistrerCopiesDirect } from "./copies-direct";
@@ -55,6 +56,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerAccueil(app);
   enregistrerCours(app);
   enregistrerMediatheque(app);
+  enregistrerRegie(app); // régie des cours (Chargé de cours) : AVANT live, ses intergiciels (garde, journal) passent en premier
   enregistrerLive(app);
   enregistrerRessourcesSeance(app);
   enregistrerInvite(app);

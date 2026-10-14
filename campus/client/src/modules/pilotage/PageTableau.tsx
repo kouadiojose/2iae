@@ -14,10 +14,10 @@
 // orange « 10 liens de salles à envoyer aujourd'hui » (CartesSallesDuJour) ; les autres jours, la petite carte
 // « Les salles du jour » reste à sa place.
 import { useState, type ReactNode } from "react";
-import { Link } from "wouter";
+import { Link, Redirect } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus, Activity } from "lucide-react";
-import type { Droit } from "@shared/schema";
+import { estProfilRegie, type Droit } from "@shared/schema";
 import type { IndicateursTableau, TableauPilotageEngagement } from "@shared/engagement/indicateurs";
 import { t as te, selonNombre } from "@shared/textes/engagement";
 import { useTextes } from "@/lib/textes";
@@ -38,7 +38,14 @@ import { CarteActionSalles, CarteLienSalles, useSallesDuJour } from "./composant
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 import { pourcent } from "./outils";
 
+/** Chargé de cours (profil de régie) : son accueil est « Mon espace » (marque-pages et anciens liens vers /pilotage). */
 export default function PageTableau() {
+  const moi = useMoiConnecte();
+  if (estProfilRegie(moi)) return <Redirect to="/regie" replace />;
+  return <TableauPilotage />;
+}
+
+function TableauPilotage() {
   const moi = useMoiConnecte();
   // Ce que le profil permet (ext-profils.ts) : le tableau ne montre que ce que la personne peut utiliser.
   const peutSuivre = profilPermet(moi, "suivi");

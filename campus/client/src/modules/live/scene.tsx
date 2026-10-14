@@ -667,7 +667,8 @@ function SceneDaily({
 
   const tu = role === "etudiant";
   const secours =
-    role === "formateur" && seance.peutModifier ? (
+    // Changer le fournisseur de la séance relève de la programmation : la régie seule (Chargé de cours) a la radio.
+    role === "formateur" && (seance.peutProgrammer ?? seance.peutModifier) ? (
       <>
         <Bouton variante="nuit-actif" chargement={bascule} onClick={() => void basculerCampus()}>
           Passer la classe sur la visio du campus

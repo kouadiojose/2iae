@@ -1,5 +1,5 @@
 // Petits outils du module compte (connexion, bienvenue, profil).
-import { accueilDuRole } from "@/lib/auth";
+import { accueilDe } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import type { Moi } from "@shared/schema";
 
@@ -30,7 +30,7 @@ export const doitPasserParBienvenue = (m: Pick<Moi, "doitChangerMotDePasse" | "c
 /** Où envoyer la personne juste après sa connexion. */
 export function destinationApresConnexion(m: Moi, retour: string | null): string {
   if (doitPasserParBienvenue(m)) return `/bienvenue${retour ? `?retour=${encodeURIComponent(retour)}` : ""}`;
-  return retour ?? accueilDuRole(m.role);
+  return retour ?? accueilDe(m);
 }
 
 /** Enregistre la personne connectée (après connexion, activation ou nouveau code). */

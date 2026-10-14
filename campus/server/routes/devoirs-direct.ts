@@ -75,7 +75,7 @@ const schemaReglage = z.object({ action: z.enum(["prolonger", "clore"]) });
 
 /** Séance animée par la personne (droits de « Devoirs dans le Studio »), en direct. */
 async function seanceEnDirect(u: Utilisateur, seanceId: number): Promise<Seance> {
-  const s = await animateurCopies(u, seanceId, texte(u, "erreur.droits"));
+  const s = await animateurCopies(u, seanceId, texte(u, "erreur.droits"), "devoir"); // un vrai devoir noté : jamais la régie seule
   if (s.statut !== "en_direct") throw new ErreurHttp(409, texte(u, "erreur.pasEnDirect"), { code: "pas_en_direct" });
   return s;
 }

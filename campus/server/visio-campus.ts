@@ -30,7 +30,7 @@ import { db } from "./db";
 import { config } from "./config";
 import { exigerConnexion, moi, estEquipe } from "./auth";
 import { route, valider, idParam, interdit, invalide, ErreurHttp } from "./http";
-import { seanceVisible, enseigneCours } from "./acces";
+import { seanceVisible, enseigneCours, regieCours } from "./acces";
 import { enregistrerGardien, publier, publierUtilisateur } from "./temps-reel";
 import { planifier } from "./taches";
 import { enregistrerVisioDaily } from "./visio-daily";
@@ -180,10 +180,20 @@ async function seanceOuverte(u: Utilisateur, seanceId: number): Promise<Seance> 
   return s;
 }
 
-/** Peut tenir le centre de l'étoile (et émettre la radio) : formateur du cours, ou direction. */
+/**
+ * Peut tenir le centre de l'étoile : formateur du cours, ou direction. Il n'y a qu'un centre (le dernier arrivé
+ * remplace l'autre) : la régie de l'équipe (Chargé de cours) n'y entre pas, elle a la radio (limite connue du
+ * Plan B en visio « campus », rare : Daily est imposé).
+ */
 async function peutAnimer(u: Utilisateur, s: Seance): Promise<boolean> {
   if (u.role === "admin") return true;
   return u.role === "formateur" && (await enseigneCours(u, s.coursId));
+}
+
+/** Peut émettre la radio des téléphones : qui anime, et la régie de l'équipe (« programme » ou « animer » : regieCours). */
+async function peutEmettreRadio(u: Utilisateur, s: Seance): Promise<boolean> {
+  if (await peutAnimer(u, s)) return true;
+  return u.role === "vie_scolaire" && (await regieCours(u, s.coursId));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -422,6 +432,11 @@ type Emission = {
   depuis: number | null;
   dernierMorceau: number;
   octetsRecus: number;
+  /**
+   * Compte qui émet la radio d'une séance : un seul poste à la fois (le formateur et la régie, ou la direction,
+   * ont chacun le Studio ouvert ; sans cela, leurs enregistrements se coupent l'un l'autre en boucle).
+   */
+  emetteurId: number | null;
 };
 
 const emissions = new Map<string, Emission>();
@@ -432,6 +447,8 @@ const TAMPON_MAX_AUDITEUR = 48 * 1024;
 const SILENCE_MAX_MS = 20_000;
 /** Radio d'essai (page /visio/essai) : durée maximale. */
 const DUREE_MAX_ESSAI_MS = 90_000;
+/** Un autre poste qui émet a envoyé un morceau depuis moins de ce délai : la radio reste à lui (423). */
+const RADIO_OCCUPEE_MS = 15_000;
 
 function emissionDe(cle: string, seanceId: number | null): Emission {
   let e = emissions.get(cle);
@@ -447,6 +464,7 @@ function emissionDe(cle: string, seanceId: number | null): Emission {
       depuis: null,
       dernierMorceau: 0,
       octetsRecus: 0,
+      emetteurId: null,
     };
     emissions.set(cle, e);
   }
@@ -510,8 +528,11 @@ const schemaMorceau = z.object({
   seq: z.coerce.number().int().min(0),
 });
 
-/** Reçoit une tranche d'enregistrement ; 409 = « recommence l'enregistrement » (en-tête perdu, trou). */
-function recevoirMorceau(e: Emission, req: Request, res: Response) {
+/**
+ * Reçoit une tranche d'enregistrement ; 409 = « recommence l'enregistrement » (en-tête perdu, trou) ; 423 = la
+ * radio de la séance part déjà d'un autre poste (« emetteurId » : radio d'une séance seulement, pas l'essai).
+ */
+function recevoirMorceau(e: Emission, req: Request, res: Response, emetteurId?: number) {
   const { debut, flux, seq } = valider(schemaMorceau, req.query);
   const octets = req.body;
   if (!Buffer.isBuffer(octets) || !octets.length) throw invalide("Morceau audio vide.");
@@ -520,6 +541,13 @@ function recevoirMorceau(e: Emission, req: Request, res: Response) {
     // Même début renvoyé (réponse perdue en route) : déjà pris en compte.
     if (e.flux === flux && seq === 0 && e.seqAttendue > 0) return res.json({ ok: true, doublon: true });
     if (seq !== 0) throw invalide("Le premier morceau doit porter le numéro 0.");
+    // Un seul poste émet : un autre compte qui envoie encore ses morceaux garde la radio (rien n'est coupé). Avec
+    // Daily, peu importe le poste : la radio mélange toute la classe (formateur et intervenants compris).
+    if (emetteurId !== undefined) {
+      const occupee = e.flux !== null && e.emetteurId !== null && e.emetteurId !== emetteurId && Date.now() - e.dernierMorceau < RADIO_OCCUPEE_MS;
+      if (occupee) return res.status(423).json({ message: "La radio des téléphones part déjà d'un autre poste.", occupee: true });
+      e.emetteurId = emetteurId;
+    }
     const redemarrage = e.enDirect;
     if (redemarrage) couper(e, "redemarrage");
     e.analyseur = new AnalyseurWebm();
@@ -870,8 +898,8 @@ export function enregistrerVisioCampus(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const seance = await seanceOuverte(u, idParam(req, "seanceId"));
-      if (!(await peutAnimer(u, seance))) throw interdit("Seul le formateur du cours émet la radio.");
-      recevoirMorceau(emissionDe(String(seance.id), seance.id), req, res);
+      if (!(await peutEmettreRadio(u, seance))) throw interdit("Seul le formateur du cours émet la radio.");
+      recevoirMorceau(emissionDe(String(seance.id), seance.id), req, res, u.id);
     }),
   );
 
@@ -881,9 +909,10 @@ export function enregistrerVisioCampus(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const seance = await seanceVisible(u, idParam(req, "seanceId"));
-      if (!(await peutAnimer(u, seance))) throw interdit("Seul le formateur du cours arrête la radio.");
+      if (!(await peutEmettreRadio(u, seance))) throw interdit("Seul le formateur du cours arrête la radio.");
       const e = emissions.get(String(seance.id));
-      if (e) couper(e, "fin");
+      // Seul le poste qui émet arrête la radio : la régie qui quitte le Studio ne coupe pas celle du formateur.
+      if (e && (e.emetteurId === null || e.emetteurId === u.id)) couper(e, "fin");
       res.json({ ok: true });
     }),
   );

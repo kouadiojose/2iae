@@ -337,7 +337,11 @@ export function FenetreCompte({
                     f.profil === p ? "border-orange bg-orange-pale" : "border-ligne bg-white hover:border-orange",
                   )}
                 >
-                  <input type="radio" name="profil" className="mt-1 h-4 w-4 shrink-0 accent-[#E4793A]" checked={f.profil === p} onChange={() => setF((x) => ({ ...x, profil: p }))} />
+                  <input type="radio" name="profil" className="mt-1 h-4 w-4 shrink-0 accent-[#E4793A]" checked={f.profil === p} onChange={() =>
+                      // Chargé de cours (régie des cours) : tout le groupe par défaut, la direction peut choisir un campus.
+                      setF((x) => ({ ...x, profil: p, ...(DROITS_PROFILS[p].espace === "regie" && !x.siteId ? { siteId: TOUS_LES_CAMPUS } : {}) }))
+                    }
+                  />
                   <span className="min-w-0">
                     <span className="block font-bold text-encre">{DROITS_PROFILS[p].libelle}</span>
                     <span className="block text-[13px] leading-snug text-texte-pale">{DROITS_PROFILS[p].description}</span>

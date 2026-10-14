@@ -1,7 +1,8 @@
 // Devoirs et copies dans le Studio, et copie montrée à toute la classe pendant le direct (projection-copies.ts).
 //
 //   - listes et aperçus : réservés à qui anime la séance ET lit les copies (formateur du cours ou co-formateur,
-//     direction, vie scolaire avec « programme » et « notes », limitée à son site) ; jamais de note, de
+//     direction, vie scolaire avec « programme » et « notes », limitée à son site, Chargé de cours avec « animer »
+//     pour voir et projeter) ; jamais de note, de
 //     commentaire ni de matricule ; ✓✓ jamais posé (GET /api/rendus/:id n'est pas appelé) ;
 //   - projection : une page à la fois, seulement en direct (hors Plan B), après confirmation si des étudiants
 //     peuvent encore rendre ce devoir ; trace au journal (« copie_montree ») et dans le fil de la séance ;
@@ -12,7 +13,7 @@ import type { Express, Response } from "express";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
-import { exigerConnexion, exigerDroitDe, moi } from "../auth";
+import { exigerConnexion, exigerDroitDe, moi, peut } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { publier } from "../temps-reel";
 import { etudiantsDuCours, seanceVisible } from "../acces";
@@ -81,14 +82,16 @@ const DELAI_FABRICATION_MS = 30_000;
 const sansCache = (res: Response) => res.setHeader("Cache-Control", "no-store");
 
 /**
- * Formateur du cours ou co-formateur, direction, vie scolaire qui anime ce cours (programme) et lit les copies (notes).
- * Aussi les droits du devoir donné en direct (routes/devoirs-direct.ts) : « message » remplace le refus par défaut.
+ * Formateur du cours ou co-formateur, direction, vie scolaire qui fait la régie de ce cours (seanceAnimee :
+ * « programme » ou « animer ») et lit les copies (« notes »), ou Chargé de cours (« animer ») pour voir et montrer
+ * une copie, sans note. Aussi les droits du devoir donné en direct (routes/devoirs-direct.ts, usage « devoir ») :
+ * un vrai devoir noté, donc « notes » exigé de la vie scolaire, jamais la régie seule. « message » remplace le refus.
  */
-export async function animateurCopies(u: Utilisateur, seanceId: number, message: string = t("erreur.droits")): Promise<Seance> {
+export async function animateurCopies(u: Utilisateur, seanceId: number, message: string = t("erreur.droits"), usage: "copies" | "devoir" = "copies"): Promise<Seance> {
   if (u.role !== "formateur" && u.role !== "admin" && u.role !== "vie_scolaire") throw interdit(message);
   try {
-    if (u.role === "vie_scolaire") exigerDroitDe(u, "notes");
-    return await seanceAnimee(u, seanceId); // programme pour la vie scolaire, puis coursEnseigne
+    if (u.role === "vie_scolaire" && (usage === "devoir" || !peut(u, "animer"))) exigerDroitDe(u, "notes");
+    return await seanceAnimee(u, seanceId); // régie (programme ou animer) pour la vie scolaire, puis le cours
   } catch (e) {
     if (e instanceof ErreurHttp && e.statut === 403) throw interdit(message);
     throw e;

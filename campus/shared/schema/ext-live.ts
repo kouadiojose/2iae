@@ -306,8 +306,18 @@ export type SeanceDetailDto = {
    * un cours partagé : elle suit le bilan et la présence de son site.
    */
   peutModifier: boolean;
-  /** Voir les devoirs et les copies du cours dans le Studio, et en montrer une à la classe (formateur du cours, direction, vie scolaire avec « notes »). */
+  /**
+   * Programmer la séance : horaire, titre, plan, publication, Empêchement, Dupliquer, Supprimer, « C'était un
+   * essai », fiche de révision. Faux pour la régie seule (Chargé de cours), qui prépare diapos, vidéos et sondages.
+   * Absent d'une ancienne réponse : reprendre peutModifier.
+   */
+  peutProgrammer?: boolean;
+  /** Voir les devoirs et les copies du cours dans le Studio, et en montrer une à la classe (formateur du cours, direction, vie scolaire avec « notes » ou la régie « animer »). */
   peutMontrerCopies: boolean;
+  /** Donner un devoir en direct (un vrai devoir noté) : formateur, direction, vie scolaire avec « notes ». Absent : reprendre peutMontrerCopies. */
+  peutDonnerDevoir?: boolean;
+  /** La personne fait la régie du cours d'un autre (direction, Chargé de cours) : repère « Vous faites la régie » dans le Studio. */
+  regie?: boolean;
   monSite: SiteLive | null;
   maPresence: { mode: ModePresence; minutes: number; emargeQr: boolean; statut: StatutPresence } | null;
   sites: SiteLive[];

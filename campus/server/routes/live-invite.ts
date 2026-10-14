@@ -11,10 +11,12 @@
 // Lien INTERVENANT : même forme, autre signature (un lien invité ne se
 // transforme pas en lien intervenant). La même page, mais en vidéo avec micro
 // et caméra (et partage d'écran) : un invité qui prend la parole pendant le cours. Il a sa place
-// dans la visio même quand les places des étudiants sont prises. Seuls la
-// direction, la vie scolaire et le formateur du cours reçoivent ce lien.
+// dans la visio même quand les places des étudiants sont prises. Seuls ceux qui
+// font la régie du cours (direction, formateur du cours, équipe « programme »
+// ou « animer » : acces.ts, regieCours) reçoivent ce lien ; avec message et
+// liens WhatsApp : GET /api/seances/:id/lien-intervenant (routes/regie.ts).
 //
-//   GET  /api/seances/:id/lien-invite       le lien, et le lien intervenant (formateur du cours, direction, vie scolaire)
+//   GET  /api/seances/:id/lien-invite       le lien, et le lien intervenant (qui fait la régie du cours)
 //   GET  /api/invite/:jeton                 la séance vue par l'invité (titre, statut, diapo)
 //   GET  /api/invite/:jeton/diapo/:index    l'image d'une diapo de la séance
 //   GET  /api/invite/:jeton/radio/etat      la radio (son du formateur) : en direct ou non
@@ -29,7 +31,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, verifierTentatives, noterEchec } from "../auth";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit } from "../http";
-import { enseigneCours, seanceVisible } from "../acces";
+import { enseigneCours, regieCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
@@ -66,7 +68,9 @@ function lireJeton(jeton: string): { id: number; intervenant: boolean } | null {
 }
 
 const finPrevue = (s: Pick<Seance, "debut" | "dureeMinutes">) => new Date(s.debut.getTime() + s.dureeMinutes * MINUTE);
-const lienValide = (s: Seance) => s.statut !== "annulee" && (s.statut === "en_direct" || Date.now() <= finPrevue(s).getTime() + MARGE_APRES_FIN_MS);
+/** Fin de validité des liens invité et intervenant d'une séance (fin prévue + 30 min). */
+export const finDesLiens = (s: Pick<Seance, "debut" | "dureeMinutes">) => new Date(finPrevue(s).getTime() + MARGE_APRES_FIN_MS);
+export const lienValide = (s: Seance) => s.statut !== "annulee" && (s.statut === "en_direct" || Date.now() <= finPrevue(s).getTime() + MARGE_APRES_FIN_MS);
 
 async function seanceDuJeton(req: Request): Promise<{ s: Seance; jeton: string; intervenant: boolean }> {
   const jeton = String(req.params.jeton ?? "");
@@ -138,11 +142,14 @@ export function enregistrerInvite(app: Express) {
         (u.role === "formateur" && (await enseigneCours(u, s.coursId))) ||
         (u.role === "salle" && (await seanceVisible(u, s.id).then(() => true, () => false)));
       if (!permis) throw interdit("Le lien invité est réservé au formateur du cours, aux salles et à l'équipe.");
+      // Micro et caméra (parler aux cinq salles, montrer son écran) : seulement à qui fait la régie du cours
+      // (direction, formateur du cours, équipe « programme » ou « animer » : acces.ts, regieCours). Jamais à l'écran
+      // d'une salle (il s'affiche en QR code devant les étudiants), ni au reste de l'équipe (secrétariat, autre campus).
+      const intervenantPermis = u.role !== "salle" && (await regieCours(u, s.coursId));
       const lien: LienInviteDto = {
         url: `${config.urlCampus}/invite/${jetonInvite(s.id)}`,
-        valableJusquau: new Date(finPrevue(s).getTime() + MARGE_APRES_FIN_MS).toISOString(),
-        // Micro et caméra : jamais remis à l'écran d'une salle (il s'affiche en QR code devant les étudiants).
-        ...(u.role !== "salle" ? { urlIntervenant: `${config.urlCampus}/invite/${jetonIntervenant(s.id)}` } : {}),
+        valableJusquau: finDesLiens(s).toISOString(),
+        ...(intervenantPermis ? { urlIntervenant: `${config.urlCampus}/invite/${jetonIntervenant(s.id)}` } : {}),
       };
       res.json(lien);
     }),

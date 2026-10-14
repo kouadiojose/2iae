@@ -34,8 +34,9 @@ import {
   Library,
   CalendarCheck,
   ClipboardCheck,
+  Presentation,
 } from "lucide-react";
-import type { Droit, Moi, Role } from "@shared/schema";
+import { estProfilRegie, type Droit, type Moi, type Role } from "@shared/schema";
 import { profilPermet } from "@/lib/auth";
 
 export type ElementNav = {
@@ -154,7 +155,17 @@ const EQUIPE: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/mediatheque", libelle: "Médiathèque", icone: MonitorPlay, prefixes: ["/mediatheque"] },
   { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"], droit: ["programme", "presences", "presences_voir"] },
+  // La régie des cours du jour (« Mon espace » du Chargé de cours) : la direction y ouvre aussi les classes.
+  { href: "/regie", libelle: "Régie des cours", icone: Presentation, prefixes: ["/regie"], direction: true },
   { href: "/bibliotheque", libelle: "Bibliothèque", icone: Library, prefixes: ["/bibliotheque"] },
+];
+
+// Chargé de cours (profil de régie, ext-profils.ts) : la navigation la plus courte. Ses classes passent par
+// « Mon espace » ; ni pilotage, ni comptes, ni notes, ni planning.
+const REGIE: ElementNav[] = [
+  { href: "/regie", libelle: "Mon espace", icone: Home, mobile: true, prefixes: ["/regie", "/live", "/enseigner/seances"] },
+  { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/emploi-du-temps"] },
+  { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
 ];
 
 /** L'entrée est-elle pour cette personne de l'équipe (direction, ou profil de la vie scolaire) ? */
@@ -171,6 +182,7 @@ export function navigationDe(moi: Pick<Moi, "role" | "profil">): ElementNav[] {
       return FORMATEUR;
     case "admin":
     case "vie_scolaire":
+      if (estProfilRegie(moi)) return REGIE;
       return EQUIPE.filter((el) => entreeVisible(el, moi));
     case "salle":
       return [];

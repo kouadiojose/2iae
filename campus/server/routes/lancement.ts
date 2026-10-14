@@ -53,7 +53,8 @@ import { sallePasEncoreNommee, SALLES_INVENTEES } from "../amorcage";
 import { compteEcranSalle, ECRAN_REEL } from "../salles-outils";
 import { nomDeSalle } from "@shared/salles";
 import { ACTION_JOURNAL_DEMO, adresseDeDemonstration } from "../demo-constantes";
-import { utilisateurs, sites, journal, reinitialisations, type Utilisateur, type Role } from "@shared/schema";
+import { utilisateurs, sites, journal, reinitialisations, estProfilRegie, type Utilisateur, type Role } from "@shared/schema";
+import { t as tRegie } from "@shared/textes/regie";
 import type {
   EtatRentree,
   LigneRentree,
@@ -779,12 +780,14 @@ export async function prochainCours(id: number): Promise<string | null> {
   return rows[0] ? format(rows[0].titre, new Date(rows[0].debut)) : null;
 }
 
-function messageInvitation(c: Pick<Utilisateur, "prenom" | "nom" | "role">, lienTexte: string, expireLe: Date, premier: string | null): string {
+function messageInvitation(c: Pick<Utilisateur, "prenom" | "nom" | "role" | "profil">, lienTexte: string, expireLe: Date, premier: string | null): string {
   return [
     `Bonjour ${nomAffiche(c)},`,
     c.role === "formateur"
       ? "Le Groupe Écoles 2IAE International vous ouvre son campus numérique : c'est de là que vous donnerez vos cours en direct aux cinq campus."
       : "Le Groupe Écoles 2IAE International vous ouvre son campus numérique.",
+    // Chargé de cours (profil de régie) : ce qu'il y fera, en une phrase.
+    ...(estProfilRegie(c) ? [tRegie("invitation.regie")] : []),
     ...(premier ? [`Votre prochain cours : ${premier}.`] : []),
     "",
     `Pour créer votre compte, ouvrez ce lien (il est personnel et ne sert qu'une fois, jusqu'au ${fmtDate.format(expireLe)}) :`,
@@ -980,7 +983,7 @@ const ROLES_INVITABLES: Role[] = ["formateur", "vie_scolaire", "admin"];
  * Guide pas à pas d'un compte qui vient d'être prêt (formateur ou équipe) : un seul modèle d'e-mail,
  * celui de guide-bienvenue.ts, quel que soit le lien qui a servi. Ne lève jamais d'erreur.
  */
-export async function envoyerGuideFormateur(c: Pick<Utilisateur, "id" | "prenom" | "nom" | "email" | "role">): Promise<boolean> {
+export async function envoyerGuideFormateur(c: Pick<Utilisateur, "id" | "prenom" | "nom" | "email" | "role" | "profil">): Promise<boolean> {
   const envoye = await envoyerGuideBienvenue(c, await prochainCours(c.id).catch(() => null));
   await journaliser(c, "guide_bienvenue", { envoye }).catch(() => undefined);
   return envoye;

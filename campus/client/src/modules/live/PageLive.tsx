@@ -6,6 +6,8 @@ import { Radio } from "lucide-react";
 import { LienBouton } from "@/components/ui/bouton";
 import { EtatVide } from "@/components/ui/divers";
 import { ErreurApi } from "@/lib/api";
+import { useMoi } from "@/lib/auth";
+import { estProfilRegie } from "@shared/schema";
 import { useSeance } from "./outils";
 import SalleEtudiant from "./SalleEtudiant";
 import Studio from "./Studio";
@@ -13,6 +15,9 @@ import Studio from "./Studio";
 export default function PageLive({ id }: { id: string }) {
   const seanceId = Number(id);
   const { data: seance, error, isLoading } = useSeance(seanceId);
+  const { moi } = useMoi();
+  // Chargé de cours : ses classes sont dans « Mon espace », pas dans « Mes lives ».
+  const regie = estProfilRegie(moi);
 
   if (isLoading) {
     return (
@@ -32,7 +37,7 @@ export default function PageLive({ id }: { id: string }) {
           icone={<Radio className="h-6 w-6" />}
           titre={statut === 403 ? "Ce live n'est pas pour ton compte." : statut === 404 ? "Ce live n'existe pas (ou plus)." : "Impossible d'ouvrir la classe."}
           texte={error instanceof Error ? error.message : "Vérifie ta connexion et réessaie."}
-          action={<LienBouton href="/direct">Voir mes lives</LienBouton>}
+          action={regie ? <LienBouton href="/regie">Revenir à mon espace</LienBouton> : <LienBouton href="/direct">Voir mes lives</LienBouton>}
           className="mx-auto max-w-lg"
         />
       </div>

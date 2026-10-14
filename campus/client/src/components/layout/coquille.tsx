@@ -19,7 +19,7 @@ import { InstallationMobile } from "@/modules/pwa/InstallationMobile";
 import { manuelsDuRole } from "@/modules/manuels/manuels";
 import { useTextes } from "@/lib/textes";
 import { t as textesManuels } from "@shared/textes/manuels";
-import { LIBELLES_ROLES } from "@shared/schema";
+import { LIBELLES_ROLES, estProfilRegie, libelleProfil } from "@shared/schema";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
 /** `compacte` : sur téléphone, le logo seul (l'en-tête du campus garde la place des boutons Plus, Live, cloche). */
@@ -182,7 +182,7 @@ function MenuProfil() {
   const moi = useMoiConnecte();
   const [, naviguer] = useLocation();
   const txManuels = useTextes(textesManuels);
-  const manuels = manuelsDuRole(moi.role);
+  const manuels = manuelsDuRole(moi.role, estProfilRegie(moi));
   return (
     <Menu
       declencheur={
@@ -194,7 +194,8 @@ function MenuProfil() {
       <div className="px-3 pb-2 pt-2">
         <div className="font-extrabold">{nomComplet(moi)}</div>
         <div className="font-mono text-xs text-texte-gris">
-          {LIBELLES_ROLES[moi.role]}
+          {/* Vie scolaire : son profil (Scolarité, Secrétariat, Chargé de cours…), pas le nom générique du rôle. */}
+          {moi.role === "vie_scolaire" ? libelleProfil(moi) : LIBELLES_ROLES[moi.role]}
           {moi.site ? ` · ${moi.site.nomCourt}` : ""}
         </div>
       </div>

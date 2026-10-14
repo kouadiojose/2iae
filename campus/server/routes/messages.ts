@@ -60,6 +60,7 @@ import {
   signalementsMessages,
   blocages,
   LIBELLES_ROLES,
+  estProfilRegie,
   type Conversation,
   type Utilisateur,
   type ContactMessages,
@@ -627,7 +628,8 @@ async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> 
       groupe(
         "vie-scolaire",
         u.siteId ? `Administration · ${carteSites.get(u.siteId) ?? "mon campus"}` : "Administration",
-        vs.filter((p) => correspond(p, q)).map((p) => versContact(p, carteSites)),
+        // Le Chargé de cours (profil de régie) ne fait pas partie de l'administration joignable par les étudiants.
+        vs.filter((p) => !estProfilRegie(p) && correspond(p, q)).map((p) => versContact(p, carteSites)),
         q,
       ),
     );
@@ -678,10 +680,14 @@ async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> 
     return { groupes, salons: listeCours };
   }
 
-  // Équipe : étudiants de son périmètre, formateurs, équipe.
+  // Équipe : étudiants de son périmètre, formateurs, équipe. Le Chargé de cours (profil de régie) n'a ni
+  // l'annuaire ni la messagerie des étudiants : formateurs et équipe seulement, pour se coordonner.
   const perimetre = perimetreSites(u);
   const motif = q ? `%${q.trim().replace(/[%_]/g, "")}%` : null;
-  const etudiants = await db
+  const regie = estProfilRegie(u);
+  const etudiants = regie
+    ? []
+    : await db
     .select()
     .from(utilisateurs)
     .where(
@@ -701,14 +707,15 @@ async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> 
     )
     .orderBy(asc(utilisateurs.nom), asc(utilisateurs.prenom))
     .limit(q ? 201 : MAX_PAR_GROUPE + 1);
-  groupes.push(
-    groupe(
-      "etudiants",
-      perimetre ? `Étudiants · ${perimetre.map((id) => carteSites.get(id)).filter(Boolean).join(", ")}` : "Étudiants",
-      etudiants.map((p) => versContact(p, carteSites)),
-      q,
-    ),
-  );
+  if (!regie)
+    groupes.push(
+      groupe(
+        "etudiants",
+        perimetre ? `Étudiants · ${perimetre.map((id) => carteSites.get(id)).filter(Boolean).join(", ")}` : "Étudiants",
+        etudiants.map((p) => versContact(p, carteSites)),
+        q,
+      ),
+    );
   const formateurs = (await db.select().from(utilisateurs).where(and(eq(utilisateurs.role, "formateur"), eq(utilisateurs.actif, true)))).filter((p) =>
     correspond(p, q),
   );
@@ -828,6 +835,7 @@ export function enregistrerMessages(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const coursId = idParam(req, "coursId");
+      if (estProfilRegie(u)) throw interdit("Ce salon ne vous est pas accessible.");
       await coursVisible(u, coursId);
       const id = await ouvrirSalon(coursId);
       await assurerParticipant(id, u.id, true);
@@ -1188,7 +1196,8 @@ export function enregistrerMessages(app: Express) {
         .select()
         .from(utilisateurs)
         .where(and(eq(utilisateurs.role, "vie_scolaire"), eq(utilisateurs.actif, true)));
-      const vsConcernes = vs.filter((p) => (u.siteId ? vieScolaireCouvre(p, u) : !p.siteId));
+      // Le Chargé de cours (profil de régie) ne reçoit pas les signalements de la messagerie.
+      const vsConcernes = vs.filter((p) => !estProfilRegie(p) && (u.siteId ? vieScolaireCouvre(p, u) : !p.siteId));
       for (const p of vsConcernes) destinataires.add(p.id);
       if (!vsConcernes.length) {
         const admins = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));

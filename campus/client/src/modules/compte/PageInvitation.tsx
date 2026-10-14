@@ -11,6 +11,7 @@ import { post } from "@/lib/api";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Champ } from "@/components/ui/champs";
 import type { InfoInvitation, InvitationAcceptee } from "@shared/lancement";
+import { estProfilRegie } from "@shared/schema";
 import { CadrePublic } from "./composants/CadrePublic";
 import { installerMoi } from "./outils";
 import { MANUELS } from "@/modules/manuels/manuels";
@@ -18,8 +19,12 @@ import { MANUELS } from "@/modules/manuels/manuels";
 /** « M. », « Mme » : prénom encore inconnu, la personne le tape. */
 const prenomInconnu = (p: string) => /^(m|mme|mlle|dr|pr)\.?$/i.test(p.trim());
 
-/** Le formateur reçoit son manuel illustré ; l'équipe, le guide de l'administration (pas de manuel pour elle). */
-const guidePdf = (role: InfoInvitation["role"]) => (role === "formateur" ? MANUELS.formateurs.pdf : "/guides/guide-administration.pdf");
+/**
+ * Le formateur reçoit son manuel illustré ; l'équipe, le guide de l'administration (pas de manuel pour elle). Le
+ * Chargé de cours (profil de régie) fait marcher le Studio : le manuel du formateur, comme le courriel
+ * (server/guide-bienvenue.ts).
+ */
+const guidePdf = (role: InfoInvitation["role"], regie = false) => (role === "formateur" || regie ? MANUELS.formateurs.pdf : "/guides/guide-administration.pdf");
 
 export default function PageInvitation({ jeton }: { jeton: string }) {
   const { data, error, isLoading } = useQuery<InfoInvitation>({ queryKey: [`/api/invitation/${encodeURIComponent(jeton)}`], retry: false, staleTime: Infinity });
@@ -242,7 +247,7 @@ function CompteCree({ resultat, role }: { resultat: InvitationAcceptee; role: In
           {resultat.destination ? "Entrer dans mon cours" : "Entrer dans mon campus"}
         </Bouton>
         <a
-          href={guidePdf(role)}
+          href={guidePdf(role, estProfilRegie(moi))}
           target="_blank"
           rel="noopener noreferrer"
           className="flex min-h-[48px] items-center justify-center gap-2 text-[15px] font-bold text-orange-fonce hover:text-encre"

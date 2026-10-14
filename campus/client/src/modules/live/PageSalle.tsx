@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft, Video } from "lucide-react";
 import { get, post, put, suppr } from "@/lib/api";
-import { accueilDuRole, seDeconnecter, useMoiConnecte } from "@/lib/auth";
+import { accueilDe, seDeconnecter, useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { useTousEvenements } from "@/lib/flux";
 import { cn } from "@/lib/utils";
@@ -111,7 +111,7 @@ function BoutonQuitter() {
   const classe = "flex items-center gap-1.5 rounded-full p-2 font-mono text-[12px] text-nuit-gris hover:text-white";
   if (moi.role !== "salle") {
     return (
-      <a href={accueilDuRole(moi.role)} className={classe} title="Revenir au campus">
+      <a href={accueilDe(moi)} className={classe} title="Revenir au campus">
         <ArrowLeft className="h-5 w-5" /> <span className="hidden xl:inline">Campus</span>
       </a>
     );

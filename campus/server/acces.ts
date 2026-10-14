@@ -163,6 +163,56 @@ export async function enseigneCours(u: Utilisateur, coursId: number): Promise<bo
   return Boolean(co);
 }
 
+/**
+ * Régie d'une séance de ce cours (ouvrir et fermer la classe, diapos, vidéos, projection, parole, sondages) :
+ * formateur du cours, direction, équipe « programme » sur un cours propre à son périmètre (comme enseigneCours),
+ * équipe « animer » (Chargé de cours) sur un cours que suit son périmètre, même partagé avec d'autres campus
+ * (peutVoirCours). Jamais le cours lui-même, ses devoirs ni ses notes : ceux-là restent à enseigneCours.
+ */
+export async function regieCours(u: Utilisateur, coursId: number): Promise<boolean> {
+  if (u.role === "admin") return true;
+  if (u.role === "formateur") return enseigneCours(u, coursId);
+  if (u.role !== "vie_scolaire") return false;
+  if (peut(u, "programme") && (await enseigneCours(u, coursId))) return true;
+  return peut(u, "animer") && (await peutVoirCours(u, coursId));
+}
+
+/**
+ * Parmi ces cours, ceux dont la personne fait la régie (même règle que regieCours, en une requête au plus) :
+ * « Mon espace » du chargé de cours (routes/regie.ts).
+ */
+export async function coursEnRegie(u: Utilisateur, coursIds: number[]): Promise<Set<number>> {
+  const ids = [...new Set(coursIds)];
+  if (!ids.length) return new Set();
+  if (u.role === "admin") return new Set(ids);
+  if (u.role === "formateur") {
+    const siens = new Set(await idsCoursAccessibles(u));
+    return new Set(ids.filter((id) => siens.has(id)));
+  }
+  if (u.role !== "vie_scolaire") return new Set();
+  const programme = peut(u, "programme");
+  const animer = peut(u, "animer");
+  if (!programme && !animer) return new Set();
+  const perimetre = perimetreSites(u);
+  if (!perimetre) return new Set(ids);
+  const lignes = await db
+    .select({ coursId: coursClasses.coursId, siteId: classes.siteId })
+    .from(coursClasses)
+    .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+    .where(inArray(coursClasses.coursId, ids));
+  const sitesParCours = new Map<number, number[]>();
+  for (const l of lignes) sitesParCours.set(l.coursId, [...(sitesParCours.get(l.coursId) ?? []), l.siteId]);
+  return new Set(
+    ids.filter((id) => {
+      const sites = sitesParCours.get(id) ?? [];
+      // « programme » : toutes les classes du cours dans le périmètre (enseigneCours) ; « animer » : une seule
+      // suffit, ou aucune classe (peutVoirCours).
+      if (programme && sites.every((s) => perimetre.includes(s))) return true;
+      return animer && (!sites.length || sites.some((s) => perimetre.includes(s)));
+    }),
+  );
+}
+
 /** Charge un cours visible par la personne, ou lève 404/403. */
 export async function coursVisible(u: Utilisateur, coursId: number): Promise<Cours> {
   const [c] = await db.select().from(cours).where(eq(cours.id, coursId));

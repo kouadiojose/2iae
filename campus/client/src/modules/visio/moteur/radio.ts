@@ -6,9 +6,16 @@
 // d'un enregistrement porte l'en-tête WebM (?debut=1). Si l'envoi échoue
 // trop longtemps, ou si le serveur le demande (409), on recommence un
 // enregistrement neuf : les auditeurs relancent leur lecture tout seuls.
+// Un seul poste émet la radio d'une séance (le formateur, ou la régie) : si
+// elle part déjà d'un autre poste (réponse { occupee: true }), on attend sans
+// rien couper et l'on réessaie toutes les 20 secondes (état « ailleurs »). Le
+// formateur du cours reprend la radio à une régie (serveur : visio-campus.ts).
 import { idAleatoire } from "./medias";
 
-export type EtatEmission = "connexion" | "direct" | "reprise" | "indisponible" | "arret";
+export type EtatEmission = "connexion" | "direct" | "reprise" | "indisponible" | "ailleurs" | "arret";
+
+/** Radio déjà émise par un autre poste : nouvel essai après ce délai. */
+const ATTENTE_AILLEURS_MS = 20_000;
 
 const DEBIT_RADIO = 24_000;
 /** Au-delà de 15 s de retard d'envoi, on repart d'un enregistrement neuf plutôt que d'accumuler. */
@@ -39,6 +46,7 @@ export class EmetteurRadioMoteur {
   private envoiEnCours = false;
   private echecs = 0;
   private arrete = false;
+  private reessai: ReturnType<typeof setTimeout> | null = null;
   auditeurs = 0;
 
   constructor(
@@ -63,6 +71,8 @@ export class EmetteurRadioMoteur {
     if (this.arrete) return;
     this.arrete = true;
     this.generation++;
+    if (this.reessai) clearTimeout(this.reessai);
+    this.reessai = null;
     this.stopperEnregistreur();
     this.file = [];
     if (prevenir) void fetch(`${this.base}/fin`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: "{}", keepalive: true }).catch(() => undefined);
@@ -125,7 +135,7 @@ export class EmetteurRadioMoteur {
         const m = this.file[0];
         const url = `${this.base}/morceau?flux=${this.flux}&seq=${m.seq}${m.debut ? "&debut=1" : ""}`;
         let statut = 0;
-        let corps: { auditeurs?: number } | null = null;
+        let corps: { auditeurs?: number; occupee?: boolean } | null = null;
         try {
           const r = await fetch(url, { method: "POST", credentials: "include", headers: { "Content-Type": "application/octet-stream" }, body: m.blob });
           statut = r.status;
@@ -134,7 +144,9 @@ export class EmetteurRadioMoteur {
           statut = 0;
         }
         if (generation !== this.generation) return;
-        if (statut >= 200 && statut < 300) {
+        // 423 : réponse d'un serveur d'avant (la radio occupée répond désormais 200 { occupee: true }).
+        const occupee = statut === 423 || (statut >= 200 && statut < 300 && corps?.occupee === true);
+        if (!occupee && statut >= 200 && statut < 300) {
           this.file.shift();
           this.echecs = 0;
           if (typeof corps?.auditeurs === "number") this.auditeurs = corps.auditeurs;
@@ -145,6 +157,19 @@ export class EmetteurRadioMoteur {
           // En-tête perdu, trou dans la numérotation, serveur redémarré : enregistrement neuf.
           this.echecs++;
           this.nouvelEnregistrement();
+          return;
+        }
+        if (occupee) {
+          // La radio part d'un autre poste (le formateur, une autre régie) : on n'émet pas, on réessaie plus tard.
+          this.generation++;
+          this.stopperEnregistreur();
+          this.file = [];
+          this.surEtat("ailleurs");
+          if (this.reessai) clearTimeout(this.reessai);
+          this.reessai = setTimeout(() => {
+            this.reessai = null;
+            this.nouvelEnregistrement();
+          }, ATTENTE_AILLEURS_MS);
           return;
         }
         if (statut === 401 || statut === 403) {

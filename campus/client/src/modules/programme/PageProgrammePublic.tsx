@@ -9,7 +9,7 @@ import { CalendarRange, ChevronRight, Printer, Radio, SearchX } from "lucide-rea
 import type { ProgrammePublicDto, SessionDetailDto, SessionDto, OccurrenceDto } from "@shared/schema";
 import { LienBouton } from "@/components/ui/bouton";
 import { Badge, BadgeDirect, EtatVide, Squelette } from "@/components/ui/divers";
-import { useMoi, accueilDuRole } from "@/lib/auth";
+import { useMoi, accueilDe } from "@/lib/auth";
 import { ErreurApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { MiseEnPagePublique } from "@/modules/vitrine/MiseEnPagePublique";
@@ -106,7 +106,7 @@ export default function PageProgrammePublic({ id }: { id?: string }) {
                   Imprimer l'emploi du temps
                 </LienBouton>
                 {moi ? (
-                  <LienBouton href={moi.role === "etudiant" || moi.role === "formateur" ? "/emploi-du-temps" : accueilDuRole(moi.role)} taille="lg" variante="contour">
+                  <LienBouton href={moi.role === "etudiant" || moi.role === "formateur" ? "/emploi-du-temps" : accueilDe(moi)} taille="lg" variante="contour">
                     {moi.role === "etudiant" ? "Mon emploi du temps" : moi.role === "formateur" ? "Mon emploi du temps" : "Mon campus"}
                   </LienBouton>
                 ) : (

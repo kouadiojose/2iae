@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Redirect, useSearch } from "wouter";
 import { PenSquare, MessageCircle } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
+import { estProfilRegie } from "@shared/schema";
+import { t as tRegie } from "@shared/textes/regie";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { EtatVide } from "@/components/ui/divers";
@@ -96,7 +98,13 @@ export default function PageMessages({ id }: { id?: string }) {
       <EnTetePage
         etiquette="Comme sur WhatsApp"
         titre="Messages"
-        sousTitre={etudiant ? "Tes formateurs, l'administration, les autres étudiants et les questions de tes cours." : "Vos étudiants, l'équipe et les questions de vos cours."}
+        sousTitre={
+          etudiant
+            ? "Tes formateurs, l'administration, les autres étudiants et les questions de tes cours."
+            : estProfilRegie(moi)
+              ? tRegie("messages.sousTitre")
+              : "Vos étudiants, l'équipe et les questions de vos cours."
+        }
       />
       <ListeConversations onNouveau={() => setChoix(true)} className="-mx-2" />
       {/* Bouton principal de l'écran, au pouce, au-dessus de la barre d'onglets. */}

@@ -11,7 +11,7 @@ import { z } from "zod";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerRole, moi, perimetreSites } from "../auth";
-import { route, valider, idParam, introuvable } from "../http";
+import { route, valider, idParam, introuvable, interdit } from "../http";
 import { demanderJson, ErreurIa } from "../ia";
 import { identifierLivre, trouverLecture } from "../catalogues";
 import { pageDuTexte, echantillonDuLivre } from "../lecture";
@@ -43,6 +43,7 @@ import {
   type ExposeDto,
   type QuizLivreDto,
   type ActiviteBiblioDto,
+  estProfilRegie,
   type ConversationBiblioDto,
   type PageTexteDto,
 } from "@shared/schema";
@@ -64,7 +65,11 @@ async function versRechercheDto(r: typeof recherchesBiblio.$inferSelect): Promis
   return { id: r.id, sujet: r.sujet, conseil: r.conseil, livres: proposes, creeLe: r.creeLe.toISOString() };
 }
 
-const estPersonnel = (u: Utilisateur) => u.role !== "etudiant";
+/**
+ * Personnel qui suit le travail des étudiants (recherche, exposé). Pas le profil de régie (Chargé de cours) : il
+ * anime la classe en direct, il ne suit pas les dossiers des étudiants ; il ne lit que ses propres recherches.
+ */
+const estPersonnel = (u: Utilisateur) => u.role !== "etudiant" && !estProfilRegie(u);
 
 async function livreDe(id: number): Promise<Livre> {
   const [l] = await db.select().from(livres).where(eq(livres.id, id));
@@ -726,6 +731,8 @@ Prépare : une problématique claire ; un plan (introduction avec accroche, 2 ou
     exigerRole(...ROLES_SUIVI),
     route(async (req, res) => {
       const u = moi(req);
+      // Ce que chaque étudiant cherche et prépare (nominatif) : pas pour la régie des cours (Chargé de cours).
+      if (estProfilRegie(u)) throw interdit("Votre profil ne permet pas de suivre le travail des étudiants.");
       // Périmètre : la direction voit tout, la vie scolaire son campus, le formateur les étudiants de ses cours.
       let filtre: ReturnType<typeof inArray> | undefined;
       if (u.role === "formateur") {

@@ -33,6 +33,9 @@ import { t as textesCopies } from "@shared/textes/copies-direct";
 import { useTextes } from "@/lib/textes";
 import { QuestionsRappel } from "./QuestionsRappel";
 import { RappelInteraction } from "./RappelInteraction";
+import { BandeauRegie } from "@/modules/regie/BandeauRegie";
+import { BoutonLienIntervenant } from "@/modules/regie/LienIntervenant";
+import { t as textesRegie } from "@shared/textes/regie";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 import { debutDuCours } from "@shared/ouverture";
 import { t as textesOuverture } from "@shared/textes/direct";
@@ -112,6 +115,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
 
   // Devoirs et copies : vue posée par-dessus le Studio (le direct continue dessous), copie montrée à la classe.
   const txCopies = useTextes(textesCopies);
+  const txRegie = useTextes(textesRegie);
   // Vue « Devoirs et copies » : fermée, ouverte depuis l'en-tête ({}), ou sur une réponse du devoir en direct.
   const [vueDevoirs, setVueDevoirs] = useState<false | { devoirId?: number; renduId?: number }>(false);
   // « Des étudiants peuvent encore rendre ce devoir » : confirmé une fois par devoir pendant le direct, même si la vue
@@ -186,13 +190,22 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const panneauDiapo = Boolean(copie) || (avecDiapos && mode !== "seules");
   const planB = Boolean(etat.planB ?? seance.planB);
   // Onglet « Devoir » : son compteur, tant que le devoir en direct est ouvert et qu'au moins une réponse est arrivée.
-  const devoirPermis = !observation && seance.peutMontrerCopies;
+  // Donner un devoir en direct (un vrai devoir noté) : jamais la régie seule (Chargé de cours), même s'il voit les copies.
+  const devoirPermis = !observation && (seance.peutDonnerDevoir ?? seance.peutMontrerCopies);
+  // Programmer (Empêchement) : pas la régie seule (l'annulation et la prévenance relèvent de l'emploi du temps).
+  const peutProgrammer = seance.peutProgrammer ?? seance.peutModifier;
+  // Régie seule (Chargé de cours) : ni bilan ni fiche de révision après le cours ; Plan B et copies seulement
+  // classe ouverte (le serveur le refuse avant : routes/regie.ts, copies-direct.ts).
+  const regieSeule = Boolean(seance.regie) && !peutProgrammer;
+  const messageDemarrage = seance.regie ? txRegie("toast.ouverte") : "Vous êtes en direct dans les cinq campus.";
   const dd = etat.devoirDirect;
   const compteurDevoir = dd && new Date(dd.dateLimite).getTime() > Date.now() ? (dd.enGroupe ? dd.groupes + dd.individuelles : dd.copies) : 0;
 
   return (
     <div className="min-h-[calc(100dvh-64px)] bg-nuit px-3 pb-32 pt-4 text-white sm:px-6 lg:pb-8">
       <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
+        {/* Régie (Chargé de cours, direction) : avant l'en-tête, qui garde sa place juste au-dessus du reste. */}
+        {!observation && seance.regie && <BandeauRegie seance={seance} />}
         <EnTeteLive
           seance={seance}
           etat={etat}
@@ -202,8 +215,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             ) : (
               <>
                 {statut === "planifiee" ? (
-                  <Bouton variante="nuit-actif" icone={<Play className="h-4 w-4" />} onClick={() => agir("demarrer", {}, "Vous êtes en direct dans les cinq campus.")}>
-                    Démarrer le direct
+                  <Bouton variante="nuit-actif" icone={<Play className="h-4 w-4" />} onClick={() => agir("demarrer", {}, messageDemarrage)}>
+                    {seance.regie ? txRegie("bouton.ouvrir") : "Démarrer le direct"}
                   </Bouton>
                 ) : (
                   <Bouton variante="danger" icone={<Square className="h-4 w-4" />} onClick={() => setConfirmation("terminer")}>
@@ -218,7 +231,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                     {seance.diapos.length ? txCopies("copie.revenir") : txCopies("copie.arreter")}
                   </Bouton>
                 )}
-                {seance.peutMontrerCopies && !planB && (
+                {seance.peutMontrerCopies && !planB && (enDirect || !regieSeule) && (
                   <BoutonDevoirs
                     actif={Boolean(etat.copie)}
                     onClick={() => {
@@ -228,12 +241,18 @@ export default function Studio({ seance, observation = false }: { seance: Seance
                   />
                 )}
                 <BoutonLienInvite seance={seance} variante="nuit" />
-                <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>
-                  Plan B
-                </Bouton>
-                <Bouton variante="nuit" icone={<Ban className="h-4 w-4" />} onClick={() => setConfirmation("empechement")}>
-                  Empêchement
-                </Bouton>
+                {/* Micro et caméra sans compte (un invité, un collègue) ; la régie l'a dans son bandeau, au-dessus. */}
+                {!seance.regie && <BoutonLienIntervenant seanceId={seance.id} variante="nuit" />}
+                {(enDirect || !regieSeule) && (
+                  <Bouton variante="nuit" icone={<LifeBuoy className="h-4 w-4" />} onClick={() => setConfirmation("planb")}>
+                    Plan B
+                  </Bouton>
+                )}
+                {peutProgrammer && (
+                  <Bouton variante="nuit" icone={<Ban className="h-4 w-4" />} onClick={() => setConfirmation("empechement")}>
+                    Empêchement
+                  </Bouton>
+                )}
               </>
             )
           }
@@ -248,7 +267,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           <div className={cn("order-3 flex flex-col gap-4", !presentation && "xl:order-1")}>
             <ChronoPlan seance={seance} etat={etat} />
             {!observation && (
-              <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={diffusion.flux} classe={diffusion.classe} />
+              <OutilsDiffusion seance={seance} enDirect={enDirect} micro={micro} radio={radio} setRadio={setRadio} fluxRadio={diffusion.flux} classe={diffusion.classe} regieEquipe={Boolean(seance.regie) && moi.role === "vie_scolaire"} />
             )}
           </div>
 
@@ -422,11 +441,18 @@ export default function Studio({ seance, observation = false }: { seance: Seance
         <VisiteGroupe seance={seance} groupes={groupes} groupe={groupeVisite} role={observation ? "equipe" : "formateur"} moiId={moi.id} onFermer={() => visiter(null)} />
       )}
       {!observation && statut === "planifiee" && (
-        <FenetreDemarrage seance={seance} prenom={moi.prenom} onDemarrer={() => agir("demarrer", {}, "Vous êtes en direct dans les cinq campus.")} />
+        <FenetreDemarrage seance={seance} prenom={moi.prenom} onDemarrer={() => agir("demarrer", {}, messageDemarrage)} />
       )}
-      <ConfirmationTerminer ouverte={confirmation === "terminer"} onFermer={() => setConfirmation(null)} onConfirmer={() => agir("terminer", {}, "Séance terminée. Le bilan est prêt.")} />
+      <ConfirmationTerminer
+        ouverte={confirmation === "terminer"}
+        regieSeule={regieSeule}
+        onFermer={() => setConfirmation(null)}
+        onConfirmer={() => agir("terminer", {}, regieSeule ? txRegie("toast.fermee") : "Séance terminée. Le bilan est prêt.")}
+      />
       <FenetrePlanB seance={seance} ouverte={confirmation === "planb"} onFermer={() => setConfirmation(null)} onConfirmer={(lien) => agir("plan-b", { lien }, "Tout le monde bascule sur le lien de secours.")} />
-      <FenetreEmpechement ouverte={confirmation === "empechement"} onFermer={() => setConfirmation(null)} onConfirmer={(motif) => agir("annuler", { motif }, "Les inscrits et les salles sont prévenus.")} />
+      {peutProgrammer && (
+        <FenetreEmpechement ouverte={confirmation === "empechement"} onFermer={() => setConfirmation(null)} onConfirmer={(motif) => agir("annuler", { motif }, "Les inscrits et les salles sont prévenus.")} />
+      )}
     </div>
   );
 }
@@ -792,6 +818,7 @@ function BandeauClasseOuverte({ seance, etat, onAgir }: { seance: SeanceDetailDt
 // ── Chrono et plan de séance ───────────────────────────────────────────────
 
 function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
+  const txRegieChrono = useTextes(textesRegie);
   const maintenant = useMaintenant(1000);
   // Début du cours : l'heure prévue pour une classe ouverte en avance (ouverture automatique), ou l'instant de
   // « Commencer le cours maintenant » ; d'ici là, compte à rebours jusqu'à elle, et la fin prévue reste la fin
@@ -844,7 +871,10 @@ function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirec
           ))}
         </ol>
       ) : (
-        <p className="text-[13px] text-nuit-gris">Aucun plan minuté. Ajoutez-le dans la préparation de la séance.</p>
+        <p className="text-[13px] text-nuit-gris">
+          {/* Régie seule : sa préparation n'a pas de plan à remplir (l'emploi du temps et le formateur le font). */}
+          {seance.regie && !(seance.peutProgrammer ?? seance.peutModifier) ? txRegieChrono("chrono.sansPlan") : "Aucun plan minuté. Ajoutez-le dans la préparation de la séance."}
+        </p>
       )}
     </div>
   );
@@ -1008,6 +1038,7 @@ function OutilsDiffusion({
   setRadio,
   fluxRadio,
   classe,
+  regieEquipe,
 }: {
   seance: SeanceDetailDto;
   enDirect: boolean;
@@ -1018,9 +1049,17 @@ function OutilsDiffusion({
   fluxRadio: MediaStream | null;
   /** La radio diffuse toute la classe (visio Daily mélangée au micro). */
   classe: boolean;
+  /** Régie de l'équipe (Chargé de cours, vie scolaire) : elle ne tient jamais la visio du campus. */
+  regieEquipe: boolean;
 }) {
+  const txRegie = useTextes(textesRegie);
   const [sousTitres, setSousTitres] = useState(false);
   const [provisoire, setProvisoire] = useState("");
+  // Régie (direction, Chargé de cours) avec Daily : son micro est coupé, la radio n'a de sens que si le son de la
+  // classe arrive sur son poste (mélange prêt) ; sinon elle la laisse au formateur. Classe sur la visio du campus :
+  // la régie de l'équipe n'y entre pas (seuls le formateur et la direction la tiennent), pas de radio de son poste.
+  const radioPossible = !regieEquipe || seance.fournisseur === "daily";
+  const radioActive = radio && enDirect && Boolean(fluxRadio) && (!seance.regie || classe || seance.fournisseur !== "daily");
   const Classe = typeof window !== "undefined" ? ((window as unknown as { SpeechRecognition?: new () => Reconnaissance; webkitSpeechRecognition?: new () => Reconnaissance }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => Reconnaissance }).webkitSpeechRecognition) : undefined;
   const reco = useRef<Reconnaissance | null>(null);
   const tampon = useRef<{ texte: string }[]>([]);
@@ -1085,6 +1124,7 @@ function OutilsDiffusion({
 
   return (
     <div className="flex flex-col gap-3 rounded-[22px] bg-nuit-panneau p-4">
+      {radioPossible && (
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col">
           <span className="flex items-center gap-2 text-[15px] font-bold">
@@ -1098,9 +1138,11 @@ function OutilsDiffusion({
         </div>
         <Interrupteur actif={radio} onChange={setRadio} libelle="Radio pour les étudiants en ligne" />
       </div>
+      )}
       {seance.fournisseur === "demo" && radio && <span className="text-[12px] text-nuit-gris">Pas de radio en démonstration (aucun micro utilisé).</span>}
-      <EmetteurRadio seanceId={seance.id} flux={fluxRadio} actif={radio && enDirect && Boolean(fluxRadio)} muet={!micro} classe={classe} />
-      <div className="flex items-start justify-between gap-3 border-t border-nuit-ligne pt-3">
+      {radioPossible && <EmetteurRadio seanceId={seance.id} flux={fluxRadio} actif={radioActive} muet={!micro} classe={classe} />}
+      {radioPossible && seance.regie && seance.fournisseur === "daily" && radio && enDirect && fluxRadio && !classe && <span className="text-[12px] text-nuit-gris">{txRegie("radio.attente")}</span>}
+      <div className={cn("flex items-start justify-between gap-3", radioPossible && "border-t border-nuit-ligne pt-3")}>
         <div className="flex flex-col">
           <span className="flex items-center gap-2 text-[15px] font-bold">
             <Captions className="h-4 w-4 text-orange" /> Sous-titres <span className="rounded bg-nuit-ligne px-1.5 font-mono text-[10px] text-nuit-doux">bêta</span>
@@ -1125,6 +1167,9 @@ function OutilsDiffusion({
  */
 function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetailDto; prenom: string; onDemarrer: () => Promise<boolean> }) {
   const maintenant = useMaintenant(15_000);
+  const txRegie = useTextes(textesRegie);
+  // Régie (Chargé de cours, direction) : on ouvre la classe d'un autre, micro et caméra coupés.
+  const formateur = seance.formateur ? `${seance.formateur.prenom} ${seance.formateur.nom}`.trim() : null;
   const cle = `studio-demarrage-${seance.id}`;
   const [fermee, setFermee] = useState(() => {
     try {
@@ -1145,7 +1190,12 @@ function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetail
     }
   };
   return (
-    <Fenetre ouverte={proche && !fermee} onFermer={fermer} titre={`Bonjour ${prenom}, prêt pour votre cours ?`} description={`« ${seance.titre} » · ${heureDouble(seance.debut)}`}>
+    <Fenetre
+      ouverte={proche && !fermee}
+      onFermer={fermer}
+      titre={seance.regie ? (formateur ? txRegie("demarrage.titre", { v: { formateur } }) : txRegie("demarrage.titre.sansFormateur")) : `Bonjour ${prenom}, prêt pour votre cours ?`}
+      description={`« ${seance.titre} » · ${heureDouble(seance.debut)}`}
+    >
       <div className="flex flex-col gap-4 pb-3">
         <Bouton
           taille="lg"
@@ -1160,14 +1210,20 @@ function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetail
             if (ok) fermer();
           }}
         >
-          Démarrer le direct
+          {seance.regie ? txRegie("demarrage.bouton") : "Démarrer le direct"}
         </Bouton>
-        <p className="text-[15px] text-texte-pale">
-          Les cinq salles et les étudiants en ligne vous voient et vous entendent dès que vous cliquez. Si le navigateur demande la caméra et le micro, cliquez sur « Autoriser ».
-        </p>
-        <p className="text-[14px] italic text-texte-gris" lang="en">
-          Click “Démarrer le direct” to start your class. If your browser asks for the camera and microphone, click “Allow”.
-        </p>
+        {seance.regie ? (
+          <p className="text-[15px] text-texte-pale">{txRegie("demarrage.texte")}</p>
+        ) : (
+          <>
+            <p className="text-[15px] text-texte-pale">
+              Les cinq salles et les étudiants en ligne vous voient et vous entendent dès que vous cliquez. Si le navigateur demande la caméra et le micro, cliquez sur « Autoriser ».
+            </p>
+            <p className="text-[14px] italic text-texte-gris" lang="en">
+              Click “Démarrer le direct” to start your class. If your browser asks for the camera and microphone, click “Allow”.
+            </p>
+          </>
+        )}
         <button type="button" onClick={fermer} className="min-h-[44px] self-center text-[15px] font-semibold text-texte-pale underline-offset-2 hover:text-encre hover:underline">
           Pas encore : voir le studio d'abord
         </button>
@@ -1176,14 +1232,16 @@ function FenetreDemarrage({ seance, prenom, onDemarrer }: { seance: SeanceDetail
   );
 }
 
-function ConfirmationTerminer({ ouverte, onFermer, onConfirmer }: { ouverte: boolean; onFermer: () => void; onConfirmer: () => Promise<boolean> }) {
+function ConfirmationTerminer({ ouverte, regieSeule = false, onFermer, onConfirmer }: { ouverte: boolean; regieSeule?: boolean; onFermer: () => void; onConfirmer: () => Promise<boolean> }) {
   const [envoi, setEnvoi] = useState(false);
+  const txRegie = useTextes(textesRegie);
   return (
     <Fenetre
       ouverte={ouverte}
       onFermer={onFermer}
       titre="Terminer le direct ?"
-      description="Les cinq salles et les étudiants en ligne sont prévenus. Le bilan et la fiche de révision vous attendent ensuite."
+      // Régie seule : pas de bilan ni de fiche à lui promettre (le formateur et la direction les ont).
+      description={regieSeule ? txRegie("fin.texte") : "Les cinq salles et les étudiants en ligne sont prévenus. Le bilan et la fiche de révision vous attendent ensuite."}
       pied={
         <>
           <Bouton variante="fantome" onClick={onFermer}>

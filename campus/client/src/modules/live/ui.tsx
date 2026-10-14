@@ -9,6 +9,8 @@ import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { post } from "@/lib/api";
+import { profilPermet, useMoi } from "@/lib/auth";
+import { estProfilRegie } from "@shared/schema";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { Badge, BadgeDirect, PastilleDate } from "@/components/ui/divers";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
@@ -80,7 +82,7 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
 
 /** Séance annulée ou terminée : message clair, présence, replay. */
 type SeanceFinie = Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> &
-  Partial<Pick<SeanceDetailDto, "debut" | "peutModifier">>;
+  Partial<Pick<SeanceDetailDto, "debut" | "peutModifier" | "peutProgrammer">>;
 
 export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; devoirDirect?: DevoirDirectDto | null }) {
   const annulee = seance.statut === "annulee";
@@ -92,8 +94,13 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
       ? devoirDirect
       : null;
   const devoirEnRetard = Boolean(devoirOuvert && new Date(devoirOuvert.dateLimite).getTime() <= maintenant);
-  // Lancé avant l'heure prévue : c'était un essai, que le formateur ou la direction peut effacer.
-  const essai = seance.statut === "terminee" && Boolean(seance.peutModifier) && Boolean(seance.debut) && new Date(seance.debut!).getTime() > maintenant;
+  // Lancé avant l'heure prévue : c'était un essai, que le formateur ou la direction peut effacer (pas la régie seule :
+  // effacer l'essai relève de la programmation).
+  const essai = seance.statut === "terminee" && Boolean(seance.peutProgrammer ?? seance.peutModifier) && Boolean(seance.debut) && new Date(seance.debut!).getTime() > maintenant;
+  const { moi } = useMoi();
+  // Chargé de cours (profil de régie) : ni bilan (présences nominatives), ni « Mes lives » ; il revient à son espace.
+  const regie = estProfilRegie(moi);
+  const voitBilan = moi?.role !== "vie_scolaire" || profilPermet(moi, "presences_voir");
   if (essai) return <FinEssai seance={seance} />;
   return (
     <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
@@ -137,14 +144,20 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
               Revoir le cours
             </LienBouton>
           )}
-          {!annulee && (seance.monRole === "formateur" || seance.monRole === "equipe") && (
+          {!annulee && voitBilan && (seance.monRole === "formateur" || seance.monRole === "equipe") && (
             <LienBouton href={`/enseigner/seances/${seance.id}`} variante="nuit">
               Voir le bilan
             </LienBouton>
           )}
-          <LienBouton href="/direct" variante="nuit">
-            Mes lives
-          </LienBouton>
+          {regie ? (
+            <LienBouton href="/regie" variante="nuit">
+              Revenir à mon espace
+            </LienBouton>
+          ) : (
+            <LienBouton href="/direct" variante="nuit">
+              Mes lives
+            </LienBouton>
+          )}
         </div>
       </div>
     </div>

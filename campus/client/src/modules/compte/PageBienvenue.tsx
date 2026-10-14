@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { ArrowLeft, BellRing, Check, CheckCircle2, MessageCircleQuestion, Signal, Wifi } from "lucide-react";
-import { useMoiConnecte, accueilDuRole, seDeconnecter } from "@/lib/auth";
+import { useMoiConnecte, accueilDe, seDeconnecter } from "@/lib/auth";
 import { post, patch, ErreurApi } from "@/lib/api";
 import { Bouton } from "@/components/ui/bouton";
 import { Avatar, BarreProgression, Erreur, Squelette } from "@/components/ui/divers";
@@ -20,7 +20,8 @@ import { ActiverNotifications } from "@/modules/pwa/ActiverNotifications";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { rafraichir } from "@/lib/queryClient";
 import { cn, nomComplet } from "@/lib/utils";
-import { LIBELLES_ROLES, libelleProfil, type Moi, type ParcoursBienvenue } from "@shared/schema";
+import { LIBELLES_ROLES, estProfilRegie, libelleProfil, type Moi, type ParcoursBienvenue } from "@shared/schema";
+import { t as tRegie } from "@shared/textes/regie";
 import { PiedAction, LienDiscret } from "./composants/PiedAction";
 import { PaveCode } from "./composants/PaveCode";
 import { FormulaireMotDePasse } from "./composants/FormulaireMotDePasse";
@@ -97,7 +98,7 @@ export default function PageBienvenue() {
     if (parcours && isFetchedAfterMount && !etapes) setEtapes(etapesDuParcours(moi, parcours, mode));
   }, [parcours, isFetchedAfterMount, etapes, moi, mode]);
 
-  const destination = retour ?? accueilDuRole(moi.role);
+  const destination = retour ?? accueilDe(moi);
   const premiereFois = Boolean(etapes?.includes("rappels"));
 
   function terminer() {
@@ -512,16 +513,25 @@ function EtapeVisite({ moi, ecran, setEcran, onFini, derniere }: { moi: Moi; ecr
 
 function EtapeRappels({ moi, onFini }: { moi: Moi; onFini: () => void }) {
   const t = tuOuVous(moi);
-  const exemple = useMemo(() => (moi.role === "etudiant" ? "Initiation à l'IA commence dans 15 min. Touche pour rejoindre le live." : "Votre séance commence dans 15 min. Entrez dans votre classe."), [moi.role]);
+  // Chargé de cours : pas de rappel de séance ni de message d'étudiant (sa messagerie : formateurs et équipe).
+  const regie = estProfilRegie(moi);
+  const exemple = useMemo(
+    () => (regie ? tRegie("rappels.exemple") : moi.role === "etudiant" ? "Initiation à l'IA commence dans 15 min. Touche pour rejoindre le live." : "Votre séance commence dans 15 min. Entrez dans votre classe."),
+    [moi.role, regie],
+  );
   return (
     <div className="flex flex-col gap-6">
       <Titre
         etiquette="Dernière chose"
         titre={t("Ne rate aucun cours", "Ne manquez aucune séance")}
-        texte={t(
-          "On te prévient 15 minutes avant chaque cours en direct et la veille d'un devoir. Jamais la nuit, et jamais le contenu d'une note.",
-          "Un rappel 15 minutes avant chaque séance, et quand un étudiant vous écrit. Jamais la nuit.",
-        )}
+        texte={
+          regie
+            ? tRegie("rappels.texte")
+            : t(
+                "On te prévient 15 minutes avant chaque cours en direct et la veille d'un devoir. Jamais la nuit, et jamais le contenu d'une note.",
+                "Un rappel 15 minutes avant chaque séance, et quand un étudiant vous écrit. Jamais la nuit.",
+              )
+        }
       />
       {/* Aperçu d'un rappel, pour qu'on sache à quoi on dit oui. */}
       <div className="rounded-[28px] bg-encre p-4" aria-hidden>

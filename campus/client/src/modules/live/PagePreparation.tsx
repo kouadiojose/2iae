@@ -10,6 +10,10 @@ import { ArrowDown, ArrowUp, Copy, Plus, Radio, Trash2, Upload, Sparkles, Send, 
 import { api, post, patch, put, suppr, alleger } from "@/lib/api";
 import { rafraichir, queryClient } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
+import { useTextes } from "@/lib/textes";
+import { BoutonLienIntervenant } from "@/modules/regie/LienIntervenant";
+import { t as textesRegie } from "@shared/textes/regie";
+import { estProfilRegie } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { dateEtHeure, depuisChampDate, heureDouble, versChampDate } from "@/lib/dates";
 import { Page, EnTetePage } from "@/components/layout/coquille";
@@ -67,6 +71,7 @@ function NouvelleSeance({ coursId }: { coursId: number | null }) {
 
 function SeanceExistante({ id }: { id: number }) {
   const moi = useMoiConnecte();
+  const txRegie = useTextes(textesRegie);
   const { data: seance, error, isLoading, refetch } = useSeance(id);
   const [, naviguer] = useLocation();
   const [onglet, setOnglet] = useState<Onglet | null>(null);
@@ -80,7 +85,11 @@ function SeanceExistante({ id }: { id: number }) {
   const apres = seance.statut === "terminee";
   // Vie scolaire d'un campus sur un cours partagé : le bilan et la présence de son site, sans préparer.
   const lectureSeule = !seance.peutModifier;
-  const courant: Onglet = lectureSeule ? "bilan" : (onglet ?? (apres ? "bilan" : "preparer"));
+  // Régie seule (Chargé de cours) : diapos, vidéos et sondages, sans l'horaire, le titre, l'annulation ni le bilan.
+  const regie = seance.peutModifier && !(seance.peutProgrammer ?? true);
+  const courant: Onglet = regie ? "preparer" : lectureSeule ? "bilan" : (onglet ?? (apres ? "bilan" : "preparer"));
+  const ouverte = seance.statut === "planifiee" || seance.statut === "en_direct";
+  const nomFormateur = seance.formateur ? `${seance.formateur.prenom} ${seance.formateur.nom}`.trim() : null;
 
   const dupliquer = async () => {
     try {
@@ -118,14 +127,16 @@ function SeanceExistante({ id }: { id: number }) {
               </LienBouton>
             )}
             {(seance.statut === "planifiee" || seance.statut === "en_direct") && <BoutonLienInvite seance={seance} variante="contour" />}
+            {/* Micro et caméra sans compte : le formateur qui n'arrive pas à se connecter, un invité (qui fait la régie). */}
+            {ouverte && seance.monRole === "formateur" && <BoutonLienIntervenant seanceId={seance.id} variante="contour" />}
             {/* Module visio : répétition dans la vraie salle Daily, à tout moment (formateur, direction). */}
-            {seance.statut === "planifiee" && seance.fournisseur === "daily" && (seance.monRole === "formateur" || moi.role === "admin") && (
+            {seance.statut === "planifiee" && seance.fournisseur === "daily" && !regie && (seance.monRole === "formateur" || moi.role === "admin") && (
               <LienBouton href={`/visio/repetition/${seance.id}`} variante="contour" icone={<FlaskConical className="h-4 w-4" />}>
                 Répéter dans la salle de cette séance
               </LienBouton>
             )}
             {/* Lancé avant l'heure prévue : un essai, que le Studio propose d'effacer. */}
-            {seance.statut === "terminee" && seance.peutModifier && new Date(seance.debut).getTime() > Date.now() && (
+            {seance.statut === "terminee" && (seance.peutProgrammer ?? seance.peutModifier) && new Date(seance.debut).getTime() > Date.now() && (
               <LienBouton href={`/live/${seance.id}`} icone={<RotateCcw className="h-4 w-4" />}>
                 C'était un essai ?
               </LienBouton>
@@ -135,7 +146,7 @@ function SeanceExistante({ id }: { id: number }) {
                 Voir le replay
               </LienBouton>
             )}
-            {!lectureSeule && (
+            {!lectureSeule && !regie && (
               <Bouton variante="doux" icone={<Copy className="h-4 w-4" />} onClick={dupliquer}>
                 Dupliquer
               </Bouton>
@@ -144,7 +155,11 @@ function SeanceExistante({ id }: { id: number }) {
         }
       />
       {seance.statut === "annulee" && <Erreur message={`Séance annulée : ${seance.motifAnnulation ?? ""}`} />}
-      {lectureSeule ? (
+      {regie ? (
+        <p className="rounded-2xl bg-creme px-5 py-3.5 text-[15px] text-texte-doux" data-preparation-regie>
+          {nomFormateur ? txRegie("preparation.regie", { v: { formateur: nomFormateur } }) : txRegie("preparation.regie.sansFormateur")}
+        </p>
+      ) : lectureSeule ? (
         <p className="rounded-2xl bg-creme px-5 py-3.5 text-[15px] text-texte-doux">
           Ce cours est suivi par plusieurs campus : son formateur et la direction préparent la séance. Vous suivez ici la présence de votre campus.
         </p>
@@ -164,22 +179,33 @@ function SeanceExistante({ id }: { id: number }) {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-4">
             <TitreSection titre="La séance" />
-            <FormulaireSeance
-              seance={seance}
-              coursId={seance.coursId}
-              onEnregistre={(_s, conflits) => {
-                toast(conflits.length ? `Enregistré · attention : ${conflits.length} live(s) en même temps dans une même salle.` : "Modifications enregistrées.", conflits.length ? "info" : "succes");
-              }}
-            />
-            {seance.statut === "planifiee" && (
-              <div className="flex flex-wrap gap-2 border-t border-ligne pt-4">
-                <Bouton variante="contour" onClick={() => setAnnuler(true)}>
-                  Signaler un empêchement
-                </Bouton>
-                <Bouton variante="fantome" icone={<Trash2 className="h-4 w-4" />} onClick={supprimer}>
-                  Supprimer
-                </Bouton>
-              </div>
+            {regie ? (
+              <SeanceEnLecture seance={seance} formateur={nomFormateur} />
+            ) : (
+              <>
+                <FormulaireSeance
+                  seance={seance}
+                  coursId={seance.coursId}
+                  onEnregistre={(_s, conflits) => {
+                    toast(conflits.length ? `Enregistré · attention : ${conflits.length} live(s) en même temps dans une même salle.` : "Modifications enregistrées.", conflits.length ? "info" : "succes");
+                  }}
+                />
+                {seance.statut === "planifiee" && (
+                  <div className="flex flex-wrap gap-2 border-t border-ligne pt-4">
+                    <Bouton variante="contour" onClick={() => setAnnuler(true)}>
+                      Signaler un empêchement
+                    </Bouton>
+                    <Bouton variante="fantome" icone={<Trash2 className="h-4 w-4" />} onClick={supprimer}>
+                      Supprimer
+                    </Bouton>
+                  </div>
+                )}
+              </>
+            )}
+            {estProfilRegie(moi) && (
+              <LienBouton href="/regie" variante="contour" className="min-h-[48px] w-fit">
+                {txRegie("retour.espace")}
+              </LienBouton>
             )}
           </div>
           <div className="flex min-w-0 flex-col gap-8">
@@ -196,6 +222,33 @@ function SeanceExistante({ id }: { id: number }) {
       {courant === "fiche" && <SectionFiche seance={seance} />}
       <FenetreAnnulation seance={seance} ouverte={annuler} onFermer={() => setAnnuler(false)} />
     </Page>
+  );
+}
+
+// ── Séance en lecture (régie seule) ─────────────────────────────────────────
+
+/** Horaire, formateur et plan de la séance, sans les modifier : la régie prépare le contenu, l'emploi du temps garde l'horaire. */
+function SeanceEnLecture({ seance, formateur }: { seance: SeanceDetailDto; formateur: string | null }) {
+  return (
+    <Carte className="flex flex-col gap-3">
+      <p className="text-[17px] font-extrabold">{dateEtHeure(seance.debut)}</p>
+      <p className="text-[15px] text-texte-doux">
+        {seance.dureeMinutes} min{formateur ? ` · ${formateur}` : ""}
+      </p>
+      {seance.plan.length > 0 && (
+        <div className="flex flex-col gap-1.5 border-t border-ligne-douce pt-3">
+          <p className="font-mono text-xs uppercase text-texte-gris">Plan du cours</p>
+          <ol className="flex list-decimal flex-col gap-1 pl-5 text-[15px]">
+            {seance.plan.map((e, i) => (
+              <li key={i}>
+                {e.titre}
+                {e.minutes ? <span className="text-texte-pale"> · {e.minutes} min</span> : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </Carte>
   );
 }
 

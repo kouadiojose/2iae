@@ -14,7 +14,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ArrowUpRight, ChevronDown, Mail, Menu as IconeMenu, MessageCircle, Phone, X } from "lucide-react";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
-import { useMoi, accueilDuRole } from "@/lib/auth";
+import { useMoi, accueilDe } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { SitePublicDto } from "@shared/schema";
 import { useEnDirect, useSitePublicOuSecours } from "./donnees";
@@ -71,7 +71,7 @@ function BoutonCompte({ className, onClick, grand = false }: { className?: strin
   const { moi } = useMoi();
   return (
     <Link
-      href={moi ? accueilDuRole(moi.role) : "/connexion"}
+      href={moi ? accueilDe(moi) : "/connexion"}
       onClick={onClick}
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-xl font-bold no-underline transition-colors",

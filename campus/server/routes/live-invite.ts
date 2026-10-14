@@ -21,6 +21,7 @@
 //   GET  /api/invite/:jeton/radio/ecoute    le flux audio
 //   POST /api/invite/:jeton/entrer          { nom, mode } : passage noté au fil de la séance
 //   POST /api/invite/:jeton/visio           { nom } : jeton Daily, sans micro ni caméra (avec, pour un intervenant)
+//   POST /api/invite/:jeton/diapo           { index, nom? } : télécommande des diapos (lien intervenant seulement, en direct)
 import crypto from "crypto";
 import type { Express, Request } from "express";
 import { z } from "zod";
@@ -33,6 +34,7 @@ import { enseigneCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
+import { changerDiapo } from "./live";
 import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -120,6 +122,20 @@ async function infoInvite(s: Seance, jeton: string, intervenant: boolean): Promi
 }
 
 const NOM = z.string().trim().min(2, "Indiquez votre nom.").max(60);
+
+/** Télécommande des diapos : au plus 120 changements par minute et par adresse (deux par seconde en continu). */
+const MAX_DIAPOS_PAR_MINUTE = 120;
+const changementsDiapo = new Map<string, { n: number; jusqua: number }>();
+function limiterDiapo(ip: string) {
+  const maintenant = Date.now();
+  const t = changementsDiapo.get(ip);
+  if (!t || t.jusqua < maintenant) {
+    if (changementsDiapo.size > 5000) for (const [cle, v] of changementsDiapo) if (v.jusqua < maintenant) changementsDiapo.delete(cle);
+    changementsDiapo.set(ip, { n: 1, jusqua: maintenant + MINUTE });
+    return;
+  }
+  if (++t.n > MAX_DIAPOS_PAR_MINUTE) throw new ErreurHttp(429, "Trop de changements de diapo d'affilée : patientez quelques secondes, puis reprenez.");
+}
 /** Passages déjà notés (séance, réseau, nom) : un rechargement de page ne compte pas deux fois. */
 const passages = new Set<string>();
 
@@ -201,6 +217,27 @@ export function enregistrerInvite(app: Express) {
         await db.insert(evenementsSeances).values({ seanceId: s.id, type: "invite", donnees: { nom, mode, ...(intervenant ? { intervenant: true } : {}) } });
       }
       res.json({ ok: true });
+    }),
+  );
+
+  // Télécommande de l'intervenant : même effet que les flèches du formateur (diapo courante, salles, étudiants,
+  // Studio, fil de la séance marqué « par l'intervenant »). Ni masquage, ni disposition, ni projection.
+  app.post(
+    "/api/invite/:jeton/diapo",
+    route(async (req, res) => {
+      limiterDiapo(String(req.ip ?? ""));
+      const { s, intervenant } = await seanceDuJeton(req);
+      if (!intervenant) throw interdit("Seul le lien intervenant permet de faire défiler les diapos.");
+      const { index, nom } = valider(z.object({ index: z.number({ required_error: "Indiquez la diapo.", invalid_type_error: "Indiquez la diapo par son numéro." }).int("Indiquez la diapo par son numéro."), nom: NOM.optional().catch(undefined) }), req.body);
+      if (s.statut !== "en_direct") throw new ErreurHttp(409, "Le cours n'est pas en direct : les diapos se font défiler pendant le cours.");
+      if (!s.diapos.length || index < 0 || index > s.diapos.length - 1) {
+        throw new ErreurHttp(400, s.diapos.length ? `Cette diapo n'existe pas : choisissez entre 1 et ${s.diapos.length}.` : "Aucune diapo n'a été déposée pour ce cours.");
+      }
+      // Diapo masquée par le formateur (« Caméra seule ») : elle le reste ; seule la diapo où reprendre change.
+      const etat = await changerDiapo(s, { index, masquer: s.diapoCourante < 0 }, { garderProjection: true, intervenant: { nom: nom ?? null } });
+      cacheInfos.delete(`${s.id}:i`);
+      cacheInfos.delete(`${s.id}:v`);
+      res.json({ index: etat.index, total: etat.total, masquee: etat.masquee });
     }),
   );
 

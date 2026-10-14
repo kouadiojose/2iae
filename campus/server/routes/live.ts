@@ -1123,6 +1123,44 @@ function diapoCourante(s: Pick<Seance, "diapos" | "diapoCourante"> & Partial<Pic
   return { index, total, url: total && !masquee ? urlFichier(s.diapos[index]) : null, masquee, disposition: s.disposition ?? "diapo" };
 }
 
+/**
+ * Change la diapo courante d'une séance : écrit en base, consigne au fil (en direct), publie sur le canal de
+ * la séance (salles, étudiants, Studio). Cœur commun de la route du formateur (← →) et de la télécommande de
+ * l'intervenant (lien intervenant, routes/live-invite.ts). Une diapo hors bornes est ramenée à la dernière.
+ *
+ * `garderProjection` : l'intervenant change seulement la page ; une copie d'étudiant projetée reste à
+ * l'écran (le formateur seul la retire). `intervenant` : marque « par l'intervenant » au fil de la séance.
+ */
+export async function changerDiapo(
+  s: Seance,
+  demande: { index: number; masquer?: boolean; disposition?: (typeof DISPOSITIONS_SCENE)[number] },
+  options: { garderProjection?: boolean; intervenant?: { nom: string | null } } = {},
+) {
+  const { index, masquer, disposition } = demande;
+  if (!s.diapos.length) throw invalide("Aucune diapo déposée pour cette séance.");
+  const borne = Math.min(index, s.diapos.length - 1);
+  // Copie d'étudiant projetée : une autre diapo, la diapo masquée ou les caméras la retirent ; la même diapo
+  // en « diapo en grand » ou « côte à côte » la laisse (seule la mise en page change).
+  const actuelle = diapoCourante(s);
+  const memeVue = borne === actuelle.index && Boolean(masquer) === actuelle.masquee && (!disposition || disposition === "diapo" || disposition === "cote");
+  // L'arrêt relit la projection (une copie écrite juste avant cette demande est retirée aussi) ; sans copie,
+  // il ne fait rien.
+  const arreter = !memeVue && !options.garderProjection;
+  const [maj] = await db
+    .update(seances)
+    .set({ diapoCourante: masquer ? -borne - 1 : borne, ...(disposition && { disposition }) })
+    .where(eq(seances.id, s.id))
+    .returning();
+  if (s.statut === "en_direct") {
+    const par = options.intervenant ? { par: "intervenant", ...(options.intervenant.nom ? { nom: options.intervenant.nom } : {}) } : {};
+    await consigner(s.id, "diapo", { index: borne, masquee: Boolean(masquer), disposition: maj.disposition, ...par });
+  }
+  if (arreter) await arreterCopie(s.id, "diapos");
+  const etat = diapoCourante(maj);
+  publier(canal(s.id), "diapo", etat);
+  return etat;
+}
+
 /** pdftoppm (poppler) est-il installé ? Sinon, les diapos se déposent en images. */
 let pdfDisponible = false;
 const detectionPdf = new Promise<void>((fini) =>
@@ -2836,25 +2874,7 @@ export function enregistrerLive(app: Express) {
         z.object({ index: z.number().int().min(0), masquer: z.boolean().optional(), disposition: z.enum(DISPOSITIONS_SCENE).optional() }),
         req.body,
       );
-      if (!s.diapos.length) throw invalide("Aucune diapo déposée pour cette séance.");
-      const borne = Math.min(index, s.diapos.length - 1);
-      // Copie d'étudiant projetée : une autre diapo, la diapo masquée ou les caméras la retirent ; la même diapo
-      // en « diapo en grand » ou « côte à côte » la laisse (seule la mise en page change).
-      const actuelle = diapoCourante(s);
-      const memeVue = borne === actuelle.index && Boolean(masquer) === actuelle.masquee && (!disposition || disposition === "diapo" || disposition === "cote");
-      // L'arrêt relit la projection (une copie écrite juste avant cette demande est retirée aussi) ; sans copie,
-      // il ne fait rien.
-      const arreter = !memeVue;
-      const [maj] = await db
-        .update(seances)
-        .set({ diapoCourante: masquer ? -borne - 1 : borne, ...(disposition && { disposition }) })
-        .where(eq(seances.id, s.id))
-        .returning();
-      if (s.statut === "en_direct") await consigner(s.id, "diapo", { index: borne, masquee: Boolean(masquer), disposition: maj.disposition });
-      if (arreter) await arreterCopie(s.id, "diapos");
-      const etat = diapoCourante(maj);
-      publier(canal(s.id), "diapo", etat);
-      res.json(etat);
+      res.json(await changerDiapo(s, { index, masquer, disposition }));
     }),
   );
 

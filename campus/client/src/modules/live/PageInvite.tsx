@@ -6,10 +6,11 @@
 //
 // Lien intervenant (même page, autre signature) : la vidéo seulement, avec
 // micro et caméra ; la personne entend toute la visio (formateur, salles) et
-// peut entrer 30 minutes avant le début pour régler son micro.
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link2Off, Mic, MonitorPlay, Presentation, Radio, UserRound } from "lucide-react";
+// peut entrer 30 minutes avant le début pour régler son micro. En direct, il
+// fait défiler les diapos du cours (télécommande sous la diapo, flèches ← →).
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, Link2Off, Mic, MonitorPlay, Presentation, Radio, UserRound } from "lucide-react";
 import { t as textesCopies } from "@shared/textes/copies-direct";
 import type { AccesDaily, InfoInviteDto } from "@shared/schema";
 import { post, ErreurApi } from "@/lib/api";
@@ -204,6 +205,12 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
         <p className="rounded-2xl border border-nuit-ligne px-4 py-3 text-[14px] leading-relaxed text-nuit-doux">
           <strong className="text-white">Micro et caméra :</strong> les boutons en bas de la visio. Votre micro est coupé en entrant : ouvrez-le pour parler, coupez-le quand vous écoutez.{" "}
           <strong className="text-white">Montrer votre écran</strong> (votre présentation, un site) : le bouton « Partager » en bas de la visio, sur un ordinateur avec Chrome. Il s'affiche en grand dans toutes les salles.
+          {info.diapo.total > 0 && (
+            <>
+              {" "}
+              <strong className="text-white">Vos diapos :</strong> faites défiler vos diapos avec les boutons sous la diapo (ou les flèches ← → du clavier), pendant le cours en direct. Toutes les salles suivent.
+            </>
+          )}
         </p>
       )}
       {mode === "video" && visioOuverte && (
@@ -247,6 +254,7 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
             </span>
           )}
         </div>
+        {info.intervenant && info.statut === "en_direct" && info.diapo.total > 0 && <Telecommande info={info} racine={racine} nom={nom} />}
         {info.sousTitre && <p className="border-t border-nuit-ligne px-4 py-3 text-center text-[15px] font-semibold leading-snug">{info.sousTitre}</p>}
         {mode === "radio" && (
           <div className="border-t border-nuit-ligne bg-nuit-panneau px-3 py-2">
@@ -275,6 +283,93 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Télécommande des diapos de l'intervenant : boutons sous la diapo et flèches ← → du clavier. */
+function Telecommande({ info, racine, nom }: { info: InfoInviteDto; racine: string; nom: string }) {
+  const client = useQueryClient();
+  const [erreur, setErreur] = useState<string | null>(null);
+  const { index, total, masquee } = info.diapo;
+  // Dernière diapo demandée : des clics rapides avancent d'autant, sans attendre la réponse du serveur.
+  const demandee = useRef<number | null>(null);
+  useEffect(() => {
+    demandee.current = null;
+  }, [index]);
+
+  const aller = useCallback(
+    async (pas: number) => {
+      const depart = demandee.current ?? index;
+      const cible = Math.min(Math.max(0, depart + pas), total - 1);
+      if (cible === depart) return;
+      demandee.current = cible;
+      setErreur(null);
+      // Mise à jour optimiste ; la relecture régulière corrige ensuite.
+      await client.cancelQueries({ queryKey: [racine] });
+      client.setQueryData<InfoInviteDto>([racine], (avant) =>
+        avant ? { ...avant, diapo: { ...avant.diapo, index: cible, url: avant.diapo.masquee ? null : `${racine}/diapo/${cible}` } } : avant,
+      );
+      try {
+        await post(`${racine}/diapo`, { index: cible, ...(nom.length >= 2 ? { nom } : {}) });
+      } catch (x) {
+        demandee.current = null;
+        setErreur(x instanceof ErreurApi ? x.message : "Le campus ne répond pas : la diapo n'a pas changé. Vérifiez la connexion internet, puis réessayez.");
+      } finally {
+        void client.invalidateQueries({ queryKey: [racine] });
+      }
+    },
+    [client, index, nom, racine, total],
+  );
+
+  useEffect(() => {
+    const touche = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const cible = e.target as HTMLElement | null;
+      if (cible && (cible.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(cible.tagName))) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        void aller(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        void aller(1);
+      }
+    };
+    window.addEventListener("keydown", touche);
+    return () => window.removeEventListener("keydown", touche);
+  }, [aller]);
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-nuit-ligne bg-nuit-panneau px-3 py-3">
+      {/* Téléphone : le numéro au-dessus, les deux boutons côte à côte ; ordinateur : sur une ligne. */}
+      <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+        <button
+          type="button"
+          onClick={() => void aller(-1)}
+          disabled={index <= 0}
+          className="inline-flex min-h-[52px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl bg-nuit-ligne px-3 text-[16px] font-bold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ChevronLeft className="h-6 w-6" aria-hidden /> Précédente
+        </button>
+        <span className="order-first w-full shrink-0 px-2 text-center font-mono text-[15px] font-semibold sm:order-none sm:w-auto" aria-live="polite">
+          Diapo {index + 1} / {total}
+        </span>
+        <button
+          type="button"
+          onClick={() => void aller(1)}
+          disabled={index >= total - 1}
+          className="inline-flex min-h-[52px] min-w-0 flex-1 items-center justify-center gap-1 rounded-xl bg-orange px-3 text-[16px] font-bold text-encre hover:bg-orange-peche disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Suivante <ChevronRight className="h-6 w-6" aria-hidden />
+        </button>
+      </div>
+      {masquee && <p className="text-center text-[13px] text-nuit-doux">Le formateur a masqué les diapos (caméra seule) : elles reprendront à la diapo choisie ici.</p>}
+      {info.copieMontree && <p className="text-center text-[13px] text-nuit-doux">Le formateur montre une copie à la classe : vos diapos reviendront quand il la retirera.</p>}
+      {erreur && (
+        <p className="rounded-xl bg-danger/20 px-4 py-2 text-[14px] font-semibold text-white" role="alert">
+          {erreur}
+        </p>
+      )}
     </div>
   );
 }

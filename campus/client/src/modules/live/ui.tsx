@@ -18,6 +18,7 @@ import { useTextes } from "@/lib/textes";
 import { chrono, cleDirect, CONSOMMATION, LIBELLES_FOURNISSEUR, LIBELLES_PRESENCE } from "./outils";
 import { t } from "@shared/textes/direct";
 import { t as textesDirect } from "@shared/textes/devoir-direct";
+import { t as textesRegie } from "@shared/textes/regie";
 import type { MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { DevoirDirectDto, EtatDirectDto, ModeSuivi, SeanceDetailDto } from "@shared/schema";
 import type { SeanceResume } from "@shared/api";
@@ -82,7 +83,7 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
 
 /** Séance annulée ou terminée : message clair, présence, replay. */
 type SeanceFinie = Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> &
-  Partial<Pick<SeanceDetailDto, "debut" | "peutModifier" | "peutProgrammer">>;
+  Partial<Pick<SeanceDetailDto, "debut" | "dureeMinutes" | "termineeLe" | "peutModifier" | "peutProgrammer">>;
 
 export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; devoirDirect?: DevoirDirectDto | null }) {
   const annulee = seance.statut === "annulee";
@@ -101,6 +102,16 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
   // Chargé de cours (profil de régie) : ni bilan (présences nominatives), ni « Mes lives » ; il revient à son espace.
   const regie = estProfilRegie(moi);
   const voitBilan = moi?.role !== "vie_scolaire" || profilPermet(moi, "presences_voir");
+  // Régie seule (sans « C'était un essai ») : une classe fermée trop tôt, par erreur, se rouvre tant que sa fin prévue
+  // n'est pas passée et qu'elle est terminée depuis moins de 2 h (la reprise que le serveur permet).
+  const termineeLe = seance.termineeLe ? new Date(seance.termineeLe).getTime() : maintenant;
+  const rouvrable =
+    regie &&
+    seance.statut === "terminee" &&
+    !(seance.peutProgrammer ?? seance.peutModifier) &&
+    Boolean(seance.debut && seance.dureeMinutes) &&
+    new Date(seance.debut!).getTime() + seance.dureeMinutes! * 60_000 > maintenant &&
+    maintenant - termineeLe < 2 * 3600_000;
   if (essai) return <FinEssai seance={seance} />;
   return (
     <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
@@ -149,6 +160,7 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
               Voir le bilan
             </LienBouton>
           )}
+          {rouvrable && <BoutonRouvrirClasse seanceId={seance.id} />}
           {regie ? (
             <LienBouton href="/regie" variante="nuit">
               Revenir à mon espace
@@ -161,6 +173,44 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
         </div>
       </div>
     </div>
+  );
+}
+
+/** « Rouvrir la classe » (régie seule) : la reprise du direct, après confirmation ; le Studio repart. */
+function BoutonRouvrirClasse({ seanceId }: { seanceId: number }) {
+  const txRegie = useTextes(textesRegie);
+  const [ouverte, setOuverte] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const rouvrir = async () => {
+    setEnvoi(true);
+    try {
+      await post(`/api/seances/${seanceId}/demarrer`, {});
+      await Promise.all([rafraichir(`/api/seances/${seanceId}`), queryClient.invalidateQueries({ queryKey: cleDirect(seanceId) }), rafraichir("/api/regie")]);
+      toast(txRegie("toast.rouverte"));
+      setOuverte(false);
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  return (
+    <>
+      <Bouton variante="nuit" icone={<RotateCcw className="h-4 w-4" />} onClick={() => setOuverte(true)}>
+        {txRegie("bouton.rouvrir")}
+      </Bouton>
+      <Fenetre
+        ouverte={ouverte}
+        onFermer={() => setOuverte(false)}
+        titre={txRegie("rouvrir.titre")}
+        description={txRegie("rouvrir.texte")}
+        pied={
+          <Bouton chargement={envoi} onClick={() => void rouvrir()}>
+            {txRegie("bouton.rouvrir")}
+          </Bouton>
+        }
+      />
+    </>
   );
 }
 

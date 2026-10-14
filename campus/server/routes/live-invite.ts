@@ -25,11 +25,14 @@
 //   POST /api/invite/:jeton/visio           { nom } : jeton Daily, sans micro ni caméra (avec, pour un intervenant)
 //   POST /api/invite/:jeton/diapo           { index, nom? } : télécommande des diapos (lien intervenant seulement, en direct)
 //   POST /api/invite/:jeton/present         { nom? } : l'intervenant est dans la visio (toutes les 30 s, lien intervenant seulement)
+//   POST /api/invite/:jeton/terminer        { nom? } : « Terminer le cours » (lien intervenant seulement, cours commencé)
 //
 // L'intervenant compte comme ANIMATEUR (José, 14 octobre 2026 : des formateurs entrent par ce lien, sans compte ou
 // mot de passe oublié) : son entrée dans la visio, sa page connectée à la visio et sa télécommande des diapos font
 // d'une classe ouverte automatiquement une classe animée (live.ts, signalerIntervenant) : plus « En attente du
-// formateur », jamais « Séance non tenue », et la fin automatique le voit présent tant que sa page se signale.
+// formateur », jamais « Séance non tenue », et la fin automatique le voit présent tant que sa page se signale. Il ferme
+// sa classe comme les autres (« Terminer le cours ») : la fin libère ses salles pour le cours suivant (« Laisse-les
+// fermer », live.ts, terminerParIntervenant), sauf si le formateur est dans son Studio (c'est lui qui termine).
 import crypto from "crypto";
 import type { Express, Request } from "express";
 import { z } from "zod";
@@ -42,7 +45,7 @@ import { enseigneCours, peutVoirCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
-import { changerDiapo, signalerIntervenant } from "./live";
+import { changerDiapo, signalerIntervenant, terminerParIntervenant } from "./live";
 import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -151,6 +154,8 @@ function limiteurParMinute(max: number, message: string) {
 const limiterDiapo = limiteurParMinute(120, "Trop de changements de diapo d'affilée : patientez quelques secondes, puis reprenez.");
 /** Signe de présence de l'intervenant : un toutes les 30 s ; 20 par minute et par adresse laissent de la marge (onglets, relances). */
 const limiterPresence = limiteurParMinute(20, "Trop de signes de présence d'affilée : patientez quelques secondes.");
+/** « Terminer le cours » : 10 demandes par minute et par adresse suffisent (un clic, une confirmation). */
+const limiterFin = limiteurParMinute(10, "Trop de demandes d'affilée : patientez quelques secondes, puis réessayez.");
 /** Passages déjà notés (séance, réseau, nom) : un rechargement de page ne compte pas deux fois. */
 const passages = new Set<string>();
 
@@ -311,6 +316,24 @@ export function enregistrerInvite(app: Express) {
       const { nom } = valider(z.object({ nom: NOM.optional().catch(undefined) }), req.body ?? {});
       const maj = await signalerIntervenant(s, nom ?? null);
       res.json({ ok: true, animateur: maj.statut === "en_direct" && (!maj.ouvertureAuto || Boolean(maj.animateurLe)) });
+    }),
+  );
+
+  // « Terminer le cours » de l'intervenant : le formateur entré par ce lien (sans compte) ferme sa classe comme dans
+  // le Studio ; les salles et les étudiants en ligne sont prévenus, le cours suivant qui attendait la salle s'ouvre.
+  // Lien invité : 403. Refusé avant le début du cours, et quand le formateur anime depuis son Studio (live.ts).
+  app.post(
+    "/api/invite/:jeton/terminer",
+    route(async (req, res) => {
+      limiterFin(String(req.ip ?? ""));
+      const { s, intervenant } = await seanceDuJeton(req);
+      if (!intervenant) throw interdit("Seul le lien intervenant permet de terminer le cours.");
+      if (s.statut === "annulee") throw new ErreurHttp(410, "Ce cours a été annulé.");
+      const { nom } = valider(z.object({ nom: NOM.optional().catch(undefined) }), req.body ?? {});
+      const maj = await terminerParIntervenant(s, nom ?? null);
+      cacheInfos.delete(`${s.id}:i`);
+      cacheInfos.delete(`${s.id}:v`);
+      res.json({ ok: true, statut: maj.statut });
     }),
   );
 }

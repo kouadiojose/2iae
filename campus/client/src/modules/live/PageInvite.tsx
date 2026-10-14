@@ -11,9 +11,12 @@
 // Tant que sa visio est connectée, la page le signale au campus toutes les
 // 30 secondes (POST /present) : il compte comme l'animateur de la classe (une
 // classe ouverte automatiquement n'attend plus le formateur, server/routes/live.ts).
+// Le cours commencé, il le termine lui-même (« Terminer le cours », confirmé) : un
+// formateur entré par ce lien ferme sa classe comme dans le Studio, et le cours
+// suivant qui attendait la salle s'ouvre (refusé si le formateur est dans son Studio).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Link2Off, Mic, MonitorPlay, Presentation, Radio, UserRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, Link2Off, Mic, MonitorPlay, Presentation, Radio, Square, UserRound } from "lucide-react";
 import { t as textesCopies } from "@shared/textes/copies-direct";
 import type { AccesDaily, InfoInviteDto } from "@shared/schema";
 import { post, ErreurApi } from "@/lib/api";
@@ -61,6 +64,8 @@ export default function PageInvite({ jeton }: { jeton: string }) {
     if (info?.intervenant) setMode("video");
   }, [info?.intervenant]);
   const [entre, setEntre] = useState<Mode | null>(null);
+  // L'intervenant a terminé le cours (ou la classe est terminée) : plus de visio, un mot de fin.
+  const [termine, setTermine] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -105,6 +110,8 @@ export default function PageInvite({ jeton }: { jeton: string }) {
                 titre={info.statut === "annulee" ? "Ce cours a été annulé." : "Ce cours est terminé."}
                 texte="Ce lien ne valait que pour ce cours. Le replay est dans votre espace, avec votre compte."
               />
+            ) : info.intervenant && (termine || info.statut === "terminee") ? (
+              <Fin titre="Le cours est terminé." texte="Merci ! Les salles et les étudiants en ligne sont prévenus. Vous pouvez fermer cette page." />
             ) : !entre ? (
               <form onSubmit={entrer} className="flex flex-col gap-4 rounded-3xl bg-nuit-carte p-5 sm:p-6">
                 <label className="flex flex-col gap-2">
@@ -154,7 +161,7 @@ export default function PageInvite({ jeton }: { jeton: string }) {
                 </Bouton>
               </form>
             ) : (
-              <Suivi info={info} racine={racine} mode={entre} nom={nom.trim()} onChanger={() => setEntre(null)} />
+              <Suivi info={info} racine={racine} mode={entre} nom={nom.trim()} onChanger={() => setEntre(null)} onTermine={() => setTermine(true)} />
             )}
           </>
         )}
@@ -204,7 +211,7 @@ function ChoixMode({ actif, onClick, icone, titre, detail }: { actif: boolean; o
   );
 }
 
-function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; racine: string; mode: Mode; nom: string; onChanger: () => void }) {
+function Suivi({ info, racine, mode, nom, onChanger, onTermine }: { info: InfoInviteDto; racine: string; mode: Mode; nom: string; onChanger: () => void; onTermine: () => void }) {
   const avant = info.statut === "planifiee";
   // L'intervenant entre dans la visio dès son ouverture (30 minutes avant) pour régler son micro et sa caméra.
   const visioOuverte = !avant || (info.intervenant && new Date(info.debut).getTime() - Date.now() <= OUVERTURE_VIDEO_MS);
@@ -295,6 +302,7 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
             Vous suivez en invité, sous le nom <strong className="text-white">{nom}</strong>. Pour poser vos questions et être compté présent, connectez-vous avec votre compte.
           </span>
         )}
+        {info.intervenant && info.statut === "en_direct" && Date.now() >= new Date(info.debut).getTime() && <TerminerCours racine={racine} nom={nom} onTermine={onTermine} />}
         {!info.intervenant && (
           <div className="flex gap-2">
             <Bouton variante="nuit" taille="sm" onClick={onChanger}>
@@ -393,6 +401,57 @@ function Telecommande({ info, racine, nom }: { info: InfoInviteDto; racine: stri
           {erreur}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * « Terminer le cours » de l'intervenant (le formateur entré par ce lien) : une confirmation, puis la classe se ferme
+ * dans les salles et pour les étudiants en ligne (POST /terminer). Le serveur refuse avant le début du cours et quand
+ * le formateur anime depuis son Studio : son message s'affiche ici.
+ */
+function TerminerCours({ racine, nom, onTermine }: { racine: string; nom: string; onTermine: () => void }) {
+  const client = useQueryClient();
+  const [confirmer, setConfirmer] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const terminer = async () => {
+    setEnvoi(true);
+    setErreur(null);
+    try {
+      await post(`${racine}/terminer`, nom.length >= 2 ? { nom } : {});
+      onTermine();
+      void client.invalidateQueries({ queryKey: [racine] });
+    } catch (x) {
+      setErreur(x instanceof ErreurApi ? x.message : "Le campus ne répond pas : le cours n'est pas terminé. Vérifiez la connexion internet, puis réessayez.");
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  if (!confirmer) {
+    return (
+      <Bouton variante="nuit" taille="sm" icone={<Square className="h-4 w-4" />} onClick={() => setConfirmer(true)}>
+        Terminer le cours
+      </Bouton>
+    );
+  }
+  return (
+    <div className="flex w-full flex-col gap-3 rounded-2xl border-2 border-danger bg-danger/10 p-4" role="alertdialog" aria-label="Terminer le cours ?">
+      <p className="text-[15px] font-bold text-white">Terminer le cours ?</p>
+      <p className="text-[14px] leading-relaxed text-nuit-doux">Les cinq salles et les étudiants en ligne sont prévenus que le cours est fini, et la visio se ferme. Le cours suivant pourra s'ouvrir dans la salle.</p>
+      {erreur && (
+        <p className="rounded-xl bg-danger/20 px-4 py-2 text-[14px] font-semibold text-white" role="alert">
+          {erreur}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Bouton variante="danger" chargement={envoi} onClick={() => void terminer()}>
+          Oui, terminer le cours
+        </Bouton>
+        <Bouton variante="nuit" onClick={() => setConfirmer(false)}>
+          Continuer le cours
+        </Bouton>
+      </div>
     </div>
   );
 }

@@ -34,10 +34,16 @@ export const t = creerTextes({
   "etat.nonOuverte": "Pas ouvert à l'heure",
   "etat.enRetard": "Pas encore ouverte · le cours a commencé à {heure}",
   "etat.attenteFormateur": "En attente du formateur · le cours devait commencer à {heure}",
+  "etat.attenteSalle": "En attente de la salle",
 
   // ── Carte d'un cours ────────────────────────────────────────────────────
   "carte.formateurConnecte": "connecté",
   "carte.formateurAbsent": "pas encore connecté",
+  "carte.formateurParLien": "connecté (lien intervenant)",
+  "carte.attenteSalle": "{cours} est encore en direct ({salle}) : cette classe s'ouvrira dès que son formateur aura fermé la sienne.",
+  "carte.attenteSalle.voir": "Voir {cours}",
+  "carte.ouvrableDes": "Vous pourrez aussi l'ouvrir vous-même dès {heure}.",
+  "carte.ouvertureAuto": "Sinon, elle s'ouvrira toute seule à {heure}.",
   "carte.sansFormateur": "Formateur à confirmer",
   "carte.salles.un": "{n} salle connectée sur {total}",
   "carte.salles": "{n} salles connectées sur {total}",
@@ -55,13 +61,24 @@ export const t = creerTextes({
   "bouton.entrer": "Entrer dans le Studio",
   "bouton.preparer": "Préparer",
   "bouton.lienIntervenant": "Lien intervenant",
-  "bouton.ouvreA": "La classe s'ouvre à {heure}",
+  "bouton.ouvreA": "Vous pourrez l'ouvrir à {heure}",
+  "bouton.ouvertureAuto": "Ouverture automatique à {heure}",
+  "bouton.ouvrirQuandMeme": "Ouvrir quand même",
+  "bouton.rouvrir": "Rouvrir la classe",
   "bouton.ouvreLe": "La classe s'ouvre {jour} à {heure}",
 
   // ── Toasts et erreurs ───────────────────────────────────────────────────
   "toast.ouverte": "La classe est ouverte dans les campus.",
+  "toast.rouverte": "La classe est rouverte dans les campus.",
+  "attenteSalle.titre": "Ouvrir la classe dans une salle occupée ?",
+  "attenteSalle.texte":
+    "{cours} est encore en direct ({salle}). Si son formateur a fini, fermez d'abord sa classe (« Voir {cours} », puis « Terminer ») : ce cours s'ouvrira tout seul. Ouvrir maintenant met deux classes en direct dans la même salle.",
+  "rouvrir.titre": "Rouvrir la classe ?",
+  "rouvrir.texte": "La classe repart dans les salles et pour les étudiants en ligne. Le cours garde son heure de début.",
   "erreur.tropTot": "La classe s'ouvre au plus tôt une heure avant le cours, à {heure}. D'ici là, vous pouvez la préparer.",
   "erreur.pasOuverte": "La classe n'est pas ouverte : ouvrez-la d'abord. Pour annuler ou déplacer un cours, voyez avec la vie scolaire.",
+  "erreur.pasCommence":
+    "Le cours n'a pas encore commencé (il commence à {heure}) : la classe reste ouverte pour que les salles s'installent. Pour annuler ou déplacer le cours, voyez avec la vie scolaire.",
 
   // ── Studio ──────────────────────────────────────────────────────────────
   "studio.regie": "Vous faites la régie de ce cours · formateur : {formateur}",
@@ -75,6 +92,7 @@ export const t = creerTextes({
   "demarrage.texte": "Les cinq salles et les étudiants en ligne sont prévenus que la classe est ouverte. Votre micro et votre caméra restent coupés.",
   "demarrage.bouton": "Ouvrir la classe",
   "fin.texte": "Les salles et les étudiants en ligne sont prévenus que la classe est fermée.",
+  "fin.avantCours.titre": "La classe reste ouverte",
   "toast.fermee": "La classe est fermée dans les campus.",
   "chrono.sansPlan": "Aucun plan minuté.",
 

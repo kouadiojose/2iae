@@ -11,9 +11,9 @@
 //
 //   GET  /api/regie                          « Mon espace » : les cours du jour et de la semaine (aucun lien dedans)
 //   GET  /api/seances/:id/lien-intervenant   le lien micro + caméra, le message et les liens WhatsApp (journalisé)
-//   + intergiciels sur démarrer, terminer, Plan B, diapos, ressources : garde « pas plus d'une heure avant » et
-//     « terminer et Plan B seulement sur une classe ouverte » pour la régie seule (sans « programme »), et journal
-//     (direction et équipe, jamais le formateur du cours).
+//   + intergiciels sur démarrer, terminer, Plan B, diapos, ressources : garde « pas plus d'une heure avant »,
+//     « terminer et Plan B seulement sur une classe ouverte » et « pas terminer avant le début du cours » pour la
+//     régie seule (sans « programme »), et journal (direction et équipe, jamais le formateur du cours).
 import type { Express, Request, RequestHandler } from "express";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -25,17 +25,19 @@ import { intervenantsDesSeances, libelleDate } from "../programme-outils";
 import { utilisateursSur } from "../temps-reel";
 import { repartitionDuSite } from "../salles-outils";
 import { numeroWhatsApp } from "./admin";
-import { canal, seanceAnimee } from "./live";
+import { canal, intervenantEstPresent, occupationDesSalles, salleOccupeePour, seanceAnimee } from "./live";
+import { lireReglageOuverture, REPERE_OUVERTURE_AUTO } from "../ouverture-auto";
 import { finDesLiens, jetonIntervenant, lienValide } from "./live-invite";
 import { nomDeSalle } from "@shared/salles";
 import { t } from "@shared/textes/regie";
 import { type CoursRegieDto, type EspaceRegieDto, type EtatRegie, type LienIntervenantDto } from "@shared/regie";
-import { AVANCE_MAX_OUVERTURE_MIN, enAttenteAnimateur } from "@shared/ouverture";
+import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
 import {
   cours,
   coursFormateurs,
   directsImmediats,
   journal,
+  rappelsLive,
   ressourcesSeances,
   seances,
   sites,
@@ -113,6 +115,24 @@ const gardeClasseOuverte: RequestHandler = (req, res, next) => {
   })().catch(next);
 };
 
+/**
+ * Terminer AVANT le début du cours (classe ouverte automatiquement ou par la régie : les salles s'installent) : la
+ * régie seule ne le peut pas. La séance passerait « terminée » et compterait comme tenue (étudiants venus en avance
+ * comptés absents) ; l'ouverture automatique ne la rouvrirait plus (repère « ouverture-auto ») et « C'était un essai »,
+ * qui la remet à venir, relève de la programmation (direction, formateur). La classe reste ouverte jusqu'à son heure ;
+ * pour annuler ou déplacer le cours, voir avec la vie scolaire. Les autres personnes passent (routes/live.ts).
+ */
+const gardeFinAvantCours: RequestHandler = (req, res, next) => {
+  const u = req.utilisateur;
+  if (!u || !regieSeule(u)) return next();
+  void (async () => {
+    const id = Number(req.params.id);
+    const s = Number.isInteger(id) && id > 0 ? await chargerSeance(id) : undefined;
+    if (!s || !classeOuverteEnAvance(s, Date.now()) || !(await regieCours(u, s.coursId))) return next();
+    res.status(409).json({ message: t("erreur.pasCommence", { v: { heure: heureCourte(debutDuCours(s)) } }), code: "pas_commence" });
+  })().catch(next);
+};
+
 type Journalise = { action: string; details?: (req: Request) => Record<string, unknown>; siDemarrage?: boolean };
 
 /**
@@ -150,7 +170,7 @@ const nombreFichiers = (req: Request) => ({ fichiers: Array.isArray(req.files) ?
 /** Les séances (hors essais de visio) des cours dont la personne fait la régie, sur [depuis, jusqua[, et ce qu'il faut pour leurs cartes. */
 async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintenant: Date): Promise<CoursRegieDto[]> {
   const lignes = await db
-    .select({ s: seances, code: cours.code, titreCours: cours.titre, couleur: cours.couleur, formateurId: cours.formateurId })
+    .select({ s: seances, code: cours.code, titreCours: cours.titre, couleur: cours.couleur, formateurId: cours.formateurId, statutCours: cours.statut })
     .from(seances)
     .innerJoin(cours, eq(cours.id, seances.coursId))
     .where(and(gte(seances.debut, depuis), lt(seances.debut, jusqua)))
@@ -171,7 +191,7 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
   const seanceIds = retenues.map((l) => l.s.id);
   const coursIds = [...new Set(retenues.map((l) => l.s.coursId))];
 
-  const [intervenants, coFormateurs, nbRessources, nbSondages, listeSites] = await Promise.all([
+  const [intervenants, coFormateurs, nbRessources, nbSondages, listeSites, reglage, reperes] = await Promise.all([
     intervenantsDesSeances(seanceIds),
     db.select({ coursId: coursFormateurs.coursId, formateurId: coursFormateurs.formateurId }).from(coursFormateurs).where(inArray(coursFormateurs.coursId, coursIds)),
     db
@@ -181,7 +201,13 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
       .groupBy(ressourcesSeances.seanceId),
     db.select({ seanceId: sondages.seanceId, n: sql<number>`count(*)::int` }).from(sondages).where(inArray(sondages.seanceId, seanceIds)).groupBy(sondages.seanceId),
     db.select().from(sites).orderBy(asc(sites.ordre)),
+    lireReglageOuverture(),
+    db.select({ seanceId: rappelsLive.seanceId }).from(rappelsLive).where(and(inArray(rappelsLive.seanceId, seanceIds), eq(rappelsLive.type, REPERE_OUVERTURE_AUTO))),
   ]);
+  // Déjà ouvertes une fois à cet horaire, ou essai effacé dans l'heure : elles ne s'ouvrent plus d'elles-mêmes.
+  const sansOuvertureAuto = new Set(reperes.map((r) => r.seanceId));
+  // Salles occupées (« Laisse-les fermer ») : seulement s'il y a un cours à ouvrir aujourd'hui ou plus tard.
+  const occupation = retenues.some((l) => l.s.statut === "planifiee" && finPrevue(l.s).getTime() > maintenant.getTime()) ? await occupationDesSalles() : null;
   const idsPrincipaux = [...new Set(retenues.map((l) => l.formateurId).filter((x): x is number => Boolean(x)))];
   const principaux = new Map(
     (idsPrincipaux.length
@@ -200,7 +226,7 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
   const avecProgramme = !regieSeule(u);
   const t0 = maintenant.getTime();
 
-  return retenues.map(({ s, code, titreCours, couleur, formateurId }): CoursRegieDto => {
+  return retenues.map(({ s, code, titreCours, couleur, formateurId, statutCours }): CoursRegieDto => {
     const fin = finPrevue(s);
     const connectes = s.statut === "en_direct" ? utilisateursSur(canal(s.id)) : [];
     const intervenant = intervenants.get(s.id);
@@ -234,6 +260,17 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
                 : "a_venir";
     const ouvre = s.debut.getTime() - AVANCE_MAX_MS;
     const dansLaFenetre = avecProgramme || ouvre <= t0;
+    // Formateur dans la classe : un formateur du cours avec son compte, ou la personne entrée par le lien intervenant
+    // (sans compte : elle anime, live.ts, signalerIntervenant).
+    const formateurCompte = connectes.some((c) => c.role === "formateur" && formateursDuCours.has(c.id));
+    const parLien = s.statut === "en_direct" && !formateurCompte && intervenantEstPresent(s.id);
+    // Salle encore occupée par une autre classe en direct : seulement pour un cours qui pourrait s'ouvrir (en retard,
+    // ou dans l'heure qui précède : la plus grande avance de l'ouverture automatique), pas pour celui de ce soir.
+    const attenteSalle = occupation && (etat === "en_retard" || (etat === "a_venir" && ouvre <= t0)) ? salleOccupeePour(occupation, s) : null;
+    const ouvertureAuto =
+      reglage.actif && statutCours === "publie" && etat === "a_venir" && !sansOuvertureAuto.has(s.id) ? new Date(s.debut.getTime() - reglage.minutes * MINUTE) : null;
+    // Reprise permise par le serveur (routes/live.ts : terminée depuis moins de 2 h), cours pas encore fini.
+    const peutRouvrir = s.statut === "terminee" && Boolean(s.termineeLe) && t0 - s.termineeLe!.getTime() < 2 * 3600_000 && fin.getTime() > t0;
     return {
       seanceId: s.id,
       titre: s.titre,
@@ -245,7 +282,8 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
       etat,
       motifAnnulation: s.statut === "annulee" ? s.motifAnnulation : null,
       formateur: nomFormateur ? { nom: nomFormateur } : null,
-      formateurConnecte: connectes.some((c) => c.role === "formateur" && formateursDuCours.has(c.id)),
+      formateurConnecte: formateurCompte || parLien,
+      formateurParLien: parLien,
       // Ouverte automatiquement, l'heure passée, personne n'anime (live.ts : noterArrivee) : à prendre ou à relancer.
       attenteFormateur: enAttenteAnimateur(s) && s.debut.getTime() <= t0,
       campus,
@@ -256,6 +294,9 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
       sondages: sondagesDe.get(s.id) ?? 0,
       peutOuvrir: etat === "en_retard" || (etat === "a_venir" && dansLaFenetre),
       ouvreA: etat === "a_venir" && !dansLaFenetre ? new Date(ouvre).toISOString() : null,
+      ouvertureAutoA: ouvertureAuto && ouvertureAuto.getTime() > t0 ? ouvertureAuto.toISOString() : null,
+      attenteSalle,
+      peutRouvrir,
     };
   });
 }
@@ -270,7 +311,7 @@ const rangEtat = (e: EtatRegie) => (e === "en_direct" || e === "ouverte_avance" 
 export function enregistrerRegie(app: Express) {
   // Intergiciels d'abord (routes/index.ts les déclare avant routes/live.ts et routes/ressources-seance.ts).
   app.post("/api/seances/:id/demarrer", exigerConnexion, gardeOuverture, journaliser({ action: "live_demarre", siDemarrage: true }));
-  app.post("/api/seances/:id/terminer", exigerConnexion, gardeClasseOuverte, journaliser({ action: "live_termine" }));
+  app.post("/api/seances/:id/terminer", exigerConnexion, gardeClasseOuverte, gardeFinAvantCours, journaliser({ action: "live_termine" }));
   app.post("/api/seances/:id/plan-b", exigerConnexion, gardeClasseOuverte, journaliser({ action: "live_plan_b" }));
   app.post("/api/seances/:id/diapos", exigerConnexion, journaliser({ action: "diapos_deposees", details: nombreFichiers }));
   app.post("/api/seances/:id(\\d+)/ressources", exigerConnexion, journaliser({ action: "ressources_ajoutees", details: () => ({ fichiers: 0, lien: true }) }));

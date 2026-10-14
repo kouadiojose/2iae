@@ -64,7 +64,8 @@ export const t = creerTextes({
   // cours ») et ouverture par le compte de campus : bilan de la séance (fil des événements) ──
   "fin.logique.un": "Fermée toute seule : une seule personne restait, 10 min après l'heure de fin",
   "fin.logique.zero": "Fermée toute seule : plus personne, 10 min après l'heure de fin",
-  "demarrage.campus": "Classe ouverte par le campus de {campus} (les salles s'installent)",
+  "fin.coursAttendu": "Fermée toute seule : le formateur était parti, la séance suivante du cours attendait",
+  "demarrage.campus": "Classe ouverte par le campus {deCampus} (les salles s'installent)",
 
   // ── Écran de salle : mini-guide du chargé de cours (avant le cours) ──────
   "guide.etiquette": "Chargé de cours",

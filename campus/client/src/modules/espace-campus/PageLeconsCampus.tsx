@@ -1,5 +1,5 @@
 // /mon-campus/cours/:coursId/lecons : « Les cours ». Une grosse ligne par leçon publiée, rangée par chapitre ; un
-// toucher ouvre la leçon (page existante /cours/:id/lecons/:leconId). Lu dans GET /api/cours/:id (leçons publiées
+// toucher ouvre la leçon dans l'espace du campus (PageLeconCampus). Lu dans GET /api/cours/:id (leçons publiées
 // seulement pour le compte de campus, qui n'enseigne pas le cours).
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -43,7 +43,7 @@ export default function PageLeconsCampus({ coursId }: { coursId: string }) {
                 return (
                   <Link
                     key={l.id}
-                    href={`/cours/${id}/lecons/${l.id}`}
+                    href={lienCampus(`/mon-campus/cours/${id}/lecons/${l.id}`)}
                     className="flex min-h-[72px] items-center gap-4 rounded-[20px] border-[3px] border-encre bg-white px-5 py-3 text-[22px] font-bold text-encre no-underline hover:bg-creme"
                   >
                     <Icone className="h-8 w-8 shrink-0 text-orange-fonce" aria-hidden />

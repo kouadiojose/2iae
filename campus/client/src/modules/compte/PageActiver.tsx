@@ -2,7 +2,7 @@
 // taper : on l'accueille (« On prépare ton campus… ») puis on l'emmène
 // choisir son code secret.
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { Redirect } from "wouter";
 import { Link2Off } from "lucide-react";
 import { get, ErreurApi } from "@/lib/api";
 import { LienBouton } from "@/components/ui/bouton";
@@ -11,13 +11,15 @@ import type { Moi } from "@shared/schema";
 import { CadrePublic } from "./composants/CadrePublic";
 import { ListeContactsSites, useContactsSites } from "./composants/AideWhatsApp";
 import { attendre, installerMoi } from "./outils";
+import { useMoi } from "@/lib/auth";
 
 const CAMPUS_PAR_DEFAUT = ["Riviera", "Yopougon", "Yamoussoukro", "Azaguié", "M'Batto"];
 /** Durée minimale de l'écran d'accueil : le premier contact doit rassurer, pas clignoter. */
 const DUREE_ACCUEIL_MS = 3200;
 
 export default function PageActiver({ jeton }: { jeton: string }) {
-  const [, naviguer] = useLocation();
+  const { moi: connu } = useMoi();
+  const [pret, setPret] = useState(false);
   const [moi, setMoi] = useState<Moi | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   const lance = useRef(false);
@@ -31,14 +33,17 @@ export default function PageActiver({ jeton }: { jeton: string }) {
         setMoi(m);
         await attendre(Math.max(0, DUREE_ACCUEIL_MS - (Date.now() - debut)));
         installerMoi(m, true);
-        naviguer("/bienvenue", { replace: true });
+        // On part quand toute l'application connaît la personne (rendu suivant) : sinon « Bienvenue » se croirait
+        // déconnectée un instant et repasserait par la page de connexion.
+        setPret(true);
       })
       .catch((e) => {
         setErreur(e instanceof ErreurApi ? e.message : "Une erreur est survenue. Réessaie dans un instant.");
       });
-  }, [jeton, naviguer]);
+  }, [jeton]);
 
   if (erreur) return <LienPerime message={erreur} />;
+  if (pret && connu) return <Redirect to="/bienvenue" replace />;
   return <EcranPreparation moi={moi} />;
 }
 

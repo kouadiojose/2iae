@@ -48,9 +48,10 @@ import {
   type AnnonceResume,
 } from "@shared/schema";
 import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
-import { heureSimple, nomDuJour } from "@shared/espace-campus";
+import { capitale, heureSimple, jourEnLettres, nomDuJour } from "@shared/espace-campus";
 import type { AccueilSimpleDto, CarreFormateurDto, RepereFormateur } from "@shared/accueil-simple";
 import { debutDuJour, finPrevueMs, seancesDuMoment } from "../espace-campus";
+import { finieSansAnimateur } from "./live";
 
 const MINUTE = 60_000;
 const HEURE = 60 * MINUTE;
@@ -648,6 +649,12 @@ export function enregistrerAccueil(app: Express) {
 }
 
 /** « 4h30 » dans le fuseau du formateur, ou null (fuseau d'Abidjan, inconnu, ou même heure). */
+/** « samedi » dans les 6 jours qui viennent ; au-delà, « vendredi 30 octobre » (jours d'Abidjan), pour ne rien confondre. */
+function jourCourt(t: number, maintenant: number): string {
+  const ecart = Math.round((debutDuJour(t) - debutDuJour(maintenant)) / JOUR);
+  return ecart >= 0 && ecart < 7 ? nomDuJour(t).toLowerCase() : jourEnLettres(t);
+}
+
 function heureChezLui(d: Date, fuseau: string | null): string | null {
   if (!fuseau || fuseau === "Africa/Abidjan") return null;
   try {
@@ -678,21 +685,31 @@ export async function accueilSimple(u: Utilisateur, maintenant = Date.now()): Pr
   const moments = await seancesDuMoment(
     liste.map((c) => c.id),
     maintenant,
-    { jour: false },
+    { jour: false, finieSansAnimateur },
   );
   const jour0 = debutDuJour(maintenant);
   const avance = AVANCE_MAX_OUVERTURE_MIN * MINUTE;
   const carres: (CarreFormateurDto & { t: number })[] = liste.map((c) => {
     const s = moments.get(c.id)?.seance ?? null;
     let repere: RepereFormateur = null;
-    let live: CarreFormateurDto["live"] = { etat: "aucun", ouvreA: null };
+    let live: CarreFormateurDto["live"] = { etat: "aucun", ouvreA: null, ouvreHeure: null, ouvreJour: null, ouvreChezVous: null };
     if (s?.statut === "en_direct") {
       repere = classeOuverteEnAvance(s, maintenant) ? "ouvert" : "direct";
-      live = { etat: "direct", ouvreA: null };
+      live = { ...live, etat: "direct" };
     } else if (s?.statut === "planifiee") {
       repere = debutDuJour(s.debut.getTime()) === jour0 ? "aujourdhui" : "jour";
       const ouvre = s.debut.getTime() - avance;
-      live = ouvre <= maintenant ? { etat: "ouvrir", ouvreA: null } : { etat: "attendre", ouvreA: new Date(ouvre).toISOString() };
+      // Ouverture plus tard : son heure (Abidjan, et chez lui), et son jour quand ce n'est pas aujourd'hui.
+      live =
+        ouvre <= maintenant
+          ? { ...live, etat: "ouvrir" }
+          : {
+              etat: "attendre",
+              ouvreA: new Date(ouvre).toISOString(),
+              ouvreHeure: heureSimple(ouvre),
+              ouvreJour: debutDuJour(ouvre) === jour0 ? null : jourCourt(ouvre, maintenant),
+              ouvreChezVous: heureChezLui(new Date(ouvre), u.fuseau),
+            };
     }
     return {
       coursId: c.id,
@@ -702,7 +719,7 @@ export async function accueilSimple(u: Utilisateur, maintenant = Date.now()): Pr
       repere,
       heure: s ? heureSimple(s.debut) : null,
       heureChezVous: s ? heureChezLui(s.debut, u.fuseau) : null,
-      jour: s ? nomDuJour(s.debut) : null,
+      jour: s ? capitale(jourCourt(s.debut.getTime(), maintenant)) : null,
       seance: s ? { id: s.id, debut: s.debut.toISOString(), fin: new Date(finPrevueMs(s)).toISOString(), statut: s.statut } : null,
       live,
       liens: { cours: `/cours/${c.id}`, live: s ? `/live/${s.id}` : null, preparer: s ? `/enseigner/seances/${s.id}` : null },

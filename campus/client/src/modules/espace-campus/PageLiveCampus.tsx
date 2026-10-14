@@ -4,10 +4,12 @@
 // formateur, diapos, QR et code du campus, son), en plein écran, avec un seul bouton discret : « Quitter ».
 //   - Pas encore ouverte : « Ouvrir le cours » dès 1 h avant (comme l'ouverture automatique), sinon « Le cours
 //     commence à 8h30 : la salle s'ouvrira toute seule à 8h00 ».
-//   - Rechargement, ou ordinateur rallumé : un voile « Touchez l'écran pour reprendre le cours. » (plein écran et son).
+//   - Rechargement, ou ordinateur rallumé : un bandeau jaune « Touchez l'écran pour reprendre le cours. » en haut, qui
+//     ne cache rien (la vidéo, le QR et le code restent visibles) ; le premier toucher, n'importe où, remet le plein
+//     écran et le son.
 //   - Deux ordinateurs du campus sur le même cours : « Un autre ordinateur de … montre ce cours. Même salle ? Fermez-en un. »
 // L'ordinateur entre dans la classe comme une salle (serveur : estEcran), caméra et micro de la salle.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Play } from "lucide-react";
@@ -20,13 +22,13 @@ import { relancerSons } from "@/modules/visio/composants";
 import { EcranSeance } from "@/modules/live/PageSalle";
 import { useEcranAllume } from "@/modules/live/outils";
 import { t as textesCampus } from "@shared/textes/campus";
-import type { LiveCampusDto } from "@shared/espace-campus";
+import { deCampus, type LiveCampusDto } from "@shared/espace-campus";
 import type { EtatDirectDto, SeanceDetailDto } from "@shared/schema";
 import { Confirmation, lienCampus, useApiCampus } from "./composants";
 import { CLE_GESTE_LIVE, demanderPleinEcran } from "./PageCoursCampus";
 
 /**
- * Voile « Touchez l'écran pour reprendre le cours. » à l'arrivée sur la page ? Non quand on vient de toucher « Entrer
+ * Bandeau « Touchez l'écran pour reprendre le cours. » à l'arrivée sur la page ? Non quand on vient de toucher « Entrer
  * dans le live » (repère laissé par la page du cours, consommé ici) ; oui après un rechargement ou un ordinateur
  * rallumé : le navigateur n'a reçu aucun geste, ni le plein écran ni le son ne peuvent repartir sans un toucher.
  */
@@ -70,6 +72,24 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
     relancerSons(document.body);
     setVoile(false);
   };
+  // Le bandeau n'a de sens que sur l'écran d'un cours (à venir ou en direct), pas sur « Le cours est fini ».
+  const ecranDuCours = Boolean(data?.seanceId && !data.choix && (data.etat === "a_venir" || data.etat === "ouverte"));
+  // Le premier toucher (ou touche du clavier), n'importe où sur l'écran, remet le plein écran et le son : le bandeau ne
+  // bloque rien, personne n'a besoin de viser.
+  useEffect(() => {
+    if (!voile || !ecranDuCours) return;
+    const geste = () => {
+      demanderPleinEcran();
+      relancerSons(document.body);
+      setVoile(false);
+    };
+    document.addEventListener("click", geste, { capture: true, once: true });
+    document.addEventListener("keydown", geste, { capture: true, once: true });
+    return () => {
+      document.removeEventListener("click", geste, { capture: true });
+      document.removeEventListener("keydown", geste, { capture: true });
+    };
+  }, [voile, ecranDuCours]);
 
   const ouvrir = async (seanceId: number) => {
     setOuverture(true);
@@ -87,7 +107,7 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
   };
 
   const bandeau = (d: LiveCampusDto) => (seance: SeanceDetailDto | null, etat: EtatDirectDto | null) => (
-    <BandeauCampus d={d} etat={etat} titre={seance?.coursTitre || d.cours.titre} onQuitter={() => setQuitter(true)} />
+    <BandeauCampus d={d} etat={etat} titre={seance?.coursTitre || d.cours.titre} onQuitter={() => setQuitter(true)} reprendre={voile && ecranDuCours ? reprendre : undefined} />
   );
 
   let contenu;
@@ -117,10 +137,14 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
               key={x.seanceId}
               type="button"
               onClick={() => naviguer(lienCampus(`/mon-campus/cours/${id}/live`, { seance: x.seanceId }), { replace: true })}
-              className="min-h-[120px] w-full rounded-[24px] bg-orange px-6 text-left text-[36px] font-black text-encre"
+              className="flex min-h-[120px] w-full flex-col justify-center rounded-[24px] bg-orange px-6 py-4 text-left text-encre"
+              data-choix
             >
-              {x.heure}
-              {x.classes ? ` · ${x.classes}` : ""}
+              <span className="text-[36px] font-black leading-tight">
+                {x.heure}
+                {x.classes ? ` · ${x.classes}` : ""}
+              </span>
+              {x.detail && <span className="text-[26px] font-bold leading-tight">{x.detail}</span>}
             </button>
           ))}
         </main>
@@ -145,7 +169,9 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
             </>
           ) : (
             <p className="rounded-[24px] bg-nuit-carte px-6 py-5 text-[26px] font-black leading-snug sm:text-[32px]" role="status">
-              {data.ouvertureAutoA
+              {data.apresPrecedente && !data.ouvertureAutoA
+                ? tx("live.apresPrecedente", { v: { heure: data.heure ?? "" } })
+                : data.ouvertureAutoA
                 ? tx("live.attendre.auto", { v: { heure: data.heure ?? "", ouverture: data.ouvertureAutoA } })
                 : data.ouvrableA
                   ? tx("live.attendre.main", { v: { heure: data.heure ?? "", ouverture: data.ouvrableA } })
@@ -210,22 +236,23 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
         }}
         onNon={() => setQuitter(false)}
       />
-      {voile && (
-        <button type="button" onClick={reprendre} className="fixed inset-0 z-[90] grid place-items-center bg-black/90 px-8 text-center" data-voile>
-          <span className="text-[34px] font-black leading-tight text-white sm:text-[48px]">{tx("live.reprendre")}</span>
-        </button>
-      )}
     </div>
   );
 }
 
 /** Bandeau de l'écran du campus : logo, « Yamoussoukro · Marketing digital », l'heure, et « Quitter ». */
-function BandeauCampus({ d, etat, titre, onQuitter }: { d: LiveCampusDto; etat: EtatDirectDto | null; titre: string; onQuitter: () => void }) {
+function BandeauCampus({ d, etat, titre, onQuitter, reprendre }: { d: LiveCampusDto; etat: EtatDirectDto | null; titre: string; onQuitter: () => void; reprendre?: () => void }) {
   const tx = useTextes(textesCampus);
   const maintenant = useMaintenant(1000);
   const ecrans = etat?.campus.find((c) => c.siteId === d.campus.id)?.ecrans ?? d.ecransDuCampus;
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-6 lg:px-10">
+      {/* Après un rechargement : un bandeau qui ne cache rien ; le premier toucher, n'importe où, suffit. */}
+      {reprendre && (
+        <button type="button" onClick={reprendre} className="w-full rounded-[18px] bg-[#F5C542] px-5 py-3 text-center text-[24px] font-black leading-tight text-encre sm:text-[28px]" data-voile>
+          {tx("live.reprendre")}
+        </button>
+      )}
       <div className="flex min-w-0 items-center gap-3">
         <img src="/marque-2iae-detouree.png" alt="Groupe Écoles 2IAE" className="h-10 w-auto shrink-0 sm:h-12" />
         <span className="min-w-0 break-words text-[20px] font-bold text-nuit-texte">
@@ -234,7 +261,7 @@ function BandeauCampus({ d, etat, titre, onQuitter }: { d: LiveCampusDto; etat: 
       </div>
       {ecrans >= 2 && (
         <span className="order-last w-full rounded-[18px] bg-[#F5C542] px-4 py-2 text-[18px] font-bold text-encre sm:order-none sm:w-auto" role="status" data-deux-ecrans>
-          {tx("live.deuxEcrans", { v: { campus: d.campus.nomCourt } })} {tx("live.deuxEcrans.conseil")}
+          {tx("live.deuxEcrans", { v: { deCampus: deCampus(d.campus.nomCourt) } })} {tx("live.deuxEcrans.conseil")}
         </span>
       )}
       <div className="flex shrink-0 items-center gap-4">

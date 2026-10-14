@@ -18,6 +18,8 @@ export type CarreCampusDto = {
   repere: RepereCarre;
   /** « 8h30 » (heure d'Abidjan), avec le repère « ouvert » ou « aujourdhui ». */
   heure: string | null;
+  /** Les classes du campus qui suivent ce cours, par leur niveau : « 1BTS · 2BTS » (deux cours aux noms proches). */
+  classes: string;
 };
 
 /** GET /api/mon-campus */
@@ -37,7 +39,11 @@ export type CoursCampusDto = {
   campus: { id: number; nomCourt: string };
   apercu: boolean;
   cours: { id: number; code: string; titre: string; couleur: string; formateur: string | null };
-  live: { repere: RepereCarre; heure: string | null };
+  /**
+   * Le live du jour : repère (en direct, ouvert, prévu aujourd'hui), ou `fin` quand la séance du jour est finie,
+   * annulée ou n'a pas eu lieu (le bloc « Entrer dans le live » est alors grisé, sans plein écran).
+   */
+  live: { repere: RepereCarre; heure: string | null; fin: "fini" | "annule" | "non_tenu" | null };
   compteurs: { lecons: number; resumes: number; examens: number; notes: number };
 };
 
@@ -49,7 +55,7 @@ export type LiveCampusDto = {
   cours: { id: number; code: string; titre: string; couleur: string };
   seanceId: number | null;
   /** Deux séances du même cours à la même heure (deux sessions) : la personne choisit (?seance=). */
-  choix: { seanceId: number; heure: string; classes: string }[] | null;
+  choix: { seanceId: number; heure: string; classes: string; detail: string | null }[] | null;
   etat: EtatLiveCampus;
   /** Heure prévue du cours (ISO) et « 8h30 ». */
   debut: string | null;
@@ -64,6 +70,8 @@ export type LiveCampusDto = {
   prochaine: { debut: string; jour: string; heure: string } | null;
   /** Motif écrit par une personne (annulation). */
   motif: string | null;
+  /** Prévue, mais une séance précédente du même cours est encore en direct : la salle s'ouvre quand elle se ferme. */
+  apresPrecedente: boolean;
   /** Postes d'écran de ce campus sur cette classe en ce moment. */
   ecransDuCampus: number;
   apercu: boolean;
@@ -115,6 +123,15 @@ export const nomDuJour = (d: Date | string | number) => {
   const j = JOURS[new Date(d).getUTCDay()];
   return j.charAt(0).toUpperCase() + j.slice(1);
 };
+
+/**
+ * « de Riviera », « d'Azaguié », « d'Yopougon » non : « de Yopougon » (le Y y sonne comme une consonne). Élision devant
+ * une voyelle (accentuée ou non) ; sert aux titres et aux messages du campus (« Campus d'Azaguié »).
+ */
+export function deCampus(nom: string): string {
+  const n = nom.trim();
+  return /^[aeiouàâäéèêëîïôöùûüœæ]/i.test(n) ? `d'${n}` : `de ${n}`;
+}
 
 /** Première lettre en capitale : « Jeudi 15 octobre ». */
 export const capitale = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useTextes } from "@/lib/textes";
 import { t as textesCampus } from "@shared/textes/campus";
-import type { CoursCampusDto, NotesCampusDto } from "@shared/espace-campus";
+import { deCampus, type CoursCampusDto, type NotesCampusDto } from "@shared/espace-campus";
 import { BoutonRetour, ErreurCampus, PageCampus, Patience, lienCampus, useApiCampus } from "./composants";
 
 const note = (n: number) => String(Math.round(n * 10) / 10).replace(".", ",");
@@ -34,7 +34,7 @@ export default function PageNotesCampus({ coursId }: { coursId: string }) {
         <div>
           <h1 className="text-[40px] font-black leading-tight sm:text-[48px]">{tx("bloc.notes")}</h1>
           {c && <p className="text-[22px] text-texte-doux">{c.cours.titre}</p>}
-          {data && <p className="mt-1 text-[22px] font-bold">{tx("notes.sousTitre", { v: { campus: data.campus.nomCourt } })}</p>}
+          {data && <p className="mt-1 text-[22px] font-bold">{tx("notes.sousTitre", { v: { deCampus: deCampus(data.campus.nomCourt) } })}</p>}
         </div>
         {isLoading ? (
           <Patience />

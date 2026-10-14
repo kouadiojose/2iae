@@ -19,9 +19,11 @@ import { Marque, lienAide } from "@/components/layout/coquille";
 import { ActiverNotifications } from "@/modules/pwa/ActiverNotifications";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { rafraichir } from "@/lib/queryClient";
+import { useTextes } from "@/lib/textes";
 import { cn, nomComplet } from "@/lib/utils";
 import { LIBELLES_ROLES, estProfilCampus, estProfilRegie, libelleProfil, type Moi, type ParcoursBienvenue } from "@shared/schema";
 import { t as tRegie } from "@shared/textes/regie";
+import { t as tCampus } from "@shared/textes/campus";
 import { PiedAction, LienDiscret } from "./composants/PiedAction";
 import { PaveCode } from "./composants/PaveCode";
 import { FormulaireMotDePasse } from "./composants/FormulaireMotDePasse";
@@ -263,7 +265,8 @@ function Cadre({ children, entete, etapes, index = 0 }: { children: ReactNode; e
 }
 
 function BoutonAide({ moi }: { moi: Moi }) {
-  const lien = lienAide(moi);
+  // Compte de campus : son aide, c'est la direction (« Code perdu ? Appelez la direction. »), pas la vie scolaire.
+  const lien = estProfilCampus(moi) ? null : lienAide(moi);
   if (!lien) return <span className="h-12 w-1 shrink-0" />;
   return (
     <a
@@ -343,6 +346,7 @@ function EtapeMoi({ moi, onOui }: { moi: Moi; onOui: () => void }) {
 }
 
 function EtapeCode({ moi, onFini }: { moi: Moi; onFini: () => void }) {
+  const txCampus = useTextes(tCampus);
   const { data: parcours } = useQuery<ParcoursBienvenue>({ queryKey: ["/api/compte/parcours"] });
   const minimum = parcours?.longueurMinimale ?? (moi.role === "etudiant" ? 6 : 10);
   const [occupe, setOccupe] = useState(false);
@@ -381,6 +385,23 @@ function EtapeCode({ moi, onFini }: { moi: Moi; onFini: () => void }) {
             }
           }}
         />
+      </div>
+    );
+  }
+
+  // Compte de campus (lien d'invitation) : les mots de son espace, « code secret », et l'aide de la direction.
+  if (estProfilCampus(moi)) {
+    return (
+      <div className="flex flex-col gap-6 text-[20px]">
+        <Titre etiquette={txCampus("invitation.etiquette")} titre={txCampus("invitation.titre")} texte={txCampus("invitation.texte", { v: { n: minimum } })} />
+        <FormulaireMotDePasse
+          minimum={minimum}
+          mots={{ nouveau: txCampus("invitation.nouveau"), confirmer: txCampus("invitation.confirmer"), voir: txCampus("connexion.voir"), cacher: txCampus("connexion.cacher") }}
+          libelleBouton={txCampus("invitation.bouton")}
+          onValider={(n) => enregistrer(n)}
+          enveloppeBouton={(b) => <PiedAction>{b}</PiedAction>}
+        />
+        <p className="text-[20px] text-texte-doux">{txCampus("connexion.aide")}</p>
       </div>
     );
   }

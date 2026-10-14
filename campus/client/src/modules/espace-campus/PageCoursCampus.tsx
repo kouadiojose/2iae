@@ -35,7 +35,15 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
         ? tx("repere.ouvert", { v: { heure: d.live.heure ?? "" } })
         : d.live.repere === "aujourdhui"
           ? tx("repere.aujourdhui", { v: { heure: d.live.heure ?? "" } })
-          : tx("bloc.live.aucun");
+          : d.live.fin === "fini"
+            ? tx("bloc.live.fini")
+            : d.live.fin === "annule"
+              ? tx("bloc.live.annule")
+              : d.live.fin === "non_tenu"
+                ? tx("bloc.live.nonTenu")
+                : tx("bloc.live.aucun");
+  // Rien à montrer aujourd'hui (fini, annulé, pas de cours) : bloc grisé, sans plein écran ni écran vide.
+  const sansLive = (d: CoursCampusDto) => !d.live.repere;
   return (
     <PageCampus>
       {data?.apercu && <BandeauApercu campus={data.campus.nomCourt} />}
@@ -57,11 +65,11 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
             <GrosBloc
               grand
               testId="live"
-              ton={data.live.repere === "direct" || data.live.repere === "ouvert" ? "vert" : "orange"}
+              ton={data.live.repere === "direct" || data.live.repere === "ouvert" ? "vert" : sansLive(data) ? "gris" : "orange"}
               icone={<MonitorPlay className="h-14 w-14" />}
               titre={tx("bloc.live")}
               sousTitre={sousTitreLive(data)}
-              onClick={() => {
+              onClick={sansLive(data) ? undefined : () => {
                 demanderPleinEcran();
                 try {
                   sessionStorage.setItem(CLE_GESTE_LIVE, String(Date.now()));

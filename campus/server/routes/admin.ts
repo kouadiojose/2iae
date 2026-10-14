@@ -40,6 +40,7 @@ import {
 } from "../auth";
 import { codePermanentCampus, creerJeton, lienActivation, lienEspaceCampus, reinitialiserCode } from "../activation";
 import { t as tCampus } from "@shared/textes/campus";
+import { deCampus } from "@shared/espace-campus";
 import { urlFichier } from "../fichiers";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { creerClassesFilieres } from "../classes-filieres";
@@ -931,7 +932,7 @@ function comptesVisibles(u: Utilisateur): SQL | undefined {
 /** Message WhatsApp du compte de campus (vouvoiement) : le lien de son espace, l'e-mail et le code permanent. */
 async function messageCampus(c: Pick<Utilisateur, "prenom" | "email" | "siteId">, code: string, lien: string): Promise<string> {
   const [site] = c.siteId ? await db.select({ nomCourt: sites.nomCourt }).from(sites).where(eq(sites.id, c.siteId)) : [];
-  return tCampus("compte.message", { v: { prenom: c.prenom, campus: site?.nomCourt ?? "", lien, email: c.email ?? "", code } });
+  return tCampus("compte.message", { v: { prenom: c.prenom, deCampus: deCampus(site?.nomCourt ?? ""), lien, email: c.email ?? "", code } });
 }
 
 export function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "email"> & { telephone?: string | null }, code: string, lien: string, expireLe: Date): string {

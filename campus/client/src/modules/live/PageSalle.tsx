@@ -268,7 +268,17 @@ export function EcranSeance({ seanceId, siteId, campus }: { seanceId: number; si
   // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
   // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
   return (
-    <div className={seule ? "relative h-dvh w-screen overflow-hidden bg-black" : "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden"}>
+    <div
+      className={
+        seule
+          ? "relative h-dvh w-screen overflow-hidden bg-black"
+          : cn(
+              "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden",
+              // Écran du campus sur un vieil ordinateur de salle (1024×600) : rien n'est coupé hors de l'écran.
+              campus && "[@media(max-height:700px)]:!h-auto [@media(max-height:700px)]:!overflow-visible",
+            )
+      }
+    >
       {!seule &&
         (campus ? campus.bandeau(seance, etat) : <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe && !petit && !attente ? entrer : undefined} />)}
       {statut === "annulee" ? (
@@ -449,6 +459,8 @@ function AvantLeCours({ seance, etat, siteId, campus }: { seance: SeanceDetailDt
     <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
         {campus?.avant}
+        {/* Écran du campus : le seul conseil pour la personne, en haut, toujours visible (même sur un écran bas). */}
+        {campus && <p className="rounded-[24px] border border-nuit-ligne bg-nuit-panneau px-5 py-4 text-[clamp(20px,1.6vw,28px)] font-black" data-guide-campus>{campus.guide}</p>}
         <div className="flex flex-col gap-2">
           <span className="font-mono text-lg text-orange-peche">
             {seance.coursCode} · {avantDebutMin <= 0 ? "Le formateur arrive" : avantDebutMin < 10 ? "La salle ouvre, installez-vous" : "Prochain cours"}
@@ -496,7 +508,7 @@ function AvantLeCours({ seance, etat, siteId, campus }: { seance: SeanceDetailDt
           <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
           <CompteursEmarges etat={etat} grand />
         </div>
-        {campus ? <p className="rounded-[24px] border border-nuit-ligne bg-nuit-panneau px-5 py-4 text-[clamp(20px,1.6vw,28px)] font-black">{campus.guide}</p> : <GuideChargeDeCours />}
+        {!campus && <GuideChargeDeCours />}
         <LimiteSilencieuse nom="CoupeSalle">
           <CoupeSalle siteId={siteId} />
         </LimiteSilencieuse>
@@ -580,6 +592,12 @@ function PendantLeCours({
             <p className="text-[clamp(15px,1.3vw,22px)] text-nuit-doux">
               {ouverteEnAvance ? txOuverture("ouverte.salle.texte") : txOuverture("attente.salle.texte", { v: { heure: heure(seance.debut) } })}
             </p>
+            {/* Écran du campus : le conseil pour la personne, sous la ligne « Classe ouverte », toujours visible. */}
+            {campus && (
+              <p className="mt-1 text-[clamp(18px,1.4vw,24px)] font-black" data-guide-campus>
+                {guideCampus}
+              </p>
+            )}
           </div>
         )}
         {aLaParole && (
@@ -653,7 +671,6 @@ function PendantLeCours({
           {devoir && <DevoirSurEcran devoir={devoir} />}
           {/* Avant le début du cours (classe ouverte automatiquement) : le code en grand AVEC son QR, comme avant le cours. */}
           <BlocCode seance={seance} siteId={siteId} compact={!avantLeCours} colonne={avantLeCours} mini={Boolean(sondage || devoir)} />
-          {campus && avantLeCours && <p className="rounded-[20px] bg-nuit-panneau px-5 py-3 text-[clamp(18px,1.4vw,24px)] font-black">{guideCampus}</p>}
           {!sondage && !devoir && <CompteursEmarges etat={etat} liste />}
         </aside>
       )}

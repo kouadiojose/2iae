@@ -22,10 +22,10 @@ import { exigerConnexion, exigerDroit, moi, peut, perimetreSites } from "../auth
 import { route, idParam, ErreurHttp } from "../http";
 import { coursEnRegie, regieCours } from "../acces";
 import { intervenantsDesSeances, libelleDate } from "../programme-outils";
-import { utilisateursSur } from "../temps-reel";
+import { utilisateursPresentsSur } from "../temps-reel";
 import { repartitionDuSite } from "../salles-outils";
 import { numeroWhatsApp } from "./admin";
-import { canal, intervenantEstPresent, seanceAnimee } from "./live";
+import { canal, fermeeToutSeule, intervenantEstPresent, seanceAnimee } from "./live";
 import { lireReglageOuverture, REPERE_OUVERTURE_AUTO } from "../ouverture-auto";
 import { finDesLiens, jetonIntervenant, lienValide } from "./live-invite";
 import { nomDeSalle } from "@shared/salles";
@@ -207,6 +207,9 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
   ]);
   // Déjà ouvertes une fois à cet horaire, ou essai effacé dans l'heure : elles ne s'ouvrent plus d'elles-mêmes.
   const sansOuvertureAuto = new Set(reperes.map((r) => r.seanceId));
+  // Terminées par une fin automatique (live.ts : fermeeToutSeule) : « Rouvrir la classe » même après la fin prévue.
+  const fermeesSeules = new Set<number>();
+  for (const l of retenues) if (l.s.statut === "terminee" && l.s.termineeLe && maintenant.getTime() - l.s.termineeLe.getTime() < 2 * 3600_000 && (await fermeeToutSeule(l.s.id))) fermeesSeules.add(l.s.id);
   const idsPrincipaux = [...new Set(retenues.map((l) => l.formateurId).filter((x): x is number => Boolean(x)))];
   const principaux = new Map(
     (idsPrincipaux.length
@@ -227,7 +230,7 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
 
   return retenues.map(({ s, code, titreCours, couleur, formateurId, statutCours }): CoursRegieDto => {
     const fin = finPrevue(s);
-    const connectes = s.statut === "en_direct" ? utilisateursSur(canal(s.id)) : [];
+    const connectes = s.statut === "en_direct" ? utilisateursPresentsSur(canal(s.id)) : [];
     const intervenant = intervenants.get(s.id);
     const nomFormateur = intervenant?.nom ?? (formateurId ? (principaux.get(formateurId) ?? null) : null);
     const formateursDuCours = new Set([...(formateursDe.get(s.coursId) ?? []), ...(intervenant?.id ? [intervenant.id] : [])]);
@@ -265,8 +268,10 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
     const parLien = s.statut === "en_direct" && !formateurCompte && intervenantEstPresent(s.id);
     const ouvertureAuto =
       reglage.actif && statutCours === "publie" && etat === "a_venir" && !sansOuvertureAuto.has(s.id) ? new Date(s.debut.getTime() - reglage.minutes * MINUTE) : null;
-    // Reprise permise par le serveur (routes/live.ts : terminée depuis moins de 2 h), cours pas encore fini.
-    const peutRouvrir = s.statut === "terminee" && Boolean(s.termineeLe) && t0 - s.termineeLe!.getTime() < 2 * 3600_000 && fin.getTime() > t0;
+    // Reprise permise par le serveur (routes/live.ts : terminée depuis moins de 2 h), cours pas encore fini ; ou fermée
+    // toute seule (fermeture logique, après la fin prévue : une erreur se rattrape aussi après l'heure de fin).
+    const peutRouvrir =
+      s.statut === "terminee" && Boolean(s.termineeLe) && t0 - s.termineeLe!.getTime() < 2 * 3600_000 && (fin.getTime() > t0 || fermeesSeules.has(s.id));
     return {
       seanceId: s.id,
       titre: s.titre,

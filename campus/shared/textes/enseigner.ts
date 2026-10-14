@@ -313,8 +313,10 @@ const FR = {
   "blocs.live.aujourdhui": "Aujourd'hui à {heure}",
   "blocs.live.chezVous": "{heure} chez vous",
   "blocs.live.jour": "{jour} à {heure}",
-  "blocs.live.attendre": "Le live ouvrira à {heure}",
-  "blocs.live.revenir": "Revenez à {heure}.",
+  "blocs.live.attendre": "Le live ouvre à {heure}",
+  "blocs.live.ouvre": "le live ouvre à {heure}",
+  "blocs.live.revenir": "Revenez à {heure}",
+  "blocs.live.revenir.jour": "Revenez {jour} à {heure}",
   "blocs.live.aucun": "Pas de live prévu",
   "blocs.live.tropTot": "Le live s'ouvre 1 heure avant le cours, à {heure}.",
   "blocs.live.ouverture": "Ouverture…",
@@ -330,6 +332,7 @@ const FR = {
   "blocs.aucun.texte": "Vos cours sont dans « Plus ».",
   "blocs.erreur": "La page ne s'ouvre pas. Vérifiez internet.",
   "blocs.reessayer": "Réessayer",
+  "blocs.chargement": "Un instant, la page arrive.",
 } satisfies Dictionnaire;
 
 export const t = creerTextes(FR);

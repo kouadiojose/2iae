@@ -15,7 +15,7 @@ export type CarreFormateurDto = {
   heure: string | null;
   /** « 4h30 », si le fuseau du formateur n'est pas celui d'Abidjan. */
   heureChezVous: string | null;
-  /** « Jeudi ». */
+  /** « Jeudi » (dans les 6 jours), sinon « Vendredi 30 octobre ». */
   jour: string | null;
   /** La séance du moment de CE cours (en direct, sinon la prochaine prévue pas finie). */
   seance: { id: number; debut: string; fin: string; statut: "planifiee" | "en_direct" | "terminee" | "annulee" } | null;
@@ -23,7 +23,15 @@ export type CarreFormateurDto = {
    * « Entrer dans le live » : direct (aller au Studio), ouvrir (dès 1 h avant : la classe s'ouvre, le cours commence à
    * son heure), attendre (plus d'1 h avant : ouvreA), aucun (pas de séance).
    */
-  live: { etat: "direct" | "ouvrir" | "attendre" | "aucun"; ouvreA: string | null };
+  live: {
+    etat: "direct" | "ouvrir" | "attendre" | "aucun";
+    /** « attendre » : l'instant où le live pourra s'ouvrir (1 h avant le cours), son heure d'Abidjan (« 9h00 »), son
+     * jour quand ce n'est pas aujourd'hui (« samedi », « vendredi 30 octobre »), et l'heure chez lui (autre fuseau). */
+    ouvreA: string | null;
+    ouvreHeure: string | null;
+    ouvreJour: string | null;
+    ouvreChezVous: string | null;
+  };
   liens: { cours: string; live: string | null; preparer: string | null };
 };
 

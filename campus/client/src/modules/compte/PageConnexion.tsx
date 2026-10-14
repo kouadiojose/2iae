@@ -15,6 +15,7 @@ import { useTextes } from "@/lib/textes";
 import { t as textesCampus } from "@shared/textes/campus";
 import { useMoi } from "@/lib/auth";
 import { post, ErreurApi } from "@/lib/api";
+import { CLE_SESSION_PERDUE } from "@/lib/queryClient";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Champ, CaseACocher } from "@/components/ui/champs";
 import { Erreur } from "@/components/ui/divers";
@@ -30,17 +31,31 @@ export default function PageConnexion() {
   return <ConnexionCommune />;
 }
 
+/** La session de cet onglet a été fermée ailleurs il y a peu (lib/queryClient.ts) : repère lu une fois, puis effacé. */
+function sessionPerdueRecemment(): boolean {
+  try {
+    const t = Number(sessionStorage.getItem(CLE_SESSION_PERDUE) ?? 0);
+    sessionStorage.removeItem(CLE_SESSION_PERDUE);
+    return t > 0 && Date.now() - t < 10 * 60_000;
+  } catch {
+    return false;
+  }
+}
+
 /** « Espace du campus » : l'e-mail et le code secret donnés par la direction, puis « Entrer ». */
 function ConnexionCampus({ retour }: { retour: string }) {
   const { moi } = useMoi();
   const tx = useTextes(textesCampus);
-  const [, naviguer] = useLocation();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [voir, setVoir] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
-  if (moi && !envoi) return <Redirect to={destinationApresConnexion(moi, retour)} replace />;
+  // L'écran vient d'être déconnecté (nouveau code donné par la direction) : on le dit, simplement.
+  const [sortie] = useState(sessionPerdueRecemment);
+  // Connecté (déjà, ou juste après « Entrer ») : la page demandée. On attend que la personne soit connue de toute
+  // l'application avant de partir : sinon la page suivante se croit déconnectée un instant et repasse par la connexion.
+  if (moi) return <Redirect to={destinationApresConnexion(moi, retour)} replace />;
 
   async function entrer(e: FormEvent) {
     e.preventDefault();
@@ -50,12 +65,13 @@ function ConnexionCampus({ retour }: { retour: string }) {
     try {
       const m = await post<Moi>("/api/auth/connexion", { identifiant: email.trim(), motDePasse: code });
       installerMoi(m, true);
-      naviguer(destinationApresConnexion(m, retour), { replace: true });
     } catch (err) {
       setEnvoi(false);
       setCode("");
       // Trop d'essais : le message du serveur ; sinon une phrase simple.
-      setErreur(err instanceof ErreurApi && err.statut === 429 ? err.message : err instanceof ErreurApi && err.statut === 0 ? err.message : tx("connexion.erreur"));
+      // Trop d'essais : une phrase simple (le message du serveur tutoie et parle de la vie scolaire). Sans réseau : le
+      // message du réseau ; sinon « E-mail ou code secret faux ».
+      setErreur(err instanceof ErreurApi && err.statut === 429 ? tx("connexion.tropEssais") : err instanceof ErreurApi && err.statut === 0 ? err.message : tx("connexion.erreur"));
     }
   }
 
@@ -65,6 +81,11 @@ function ConnexionCampus({ retour }: { retour: string }) {
       <main className="mx-auto flex w-full max-w-xl flex-col gap-7 px-4 pb-16 pt-8 sm:pt-14">
         <img src="/marque-2iae.png" alt="Groupe Écoles 2IAE" className="h-14 w-auto self-start" />
         <h1 className="text-[40px] font-black leading-tight sm:text-[44px]">{tx("connexion.titre")}</h1>
+        {sortie && !erreur && (
+          <p className="rounded-[18px] bg-[#FFF3D6] px-5 py-4 text-[22px] font-bold text-encre" role="status" data-sortie>
+            {tx("connexion.sortie")}
+          </p>
+        )}
         <form onSubmit={entrer} className="flex flex-col gap-6" noValidate>
           <label className="flex flex-col gap-2">
             <span className="text-[22px] font-bold">{tx("connexion.email")}</span>

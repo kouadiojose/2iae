@@ -28,8 +28,8 @@ export default function PageEnseigner() {
         <h1 className="text-[34px] font-black leading-[1.05] tracking-serre sm:text-[40px]">{data ? `${data.salutation} ${data.prenom}.` : " "}</h1>
       </header>
       {isLoading ? (
-        <p className="text-[22px] text-texte-doux" aria-busy="true">
-          …
+        <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">
+          {tx("blocs.chargement")}
         </p>
       ) : error || !data ? (
         <div className="flex flex-col items-start gap-4">

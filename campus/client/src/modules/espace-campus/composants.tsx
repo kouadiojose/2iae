@@ -14,7 +14,7 @@ import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { couleurLisible } from "@/modules/cours/outils";
 import { t as textesCampus } from "@shared/textes/campus";
-import type { CarreCampusDto, RepereCarre } from "@shared/espace-campus";
+import { deCampus, type CarreCampusDto, type RepereCarre } from "@shared/espace-campus";
 
 /** Aperçu de la direction : ?site=3 suit toutes les adresses de l'espace. */
 export function siteApercu(): string | null {
@@ -54,7 +54,7 @@ export const styleCouleur = (couleur: string) => {
 /** Bandeau gris de l'aperçu de la direction. */
 export function BandeauApercu({ campus }: { campus: string }) {
   const tx = useTextes(textesCampus);
-  return <div className="bg-[#E9E5E1] px-4 py-3 text-center text-[18px] font-bold text-encre">{tx("accueil.apercu", { v: { campus } })}</div>;
+  return <div className="bg-[#E9E5E1] px-4 py-3 text-center text-[18px] font-bold text-encre">{tx("accueil.apercu", { v: { deCampus: deCampus(campus) } })}</div>;
 }
 
 /** Bouton « Retour » de 64 px (contour encre). */
@@ -90,7 +90,7 @@ export function PastilleRepere({ repere, heure, grande = false }: { repere: Repe
 }
 
 /** Un gros carré de cours : la couleur du cours, son nom en très gros, le repère en haut. */
-export function Carre({ carre, href }: { carre: Pick<CarreCampusDto, "titre" | "couleur" | "repere" | "heure" | "code">; href: string }) {
+export function Carre({ carre, href }: { carre: Pick<CarreCampusDto, "titre" | "couleur" | "repere" | "heure" | "code"> & { classes?: string }; href: string }) {
   return (
     <Link
       href={href}
@@ -101,7 +101,11 @@ export function Carre({ carre, href }: { carre: Pick<CarreCampusDto, "titre" | "
       <div className="min-h-[38px]">
         <PastilleRepere repere={carre.repere} heure={carre.heure} />
       </div>
-      <span className="line-clamp-3 break-words text-[32px] font-black leading-[1.05] sm:text-[40px]">{carre.titre}</span>
+      {/* Interligne et marge basse : les jambages (g, p, y) de la dernière ligne ne sont pas coupés. */}
+      <span className="flex flex-col gap-1">
+        <span className="line-clamp-3 break-words pb-[0.12em] text-[32px] font-black leading-[1.12] sm:text-[40px]">{carre.titre}</span>
+        {carre.classes && <span className="text-[20px] font-bold leading-snug opacity-90">{carre.classes}</span>}
+      </span>
     </Link>
   );
 }
@@ -227,8 +231,12 @@ export function Confirmation({
   );
 }
 
-/** « Se déconnecter » (lien discret), confirmé : « Se déconnecter de cet ordinateur ? ». */
-export function BoutonDeconnexion() {
+/**
+ * « Se déconnecter » (lien discret), confirmé : « Se déconnecter de cet ordinateur ? ». Le compte du campus revient à
+ * la page simple « Espace du campus » (l'e-mail, le code secret, « Entrer ») ; la direction (aperçu), à la connexion
+ * commune.
+ */
+export function BoutonDeconnexion({ apercu = false }: { apercu?: boolean }) {
   const tx = useTextes(textesCampus);
   const [ouverte, setOuverte] = useState(false);
   return (
@@ -242,7 +250,7 @@ export function BoutonDeconnexion() {
         titre={tx("deconnexion.titre")}
         oui={tx("deconnexion.oui")}
         non={tx("deconnexion.non")}
-        onOui={() => void seDeconnecter()}
+        onOui={() => void seDeconnecter(apercu ? undefined : `/connexion?retour=${encodeURIComponent("/mon-campus")}`)}
         onNon={() => setOuverte(false)}
       />
     </>
@@ -256,17 +264,18 @@ export function EnTeteCampus({ apercu, campus }: { apercu?: boolean; campus?: st
       {apercu && campus && <BandeauApercu campus={campus} />}
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 pt-4 sm:px-8 sm:pt-6">
         <img src="/marque-2iae.png" alt="Groupe Écoles 2IAE" className="h-12 w-auto sm:h-14" />
-        <BoutonDeconnexion />
+        <BoutonDeconnexion apercu={apercu} />
       </header>
     </>
   );
 }
 
-/** Page qui charge : une phrase, pas d'animation. */
+/** Page qui charge : une phrase, pas d'animation (« Un instant, la page arrive. »). */
 export function Patience() {
+  const tx = useTextes(textesCampus);
   return (
     <div className="grid min-h-[50dvh] place-items-center px-4" aria-busy="true">
-      <p className="text-[24px] font-bold text-texte-doux">…</p>
+      <p className="text-[24px] font-bold text-texte-doux">{tx("chargement")}</p>
     </div>
   );
 }

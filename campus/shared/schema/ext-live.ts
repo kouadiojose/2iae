@@ -296,6 +296,9 @@ export type SeanceDetailDto = {
   /** Classe ouverte automatiquement où aucun animateur n'est encore entré (enAttenteAnimateur). */
   attenteAnimateur: boolean;
   termineeLe: string | null;
+  /** Terminée par une fin automatique (fermeture logique, séance suivante du cours qui attendait, séance oubliée) :
+   * « Rouvrir la classe » reste possible 2 h, même après la fin prévue. */
+  fermeeToutSeule: boolean;
   motifAnnulation: string | null;
   diapos: DiapoDto[];
   diapoCourante: number;

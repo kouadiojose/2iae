@@ -16,10 +16,12 @@ import {
   utilisateurs,
   seances,
   devoirs,
+  estProfilCampus,
   type Utilisateur,
   type Cours,
 } from "@shared/schema";
 import { debutDuCours } from "@shared/ouverture";
+import { anneesDesCoursDuSite } from "./salles-outils";
 
 /** Sites des classes qui suivent un cours. */
 async function sitesDuCours(coursId: number): Promise<number[]> {
@@ -33,6 +35,10 @@ async function sitesDuCours(coursId: number): Promise<number[]> {
 
 /** Identifiants des cours visibles par cette personne. */
 export async function idsCoursAccessibles(u: Utilisateur): Promise<number[]> {
+  // Compte de campus (l'écran des salles d'un campus) : seulement les cours PUBLIÉS suivis par une classe de son campus
+  // (la même règle que son espace, routes/espace-campus.ts) ; ni brouillons, ni cours sans classe, ni ceux d'un autre
+  // campus suivis par inscription individuelle.
+  if (estProfilCampus(u)) return u.siteId ? [...(await anneesDesCoursDuSite(u.siteId)).keys()] : [];
   if (estEquipe(u)) {
     const perimetre = perimetreSites(u);
     const tous = await db.select({ id: cours.id }).from(cours);
@@ -87,6 +93,7 @@ export async function idsCoursAccessibles(u: Utilisateur): Promise<number[]> {
 
 /** La personne peut-elle consulter ce cours ? */
 export async function peutVoirCours(u: Utilisateur, coursId: number): Promise<boolean> {
+  if (estProfilCampus(u)) return u.siteId ? (await anneesDesCoursDuSite(u.siteId, coursId)).has(coursId) : false;
   if (estEquipe(u)) {
     const perimetre = perimetreSites(u);
     if (!perimetre) return true;

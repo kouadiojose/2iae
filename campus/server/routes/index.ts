@@ -47,8 +47,11 @@ import { enregistrerCrm } from "./crm";
 import { enregistrerScolarite } from "./scolarite";
 import { enregistrerVisioCampus } from "../visio-campus";
 import { enregistrerTravauxIa } from "./travaux-ia";
+import { filtreCompteCampus } from "../campus-filtre";
 
 export function enregistrerRoutes(app: Express) {
+  // Compte de campus (écran des salles d'un campus) : refus par défaut, avant toutes les routes (campus-filtre.ts).
+  app.use("/api", filtreCompteCampus);
   enregistrerPublic(app);
   enregistrerAndroid(app);
   enregistrerAuth(app);

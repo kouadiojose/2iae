@@ -1,5 +1,5 @@
 // /mon-campus/cours/:coursId/resumes : « Les résumés de cours ». Une grosse ligne par cours complet prêt (tiré de
-// l'enregistrement : fiche, exercices, quiz) ; un toucher l'ouvre (page existante /mediatheque/cours/:seanceId).
+// l'enregistrement : fiche, exercices, quiz) ; un toucher l'ouvre dans l'espace du campus (PageResumeCampus).
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, FileText } from "lucide-react";
@@ -36,7 +36,7 @@ export default function PageResumesCampus({ coursId }: { coursId: string }) {
             {data.map((r) => (
               <Link
                 key={r.seanceId}
-                href={`/mediatheque/cours/${r.seanceId}`}
+                href={lienCampus(`/mon-campus/cours/${id}/resumes/${r.seanceId}`)}
                 className="flex min-h-[80px] items-center gap-4 rounded-[20px] border-[3px] border-encre bg-white px-5 py-3 text-encre no-underline hover:bg-creme"
               >
                 <FileText className="h-8 w-8 shrink-0 text-orange-fonce" aria-hidden />

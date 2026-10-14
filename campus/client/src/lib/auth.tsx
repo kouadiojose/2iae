@@ -66,11 +66,16 @@ async function retirerRappelsDeCeTelephone() {
   await Promise.race([retrait, new Promise((fini) => setTimeout(fini, DELAI_RETRAIT_RAPPELS_MS))]);
 }
 
-export async function seDeconnecter() {
+/**
+ * Déconnecte ce téléphone ou cet ordinateur, puis ouvre la page de connexion (`vers` : une page de connexion
+ * particulière, chemin interne seulement ; par exemple « /connexion?retour=%2Fmon-campus », la page simple de l'espace du
+ * campus).
+ */
+export async function seDeconnecter(vers?: string) {
   await retirerRappelsDeCeTelephone();
   await post("/api/auth/deconnexion").catch(() => undefined);
   queryClient.clear();
-  window.location.href = "/connexion";
+  window.location.href = cheminInterne(vers) ?? "/connexion";
 }
 
 /**

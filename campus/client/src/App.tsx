@@ -4,15 +4,16 @@ import { Suspense, useEffect, useState } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
-import { FournisseurAuth, useMoi, accueilDe, accueilDuRole, profilPermet, basculerCasquette } from "@/lib/auth";
-import { libelleProfil, LIBELLES_ROLES, type Casquette, type Role } from "@shared/schema";
+import { FournisseurAuth, useMoi, accueilDe, accueilDuRole, profilPermet, basculerCasquette, seDeconnecter } from "@/lib/auth";
+import { estProfilCampus, libelleProfil, LIBELLES_ROLES, type Casquette, type Role } from "@shared/schema";
+import { t as textesCampus } from "@shared/textes/campus";
 import { t as textesSalles } from "@shared/textes/salles";
 import { FournisseurFlux } from "@/lib/flux";
 import { Coquille } from "@/components/layout/coquille";
 import { Toasts, toast } from "@/components/ui/toast";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { useTextes } from "@/lib/textes";
-import { Repeat } from "lucide-react";
+import { LogIn, Repeat } from "lucide-react";
 import type { DefRoute } from "@/routes-types";
 
 // Toutes les routes déclarées par les modules (modules/*/routes.tsx).
@@ -86,6 +87,49 @@ function PageAutreCasquette({ actuel, casquette }: { actuel: Role; casquette: Ca
   );
 }
 
+/**
+ * Le lien de l'espace du campus (/mon-campus) ouvert sur un ordinateur déjà connecté avec un autre compte (l'ancien
+ * écran « salle », un formateur, un étudiant, la vie scolaire) : au lieu d'un refus qui ramène vers l'autre compte, un
+ * gros bouton « Entrer avec le compte du campus » qui déconnecte cet ordinateur et ouvre la page « Espace du campus »
+ * (l'e-mail et le code secret), qui revient ensuite à la page demandée.
+ */
+function PageAutreCompteCampus() {
+  const tx = useTextes(textesCampus);
+  const { moi } = useMoi();
+  const [envoi, setEnvoi] = useState(false);
+  const ici = window.location.pathname + window.location.search;
+  return (
+    <div className="min-h-dvh bg-white text-encre">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-7 px-4 pb-16 pt-8 sm:pt-14">
+        <img src="/marque-2iae.png" alt="Groupe Écoles 2IAE" className="h-14 w-auto self-start" />
+        <h1 className="text-[36px] font-black leading-tight sm:text-[44px]">{tx("autreCompte.titre")}</h1>
+        <p className="text-[22px] leading-snug">{tx("autreCompte.texte")}</p>
+        <button
+          type="button"
+          disabled={envoi}
+          onClick={() => {
+            setEnvoi(true);
+            void seDeconnecter(`/connexion?retour=${encodeURIComponent(ici)}`);
+          }}
+          className="flex min-h-[120px] w-full items-center justify-center gap-4 rounded-[24px] bg-orange px-6 text-[28px] font-black text-encre disabled:opacity-80 sm:text-[32px]"
+          data-autre-compte
+        >
+          <LogIn className="h-10 w-10 shrink-0" aria-hidden />
+          {tx("autreCompte.bouton")}
+        </button>
+        {moi && (
+          <a href={accueilDe(moi)} className="self-start text-[20px] font-bold text-texte-doux underline underline-offset-4">
+            {tx("autreCompte.rester")}
+          </a>
+        )}
+      </main>
+    </div>
+  );
+}
+
+/** Pages ouvertes au compte de campus : son espace, et le premier choix du code (lien d'invitation). */
+const pageDuCompteCampus = (chemin: string) => chemin === "/mon-campus" || chemin.startsWith("/mon-campus/") || chemin === "/bienvenue";
+
 function PageIntrouvable() {
   const { moi } = useMoi();
   return (
@@ -125,6 +169,18 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
     return <Redirect to={`/connexion?retour=${retour}`} replace />;
   }
   if (moi.doitChangerMotDePasse && chemin !== "/bienvenue") return <Redirect to="/bienvenue" replace />;
+  // Compte de campus (l'écran des salles d'un campus) : rien d'autre que son espace (le serveur refuse aussi tout le
+  // reste : campus-filtre.ts). Un lien reçu (/live/12, /profil, /salle…) ramène aux carrés de son campus.
+  if (estProfilCampus(moi) && !pageDuCompteCampus(chemin)) {
+    // Le lien d'une classe (/live/12, reçu par message) : sa page renvoie au carré de ce cours, sans la coquille.
+    if (/^\/live\/\d+$/.test(chemin))
+      return (
+        <Suspense fallback={<EcranChargement />}>
+          <Page {...params} />
+        </Suspense>
+      );
+    return <Redirect to="/mon-campus" replace />;
+  }
 
   const autorise = def.acces === "connecte" || def.acces.includes(moi.role);
   // Équipe : le profil doit aussi permettre la page (ext-profils.ts).
@@ -142,6 +198,8 @@ function Garde({ def, params }: { def: DefRoute; params: Record<string, string> 
       </Suspense>
     ) : autreCasquette ? (
       <PageAutreCasquette actuel={moi.role} casquette={autreCasquette} />
+    ) : pageDuCompteCampus(chemin) && chemin !== "/bienvenue" ? (
+      <PageAutreCompteCampus />
     ) : (
       <PageInterdite profil={autorise} />
     );

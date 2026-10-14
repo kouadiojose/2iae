@@ -15,9 +15,11 @@ type Props = {
   onValider: (nouveau: string, actuel?: string) => Promise<void>;
   /** Enveloppe du bouton (ex. barre collée en bas de l'écran sur téléphone). */
   enveloppeBouton?: (bouton: ReactNode) => ReactNode;
+  /** Autres mots pour les champs (compte de campus : « code secret » plutôt que « mot de passe »). */
+  mots?: { nouveau: string; confirmer: string; voir: string; cacher: string };
 };
 
-export function FormulaireMotDePasse({ minimum, actuelRequis, libelleBouton, onValider, enveloppeBouton }: Props) {
+export function FormulaireMotDePasse({ minimum, actuelRequis, libelleBouton, onValider, enveloppeBouton, mots }: Props) {
   const [actuel, setActuel] = useState("");
   const [nouveau, setNouveau] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -33,7 +35,7 @@ export function FormulaireMotDePasse({ minimum, actuelRequis, libelleBouton, onV
   async function envoyer(e: FormEvent) {
     e.preventDefault();
     if (actuelRequis && !actuel) return setErreur("Tapez d'abord votre mot de passe actuel.");
-    if (nouveau.length < minimum) return setErreur(`Votre mot de passe doit faire au moins ${minimum} caractères.`);
+    if (nouveau.length < minimum) return setErreur(mots ? `${minimum} caractères au moins, s'il vous plaît.` : `Votre mot de passe doit faire au moins ${minimum} caractères.`);
     if (nouveau !== confirmation) return setErreur("Les deux saisies ne sont pas identiques.");
     setErreur(null);
     setEnvoi(true);
@@ -55,11 +57,11 @@ export function FormulaireMotDePasse({ minimum, actuelRequis, libelleBouton, onV
   return (
     <form onSubmit={envoyer} className="flex flex-col gap-4" noValidate>
       {actuelRequis && <ChampSecret libelle="Mot de passe actuel" valeur={actuel} onChange={setActuel} voir={voir} autoComplete="current-password" />}
-      <ChampSecret libelle="Nouveau mot de passe" valeur={nouveau} onChange={setNouveau} voir={voir} autoComplete="new-password" />
-      <ChampSecret libelle="Confirmez-le" valeur={confirmation} onChange={setConfirmation} voir={voir} autoComplete="new-password" />
+      <ChampSecret libelle={mots?.nouveau ?? "Nouveau mot de passe"} valeur={nouveau} onChange={setNouveau} voir={voir} autoComplete="new-password" />
+      <ChampSecret libelle={mots?.confirmer ?? "Confirmez-le"} valeur={confirmation} onChange={setConfirmation} voir={voir} autoComplete="new-password" />
       <button type="button" onClick={() => setVoir((v) => !v)} className="flex min-h-[44px] items-center gap-2 self-start text-sm font-bold text-texte-doux hover:text-encre">
         {voir ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        {voir ? "Cacher les mots de passe" : "Afficher les mots de passe"}
+        {voir ? (mots?.cacher ?? "Cacher les mots de passe") : (mots?.voir ?? "Afficher les mots de passe")}
       </button>
       <ul className="flex flex-col gap-1.5" aria-label="Règles du mot de passe">
         {regles.map((r) => (

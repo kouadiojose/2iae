@@ -30,7 +30,7 @@ import { lireReglageOuverture, REPERE_OUVERTURE_AUTO } from "../ouverture-auto";
 import { postesSur } from "../temps-reel";
 import { echeance } from "../evaluations-outils";
 import * as visio from "../visio";
-import { canal, ouvrirCommeAuto } from "./live";
+import { canal, finieSansAnimateur, ouvrirCommeAuto } from "./live";
 import { notesPubliees } from "./evaluations";
 import { debutDuJour, finPrevueMs, repereDe, seancesDuMoment, trierCarres } from "../espace-campus";
 import {
@@ -111,6 +111,19 @@ async function etudiantsDuCampus(coursId: number, siteId: number): Promise<Utili
   return (await etudiantsDuCours(coursId)).filter((e) => e.siteId === siteId);
 }
 
+/** Les classes du campus qui suivent chaque cours, par leur niveau (« 1BTS · 2BTS ») : la ligne sous le nom du carré. */
+async function niveauxDesCours(coursIds: number[], siteId: number): Promise<Map<number, string>> {
+  if (!coursIds.length) return new Map();
+  const lignes = await db
+    .selectDistinct({ coursId: coursClasses.coursId, nom: classes.nom, niveau: classes.niveau })
+    .from(coursClasses)
+    .innerJoin(classes, eq(classes.id, coursClasses.classeId))
+    .where(and(inArray(coursClasses.coursId, coursIds), eq(classes.siteId, siteId)));
+  const parCours = new Map<number, Set<string>>();
+  for (const l of lignes) parCours.set(l.coursId, (parCours.get(l.coursId) ?? new Set()).add(l.niveau.trim() || l.nom));
+  return new Map([...parCours].map(([id, n]) => [id, [...n].sort((a, b) => a.localeCompare(b, "fr", { numeric: true })).join(" · ")]));
+}
+
 /** « 8h30 · 1BTS » : les classes de ce campus pour chaque séance (emploi du temps, sinon les classes du cours). */
 async function classesPourChoix(liste: Seance[], siteId: number): Promise<Map<number, string>> {
   const parSeance = await classesDesSeances(liste.map((s) => s.id));
@@ -129,6 +142,31 @@ async function classesPourChoix(liste: Seance[], siteId: number): Promise<Map<nu
   );
 }
 
+/**
+ * Ce qui distingue deux séances au même libellé (« 11h00 · 1BTS » deux fois : séances posées hors de l'emploi du temps,
+ * avec toutes les classes du cours) : leur titre s'ils diffèrent, sinon leur formateur, sinon « 1er groupe »,
+ * « 2e groupe » dans l'ordre de création. Rien quand les libellés sont déjà différents.
+ */
+async function detailsPourChoix(liste: Seance[], noms: Map<number, string>): Promise<Map<number, string>> {
+  const details = new Map<number, string>();
+  const libelle = (s: Seance) => `${heureSimple(s.debut)} · ${noms.get(s.id) ?? ""}`;
+  const pareils = liste.filter((s) => liste.some((x) => x.id !== s.id && libelle(x) === libelle(s)));
+  if (!pareils.length) return details;
+  const titres = new Set(pareils.map((s) => s.titre.trim()));
+  if (titres.size === pareils.length) {
+    for (const s of pareils) details.set(s.id, s.titre.trim());
+    return details;
+  }
+  const intervenants = await intervenantsDesSeances(pareils.map((s) => s.id));
+  const formateurs = pareils.map((s) => intervenants.get(s.id)?.nom ?? "");
+  if (new Set(formateurs).size === pareils.length && formateurs.every(Boolean)) {
+    pareils.forEach((s, i) => details.set(s.id, `avec ${formateurs[i]}`));
+    return details;
+  }
+  [...pareils].sort((a, b) => a.id - b.id).forEach((s, i) => details.set(s.id, i === 0 ? "1er groupe" : `${i + 1}e groupe`));
+  return details;
+}
+
 /** L'état du live d'un cours pour l'écran du campus (LiveCampusDto). */
 async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | null, choix: Seance[] | null, prochaine: Seance | null, enDirect: Seance[]): Promise<LiveCampusDto> {
   const maintenant = Date.now();
@@ -140,10 +178,11 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
   };
   if (choix && choix.length >= 2) {
     const noms = await classesPourChoix(choix, ctx.site.id);
+    const details = await detailsPourChoix(choix, noms);
     return {
       ...base,
       seanceId: null,
-      choix: choix.map((x) => ({ seanceId: x.id, heure: heureSimple(x.debut), classes: noms.get(x.id) ?? "" })),
+      choix: choix.map((x) => ({ seanceId: x.id, heure: heureSimple(x.debut), classes: noms.get(x.id) ?? "", detail: details.get(x.id) ?? null })),
       etat: "a_venir",
       debut: choix[0].debut.toISOString(),
       heure: heureSimple(choix[0].debut),
@@ -151,11 +190,12 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
       ouvrableA: null,
       ouvertureAutoA: null,
       motif: null,
+      apresPrecedente: false,
       ecransDuCampus: 0,
     };
   }
   if (!s) {
-    return { ...base, seanceId: null, choix: null, etat: "aucune", debut: null, heure: null, peutOuvrir: false, ouvrableA: null, ouvertureAutoA: null, motif: null, ecransDuCampus: 0 };
+    return { ...base, seanceId: null, choix: null, etat: "aucune", debut: null, heure: null, peutOuvrir: false, ouvrableA: null, ouvertureAutoA: null, motif: null, apresPrecedente: false, ecransDuCampus: 0 };
   }
   const etat: LiveCampusDto["etat"] =
     s.statut === "planifiee"
@@ -168,7 +208,9 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
             ? "non_tenue"
             : "annulee";
   const ouvreA = s.debut.getTime() - AVANCE_OUVERTURE_MS;
-  const autreEnDirect = enDirect.some((x) => x.id !== s.id);
+  // Une autre séance du même cours en direct empêche d'ouvrir celle-ci, sauf une séance sœur à la même heure (deux
+  // sessions du même cours, en parallèle dans deux salles : chacune s'ouvre).
+  const autreEnDirect = enDirect.some((x) => x.id !== s.id && x.debut.getTime() !== s.debut.getTime());
   const peutOuvrir = s.statut === "planifiee" && ouvreA <= maintenant && maintenant < finPrevueMs(s) && !autreEnDirect;
   let ouvertureAutoA: string | null = null;
   if (s.statut === "planifiee") {
@@ -178,7 +220,24 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
       .from(rappelsLive)
       .where(and(eq(rappelsLive.seanceId, s.id), eq(rappelsLive.type, REPERE_OUVERTURE_AUTO)))
       .limit(1);
-    if (reglage.actif && c.statut === "publie" && !repere) ouvertureAutoA = heureSimple(s.debut.getTime() - reglage.minutes * MINUTE);
+    // L'ouverture automatique n'ouvre que la première de deux séances du même cours à la même heure (un seul rappel
+    // aux étudiants du cours) : la seconde s'ouvre à la main (« Ouvrir le cours », le formateur).
+    const [premiere] = await db
+      .select({ id: seances.id })
+      .from(seances)
+      .where(
+        and(
+          eq(seances.coursId, s.coursId),
+          eq(seances.debut, s.debut),
+          sql`${seances.id} < ${s.id}`,
+          inArray(seances.statut, ["planifiee", "en_direct"]),
+          sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats dx WHERE dx.seance_id = ${seances.id})`,
+        ),
+      )
+      .limit(1);
+    const aVenir = s.debut.getTime() - reglage.minutes * MINUTE > maintenant;
+    // Une séance précédente du même cours encore en direct : l'ouverture automatique attend qu'elle se ferme.
+    if (reglage.actif && c.statut === "publie" && !repere && !premiere && (aVenir || !autreEnDirect)) ouvertureAutoA = heureSimple(s.debut.getTime() - reglage.minutes * MINUTE);
   }
   return {
     ...base,
@@ -191,13 +250,14 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
     ouvrableA: s.statut === "planifiee" && ouvreA > maintenant ? heureSimple(ouvreA) : null,
     ouvertureAutoA,
     motif: s.statut === "annulee" && s.motifAnnulation !== MOTIF_NON_TENUE ? s.motifAnnulation : null,
+    apresPrecedente: s.statut === "planifiee" && autreEnDirect && enDirect.some((x) => x.debut.getTime() < s.debut.getTime()),
     ecransDuCampus: s.statut === "en_direct" || s.statut === "planifiee" ? postesSur(canal(s.id), (x) => estEcran(x) && x.siteId === ctx.site.id) : 0,
   };
 }
 
 /** Le live d'un cours, éventuellement pour la séance choisie (?seance=, une séance de CE cours). */
 async function liveDuCours(ctx: Contexte, c: typeof cours.$inferSelect, seanceDemandee: number | null): Promise<LiveCampusDto> {
-  const moment = (await seancesDuMoment([c.id], Date.now())).get(c.id)!;
+  const moment = (await seancesDuMoment([c.id], Date.now(), { finieSansAnimateur })).get(c.id)!;
   if (seanceDemandee !== null) {
     const [x] = await db.select().from(seances).where(and(eq(seances.id, seanceDemandee), eq(seances.coursId, c.id)));
     if (!x) throw introuvable("Séance");
@@ -227,10 +287,11 @@ export function enregistrerEspaceCampus(app: Express) {
       const liste = ids.length
         ? await db.select({ id: cours.id, code: cours.code, titre: cours.titre, couleur: cours.couleur }).from(cours).where(inArray(cours.id, ids))
         : [];
-      const moments = await seancesDuMoment(ids, maintenant);
+      const moments = await seancesDuMoment(ids, maintenant, { finieSansAnimateur });
+      const niveaux = await niveauxDesCours(ids, ctx.site.id);
       const carres = liste.map((c) => {
         const s = moments.get(c.id)?.seance ?? null;
-        return { coursId: c.id, code: c.code, titre: c.titre, couleur: c.couleur, ...repereDe(s, maintenant), debutMs: s?.debut.getTime() ?? 0 };
+        return { coursId: c.id, code: c.code, titre: c.titre, couleur: c.couleur, ...repereDe(s, maintenant), classes: niveaux.get(c.id) ?? "", debutMs: s?.debut.getTime() ?? 0 };
       });
       const dto: EspaceCampusDto = {
         campus: campusDto(ctx.site),
@@ -251,7 +312,7 @@ export function enregistrerEspaceCampus(app: Express) {
       const ctx = await contexteDe(req, res);
       const c = await coursDuCampus(ctx.site.id, idParam(req));
       const maintenant = Date.now();
-      const moment = (await seancesDuMoment([c.id], maintenant)).get(c.id)!;
+      const moment = (await seancesDuMoment([c.id], maintenant, { finieSansAnimateur })).get(c.id)!;
       const etudiants = await etudiantsDuCampus(c.id, ctx.site.id);
       const idsEtudiants = etudiants.map((e) => e.id);
       const [intervenant, principal, [nbLecons], resumes, [nbExamens], notees] = await Promise.all([
@@ -276,7 +337,17 @@ export function enregistrerEspaceCampus(app: Express) {
         campus: campusDto(ctx.site),
         apercu: ctx.apercu,
         cours: { id: c.id, code: c.code, titre: c.titre, couleur: c.couleur, formateur: intervenant?.nom || (p ? `${p.prenom} ${p.nom}`.trim() : null) },
-        live: repereDe(moment.seance, maintenant),
+        live: {
+          ...repereDe(moment.seance, maintenant),
+          fin:
+            moment.seance?.statut === "terminee"
+              ? "fini"
+              : moment.seance?.statut === "annulee"
+                ? moment.seance.motifAnnulation === MOTIF_NON_TENUE
+                  ? "non_tenu"
+                  : "annule"
+                : null,
+        },
         compteurs: { lecons: nbLecons?.n ?? 0, resumes: resumes.rows[0]?.n ?? 0, examens: nbExamens?.n ?? 0, notes: notees.length },
       };
       res.json(dto);
@@ -322,6 +393,7 @@ export function enregistrerEspaceCampus(app: Express) {
           and(
             eq(seances.coursId, s.coursId),
             ne(seances.id, s.id),
+            ne(seances.debut, s.debut),
             eq(seances.statut, "en_direct"),
             sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats dx WHERE dx.seance_id = ${seances.id} AND NOT dx.prevenir)`,
           ),

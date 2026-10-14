@@ -83,7 +83,7 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
 
 /** Séance annulée ou terminée : message clair, présence, replay. */
 type SeanceFinie = Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> &
-  Partial<Pick<SeanceDetailDto, "debut" | "dureeMinutes" | "termineeLe" | "peutModifier" | "peutProgrammer">>;
+  Partial<Pick<SeanceDetailDto, "debut" | "dureeMinutes" | "termineeLe" | "fermeeToutSeule" | "peutModifier" | "peutProgrammer">>;
 
 export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; devoirDirect?: DevoirDirectDto | null }) {
   const annulee = seance.statut === "annulee";
@@ -103,14 +103,15 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
   const regie = estProfilRegie(moi);
   const voitBilan = moi?.role !== "vie_scolaire" || profilPermet(moi, "presences_voir");
   // Régie seule (sans « C'était un essai ») : une classe fermée trop tôt, par erreur, se rouvre tant que sa fin prévue
-  // n'est pas passée et qu'elle est terminée depuis moins de 2 h (la reprise que le serveur permet).
+  // n'est pas passée et qu'elle est terminée depuis moins de 2 h (la reprise que le serveur permet) ; fermée toute seule
+  // (fermeture logique, après la fin prévue), elle se rouvre aussi après la fin prévue, pendant ces 2 h.
   const termineeLe = seance.termineeLe ? new Date(seance.termineeLe).getTime() : maintenant;
   const rouvrable =
     regie &&
     seance.statut === "terminee" &&
     !(seance.peutProgrammer ?? seance.peutModifier) &&
     Boolean(seance.debut && seance.dureeMinutes) &&
-    new Date(seance.debut!).getTime() + seance.dureeMinutes! * 60_000 > maintenant &&
+    (new Date(seance.debut!).getTime() + seance.dureeMinutes! * 60_000 > maintenant || Boolean(seance.fermeeToutSeule)) &&
     maintenant - termineeLe < 2 * 3600_000;
   if (essai) return <FinEssai seance={seance} />;
   return (

@@ -83,7 +83,7 @@ import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, no
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque, regieCours } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
-import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne, postesSur } from "../temps-reel";
+import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne, postesSur, noterPosteHttp, utilisateursPresentsSur } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
 import { copierRessources, projectionDe, ressourcesDe } from "./ressources-seance";
 import { arreterCopie, copieDe } from "../projection-copies";
@@ -196,7 +196,7 @@ import { coursDuSite, nomSalleDuCours, type RegardSalle } from "../salles-outils
 import { lireReglageOuverture, REPERE_OUVERTURE_AUTO, REPERE_RAPPEL_DEMARRAGE } from "../ouverture-auto";
 import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
 import { t as tOuverture } from "@shared/textes/direct";
-import { heureSimple as heureCourte } from "@shared/espace-campus";
+import { deCampus, heureSimple as heureCourte } from "@shared/espace-campus";
 
 const executer = promisify(execFile);
 
@@ -1166,7 +1166,8 @@ async function campusDirect(s: Pick<Seance, "id">): Promise<{ campus: CampusDire
       .innerJoin(classes, eq(classes.id, coursClasses.classeId))
       .where(eq(seances.id, s.id)),
   ]);
-  const connectes = utilisateursSur(canal(s.id));
+  // Flux temps réel, ou page vue par HTTP depuis moins de 2 min (flux retenu en route : elle relit /direct).
+  const connectes = utilisateursPresentsSur(canal(s.id));
   const sitesAttendus = new Set(attendus.map((a) => a.siteId));
   const enSalle = new Set(presencesSeance.filter((p) => p.mode === "salle").map((p) => p.utilisateurId));
   const etudiantsEnLigne = connectes.filter((u) => u.role === "etudiant" && !enSalle.has(u.id));
@@ -1390,6 +1391,21 @@ function fenetreEmargementOuverte(s: Seance, t = Date.now()): boolean {
 
 // ── Détail de séance ───────────────────────────────────────────────────────
 
+/**
+ * La dernière fin consignée de la séance est-elle automatique (fermeture logique, séance suivante du même cours qui
+ * attendait, fin des séances oubliées) ? Une telle classe se rouvre pendant 2 h même après sa fin prévue (« Rouvrir la
+ * classe » : regie.ts, peutRouvrir ; live/ui.tsx, FinDeSeance) : la fermeture logique n'agit qu'après la fin prévue.
+ */
+export async function fermeeToutSeule(seanceId: number): Promise<boolean> {
+  const [f] = await db
+    .select({ donnees: evenementsSeances.donnees })
+    .from(evenementsSeances)
+    .where(and(eq(evenementsSeances.seanceId, seanceId), eq(evenementsSeances.type, "fin")))
+    .orderBy(desc(evenementsSeances.creeLe), desc(evenementsSeances.id))
+    .limit(1);
+  return f?.donnees?.automatique === true;
+}
+
 async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto> {
   const [c] = await db.select().from(cours).where(eq(cours.id, s.coursId));
   const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id);
@@ -1431,6 +1447,7 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     debutCours: iso(s.debutCours),
     attenteAnimateur: enAttenteAnimateur(s),
     termineeLe: iso(s.termineeLe),
+    fermeeToutSeule: s.statut === "terminee" ? await fermeeToutSeule(s.id) : false,
     motifAnnulation: s.motifAnnulation,
     diapos: versDiapos(s),
     diapoCourante: diapoCourante(s).index,
@@ -2549,7 +2566,11 @@ export function enregistrerLive(app: Express) {
     "/api/seances/:id/diapo",
     exigerConnexion,
     route(async (req, res) => {
-      const s = await seanceAccessible(moi(req), idParam(req));
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      // Cette relecture n'a lieu que quand le flux temps réel est retenu en route (useEtatDirect, toutes les 2 s) : la
+      // page est pourtant dans la classe (fermeture logique, « salle connectée », animateur présent).
+      noterPosteHttp(canal(s.id), u, req.sessionID);
       const r: DiapoDirectDto = { statut: s.statut, planB: s.planBLe ? s.lienSecours : null, diapo: diapoCourante(s), projection: await projectionDe(s), copie: copieDe(s) };
       res.setHeader("Cache-Control", "no-store");
       res.json(r);
@@ -3975,7 +3996,7 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
     case "demarrage":
       if (d.reprise) return "Reprise du direct";
       // Ouverte par le compte de campus (« Ouvrir le cours ») : comme l'ouverture automatique, au nom du campus.
-      if (d.auto && typeof d.campus === "number") return tOuverture("demarrage.campus", { v: { campus: site ?? "?" } });
+      if (d.auto && typeof d.campus === "number") return tOuverture("demarrage.campus", { v: { deCampus: deCampus(site ?? "?") } });
       return d.auto ? "Ouverture automatique de la classe (les salles s'installent)" : "Début du direct";
     case "arrivee":
       return d.relais
@@ -3988,11 +4009,13 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
     case "fin":
       if (d.intervenant) return `Fin du direct par ${String(d.nom ?? "l'intervenant")} (lien intervenant)`;
       if (d.logique) return tOuverture(Number(d.presents ?? 0) >= 1 ? "fin.logique.un" : "fin.logique.zero");
+      if (d.coursAttendu) return tOuverture("fin.coursAttendu");
       // Fils écrits avant le 15 octobre 2026 (attente de la salle, retirée).
       if (d.salleAttendue) return "Fin automatique : le formateur était parti et le cours suivant attendait la salle";
       return "Fin du direct";
     case "annulation":
       if (d.logique) return `Séance non tenue : ${tOuverture(Number(d.presents ?? 0) >= 1 ? "fin.logique.un" : "fin.logique.zero").replace(/^Fermée toute seule : /, "")}`;
+      if (d.coursAttendu) return `Séance non tenue : ${tOuverture("fin.coursAttendu").replace(/^Fermée toute seule : /, "")}`;
       return `Séance annulée${d.automatique ? " automatiquement" : ""} : ${String(d.motif ?? "")}`;
     case "plan_b":
       return "Plan B : bascule sur le lien de secours";
@@ -4406,7 +4429,8 @@ async function animateurConnecte(s: Seance): Promise<boolean> {
 
 /** Un animateur AVEC un compte (formateur du cours, personne qui a démarré ou pris la classe) est-il dans la classe ? */
 async function animateurCompteConnecte(s: Seance): Promise<boolean> {
-  const presents = connectesSur(canal(s.id));
+  // Flux temps réel, ou Studio vu par HTTP depuis moins de 2 min (flux retenu en route : il relit /direct).
+  const presents = new Set(utilisateursPresentsSur(canal(s.id)).map((x) => x.id));
   if (!presents.size) return false;
   if ((await formateursDuCours(s.coursId)).some((f) => presents.has(f.id))) return true;
   const animateurs = await db
@@ -4681,6 +4705,15 @@ function finDeLaClasse(s: Seance): number {
 }
 
 /**
+ * Classe en direct finie (finDeLaClasse passée) que personne n'anime plus (animateurConnecte) : l'espace du campus et
+ * l'accueil du formateur montrent alors la séance suivante du même cours (espace-campus.ts : seancesDuMoment).
+ */
+export async function finieSansAnimateur(s: Seance, maintenant = Date.now()): Promise<boolean> {
+  if (s.statut !== "en_direct" || finDeLaClasse(s) > maintenant) return false;
+  return !(await animateurConnecte(s));
+}
+
+/**
  * Fin de référence de la fermeture logique : la fin PRÉVUE (heure du cours + durée), sauf une séance démarrée plus
  * d'une heure avant son heure (autre créneau ouvert par erreur), dont la fin se compte depuis le démarrage réel
  * (même règle que finDeLaClasse).
@@ -4693,11 +4726,12 @@ function finDeReference(s: Seance): number {
 /**
  * Personnes connectées à une classe, pour la fermeture logique : chaque poste abonné à son canal (formateur dans son
  * Studio, sa fenêtre présentateur comprise ; direction ou régie dans le Studio ; chaque étudiant ; chaque ancien écran
- * « salle » ; chaque ordinateur du compte de campus), plus l'intervenant du lien intervenant dont la page se signale.
+ * « salle » ; chaque ordinateur du compte de campus), ou qui relit l'état du direct par HTTP depuis moins de 2 min
+ * (flux temps réel retenu en route : postesSur), plus l'intervenant du lien intervenant dont la page se signale.
  * Les invités du lien invité (sans micro) n'envoient aucun signe : ils ne comptent pas (limite connue).
  */
 export function presentsDans(seanceId: number, maintenant = Date.now()): number {
-  return postesSur(canal(seanceId)) + (intervenantPresent(seanceId, maintenant) ? 1 : 0);
+  return postesSur(canal(seanceId), undefined, maintenant) + (intervenantPresent(seanceId, maintenant) ? 1 : 0);
 }
 
 /** Fermeture logique : délai sans interruption avec au plus une personne, après l'heure de fin (10 min). */
@@ -4708,6 +4742,32 @@ const MARGE_FERMETURE_MS = 30_000;
 const PRESENTS_MAX_FERMETURE = 1;
 /** Classes en direct, fin passée, vues avec au plus une personne : depuis quand (en mémoire ; vide après un redémarrage). */
 const basDepuis = new Map<number, number>();
+/** Classes qui retiennent une séance du même cours, vues sans animateur : depuis quand (en mémoire, comme basDepuis). */
+const sansAnimateurDepuis = new Map<number, number>();
+
+/**
+ * Classes en direct qui retiennent une autre séance du MÊME cours (« jamais deux séances du même cours en direct ») :
+ * une séance plus tardive de ce cours, prévue, à une heure ou moins de son début (la salle peut alors l'ouvrir :
+ * « Ouvrir le cours », l'ouverture automatique, le formateur) et pas finie, ou déjà en direct. Classe en direct → la
+ * séance qui l'attend. Les essais de visio ne retiennent rien et n'attendent rien. Les salles, elles, ne comptent plus
+ * (retrait de l'attente de la salle, 15 octobre 2026) : seul le même cours retient.
+ */
+async function classesQuiRetiennentLeCours(maintenant: number): Promise<Map<number, number>> {
+  const t = new Date(maintenant).toISOString();
+  const { rows } = await db.execute<{ retenue: number; attendue: number }>(sql`
+    SELECT DISTINCT ON (x.id) x.id AS retenue, s.id AS attendue
+    FROM campus.seances x
+    JOIN campus.seances s ON s.cours_id = x.cours_id AND s.id <> x.id AND s.debut > x.debut
+    WHERE x.statut = 'en_direct'
+      AND NOT EXISTS (SELECT 1 FROM campus.directs_immediats dx WHERE dx.seance_id = x.id AND NOT dx.prevenir)
+      AND NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id)
+      AND (s.statut = 'en_direct'
+        OR (s.statut = 'planifiee'
+          AND s.debut - make_interval(mins => ${AVANCE_MAX_OUVERTURE_MIN}) <= ${t}::timestamptz
+          AND s.debut + make_interval(mins => s.duree_minutes) > ${t}::timestamptz))
+    ORDER BY x.id, s.debut, s.id`);
+  return new Map(rows.map((r) => [Number(r.retenue), Number(r.attendue)]));
+}
 
 /**
  * Fermeture logique (José, 14 octobre 2026 au soir : « il y a une seule personne dans le cours, ferme le cours »),
@@ -4747,12 +4807,48 @@ export async function fermerLesClassesVides(maintenant = Date.now(), { apresRede
     }
   }
   for (const id of basDepuis.keys()) if (!vues.has(id)) basDepuis.delete(id);
+
+  // Même cours : une classe finie qui retient la séance suivante de son cours (classesQuiRetiennentLeCours) se ferme
+  // quand personne ne l'anime depuis 10 min (formateur parti sans « Terminer », page de l'intervenant fermée), même
+  // s'il reste deux personnes ou plus (écrans laissés ouverts, onglets d'étudiants) : sinon la séance suivante ne
+  // s'ouvrirait pas et les écrans resteraient sur le cours fini. Jamais animée : « Séance non tenue » dès sa fin.
+  // L'absence d'animateur se relève dès que la séance suivante attend, même avant la fin ; la fermeture, jamais avant
+  // la fin (finDeLaClasse). Un formateur qui déborde, présent dans son Studio ou par le lien intervenant, n'est jamais
+  // coupé.
+  const retenues = await classesQuiRetiennentLeCours(maintenant);
+  const vuesCours = new Set<number>();
+  for (const s of directs) {
+    const attendue = retenues.get(s.id);
+    if (attendue === undefined || fermees.includes(s.id)) continue;
+    vuesCours.add(s.id);
+    try {
+      if (await animateurConnecte(s)) {
+        sansAnimateurDepuis.delete(s.id);
+        continue;
+      }
+      let depuis = sansAnimateurDepuis.get(s.id);
+      if (depuis === undefined) sansAnimateurDepuis.set(s.id, (depuis = maintenant));
+      if (finDeLaClasse(s) > maintenant) continue;
+      const attente = enAttenteAnimateur(s);
+      if (!attente && maintenant - depuis < FERMETURE_LOGIQUE_MS - MARGE_FERMETURE_MS) continue;
+      sansAnimateurDepuis.delete(s.id);
+      basDepuis.delete(s.id);
+      console.log(`[live] séance ${s.id} close : fin passée, personne ne l'anime, la séance ${attendue} du même cours attend`);
+      if (attente) await marquerNonTenue(s, { coursAttendu: attendue });
+      else await terminerSeance(s, null, { coursAttendu: attendue });
+      fermees.push(s.id);
+    } catch (e) {
+      console.error(`[live] fermeture de la séance ${s.id} (même cours) :`, (e as Error).message);
+    }
+  }
+  for (const id of sansAnimateurDepuis.keys()) if (!vuesCours.has(id)) sansAnimateurDepuis.delete(id);
   return fermees;
 }
 
 /** Pour les essais à horloge simulée : oublie la mémoire de la fermeture logique (redémarrage simulé). */
 export function oublierFermetureLogique() {
   basDepuis.clear();
+  sansAnimateurDepuis.clear();
 }
 
 // Chaque minute ; rien pendant les 2 premières minutes du processus (les Studios et les pages se reconnectent).

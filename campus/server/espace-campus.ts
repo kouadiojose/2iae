@@ -7,14 +7,19 @@
 //   3. campus : sinon, la dernière séance d'aujourd'hui terminée ou annulée (« fini », « annulé ») ;
 //   4. sinon, aucune ; `prochaine` = la première séance prévue après aujourd'hui (campus), ou plus tard (formateur).
 // Deux séances du même cours à la même heure (deux sessions) : `choix` les donne toutes les deux, la personne choisit.
+// Une classe en direct FINIE que personne n'anime plus (`finieSansAnimateur`, routes/live.ts) ne cache pas la séance
+// suivante du même cours dans l'heure qui précède son début : la salle voit le bon cours (son compte à rebours, son code
+// de présence) et le formateur ouvre la bonne séance ; la classe finie se ferme toute seule (fermerLesClassesVides).
 import { and, asc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { seances, type Seance } from "@shared/schema";
-import { classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
 import { heureSimple, type RepereCarre } from "@shared/espace-campus";
 
 const MINUTE = 60_000;
 const JOUR = 86_400_000;
+/** La séance suivante du même cours passe devant une classe finie dans l'heure qui précède son début. */
+const AVANCE_OUVERTURE_MS = AVANCE_MAX_OUVERTURE_MIN * MINUTE;
 
 export type MomentCours = {
   /** La séance à montrer (null : aucune aujourd'hui pour le campus, aucune à venir pour le formateur). */
@@ -38,7 +43,11 @@ const sansEssai = sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats dx WHER
  * Séance du moment de chaque cours (règle en tête du fichier). `jour` : le campus regarde la journée d'Abidjan
  * (une séance prévue demain n'est pas « aujourd'hui ») ; le formateur regarde sans limite de jour.
  */
-export async function seancesDuMoment(coursIds: number[], maintenant: number, { jour = true }: { jour?: boolean } = {}): Promise<Map<number, MomentCours>> {
+export async function seancesDuMoment(
+  coursIds: number[],
+  maintenant: number,
+  { jour = true, finieSansAnimateur }: { jour?: boolean; finieSansAnimateur?: (s: Seance) => Promise<boolean> } = {},
+): Promise<Map<number, MomentCours>> {
   const carte = new Map<number, MomentCours>();
   const ids = [...new Set(coursIds)];
   if (!ids.length) return carte;
@@ -85,6 +94,13 @@ export async function seancesDuMoment(coursIds: number[], maintenant: number, { 
     const prevues = siennes.filter((s) => s.statut === "planifiee" && finPrevueMs(s) > maintenant);
     let seance: Seance | null = enDirect[0] ?? null;
     let prochaine: Seance | null = jour ? (suivante.get(id) ?? null) : null;
+    if (seance && finieSansAnimateur) {
+      const enCours = seance;
+      const apres = (jour ? prevues : [suivante.get(id)].filter((x): x is Seance => Boolean(x))).find(
+        (p) => p.debut.getTime() > enCours.debut.getTime() && p.debut.getTime() - AVANCE_OUVERTURE_MS <= maintenant,
+      );
+      if (apres && (await finieSansAnimateur(enCours))) seance = apres;
+    }
     if (!seance) {
       if (jour) {
         seance = prevues[0] ?? null;

@@ -1,7 +1,7 @@
 // Petits outils du module compte (connexion, bienvenue, profil).
 import { accueilDe } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
-import type { Moi } from "@shared/schema";
+import { estProfilCampus, type Moi } from "@shared/schema";
 
 /**
  * Adresse de retour après connexion (?retour=…), seulement si elle reste
@@ -29,6 +29,9 @@ export const doitPasserParBienvenue = (m: Pick<Moi, "doitChangerMotDePasse" | "c
 
 /** Où envoyer la personne juste après sa connexion. */
 export function destinationApresConnexion(m: Moi, retour: string | null): string {
+  // Compte de campus au code donné par la direction : rien à faire dans « Bienvenue » (ni charte, ni visite), droit à
+  // la page demandée (les carrés de son campus, ou l'écran du cours qu'il montrait).
+  if (estProfilCampus(m) && !m.doitChangerMotDePasse) return retour ?? accueilDe(m);
   if (doitPasserParBienvenue(m)) return `/bienvenue${retour ? `?retour=${encodeURIComponent(retour)}` : ""}`;
   return retour ?? accueilDe(m);
 }

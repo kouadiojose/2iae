@@ -11,7 +11,6 @@ import { useTousEvenements } from "@/lib/flux";
 import { rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
-import { heure } from "@/lib/dates";
 import { couleurLisible } from "@/modules/cours/outils";
 import { t as tEnseigner } from "@shared/textes/enseigner";
 import type { AccueilSimpleDto, CarreFormateurDto } from "@shared/accueil-simple";
@@ -67,7 +66,8 @@ export function CarreCours({ c }: { c: CarreFormateurDto }) {
           <span className={cn("inline-flex rounded-full px-3.5 py-1.5 text-[18px] font-extrabold", c.repere === "direct" ? "bg-succes text-white" : "bg-white text-encre")}>{repere}</span>
         )}
       </span>
-      <span className="line-clamp-3 break-words text-[30px] font-black leading-[1.05] sm:text-[36px]">{c.titre}</span>
+      {/* Interligne et marge basse : les jambages (g, p, y) de la dernière ligne ne sont pas coupés. */}
+      <span className="line-clamp-3 break-words pb-[0.12em] text-[30px] font-black leading-[1.12] sm:text-[36px]">{c.titre}</span>
     </Link>
   );
 }
@@ -123,8 +123,21 @@ export function TroisBlocs({ c }: { c: CarreFormateurDto }) {
   const [revenir, setRevenir] = useState(false);
   const s = c.seance;
   const live = c.live;
+  // Plus d'une heure avant : le jour et l'heure du cours (« Samedi à 10h00 »), ou, aujourd'hui, l'heure du cours et
+  // celle où le live s'ouvre (« Aujourd'hui à 11h00 · le live ouvre à 10h00 »). Toujours l'heure d'Abidjan d'abord.
   const texteLive =
-    live.etat === "attendre" && live.ouvreA ? tx("blocs.live.attendre", { v: { heure: heure(live.ouvreA).replace(/^0/, "") } }) : live.etat === "aucun" ? tx("blocs.live.aucun") : (repere ?? tx("blocs.live.aucun"));
+    live.etat === "attendre" && live.ouvreHeure
+      ? c.repere === "aujourdhui" && !live.ouvreJour
+        ? `${repere ?? ""} · ${tx("blocs.live.ouvre", { v: { heure: live.ouvreHeure } })}`
+        : (repere ?? tx("blocs.live.attendre", { v: { heure: live.ouvreHeure } }))
+      : live.etat === "aucun"
+        ? tx("blocs.live.aucun")
+        : (repere ?? tx("blocs.live.aucun"));
+  const texteRevenir = live.ouvreHeure
+    ? `${live.ouvreJour ? tx("blocs.live.revenir.jour", { v: { jour: live.ouvreJour, heure: live.ouvreHeure } }) : tx("blocs.live.revenir", { v: { heure: live.ouvreHeure } })}${
+        live.ouvreChezVous ? ` (${tx("blocs.live.chezVous", { v: { heure: live.ouvreChezVous } })})` : ""
+      }.`
+    : null;
   const entrer = async () => {
     if (!s) return;
     if (live.etat === "direct") return naviguer(`/live/${s.id}`);
@@ -157,9 +170,9 @@ export function TroisBlocs({ c }: { c: CarreFormateurDto }) {
           href={c.liens.preparer ?? undefined}
         />
       </div>
-      {revenir && live.ouvreA && (
-        <p className="rounded-[20px] bg-creme px-5 py-4 text-[22px] font-bold" role="status">
-          {tx("blocs.live.revenir", { v: { heure: heure(live.ouvreA).replace(/^0/, "") } })}
+      {revenir && texteRevenir && (
+        <p className="rounded-[20px] bg-creme px-5 py-4 text-[22px] font-bold" role="status" data-revenir>
+          {texteRevenir}
         </p>
       )}
     </div>

@@ -44,7 +44,7 @@ export default function PageExamensCampus({ coursId }: { coursId: string }) {
                 </span>
                 <p className="break-words text-[24px] font-black leading-tight">{e.titre}</p>
                 <p className="text-[20px] font-semibold">{date(e)}</p>
-                <p className="text-[20px] text-texte-doux">{tx("examens.rendus", { v: { n: e.rendus, total: e.inscrits, campus: c?.campus.nomCourt ?? "" } })}</p>
+                <p className="text-[20px] text-texte-doux">{tx(e.rendus === 0 ? "examens.rendus.zero" : e.rendus === 1 ? "examens.rendus.un" : "examens.rendus", { v: { n: e.rendus, total: e.inscrits, campus: c?.campus.nomCourt ?? "" } })}</p>
               </article>
             ))}
           </div>

@@ -137,15 +137,65 @@ export function utilisateursSur(canal: string): Utilisateur[] {
 }
 
 /**
- * Postes connectés à un canal : une connexion par couple (compte, session du navigateur). Le formateur et sa
- * fenêtre présentateur (même session) comptent une fois ; deux ordinateurs du même compte de campus (deux
- * sessions) comptent deux fois. Sert à la fermeture logique (routes/live.ts : presentsDans) et aux écrans du
- * campus (routes/live.ts : campusDirect, « ecrans »).
+ * Postes vus par HTTP sur un canal, depuis moins de PRESENCE_HTTP_MS : la page dont le flux temps réel est retenu en
+ * route (antivirus, proxy, réseau de la salle) relit la diapo toutes les 2 s (/diapo : cette relecture n'a lieu QUE
+ * dans ce cas) sans jamais s'abonner au canal. Elle est pourtant dans la classe : la fermeture logique et la carte des
+ * salles doivent la compter. Noté par routes/live.ts (GET /api/seances/:id/diapo), oublié après 2 min.
  */
-export function postesSur(canal: string, filtre?: (u: Utilisateur) => boolean): number {
+const vusParHttp = new Map<string, Map<string, { t: number; utilisateur: Utilisateur }>>();
+export const PRESENCE_HTTP_MS = 2 * 60_000;
+
+/** La page de ce compte (cette session du navigateur) vient de relire l'état d'un canal par HTTP. */
+export function noterPosteHttp(canal: string, utilisateur: Utilisateur, sessionId: string, maintenant = Date.now()) {
+  let m = vusParHttp.get(canal);
+  if (!m) vusParHttp.set(canal, (m = new Map()));
+  m.set(`${utilisateur.id}|${sessionId}`, { t: maintenant, utilisateur });
+}
+
+/** Postes (compte|session) abonnés par le temps réel au canal d'une classe : leur flux marche. */
+function postesAbonnesAUneClasse(): Set<string> {
+  const cles = new Set<string>();
+  for (const [canal, liste] of parCanal) if (canal.startsWith("seance:")) for (const c of liste) cles.add(`${c.utilisateur.id}|${c.sessionId}`);
+  return cles;
+}
+
+/**
+ * Postes vus par HTTP récemment sur ce canal (les anciens sont oubliés au passage), sauf ceux dont le flux temps réel
+ * marche (abonnés au canal d'une classe) : leur présence se lit dans leurs abonnements. Ainsi un ordinateur qui passe
+ * d'un cours à l'autre n'est pas compté deux minutes de plus dans le premier.
+ */
+function postesHttp(canal: string, maintenant = Date.now()): Map<string, Utilisateur> {
+  const m = vusParHttp.get(canal);
+  const out = new Map<string, Utilisateur>();
+  if (!m) return out;
+  const abonnes = postesAbonnesAUneClasse();
+  for (const [cle, v] of m) {
+    if (maintenant - v.t > PRESENCE_HTTP_MS || v.t > maintenant + PRESENCE_HTTP_MS) m.delete(cle);
+    else if (!abonnes.has(cle)) out.set(cle, v.utilisateur);
+  }
+  if (!m.size) vusParHttp.delete(canal);
+  return out;
+}
+
+/**
+ * Postes présents sur un canal : une connexion par couple (compte, session du navigateur), par le flux temps réel ou,
+ * flux retenu en route, vue par HTTP depuis moins de 2 minutes (postesHttp). Le formateur et sa fenêtre présentateur
+ * (même session) comptent une fois ; deux ordinateurs du même compte de campus (deux sessions) comptent deux fois.
+ * Sert à la fermeture logique (routes/live.ts : presentsDans) et aux écrans du campus (campusDirect, « ecrans »).
+ */
+export function postesSur(canal: string, filtre?: (u: Utilisateur) => boolean, maintenant = Date.now()): number {
   const vus = new Set<string>();
   for (const c of parCanal.get(canal) ?? []) if (!filtre || filtre(c.utilisateur)) vus.add(`${c.utilisateur.id}|${c.sessionId}`);
+  for (const [cle, u] of postesHttp(canal, maintenant)) if (!filtre || filtre(u)) vus.add(cle);
   return vus.size;
+}
+
+/** Comptes présents sur un canal : flux temps réel, ou vus par HTTP depuis moins de 2 minutes (postesHttp). */
+export function utilisateursPresentsSur(canal: string, maintenant = Date.now()): Utilisateur[] {
+  const vus = new Map<number, Utilisateur>();
+  for (const c of parCanal.get(canal) ?? []) vus.set(c.utilisateur.id, c.utilisateur);
+  for (const u of postesHttp(canal, maintenant).values()) if (!vus.has(u.id)) vus.set(u.id, u);
+  return [...vus.values()];
 }
 
 /** La personne a-t-elle au moins un onglet ouvert sur le campus ? */

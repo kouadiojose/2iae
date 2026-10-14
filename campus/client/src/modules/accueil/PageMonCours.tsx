@@ -21,8 +21,8 @@ export default function PageMonCours({ coursId }: { coursId: string }) {
         {tx("blocs.retour")}
       </Link>
       {isLoading ? (
-        <p className="text-[22px] text-texte-doux" aria-busy="true">
-          …
+        <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">
+          {tx("blocs.chargement")}
         </p>
       ) : error || !data || !c ? (
         <div className="flex flex-col items-start gap-4">

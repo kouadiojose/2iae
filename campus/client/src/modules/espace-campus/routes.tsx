@@ -7,6 +7,8 @@ const acces: DefRoute["acces"] = ["vie_scolaire", "admin"];
 
 export const routes: DefRoute[] = [
   { chemin: "/mon-campus/cours/:coursId/live", page: lazy(() => import("./PageLiveCampus")), acces, droit: "espace_campus", coquille: "aucune" },
+  { chemin: "/mon-campus/cours/:coursId/lecons/:leconId", page: lazy(() => import("./PageLeconCampus")), acces, droit: "espace_campus", coquille: "aucune" },
+  { chemin: "/mon-campus/cours/:coursId/resumes/:seanceId", page: lazy(() => import("./PageResumeCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId/lecons", page: lazy(() => import("./PageLeconsCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId/resumes", page: lazy(() => import("./PageResumesCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId/examens", page: lazy(() => import("./PageExamensCampus")), acces, droit: "espace_campus", coquille: "aucune" },

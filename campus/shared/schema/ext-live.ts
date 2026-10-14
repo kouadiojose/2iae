@@ -776,12 +776,13 @@ export type BattementPresenceDto =
 
 // ── Lien invité d'une séance (sans compte) ─────────────────────────────────
 
-/** GET /api/seances/:id/lien-invite : le lien à partager, pour cette séance seulement. */
+/**
+ * GET /api/seances/:id/lien-invite : le lien à partager (sans micro), pour cette séance seulement. Le lien avec micro
+ * et caméra (un intervenant) se demande à part : GET /api/seances/:id/lien-intervenant (LienIntervenantDto, shared/regie.ts).
+ */
 export type LienInviteDto = {
   url: string;
   valableJusquau: string;
-  /** Même lien, avec micro et caméra (un intervenant) : direction, vie scolaire et formateur du cours seulement. */
-  urlIntervenant?: string;
 };
 
 /** GET /api/invite/:jeton : ce qu'un invité voit de la séance (sans compte). */

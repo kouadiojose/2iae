@@ -33,7 +33,14 @@ export default function PageRegie() {
     if (e.type === "live") void rafraichir(CLE);
   });
 
-  const sousTitre = data?.perimetre.campus ? tx("espace.sousTitre.campus", { v: { campus: data.perimetre.campus } }) : tx("espace.sousTitre");
+  // Sur téléphone, le sous-titre court : le premier cours et son bouton tiennent dans le premier écran.
+  const campus = data?.perimetre.campus;
+  const sousTitre = (
+    <>
+      <span className="sm:hidden">{campus ? tx("espace.sousTitre.campus.court", { v: { campus } }) : tx("espace.sousTitre.court")}</span>
+      <span className="hidden sm:inline">{campus ? tx("espace.sousTitre.campus", { v: { campus } }) : tx("espace.sousTitre")}</span>
+    </>
+  );
   const derniere = data?.suivants.at(-1)?.libelle;
 
   return (
@@ -46,7 +53,7 @@ export default function PageRegie() {
       ) : (
         <>
           <section className="flex flex-col gap-3" aria-labelledby="regie-aujourdhui">
-            <h2 id="regie-aujourdhui" className="text-xl font-extrabold first-letter:uppercase">
+            <h2 id="regie-aujourdhui" className="text-lg font-extrabold first-letter:uppercase sm:text-xl">
               {tx("espace.aujourdhui", { v: { date: data.libelle } })}
             </h2>
             {data.aujourdhui.length === 0 ? (
@@ -101,7 +108,18 @@ function PastilleEtat({ etat, debut }: { etat: EtatRegie; debut: string }) {
     case "en_direct":
       return <BadgeDirect libelle={tx("etat.enDirect")} />;
     case "ouverte_avance":
-      return <Badge ton="direct">{tx("etat.ouverteAvance", { v: { heure: heure(debut) } })}</Badge>;
+      return (
+        <Badge ton="direct" className="whitespace-normal">
+          {tx("etat.ouverteAvance", { v: { heure: heure(debut) } })}
+        </Badge>
+      );
+    case "en_retard":
+      // L'heure du cours est passée et personne n'a ouvert la classe : le cas à repérer d'un coup d'œil.
+      return (
+        <Badge ton="danger" className="whitespace-normal font-semibold">
+          {tx("etat.enRetard", { v: { heure: heure(debut) } })}
+        </Badge>
+      );
     case "terminee":
       return <Badge ton="succes">{tx("etat.terminee")}</Badge>;
     case "annulee":
@@ -129,7 +147,7 @@ function BoutonPrincipal({ c }: { c: CoursRegieDto }) {
   const tx = useTextes(textesRegie);
   const [, naviguer] = useLocation();
   const [envoi, setEnvoi] = useState(false);
-  const classe = "min-h-[56px] w-full text-[17px] sm:w-auto sm:min-w-[260px]";
+  const classe = "min-h-[56px] w-full text-[17px] sm:w-auto sm:min-w-[260px] sm:self-start";
   if (classeOuverte(c.etat)) {
     return (
       <LienBouton href={`/live/${c.seanceId}`} taille="lg" icone={<MonitorPlay className="h-5 w-5" />} className={classe}>
@@ -180,7 +198,7 @@ function CarteCours({ c }: { c: CoursRegieDto }) {
     <article
       className={cn(
         "flex flex-col gap-3 rounded-2xl border bg-white p-4 sm:p-5",
-        ouverte ? "border-orange shadow-[0_0_0_2px_rgba(228,121,58,0.25)]" : "border-ligne",
+        ouverte ? "border-orange shadow-[0_0_0_2px_rgba(228,121,58,0.25)]" : c.etat === "en_retard" ? "border-danger shadow-[0_0_0_2px_rgba(194,65,12,0.2)]" : "border-ligne",
         finie(c.etat) && "opacity-80",
       )}
       data-seance={c.seanceId}
@@ -214,6 +232,9 @@ function CarteCours({ c }: { c: CoursRegieDto }) {
         </p>
       </div>
 
+      {/* Le gros bouton juste sous le cours et le formateur : sur un petit téléphone, il tient dans le premier écran. */}
+      {!finie(c.etat) && <BoutonPrincipal c={c} />}
+
       {c.campus.length > 0 ? <CampusEtSalles c={c} ouverte={ouverte} /> : <p className="text-sm text-texte-pale">{tx("carte.sansSalle")}</p>}
 
       {c.etat === "annulee" ? (
@@ -226,14 +247,11 @@ function CarteCours({ c }: { c: CoursRegieDto }) {
       )}
 
       {!finie(c.etat) && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <BoutonPrincipal c={c} />
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <LienBouton href={`/enseigner/seances/${c.seanceId}`} variante="doux" icone={<Wrench className="h-4 w-4" />} className="min-h-[48px]">
-              {tx("bouton.preparer")}
-            </LienBouton>
-            <BoutonLienIntervenant seanceId={c.seanceId} className="min-h-[48px]" />
-          </div>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <LienBouton href={`/enseigner/seances/${c.seanceId}`} variante="doux" icone={<Wrench className="h-4 w-4" />} className="min-h-[48px]">
+            {tx("bouton.preparer")}
+          </LienBouton>
+          <BoutonLienIntervenant seanceId={c.seanceId} className="min-h-[48px]" />
         </div>
       )}
     </article>

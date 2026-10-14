@@ -1,7 +1,8 @@
 // Visite guidée en quelques écrans illustrés, adaptée au rôle :
 // étudiant (prochain cours, rendre un devoir, écrire à un formateur),
 // formateur (ma classe, mes séances, notes : les trois gestes du nouvel accueil)
-// et équipe (le travail du campus, pilotage, fiches, présences et annonces).
+// équipe (le travail du campus, pilotage, fiches, présences et annonces) et
+// Chargé de cours (Mon espace, le Studio, le lien intervenant : ce qu'il ouvre vraiment).
 // Les illustrations sont dessinées en HTML : aucune image à télécharger.
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -25,14 +26,18 @@ import {
   Megaphone,
   Home,
   BookOpen,
+  Play,
+  Presentation,
+  Link2,
   type LucideIcon,
 } from "lucide-react";
 import { DecompteCourt } from "@/components/ui/compte-a-rebours";
 import { heure, jourLong } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { profilPermet, useMoi } from "@/lib/auth";
-import type { Role } from "@shared/schema";
+import { estProfilRegie, type Role } from "@shared/schema";
 import type { EnCours } from "@shared/api";
+import { t as tRegie } from "@shared/textes/regie";
 
 export type EcranVisite = { cle: string; etiquette: string; titre: string; texte: string; illustration: ReactNode };
 
@@ -107,6 +112,33 @@ export function useEcransVisite(role: Role): EcranVisite[] {
         titre: "Les copies et les notes",
         texte: "Le campus corrige les copies avec le corrigé que vous vérifiez. Vous pouvez changer toute note.",
         illustration: <IllustrationCorrections />,
+      },
+    ];
+  }
+
+  // Chargé de cours (profil de régie) : seulement ce que son espace lui ouvre (ni pilotage, ni fiches, ni annonces).
+  if (moi && estProfilRegie(moi)) {
+    return [
+      {
+        cle: "espace",
+        etiquette: tRegie("visite.espace.etiquette"),
+        titre: tRegie("visite.espace.titre"),
+        texte: tRegie("visite.espace.texte"),
+        illustration: <IllustrationMonEspace titre={seance?.coursTitre ?? "Initiation à l'IA"} />,
+      },
+      {
+        cle: "studio",
+        etiquette: tRegie("visite.studio.etiquette"),
+        titre: tRegie("visite.studio.titre"),
+        texte: tRegie("visite.studio.texte"),
+        illustration: <IllustrationStudioRegie />,
+      },
+      {
+        cle: "lien",
+        etiquette: tRegie("visite.lien.etiquette"),
+        titre: tRegie("visite.lien.titre"),
+        texte: tRegie("visite.lien.texte"),
+        illustration: <IllustrationLienIntervenant />,
       },
     ];
   }
@@ -525,6 +557,84 @@ function IllustrationAnnonces() {
         <p className="mt-1 text-[10px] leading-snug">Séminaire samedi toute la journée, en salle de conférence.</p>
         <span className="mt-1.5 block font-mono text-[8px] text-texte-gris">Lu par 212 étudiants sur 240</span>
       </div>
+    </div>
+  );
+}
+
+// ── Illustrations du Chargé de cours ───────────────────────────────────────
+
+/** « Mon espace » : une carte du jour, l'heure, les campus, le gros bouton « Ouvrir la classe ». */
+function IllustrationMonEspace({ titre }: { titre: string }) {
+  return (
+    <Ecran>
+      <div className="flex flex-col gap-2.5 p-3">
+        <span className="text-[12px] font-extrabold">Mon espace</span>
+        <div className="flex flex-col gap-1.5 rounded-2xl border-2 border-orange bg-white p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[18px] font-black leading-none tracking-serre">8h30-12h30</span>
+            <span className="rounded-full bg-creme px-2 py-0.5 font-mono text-[8px] text-texte-pale">À venir</span>
+          </div>
+          <p className="text-[12px] font-extrabold leading-tight">{titre}</p>
+          <p className="text-[10px] font-semibold">Dr Angora Nzi</p>
+          <div className="flex flex-wrap gap-1">
+            {CAMPUS.map((c) => (
+              <span key={c} className="rounded-full bg-creme px-1.5 py-0.5 text-[8px] font-semibold text-texte-doux">
+                {c}
+              </span>
+            ))}
+          </div>
+          <span className="mt-1 flex items-center justify-center gap-1.5 rounded-xl bg-orange py-2.5 text-[12px] font-extrabold text-encre">
+            <Play className="h-3.5 w-3.5" /> Ouvrir la classe
+          </span>
+          <div className="grid grid-cols-2 gap-1">
+            <span className="rounded-lg bg-creme py-1.5 text-center text-[9px] font-bold">Préparer</span>
+            <span className="rounded-lg bg-creme py-1.5 text-center text-[9px] font-bold">Lien intervenant</span>
+          </div>
+        </div>
+      </div>
+    </Ecran>
+  );
+}
+
+/** Le Studio de la régie : la diapo à l'écran, la bande des diapos avec « Ajouter », une vidéo à projeter. */
+function IllustrationStudioRegie() {
+  return (
+    <div className="mx-auto flex w-full max-w-[320px] flex-col gap-2 rounded-[22px] bg-nuit p-3 text-white shadow-carte" aria-hidden>
+      <span className="rounded-lg bg-nuit-carte px-2 py-1 text-[9px] font-bold text-orange-peche">Vous faites la régie de ce cours · formateur : Dr Angora Nzi</span>
+      <div className="grid aspect-video place-items-center rounded-xl bg-white text-encre">
+        <span className="flex flex-col items-center gap-1">
+          <Presentation className="h-6 w-6 text-orange-fonce" />
+          <span className="text-[11px] font-extrabold">Diapo 3 sur 24</span>
+        </span>
+      </div>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4].map((n) => (
+          <span key={n} className={cn("h-7 flex-1 rounded-md bg-white/90", n === 3 && "ring-2 ring-orange")} />
+        ))}
+        <span className="grid h-7 flex-1 place-items-center rounded-md border border-dashed border-orange text-[13px] font-black text-orange">+</span>
+      </div>
+      <div className="flex items-center justify-between gap-2 rounded-xl bg-nuit-carte px-2.5 py-2">
+        <span className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold">
+          <PlayCircle className="h-4 w-4 shrink-0 text-orange" /> Vidéo du cours
+        </span>
+        <span className="rounded-lg bg-orange px-2 py-1 text-[9px] font-extrabold text-encre">Projeter</span>
+      </div>
+    </div>
+  );
+}
+
+/** La fenêtre du lien intervenant : l'adresse (fictive), « Copier », « Envoyer sur WhatsApp ». */
+function IllustrationLienIntervenant() {
+  return (
+    <div className="mx-auto flex w-full max-w-[320px] flex-col gap-2 rounded-[22px] border border-ligne bg-white p-3.5 shadow-carte" aria-hidden>
+      <span className="flex items-center gap-1.5 text-[13px] font-extrabold">
+        <Link2 className="h-4 w-4 text-orange-fonce" /> Lien intervenant
+      </span>
+      <span className="rounded-lg bg-creme px-2 py-1.5 font-mono text-[9px] text-texte-pale">campus.2iae.com/invite/…</span>
+      <span className="rounded-xl border border-ligne py-2 text-center text-[11px] font-bold">Copier le lien</span>
+      <span className="flex items-center justify-center gap-1.5 rounded-xl bg-[#25D366] py-2 text-[11px] font-extrabold text-white">
+        <MessageCircle className="h-3.5 w-3.5" /> Envoyer à Dr Angora Nzi sur WhatsApp
+      </span>
     </div>
   );
 }

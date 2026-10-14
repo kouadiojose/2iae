@@ -29,11 +29,12 @@ export const MANUELS = {
 
 /**
  * Le manuel de chacun : l'étudiant et le formateur ont le leur ; la vie scolaire et la direction, qui
- * aident les uns et les autres, ont les deux ; une salle de conférence n'en a pas.
+ * aident les uns et les autres, ont les deux ; une salle de conférence n'en a pas. Le Chargé de cours
+ * (« regie » : profil de régie, ext-profils.ts) fait marcher le Studio : le manuel du formateur seulement.
  */
-export function manuelsDuRole(role: Role): Manuel[] {
+export function manuelsDuRole(role: Role, regie = false): Manuel[] {
   if (role === "etudiant") return [MANUELS.etudiants];
-  if (role === "formateur") return [MANUELS.formateurs];
+  if (role === "formateur" || (role === "vie_scolaire" && regie)) return [MANUELS.formateurs];
   if (role === "admin" || role === "vie_scolaire") return [MANUELS.etudiants, MANUELS.formateurs];
   return [];
 }

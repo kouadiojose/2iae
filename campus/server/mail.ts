@@ -316,8 +316,11 @@ export function emailGuideBienvenue(o: {
   premierCours?: string | null;
   pdfJoint: boolean;
   lienPdf: string;
+  /** Chargé de cours (profil de régie) : ses étapes (Mon espace, ouvrir la classe, lien intervenant), le manuel du formateur joint. */
+  regie?: boolean;
 }): { sujet: string; html: string; texte: string } {
   const formateur = o.personne.role === "formateur";
+  const regie = !formateur && o.regie === true;
   const hote = config.urlCampus.replace(/^https?:\/\//, "");
   const appel = /^(m|mme|mlle|dr|pr)\.?$/i.test(o.personne.prenom.trim()) ? nomAffiche(o.personne) : o.personne.prenom.trim();
   const etapes: { titre: string; texte: string }[] = formateur
@@ -355,6 +358,33 @@ export function emailGuideBienvenue(o: {
           texte: "Sur la page de la séance : le bilan des présences par campus, la fiche de révision rédigée par l'IA (vous la relisez avant de la publier), et le **replay**, qui arrive tout seul dans le cours.",
         },
       ]
+    : regie
+      ? [
+          {
+            titre: "Se connecter",
+            texte: `Allez sur **${hote}/connexion**. Tapez votre adresse e-mail et le mot de passe que vous venez de choisir. Mot de passe oublié ? Sur la page de connexion, touchez « Mot de passe oublié ? ».`,
+          },
+          {
+            titre: "Installer l'application",
+            texte: "Sur ordinateur, l'icône « Installer » de la barre d'adresse de Chrome ou d'Edge. Sur téléphone, le campus vous propose de l'installer.",
+          },
+          {
+            titre: "Mon espace",
+            texte: "C'est votre accueil : les cours du jour de tous les campus, avec l'heure, le formateur et les salles. Les cours de la semaine sont dessous, pour les préparer à l'avance.",
+          },
+          {
+            titre: "Ouvrir la classe",
+            texte: "Une heure avant le cours, le bouton « **Ouvrir la classe** » s'allume : touchez-le, les salles et les étudiants sont prévenus, et vous entrez dans le **Studio**. Votre micro et votre caméra restent coupés.",
+          },
+          {
+            titre: "PowerPoint et vidéos",
+            texte: "Avant le cours (« Préparer ») ou pendant, dans le Studio : ajoutez le **PowerPoint** du formateur et les vidéos, puis « **Projeter** ». Un clic sur une salle lui donne la parole.",
+          },
+          {
+            titre: "Lien intervenant",
+            texte: "Le formateur n'arrive pas à se connecter ? « **Lien intervenant** » : envoyez-le-lui sur WhatsApp. Il entre avec son micro et sa caméra, sans compte, pendant que vous faites défiler ses diapos.",
+          },
+        ]
     : [
         {
           titre: "Se connecter",
@@ -373,9 +403,13 @@ export function emailGuideBienvenue(o: {
           texte: "« **Live** » : les cours en cours, les salles prêtes, et le replay de chaque séance terminée.",
         },
       ];
-  const pdf = formateur ? "Le **manuel illustré du formateur** (PDF, en images) est joint à cet e-mail." : "Le **guide de l'administration** complet (PDF) est joint à cet e-mail.";
+  const pdf = formateur
+    ? "Le **manuel illustré du formateur** (PDF, en images) est joint à cet e-mail."
+    : regie
+      ? "Le **manuel illustré du formateur** (PDF, en images) est joint à cet e-mail : il montre le Studio, où vous faites la régie des cours."
+      : "Le **guide de l'administration** complet (PDF) est joint à cet e-mail.";
   const { html, texte } = gabaritEmail({
-    etiquette: formateur ? "Bienvenue · Guide du formateur" : "Bienvenue · Campus numérique",
+    etiquette: formateur ? "Bienvenue · Guide du formateur" : regie ? "Bienvenue · Régie des cours" : "Bienvenue · Campus numérique",
     titre: `Bienvenue, ${appel} !`,
     paragraphes: [
       formateur
@@ -384,7 +418,7 @@ export function emailGuideBienvenue(o: {
       ...(o.premierCours ? [`Votre prochain cours : **${o.premierCours}**.`] : []),
     ],
     bouton: { libelle: "Entrer dans mon campus", lien: `${config.urlCampus}/connexion` },
-    apresBouton: [o.pdfJoint ? pdf : `${formateur ? "Le manuel illustré du formateur" : "Le guide complet"} (PDF) se télécharge ici : ${o.lienPdf}`],
+    apresBouton: [o.pdfJoint ? pdf : `${formateur || regie ? "Le manuel illustré du formateur" : "Le guide complet"} (PDF) se télécharge ici : ${o.lienPdf}`],
     encadre: [
       { libelle: "Adresse du campus", valeur: hote },
       { libelle: "Votre identifiant", valeur: o.email, mono: true },

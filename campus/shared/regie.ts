@@ -7,9 +7,10 @@ export const AVANCE_MAX_OUVERTURE_REGIE_MIN = 60;
 
 /**
  * État d'un cours vu de la régie : à venir, classe ouverte avant l'heure (le cours n'a pas encore commencé),
- * en direct, terminé, annulé, ou pas ouvert du tout alors que l'heure de fin est passée.
+ * en direct, en retard (l'heure du cours est passée et personne n'a ouvert la classe : le cas à repérer d'un coup
+ * d'œil), terminé, annulé, ou pas ouvert du tout alors que l'heure de fin est passée.
  */
-export type EtatRegie = "a_venir" | "ouverte_avance" | "en_direct" | "terminee" | "annulee" | "non_ouverte";
+export type EtatRegie = "a_venir" | "ouverte_avance" | "en_direct" | "en_retard" | "terminee" | "annulee" | "non_ouverte";
 
 export type CampusRegieDto = {
   siteId: number;
@@ -41,7 +42,7 @@ export type CoursRegieDto = {
   diapos: number;
   ressources: number;
   sondages: number;
-  /** « Ouvrir la classe » marche maintenant (séance à venir, dans l'heure qui précède, avant la fin). */
+  /** « Ouvrir la classe » marche maintenant (séance à venir dans l'heure qui précède, ou en retard, avant la fin). */
   peutOuvrir: boolean;
   /** Heure à partir de laquelle « Ouvrir la classe » marche (régie sans « programme »), sinon null. */
   ouvreA: string | null;

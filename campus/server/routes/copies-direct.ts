@@ -2,7 +2,7 @@
 //
 //   - listes et aperçus : réservés à qui anime la séance ET lit les copies (formateur du cours ou co-formateur,
 //     direction, vie scolaire avec « programme » et « notes », limitée à son site, Chargé de cours avec « animer »
-//     pour voir et projeter) ; jamais de note, de
+//     pour voir et projeter, seulement en direct et le corrigé seulement montrable) ; jamais de note, de
 //     commentaire ni de matricule ; ✓✓ jamais posé (GET /api/rendus/:id n'est pas appelé) ;
 //   - projection : une page à la fois, seulement en direct (hors Plan B), après confirmation si des étudiants
 //     peuvent encore rendre ce devoir ; trace au journal (« copie_montree ») et dans le fil de la séance ;
@@ -106,6 +106,20 @@ function exigerStatut(s: Seance, statuts: Seance["statut"][], message: string) {
 function exigerDirect(s: Seance) {
   if (s.statut !== "en_direct") throw new ErreurHttp(409, t("erreur.pasEnDirect"));
   if (s.planBLe) throw new ErreurHttp(409, t("erreur.planB"));
+}
+
+/**
+ * Régie seule (Chargé de cours : « animer » sans « notes ») : les copies et le corrigé ne servent qu'à les MONTRER
+ * à la classe. Elle ne les lit donc qu'en direct, hors Plan B (le seul moment où la projection est possible), et ne
+ * voit un corrigé que s'il est montrable en classe (validé, date limite passée, copies publiées). Le formateur, la
+ * direction et les profils « notes » lisent comme avant, avant le cours compris (préparer la correction).
+ */
+const regieSansNotes = (u: Utilisateur) => u.role === "vie_scolaire" && !peut(u, "notes");
+
+/** Lecture des copies (listes, plan, aperçu, corrigé) : statut de la séance, et le direct pour la régie seule. */
+function exigerLecture(u: Utilisateur, s: Seance) {
+  exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+  if (regieSansNotes(u)) exigerDirect(s);
 }
 
 async function avecDelai<T>(travail: Promise<T>, ms = DELAI_FABRICATION_MS): Promise<T> {
@@ -230,7 +244,7 @@ export function enregistrerCopiesDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await animateurCopies(u, idParam(req));
-      exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+      exigerLecture(u, s);
       const maintenant = new Date();
       const liste = await devoirsPubliesDuCours(s.coursId);
       const [inscrits, tous, copies] = await Promise.all([inscritsVisibles(u, s.coursId), etudiantsDuCours(s.coursId), copiesDesDevoirs(liste.map((d) => d.id))]);
@@ -269,7 +283,7 @@ export function enregistrerCopiesDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await animateurCopies(u, idParam(req));
-      exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+      exigerLecture(u, s);
       const d = await devoirDuCours(s, idParam(req, "devoirId"));
       if (d.type === "quiz") throw invalide(t("erreur.quiz"));
       const maintenant = new Date();
@@ -324,7 +338,7 @@ export function enregistrerCopiesDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await animateurCopies(u, idParam(req));
-      exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+      exigerLecture(u, s);
       const { r, e } = await copieDuCours(u, s, idParam(req, "renduId"));
       const plan: PlanCopieDto = await planDeCopie(r, e);
       sansCache(res);
@@ -339,7 +353,7 @@ export function enregistrerCopiesDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await animateurCopies(u, idParam(req));
-      exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+      exigerLecture(u, s);
       const { r, e } = await copieDuCours(u, s, idParam(req, "renduId"));
       const page = String(req.params.page);
       if (!CLE_PAGE.test(page)) throw introuvable("Page");
@@ -369,12 +383,14 @@ export function enregistrerCopiesDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await animateurCopies(u, idParam(req));
-      exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+      exigerLecture(u, s);
       const d = await devoirDuCours(s, idParam(req, "devoirId"));
       if (d.type !== "depot") throw invalide(t("erreur.quiz"));
       const cd = await corrigeDuDevoir(d.id);
       const montrable = (await corrigeDuDirect(d))!;
-      const plan = cd && cd.contenu.trim() ? planDuCorrige(d, cd) : planDuCorrige(d, { contenu: "", version: cd?.version ?? 0 });
+      // Régie seule : tant que le corrigé n'est pas montrable en classe, seulement l'état (ni pages ni contenu).
+      const lisible = cd && cd.contenu.trim() && (montrable.montrable || !regieSansNotes(u));
+      const plan = lisible ? planDuCorrige(d, cd) : planDuCorrige(d, { contenu: "", version: cd?.version ?? 0 });
       const reponse: PlanCorrigeDto = { ...plan, montrable };
       sansCache(res);
       res.json(reponse);
@@ -387,8 +403,10 @@ export function enregistrerCopiesDirect(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const s = await animateurCopies(u, idParam(req));
-      exigerStatut(s, ["planifiee", "en_direct"], t("erreur.termine"));
+      exigerLecture(u, s);
       const d = await devoirDuCours(s, idParam(req, "devoirId"));
+      // Régie seule : un corrigé en préparation, avant la date limite ou avant les copies publiées ne se lit pas.
+      if (regieSansNotes(u) && !(await corrigeDuDirect(d))?.montrable) throw new ErreurHttp(409, t("corrige.nonValide"), { code: "corrige_retenu" });
       const cd = await corrigeDuDevoir(d.id);
       if (!cd || !cd.contenu.trim()) throw introuvable("Corrigé");
       const plan = planDuCorrige(d, cd);

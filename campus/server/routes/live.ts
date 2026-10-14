@@ -1939,7 +1939,8 @@ export function enregistrerLive(app: Express) {
       const sitesParId = await nomsSites();
       const site = u.siteId ? sitesParId.get(u.siteId) : undefined;
       const nomAffiche =
-        role === "formateur"
+        // Régie de l'équipe (Chargé de cours, vie scolaire) : « · régie », jamais « · formateur » devant les salles.
+        role === "formateur" && u.role === "vie_scolaire" ? `${u.prenom} ${u.nom} · régie` : role === "formateur"
           ? `${u.prenom} ${u.nom} · ${u.role === "admin" ? "direction" : "formateur"}`
           : role === "salle"
             ? `${u.role === "salle" ? nomDeSalle(u, site) : (site?.salleConference ?? "Salle")} · ${site?.nomCourt ?? ""}`

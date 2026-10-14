@@ -56,7 +56,7 @@ export async function envoyerGuideBienvenue(
     const e =
       u.role === "etudiant"
         ? emailGuideEtudiant({ prenom: u.prenom, matricule: u.matricule ?? "", classe: u.classeNom ?? null, premierCours, pdfJoint: pieces.length > 0, lienPdf })
-        : emailGuideBienvenue({ personne: u, email: u.email, premierCours, pdfJoint: pieces.length > 0, lienPdf });
+        : emailGuideBienvenue({ personne: u, email: u.email, premierCours, pdfJoint: pieces.length > 0, lienPdf, regie: estProfilRegie({ role: u.role, profil: u.profil }) });
     if (!emailDisponible()) {
       if (!estProduction) console.log(`[bienvenue] (dev) e-mail non envoyé à ${u.email} : « ${e.sujet} »${pieces.length ? " avec le PDF" : ""}`);
       return false;

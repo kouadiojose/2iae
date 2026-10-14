@@ -6,6 +6,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic, RotateCcw, EyeOff } from "lucide-react";
 import type { DailyCall, DailyEventObjectParticipant } from "@daily-co/daily-js";
 import { patch, post } from "@/lib/api";
+import { useMoi } from "@/lib/auth";
+import { t as textesRegie } from "@shared/textes/regie";
 import { rafraichir } from "@/lib/queryClient";
 import { cn, initiales } from "@/lib/utils";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
@@ -82,7 +84,7 @@ export function Scene(p: PropsScene) {
   else if (role === "etudiant" && mode === "compagnon") contenu = <SceneCompagnon {...p} />;
   else if (seance.fournisseur === "daily" && secoursRadio) contenu = <SceneRadio {...p} raisonSecours={secoursRadio} retourVisio={() => setSecoursRadio(null)} />;
   else if (seance.fournisseur === "daily") contenu = <SceneDaily {...p} onSecoursRadio={(raison) => setSecoursRadio(raison)} onPartageEcran={setEcranPartage} />;
-  else if (seance.fournisseur === "campus") contenu = <SceneCampus {...p} />;
+  else if (seance.fournisseur === "campus") contenu = <SceneCampusOuRegie {...p} />;
   else if (seance.fournisseur === "jitsi") contenu = <SceneJitsi {...p} />;
   else if (seance.fournisseur === "externe") contenu = <SceneExterne {...p} />;
   else contenu = <SceneDemo {...p} />;
@@ -422,6 +424,20 @@ function MessageScene({ icone, texte, action }: { icone: ReactNode; texte: strin
 }
 
 // ── Visio du campus (WebRTC en étoile, module visio) ───────────────────────
+
+/**
+ * Régie de l'équipe (Chargé de cours, vie scolaire) : la visio du campus n'a qu'un centre, le formateur (ou la
+ * direction) ; elle n'y entre pas. Pas d'erreur ni de « Reprendre la classe ici » qui échouerait : un message neutre,
+ * et elle garde les diapos, les vidéos, la parole et les sondages du Studio. Les autres : la visio du campus.
+ */
+function SceneCampusOuRegie(p: PropsScene) {
+  const moi = useMoi().moi;
+  const txRegie = useTextes(textesRegie);
+  if (p.role === "formateur" && p.seance.regie && moi?.role === "vie_scolaire") {
+    return <MessageScene icone={<Radio className="h-6 w-6" />} texte={txRegie("studio.visioCampus")} />;
+  }
+  return <SceneCampus {...p} />;
+}
 
 function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVisio }: PropsScene) {
   const [nomAffiche, setNomAffiche] = useState<string | null>(null);

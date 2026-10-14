@@ -983,7 +983,7 @@ const ROLES_INVITABLES: Role[] = ["formateur", "vie_scolaire", "admin"];
  * Guide pas à pas d'un compte qui vient d'être prêt (formateur ou équipe) : un seul modèle d'e-mail,
  * celui de guide-bienvenue.ts, quel que soit le lien qui a servi. Ne lève jamais d'erreur.
  */
-export async function envoyerGuideFormateur(c: Pick<Utilisateur, "id" | "prenom" | "nom" | "email" | "role">): Promise<boolean> {
+export async function envoyerGuideFormateur(c: Pick<Utilisateur, "id" | "prenom" | "nom" | "email" | "role" | "profil">): Promise<boolean> {
   const envoye = await envoyerGuideBienvenue(c, await prochainCours(c.id).catch(() => null));
   await journaliser(c, "guide_bienvenue", { envoye }).catch(() => undefined);
   return envoye;

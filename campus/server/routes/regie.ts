@@ -11,8 +11,9 @@
 //
 //   GET  /api/regie                          « Mon espace » : les cours du jour et de la semaine (aucun lien dedans)
 //   GET  /api/seances/:id/lien-intervenant   le lien micro + caméra, le message et les liens WhatsApp (journalisé)
-//   + intergiciels sur démarrer, terminer, Plan B, diapos, ressources : garde « pas plus d'une heure avant » pour
-//     la régie seule (sans « programme ») et journal (direction et équipe, jamais le formateur du cours).
+//   + intergiciels sur démarrer, terminer, Plan B, diapos, ressources : garde « pas plus d'une heure avant » et
+//     « terminer et Plan B seulement sur une classe ouverte » pour la régie seule (sans « programme »), et journal
+//     (direction et équipe, jamais le formateur du cours).
 import type { Express, Request, RequestHandler } from "express";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -79,10 +80,30 @@ const gardeOuverture: RequestHandler = (req, res, next) => {
   void (async () => {
     const id = Number(req.params.id);
     const s = Number.isInteger(id) && id > 0 ? await chargerSeance(id) : undefined;
-    if (!s || s.statut !== "planifiee" || s.debut.getTime() - Date.now() <= AVANCE_MAX_MS) return next();
+    // Premier démarrage : séance à venir, ou « terminée » sans avoir jamais démarré (live.ts la démarrerait comme
+    // la première fois, rappel « le cours commence » compris). Une vraie reprise (déjà démarrée) passe.
+    const premier = s && (s.statut === "planifiee" || (s.statut === "terminee" && !s.demarreeLe));
+    if (!s || !premier || s.debut.getTime() - Date.now() <= AVANCE_MAX_MS) return next();
     if (!(await regieCours(u, s.coursId))) return next();
     const ouvre = new Date(s.debut.getTime() - AVANCE_MAX_MS);
     res.status(409).json({ message: t("erreur.tropTot", { v: { heure: heureCourte(ouvre) } }), code: "trop_tot", ouvreA: ouvre.toISOString() });
+  })().catch(next);
+};
+
+/**
+ * Terminer, Plan B : la régie seule n'agit que sur une classe OUVERTE. « Terminer » une séance à venir l'annulerait
+ * sans motif (l'annulation relève de l'emploi du temps) et contournerait la garde d'ouverture ; un Plan B posé sur le
+ * cours de la semaine prochaine resterait jusqu'au cours. Les autres statuts, les autres personnes et celles qui ne
+ * font pas la régie de ce cours passent : routes/live.ts leur répond comme avant.
+ */
+const gardeClasseOuverte: RequestHandler = (req, res, next) => {
+  const u = req.utilisateur;
+  if (!u || !regieSeule(u)) return next();
+  void (async () => {
+    const id = Number(req.params.id);
+    const s = Number.isInteger(id) && id > 0 ? await chargerSeance(id) : undefined;
+    if (!s || s.statut !== "planifiee" || !(await regieCours(u, s.coursId))) return next();
+    res.status(409).json({ message: t("erreur.pasOuverte"), code: "pas_ouverte" });
   })().catch(next);
 };
 
@@ -202,7 +223,9 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
               : "en_direct"
             : fin.getTime() <= t0
               ? "non_ouverte"
-              : "a_venir";
+              : s.debut.getTime() <= t0
+                ? "en_retard"
+                : "a_venir";
     const ouvre = s.debut.getTime() - AVANCE_MAX_MS;
     const dansLaFenetre = avecProgramme || ouvre <= t0;
     return {
@@ -223,20 +246,24 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
       diapos: s.diapos.length,
       ressources: ressourcesDe.get(s.id) ?? 0,
       sondages: sondagesDe.get(s.id) ?? 0,
-      peutOuvrir: etat === "a_venir" && dansLaFenetre,
+      peutOuvrir: etat === "en_retard" || (etat === "a_venir" && dansLaFenetre),
       ouvreA: etat === "a_venir" && !dansLaFenetre ? new Date(ouvre).toISOString() : null,
     };
   });
 }
 
-/** Ordre de la journée : les classes ouvertes (en direct, ouvertes en avance) en tête, puis par heure. */
-const rangEtat = (e: EtatRegie) => (e === "en_direct" || e === "ouverte_avance" ? 0 : 1);
+/**
+ * Ordre de la journée : d'abord ce qui demande d'agir (classes ouvertes, cours commencé que personne n'a ouvert),
+ * puis les cours à venir, enfin ce qui est passé (terminé, annulé, pas ouvert du tout) ; par heure dans chaque groupe.
+ * Sur téléphone, le premier écran montre ainsi le cours à ouvrir, pas un cours fini sans bouton.
+ */
+const rangEtat = (e: EtatRegie) => (e === "en_direct" || e === "ouverte_avance" || e === "en_retard" ? 0 : e === "a_venir" ? 1 : 2);
 
 export function enregistrerRegie(app: Express) {
   // Intergiciels d'abord (routes/index.ts les déclare avant routes/live.ts et routes/ressources-seance.ts).
   app.post("/api/seances/:id/demarrer", exigerConnexion, gardeOuverture, journaliser({ action: "live_demarre", siDemarrage: true }));
-  app.post("/api/seances/:id/terminer", exigerConnexion, journaliser({ action: "live_termine" }));
-  app.post("/api/seances/:id/plan-b", exigerConnexion, journaliser({ action: "live_plan_b" }));
+  app.post("/api/seances/:id/terminer", exigerConnexion, gardeClasseOuverte, journaliser({ action: "live_termine" }));
+  app.post("/api/seances/:id/plan-b", exigerConnexion, gardeClasseOuverte, journaliser({ action: "live_plan_b" }));
   app.post("/api/seances/:id/diapos", exigerConnexion, journaliser({ action: "diapos_deposees", details: nombreFichiers }));
   app.post("/api/seances/:id(\\d+)/ressources", exigerConnexion, journaliser({ action: "ressources_ajoutees", details: () => ({ fichiers: 0, lien: true }) }));
   app.post("/api/seances/:id(\\d+)/ressources/fichiers", exigerConnexion, journaliser({ action: "ressources_ajoutees", details: nombreFichiers }));

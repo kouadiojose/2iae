@@ -10,9 +10,10 @@ const VARIANTES = {
   contour: "bg-white text-encre border-[1.5px] border-encre hover:bg-orange-pale",
   doux: "bg-creme text-encre hover:bg-orange-clair",
   fantome: "bg-transparent text-texte-doux hover:bg-creme hover:text-encre",
-  danger: "bg-direct text-white hover:bg-danger",
-  nuit: "bg-nuit-carte text-white hover:bg-nuit-ligne",
-  "nuit-actif": "bg-orange text-encre hover:bg-orange-peche",
+  // Texte au survol redit pour les liens (LienBouton) : la règle globale « a:hover » (index.css) le passerait en encre.
+  danger: "bg-direct text-white hover:bg-danger hover:text-white focus-visible:text-white",
+  nuit: "bg-nuit-carte text-white hover:bg-nuit-ligne hover:text-white focus-visible:text-white",
+  "nuit-actif": "bg-orange text-encre hover:bg-orange-peche hover:text-encre",
 } as const;
 
 const TAILLES = {

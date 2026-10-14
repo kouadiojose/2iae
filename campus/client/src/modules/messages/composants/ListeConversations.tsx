@@ -11,7 +11,8 @@ import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { cn } from "@/lib/utils";
 import { AvatarConversation } from "./AvatarConversation";
 import { CLE_LISTE, heureListe, rafraichirListe, selonRole } from "../outils";
-import type { ConversationResume, DernierMessage, Role } from "@shared/schema";
+import { estProfilRegie, type ConversationResume, type DernierMessage, type Role } from "@shared/schema";
+import { t as tRegie } from "@shared/textes/regie";
 
 const normaliser = (s: string) =>
   s
@@ -150,11 +151,13 @@ export function ListeConversations({ actifId, onNouveau, className }: { actifId?
       {data && data.length === 0 && (
         <EtatVide
           icone={<MessageCircle className="h-6 w-6" />}
-          titre={etudiant ? "Écris à qui tu veux, comme sur WhatsApp" : "Échangez avec vos étudiants et l'équipe"}
+          titre={etudiant ? "Écris à qui tu veux, comme sur WhatsApp" : estProfilRegie(moi) ? tRegie("messages.vide.titre") : "Échangez avec vos étudiants et l'équipe"}
           texte={
             etudiant
               ? "Ici, tu écris à tes formateurs, à l'administration et aux autres étudiants, de ton campus ou d'ailleurs. Tes conversations et les questions de tes cours apparaîtront ici."
-              : "Vos conversations avec les étudiants de vos cours et avec l'équipe apparaîtront ici, avec les questions posées dans les salons de vos cours."
+              : estProfilRegie(moi)
+                ? tRegie("messages.vide.texte")
+                : "Vos conversations avec les étudiants de vos cours et avec l'équipe apparaîtront ici, avec les questions posées dans les salons de vos cours."
           }
           action={
             <button onClick={onNouveau} className="mt-1 rounded-xl bg-orange px-5 py-3 text-[15px] font-bold text-encre hover:bg-encre hover:text-white">

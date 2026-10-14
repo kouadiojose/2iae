@@ -38,7 +38,8 @@ import {
   exigerDroitDe,
   peut,
 } from "../auth";
-import { creerJeton, lienActivation, reinitialiserCode } from "../activation";
+import { codePermanentCampus, creerJeton, lienActivation, lienEspaceCampus, reinitialiserCode } from "../activation";
+import { t as tCampus } from "@shared/textes/campus";
 import { urlFichier } from "../fichiers";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { creerClassesFilieres } from "../classes-filieres";
@@ -93,6 +94,7 @@ import {
   type CompteLigne,
   type PageComptes,
   type CodeRemis,
+  estProfilCampus,
   type CompteCree,
   type LigneImport,
   type ApercuImport,
@@ -926,6 +928,12 @@ function comptesVisibles(u: Utilisateur): SQL | undefined {
 }
 
 /** Message qui accompagne un code provisoire (tutoiement pour les étudiants, vouvoiement sinon). */
+/** Message WhatsApp du compte de campus (vouvoiement) : le lien de son espace, l'e-mail et le code permanent. */
+async function messageCampus(c: Pick<Utilisateur, "prenom" | "email" | "siteId">, code: string, lien: string): Promise<string> {
+  const [site] = c.siteId ? await db.select({ nomCourt: sites.nomCourt }).from(sites).where(eq(sites.id, c.siteId)) : [];
+  return tCampus("compte.message", { v: { prenom: c.prenom, campus: site?.nomCourt ?? "", lien, email: c.email ?? "", code } });
+}
+
 export function messageCode(c: Pick<Utilisateur, "prenom" | "role" | "matricule" | "email"> & { telephone?: string | null }, code: string, lien: string, expireLe: Date): string {
   const identifiant = c.matricule ?? c.email ?? c.telephone ?? "";
   // Compte sans identifiant (formateur créé sans e-mail ni téléphone) : il le choisira en ouvrant le lien.
@@ -986,6 +994,11 @@ const schemaCreationCompte = z.object({
   localisation: optionnel(z.string().trim().max(120)),
   /** Équipe (rôle vie_scolaire) : profil choisi par la direction (ext-profils.ts). */
   profil: z.enum(PROFILS_EQUIPE).nullable().optional(),
+  /**
+   * Compte de campus : envoyer un lien d'invitation (la personne choisit son code) au lieu du code permanent donné
+   * par la direction. Sans effet pour les autres comptes (ils ont toujours un code provisoire et un lien).
+   */
+  invitation: z.boolean().optional(),
 });
 
 const schemaModificationCompte = z.object({
@@ -1903,6 +1916,9 @@ export function enregistrerAdmin(app: Express) {
       }
       if (d.profil && u.role !== "admin") throw interdit("Seule la direction choisit le profil d'un membre de l'équipe.");
       const profil = d.role === "vie_scolaire" ? (d.profil ?? null) : null;
+      // Compte de campus (un par campus) : toujours rattaché à SON campus, jamais « Tous les campus ».
+      const campus = profil === "campus";
+      if (campus && !d.siteId) throw invalide(tCampus("compte.campusObligatoire"));
       let siteId: number | null = null;
       let classeId: number | null = null;
       if (d.role === "etudiant") {
@@ -1934,6 +1950,9 @@ export function enregistrerAdmin(app: Express) {
       }
 
       const code = d.role === "etudiant" ? codeProvisoire() : motDePasseProvisoire();
+      // Compte de campus sans invitation : code PERMANENT (pas de changement forcé, pas de date de fin), le même sur tous
+      // les ordinateurs du campus ; le lien donné est celui de son espace (/mon-campus).
+      const permanent = campus && !d.invitation;
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
       const [cree] = await db
         .insert(utilisateurs)
@@ -1945,8 +1964,8 @@ export function enregistrerAdmin(app: Express) {
           email: d.email ?? null,
           telephone,
           motDePasseHash: await hacher(code),
-          doitChangerMotDePasse: true,
-          motDePasseExpireLe: expireLe,
+          doitChangerMotDePasse: !permanent,
+          motDePasseExpireLe: permanent ? null : expireLe,
           siteId,
           classeId,
           profil,
@@ -1954,9 +1973,20 @@ export function enregistrerAdmin(app: Express) {
           localisation: d.role === "formateur" ? (d.localisation ?? null) : null,
         })
         .returning();
+      await journaliser(u, "compte_cree", { compteId: cree.id, role: cree.role, siteId, ...(profil ? { profil } : {}), ...(campus ? { permanent } : {}) });
+      if (permanent) {
+        const lien = lienEspaceCampus();
+        const reponse: CompteCree = {
+          compte: await compteParId(cree.id),
+          code,
+          lien,
+          whatsapp: lienWhatsApp(telephone, await messageCampus(cree, code, lien)),
+          expireLe: null,
+        };
+        return res.status(201).json(reponse);
+      }
       const jeton = await creerJeton(cree.id, "activation");
       const lien = lienActivation(jeton);
-      await journaliser(u, "compte_cree", { compteId: cree.id, role: cree.role, siteId, ...(profil ? { profil } : {}) });
       const reponse: CompteCree = {
         compte: await compteParId(cree.id),
         code,
@@ -2040,6 +2070,10 @@ export function enregistrerAdmin(app: Express) {
       }
       // Un compte qu'on déplace doit rester dans le périmètre de la vie scolaire.
       if (p && maj.siteId !== undefined && maj.siteId !== null && !p.includes(maj.siteId)) throw interdit("Ce campus n'est pas dans votre périmètre.");
+      // Compte de campus : toujours rattaché à un campus (jamais « Tous les campus »).
+      const profilApres = d.profil !== undefined ? d.profil : avant.profil;
+      const siteApres = maj.siteId !== undefined ? maj.siteId : avant.siteId;
+      if (role === "vie_scolaire" && profilApres === "campus" && !siteApres) throw invalide(tCampus("compte.campusObligatoire"));
 
       // Profil de l'équipe : choisi par la direction seulement ; un compte qui quitte l'équipe le perd.
       if (role === "vie_scolaire") {
@@ -2105,6 +2139,13 @@ export function enregistrerAdmin(app: Express) {
       if (c.compteLieId && !c.matricule && !c.email && !c.telephone) {
         throw invalide("Ce compte est une double casquette : il s'ouvre depuis le compte formateur de la personne, sans code.");
       }
+      // Compte de campus : un nouveau code PERMANENT ; tous les ordinateurs du campus sont déconnectés.
+      if (estProfilCampus(c)) {
+        const code = await codePermanentCampus(c.id, u.id);
+        const lien = lienEspaceCampus();
+        const reponse: CodeRemis = { code, lien, whatsapp: lienWhatsApp(c.telephone, await messageCampus(c, code, lien)), expireLe: null };
+        return res.json(reponse);
+      }
       const { code, lien } = await reinitialiserCode(c.id, u.id);
       const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
       const reponse: CodeRemis = { code, lien, whatsapp: lienWhatsApp(c.telephone, messageCode(c, code, lien, expireLe)), expireLe: expireLe.toISOString() };
@@ -2132,6 +2173,7 @@ export function enregistrerAdmin(app: Express) {
         req.body,
       );
       if (f.role !== "formateur") throw invalide("La double casquette se donne à un compte formateur.");
+      if (profil === "campus") throw invalide("Le profil « Chargé du campus » est l'accès d'un campus : créez-le dans Comptes, pas en double casquette.");
       if (!f.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
       if (f.compteLieId) throw new ErreurHttp(409, "Ce formateur a déjà une double casquette. Retirez-la d'abord pour en donner une autre.");
       let site: number | null = null;

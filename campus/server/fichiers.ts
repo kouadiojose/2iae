@@ -19,7 +19,7 @@ import { route, idParam, introuvable, interdit, invalide, ErreurHttp } from "./h
 import { planifier } from "./taches";
 import { creerBucket } from "./stockage";
 import { and, eq, like, not } from "drizzle-orm";
-import { fichiers, utilisateurs, estProfilRegie, type Fichier, type Utilisateur, type Droit } from "@shared/schema";
+import { fichiers, utilisateurs, estProfilRestreint, type Fichier, type Utilisateur, type Droit } from "@shared/schema";
 
 /** Le bucket Railway des fichiers ; ses objets sont rangés sous « fichiers/<clé> ». */
 const bucket = creerBucket(config.fichiersBucket, "fichiers");
@@ -60,9 +60,10 @@ const DROIT_FICHIER: Partial<Record<string, Droit>> = { rendu: "notes", piece: "
 export async function peutLireFichier(u: Utilisateur, f: Fichier): Promise<boolean> {
   if (f.proprietaireId === u.id || f.usage === "avatar") return true;
   const droit = DROIT_FICHIER[f.usage];
-  // Profil de régie (Chargé de cours) : pas l'accès large de l'équipe (pièces jointes des messages privés, etc.) ;
-  // seulement les gardiens de chaque usage (diapo, ressource, discussion du live, leçon, consigne : la classe).
-  if (estEquipe(u) && !estProfilRegie(u) && (!droit || peut(u, droit))) {
+  // Profils à espace réduit (Chargé de cours, Chargé du campus) : pas l'accès large de l'équipe (pièces jointes des
+  // messages privés, etc.) ; seulement les gardiens de chaque usage (diapo, ressource, discussion du live, leçon,
+  // consigne : la classe).
+  if (estEquipe(u) && !estProfilRestreint(u) && (!droit || peut(u, droit))) {
     const perimetre = perimetreSites(u);
     if (!perimetre) return true; // direction, ou vie scolaire du groupe
     // Vie scolaire d'un site : les fichiers des personnes de son site…

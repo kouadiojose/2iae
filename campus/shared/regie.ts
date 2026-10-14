@@ -22,21 +22,6 @@ export type CampusRegieDto = {
   connectee: boolean;
 };
 
-/**
- * Une autre classe en direct occupe une salle de conférence de ce cours (« Laisse-les fermer, ne force pas la
- * fermeture » : l'ouverture automatique attend qu'elle ferme). GET /api/seances/:id/salle-occupee (Studio) et
- * CoursRegieDto.attenteSalle (« Mon espace »).
- */
-export type SalleOccupeeDto = {
-  /** La séance en direct qui occupe la salle (son Studio : /live/:id). */
-  seanceId: number;
-  /** « Anglais commun ». */
-  cours: string;
-  code: string;
-  /** « Riviera · Salle de conférence 1 ». */
-  salle: string;
-};
-
 export type CoursRegieDto = {
   seanceId: number;
   titre: string;
@@ -79,11 +64,6 @@ export type CoursRegieDto = {
    * ne s'est pas encore ouverte à cet horaire), sinon null. Absent d'une ancienne réponse : null.
    */
   ouvertureAutoA?: string | null;
-  /**
-   * Séance pas encore ouverte dont une salle est occupée par une autre classe en direct : elle attend que celle-ci
-   * ferme (« Laisse-les fermer ») ; « Ouvrir la classe » mettrait deux classes dans la même salle. Absent : null.
-   */
-  attenteSalle?: SalleOccupeeDto | null;
   /**
    * « Rouvrir la classe » : terminée depuis moins de 2 h (reprise permise par le serveur) et sa fin prévue pas encore
    * passée (fermée trop tôt, par erreur). Absent : faux.

@@ -43,7 +43,7 @@ import {
   type ExposeDto,
   type QuizLivreDto,
   type ActiviteBiblioDto,
-  estProfilRegie,
+  estProfilRestreint,
   type ConversationBiblioDto,
   type PageTexteDto,
 } from "@shared/schema";
@@ -69,7 +69,7 @@ async function versRechercheDto(r: typeof recherchesBiblio.$inferSelect): Promis
  * Personnel qui suit le travail des étudiants (recherche, exposé). Pas le profil de régie (Chargé de cours) : il
  * anime la classe en direct, il ne suit pas les dossiers des étudiants ; il ne lit que ses propres recherches.
  */
-const estPersonnel = (u: Utilisateur) => u.role !== "etudiant" && !estProfilRegie(u);
+const estPersonnel = (u: Utilisateur) => u.role !== "etudiant" && !estProfilRestreint(u);
 
 async function livreDe(id: number): Promise<Livre> {
   const [l] = await db.select().from(livres).where(eq(livres.id, id));
@@ -732,7 +732,7 @@ Prépare : une problématique claire ; un plan (introduction avec accroche, 2 ou
     route(async (req, res) => {
       const u = moi(req);
       // Ce que chaque étudiant cherche et prépare (nominatif) : pas pour la régie des cours (Chargé de cours).
-      if (estProfilRegie(u)) throw interdit("Votre profil ne permet pas de suivre le travail des étudiants.");
+      if (estProfilRestreint(u)) throw interdit("Votre profil ne permet pas de suivre le travail des étudiants.");
       // Périmètre : la direction voit tout, la vie scolaire son campus, le formateur les étudiants de ses cours.
       let filtre: ReturnType<typeof inArray> | undefined;
       if (u.role === "formateur") {

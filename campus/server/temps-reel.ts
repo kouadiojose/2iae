@@ -136,6 +136,18 @@ export function utilisateursSur(canal: string): Utilisateur[] {
   return [...vus.values()];
 }
 
+/**
+ * Postes connectés à un canal : une connexion par couple (compte, session du navigateur). Le formateur et sa
+ * fenêtre présentateur (même session) comptent une fois ; deux ordinateurs du même compte de campus (deux
+ * sessions) comptent deux fois. Sert à la fermeture logique (routes/live.ts : presentsDans) et aux écrans du
+ * campus (routes/live.ts : campusDirect, « ecrans »).
+ */
+export function postesSur(canal: string, filtre?: (u: Utilisateur) => boolean): number {
+  const vus = new Set<string>();
+  for (const c of parCanal.get(canal) ?? []) if (!filtre || filtre(c.utilisateur)) vus.add(`${c.utilisateur.id}|${c.sessionId}`);
+  return vus.size;
+}
+
 /** La personne a-t-elle au moins un onglet ouvert sur le campus ? */
 export const estEnLigne = (utilisateurId: number) => (parCanal.get(`u:${utilisateurId}`)?.size ?? 0) > 0;
 

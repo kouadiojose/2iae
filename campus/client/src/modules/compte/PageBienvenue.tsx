@@ -20,7 +20,7 @@ import { ActiverNotifications } from "@/modules/pwa/ActiverNotifications";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { rafraichir } from "@/lib/queryClient";
 import { cn, nomComplet } from "@/lib/utils";
-import { LIBELLES_ROLES, estProfilRegie, libelleProfil, type Moi, type ParcoursBienvenue } from "@shared/schema";
+import { LIBELLES_ROLES, estProfilCampus, estProfilRegie, libelleProfil, type Moi, type ParcoursBienvenue } from "@shared/schema";
 import { t as tRegie } from "@shared/textes/regie";
 import { PiedAction, LienDiscret } from "./composants/PiedAction";
 import { PaveCode } from "./composants/PaveCode";
@@ -60,10 +60,11 @@ const libelleEtape = (e: Etape, moi: Moi): [string, string] => (e === "code" && 
 
 /** Étapes qu'il reste à faire pour cette personne (calculées une fois, à l'arrivée). */
 function etapesDuParcours(moi: Moi, p: ParcoursBienvenue, mode: Mode): Etape[] {
-  if (mode === "visite") return moi.role === "salle" ? [] : ["visite"];
+  if (mode === "visite") return moi.role === "salle" || estProfilCampus(moi) ? [] : ["visite"];
   if (mode === "essai") return moi.role === "etudiant" ? ["essai"] : [];
-  // L'écran d'une salle de conférence n'a besoin que de son mot de passe.
-  if (moi.role === "salle") return p.codeChoisi ? [] : ["code"];
+  // L'écran d'une salle de conférence n'a besoin que de son mot de passe ; le Chargé du campus aussi (arrivé par un
+  // lien d'invitation : il choisit son code secret, puis arrive sur les carrés de son campus).
+  if (moi.role === "salle" || estProfilCampus(moi)) return p.codeChoisi ? [] : ["code"];
   const etudiant = moi.role === "etudiant";
   const liste: Etape[] = [];
   // « C'est bien vous ? » est inutile quand la personne vérifie et corrige elle-même son nom.

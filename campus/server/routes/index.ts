@@ -7,6 +7,7 @@ import { enregistrerCours } from "./cours";
 import { enregistrerMediatheque } from "./mediatheque";
 import { enregistrerLive } from "./live";
 import { enregistrerRegie } from "./regie";
+import { enregistrerEspaceCampus } from "./espace-campus";
 import { enregistrerRessourcesSeance } from "./ressources-seance";
 import { enregistrerEvaluations } from "./evaluations";
 import { enregistrerCopiesDirect } from "./copies-direct";
@@ -58,6 +59,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerMediatheque(app);
   enregistrerRegie(app); // régie des cours (Chargé de cours) : AVANT live, ses intergiciels (garde, journal) passent en premier
   enregistrerLive(app);
+  enregistrerEspaceCampus(app); // espace du campus (un compte par campus : carrés des cours, écran de la salle)
   enregistrerRessourcesSeance(app);
   enregistrerInvite(app);
   enregistrerEvaluations(app);

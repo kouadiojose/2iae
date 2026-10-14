@@ -17,7 +17,7 @@ import { useState, type ReactNode } from "react";
 import { Link, Redirect } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { FileSpreadsheet, Printer, CalendarClock, BarChart3, Globe, Sparkles, ArrowRight, PartyPopper, GraduationCap, UserPlus, Activity } from "lucide-react";
-import { estProfilRegie, type Droit } from "@shared/schema";
+import { estProfilCampus, estProfilRegie, type Droit } from "@shared/schema";
 import type { IndicateursTableau, TableauPilotageEngagement } from "@shared/engagement/indicateurs";
 import { t as te, selonNombre } from "@shared/textes/engagement";
 import { useTextes } from "@/lib/textes";
@@ -42,6 +42,8 @@ import { pourcent } from "./outils";
 export default function PageTableau() {
   const moi = useMoiConnecte();
   if (estProfilRegie(moi)) return <Redirect to="/regie" replace />;
+  // Chargé du campus : son accueil est le carré de chaque cours de son campus.
+  if (estProfilCampus(moi)) return <Redirect to="/mon-campus" replace />;
   return <TableauPilotage />;
 }
 

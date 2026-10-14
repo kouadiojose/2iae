@@ -60,6 +60,12 @@ export const t = creerTextes({
   "salle.qr.taux": "{n} %",
   "salle.qr.retrait": "Ce message se retire tout seul dans {n} s · le cours continue",
 
+  // ── Fermeture logique (José, 14 octobre 2026 au soir : « il y a une seule personne dans le cours, ferme le
+  // cours ») et ouverture par le compte de campus : bilan de la séance (fil des événements) ──
+  "fin.logique.un": "Fermée toute seule : une seule personne restait, 10 min après l'heure de fin",
+  "fin.logique.zero": "Fermée toute seule : plus personne, 10 min après l'heure de fin",
+  "demarrage.campus": "Classe ouverte par le campus de {campus} (les salles s'installent)",
+
   // ── Écran de salle : mini-guide du chargé de cours (avant le cours) ──────
   "guide.etiquette": "Chargé de cours",
   "guide.titre": "Vous n'avez rien à faire",

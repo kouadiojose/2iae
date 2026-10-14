@@ -541,8 +541,13 @@ export type CampusDirectDto = {
   effectif: number | null;
   prete: boolean;
   incident: string | null;
-  /** L'écran de la salle est connecté (le campus « s'allume » sur la carte). */
+  /** L'écran de la salle est connecté (le campus « s'allume » sur la carte) : compte « salle » ou ordinateur du compte de campus. */
   salleConnectee: boolean;
+  /**
+   * Postes d'écran de ce campus sur la classe (un par ordinateur). Deux ordinateurs du compte de campus sur le même
+   * cours : 2 (l'écran prévient « Un autre ordinateur de … montre ce cours »). Absent : réponse d'avant le 15 octobre.
+   */
+  ecrans?: number;
   mainLevee: boolean;
   /** Une classe de ce campus suit le cours : sa salle est attendue (absent : réponse d'avant les salles). */
   attendue?: boolean;

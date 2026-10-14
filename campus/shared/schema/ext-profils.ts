@@ -15,9 +15,18 @@
 // place de la direction (ouvrir la classe, PowerPoint et vidéos, projection,
 // lien intervenant, parole), par le droit « animer », sans rien d'autre. Son
 // espace : « Mon espace » (/regie, routes/regie.ts), navigation réduite.
+//
+// Chargé du campus (José, 14 octobre 2026 au soir : « chaque campus aura son propre accès, géré par le chargé
+// du campus ») : UN compte par campus, rattaché à son campus (site_id obligatoire), droit unique « espace_campus ».
+// Son espace : /mon-campus (routes/espace-campus.ts), un gros carré par cours de son campus, puis cinq gros blocs
+// (live, leçons, résumés, examens, notes en lecture). « Entrer dans le live » fait de l'ordinateur l'écran de la
+// salle pour le cours choisi : il entre dans la classe COMME UNE SALLE (estEcran), jamais comme animateur. Il n'a
+// pas « animer » : avec ce droit, regieCours ferait de lui le formateur de la classe (jeton propriétaire,
+// enregistrement, « Terminer », main levée refusée) ; ni « notes » : enseigneCours le rendrait enseignant des
+// cours propres à son campus (créer des devoirs, publier des notes).
 import type { Role } from "./base";
 
-export const PROFILS_EQUIPE = ["scolarite", "vie_scolaire", "secretariat", "pedagogie", "charge_cours"] as const;
+export const PROFILS_EQUIPE = ["scolarite", "vie_scolaire", "secretariat", "pedagogie", "charge_cours", "campus"] as const;
 export type ProfilEquipe = (typeof PROFILS_EQUIPE)[number];
 
 /** Profil appliqué à un compte de l'équipe qui n'en a pas (comptes d'avant les profils). */
@@ -39,6 +48,7 @@ export const DROITS = [
   "annonces",
   "outils_campus",
   "animer",
+  "espace_campus",
 ] as const;
 export type Droit = (typeof DROITS)[number];
 
@@ -60,6 +70,8 @@ export const LIBELLES_DROITS: Record<Droit, string> = {
   outils_campus: "Écrans des salles, réglages et consommation de la visio, budget de l'assistant IA, liste de la rentrée",
   animer:
     "Régie des cours en direct : ouvrir et fermer la classe, PowerPoint et vidéos avant et pendant le cours, projection, lien intervenant, parole et mains levées, sondages, discussion (sans notes ni emploi du temps)",
+  espace_campus:
+    "Espace du campus : les cours de son campus en gros carrés, l'écran de la salle pendant le live (ouvrir le cours dès 1 h avant), les leçons, résumés, examens et notes publiées des étudiants de son campus, en lecture",
 };
 
 export type DefinitionProfil = {
@@ -67,8 +79,11 @@ export type DefinitionProfil = {
   /** Une phrase, montrée à la direction quand elle choisit le profil. */
   description: string;
   droits: readonly Droit[];
-  /** « regie » : profil limité à la régie des cours (accueil « Mon espace », navigation réduite, messagerie sans les étudiants). */
-  espace?: "regie";
+  /**
+   * « regie » : profil limité à la régie des cours (accueil « Mon espace », navigation réduite, messagerie sans les
+   * étudiants). « campus » : l'espace du campus (accueil /mon-campus, aucune autre page, ni messagerie ni annuaire).
+   */
+  espace?: "regie" | "campus";
 };
 
 export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
@@ -84,7 +99,9 @@ export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
       "Tout le travail de l'équipe sur son périmètre : présences et absences, suivi des étudiants, comptes et nouveau code, dossiers, frais, programme, annonces.",
     // Tous les droits SAUF « animer » : la vie scolaire anime déjà par « programme », sur les cours propres à son
     // campus (enseigneCours) ; « animer » lui donnerait en plus les cours partagés, sans que personne l'ait demandé.
-    droits: DROITS.filter((d) => d !== "animer"),
+    // Ni « espace_campus » : la vie scolaire garde ses outils (pilotage, /salle?site=) ; un second accueil les lui
+    // ferait perdre.
+    droits: DROITS.filter((d) => d !== "animer" && d !== "espace_campus"),
   },
   secretariat: {
     libelle: "Secrétariat / accueil",
@@ -105,6 +122,13 @@ export const DROITS_PROFILS: Record<ProfilEquipe, DefinitionProfil> = {
     droits: ["animer"],
     espace: "regie",
   },
+  campus: {
+    libelle: "Chargé du campus",
+    description:
+      "Un accès par campus, pour la personne qui s'occupe des salles. Elle voit les cours de son campus en gros carrés, lance le live sur l'ordinateur de chaque salle, lit les leçons, les résumés, les examens et les notes de son campus. Rien d'autre.",
+    droits: ["espace_campus"],
+    espace: "campus",
+  },
 };
 
 export const LIBELLES_PROFILS: Record<ProfilEquipe, string> = {
@@ -113,6 +137,7 @@ export const LIBELLES_PROFILS: Record<ProfilEquipe, string> = {
   secretariat: DROITS_PROFILS.secretariat.libelle,
   pedagogie: DROITS_PROFILS.pedagogie.libelle,
   charge_cours: DROITS_PROFILS.charge_cours.libelle,
+  campus: DROITS_PROFILS.campus.libelle,
 };
 
 export const estProfilEquipe = (v: unknown): v is ProfilEquipe => typeof v === "string" && (PROFILS_EQUIPE as readonly string[]).includes(v);
@@ -147,6 +172,29 @@ export function estProfilRegie(u: PersonneDroits | null | undefined): boolean {
   return p !== null && DROITS_PROFILS[p].espace === "regie";
 }
 
+/** Profil « Chargé du campus » : un compte par campus, accueil /mon-campus (espace-campus). Faux pour la direction. */
+export function estProfilCampus(u: PersonneDroits | null | undefined): boolean {
+  const p = u ? profilDe(u) : null;
+  return p !== null && DROITS_PROFILS[p].espace === "campus";
+}
+
+/**
+ * Profils à espace réduit (régie, campus) : ni annuaire, ni messagerie avec les étudiants, ni accès large de
+ * l'équipe aux fichiers (seulement les gardiens de chaque usage), ni guide ni visite de l'équipe.
+ */
+export function estProfilRestreint(u: PersonneDroits | null | undefined): boolean {
+  const p = u ? profilDe(u) : null;
+  return p !== null && Boolean(DROITS_PROFILS[p].espace);
+}
+
+/**
+ * L'écran d'une salle de conférence dans une classe : un compte « salle » (ancien écran installé par son lien), ou
+ * un compte de campus (« Entrer dans le live » : l'ordinateur de la salle montre le cours choisi). Il entre
+ * toujours comme une salle : profil de visio « salle », caméra et micro de la salle, jamais animateur ; il compte
+ * comme « salle connectée » de son campus (Studio, régie, direction).
+ */
+export const estEcran = (u: PersonneDroits | null | undefined): boolean => Boolean(u) && (u!.role === "salle" || estProfilCampus(u));
+
 /** Profils qui ont ce droit (pour une requête : qui prévenir, qui peut recevoir une tâche…). */
 export const profilsAvec = (droit: Droit): ProfilEquipe[] => PROFILS_EQUIPE.filter((p) => DROITS_PROFILS[p].droits.includes(droit));
 
@@ -167,6 +215,8 @@ export function profilSuggere(fonction: string | null | undefined): ProfilEquipe
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
   if (!f.trim()) return null;
+  // Avant la vie scolaire : « responsable du campus » n'est pas un surveillant.
+  if (/charge du campus|charges du campus|responsable (du |de )?campus|chef (du |de )?campus|gestionnaire (du |de )?campus/.test(f)) return "campus";
   if (/vie scolaire|\bcpe\b|surveill|educat|conseiller principal/.test(f)) return "vie_scolaire";
   // Avant la pédagogie (« chargé de cours et coordination » doit donner la régie). Ailleurs, « chargé de cours »
   // désigne aussi un enseignant vacataire : la description du profil le dit à la direction, qui valide.

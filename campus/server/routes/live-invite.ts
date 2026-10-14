@@ -46,7 +46,7 @@ import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
 import { changerDiapo, signalerIntervenant, terminerParIntervenant } from "./live";
-import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
+import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, estProfilCampus, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
 
 const MINUTE = 60_000;
 /** Le lien marche encore 30 minutes après la fin prévue (débordement, retardataires). */
@@ -171,7 +171,8 @@ export function enregistrerInvite(app: Express) {
       // L'équipe : les cours de son périmètre (un campus, ou tout le groupe), comme pour voir la séance.
       const permis =
         u.role === "admin" ||
-        (u.role === "vie_scolaire" && (await peutVoirCours(u, s.coursId))) ||
+        // Le compte de campus n'en a pas besoin : son ordinateur EST l'écran de la salle (pas de lien « son + diapos »).
+        (u.role === "vie_scolaire" && !estProfilCampus(u) && (await peutVoirCours(u, s.coursId))) ||
         (u.role === "formateur" && (await enseigneCours(u, s.coursId))) ||
         (u.role === "salle" && (await seanceVisible(u, s.id).then(() => true, () => false)));
       if (!permis) throw interdit("Le lien invité est réservé au formateur du cours, aux salles et à l'équipe.");

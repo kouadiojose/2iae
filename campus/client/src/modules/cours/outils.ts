@@ -25,6 +25,31 @@ function luminance(hex: string): number {
   return 0.2126 * canal(1) + 0.7152 * canal(3) + 0.0722 * canal(5);
 }
 
+/**
+ * Fond et texte d'un grand carré de couleur (espace du campus, accueil du formateur) : la couleur du cours, et le
+ * texte le plus lisible (encre ou blanc). Quand ni l'un ni l'autre n'atteint un contraste de 4,5 (couleur moyenne),
+ * la couleur est assombrie peu à peu jusqu'à ce que le blanc l'atteigne : le carré garde sa teinte, le nom se lit
+ * de loin, même sur un vieil écran.
+ */
+export function couleurLisible(hex: string): { fond: string; texte: string } {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return { fond: "#E4793A", texte: "#141414" };
+  const encre = luminance("#141414");
+  const contrastes = (h: string) => {
+    const l = luminance(h);
+    return { blanc: 1.05 / (l + 0.05), encre: (l + 0.05) / (encre + 0.05) };
+  };
+  const c = contrastes(hex);
+  if (c.encre >= 4.5 && c.encre >= c.blanc) return { fond: hex, texte: "#141414" };
+  if (c.blanc >= 4.5) return { fond: hex, texte: "#FFFFFF" };
+  if (c.encre >= 4.5) return { fond: hex, texte: "#141414" };
+  const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  for (let f = 0.95; f > 0.3; f -= 0.05) {
+    const sombre = `#${rgb.map((v) => Math.round(v * f).toString(16).padStart(2, "0")).join("")}`;
+    if (contrastes(sombre).blanc >= 4.5) return { fond: sombre, texte: "#FFFFFF" };
+  }
+  return { fond: "#141414", texte: "#FFFFFF" };
+}
+
 /** Le texte le plus lisible sur une couleur de cours : encre ou blanc (contraste le plus élevé). */
 export function texteSur(hex: string): "encre" | "blanc" {
   const l = luminance(hex);

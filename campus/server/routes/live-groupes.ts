@@ -9,7 +9,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { exigerConnexion, moi } from "../auth";
+import { exigerConnexion, moi, sqlEstEcran } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { seanceVisible } from "../acces";
 import { publier, utilisateursSur } from "../temps-reel";
@@ -38,6 +38,7 @@ import {
   type ParticipantGroupeDto,
   type TypeEvenementSeance,
   type AccesDaily,
+  estEcran,
 } from "@shared/schema";
 import { nomDeSalle } from "@shared/salles";
 
@@ -143,7 +144,7 @@ async function rattacherCompagnon(u: Utilisateur, s: Seance, session: SessionGro
     .select({ groupeId: membresGroupes.groupeId })
     .from(membresGroupes)
     .innerJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
-    .where(and(eq(membresGroupes.sessionId, session.id), eq(utilisateurs.role, "salle"), eq(utilisateurs.siteId, p.siteId)))
+    .where(and(eq(membresGroupes.sessionId, session.id), sqlEstEcran(), eq(utilisateurs.siteId, p.siteId)))
     .limit(1);
   if (salle) await db.insert(membresGroupes).values({ sessionId: session.id, groupeId: salle.groupeId, utilisateurId: u.id }).onConflictDoNothing();
 }
@@ -167,7 +168,16 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const [groupes, membres, sitesParId] = await Promise.all([
       db.select().from(groupesTravail).where(eq(groupesTravail.sessionId, session.id)).orderBy(asc(groupesTravail.numero)),
       db
-        .select({ groupeId: membresGroupes.groupeId, id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, role: utilisateurs.role, siteId: utilisateurs.siteId, salleNom: utilisateurs.salleNom })
+        .select({
+          groupeId: membresGroupes.groupeId,
+          id: utilisateurs.id,
+          prenom: utilisateurs.prenom,
+          nom: utilisateurs.nom,
+          role: utilisateurs.role,
+          profil: utilisateurs.profil,
+          siteId: utilisateurs.siteId,
+          salleNom: utilisateurs.salleNom,
+        })
         .from(membresGroupes)
         .innerJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
         .where(eq(membresGroupes.sessionId, session.id))
@@ -178,7 +188,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const voitTout = privilegie(role);
     const versMembre = (m: (typeof membres)[number]): MembreGroupeDto => {
       const site = m.siteId ? sitesParId.get(m.siteId) : undefined;
-      if (m.role === "salle") return { id: m.id, nom: nomSalle(site, m), role: "salle", siteId: m.siteId, site: site?.nomCourt ?? null };
+      if (estEcran(m)) return { id: m.id, nom: nomSalle(site, m), role: "salle", siteId: m.siteId, site: site?.nomCourt ?? null };
       const nom = role === "salle" ? "Un étudiant" : voitTout ? `${m.prenom} ${m.nom}` : `${m.prenom} ${m.nom.charAt(0)}.`;
       return { id: m.id, nom, role: "etudiant", siteId: m.siteId, site: site?.nomCourt ?? null };
     };
@@ -215,7 +225,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
 
   /** Personnes présentes à répartir : étudiants et écrans de salle ouverts sur le direct. */
   async function participants(s: Seance): Promise<ParticipantGroupeDto[]> {
-    const connectes = utilisateursSur(canal(s.id)).filter((x) => x.role === "etudiant" || x.role === "salle");
+    const connectes = utilisateursSur(canal(s.id)).filter((x) => x.role === "etudiant" || estEcran(x));
     if (!connectes.length) return [];
     const ids = connectes.map((x) => x.id);
     const [lignes, sitesParId] = await Promise.all([
@@ -227,7 +237,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
       const p = presence.get(x.id);
       const siteId = x.role === "etudiant" && p?.mode === "salle" && p.siteId ? p.siteId : x.siteId;
       const site = siteId ? sitesParId.get(siteId) : undefined;
-      if (x.role === "salle") return { id: x.id, nom: nomSalle(site, x), role: "salle", siteId, site: site?.nomCourt ?? null, mode: "salle" };
+      if (estEcran(x)) return { id: x.id, nom: nomSalle(site, x), role: "salle", siteId, site: site?.nomCourt ?? null, mode: "salle" };
       const suivi = modesSuivi.get(`${s.id}:${x.id}`)?.mode;
       const mode = p?.mode === "salle" || suivi === "compagnon" ? "salle" : suivi === "video" ? "video" : suivi === "radio" ? "radio" : null;
       return { id: x.id, nom: `${x.prenom} ${x.nom}`, role: "etudiant", siteId, site: site?.nomCourt ?? null, mode };
@@ -268,7 +278,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const personnes = await db.select().from(utilisateurs).where(inArray(utilisateurs.id, ids));
     if (personnes.length !== ids.length) throw invalide("Une des personnes n'existe plus.");
     for (const p of personnes) {
-      if (!p.actif || (p.role !== "etudiant" && p.role !== "salle")) throw invalide("Seuls les étudiants et les salles se répartissent en groupes.");
+      if (!p.actif || (p.role !== "etudiant" && !estEcran(p))) throw invalide("Seuls les étudiants et les salles se répartissent en groupes.");
     }
     const refus = await Promise.all(personnes.map((p) => seanceVisible(p, s.id).then(() => null, () => p)));
     const exclu = refus.find(Boolean);
@@ -351,7 +361,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         // Les étudiants émargés dans une salle suivent le groupe de leur salle.
         const groupeDe = new Map(d.groupes.flatMap((g, i) => g.membres.map((id) => [id, i] as const)));
         const crees = await db.select().from(groupesTravail).where(eq(groupesTravail.sessionId, session.id)).orderBy(asc(groupesTravail.numero));
-        for (const p of personnes) if (p.role === "salle") await deplacerSalle(s, session.id, p, null, crees[groupeDe.get(p.id)!].id);
+        for (const p of personnes) if (estEcran(p)) await deplacerSalle(s, session.id, p, null, crees[groupeDe.get(p.id)!].id);
         await o.consigner(s.id, "groupes_ouverts", { groupes: d.groupes.length, personnes: ids.length, par: u.id });
         await db.insert(journal).values({ utilisateurId: u.id, action: "groupes_ouverts", details: { seanceId: s.id, groupes: d.groupes.length } });
         signaler(s.id, "ouverture");
@@ -373,7 +383,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         const [personne] = await verifierParticipants(s, [d.utilisateurId]);
         const ancien = await monGroupe(session.id, personne.id);
         await placer(session.id, personne.id, d.groupeId);
-        if (personne.role === "salle") await deplacerSalle(s, session.id, personne, ancien, d.groupeId);
+        if (estEcran(personne)) await deplacerSalle(s, session.id, personne, ancien, d.groupeId);
         signaler(s.id, "membres");
         res.json(await etatGroupes(u, s, await o.roleDans(u, s)));
       }),
@@ -405,7 +415,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
           }
         }
         await placer(session.id, u.id, g.id);
-        if (u.role === "salle") await deplacerSalle(s, session.id, u, ancien, g.id);
+        if (estEcran(u)) await deplacerSalle(s, session.id, u, ancien, g.id);
         signaler(s.id, "membres");
         res.json(await etatGroupes(u, s, role));
       }),
@@ -424,7 +434,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         if (!session.retourLibre && !session.choixLibre) throw interdit("Le formateur ramènera tout le monde en classe.");
         const ancien = await monGroupe(session.id, u.id);
         await placer(session.id, u.id, null);
-        if (u.role === "salle") await deplacerSalle(s, session.id, u, ancien, null);
+        if (estEcran(u)) await deplacerSalle(s, session.id, u, ancien, null);
         signaler(s.id, "membres");
         res.json(await etatGroupes(u, s, role));
       }),

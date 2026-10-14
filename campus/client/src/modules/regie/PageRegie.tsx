@@ -2,14 +2,13 @@
 // Les cours du jour de tous les campus de son périmètre, une carte par cours : l'heure, le cours, le formateur
 // (connecté ou non, avec son compte ou par le lien intervenant), les campus et leurs salles (connectées ou non), ce
 // qui est prêt (PowerPoint, vidéos). Un seul gros bouton orange par carte : « Ouvrir la classe » (démarrer, puis le
-// Studio) ou « Entrer dans le Studio » ; puis « Préparer » et « Lien intervenant ». Un cours dont la salle est encore
-// occupée par une autre classe en direct le dit (« En attente de la salle », « Laisse-les fermer ») : pas de gros
-// bouton, « Ouvrir quand même » après confirmation. L'heure de l'ouverture automatique est annoncée ; une classe
+// Studio) ou « Entrer dans le Studio » ; puis « Préparer » et « Lien intervenant ». (L'attente de la salle occupée,
+// « En attente de la salle », a été retirée le 15 octobre 2026.) L'heure de l'ouverture automatique est annoncée ; une classe
 // fermée trop tôt se rouvre (« Rouvrir la classe »). Les jours suivants de la semaine dessous, pour préparer.
 // Téléphone d'abord (360 px) ; se met à jour toute seule (30 s, et à chaque ouverture ou fin d'un direct).
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { CalendarDays, Check, CircleSlash, Clock, MonitorPlay, Play, Presentation, RotateCcw, Wrench } from "lucide-react";
 import type { CoursRegieDto, EspaceRegieDto, EtatRegie } from "@shared/regie";
 import { t as textesRegie } from "@shared/textes/regie";
@@ -106,16 +105,8 @@ function jourDans(n: number): string {
   return jourLong(new Date(Date.now() + n * 86_400_000));
 }
 
-function PastilleEtat({ etat, debut, attenteFormateur = false, attenteSalle = false }: { etat: EtatRegie; debut: string; attenteFormateur?: boolean; attenteSalle?: boolean }) {
+function PastilleEtat({ etat, debut, attenteFormateur = false }: { etat: EtatRegie; debut: string; attenteFormateur?: boolean }) {
   const tx = useTextes(textesRegie);
-  // Une autre classe en direct occupe encore la salle : celle-ci s'ouvrira dès qu'elle fermera.
-  if (attenteSalle && (etat === "a_venir" || etat === "en_retard")) {
-    return (
-      <Badge ton={etat === "en_retard" ? "danger" : "alerte"} className="whitespace-normal font-semibold">
-        {tx("etat.attenteSalle")}
-      </Badge>
-    );
-  }
   switch (etat) {
     case "en_direct":
       // Ouverte automatiquement, l'heure passée, personne n'anime : prendre la classe ou envoyer le lien intervenant.
@@ -183,44 +174,17 @@ function useOuvrir(c: CoursRegieDto, message: string) {
 
 /**
  * Le gros bouton de la carte : entrer dans la classe ouverte, l'ouvrir, ou dire à quelle heure elle s'ouvrira
- * (d'elle-même, ouverture automatique, ou à la main). Salle encore occupée : « Ouvrir quand même », confirmé.
+ * (d'elle-même, ouverture automatique, ou à la main).
  */
 function BoutonPrincipal({ c }: { c: CoursRegieDto }) {
   const tx = useTextes(textesRegie);
   const { envoi, ouvrir } = useOuvrir(c, tx("toast.ouverte"));
-  const [confirmer, setConfirmer] = useState(false);
   const classe = "min-h-[56px] w-full text-[17px] sm:w-auto sm:min-w-[260px] sm:self-start";
   if (classeOuverte(c.etat)) {
     return (
       <LienBouton href={`/live/${c.seanceId}`} taille="lg" icone={<MonitorPlay className="h-5 w-5" />} className={classe}>
         {tx("bouton.entrer")}
       </LienBouton>
-    );
-  }
-  if (c.peutOuvrir && c.attenteSalle) {
-    const v = { cours: c.attenteSalle.cours, salle: c.attenteSalle.salle };
-    return (
-      <>
-        <Bouton variante="doux" className="min-h-[48px] w-full sm:w-auto sm:self-start" icone={<Play className="h-4 w-4" />} onClick={() => setConfirmer(true)}>
-          {tx("bouton.ouvrirQuandMeme")}
-        </Bouton>
-        <Fenetre
-          ouverte={confirmer}
-          onFermer={() => setConfirmer(false)}
-          titre={tx("attenteSalle.titre")}
-          description={tx("attenteSalle.texte", { v })}
-          pied={
-            <>
-              <LienBouton href={`/live/${c.attenteSalle.seanceId}`} variante="fantome">
-                {tx("carte.attenteSalle.voir", { v })}
-              </LienBouton>
-              <Bouton chargement={envoi} onClick={() => void ouvrir()}>
-                {tx("bouton.ouvrirQuandMeme")}
-              </Bouton>
-            </>
-          }
-        />
-      </>
     );
   }
   if (c.peutOuvrir) {
@@ -235,7 +199,7 @@ function BoutonPrincipal({ c }: { c: CoursRegieDto }) {
   }
   // Pas encore ouvrable à la main (régie seule, plus d'une heure avant) : l'heure de l'ouverture automatique d'abord,
   // celle où la régie pourra l'ouvrir elle-même ensuite (ouverture automatique coupée : seulement celle-là).
-  if (c.ouvertureAutoA && !c.attenteSalle) {
+  if (c.ouvertureAutoA) {
     return (
       <div className="flex flex-col gap-1.5">
         <Bouton taille="lg" variante="doux" disabled icone={<Clock className="h-5 w-5" />} className={cn(classe, "disabled:opacity-100 text-texte-pale")}>
@@ -296,7 +260,7 @@ function CarteCours({ c }: { c: CoursRegieDto }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[26px] font-black leading-none tracking-serre">{c.heures}</span>
-        <PastilleEtat etat={c.etat} debut={c.debut} attenteFormateur={c.attenteFormateur} attenteSalle={Boolean(c.attenteSalle)} />
+        <PastilleEtat etat={c.etat} debut={c.debut} attenteFormateur={c.attenteFormateur} />
       </div>
 
       <div className="flex min-w-0 flex-col gap-1">
@@ -322,16 +286,6 @@ function CarteCours({ c }: { c: CoursRegieDto }) {
           )}
         </p>
       </div>
-
-      {/* Salle encore occupée par une autre classe en direct (« Laisse-les fermer ») : laquelle, et le moyen de la voir. */}
-      {c.attenteSalle && (c.etat === "a_venir" || c.etat === "en_retard") && (
-        <p className="flex flex-wrap items-baseline gap-x-2 text-[15px] text-texte-doux">
-          <span>{tx("carte.attenteSalle", { v: { cours: c.attenteSalle.cours, salle: c.attenteSalle.salle } })}</span>
-          <Link href={`/live/${c.attenteSalle.seanceId}`} className="font-semibold text-orange-fonce underline underline-offset-2">
-            {tx("carte.attenteSalle.voir", { v: { cours: c.attenteSalle.cours } })}
-          </Link>
-        </p>
-      )}
 
       {/* Le gros bouton juste sous le cours et le formateur : sur un petit téléphone, il tient dans le premier écran. */}
       {!finie(c.etat) && <BoutonPrincipal c={c} />}

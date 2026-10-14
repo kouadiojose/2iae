@@ -18,9 +18,10 @@
 //     « Commencer le cours maintenant », diapo, parole, sondage, vidéo ou copie projetée ; regarder le Studio ou
 //     l'écran d'une salle ne compte pas).
 //
-// L'ouverture automatique ne ferme jamais un cours et n'ouvre pas un cours tant qu'un autre cours en direct occupe
-// une de ses salles de conférence (« Laisse-les fermer, ne force pas la fermeture », server/routes/live.ts). La
-// régie de l'équipe (chargé de cours, vie scolaire) qui ouvre la classe avant l'heure fait comme l'ouverture
+// L'ouverture automatique ne ferme jamais un cours ; elle ne regarde plus l'occupation des salles depuis le 15 octobre
+// 2026 (une classe oubliée retenait la salle) : la fermeture logique ferme une classe dont la fin prévue est passée et
+// où il reste au plus une personne depuis 10 min (server/routes/live.ts, fermerLesClassesVides). Le compte de campus
+// qui appuie sur « Ouvrir le cours » (dès 1 h avant) fait comme l'ouverture automatique. La régie de l'équipe (chargé de cours, vie scolaire) qui ouvre la classe avant l'heure fait comme l'ouverture
 // automatique pour le début du cours (debut_cours = l'heure prévue), sans attendre d'animateur : elle est là.
 // Tout ce qui se compte depuis le début du cours (retards, minutes de présence, seuil des 70 %, fin du cours,
 // échéance « fin du cours » d'un devoir, chrono du Studio, moments de l'émargement, transcription du replay,

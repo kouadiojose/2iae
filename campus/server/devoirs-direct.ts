@@ -35,6 +35,7 @@ import {
   type RoleSeance,
   type Seance,
   type Utilisateur,
+  estEcran,
 } from "@shared/schema";
 
 const canalSeance = (seanceId: number) => `seance:${seanceId}`;
@@ -177,7 +178,7 @@ export async function situationGroupe(d: Pick<Devoir, "id" | "coursId">, etudian
     .from(membresGroupes)
     .innerJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
     .where(eq(membresGroupes.groupeId, m.groupeId));
-  if (personnes.some((p) => p.u.role === "salle")) return { etat: "salle", dd: ddg, groupeId: m.groupeId, nom: m.nom };
+  if (personnes.some((p) => estEcran(p.u))) return { etat: "salle", dd: ddg, groupeId: m.groupeId, nom: m.nom };
   // Inscription vérifiée pour les seuls membres du groupe (pas tout le cours : chaque étudiant relit son groupe).
   const candidats = personnes.filter((p) => p.u.role === "etudiant" && p.u.actif).map((p) => p.u.id);
   const inscrits = await inscritsParmi(d.coursId, candidats);
@@ -318,7 +319,7 @@ export async function refusChangementGroupe(sessionId: number, cibleGroupeId: nu
  */
 export async function groupesQuiRepondent(sessionId: number, visibles: Set<number>): Promise<{ id: number; nom: string }[]> {
   const lignes = await db
-    .select({ id: groupesTravail.id, nom: groupesTravail.nom, numero: groupesTravail.numero, membreId: membresGroupes.utilisateurId, role: utilisateurs.role })
+    .select({ id: groupesTravail.id, nom: groupesTravail.nom, numero: groupesTravail.numero, membreId: membresGroupes.utilisateurId, role: utilisateurs.role, profil: utilisateurs.profil })
     .from(groupesTravail)
     .leftJoin(membresGroupes, eq(membresGroupes.groupeId, groupesTravail.id))
     .leftJoin(utilisateurs, eq(utilisateurs.id, membresGroupes.utilisateurId))
@@ -327,7 +328,7 @@ export async function groupesQuiRepondent(sessionId: number, visibles: Set<numbe
   const parGroupe = new Map<number, { nom: string; salle: boolean; etudiants: number }>();
   for (const l of lignes) {
     const g = parGroupe.get(l.id) ?? { nom: l.nom, salle: false, etudiants: 0 };
-    if (l.role === "salle") g.salle = true;
+    if (l.role && estEcran({ role: l.role, profil: l.profil })) g.salle = true;
     if (l.role === "etudiant" && l.membreId !== null && visibles.has(l.membreId)) g.etudiants++;
     parGroupe.set(l.id, g);
   }

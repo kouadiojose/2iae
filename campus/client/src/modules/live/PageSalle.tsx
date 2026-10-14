@@ -5,7 +5,12 @@
 // PAROLE », la question en cours, les résultats des sondages par campus.
 // Une petite console en bas sert au responsable de salle. Aucun nom
 // d'étudiant n'est jamais affiché ici.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+//
+// EcranSeance sert aussi à l'espace du campus (« Entrer dans le live », modules/espace-campus/PageLiveCampus.tsx) :
+// l'ordinateur du compte de campus devient l'écran de la salle pour le cours choisi. Même affichage (grande vidéo du
+// formateur, diapos, QR et code du campus, son), avec son propre bandeau (un seul bouton « Quitter »), sans console,
+// sans « Présentation seule » ni « Masquer la caméra ».
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft, Video } from "lucide-react";
@@ -32,7 +37,7 @@ import { EmargementPleinEcran, GuideChargeDeCours, cheminEmargement, useCodeSall
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 // Emplacement du plan d'engagement (campus/ENGAGEMENT.md) : sans cours et avant le cours, jamais pendant.
 import { CoupeSalle } from "@/modules/progression/CoupeSalle";
-import type { DevoirDirectDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } from "@shared/schema";
+import { estEcran, type DevoirDirectDto, type EtatDirectDto, type MainDirectDto, type SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
 import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
@@ -203,7 +208,18 @@ function EcranSansCours({ siteId, enCours }: { siteId: number | null; enCours?: 
   );
 }
 
-function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | null }) {
+/**
+ * Écran du compte de campus (espace-campus) : son bandeau (logo, campus, cours, heure, « Quitter », avertissement de
+ * deux écrans), ce qui s'affiche au-dessus du compte à rebours avant le cours (« Ouvrir le cours » ou l'heure de
+ * l'ouverture) et le petit guide sous le code.
+ */
+export type OptionsEcranCampus = {
+  bandeau: (seance: SeanceDetailDto, etat: EtatDirectDto) => ReactNode;
+  avant?: ReactNode;
+  guide: string;
+};
+
+export function EcranSeance({ seanceId, siteId, campus }: { seanceId: number; siteId: number | null; campus?: OptionsEcranCampus }) {
   const moi = useMoiConnecte();
   const { data: seance } = useSeance(seanceId);
   const { data: etat } = useEtatDirect(seanceId, false);
@@ -232,7 +248,7 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   }, [setPresentation]);
   // Touche P : entrer ou sortir ; Échap : sortir (quand le navigateur n'est pas en plein écran).
   useEffect(() => {
-    if (!enDirect || petit) return;
+    if (!enDirect || petit || campus) return;
     const touche = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
       if (e.key === "p" || e.key === "P") (presentation ? sortir : entrer)();
@@ -240,7 +256,7 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
     };
     window.addEventListener("keydown", touche);
     return () => window.removeEventListener("keydown", touche);
-  }, [enDirect, petit, presentation, entrer, sortir]);
+  }, [enDirect, petit, presentation, entrer, sortir, campus]);
   if (!seance || !etat) return <div className="min-h-dvh" aria-busy="true" />;
   const statut = etat.statut;
   const groupe = statut === "en_direct" ? monGroupe(groupes) : null;
@@ -248,24 +264,35 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   // étudiants arrivent et émargent. Pas de « Présentation seule » (même gardée d'un autre cours) : le bandeau, le
   // code et le QR restent à l'écran jusqu'au début du cours.
   const attente = statut === "en_direct" && (etat.attenteAnimateur || classeOuverteEnAvance({ statut, debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }, maintenant));
-  const seule = statut === "en_direct" && presentation && !groupe && !petit && !attente;
+  const seule = !campus && statut === "en_direct" && presentation && !groupe && !petit && !attente;
   // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
   // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
   return (
     <div className={seule ? "relative h-dvh w-screen overflow-hidden bg-black" : "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden"}>
-      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe && !petit && !attente ? entrer : undefined} />}
+      {!seule &&
+        (campus ? campus.bandeau(seance, etat) : <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe && !petit && !attente ? entrer : undefined} />)}
       {statut === "annulee" ? (
         <Message titre="Cours annulé" texte={etat.motifAnnulation ?? seance.motifAnnulation ?? "Le formateur a un empêchement."} seance={seance} />
       ) : statut === "terminee" ? (
         <Message titre="Merci et à bientôt !" texte="Le replay, la transcription et la fiche de révision arrivent dans le cours sur le campus numérique." seance={seance} />
       ) : statut === "planifiee" ? (
-        <AvantLeCours seance={seance} etat={etat} siteId={siteId} />
+        <AvantLeCours seance={seance} etat={etat} siteId={siteId} campus={campus} />
       ) : groupe && groupes ? (
         <VueGroupeSalle seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} />
       ) : (
-        <PendantLeCours seance={seance} etat={etat} siteId={siteId} videoMasquee={videoMasquee} onVideoMasquee={setVideoMasquee} presentation={seule} onSortir={sortir} petit={petit} />
+        <PendantLeCours
+          seance={seance}
+          etat={etat}
+          siteId={siteId}
+          videoMasquee={campus ? false : videoMasquee}
+          onVideoMasquee={setVideoMasquee}
+          presentation={seule}
+          onSortir={sortir}
+          petit={petit}
+          guideCampus={campus?.guide}
+        />
       )}
-      {siteId && !seule && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} petit={petit} />}
+      {siteId && !seule && !campus && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} petit={petit} />}
       {/* Émargement : le QR en grand au démarrage, à +15 et +45 min, ou à la demande du Studio (une minute). */}
       {statut === "en_direct" && <EmargementPleinEcran seance={seance} etat={etat} siteId={siteId} enGroupe={Boolean(groupe)} />}
     </div>
@@ -405,14 +432,15 @@ function GrandCompteARebours({ cible }: { cible: string }) {
 const VISIO_AUTO_MIN = 30;
 const VISIO_POSSIBLE_MIN = 90;
 
-function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null }) {
+function AvantLeCours({ seance, etat, siteId, campus }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; campus?: OptionsEcranCampus }) {
   const moi = useMoiConnecte();
   const ville = seance.formateur?.localisation?.split(",")[0] ?? null;
   const maintenant = useMaintenant(1000);
   const avantDebutMin = (new Date(seance.debut).getTime() - maintenant) / 60_000;
   // Réglages avant le formateur : image, son, micro, avec les autres salles déjà connectées. Le micro reste
   // à la main de la salle (bouton de la visio) ; au début du cours, il se coupe et suit la parole.
-  const visioPossible = moi.role === "salle" && seance.fournisseur === "daily" && avantDebutMin <= VISIO_POSSIBLE_MIN;
+  // L'écran d'une salle : un compte « salle », ou l'ordinateur du compte de campus (sans bouton : la visio s'ouvre seule).
+  const visioPossible = estEcran(moi) && seance.fournisseur === "daily" && avantDebutMin <= VISIO_POSSIBLE_MIN;
   const [visioDemandee, setVisioDemandee] = useState(false);
   const visioOuverte = visioPossible && (visioDemandee || avantDebutMin <= VISIO_AUTO_MIN);
   // Sans la diapo : la vidéo en grand, et la salle se voit elle-même pour régler sa caméra.
@@ -420,6 +448,7 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
   return (
     <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
+        {campus?.avant}
         <div className="flex flex-col gap-2">
           <span className="font-mono text-lg text-orange-peche">
             {seance.coursCode} · {avantDebutMin <= 0 ? "Le formateur arrive" : avantDebutMin < 10 ? "La salle ouvre, installez-vous" : "Prochain cours"}
@@ -447,7 +476,7 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
           </div>
         ) : (
           <>
-            {visioPossible && (
+            {visioPossible && !campus && (
               <button
                 onClick={() => setVisioDemandee(true)}
                 className="flex min-h-12 items-center justify-center gap-2 self-start rounded-2xl bg-orange px-5 text-[16px] font-bold text-encre hover:bg-orange-peche"
@@ -467,7 +496,7 @@ function AvantLeCours({ seance, etat, siteId }: { seance: SeanceDetailDto; etat:
           <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
           <CompteursEmarges etat={etat} grand />
         </div>
-        <GuideChargeDeCours />
+        {campus ? <p className="rounded-[24px] border border-nuit-ligne bg-nuit-panneau px-5 py-4 text-[clamp(20px,1.6vw,28px)] font-black">{campus.guide}</p> : <GuideChargeDeCours />}
         <LimiteSilencieuse nom="CoupeSalle">
           <CoupeSalle siteId={siteId} />
         </LimiteSilencieuse>
@@ -511,7 +540,10 @@ function PendantLeCours({
   presentation,
   onSortir,
   petit,
-}: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; presentation: boolean; onSortir: () => void; petit: boolean } & PropsVideo) {
+  guideCampus,
+}: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; presentation: boolean; onSortir: () => void; petit: boolean; guideCampus?: string } & PropsVideo) {
+  // Écran du compte de campus : ni « Masquer la caméra », ni « Afficher la caméra » (un seul bouton : « Quitter »).
+  const campus = guideCampus !== undefined;
   const aLaParole = etat.parole?.type === "salle" && etat.parole.siteId === siteId;
   const questionEnCours = etat.questions.find((q) => q.epinglee && !q.masquee);
   const derniereLigne = etat.sousTitres[etat.sousTitres.length - 1];
@@ -570,12 +602,12 @@ function PendantLeCours({
             camera
             grand
             videoMasquee={videoMasquee}
-            onVideoMasquee={onVideoMasquee}
+            onVideoMasquee={campus ? undefined : onVideoMasquee}
             className={presentation ? "h-full rounded-none border-0" : "h-full"}
           />
         </div>
         {/* Téléphone : la vidéo est au-dessus de la diapo ; le bouton se range sous la scène. */}
-        {petit && !presentation && (etat.diapo.url || etat.copie) && !cacheeParFormateur && seance.fournisseur !== "demo" && (
+        {petit && !campus && !presentation && (etat.diapo.url || etat.copie) && !cacheeParFormateur && seance.fournisseur !== "demo" && (
           <button
             onClick={() => onVideoMasquee(!videoMasquee)}
             className="flex min-h-11 items-center justify-center gap-2 self-start rounded-full bg-nuit-carte px-4 text-[15px] font-bold text-white hover:bg-nuit-ligne"
@@ -621,6 +653,7 @@ function PendantLeCours({
           {devoir && <DevoirSurEcran devoir={devoir} />}
           {/* Avant le début du cours (classe ouverte automatiquement) : le code en grand AVEC son QR, comme avant le cours. */}
           <BlocCode seance={seance} siteId={siteId} compact={!avantLeCours} colonne={avantLeCours} mini={Boolean(sondage || devoir)} />
+          {campus && avantLeCours && <p className="rounded-[20px] bg-nuit-panneau px-5 py-3 text-[clamp(18px,1.4vw,24px)] font-black">{guideCampus}</p>}
           {!sondage && !devoir && <CompteursEmarges etat={etat} liste />}
         </aside>
       )}
@@ -650,7 +683,7 @@ function PendantLeCours({
           </button>
         </div>
       )}
-      {!presentation && !petit && videoMasquee && !cacheeParFormateur && (
+      {!presentation && !petit && !campus && videoMasquee && !cacheeParFormateur && (
         <button
           onClick={() => onVideoMasquee(false)}
           className="fixed bottom-24 left-4 z-40 flex min-h-11 items-center gap-2 rounded-full bg-nuit-carte px-4 text-[15px] font-bold text-white shadow-xl hover:bg-nuit-ligne lg:bottom-20"

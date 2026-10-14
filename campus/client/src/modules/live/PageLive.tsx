@@ -7,7 +7,7 @@ import { LienBouton } from "@/components/ui/bouton";
 import { EtatVide } from "@/components/ui/divers";
 import { ErreurApi } from "@/lib/api";
 import { useMoi } from "@/lib/auth";
-import { estProfilRegie } from "@shared/schema";
+import { estProfilCampus, estProfilRegie } from "@shared/schema";
 import { useSeance } from "./outils";
 import SalleEtudiant from "./SalleEtudiant";
 import Studio from "./Studio";
@@ -43,7 +43,8 @@ export default function PageLive({ id }: { id: string }) {
       </div>
     );
   }
-  if (seance.monRole === "salle") return <Redirect to="/salle" replace />;
+  // Chargé du campus : l'écran d'une salle s'ouvre depuis le carré du cours (« Entrer dans le live »), jamais par /salle.
+  if (seance.monRole === "salle") return <Redirect to={estProfilCampus(moi) ? `/mon-campus/cours/${seance.coursId}` : "/salle"} replace />;
   if (seance.monRole === "formateur") return <Studio seance={seance} />;
   if (seance.monRole === "equipe") return <Studio seance={seance} observation />;
   return <SalleEtudiant seance={seance} />;

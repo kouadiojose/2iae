@@ -257,6 +257,14 @@ export function perimetreSites(u: Pick<Utilisateur, "role" | "siteId">): number[
 }
 export const estFormateur = (u: Pick<Utilisateur, "role">) => u.role === "formateur";
 
+/**
+ * Condition SQL sur utilisateurs : l'écran d'une salle (même règle que estEcran, ext-profils.ts) : un compte « salle »,
+ * ou un compte de campus (profil « campus » de l'équipe), qui entre dans la classe comme une salle.
+ */
+export function sqlEstEcran(): SQL {
+  return or(eq(utilisateurs.role, "salle"), and(eq(utilisateurs.role, "vie_scolaire"), eq(utilisateurs.profil, "campus")))!;
+}
+
 // ── Profils de l'équipe (shared/schema/ext-profils.ts : DROITS_PROFILS) ──────
 // La direction a tous les droits ; un membre de l'équipe, ceux de son profil
 // (profil NULL : vie scolaire, comme avant les profils). Le périmètre (son

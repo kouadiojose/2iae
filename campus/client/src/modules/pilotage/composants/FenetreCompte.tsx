@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { KeyRound, FolderOpen, Power, Send, MonitorSmartphone, Repeat } from "lucide-react";
 import type { CompteLigne, CompteCree, CodeRemis, Role, ProfilEquipe } from "@shared/schema";
-import { LIBELLES_ROLES, PROFILS_EQUIPE, DROITS_PROFILS, libelleProfil } from "@shared/schema";
+import { LIBELLES_ROLES, PROFILS_EQUIPE, DROITS_PROFILS, libelleProfil, estProfilCampus } from "@shared/schema";
+import { t as textesCampus } from "@shared/textes/campus";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Bouton } from "@/components/ui/bouton";
 import { Champ, Selection } from "@/components/ui/champs";
@@ -33,6 +34,8 @@ type Formulaire = {
   localisation: string;
   /** Équipe : profil (ext-profils.ts) ; vide = vie scolaire par défaut (comptes d'avant les profils). */
   profil: "" | ProfilEquipe;
+  /** Compte de campus : envoyer un lien d'invitation (la personne choisit son code) plutôt que le code permanent. */
+  invitation: boolean;
 };
 
 const TOUS_LES_CAMPUS = "tous";
@@ -49,6 +52,7 @@ const vide = (role: Role = "etudiant"): Formulaire => ({
   titre: "",
   localisation: "",
   profil: "",
+  invitation: false,
 });
 
 const depuisCompte = (c: CompteLigne): Formulaire => ({
@@ -63,6 +67,7 @@ const depuisCompte = (c: CompteLigne): Formulaire => ({
   titre: c.titre ?? "",
   localisation: c.localisation ?? "",
   profil: c.profil ?? "",
+  invitation: false,
 });
 
 /** « M. Konaté » → prénom « M. », nom « Konaté » ; « Claude Trépanier » → « Claude » / « Trépanier ». */
@@ -127,6 +132,8 @@ export function FenetreCompte({
   const peutDonnerCode = profilPermet(moi, "nouveau_code") && (etudiantVise || profilPermet(moi, "comptes_personnel"));
   /** La direction choisit le profil et peut ouvrir tout le groupe à un membre de l'équipe. */
   const choixProfil = direction && f.role === "vie_scolaire";
+  /** Compte de campus (un par campus) : campus obligatoire, jamais « Tous les campus ». */
+  const profilCampus = f.role === "vie_scolaire" && f.profil === "campus";
 
   const corps = () => {
     const base: Record<string, unknown> = {
@@ -143,6 +150,7 @@ export function FenetreCompte({
     // « Tous les campus » : null ; campus pas encore choisi : rien (le serveur le demande).
     if (avecSite && f.siteId) base.siteId = f.siteId === TOUS_LES_CAMPUS ? null : Number(f.siteId);
     if (choixProfil) base.profil = f.profil || null;
+    if (creation && profilCampus && f.invitation) base.invitation = true;
     if (f.role === "formateur") {
       base.titre = f.titre || null;
       base.localisation = f.localisation || null;
@@ -153,6 +161,10 @@ export function FenetreCompte({
   const enregistrer = async () => {
     if (choixProfil && creation && !f.profil) {
       setErreur("Choisissez le profil de ce membre de l'équipe : ce qu'il pourra voir et faire.");
+      return;
+    }
+    if (profilCampus && (!f.siteId || f.siteId === TOUS_LES_CAMPUS)) {
+      setErreur(textesCampus("compte.campusObligatoire"));
       return;
     }
     setEnvoi("enregistrer");
@@ -289,13 +301,15 @@ export function FenetreCompte({
             {confirmerCode && (
               <div className="w-full rounded-xl border border-orange bg-white p-3 text-sm">
                 <p className="font-semibold">Créer un nouveau code pour {compte.prenom} ?</p>
-                <p className="mt-1 text-texte-pale">L'ancien code et l'ancienne fiche ne marcheront plus, et ses appareils seront déconnectés.</p>
+                <p className="mt-1 text-texte-pale">
+                  {estProfilCampus(compte) ? textesCampus("compte.nouveauCode.alerte") : "L'ancien code et l'ancienne fiche ne marcheront plus, et ses appareils seront déconnectés."}
+                </p>
                 <div className="mt-3 flex gap-2">
                   <Bouton taille="sm" onClick={nouveauCode} chargement={envoi === "code"}>
-                    Oui, créer le code
+                    {estProfilCampus(compte) ? textesCampus("compte.nouveauCode.oui") : "Oui, créer le code"}
                   </Bouton>
                   <Bouton taille="sm" variante="fantome" onClick={() => setConfirmerCode(false)}>
-                    Annuler
+                    {estProfilCampus(compte) ? textesCampus("compte.nouveauCode.non") : "Annuler"}
                   </Bouton>
                 </div>
               </div>
@@ -339,7 +353,13 @@ export function FenetreCompte({
                 >
                   <input type="radio" name="profil" className="mt-1 h-4 w-4 shrink-0 accent-[#E4793A]" checked={f.profil === p} onChange={() =>
                       // Chargé de cours (régie des cours) : tout le groupe par défaut, la direction peut choisir un campus.
-                      setF((x) => ({ ...x, profil: p, ...(DROITS_PROFILS[p].espace === "regie" && !x.siteId ? { siteId: TOUS_LES_CAMPUS } : {}) }))
+                      // Chargé du campus : un campus obligatoire (« Tous les campus » est retiré).
+                      setF((x) => ({
+                        ...x,
+                        profil: p,
+                        ...(DROITS_PROFILS[p].espace === "regie" && !x.siteId ? { siteId: TOUS_LES_CAMPUS } : {}),
+                        ...(DROITS_PROFILS[p].espace === "campus" && x.siteId === TOUS_LES_CAMPUS ? { siteId: "" } : {}),
+                      }))
                     }
                   />
                   <span className="min-w-0">
@@ -382,10 +402,10 @@ export function FenetreCompte({
             libelle="Campus"
             value={f.siteId}
             onChange={maj("siteId")}
-            aide={choixProfil ? "Un campus : la personne ne voit que ce campus. Tous les campus : tout le groupe." : undefined}
+            aide={profilCampus ? "Le campus de ce compte : ses carrés montrent les cours de ce campus." : choixProfil ? "Un campus : la personne ne voit que ce campus. Tous les campus : tout le groupe." : undefined}
           >
             <option value="">Choisir le campus…</option>
-            {choixProfil && <option value={TOUS_LES_CAMPUS}>Tous les campus (tout le groupe)</option>}
+            {choixProfil && !profilCampus && <option value={TOUS_LES_CAMPUS}>Tous les campus (tout le groupe)</option>}
             {(refs.data?.sites ?? []).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.nomCourt}
@@ -414,6 +434,18 @@ export function FenetreCompte({
             }
           />
         </div>
+
+        {creation && profilCampus && (
+          <label className="flex cursor-pointer gap-3 rounded-xl border border-ligne p-3">
+            <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[#E4793A]" checked={f.invitation} onChange={(e) => setF((x) => ({ ...x, invitation: e.target.checked }))} />
+            <span className="min-w-0">
+              <span className="block font-bold text-encre">{textesCampus("compte.invitation")}</span>
+              <span className="block text-[13px] leading-snug text-texte-pale">
+                {f.invitation ? textesCampus("compte.invitation.aide") : "Sinon : un code secret permanent, à donner à la personne (le même sur tous les ordinateurs du campus)."}
+              </span>
+            </span>
+          </label>
+        )}
 
         {f.role === "formateur" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -519,7 +551,7 @@ function DoubleCasquette({ compte, moiId, sites, onFait }: { compte: CompteLigne
             )}
             {role === "vie_scolaire" && (
               <Selection libelle="Profil" value={profil} onChange={(e) => setProfil(e.target.value as ProfilEquipe)} className="sm:col-span-2" aide={DROITS_PROFILS[profil].description}>
-                {PROFILS_EQUIPE.map((p) => (
+                {PROFILS_EQUIPE.filter((p) => p !== "campus").map((p) => (
                   <option key={p} value={p}>
                     {DROITS_PROFILS[p].libelle}
                   </option>

@@ -22,7 +22,8 @@ import {
   coursClasses,
   classes,
   blocages,
-  estProfilRegie,
+  estProfilRestreint,
+  estProfilCampus,
   type Utilisateur,
   type Conversation,
   type Role,
@@ -31,7 +32,11 @@ import {
 /** Rôles qui ont une messagerie (l'écran de salle n'en a pas). */
 export const ROLES_MESSAGERIE = ["etudiant", "formateur", "vie_scolaire", "admin"] as const satisfies readonly Role[];
 
-export const aMessagerie = (u: Pick<Utilisateur, "role">) => (ROLES_MESSAGERIE as readonly Role[]).includes(u.role);
+/**
+ * La personne a-t-elle une messagerie ? Ni l'écran d'une salle, ni le compte de campus (un accès partagé par les
+ * ordinateurs d'un campus : aucune conversation, il n'apparaît dans aucun annuaire).
+ */
+export const aMessagerie = (u: Pick<Utilisateur, "role" | "profil">) => (ROLES_MESSAGERIE as readonly Role[]).includes(u.role) && !estProfilCampus(u);
 
 /**
  * Dans un salon ouvert pour la première fois, seuls les messages des 7
@@ -107,7 +112,7 @@ export async function peuventSEcrire(a: Utilisateur, b: Utilisateur): Promise<bo
     const etudiant = a.role === "etudiant" ? a : b;
     const autre = etudiant === a ? b : a;
     if (autre.role === "admin") return true;
-    if (estProfilRegie(autre)) return false;
+    if (estProfilRestreint(autre)) return false;
     if (autre.role === "vie_scolaire") return vieScolaireCouvre(autre, etudiant);
     if (autre.role === "formateur") {
       const [suivis, enseignes] = await Promise.all([idsCoursAccessibles(etudiant), coursPubliesDuFormateur(autre.id)]);
@@ -188,7 +193,7 @@ export async function accesConversation(u: Utilisateur, conversationId: number):
     return { conversation: c, participant: p, moderateur: false };
   }
   // Salon d'un cours : pas pour le Chargé de cours (profil de régie, sans messagerie avec les étudiants).
-  if (!c.coursId || estProfilRegie(u) || !(await peutVoirCours(u, c.coursId))) {
+  if (!c.coursId || estProfilRestreint(u) || !(await peutVoirCours(u, c.coursId))) {
     throw new ErreurHttp(403, u.role === "etudiant" ? "Ce salon est réservé aux inscrits du cours." : "Ce salon ne vous est pas accessible.");
   }
   return { conversation: c, participant: p ?? null, moderateur: await modereSalon(u, c.coursId) };

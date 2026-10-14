@@ -301,6 +301,35 @@ const FR = {
   "corriges.erreur.ecrire": "Seuls le formateur du cours et la direction peuvent écrire ou modifier le corrigé d'un devoir. Enregistrez sans le corrigé.",
   "corriges.erreur.questions":
     "Les questions de ce QCM sont son corrigé : seuls le formateur du cours et la direction peuvent les modifier (le formateur les valide).",
+
+  // ── Accueil à trois gros blocs (José, 14 octobre 2026 au soir : « le professeur se connecte et il veut voir de gros
+  // blocs : Le cours, Entrer dans le live, Préparer le cours ») ─────────────────────────────────────────────────────
+  "blocs.choisir": "Touchez le carré du cours.",
+  "blocs.cours": "Le cours",
+  "blocs.cours.texte": "Leçons, devoirs et notes",
+  "blocs.live": "Entrer dans le live",
+  "blocs.live.direct": "En direct maintenant",
+  "blocs.live.ouvert": "Salle ouverte · début à {heure}",
+  "blocs.live.aujourdhui": "Aujourd'hui à {heure}",
+  "blocs.live.chezVous": "{heure} chez vous",
+  "blocs.live.jour": "{jour} à {heure}",
+  "blocs.live.attendre": "Le live ouvrira à {heure}",
+  "blocs.live.revenir": "Revenez à {heure}.",
+  "blocs.live.aucun": "Pas de live prévu",
+  "blocs.live.tropTot": "Le live s'ouvre 1 heure avant le cours, à {heure}.",
+  "blocs.live.ouverture": "Ouverture…",
+  "blocs.preparer": "Préparer le cours",
+  "blocs.preparer.texte": "PowerPoint, vidéos et plan",
+  "blocs.preparer.aucun": "Pas de cours prévu",
+  "blocs.retour": "Retour à mes cours",
+  "blocs.plus": "Plus",
+  "blocs.plus.un": "Plus · 1 chose à faire",
+  "blocs.plus.n": "Plus · {n} choses à faire",
+  "blocs.plus.retour": "Retour à l'accueil",
+  "blocs.aucun.titre": "Pas de cours cette semaine.",
+  "blocs.aucun.texte": "Vos cours sont dans « Plus ».",
+  "blocs.erreur": "La page ne s'ouvre pas. Vérifiez internet.",
+  "blocs.reessayer": "Réessayer",
 } satisfies Dictionnaire;
 
 export const t = creerTextes(FR);

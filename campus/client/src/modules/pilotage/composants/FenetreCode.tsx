@@ -27,7 +27,10 @@ export function FenetreCode({
   const [, naviguer] = useLocation();
   if (!remis || !personne) return null;
   const message = decodeURIComponent(remis.whatsapp.split("?text=")[1] ?? "");
+  // Compte de campus : code permanent (pas de fiche à usage unique), le lien est celui de son espace.
+  const permanent = remis.expireLe === null;
   const imprimer = () => {
+    if (!remis.expireLe) return;
     memoriserFiches([{ ...personne, code: remis.code, lien: remis.lien, expireLe: remis.expireLe }]);
     naviguer(lienFiches([personne.id]));
   };
@@ -39,9 +42,11 @@ export function FenetreCode({
       description="Ce code ne sera plus affiché : envoyez-le, imprimez la fiche ou faites scanner le QR maintenant."
       pied={
         <>
-          <Bouton variante="contour" icone={<Printer className="h-4 w-4" />} onClick={imprimer}>
-            Imprimer la fiche
-          </Bouton>
+          {!permanent && (
+            <Bouton variante="contour" icone={<Printer className="h-4 w-4" />} onClick={imprimer}>
+              Imprimer la fiche
+            </Bouton>
+          )}
           <a
             href={remis.whatsapp}
             target="_blank"
@@ -64,7 +69,7 @@ export function FenetreCode({
           )}
           {personne.identifiant && (
             <>
-              <div className="etiquette mt-4">Code provisoire</div>
+              <div className="etiquette mt-4">{permanent ? "Code secret" : "Code provisoire"}</div>
               <div
                 className={cn("mt-1 font-mono font-bold leading-none tabular-nums", remis.code.length > 8 ? "whitespace-nowrap text-[26px] tracking-normal" : "text-[44px] tracking-[0.12em]")}
                 aria-live="polite"
@@ -73,17 +78,23 @@ export function FenetreCode({
               </div>
             </>
           )}
-          <div className="mt-3 text-sm text-texte-pale">Valable jusqu'au {dateCourte(remis.expireLe)} · à usage unique</div>
+          <div className="mt-3 text-sm text-texte-pale">
+            {remis.expireLe ? `Valable jusqu'au ${dateCourte(remis.expireLe)} · à usage unique` : "Code permanent : le même sur tous les ordinateurs du campus."}
+          </div>
         </div>
         <div className="flex flex-col items-center gap-2">
-          <Qr texte={remis.lien} className="w-40 rounded-xl border border-ligne bg-white p-3" titre="QR du lien d'activation" />
+          <Qr texte={remis.lien} className="w-40 rounded-xl border border-ligne bg-white p-3" titre={permanent ? "QR du lien de l'espace du campus" : "QR du lien d'activation"} />
           <span className="text-center text-[13px] text-texte-gris">À scanner avec l'appareil photo</span>
         </div>
       </div>
       {!nouveauCompte && (
         <div className="mt-3 flex items-start gap-2 rounded-xl bg-alerte-clair px-4 py-3 text-sm text-alerte">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Les anciens codes et fiches de ce compte ne marchent plus. Les appareils déjà connectés devront se reconnecter.</span>
+          <span>
+            {permanent
+              ? "L'ancien code ne marche plus. Tous les ordinateurs du campus devront se reconnecter avec le nouveau code."
+              : "Les anciens codes et fiches de ce compte ne marchent plus. Les appareils déjà connectés devront se reconnecter."}
+          </span>
         </div>
       )}
       <button

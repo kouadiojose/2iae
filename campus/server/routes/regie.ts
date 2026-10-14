@@ -25,7 +25,7 @@ import { intervenantsDesSeances, libelleDate } from "../programme-outils";
 import { utilisateursSur } from "../temps-reel";
 import { repartitionDuSite } from "../salles-outils";
 import { numeroWhatsApp } from "./admin";
-import { canal, intervenantEstPresent, occupationDesSalles, salleOccupeePour, seanceAnimee } from "./live";
+import { canal, intervenantEstPresent, seanceAnimee } from "./live";
 import { lireReglageOuverture, REPERE_OUVERTURE_AUTO } from "../ouverture-auto";
 import { finDesLiens, jetonIntervenant, lienValide } from "./live-invite";
 import { nomDeSalle } from "@shared/salles";
@@ -45,6 +45,7 @@ import {
   utilisateurs,
   type Seance,
   type Utilisateur,
+  estEcran,
 } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -206,8 +207,6 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
   ]);
   // Déjà ouvertes une fois à cet horaire, ou essai effacé dans l'heure : elles ne s'ouvrent plus d'elles-mêmes.
   const sansOuvertureAuto = new Set(reperes.map((r) => r.seanceId));
-  // Salles occupées (« Laisse-les fermer ») : seulement s'il y a un cours à ouvrir aujourd'hui ou plus tard.
-  const occupation = retenues.some((l) => l.s.statut === "planifiee" && finPrevue(l.s).getTime() > maintenant.getTime()) ? await occupationDesSalles() : null;
   const idsPrincipaux = [...new Set(retenues.map((l) => l.formateurId).filter((x): x is number => Boolean(x)))];
   const principaux = new Map(
     (idsPrincipaux.length
@@ -240,7 +239,7 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
           siteId: site.id,
           nomCourt: site.nomCourt,
           salle: salle ? nomDeSalle(salle.compte, site) : site.salleConference,
-          connectee: connectes.some((c) => c.role === "salle" && c.siteId === site.id),
+          connectee: connectes.some((c) => estEcran(c) && c.siteId === site.id),
         },
       ];
     });
@@ -264,9 +263,6 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
     // (sans compte : elle anime, live.ts, signalerIntervenant).
     const formateurCompte = connectes.some((c) => c.role === "formateur" && formateursDuCours.has(c.id));
     const parLien = s.statut === "en_direct" && !formateurCompte && intervenantEstPresent(s.id);
-    // Salle encore occupée par une autre classe en direct : seulement pour un cours qui pourrait s'ouvrir (en retard,
-    // ou dans l'heure qui précède : la plus grande avance de l'ouverture automatique), pas pour celui de ce soir.
-    const attenteSalle = occupation && (etat === "en_retard" || (etat === "a_venir" && ouvre <= t0)) ? salleOccupeePour(occupation, s) : null;
     const ouvertureAuto =
       reglage.actif && statutCours === "publie" && etat === "a_venir" && !sansOuvertureAuto.has(s.id) ? new Date(s.debut.getTime() - reglage.minutes * MINUTE) : null;
     // Reprise permise par le serveur (routes/live.ts : terminée depuis moins de 2 h), cours pas encore fini.
@@ -295,7 +291,6 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
       peutOuvrir: etat === "en_retard" || (etat === "a_venir" && dansLaFenetre),
       ouvreA: etat === "a_venir" && !dansLaFenetre ? new Date(ouvre).toISOString() : null,
       ouvertureAutoA: ouvertureAuto && ouvertureAuto.getTime() > t0 ? ouvertureAuto.toISOString() : null,
-      attenteSalle,
       peutRouvrir,
     };
   });

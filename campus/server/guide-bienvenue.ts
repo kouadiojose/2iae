@@ -7,7 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import { config, estProduction } from "./config";
 import { emailDisponible, envoyerEmail, emailGuideBienvenue, emailGuideEtudiant, type PieceJointe } from "./mail";
-import { estProfilRegie, type Utilisateur } from "@shared/schema";
+import { estProfilCampus, estProfilRegie, type Utilisateur } from "@shared/schema";
 
 /** Au-delà, le PDF n'est pas joint (le lien suffit) : certaines messageries refusent les gros e-mails. */
 const TAILLE_MAX_PDF = 8 * 1024 * 1024;
@@ -48,6 +48,8 @@ export async function envoyerGuideBienvenue(
   premierCours: string | null,
 ): Promise<boolean> {
   if (!u.email) return false;
+  // Compte de campus : son espace tient en gros carrés, pas de guide de l'administration par e-mail.
+  if (estProfilCampus({ role: u.role, profil: u.profil })) return false;
   try {
     const guide = guideDuRole(u.role, u.profil);
     const pdf = await lirePdf(guide.fichier);

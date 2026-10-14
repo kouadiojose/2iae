@@ -36,7 +36,7 @@ import {
   ClipboardCheck,
   Presentation,
 } from "lucide-react";
-import { estProfilRegie, type Droit, type Moi, type Role } from "@shared/schema";
+import { estProfilCampus, estProfilRegie, type Droit, type Moi, type Role } from "@shared/schema";
 import { profilPermet } from "@/lib/auth";
 
 export type ElementNav = {
@@ -83,7 +83,7 @@ const ETUDIANT: ElementNav[] = [
 ];
 
 const FORMATEUR: ElementNav[] = [
-  { href: "/enseigner", libelle: "Aujourd'hui", icone: Home, mobile: true },
+  { href: "/enseigner", libelle: "Aujourd'hui", icone: Home, mobile: true, prefixes: ["/enseigner/mon-cours", "/enseigner/plus"] },
   // Le fil de ses séances tenues : vidéo, cours résumé, QCM, exercice, présents.
   { href: "/mes-seances", libelle: "Mes séances", icone: CalendarCheck, mobile: true, prefixes: ["/mes-seances"] },
   // L'ancien « Studio » : à 45 minutes du cours et pendant le direct, l'onglet ouvre directement la classe (coquille).
@@ -168,6 +168,10 @@ const REGIE: ElementNav[] = [
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
 ];
 
+// Chargé du campus (un compte par campus) : une seule entrée, ses cours en gros carrés. Les pages qu'il ouvre depuis
+// son espace (une leçon, un résumé) gardent ce seul chemin du retour.
+const CAMPUS: ElementNav[] = [{ href: "/mon-campus", libelle: "Mon campus", icone: Home, mobile: true, prefixes: ["/mon-campus", "/cours", "/mediatheque"] }];
+
 /** L'entrée est-elle pour cette personne de l'équipe (direction, ou profil de la vie scolaire) ? */
 export function entreeVisible(el: Pick<ElementNav, "droit" | "sansDroit" | "direction">, moi: Pick<Moi, "role" | "profil">): boolean {
   if (el.direction) return moi.role === "admin";
@@ -182,6 +186,7 @@ export function navigationDe(moi: Pick<Moi, "role" | "profil">): ElementNav[] {
       return FORMATEUR;
     case "admin":
     case "vie_scolaire":
+      if (estProfilCampus(moi)) return CAMPUS;
       if (estProfilRegie(moi)) return REGIE;
       return EQUIPE.filter((el) => entreeVisible(el, moi));
     case "salle":

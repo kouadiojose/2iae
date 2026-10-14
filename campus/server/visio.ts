@@ -35,6 +35,7 @@ import {
   type ProfilDaily,
   type PresenceSalleVisio,
   type UsageVisioDto,
+  estEcran,
 } from "@shared/schema";
 
 const API_DAILY = "https://api.daily.co/v1";
@@ -586,13 +587,17 @@ export async function reserverPlaceDaily(o: { salle: string; profil: ProfilJeton
     const presents = limite > 0 ? ((await comptesPresents(o.salle)) ?? []) : [];
     const inconnus = presents.filter((id) => !remis.has(id));
     const roles = new Map(
-      inconnus.length ? (await db.select({ id: utilisateurs.id, role: utilisateurs.role }).from(utilisateurs).where(inArray(utilisateurs.id, inconnus))).map((l) => [l.id, l.role]) : [],
+      inconnus.length
+        ? (await db.select({ id: utilisateurs.id, role: utilisateurs.role, profil: utilisateurs.profil }).from(utilisateurs).where(inArray(utilisateurs.id, inconnus))).map((l) => [l.id, l])
+        : [],
     );
     const profilDe = (id: number): ProfilJeton | null => {
       const connu = remis.get(id)?.profil;
       if (connu) return connu;
-      const role = roles.get(id);
-      return role === "etudiant" ? "etudiant" : role === "admin" || role === "vie_scolaire" ? "observateur" : null;
+      const l = roles.get(id);
+      // Un ordinateur du compte de campus est l'écran d'une salle : il ne prend jamais une place d'observation.
+      if (l && estEcran(l)) return "salle";
+      return l?.role === "etudiant" ? "etudiant" : l?.role === "admin" || l?.role === "vie_scolaire" ? "observateur" : null;
     };
     // Plus aucune attente d'ici la décision : deux demandes simultanées ne peuvent pas prendre la même place.
     const maintenant = Date.now();
@@ -775,8 +780,9 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
   for (const m of duCampus) for (const p of m.participants ?? []) if (p.user_id && /^\d+$/.test(p.user_id)) ids.add(Number(p.user_id));
   const roles = new Map<number, string>();
   if (ids.size) {
-    const lignes = await db.select({ id: utilisateurs.id, role: utilisateurs.role }).from(utilisateurs).where(inArray(utilisateurs.id, [...ids]));
-    for (const l of lignes) roles.set(l.id, l.role);
+    const lignes = await db.select({ id: utilisateurs.id, role: utilisateurs.role, profil: utilisateurs.profil }).from(utilisateurs).where(inArray(utilisateurs.id, [...ids]));
+    // Le compte de campus compte avec les salles (son ordinateur est l'écran d'une salle).
+    for (const l of lignes) roles.set(l.id, estEcran(l) ? "salle" : l.role);
   }
   const profilDe = (userId: string | null): UsageVisioDto["parProfil"][number]["profil"] => {
     const role = userId && /^\d+$/.test(userId) ? roles.get(Number(userId)) : undefined;

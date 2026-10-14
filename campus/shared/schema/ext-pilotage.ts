@@ -268,7 +268,8 @@ export type CodeRemis = {
   lien: string;
   /** Lien wa.me avec le message prêt (vers le numéro de la personne, sinon au choix). */
   whatsapp: string;
-  expireLe: string;
+  /** Fin de validité du code provisoire ; null : code permanent (compte de campus, donné par la direction). */
+  expireLe: string | null;
 };
 
 /** POST /api/pilotage/comptes */

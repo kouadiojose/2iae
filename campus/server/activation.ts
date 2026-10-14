@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "./db";
 import { config } from "./config";
-import { hacher, codeProvisoire, DUREE_CODE_PROVISOIRE_MS, oublierUtilisateur, jetonAleatoire, fermerAutresSessions } from "./auth";
+import { hacher, codeProvisoire, motDePasseProvisoire, DUREE_CODE_PROVISOIRE_MS, oublierUtilisateur, jetonAleatoire, fermerAutresSessions } from "./auth";
 import { reinitialisations, utilisateurs, journal, type Utilisateur } from "@shared/schema";
 
 export const hacherJeton = (jeton: string) => crypto.createHash("sha256").update(jeton).digest("hex");
@@ -45,6 +45,30 @@ export async function consommerJeton(jeton: string, type: "activation" | "reinit
 }
 
 export const lienActivation = (jeton: string) => `${config.urlCampus}/activer/${jeton}`;
+/** Le lien donné au chargé du campus : son espace (la connexion s'y ouvre d'elle-même s'il n'est pas connecté). */
+export const lienEspaceCampus = () => `${config.urlCampus}/mon-campus`;
+
+/**
+ * Code PERMANENT d'un compte de campus (« il rentre ce qu'on lui a donné ») : un code fort (motDePasseProvisoire : mot, chiffres, mot),
+ * sans date de fin ni changement forcé à la première connexion. Les anciens jetons d'activation ne marchent plus, et
+ * tous les ordinateurs du campus sont déconnectés (sessions et flux temps réel) : ils se reconnectent avec le nouveau
+ * code. Journalisé ; le code n'est montré qu'une fois (stocké haché).
+ */
+export async function codePermanentCampus(utilisateurId: number, auteurId: number): Promise<string> {
+  const code = motDePasseProvisoire();
+  await db
+    .update(utilisateurs)
+    .set({ motDePasseHash: await hacher(code), doitChangerMotDePasse: false, motDePasseExpireLe: null })
+    .where(eq(utilisateurs.id, utilisateurId));
+  await db
+    .update(reinitialisations)
+    .set({ utiliseLe: new Date() })
+    .where(and(eq(reinitialisations.utilisateurId, utilisateurId), isNull(reinitialisations.utiliseLe)));
+  await fermerAutresSessions(utilisateurId);
+  await db.insert(journal).values({ utilisateurId: auteurId, action: "nouveau_code", details: { pour: utilisateurId, permanent: true } });
+  oublierUtilisateur(utilisateurId);
+  return code;
+}
 /** Lien d'invitation d'un formateur ou de l'équipe : la page « Créer mon compte » (même jeton d'activation). */
 export const lienInvitation = (jeton: string) => `${config.urlCampus}/invitation/${jeton}`;
 

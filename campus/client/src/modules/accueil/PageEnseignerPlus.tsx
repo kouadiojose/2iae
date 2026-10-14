@@ -1,0 +1,345 @@
+// /enseigner/plus — « Plus » : l'accueil détaillé du formateur d'avant le 15 octobre 2026. L'accueil (/enseigner)
+// montre désormais trois gros blocs (« Le cours », « Entrer dans le live », « Préparer le cours » : PageEnseigner) ;
+// rien ne disparaît du campus, tout le reste est ici, sous le petit lien « Plus » :
+//
+// 1. Les réglages repliés (le lieu d'où il enseigne, l'essai de la visio, le fuseau). La carte « Ma prochaine
+//    classe » n'y est plus : les trois blocs de l'accueil la remplacent.
+// 2. « À faire », seulement s'il y a quelque chose : corrigés à vérifier, copies à revoir ou à corriger,
+//    relectures, notes à envoyer, messages non lus. Une ligne et un gros bouton par chose.
+// 3. « Mes séances » : les 5 dernières séances tenues en cartes (CarteSeance : vidéo, cours résumé, QCM,
+//    exercice, présents), puis « Voir toutes mes séances » (/mes-seances).
+//
+// Le reste (écrire aux étudiants, mes cours, vidéos des cours, emploi du temps, annonces, questions en
+// suspens) n'est plus qu'une rangée de liens simples en bas : rien ne disparaît du campus, seulement de l'accueil.
+//
+// Double casquette avec la direction (José, 13 octobre 2026) : en haut, avant le reste, les jours où il reste des
+// liens de salles à envoyer, la carte « Les liens des salles du jour » ; un toucher le fait passer en Direction et
+// ouvre directement « Les salles du jour » (CartesSallesDuJour). Son compte part en même temps que l'accueil, qui
+// l'attend (au plus un instant) pour tout montrer d'un coup ; quand sa classe commence bientôt ou est en direct, la
+// carte passe sous la classe : rien ne repousse « Entrer dans ma classe ».
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  BookOpen,
+  CalendarRange,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  ClipboardList,
+  Megaphone,
+  MessageCircle,
+  MessageSquareQuote,
+  MessagesSquare,
+  PenLine,
+  PlayCircle,
+  Radio,
+  Send,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
+import { useTousEvenements } from "@/lib/flux";
+import { rafraichir } from "@/lib/queryClient";
+import { jourLong } from "@/lib/dates";
+import { useTextes } from "@/lib/textes";
+import { cn } from "@/lib/utils";
+import { Page } from "@/components/layout/coquille";
+import { LienBouton } from "@/components/ui/bouton";
+import { CarteLien } from "@/components/ui/carte";
+import { Erreur, Squelette } from "@/components/ui/divers";
+import { useMaintenant } from "@/components/ui/compte-a-rebours";
+import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
+import { CarteSeance } from "@/components/seances/CarteSeance";
+import { SquelettesSeances } from "@/components/seances/FilDesSeances";
+import { useDernieresSeances } from "@/components/seances/fil";
+import type { AccueilFormateur, SeanceFormateur } from "@shared/schema";
+import type { ResumeEnseigner } from "@shared/engagement/enseigner";
+import { selonNombre, t, type CleTravail } from "@shared/textes/travail";
+import type { Traducteur } from "@shared/textes";
+import { EVENEMENTS_ACCUEIL, majuscule } from "./outils";
+import { CartePretClasse, ConfirmationFuseau, LieuDuCours } from "@/modules/visio";
+import { MANUELS } from "@/modules/manuels/manuels";
+import { CarteCasquetteSalles, useSallesDuJour, type EtatSallesDuJour } from "@/modules/pilotage/composants/CartesSallesDuJour";
+import { useMoiConnecte } from "@/lib/auth";
+import { t as textesManuels } from "@shared/textes/manuels";
+import { t as tEnseigner } from "@shared/textes/enseigner";
+
+type Tx = Traducteur<CleTravail>;
+
+const MINUTE = 60_000;
+/** À 45 minutes du début, le geste utile devient « entrer dans ma classe » (la fenêtre de démarrage du Studio s'ouvre aussi à 45 minutes). */
+const AVANT_CLASSE = 45 * MINUTE;
+
+export default function PageEnseignerPlus() {
+  const tx = useTextes(t);
+  const { data, isLoading, error, refetch } = useQuery<AccueilFormateur>({ queryKey: ["/api/accueil/formateur"], refetchInterval: 60_000 });
+  const maintenant = useMaintenant(30_000);
+  // Autre casquette : la direction. Le compte du jour (sans lien) dit s'il reste des liens de salles à envoyer ; il part
+  // avec l'accueil, et l'accueil l'attend (salles.pret) pour que la carte ne s'insère pas après coup.
+  const moi = useMoiConnecte();
+  const salles = useSallesDuJour("/api/casquette/salles-du-jour", moi.role === "formateur" && moi.casquette?.role === "admin");
+
+  useTousEvenements((e) => {
+    if (EVENEMENTS_ACCUEIL.has(e.type)) void rafraichir("/api/accueil/formateur", "/api/enseigner/apres-seance", "/api/fil");
+  });
+
+  if (error && !data) {
+    return (
+      <Page>
+        <Erreur message={(error as Error).message} reessayer={() => void refetch()} />
+      </Page>
+    );
+  }
+  if (isLoading || !data || !salles.pret) {
+    return (
+      <Page className="gap-6">
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Chargement">
+          <Squelette className="h-4 w-40" />
+          <Squelette className="h-9 w-52" />
+        </div>
+        <Squelette className="h-80 rounded-[24px]" />
+      </Page>
+    );
+  }
+
+  return <ContenuAccueil data={data} seance={data.enDirect ?? data.prochaineSeance} maintenant={maintenant} tx={tx} salles={salles} />;
+}
+
+/** La classe commence dans 45 minutes ou moins, ou elle est en direct : le geste du moment est « Entrer dans ma classe ». */
+const classeImminente = (data: AccueilFormateur, maintenant: number) =>
+  Boolean(data.enDirect) || (data.prochaineSeance !== null && new Date(data.prochaineSeance.debut).getTime() - maintenant <= AVANT_CLASSE);
+
+function ContenuAccueil({
+  data,
+  seance,
+  maintenant,
+  tx,
+  salles,
+}: {
+  data: AccueilFormateur;
+  seance: SeanceFormateur | null;
+  maintenant: number;
+  tx: Tx;
+  salles: EtatSallesDuJour;
+}) {
+  const choses = useChosesAFaire(data.messagesNonLus, tx);
+  const txBlocs = useTextes(tEnseigner);
+  // Les liens des salles du jour (autre casquette : la direction) : en haut, sauf quand la classe commence ; alors sous elle.
+  const carteSalles = salles.aFaire ? (
+    <LimiteSilencieuse nom="CasquetteSalles">
+      <CarteCasquetteSalles restants={salles.restants} aPreparer={salles.aPreparer} />
+    </LimiteSilencieuse>
+  ) : null;
+  const sallesSousLaClasse = classeImminente(data, maintenant);
+  return (
+    <Page className="gap-6 sm:gap-8">
+      <header className="flex flex-col gap-3">
+        <Link href="/enseigner" className="inline-flex min-h-[48px] items-center gap-2 self-start text-[17px] font-bold text-encre no-underline">
+          <ArrowLeft className="h-5 w-5" aria-hidden /> {txBlocs("blocs.plus.retour")}
+        </Link>
+        <span className="text-[15px] font-semibold text-texte-pale">{majuscule(jourLong(maintenant))}</span>
+        <h1 className="text-[30px] font-black leading-[1.05] tracking-serre sm:text-[40px]">
+          {data.salutation} {data.prenom}.
+        </h1>
+      </header>
+
+      {!sallesSousLaClasse && carteSalles}
+
+      {/* Sur ordinateur, « À faire » se range à droite de la classe ; rien à faire : la classe seule. */}
+      <div className={cn("grid gap-6 lg:items-start lg:gap-8", choses.length ? "lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]" : "lg:max-w-[760px]")}>
+        <div className="flex min-w-0 flex-col gap-4">
+          {sallesSousLaClasse && carteSalles}
+          {/* Module visio : fuseau deviné par le navigateur, à confirmer une fois (sous le bouton, jamais au-dessus). */}
+          <ConfirmationFuseau className="lg:flex-col lg:items-stretch" />
+          {seance && (
+            <details className="group rounded-2xl border border-ligne bg-white">
+              <summary className="flex min-h-[56px] cursor-pointer list-none items-center gap-3 px-4 py-3 text-[16px] font-bold text-encre [&::-webkit-details-marker]:hidden">
+                <Radio className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+                <span className="flex-1">{tx("classe.reglages")}</span>
+                <ChevronDown className="h-5 w-5 shrink-0 text-texte-gris transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="flex flex-col gap-4 border-t border-ligne-douce p-4">
+                {/* Module visio : le lieu d'où il enseigne, puis l'essai de la visio, le fuseau, les diapos, le plan. */}
+                <LieuDuCours />
+                {!data.enDirect && <CartePretClasse />}
+              </div>
+            </details>
+          )}
+        </div>
+
+        {choses.length > 0 && (
+          <LimiteSilencieuse nom="AFaire">
+            <AFaire choses={choses} tx={tx} />
+          </LimiteSilencieuse>
+        )}
+      </div>
+
+      <LimiteSilencieuse nom="MesSeances">
+        <MesSeances tx={tx} />
+      </LimiteSilencieuse>
+
+      <LiensSimples data={data} tx={tx} />
+    </Page>
+  );
+}
+
+// ── À faire ────────────────────────────────────────────────────────────────
+
+type Chose = { cle: string; href: string; n: number; icone: LucideIcon; titre: string; texte: string; principale?: boolean };
+
+/** Ce qui attend le formateur, dans l'ordre d'importance ; vide quand il n'y a rien (le bloc ne s'affiche pas). */
+function useChosesAFaire(messagesNonLus: number, tx: Tx): Chose[] {
+  // Même requête que l'ancienne carte « Correction des copies » : un seul appel au serveur.
+  const { data } = useQuery<ResumeEnseigner>({ queryKey: ["/api/enseigner/apres-seance"], staleTime: 60_000 });
+  const c = data?.corriges;
+  return [
+    c?.aValider ? { cle: "corriges", href: "/enseigner/corriges", n: c.aValider, icone: ClipboardCheck, titre: selonNombre(tx, "afaire.corriges", c.aValider), texte: tx("afaire.corriges.texte"), principale: true } : null,
+    c?.relectures ? { cle: "relectures", href: "/enseigner/a-revoir#relectures", n: c.relectures, icone: MessageSquareQuote, titre: selonNombre(tx, "afaire.relectures", c.relectures), texte: tx("afaire.relectures.texte") } : null,
+    c?.aRevoir ? { cle: "a-revoir", href: "/enseigner/a-revoir#copies", n: c.aRevoir, icone: TriangleAlert, titre: selonNombre(tx, "afaire.aRevoir", c.aRevoir), texte: tx("afaire.aRevoir.texte") } : null,
+    data?.copies.aCorriger ? { cle: "copies", href: "/corriger", n: data.copies.aCorriger, icone: PenLine, titre: selonNombre(tx, "afaire.copies", data.copies.aCorriger), texte: tx("afaire.copies.texte") } : null,
+    data?.copies.aPublier ? { cle: "a-publier", href: "/corriger", n: data.copies.aPublier, icone: Send, titre: selonNombre(tx, "afaire.aPublier", data.copies.aPublier), texte: tx("afaire.aPublier.texte") } : null,
+    messagesNonLus ? { cle: "messages", href: "/messages", n: messagesNonLus, icone: MessageCircle, titre: selonNombre(tx, "afaire.messages", messagesNonLus), texte: tx("afaire.messages.texte") } : null,
+  ].filter((x): x is Chose => x !== null);
+}
+
+function AFaire({ choses, tx }: { choses: Chose[]; tx: Tx }) {
+  return (
+    <section aria-labelledby="titre-a-faire" className="flex flex-col gap-3">
+      <h2 id="titre-a-faire" className="text-[24px] font-extrabold leading-tight">
+        {tx("afaire.titre")}
+      </h2>
+      <ul className="flex flex-col gap-2.5">
+        {choses.map((x) => (
+          <li key={x.cle}>
+            <LigneAFaire chose={x} ouvrir={tx("afaire.ouvrir")} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function LigneAFaire({ chose: { href, n, icone: Icone, titre, texte, principale }, ouvrir }: { chose: Chose; ouvrir: string }) {
+  return (
+    <CarteLien href={href} className={cn("flex min-h-[76px] items-center gap-3.5 px-4 py-3.5", principale && "border-orange bg-orange-pale")}>
+      <span
+        className={cn("relative grid h-12 w-12 shrink-0 place-items-center rounded-xl text-[19px] font-black tabular-nums", principale ? "bg-orange text-encre" : "bg-creme text-encre")}
+        aria-hidden
+      >
+        {n}
+        <Icone className={cn("absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-white p-0.5", principale ? "text-orange-fonce" : "text-texte-pale")} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[17px] font-extrabold leading-snug">{titre}</span>
+        <span className="text-[14px] leading-snug text-texte-pale">{texte}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-1 rounded-xl bg-encre px-3 py-2.5 text-[15px] font-bold text-white">
+        <span className="hidden min-[420px]:inline">{ouvrir}</span>
+        <ChevronRight className="h-5 w-5" aria-hidden />
+      </span>
+    </CarteLien>
+  );
+}
+
+// ── Mes séances ────────────────────────────────────────────────────────────
+
+function MesSeances({ tx }: { tx: Tx }) {
+  const { data, isLoading, error } = useDernieresSeances(5);
+  const seances = data?.seances ?? [];
+  return (
+    <section aria-labelledby="titre-mes-seances" className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 id="titre-mes-seances" className="text-[28px] font-extrabold leading-tight">
+            {tx("seances.titre")}
+          </h2>
+          <p className="text-[16px] text-texte-pale">{tx("seances.sousTitre")}</p>
+        </div>
+      </div>
+      {isLoading ? (
+        <SquelettesSeances />
+      ) : error && !data ? (
+        <p className="rounded-2xl bg-creme px-4 py-4 text-[16px] text-texte-pale">{tx("seances.erreur")}</p>
+      ) : !seances.length ? (
+        <p className="rounded-2xl bg-creme px-4 py-4 text-[16px] leading-relaxed text-texte-pale">{tx("seances.vide.texte")}</p>
+      ) : (
+        <ul className="grid gap-4 lg:grid-cols-2">
+          {seances.map((s) => (
+            <li key={s.id} className="min-w-0">
+              <CarteSeance seance={s} className="h-full" />
+            </li>
+          ))}
+        </ul>
+      )}
+      <LienBouton href="/mes-seances" variante="encre" taille="lg" className="min-h-[60px] w-full text-[18px] sm:w-auto sm:self-start sm:px-8">
+        {tx("seances.toutes")} <ArrowRight className="h-5 w-5" aria-hidden />
+      </LienBouton>
+    </section>
+  );
+}
+
+// ── Liens simples ──────────────────────────────────────────────────────────
+
+function LiensSimples({ data, tx }: { data: AccueilFormateur; tx: Tx }) {
+  const enSuspens = data.questions?.total ?? 0;
+  const liens: { href: string; icone: LucideIcon; libelle: string; compteur?: number }[] = [
+    { href: "/annonces?nouvelle=1", icone: Megaphone, libelle: tx("liens.ecrire") },
+    // La page de lecture du cours (comme l'onglet « Mes cours »), pas l'éditeur.
+    { href: "/cours", icone: BookOpen, libelle: tx("liens.cours") },
+    { href: "/replays", icone: PlayCircle, libelle: tx("liens.videos") },
+    { href: "/emploi-du-temps", icone: CalendarRange, libelle: tx("liens.emploi") },
+    { href: "/annonces", icone: ClipboardList, libelle: tx("liens.annonces"), compteur: data.annoncesNonLues || undefined },
+    ...(data.questions && enSuspens > 0 ? [{ href: data.questions.lien, icone: MessagesSquare, libelle: tx("liens.questions"), compteur: enSuspens }] : []),
+  ];
+  return (
+    <nav aria-labelledby="titre-liens" className="flex flex-col gap-3 border-t border-ligne-douce pt-6">
+      <h2 id="titre-liens" className="text-xl font-extrabold">
+        {tx("liens.titre")}
+      </h2>
+      <ul className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2 lg:grid-cols-3">
+        <li className="col-span-full">
+          <LienManuel />
+        </li>
+        {liens.map((l) => (
+          <li key={l.href}>
+            <CarteLien href={l.href} className="flex min-h-[60px] items-center gap-3 px-4 py-3">
+              <l.icone className="h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+              <span className="flex-1 text-[16px] font-bold leading-snug">{l.libelle}</span>
+              {l.compteur ? <span className="rounded-full bg-orange px-2 py-0.5 font-mono text-[13px] font-bold text-encre">{l.compteur}</span> : null}
+              <ChevronRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
+            </CarteLien>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/**
+ * Le manuel illustré du formateur, en tête des liens : la couverture et le PDF, ouvert dans un nouvel onglet
+ * (un vrai lien, hors du routeur du campus ; le service worker ne le garde pas). Même carte blanche que les autres
+ * liens : l'orange reste à la chose à faire de « À faire » (un document de référence n'est pas urgent).
+ * Textes : shared/textes/manuels.ts, avec ceux des autres écrans des manuels.
+ */
+function LienManuel() {
+  const tx = useTextes(textesManuels);
+  const m = MANUELS.formateurs;
+  return (
+    <a
+      href={m.pdf}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex min-h-[76px] items-center gap-3.5 rounded-2xl border border-ligne bg-white px-4 py-3 text-encre no-underline transition-colors hover:border-orange hover:text-encre focus-visible:border-orange"
+    >
+      <img src={m.couverture} alt="" width={300} height={425} loading="lazy" className="h-[60px] w-[42px] shrink-0 rounded-md border border-ligne object-cover" />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[17px] font-extrabold leading-snug">{tx("formateur.titre")}</span>
+        <span className="text-[14px] leading-snug text-texte-pale">{tx("formateur.detail")}</span>
+        <span className="font-mono text-[13px] font-semibold text-orange-fonce">{tx("infos", { v: { pages: m.pages, poids: m.poids } })}</span>
+      </span>
+      <ArrowUpRight className="h-5 w-5 shrink-0 text-texte-gris" aria-hidden />
+    </a>
+  );
+}

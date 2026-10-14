@@ -4,9 +4,15 @@
 // Neutre pour tous (8 octobre 2026) : formateurs, équipe et étudiants arrivent par la même page. On vouvoie,
 // comme chaque fois qu'on ne sait pas à qui l'on parle ; les champs viennent en premier, « Nouvel étudiant ?
 // Créer mon compte » ensuite, plus discret.
+//
+// Mode campus (15 octobre 2026) : le lien donné au chargé du campus est /mon-campus ; sans session, il arrive ici avec
+// ?retour=/mon-campus. La page devient « Espace du campus » : l'e-mail, le code secret, « Entrer ». Rien d'autre
+// (ni « Téléphone partagé », ni « Créer mon compte »).
 import { useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { Eye, EyeOff, QrCode, UserPlus } from "lucide-react";
+import { useTextes } from "@/lib/textes";
+import { t as textesCampus } from "@shared/textes/campus";
 import { useMoi } from "@/lib/auth";
 import { post, ErreurApi } from "@/lib/api";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
@@ -18,6 +24,99 @@ import { AideWhatsApp } from "./composants/AideWhatsApp";
 import { destinationApresConnexion, installerMoi, retourSur, ressembleEmail } from "./outils";
 
 export default function PageConnexion() {
+  const recherche = new URLSearchParams(useSearch());
+  const retour = retourSur(recherche.get("retour"));
+  if (retour?.startsWith("/mon-campus")) return <ConnexionCampus retour={retour} />;
+  return <ConnexionCommune />;
+}
+
+/** « Espace du campus » : l'e-mail et le code secret donnés par la direction, puis « Entrer ». */
+function ConnexionCampus({ retour }: { retour: string }) {
+  const { moi } = useMoi();
+  const tx = useTextes(textesCampus);
+  const [, naviguer] = useLocation();
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [voir, setVoir] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [envoi, setEnvoi] = useState(false);
+  if (moi && !envoi) return <Redirect to={destinationApresConnexion(moi, retour)} replace />;
+
+  async function entrer(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !code) return setErreur(tx("connexion.vide"));
+    setErreur(null);
+    setEnvoi(true);
+    try {
+      const m = await post<Moi>("/api/auth/connexion", { identifiant: email.trim(), motDePasse: code });
+      installerMoi(m, true);
+      naviguer(destinationApresConnexion(m, retour), { replace: true });
+    } catch (err) {
+      setEnvoi(false);
+      setCode("");
+      // Trop d'essais : le message du serveur ; sinon une phrase simple.
+      setErreur(err instanceof ErreurApi && err.statut === 429 ? err.message : err instanceof ErreurApi && err.statut === 0 ? err.message : tx("connexion.erreur"));
+    }
+  }
+
+  const champ = "min-h-[64px] w-full rounded-[18px] border-[3px] border-encre bg-white px-5 text-[22px] text-encre outline-none focus:border-orange";
+  return (
+    <div className="min-h-dvh bg-white text-encre">
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-7 px-4 pb-16 pt-8 sm:pt-14">
+        <img src="/marque-2iae.png" alt="Groupe Écoles 2IAE" className="h-14 w-auto self-start" />
+        <h1 className="text-[40px] font-black leading-tight sm:text-[44px]">{tx("connexion.titre")}</h1>
+        <form onSubmit={entrer} className="flex flex-col gap-6" noValidate>
+          <label className="flex flex-col gap-2">
+            <span className="text-[22px] font-bold">{tx("connexion.email")}</span>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={champ}
+            />
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="text-[22px] font-bold">{tx("connexion.code")}</span>
+            <span className="relative block">
+              <input
+                type={voir ? "text" : "password"}
+                autoComplete="current-password"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className={`${champ} pr-20`}
+              />
+              <button
+                type="button"
+                onClick={() => setVoir((v) => !v)}
+                className="absolute right-2 top-1/2 grid h-14 w-14 -translate-y-1/2 place-items-center rounded-xl text-encre"
+                aria-label={voir ? tx("connexion.cacher") : tx("connexion.voir")}
+                aria-pressed={voir}
+              >
+                {voir ? <EyeOff className="h-7 w-7" /> : <Eye className="h-7 w-7" />}
+              </button>
+            </span>
+          </label>
+          {erreur && (
+            <p className="rounded-[18px] bg-danger-clair px-5 py-4 text-[22px] font-bold text-danger" role="alert">
+              {erreur}
+            </p>
+          )}
+          <button type="submit" disabled={envoi} className="min-h-[72px] w-full rounded-[20px] bg-orange px-6 text-[26px] font-black text-encre disabled:opacity-80">
+            {tx("connexion.entrer")}
+          </button>
+        </form>
+        <p className="text-[20px] text-texte-doux">{tx("connexion.aide")}</p>
+      </main>
+    </div>
+  );
+}
+
+function ConnexionCommune() {
   const { moi } = useMoi();
   const recherche = new URLSearchParams(useSearch());
   const retour = retourSur(recherche.get("retour"));

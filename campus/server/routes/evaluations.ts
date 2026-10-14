@@ -1399,6 +1399,42 @@ function moyennePonderee(notes: { note: number; bareme: number; coefficient: num
   return arrondi(utiles.reduce((s, n) => s + (n.note / n.bareme) * 20 * n.coefficient, 0) / poids);
 }
 
+/**
+ * Notes PUBLIÉES (copies corrigées : statut « corrige » avec une note) des devoirs publiés d'un cours, pour ces
+ * étudiants, ramenées sur 20, et leur moyenne pondérée (même règle que le carnet : moyennePonderee). Jamais une note
+ * en brouillon, à corriger ou non rendue. Espace du campus (routes/espace-campus.ts : « Les notes », en lecture).
+ */
+export async function notesPubliees(
+  coursId: number,
+  etudiantIds: number[],
+): Promise<{ devoirs: { id: number; titre: string; type: Devoir["type"]; bareme: number }[]; parEtudiant: Map<number, { notes: Record<number, number | null>; moyenne: number | null; n: number }> }> {
+  const liste = await db
+    .select()
+    .from(devoirs)
+    .where(and(eq(devoirs.coursId, coursId), eq(devoirs.publie, true)))
+    .orderBy(asc(devoirs.dateLimite), asc(devoirs.id));
+  const parEtudiant = new Map<number, { notes: Record<number, number | null>; moyenne: number | null; n: number }>();
+  const corriges =
+    liste.length && etudiantIds.length
+      ? await db
+          .select({ devoirId: rendus.devoirId, etudiantId: rendus.etudiantId, note: rendus.note })
+          .from(rendus)
+          .where(and(inArray(rendus.devoirId, liste.map((d) => d.id)), inArray(rendus.etudiantId, etudiantIds), eq(rendus.statut, "corrige"), isNotNull(rendus.note)))
+      : [];
+  const noteDe = new Map(corriges.map((r) => [`${r.devoirId}:${r.etudiantId}`, r.note as number]));
+  for (const id of etudiantIds) {
+    const notes: Record<number, number | null> = {};
+    const publiees: { note: number; bareme: number; coefficient: number }[] = [];
+    for (const d of liste) {
+      const n = noteDe.get(`${d.id}:${id}`);
+      notes[d.id] = n === undefined || d.bareme <= 0 ? null : arrondi((n / d.bareme) * 20, 1);
+      if (n !== undefined) publiees.push({ note: n, bareme: d.bareme, coefficient: d.coefficient });
+    }
+    parEtudiant.set(id, { notes, moyenne: moyennePonderee(publiees), n: publiees.length });
+  }
+  return { devoirs: liste.map((d) => ({ id: d.id, titre: d.titre, type: d.type, bareme: d.bareme })), parEtudiant };
+}
+
 async function carnetDuCours(u: Utilisateur, c: Cours): Promise<CarnetCours> {
   const maintenant = new Date();
   const listeDevoirs = await db.select().from(devoirs).where(eq(devoirs.coursId, c.id)).orderBy(asc(devoirs.dateLimite));

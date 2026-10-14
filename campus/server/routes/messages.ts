@@ -17,7 +17,7 @@
 //
 // Hors ligne : chaque envoi porte une clé choisie par le téléphone ; un
 // renvoi de la file d'envoi rend le message déjà créé au lieu d'un doublon.
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, ilike, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "../db";
@@ -29,6 +29,7 @@ import { enregistrerGardienFichier, urlFichier } from "../fichiers";
 import { notifier, type NouvelleNotification } from "../notifications";
 import {
   ROLES_MESSAGERIE,
+  aMessagerie,
   accesConversation,
   assurerParticipant,
   blocageEntre,
@@ -60,7 +61,7 @@ import {
   signalementsMessages,
   blocages,
   LIBELLES_ROLES,
-  estProfilRegie,
+  estProfilRestreint,
   type Conversation,
   type Utilisateur,
   type ContactMessages,
@@ -81,7 +82,13 @@ const DELAI_SUPPRESSION_MS = 10 * 60_000;
 /** Au-delà, l'interface demande de taper un nom (listes de contacts de centaines d'étudiants). */
 const MAX_PAR_GROUPE = 80;
 
-const autorise = exigerRole(...ROLES_MESSAGERIE);
+const roleMessagerie = exigerRole(...ROLES_MESSAGERIE);
+/** Rôles qui ont une messagerie, sauf le compte de campus (accès partagé d'un campus : pas de messagerie). */
+const autorise: RequestHandler = (req, res, next) =>
+  roleMessagerie(req, res, () => {
+    if (req.utilisateur && !aMessagerie(req.utilisateur)) return res.status(403).json({ message: "La messagerie n'est pas disponible avec ce compte." });
+    next();
+  });
 
 /** Tutoiement pour les étudiants, vouvoiement pour les formateurs et l'équipe. */
 const selon = (u: Pick<Utilisateur, "role">, tu: string, vous: string) => (u.role === "etudiant" ? tu : vous);
@@ -580,7 +587,8 @@ async function equipe(u: Utilisateur, q: string): Promise<Utilisateur[]> {
     .select()
     .from(utilisateurs)
     .where(and(inArray(utilisateurs.role, ["vie_scolaire", "admin"]), eq(utilisateurs.actif, true), ne(utilisateurs.id, u.id)));
-  return liste.filter((p) => correspond(p, q));
+  // Le compte de campus (accès partagé d'un campus) n'a pas de messagerie : il n'apparaît dans aucun annuaire.
+  return liste.filter((p) => aMessagerie(p) && correspond(p, q));
 }
 
 async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> {
@@ -629,7 +637,7 @@ async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> 
         "vie-scolaire",
         u.siteId ? `Administration · ${carteSites.get(u.siteId) ?? "mon campus"}` : "Administration",
         // Le Chargé de cours (profil de régie) ne fait pas partie de l'administration joignable par les étudiants.
-        vs.filter((p) => !estProfilRegie(p) && correspond(p, q)).map((p) => versContact(p, carteSites)),
+        vs.filter((p) => !estProfilRestreint(p) && correspond(p, q)).map((p) => versContact(p, carteSites)),
         q,
       ),
     );
@@ -684,7 +692,7 @@ async function contactsDe(u: Utilisateur, q: string): Promise<ContactsMessages> 
   // l'annuaire ni la messagerie des étudiants : formateurs et équipe seulement, pour se coordonner.
   const perimetre = perimetreSites(u);
   const motif = q ? `%${q.trim().replace(/[%_]/g, "")}%` : null;
-  const regie = estProfilRegie(u);
+  const regie = estProfilRestreint(u);
   const etudiants = regie
     ? []
     : await db
@@ -835,7 +843,7 @@ export function enregistrerMessages(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const coursId = idParam(req, "coursId");
-      if (estProfilRegie(u)) throw interdit("Ce salon ne vous est pas accessible.");
+      if (estProfilRestreint(u)) throw interdit("Ce salon ne vous est pas accessible.");
       await coursVisible(u, coursId);
       const id = await ouvrirSalon(coursId);
       await assurerParticipant(id, u.id, true);
@@ -1197,7 +1205,7 @@ export function enregistrerMessages(app: Express) {
         .from(utilisateurs)
         .where(and(eq(utilisateurs.role, "vie_scolaire"), eq(utilisateurs.actif, true)));
       // Le Chargé de cours (profil de régie) ne reçoit pas les signalements de la messagerie.
-      const vsConcernes = vs.filter((p) => !estProfilRegie(p) && (u.siteId ? vieScolaireCouvre(p, u) : !p.siteId));
+      const vsConcernes = vs.filter((p) => !estProfilRestreint(p) && (u.siteId ? vieScolaireCouvre(p, u) : !p.siteId));
       for (const p of vsConcernes) destinataires.add(p.id);
       if (!vsConcernes.length) {
         const admins = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));

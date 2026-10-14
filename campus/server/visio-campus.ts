@@ -48,6 +48,7 @@ import {
   type EtatRadio,
   type EvenementRadio,
   type RTCIceServerJson,
+  estEcran,
 } from "@shared/schema";
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -689,8 +690,8 @@ export function enregistrerVisioCampus(app: Express) {
       const role = corps.role;
 
       if (role === "formateur" && !(await peutAnimer(u, seance))) throw interdit("Seul le formateur du cours anime la visio.");
-      if (role === "salle" && u.role !== "salle") throw interdit("Ce rôle est réservé à l'écran d'une salle de conférence.");
-      if (role !== "salle" && u.role === "salle") throw interdit("L'écran de salle rejoint la visio en tant que salle.");
+      if (role === "salle" && !estEcran(u)) throw interdit("Ce rôle est réservé à l'écran d'une salle de conférence.");
+      if (role !== "salle" && estEcran(u)) throw interdit("L'écran de salle rejoint la visio en tant que salle.");
 
       const c = classeDe(seance);
       const deja = c.pairs.get(corps.pairId);

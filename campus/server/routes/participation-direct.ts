@@ -39,7 +39,7 @@ import { tableExiste } from "../engagement/tables";
 import { SQL_DUREE_REFERENCE, sqlAttendus } from "./admin";
 import { canal, seanceAnimee } from "./live";
 import { heureLocale } from "@shared/engagement/calendrier";
-import { SEUIL_PRESENCE_EN_LIGNE, type Utilisateur } from "@shared/schema";
+import { SEUIL_PRESENCE_EN_LIGNE, estEcran, type Utilisateur } from "@shared/schema";
 import {
   DUREE_EMARGEMENT_MS,
   REPORT_MAX_EMARGEMENT_MS,
@@ -216,7 +216,7 @@ export async function envoyerRappelsEmargement(maintenant = new Date()): Promise
   for (const s of directs.rows) {
     const ecrans = new Set(
       utilisateursSur(canal(s.id))
-        .filter((x) => x.role === "salle" && x.siteId)
+        .filter((x) => estEcran(x) && x.siteId)
         .map((x) => x.siteId as number),
     );
     if (!ecrans.size) continue;

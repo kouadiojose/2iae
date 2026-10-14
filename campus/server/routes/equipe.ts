@@ -190,6 +190,8 @@ export function enregistrerEquipe(app: Express) {
       );
       if (d.role === "vie_scolaire" && !d.profil) throw invalide("Choisissez le profil de cette personne : scolarité, vie scolaire, secrétariat / accueil ou responsable pédagogique.");
       const profil = d.role === "vie_scolaire" ? d.profil! : null;
+      // Compte de campus : rattaché à SON campus, jamais à tout le groupe.
+      if (profil === "campus" && !d.siteId) throw invalide("Choisissez le campus de ce compte.");
       const [demande] = await db.select().from(demandesAcces).where(eq(demandesAcces.id, idParam(req)));
       if (!demande) throw introuvable("Demande");
       if (demande.statut !== "en_attente") throw new ErreurHttp(409, "Cette demande est déjà traitée.");

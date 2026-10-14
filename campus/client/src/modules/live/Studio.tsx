@@ -39,7 +39,6 @@ import { BoutonLienIntervenant } from "@/modules/regie/LienIntervenant";
 import { t as textesRegie } from "@shared/textes/regie";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
 import { debutDuCours } from "@shared/ouverture";
-import type { SalleOccupeeDto } from "@shared/regie";
 import { t as textesOuverture } from "@shared/textes/direct";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "devoir" | "campus";
@@ -961,21 +960,11 @@ function BandeDiapos({ seance, etat, onChanger, onAller }: { seance: SeanceDetai
 // ── Coulisses : avant le direct ────────────────────────────────────────────
 
 function Coulisses({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
-  const txRegie = useTextes(textesRegie);
   // Salles attendues : celles des campus dont une classe suit ce cours (toutes, avant que le serveur ne le dise).
   const attendues = etat.campus.filter((c) => c.attendue !== false);
   const pretes = attendues.filter((c) => c.salleConnectee || c.prete).length;
-  // Une autre classe en direct occupe une salle de ce cours : l'ouverture automatique attend qu'elle ferme
-  // (« Laisse-les fermer ») ; le formateur le lit ici au lieu d'attendre une ouverture qui ne vient pas.
-  const { data: salle } = useQuery<{ occupee: SalleOccupeeDto | null }>({ queryKey: [`/api/seances/${seance.id}/salle-occupee`], refetchInterval: 30_000 });
-  const occupee = salle?.occupee ?? null;
   return (
     <div className="flex flex-col gap-3 rounded-[22px] bg-nuit-panneau p-4">
-      {occupee && (
-        <p className="rounded-xl bg-[#2A1510] px-3 py-2 text-[14px] font-semibold text-[#FFB59E]" role="status">
-          {txRegie("carte.attenteSalle", { v: { cours: occupee.cours, salle: occupee.salle } })}
-        </p>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-lg font-extrabold">
           Coulisses · {pretes}/{attendues.length || etat.campus.length} {attendues.length === 1 ? "salle prête" : "salles prêtes"}

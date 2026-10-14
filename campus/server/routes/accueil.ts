@@ -47,7 +47,10 @@ import {
   type SeanceFormateur,
   type AnnonceResume,
 } from "@shared/schema";
-import { debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
+import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
+import { heureSimple, nomDuJour } from "@shared/espace-campus";
+import type { AccueilSimpleDto, CarreFormateurDto, RepereFormateur } from "@shared/accueil-simple";
+import { debutDuJour, finPrevueMs, seancesDuMoment } from "../espace-campus";
 
 const MINUTE = 60_000;
 const HEURE = 60 * MINUTE;
@@ -480,7 +483,17 @@ export function enregistrerAccueil(app: Express) {
     }),
   );
 
-  // ── Formateur ────────────────────────────────────────────────────────────
+  // ── Formateur : accueil à trois gros blocs ───────────────────────────────
+  app.get(
+    "/api/enseigner/accueil-simple",
+    exigerRole("formateur"),
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await accueilSimple(moi(req)));
+    }),
+  );
+
+  // ── Formateur : la page « Plus » (l'accueil détaillé d'avant) ────────────
   app.get(
     "/api/accueil/formateur",
     exigerRole("formateur"),
@@ -632,6 +645,102 @@ export function enregistrerAccueil(app: Express) {
       res.json(reponse);
     }),
   );
+}
+
+/** « 4h30 » dans le fuseau du formateur, ou null (fuseau d'Abidjan, inconnu, ou même heure). */
+function heureChezLui(d: Date, fuseau: string | null): string | null {
+  if (!fuseau || fuseau === "Africa/Abidjan") return null;
+  try {
+    const parts = new Intl.DateTimeFormat("fr-FR", { hour: "numeric", minute: "2-digit", hourCycle: "h23", timeZone: fuseau }).formatToParts(d);
+    const h = Number(parts.find((x) => x.type === "hour")?.value ?? "0");
+    const m = parts.find((x) => x.type === "minute")?.value ?? "00";
+    const chezLui = `${h}h${m}`;
+    return chezLui === heureSimple(d) ? null : chezLui;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * GET /api/enseigner/accueil-simple : l'accueil à trois gros blocs du formateur (José, 14 octobre 2026 au soir). Ses
+ * cours (hors archivés) avec la séance du moment de chacun (en direct, sinon la prochaine prévue pas finie :
+ * espace-campus.ts, seancesDuMoment), ceux à montrer (aujourd'hui, sinon les 7 jours, sinon à venir, sinon tous) et
+ * le nombre de choses à faire (lien « Plus »). Léger : deux requêtes sur les séances, des comptes pour le reste.
+ */
+export async function accueilSimple(u: Utilisateur, maintenant = Date.now()): Promise<AccueilSimpleDto> {
+  const ids = await idsCoursAccessibles(u);
+  const liste = ids.length
+    ? await db
+        .select({ id: cours.id, code: cours.code, titre: cours.titre, couleur: cours.couleur })
+        .from(cours)
+        .where(and(inArray(cours.id, ids), ne(cours.statut, "archive")))
+    : [];
+  const moments = await seancesDuMoment(
+    liste.map((c) => c.id),
+    maintenant,
+    { jour: false },
+  );
+  const jour0 = debutDuJour(maintenant);
+  const avance = AVANCE_MAX_OUVERTURE_MIN * MINUTE;
+  const carres: (CarreFormateurDto & { t: number })[] = liste.map((c) => {
+    const s = moments.get(c.id)?.seance ?? null;
+    let repere: RepereFormateur = null;
+    let live: CarreFormateurDto["live"] = { etat: "aucun", ouvreA: null };
+    if (s?.statut === "en_direct") {
+      repere = classeOuverteEnAvance(s, maintenant) ? "ouvert" : "direct";
+      live = { etat: "direct", ouvreA: null };
+    } else if (s?.statut === "planifiee") {
+      repere = debutDuJour(s.debut.getTime()) === jour0 ? "aujourdhui" : "jour";
+      const ouvre = s.debut.getTime() - avance;
+      live = ouvre <= maintenant ? { etat: "ouvrir", ouvreA: null } : { etat: "attendre", ouvreA: new Date(ouvre).toISOString() };
+    }
+    return {
+      coursId: c.id,
+      code: c.code,
+      titre: c.titre,
+      couleur: c.couleur,
+      repere,
+      heure: s ? heureSimple(s.debut) : null,
+      heureChezVous: s ? heureChezLui(s.debut, u.fuseau) : null,
+      jour: s ? nomDuJour(s.debut) : null,
+      seance: s ? { id: s.id, debut: s.debut.toISOString(), fin: new Date(finPrevueMs(s)).toISOString(), statut: s.statut } : null,
+      live,
+      liens: { cours: `/cours/${c.id}`, live: s ? `/live/${s.id}` : null, preparer: s ? `/enseigner/seances/${s.id}` : null },
+      t: s ? s.debut.getTime() : Number.MAX_SAFE_INTEGER,
+    };
+  });
+  const rang = (r: RepereFormateur) => (r === "direct" ? 0 : r === "ouvert" ? 1 : r === "aujourdhui" ? 2 : r === "jour" ? 3 : 4);
+  carres.sort((a, b) => rang(a.repere) - rang(b.repere) || a.t - b.t || a.titre.localeCompare(b.titre, "fr"));
+  // Les cours de l'accueil : aujourd'hui (en direct ou prévu pas fini), sinon dans les 7 jours, sinon à venir, sinon tous.
+  const aujourdhui = carres.filter((c) => c.repere === "direct" || c.repere === "ouvert" || c.repere === "aujourdhui");
+  const semaine = carres.filter((c) => c.seance && c.t < maintenant + 7 * JOUR);
+  const aVenir = carres.filter((c) => c.seance);
+  const montres = (aujourdhui.length ? aujourdhui : semaine.length ? semaine : aVenir.length ? aVenir : carres).map((c) => c.coursId);
+
+  // « Plus · 3 choses à faire » : copies à corriger et à publier, corrigés à valider, messages non lus (des comptes).
+  const [copies, corriges, messagesNonLus] = await Promise.all([
+    ids.length
+      ? db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(rendus)
+          .innerJoin(devoirs, eq(devoirs.id, rendus.devoirId))
+          .where(and(inArray(devoirs.coursId, ids), eq(rendus.statut, "rendu")))
+      : Promise.resolve([{ n: 0 }]),
+    ids.length
+      ? db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM campus.corriges_devoirs cd JOIN campus.devoirs d ON d.id = cd.devoir_id
+          WHERE d.cours_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)}) AND d.publie AND cd.statut = 'propose'`)
+      : Promise.resolve({ rows: [{ n: 0 }] }),
+    compterMessagesNonLus(u).catch(() => 0),
+  ]);
+  return {
+    salutation: salutationPour(new Date(maintenant)),
+    prenom: u.prenom,
+    cours: carres.map(({ t: _t, ...c }) => c),
+    montres,
+    seul: montres.length === 1 ? montres[0] : null,
+    aFaire: (copies[0]?.n ?? 0) + (corriges.rows[0]?.n ?? 0) + messagesNonLus,
+  };
 }
 
 function sansRang({ rang: _r, t: _t, ...e }: Candidat): ElementAFaire {

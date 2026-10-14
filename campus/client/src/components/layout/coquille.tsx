@@ -19,7 +19,7 @@ import { InstallationMobile } from "@/modules/pwa/InstallationMobile";
 import { manuelsDuRole } from "@/modules/manuels/manuels";
 import { useTextes } from "@/lib/textes";
 import { t as textesManuels } from "@shared/textes/manuels";
-import { LIBELLES_ROLES, estProfilRegie, libelleProfil } from "@shared/schema";
+import { LIBELLES_ROLES, estProfilCampus, estProfilRegie, libelleProfil } from "@shared/schema";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
 /** `compacte` : sur téléphone, le logo seul (l'en-tête du campus garde la place des boutons Plus, Live, cloche). */
@@ -182,7 +182,9 @@ function MenuProfil() {
   const moi = useMoiConnecte();
   const [, naviguer] = useLocation();
   const txManuels = useTextes(textesManuels);
-  const manuels = manuelsDuRole(moi.role, estProfilRegie(moi));
+  // Chargé du campus : ni profil, ni visite, ni manuel de l'équipe (son espace tient en gros carrés) ; se déconnecter.
+  const campus = estProfilCampus(moi);
+  const manuels = campus ? [] : manuelsDuRole(moi.role, estProfilRegie(moi));
   return (
     <Menu
       declencheur={
@@ -208,15 +210,19 @@ function MenuProfil() {
           <SeparateurMenu />
         </>
       )}
-      <ElementMenu icone={<User className="h-4 w-4" />} onSelect={() => naviguer("/profil")}>
-        Mon profil
-      </ElementMenu>
-      <ElementMenu icone={<Settings2 className="h-4 w-4" />} onSelect={() => naviguer("/profil#preferences")}>
-        Préférences et données
-      </ElementMenu>
-      <ElementMenu icone={<HelpCircle className="h-4 w-4" />} onSelect={() => naviguer("/bienvenue?visite=1")}>
-        Revoir la visite guidée
-      </ElementMenu>
+      {!campus && (
+        <>
+          <ElementMenu icone={<User className="h-4 w-4" />} onSelect={() => naviguer("/profil")}>
+            Mon profil
+          </ElementMenu>
+          <ElementMenu icone={<Settings2 className="h-4 w-4" />} onSelect={() => naviguer("/profil#preferences")}>
+            Préférences et données
+          </ElementMenu>
+          <ElementMenu icone={<HelpCircle className="h-4 w-4" />} onSelect={() => naviguer("/bienvenue?visite=1")}>
+            Revoir la visite guidée
+          </ElementMenu>
+        </>
+      )}
       {/* Le manuel illustré (PDF public) de chacun, dans un nouvel onglet ; les deux pour la vie scolaire et la direction. */}
       {manuels.map((m) => (
         <ElementMenu key={m.id} icone={<BookImage className="h-4 w-4" />} onSelect={() => window.open(m.pdf, "_blank", "noopener")}>
@@ -362,6 +368,8 @@ export function Coquille({ children, pleinEcran = false, autreCasquette = false 
   const NAV_XL = navVisibles(moi.role, Boolean(enCours?.enDirect));
   const NAV_VISIBLES = NAV_XL - (moi.casquette ? ENTREES_XL_SEULEMENT : 0);
   const { data: compteur } = useCompteur();
+  // Chargé du campus : ni « Rejoindre le live » (son live passe par les carrés de son campus), ni cloche.
+  const campus = estProfilCampus(moi);
 
   useEffect(() => {
     document.documentElement.classList.toggle("donnees-reduites", Boolean(moi.preferences?.donneesReduites));
@@ -439,9 +447,9 @@ export function Coquille({ children, pleinEcran = false, autreCasquette = false 
               serrent, « Live » passe en colonne, et il quitte l'en-tête quand la barre du bas l'a déjà (onglet central « En direct »). */}
           <div className={cn("ml-auto flex items-center gap-1.5 sm:gap-2 lg:ml-0", moi.casquette && "max-[399px]:gap-1")}>
             <div className="hidden sm:block">
-              <BoutonDirect />
+              {!campus && <BoutonDirect />}
             </div>
-            {!(moi.casquette && onglets.some((el) => el.central)) && (
+            {!campus && !(moi.casquette && onglets.some((el) => el.central)) && (
               <div className="sm:hidden">
                 <BoutonDirect compact colonne={Boolean(moi.casquette)} />
               </div>
@@ -450,7 +458,7 @@ export function Coquille({ children, pleinEcran = false, autreCasquette = false 
             <div className="lg:hidden">
               <MenuPlusTelephone elements={plus} chemin={chemin} />
             </div>
-            <Cloche />
+            {!campus && <Cloche />}
             <MenuProfil />
           </div>
         </div>

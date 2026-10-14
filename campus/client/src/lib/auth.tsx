@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ErreurApi, post } from "./api";
 import { queryClient } from "./queryClient";
 import { noterRappelsActives } from "@/modules/rappels/memoire";
-import { estProfilRegie, peut, type Droit, type Moi, type Role } from "@shared/schema";
+import { estProfilCampus, estProfilRegie, peut, type Droit, type Moi, type Role } from "@shared/schema";
 
 type ContexteAuth = { moi: Moi | null; chargement: boolean };
 const Contexte = createContext<ContexteAuth>({ moi: null, chargement: true });
@@ -124,9 +124,11 @@ export function profilPermet(moi: Pick<Moi, "role" | "profil"> | null | undefine
 
 /**
  * Page d'arrivée de la personne : celle de son rôle, sauf le Chargé de cours (profil de régie de l'équipe), qui
- * arrive sur « Mon espace » (/regie) : les cours du jour à ouvrir et à préparer.
+ * arrive sur « Mon espace » (/regie) : les cours du jour à ouvrir et à préparer, et le Chargé du campus (un compte
+ * par campus), qui arrive sur les gros carrés des cours de son campus (/mon-campus).
  */
 export function accueilDe(moi: Pick<Moi, "role" | "profil">): string {
+  if (estProfilCampus(moi)) return "/mon-campus";
   return estProfilRegie(moi) ? "/regie" : accueilDuRole(moi.role);
 }
 

@@ -37,6 +37,13 @@ export type CoursRegieDto = {
   formateur: { nom: string } | null;
   /** Un formateur du cours est dans la classe en ce moment (canal temps réel de la séance). */
   formateurConnecte: boolean;
+  /**
+   * Classe ouverte automatiquement, l'heure du cours passée, que personne n'anime encore (ni le formateur, ni
+   * l'intervenant du lien intervenant, ni la régie) : « En attente du formateur ». Le chargé de cours la prend
+   * (« Je prends la classe » dans le Studio) ou envoie le lien intervenant au formateur ; sinon elle finira « Séance
+   * non tenue ». Absent d'une ancienne réponse : faux.
+   */
+  attenteFormateur?: boolean;
   campus: CampusRegieDto[];
   sallesConnectees: number;
   sallesAttendues: number;

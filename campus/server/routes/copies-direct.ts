@@ -19,7 +19,7 @@ import { publier } from "../temps-reel";
 import { etudiantsDuCours, seanceVisible } from "../acces";
 import { genreDe } from "../copies-pages";
 import { echeance, peutEncoreRendre } from "../evaluations-outils";
-import { seanceAnimee } from "./live";
+import { noterGesteAnimation, seanceAnimee } from "./live";
 import { inscritsVisibles, renduEnseigne } from "./evaluations";
 import { dernierDevoirDirect, devoirDirectDe, groupesQuiRepondent } from "../devoirs-direct";
 import {
@@ -446,6 +446,8 @@ export function enregistrerCopiesDirect(app: Express) {
         // 1-2. Séance relue : état frais, en direct, hors Plan B.
         const s = await animateurCopies(u, id);
         exigerDirect(s);
+        // Montrer une copie à la classe, c'est animer (classe ouverte automatiquement que personne n'animait : live.ts).
+        noterGesteAnimation(s, u);
         const maintenant = new Date();
         let src: SourcePages;
         let plan: PlanCopieDto;

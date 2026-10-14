@@ -24,6 +24,12 @@
 //   POST /api/invite/:jeton/entrer          { nom, mode } : passage noté au fil de la séance
 //   POST /api/invite/:jeton/visio           { nom } : jeton Daily, sans micro ni caméra (avec, pour un intervenant)
 //   POST /api/invite/:jeton/diapo           { index, nom? } : télécommande des diapos (lien intervenant seulement, en direct)
+//   POST /api/invite/:jeton/present         { nom? } : l'intervenant est dans la visio (toutes les 30 s, lien intervenant seulement)
+//
+// L'intervenant compte comme ANIMATEUR (José, 14 octobre 2026 : des formateurs entrent par ce lien, sans compte ou
+// mot de passe oublié) : son entrée dans la visio, sa page connectée à la visio et sa télécommande des diapos font
+// d'une classe ouverte automatiquement une classe animée (live.ts, signalerIntervenant) : plus « En attente du
+// formateur », jamais « Séance non tenue », et la fin automatique le voit présent tant que sa page se signale.
 import crypto from "crypto";
 import type { Express, Request } from "express";
 import { z } from "zod";
@@ -36,7 +42,7 @@ import { enseigneCours, peutVoirCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
-import { changerDiapo } from "./live";
+import { changerDiapo, signalerIntervenant } from "./live";
 import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -127,19 +133,24 @@ async function infoInvite(s: Seance, jeton: string, intervenant: boolean): Promi
 
 const NOM = z.string().trim().min(2, "Indiquez votre nom.").max(60);
 
-/** Télécommande des diapos : au plus 120 changements par minute et par adresse (deux par seconde en continu). */
-const MAX_DIAPOS_PAR_MINUTE = 120;
-const changementsDiapo = new Map<string, { n: number; jusqua: number }>();
-function limiterDiapo(ip: string) {
-  const maintenant = Date.now();
-  const t = changementsDiapo.get(ip);
-  if (!t || t.jusqua < maintenant) {
-    if (changementsDiapo.size > 5000) for (const [cle, v] of changementsDiapo) if (v.jusqua < maintenant) changementsDiapo.delete(cle);
-    changementsDiapo.set(ip, { n: 1, jusqua: maintenant + MINUTE });
-    return;
-  }
-  if (++t.n > MAX_DIAPOS_PAR_MINUTE) throw new ErreurHttp(429, "Trop de changements de diapo d'affilée : patientez quelques secondes, puis reprenez.");
+/** Au plus `max` demandes par minute et par adresse (compteur en mémoire, une fenêtre d'une minute par adresse). */
+function limiteurParMinute(max: number, message: string) {
+  const compteurs = new Map<string, { n: number; jusqua: number }>();
+  return (ip: string) => {
+    const maintenant = Date.now();
+    const c = compteurs.get(ip);
+    if (!c || c.jusqua < maintenant) {
+      if (compteurs.size > 5000) for (const [cle, v] of compteurs) if (v.jusqua < maintenant) compteurs.delete(cle);
+      compteurs.set(ip, { n: 1, jusqua: maintenant + MINUTE });
+      return;
+    }
+    if (++c.n > max) throw new ErreurHttp(429, message);
+  };
 }
+/** Télécommande des diapos : au plus 120 changements par minute et par adresse (deux par seconde en continu). */
+const limiterDiapo = limiteurParMinute(120, "Trop de changements de diapo d'affilée : patientez quelques secondes, puis reprenez.");
+/** Signe de présence de l'intervenant : un toutes les 30 s ; 20 par minute et par adresse laissent de la marge (onglets, relances). */
+const limiterPresence = limiteurParMinute(20, "Trop de signes de présence d'affilée : patientez quelques secondes.");
 /** Passages déjà notés (séance, réseau, nom) : un rechargement de page ne compte pas deux fois. */
 const passages = new Set<string>();
 
@@ -241,6 +252,9 @@ export function enregistrerInvite(app: Express) {
       }
       // Diapo masquée par le formateur (« Caméra seule ») : elle le reste ; seule la diapo où reprendre change.
       const etat = await changerDiapo(s, { index, masquer: s.diapoCourante < 0 }, { garderProjection: true, intervenant: { nom: nom ?? null } });
+      // Faire défiler les diapos, c'est animer : l'intervenant est l'animateur d'une classe ouverte automatiquement
+      // que personne n'animait encore (live.ts, signalerIntervenant).
+      await signalerIntervenant(s, nom ?? null);
       cacheInfos.delete(`${s.id}:i`);
       cacheInfos.delete(`${s.id}:v`);
       res.json({ index: etat.index, total: etat.total, masquee: etat.masquee });
@@ -276,8 +290,27 @@ export function enregistrerInvite(app: Express) {
         // L'intervenant peut montrer son écran (sa présentation, un site) : il passe en grand dans les salles.
         partageEcran: intervenant,
       });
+      // L'intervenant entre dans la visio : il anime (classe ouverte automatiquement : son arrivée est notée ; avant
+      // l'ouverture, sa présence est gardée et notée dès que la classe s'ouvre). Un invité ne compte jamais.
+      if (intervenant) await signalerIntervenant(s, nom);
       const acces: AccesDaily = { url: salle.url, jeton, nomAffiche, profil: "etudiant" };
       res.json(acces);
+    }),
+  );
+
+  // Signe de présence de l'intervenant, toutes les 30 s tant que sa page est connectée à la visio (PageInvite.tsx) :
+  // la fin automatique le voit présent (il anime), et une classe ouverte automatiquement pendant qu'il attendait
+  // dans la visio note son arrivée. Lien invité : 403 (un invité n'anime jamais).
+  app.post(
+    "/api/invite/:jeton/present",
+    route(async (req, res) => {
+      limiterPresence(String(req.ip ?? ""));
+      const { s, intervenant } = await seanceDuJeton(req);
+      if (!intervenant) throw interdit("Seul le lien intervenant compte comme animateur de la classe.");
+      exigerValide(s);
+      const { nom } = valider(z.object({ nom: NOM.optional().catch(undefined) }), req.body ?? {});
+      const maj = await signalerIntervenant(s, nom ?? null);
+      res.json({ ok: true, animateur: maj.statut === "en_direct" && (!maj.ouvertureAuto || Boolean(maj.animateurLe)) });
     }),
   );
 }

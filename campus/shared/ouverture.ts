@@ -13,8 +13,15 @@
 //     PRÉVUE ; l'animateur peut commencer plus tôt (« Commencer le cours maintenant » dans le Studio : l'instant
 //     du clic) ; s'il arrive après l'heure, le cours commence à son arrivée (comme un « Démarrer » en retard) ;
 //   - animateur_le : l'arrivée du premier animateur (formateur du cours qui ouvre son Studio ou entre dans la
-//     visio ; direction ou vie scolaire seulement sur une action explicite : « Je prends la classe », « Commencer
-//     le cours maintenant », diapo, parole, sondage ; regarder le Studio ou l'écran d'une salle ne compte pas).
+//     visio ; personne entrée dans la visio par le lien intervenant de la séance, ou qui y fait défiler les diapos ;
+//     direction, vie scolaire ou chargé de cours seulement sur une action explicite : « Je prends la classe »,
+//     « Commencer le cours maintenant », diapo, parole, sondage, vidéo ou copie projetée ; regarder le Studio ou
+//     l'écran d'une salle ne compte pas).
+//
+// L'ouverture automatique ne ferme jamais un cours et n'ouvre pas un cours tant qu'un autre cours en direct occupe
+// une de ses salles de conférence (« Laisse-les fermer, ne force pas la fermeture », server/routes/live.ts). La
+// régie de l'équipe (chargé de cours, vie scolaire) qui ouvre la classe avant l'heure fait comme l'ouverture
+// automatique pour le début du cours (debut_cours = l'heure prévue), sans attendre d'animateur : elle est là.
 // Tout ce qui se compte depuis le début du cours (retards, minutes de présence, seuil des 70 %, fin du cours,
 // échéance « fin du cours » d'un devoir, chrono du Studio, moments de l'émargement, transcription du replay,
 // enregistrement) part de debutDuCours(). Un « Démarrer » à la main, même 20 minutes avant l'heure, garde le

@@ -102,10 +102,18 @@ function jourDans(n: number): string {
   return jourLong(new Date(Date.now() + n * 86_400_000));
 }
 
-function PastilleEtat({ etat, debut }: { etat: EtatRegie; debut: string }) {
+function PastilleEtat({ etat, debut, attenteFormateur = false }: { etat: EtatRegie; debut: string; attenteFormateur?: boolean }) {
   const tx = useTextes(textesRegie);
   switch (etat) {
     case "en_direct":
+      // Ouverte automatiquement, l'heure passée, personne n'anime : prendre la classe ou envoyer le lien intervenant.
+      if (attenteFormateur) {
+        return (
+          <Badge ton="danger" className="whitespace-normal font-semibold">
+            {tx("etat.attenteFormateur", { v: { heure: heure(debut) } })}
+          </Badge>
+        );
+      }
       return <BadgeDirect libelle={tx("etat.enDirect")} />;
     case "ouverte_avance":
       return (
@@ -205,7 +213,7 @@ function CarteCours({ c }: { c: CoursRegieDto }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[26px] font-black leading-none tracking-serre">{c.heures}</span>
-        <PastilleEtat etat={c.etat} debut={c.debut} />
+        <PastilleEtat etat={c.etat} debut={c.debut} attenteFormateur={c.attenteFormateur} />
       </div>
 
       <div className="flex min-w-0 flex-col gap-1">

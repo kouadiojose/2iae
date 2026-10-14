@@ -8,6 +8,9 @@
 // micro et caméra ; la personne entend toute la visio (formateur, salles) et
 // peut entrer 30 minutes avant le début pour régler son micro. En direct, il
 // fait défiler les diapos du cours (télécommande sous la diapo, flèches ← →).
+// Tant que sa visio est connectée, la page le signale au campus toutes les
+// 30 secondes (POST /present) : il compte comme l'animateur de la classe (une
+// classe ouverte automatiquement n'attend plus le formateur, server/routes/live.ts).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Link2Off, Mic, MonitorPlay, Presentation, Radio, UserRound } from "lucide-react";
@@ -23,6 +26,22 @@ type Mode = "radio" | "video";
 const CLE_NOM = "campus:invite-nom";
 /** La visio ouvre 30 minutes avant le début (même règle que le serveur). */
 const OUVERTURE_VIDEO_MS = 30 * 60_000;
+/** L'intervenant connecté à la visio se signale toutes les 30 s (le serveur l'oublie au bout de 2 min sans signe). */
+const SIGNE_PRESENCE_MS = 30_000;
+
+/**
+ * Intervenant dans la visio : un signe de présence tout de suite (et à chaque changement d'état de la classe, pour
+ * que son arrivée soit notée dès l'ouverture), puis toutes les 30 s. Un échec ne gêne jamais la visio.
+ */
+function usePresenceIntervenant(racine: string, actif: boolean, nom: string, statut: string) {
+  useEffect(() => {
+    if (!actif) return;
+    const signaler = () => void post(`${racine}/present`, nom.length >= 2 ? { nom } : {}).catch(() => undefined);
+    signaler();
+    const id = window.setInterval(signaler, SIGNE_PRESENCE_MS);
+    return () => window.clearInterval(id);
+  }, [racine, actif, nom, statut]);
+}
 
 const lireNom = () => {
   try {
@@ -189,6 +208,9 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
   const avant = info.statut === "planifiee";
   // L'intervenant entre dans la visio dès son ouverture (30 minutes avant) pour régler son micro et sa caméra.
   const visioOuverte = !avant || (info.intervenant && new Date(info.debut).getTime() - Date.now() <= OUVERTURE_VIDEO_MS);
+  // Intervenant connecté à la visio : il anime la classe (signe de présence au campus).
+  const [connecte, setConnecte] = useState(false);
+  usePresenceIntervenant(racine, info.intervenant && mode === "video" && visioOuverte && connecte, nom, info.statut);
   return (
     <div className="flex flex-col gap-4">
       {avant && (
@@ -217,6 +239,7 @@ function Suivi({ info, racine, mode, nom, onChanger }: { info: InfoInviteDto; ra
         <div className="aspect-video overflow-hidden rounded-[22px] border-2 border-nuit-ligne bg-nuit-carte">
           <CadreDaily
             obtenirAcces={() => post<AccesDaily>(`${racine}/visio`, { nom })}
+            onEtat={(e) => setConnecte(e === "connecte" || e === "reconnexion")}
             role="etudiant"
             tu={false}
             cameraAuDepart={info.intervenant}

@@ -15,7 +15,7 @@ import { exigerConnexion, moi } from "../auth";
 import { route, valider, idParam, introuvable, invalide } from "../http";
 import { publier } from "../temps-reel";
 import { enregistrerFichier, enregistrerGardienFichier, televersementRessource, urlFichier } from "../fichiers";
-import { canal, seanceAnimee, seanceDuReplay } from "./live";
+import { canal, noterGesteAnimation, seanceAnimee, seanceDuReplay } from "./live";
 import { etudiantsDuCours } from "../acces";
 import { notifier } from "../notifications";
 import { planifier } from "../taches";
@@ -321,6 +321,8 @@ export function enregistrerRessourcesSeance(app: Express) {
         }),
         req.body,
       );
+      // Projeter une vidéo, c'est animer (classe ouverte automatiquement que personne n'animait : live.ts) ; l'arrêter aussi.
+      if (s.statut === "en_direct") noterGesteAnimation(s, u);
       let projection: ProjectionVideo | null = null;
       if (d.ressourceId !== null) {
         const r = await ressourceDeLaSeance(s.id, d.ressourceId);

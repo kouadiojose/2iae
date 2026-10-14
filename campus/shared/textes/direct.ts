@@ -40,7 +40,8 @@ export const t = creerTextes({
   // ── Classe ouverte automatiquement que personne n'anime encore, l'heure du cours passée ──
   "attente.entete": "En attente du formateur",
   "attente.studio": "Le cours devait commencer à {heure} : personne n'anime encore cette classe ouverte automatiquement. Ni chrono ni enregistrement tant que personne ne l'anime.",
-  "attente.studio.direction": "Regarder la classe ne compte pas. Si le formateur ne vient pas, prenez la classe pour l'animer ; sinon, elle finira « Séance non tenue » (ni présents ni absents).",
+  "attente.studio.direction":
+    "Regarder la classe ne compte pas. Si le formateur ne vient pas, prenez la classe pour l'animer, ou envoyez-lui le lien intervenant (il entre sans compte et anime la classe) ; sinon, elle finira « Séance non tenue » (ni présents ni absents).",
   "attente.prendre": "Je prends la classe",
   "attente.prendre.ok": "Vous animez la classe : le cours commence, le chrono et l'enregistrement démarrent.",
   "attente.salle.titre": "Le formateur arrive",

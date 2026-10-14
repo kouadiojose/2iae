@@ -33,6 +33,7 @@ export const t = creerTextes({
   "etat.annulee": "Annulé",
   "etat.nonOuverte": "Pas ouvert à l'heure",
   "etat.enRetard": "Pas encore ouverte · le cours a commencé à {heure}",
+  "etat.attenteFormateur": "En attente du formateur · le cours devait commencer à {heure}",
 
   // ── Carte d'un cours ────────────────────────────────────────────────────
   "carte.formateurConnecte": "connecté",

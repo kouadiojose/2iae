@@ -30,7 +30,7 @@ import { finDesLiens, jetonIntervenant, lienValide } from "./live-invite";
 import { nomDeSalle } from "@shared/salles";
 import { t } from "@shared/textes/regie";
 import { type CoursRegieDto, type EspaceRegieDto, type EtatRegie, type LienIntervenantDto } from "@shared/regie";
-import { AVANCE_MAX_OUVERTURE_MIN } from "@shared/ouverture";
+import { AVANCE_MAX_OUVERTURE_MIN, enAttenteAnimateur } from "@shared/ouverture";
 import {
   cours,
   coursFormateurs,
@@ -246,6 +246,8 @@ async function coursDeRegie(u: Utilisateur, depuis: Date, jusqua: Date, maintena
       motifAnnulation: s.statut === "annulee" ? s.motifAnnulation : null,
       formateur: nomFormateur ? { nom: nomFormateur } : null,
       formateurConnecte: connectes.some((c) => c.role === "formateur" && formateursDuCours.has(c.id)),
+      // Ouverte automatiquement, l'heure passée, personne n'anime (live.ts : noterArrivee) : à prendre ou à relancer.
+      attenteFormateur: enAttenteAnimateur(s) && s.debut.getTime() <= t0,
       campus,
       sallesConnectees: campus.filter((c) => c.connectee).length,
       sallesAttendues: campus.length,

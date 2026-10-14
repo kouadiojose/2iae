@@ -77,8 +77,9 @@ type SeanceDemarree = { titre: string; debut?: Date | string; demarreeLe?: Date 
 /**
  * Textes du rappel du démarrage :
  *   - « Démarrer » à la main (même avant l'heure : le formateur a commencé) : « Le cours commence » ;
- *   - ouverture automatique avant l'heure du cours (shared/ouverture.ts) : « La classe est ouverte · le cours
- *     commence à 08h30 (heure d'Abidjan) » ;
+ *   - ouverture automatique avant l'heure du cours (shared/ouverture.ts), ou classe ouverte avant l'heure par la
+ *     régie de l'équipe (chargé de cours, vie scolaire : le cours commence aussi à son heure, debut_cours) : « La
+ *     classe est ouverte · le cours commence à 08h30 (heure d'Abidjan) » ;
  *   - ouverture automatique après l'heure (serveur relancé pendant le créneau, réglage réactivé, séance précédente
  *     qui déborde) : « La classe est ouverte · le cours devait commencer à 08h30, le formateur arrive » (personne
  *     n'a « ouvert la classe » ni commencé le cours).
@@ -86,9 +87,10 @@ type SeanceDemarree = { titre: string; debut?: Date | string; demarreeLe?: Date 
 function textesDemarrage(s: SeanceDemarree, code: string) {
   const v = { titre: s.titre, code };
   const auto = Boolean(s.ouvertureAuto) && Boolean(s.debut);
+  // Ouverte avant l'heure du cours (automatiquement, ou par la régie) : le cours commence plus tard que l'ouverture.
   const avance =
-    auto && s.demarreeLe ? debutDuCours({ debut: s.debut!, demarreeLe: s.demarreeLe, debutCours: s.debutCours }).getTime() > new Date(s.demarreeLe).getTime() : false;
-  if (!auto) {
+    s.debut && s.demarreeLe ? debutDuCours({ debut: s.debut, demarreeLe: s.demarreeLe, debutCours: s.debutCours }).getTime() > new Date(s.demarreeLe).getTime() : false;
+  if (!auto && !avance) {
     return {
       titreSalle: t("demarrage.titre", { registre: "tu", v }),
       salle: t("demarrage.salle.corps", { registre: "tu", v }),

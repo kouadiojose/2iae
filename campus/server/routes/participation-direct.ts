@@ -8,7 +8,9 @@
 //   - le rappel unique du démarrage du direct (décision D3) : UN rappel par
 //     étudiant, qui couvre les deux cas (« en salle, scanne le QR de l'écran ;
 //     sinon, rejoins le cours en ligne »), envoyé par live.ts au démarrage
-//     (rappelerDemarrage), avec un filet pour une salle oubliée ;
+//     (rappelerDemarrage), avec un filet pour une salle oubliée ; classe ouverte
+//     avant l'heure (ouverture automatique, 30 min avant par défaut), le même
+//     rappel unique dit « la classe est ouverte, le cours commence à 8h30 » ;
 //   - « Afficher l'émargement » (Studio, formateur et direction) : le QR
 //     revient une minute en grand sur toutes les salles (événement temps réel
 //     « emargement:afficher » du canal de la séance) ;
@@ -50,6 +52,7 @@ import {
   type QuestionsRappelDto,
 } from "@shared/engagement/direct";
 import { t } from "@shared/textes/direct";
+import { debutDuCours } from "@shared/ouverture";
 
 const MINUTE = 60_000;
 /** Nombre de questions de rappel proposées au formateur. */
@@ -63,6 +66,55 @@ const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOStrin
 
 function exigerEtudiant(u: Utilisateur) {
   if (u.role !== "etudiant") throw interdit(t("erreur.etudiant"));
+}
+
+/** « 08h30 » à l'heure d'Abidjan (le campus vit à l'heure d'Abidjan). */
+const heureAbidjan = (d: Date) => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Abidjan" }).format(d).replace(":", "h");
+
+/** Ce que le rappel du démarrage doit savoir de la séance (Seance, ou la ligne SQL du filet). */
+type SeanceDemarree = { titre: string; debut?: Date | string; demarreeLe?: Date | string | null; ouvertureAuto?: boolean; debutCours?: Date | string | null };
+
+/**
+ * Textes du rappel du démarrage :
+ *   - « Démarrer » à la main (même avant l'heure : le formateur a commencé) : « Le cours commence » ;
+ *   - ouverture automatique avant l'heure du cours (shared/ouverture.ts) : « La classe est ouverte · le cours
+ *     commence à 08h30 (heure d'Abidjan) » ;
+ *   - ouverture automatique après l'heure (serveur relancé pendant le créneau, réglage réactivé, séance précédente
+ *     qui déborde) : « La classe est ouverte · le cours devait commencer à 08h30, le formateur arrive » (personne
+ *     n'a « ouvert la classe » ni commencé le cours).
+ */
+function textesDemarrage(s: SeanceDemarree, code: string) {
+  const v = { titre: s.titre, code };
+  const auto = Boolean(s.ouvertureAuto) && Boolean(s.debut);
+  const avance =
+    auto && s.demarreeLe ? debutDuCours({ debut: s.debut!, demarreeLe: s.demarreeLe, debutCours: s.debutCours }).getTime() > new Date(s.demarreeLe).getTime() : false;
+  if (!auto) {
+    return {
+      titreSalle: t("demarrage.titre", { registre: "tu", v }),
+      salle: t("demarrage.salle.corps", { registre: "tu", v }),
+      emarge: t("demarrage.emarge.corps", { registre: "tu", v }),
+      titreEnLigne: t("demarrage.enLigne.titre", { registre: "tu", v }),
+      enLigne: t("demarrage.enLigne.corps", { registre: "tu", v }),
+    };
+  }
+  const va = { ...v, heure: heureAbidjan(new Date(s.debut!)) };
+  const titre = t("ouverture.titre", { registre: "tu", v: va });
+  if (!avance) {
+    return {
+      titreSalle: titre,
+      salle: t("ouverture.retard.salle.corps", { registre: "tu", v: va }),
+      emarge: t("ouverture.retard.emarge.corps", { registre: "tu", v: va }),
+      titreEnLigne: titre,
+      enLigne: t("ouverture.retard.enLigne.corps", { registre: "tu", v: va }),
+    };
+  }
+  return {
+    titreSalle: titre,
+    salle: t("ouverture.salle.corps", { registre: "tu", v: va }),
+    emarge: t("ouverture.emarge.corps", { registre: "tu", v: va }),
+    titreEnLigne: titre,
+    enLigne: t("ouverture.enLigne.corps", { registre: "tu", v: va }),
+  };
 }
 
 /** Heures calmes (21 h à 6 h) dans le fuseau de la personne, Abidjan par défaut. */
@@ -99,12 +151,21 @@ const DELAI_FILET_MS = 30_000;
  *     es déjà compté présent », vers le mode salle ;
  *   - les autres (sans campus, ou campus dont aucune classe ne suit ce cours) :
  *     « En direct : entre maintenant », vers /live/<id>.
+ * Classe ouverte automatiquement avant l'heure du cours : le même rappel unique
+ * dit « La classe est ouverte : … · le cours commence à 08h30 (heure
+ * d'Abidjan) » (après l'heure : « le cours devait commencer à 08h30, le
+ * formateur arrive ») ; il n'y a pas de second rappel à l'heure du cours (le
+ * « Dans 15 min » n'est pas envoyé pour une séance déjà ouverte, ni pour une
+ * séance qui va s'ouvrir d'elle-même : live-rappels ; ni au démarrage qui suit
+ * « C'était un essai » sur une classe ouverte automatiquement : live.ts). Un
+ * « Démarrer » à la main, même avant l'heure, dit « Le cours commence ».
  * Les lignes « emargement:<site> » de rappels_live sont posées AVANT l'envoi :
  * le filet (envoyerRappelsEmargement) ne double jamais ce rappel. Appelé par
- * live.ts au premier démarrage (jamais à une reprise) et par le direct
- * immédiat qui prévient les étudiants (jamais pour un essai de visio).
+ * live.ts au premier démarrage (jamais à une reprise), y compris l'ouverture
+ * automatique, et par le direct immédiat qui prévient les étudiants (jamais
+ * pour un essai de visio).
  */
-export async function rappelerDemarrage(s: { id: number; titre: string; coursId: number }, code: string): Promise<void> {
+export async function rappelerDemarrage(s: SeanceDemarree & { id: number; coursId: number }, code: string): Promise<void> {
   const [etudiants, sites] = await Promise.all([etudiantsDuCours(s.coursId), sitesDuCours(s.coursId)]);
   for (const site of sites) {
     await db.execute(sql`INSERT INTO campus.rappels_live (seance_id, type) VALUES (${s.id}, ${`emargement:${site}`}) ON CONFLICT DO NOTHING`);
@@ -113,20 +174,11 @@ export async function rappelerDemarrage(s: { id: number; titre: string; coursId:
   const emarges = await db.execute<{ uid: number }>(sql`SELECT utilisateur_id AS uid FROM campus.presences WHERE seance_id = ${s.id} AND mode = 'salle'`);
   const deja = new Set(emarges.rows.map((l) => Number(l.uid)));
   const enSalle = (e: Utilisateur) => e.siteId !== null && suivent.has(e.siteId);
-  const v = { titre: s.titre, code };
+  const x = textesDemarrage(s, code);
   const ids = (garder: (e: Utilisateur) => boolean) => etudiants.filter(garder).map((e) => e.id);
-  await notifier(
-    ids((e) => enSalle(e) && !deja.has(e.id)),
-    { type: "live", titre: t("demarrage.titre", { registre: "tu", v }), corps: t("demarrage.salle.corps", { registre: "tu", v }), lien: `/emargement?seance=${s.id}`, urgent: true },
-  );
-  await notifier(
-    ids((e) => enSalle(e) && deja.has(e.id)),
-    { type: "live", titre: t("demarrage.titre", { registre: "tu", v }), corps: t("demarrage.emarge.corps", { registre: "tu", v }), lien: `/live/${s.id}`, urgent: true },
-  );
-  await notifier(
-    ids((e) => !enSalle(e)),
-    { type: "live", titre: t("demarrage.enLigne.titre", { registre: "tu", v }), corps: t("demarrage.enLigne.corps", { registre: "tu", v }), lien: `/live/${s.id}`, urgent: true },
-  );
+  await notifier(ids((e) => enSalle(e) && !deja.has(e.id)), { type: "live", titre: x.titreSalle, corps: x.salle, lien: `/emargement?seance=${s.id}`, urgent: true });
+  await notifier(ids((e) => enSalle(e) && deja.has(e.id)), { type: "live", titre: x.titreSalle, corps: x.emarge, lien: `/live/${s.id}`, urgent: true });
+  await notifier(ids((e) => !enSalle(e)), { type: "live", titre: x.titreEnLigne, corps: x.enLigne, lien: `/live/${s.id}`, urgent: true });
 }
 
 /**
@@ -141,8 +193,18 @@ export async function rappelerDemarrage(s: { id: number; titre: string; coursId:
  * d'émargement du démarrage : jamais reporté au résumé du lendemain.
  */
 export async function envoyerRappelsEmargement(maintenant = new Date()): Promise<number> {
-  const directs = await db.execute<{ id: number; titre: string; cours_id: number; code: string; debut: Date | string; duree_minutes: number; demarree_le: Date | string }>(sql`
-    SELECT s.id, s.titre, s.cours_id, c.code, s.debut, s.duree_minutes, s.demarree_le
+  const directs = await db.execute<{
+    id: number;
+    titre: string;
+    cours_id: number;
+    code: string;
+    debut: Date | string;
+    duree_minutes: number;
+    demarree_le: Date | string;
+    ouverture_auto: boolean;
+    debut_cours: Date | string | null;
+  }>(sql`
+    SELECT s.id, s.titre, s.cours_id, c.code, s.debut, s.duree_minutes, s.demarree_le, s.ouverture_auto, s.debut_cours
     FROM campus.seances s JOIN campus.cours c ON c.id = s.cours_id
     WHERE s.statut = 'en_direct'
       AND s.demarree_le > ${new Date(maintenant.getTime() - REPORT_MAX_EMARGEMENT_MS).toISOString()}::timestamptz
@@ -164,7 +226,13 @@ export async function envoyerRappelsEmargement(maintenant = new Date()): Promise
         INSERT INTO campus.rappels_live (seance_id, type) VALUES (${s.id}, ${`emargement:${site}`})
         ON CONFLICT DO NOTHING RETURNING seance_id`);
       if (!pris.rows.length) continue;
-      attendus ??= await etudiantsAttendusSeance({ coursId: s.cours_id, debut: new Date(s.debut), dureeMinutes: s.duree_minutes });
+      attendus ??= await etudiantsAttendusSeance({
+        coursId: s.cours_id,
+        debut: new Date(s.debut),
+        dureeMinutes: s.duree_minutes,
+        demarreeLe: new Date(s.demarree_le),
+        debutCours: s.debut_cours ? new Date(s.debut_cours) : null,
+      });
       const candidats = attendus.filter((e) => e.siteId === site && !nuitPour(e.fuseau, maintenant));
       if (!candidats.length) continue;
       const emarges = await db.execute<{ uid: number }>(sql`
@@ -172,11 +240,11 @@ export async function envoyerRappelsEmargement(maintenant = new Date()): Promise
       const deja = new Set(emarges.rows.map((l) => Number(l.uid)));
       const ids = candidats.filter((e) => !deja.has(e.id)).map((e) => e.id);
       if (!ids.length) continue;
-      const v = { titre: s.titre, code: s.code };
+      const x = textesDemarrage({ titre: s.titre, debut: s.debut, demarreeLe: s.demarree_le, ouvertureAuto: s.ouverture_auto, debutCours: s.debut_cours }, s.code);
       await notifier(ids, {
         type: "live",
-        titre: t("demarrage.titre", { registre: "tu", v }),
-        corps: t("demarrage.salle.corps", { registre: "tu", v }),
+        titre: x.titreSalle,
+        corps: x.salle,
         lien: `/emargement?seance=${s.id}`,
         priorite: "action",
         expireLe: new Date(new Date(s.demarree_le).getTime() + REPORT_MAX_EMARGEMENT_MS),

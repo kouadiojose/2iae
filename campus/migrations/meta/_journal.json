@@ -253,6 +253,13 @@
       "when": 1791849566679,
       "tag": "0035_devoirs_direct",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791967599145,
+      "tag": "0036_ouverture_auto",
+      "breakpoints": true
     }
   ]
 }

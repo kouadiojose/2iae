@@ -19,12 +19,21 @@ import { t as textesDirect } from "@shared/textes/devoir-direct";
 import type { MaPresenceDirectDto } from "@shared/engagement/direct";
 import type { DevoirDirectDto, EtatDirectDto, ModeSuivi, SeanceDetailDto } from "@shared/schema";
 import type { SeanceResume } from "@shared/api";
+import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours } from "@shared/ouverture";
+import { maintenantServeur } from "@/lib/horloge";
 
 /** En-tête de la salle live : cours, formateur, direct, compteur de connectés. */
 export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDetailDto; etat?: EtatDirectDto; mode?: ModeSuivi; actions?: ReactNode }) {
   const maintenant = useMaintenant(1000);
+  const tx = useTextes(t);
   const statut = etat?.statut ?? seance.statut;
-  const demarree = etat?.demarreeLe ?? seance.demarreeLe;
+  // Le chrono part du début du cours : l'heure prévue pour une classe ouverte en avance (ouverture automatique).
+  // Classe ouverte automatiquement que personne n'anime encore, l'heure passée : « En attente du formateur », sans
+  // chrono ni « REC » (rien n'est enregistré tant que personne ne l'anime).
+  const demarreeLe = etat?.demarreeLe ?? seance.demarreeLe;
+  const demarree = demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe, debutCours: etat ? etat.debutCours : seance.debutCours }).getTime() : null;
+  const ouverteEnAvance = statut === "en_direct" && demarree !== null && demarree > maintenant;
+  const attenteFormateur = statut === "en_direct" && !ouverteEnAvance && (etat ? etat.attenteAnimateur : seance.attenteAnimateur);
   const ville = seance.formateur?.localisation?.split(",")[0];
   const connectes = etat ? etat.campus.reduce((a, c) => a + c.emarges, 0) + etat.enLigne : 0;
   return (
@@ -38,11 +47,21 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
         <h1 className="text-[22px] font-extrabold leading-tight tracking-[-0.02em] text-white sm:text-[26px]">{seance.titre}</h1>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {statut === "en_direct" ? (
+        {ouverteEnAvance ? (
+          <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-3 py-2 font-mono text-xs text-[#FF8A6B]">
+            <span className="point-direct" />
+            {tx("ouverte.entete", { v: { heure: heure(seance.debut) } })}
+          </span>
+        ) : attenteFormateur ? (
+          <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-3 py-2 font-mono text-xs text-[#FF8A6B]">
+            <span className="point-direct" />
+            {tx("attente.entete")}
+          </span>
+        ) : statut === "en_direct" ? (
           <span className="flex items-center gap-2 rounded-full bg-[#2A1510] px-3 py-2 font-mono text-xs text-[#FF8A6B]">
             <span className="point-direct" />
             {seance.fournisseur === "daily" ? "REC · " : "EN DIRECT · "}
-            {demarree ? chrono((maintenant - new Date(demarree).getTime()) / 1000) : "00:00:00"}
+            {demarree ? chrono((maintenant - demarree) / 1000) : "00:00:00"}
           </span>
         ) : (
           <span className="rounded-full bg-nuit-carte px-3 py-2 font-mono text-xs text-nuit-doux">{statut === "planifiee" ? `Début ${heure(seance.debut)} Abidjan` : statut === "terminee" ? "Terminée" : "Annulée"}</span>
@@ -174,6 +193,9 @@ function FinEssai({ seance }: { seance: SeanceFinie }) {
         <p className="text-[15px] leading-relaxed text-nuit-doux">
           Ce direct a été lancé avant l'heure prévue du cours ({jourLong(debut)} à {heure(debut)}). Remettez le cours à venir : les salles et les étudiants le
           retrouveront à son heure, sans rien de l'essai.
+          {/* Repère « ouverture-auto » posé par le serveur dans l'heure qui précède le cours (routes/live.ts). */}
+          {debut.getTime() - maintenantServeur() <= AVANCE_MAX_OUVERTURE_MIN * 60_000 &&
+            " À moins d'une heure du cours, il ne se rouvrira pas tout seul : démarrez-le quand vous êtes prêt."}
         </p>
         <div className="flex flex-wrap justify-center gap-2">
           <Bouton variante="nuit-actif" icone={<RotateCcw className="h-4 w-4" />} onClick={() => setOuverte(true)}>

@@ -14,7 +14,10 @@ export const rappelsLive = campusSchema.table(
   "rappels_live",
   {
     seanceId: integer("seance_id").notNull().references(() => seances.id, { onDelete: "cascade" }),
-    type: text("type").$type<"24h" | "jour" | "15min">().notNull(),
+    /** Rappels « 24h », « jour », « 15min » ; « emargement:<site> » (rappel du démarrage, participation-direct.ts) ;
+     *  « ouverture-auto » : la séance ne s'ouvre plus d'elle-même à cet horaire ; « rappel-demarrage » : le rappel du
+     *  démarrage est déjà parti pour cet horaire (essai effacé après une ouverture automatique) (server/ouverture-auto.ts). */
+    type: text("type").$type<"24h" | "jour" | "15min" | "ouverture-auto" | "rappel-demarrage" | `emargement:${number}`>().notNull(),
     envoyeLe: timestamp("envoye_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.seanceId, t.type] })],
@@ -31,7 +34,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom", "devoir_direct"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom", "devoir_direct", "arrivee", "cours_commence"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -288,6 +291,10 @@ export type SeanceDetailDto = {
   planB: string | null;
   plan: EtapePlan[];
   demarreeLe: string | null;
+  /** Début du cours quand il n'est pas le démarrage (classe ouverte automatiquement : debutDuCours, shared/ouverture.ts). */
+  debutCours: string | null;
+  /** Classe ouverte automatiquement où aucun animateur n'est encore entré (enAttenteAnimateur). */
+  attenteAnimateur: boolean;
   termineeLe: string | null;
   motifAnnulation: string | null;
   diapos: DiapoDto[];
@@ -538,6 +545,10 @@ export type EtatDirectDto = {
   seanceId: number;
   statut: StatutSeance;
   demarreeLe: string | null;
+  /** Début du cours quand il n'est pas le démarrage (classe ouverte automatiquement : debutDuCours, shared/ouverture.ts). */
+  debutCours: string | null;
+  /** Classe ouverte automatiquement où aucun animateur n'est encore entré : ni chrono ni enregistrement (enAttenteAnimateur). */
+  attenteAnimateur: boolean;
   planB: string | null;
   motifAnnulation: string | null;
   /**

@@ -33,6 +33,7 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { ZoneRendu } from "@/modules/evaluations/composants/ZoneRendu";
 import { lirePagesBrouillon, lireTexteBrouillon } from "@/modules/evaluations/outils";
 import { consigneEnLigne, titreDeConsigne, titreRepete, CONSIGNE_DIRECT_MAX } from "@shared/devoir-direct";
+import { debutDuCours } from "@shared/ouverture";
 import { t as textesDirect } from "@shared/textes/devoir-direct";
 import { t as textesCopies } from "@shared/textes/copies-direct";
 import type {
@@ -227,7 +228,7 @@ function FormulaireDevoir({
   const changer = (champs: Partial<FormulaireDevoirDirect>) => setFormulaire((x) => ({ ...x, ...champs }));
 
   // Échéances proposées : fin du cours (même calcul que le chrono du Studio), 10, 15, 30 min, ce soir.
-  const finCours = (etat.demarreeLe ? new Date(etat.demarreeLe).getTime() : new Date(seance.debut).getTime()) + seance.dureeMinutes * MINUTE;
+  const finCours = (etat.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime() : new Date(seance.debut).getTime()) + seance.dureeMinutes * MINUTE;
   const finProposee = finCours >= maintenant + 10 * MINUTE;
   // Chaque pastille : son nom, puis l'heure d'Abidjan à laquelle les réponses s'arrêteront, comme le serveur la
   // calcule (fin du cours à la minute entamée, comme « Fin prévue » du chrono ; durées à la minute supérieure).

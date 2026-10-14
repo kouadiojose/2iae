@@ -26,6 +26,7 @@ import { db } from "../db";
 import { sqlAttendus, sqlDevoirsAttendus, SQL_DUREE_REFERENCE, SQL_INCIDENT_SALLE } from "../routes/admin";
 import type { EtatPresence } from "./presence";
 import { tableExiste } from "./tables";
+import { sqlDebutCours } from "../ouverture-auto";
 import { DEBUT_EXPERIENCE, rappelEntrainementAutorise } from "./tirage";
 import { corrigerQuestion } from "../evaluations-outils";
 import { ajouterJours, ecartJours, jourLocal, lundiDe, semaineIso, type Jour } from "@shared/engagement/calendrier";
@@ -241,7 +242,8 @@ async function sqlActes(depuis: Date): Promise<SQL> {
   const branches: SQL[] = [
     horodate(
       sql`campus.presences pr JOIN pop p ON p.uid = pr.utilisateur_id JOIN campus.seances s ON s.id = pr.seance_id`,
-      sql`s.demarree_le`,
+      // Le jour du cours (debutDuCours) : une classe ouverte avant minuit pour un cours de minuit et demi reste du jour du cours.
+      sql`(CASE WHEN s.demarree_le IS NOT NULL THEN ${sqlDebutCours("s")} END)`,
       "presence",
       sql`NULLIF(pr.justification, '') IS NULL AND (pr.mode = 'salle' OR pr.minutes >= ${sqlMinutesSuivi()})`,
     ),
@@ -592,7 +594,9 @@ type MetaSeance = { id: number; titre: string; code: string; debut: Date | strin
 async function metaSeances(ids: number[]): Promise<Map<number, MetaSeance>> {
   if (!ids.length) return new Map();
   const r = await ex().execute<MetaSeance>(sql`
-    SELECT s.id, s.titre, c.code, s.debut, s.demarree_le,
+    SELECT s.id, s.titre, c.code, s.debut,
+      -- « Tenue le » : le début du cours (debutDuCours), pas l'ouverture de la classe 30 min avant.
+      (CASE WHEN s.demarree_le IS NOT NULL THEN ${sqlDebutCours("s")} END) AS demarree_le,
       (SELECT count(*) FROM campus.sondages so WHERE so.seance_id = s.id AND so.ouvert_le IS NOT NULL)::int AS sondages
     FROM campus.seances s JOIN campus.cours c ON c.id = s.cours_id WHERE s.id = ANY(${entiers(ids)})`);
   return new Map(r.rows.map((l) => [l.id, l]));

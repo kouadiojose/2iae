@@ -33,6 +33,8 @@ import {
   LIEUX_MAX,
 } from "@shared/schema";
 import { nomDeSalle } from "@shared/salles";
+import { DELAIS_OUVERTURE_AUTO, type DelaiOuvertureAuto, type ReglageOuvertureAutoDto } from "@shared/ouverture";
+import { enregistrerReglageOuverture, reglageOuvertureDto } from "./ouverture-auto";
 
 const MINUTE = 60_000;
 
@@ -371,6 +373,40 @@ export function enregistrerVisioDaily(app: Express) {
       visio.oublierUsage();
       await db.insert(journal).values({ utilisateurId: u.id, action: "reglages_visio", details: d });
       res.json(await versReglagesDto());
+    }),
+  );
+
+  // ── Ouverture automatique des classes (routes/live.ts, « live-ouverture-auto ») ──
+  // Par défaut active, 30 min avant ; la direction la coupe ou choisit 15, 30, 45 ou 60 min. La vie scolaire
+  // la voit (même droit que les réglages de la visio). Le changement vaut dès le passage suivant (chaque minute).
+  app.get(
+    "/api/visio/ouverture-auto",
+    exigerDroit("outils_campus"),
+    route(async (_req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      res.json((await reglageOuvertureDto()) satisfies ReglageOuvertureAutoDto);
+    }),
+  );
+
+  app.put(
+    "/api/visio/ouverture-auto",
+    exigerRole("admin"),
+    route(async (req, res) => {
+      const u = moi(req);
+      const d = valider(
+        z.object({
+          actif: z.boolean(),
+          minutes: z
+            .number()
+            .int()
+            .refine((m): m is DelaiOuvertureAuto => (DELAIS_OUVERTURE_AUTO as readonly number[]).includes(m), "15, 30, 45 ou 60 minutes"),
+        }),
+        req.body,
+      );
+      const r = await enregistrerReglageOuverture({ actif: d.actif, minutes: d.minutes as DelaiOuvertureAuto }, u.id);
+      await db.insert(journal).values({ utilisateurId: u.id, action: "reglage_ouverture_auto", details: { actif: d.actif, minutes: d.minutes } });
+      res.setHeader("Cache-Control", "no-store");
+      res.json(r satisfies ReglageOuvertureAutoDto);
     }),
   );
 

@@ -47,6 +47,7 @@ import {
   type SeanceFormateur,
   type AnnonceResume,
 } from "@shared/schema";
+import { debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
 
 const MINUTE = 60_000;
 const HEURE = 60 * MINUTE;
@@ -260,15 +261,25 @@ export function enregistrerAccueil(app: Express) {
         const nomAnimateur = i ? i.nom : prenom ? `${prenom} ${nom}` : null;
         const formateur = nomAnimateur ? `${nomAnimateur}${lieu ? ` depuis ${lieu}` : ""}` : null;
         if (s.statut === "en_direct") {
+          // Classe ouverte automatiquement avant l'heure : l'heure du cours est dite ; l'heure passée sans personne
+          // pour l'animer : le formateur arrive (shared/ouverture.ts).
+          const avance = debutDuCours(s).getTime() > t0;
+          const ouverte = avance
+            ? `${formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte."} Le cours commence à ${heureFr(s.debut)}.`
+            : enAttenteAnimateur(s)
+              ? `La classe est ouverte : le cours devait commencer à ${heureFr(s.debut)}, le formateur arrive.`
+              : formateur
+                ? `La classe est ouverte, avec ${formateur}.`
+                : "La classe est ouverte.";
           ajouter(
             {
               type: "live",
               titre: s.titre,
-              detail: `${formateur ? `La classe est ouverte, avec ${formateur}.` : "La classe est ouverte."}${aEmarger.has(s.id) ? " Tu es en salle ? Émarge pour être compté présent ; sinon, suis le cours en ligne." : ""}`,
+              detail: `${ouverte}${aEmarger.has(s.id) ? " Tu es en salle ? Émarge pour être compté présent ; sinon, suis le cours en ligne." : ""}`,
               lien: aEmarger.has(s.id) ? `/emargement?seance=${s.id}` : `/live/${s.id}`,
               bouton: aEmarger.has(s.id) ? "Émarger ou suivre en ligne" : "Rejoindre le live",
               urgence: "haute",
-              quand: (s.demarreeLe ?? s.debut).toISOString(),
+              quand: debutDuCours(s).toISOString(),
               coursCode: code,
               couleur,
             },
@@ -488,6 +499,7 @@ export function enregistrerAccueil(app: Express) {
         debut: s.debut.toISOString(),
         dureeMinutes: s.dureeMinutes,
         statut: s.statut,
+        debutCours: s.statut === "en_direct" ? debutDuCours(s).toISOString() : null,
         lienStudio: `/live/${s.id}`,
         lienPreparation: `/enseigner/seances/${s.id}`,
         lienAgenda: `/api/agenda/seances/${s.id}.ics`,

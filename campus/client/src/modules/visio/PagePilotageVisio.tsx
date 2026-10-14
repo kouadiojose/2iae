@@ -1,7 +1,9 @@
 // /pilotage/visio — la visio du campus pour la direction et la vie scolaire :
-// minutes-participant Daily du mois (lues côté serveur dans l'API Daily),
-// qui les consomme (formateurs, salles, étudiants, équipe), coût estimé, et
-// réglages (fournisseur par défaut, vidéo étudiante par défaut, places).
+// l'ouverture automatique des classes (14 octobre 2026 : chaque cours s'ouvre
+// tout seul 30 min avant par défaut, CarteOuvertureAuto), minutes-participant
+// Daily du mois (lues côté serveur dans l'API Daily), qui les consomme
+// (formateurs, salles, étudiants, équipe), coût estimé, et réglages
+// (fournisseur par défaut, vidéo étudiante par défaut, places).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, FlaskConical, HardDrive, Save, Video } from "lucide-react";
@@ -18,6 +20,7 @@ import { BarreProgression, Chargement, Chiffre, EtatVide, Erreur } from "@/compo
 import { toast, toastErreur } from "@/components/ui/toast";
 import type { FournisseurVisio, ReglagesVisioDto, UsageVisioDto } from "@shared/schema";
 import { ConfirmationFuseau } from "./Fuseau";
+import { CarteOuvertureAuto } from "./CarteOuvertureAuto";
 
 const LIBELLES_PROFIL: Record<UsageVisioDto["parProfil"][number]["profil"], string> = {
   formateur: "Formateurs",
@@ -60,7 +63,7 @@ export default function PagePilotageVisio() {
       <EnTetePage
         etiquette="Pilotage · visio"
         titre="La visio du campus"
-        sousTitre="Ce que la visio Daily a consommé, ce que cela coûte, et les réglages qui gardent la facture basse."
+        sousTitre="L'ouverture automatique des classes, ce que la visio Daily a consommé, ce que cela coûte, et les réglages qui gardent la facture basse."
         actions={
           <LienBouton href="/visio/essai#salle-essai" icone={<FlaskConical className="h-4 w-4" />}>
             Entrer dans la salle d'essai
@@ -68,6 +71,14 @@ export default function PagePilotageVisio() {
         }
       />
       <ConfirmationFuseau />
+
+      {/* Le réglage qui change le déroulé de chaque cours : en premier, avant la consommation. */}
+      <section className="flex flex-col gap-4" aria-labelledby="titre-ouverture">
+        <h2 id="titre-ouverture" className="text-xl font-extrabold">
+          Ouverture des classes
+        </h2>
+        <CarteOuvertureAuto modifiable={moi.role === "admin"} />
+      </section>
 
       <section className="flex flex-col gap-4" aria-labelledby="titre-conso">
         <div className="flex flex-wrap items-center justify-between gap-3">

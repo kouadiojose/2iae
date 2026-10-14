@@ -36,6 +36,8 @@ import type { DevoirDirectDto, EtatDirectDto, MainDirectDto, SeanceDetailDto } f
 import type { EnCours, SeanceResume } from "@shared/api";
 import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
+import { t as textesOuverture } from "@shared/textes/direct";
+import { classeOuverteEnAvance } from "@shared/ouverture";
 
 const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d'internet", "Salle bruyante"];
 
@@ -214,6 +216,8 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   const [videoMasquee, setVideoMasquee] = usePreferenceSalle("campus:salle-video-masquee");
   const pleinEcranDemande = useRef(false);
   const enDirect = etat?.statut === "en_direct";
+  // Rafraîchit l'écran quand le cours commence (fin de l'attente d'une classe ouverte en avance).
+  const maintenant = useMaintenant(5000);
   const entrer = useCallback(() => {
     setPresentation(true);
     if (!document.fullscreenElement) {
@@ -240,12 +244,16 @@ function EcranSeance({ seanceId, siteId }: { seanceId: number; siteId: number | 
   if (!seance || !etat) return <div className="min-h-dvh" aria-busy="true" />;
   const statut = etat.statut;
   const groupe = statut === "en_direct" ? monGroupe(groupes) : null;
-  const seule = statut === "en_direct" && presentation && !groupe && !petit;
+  // Classe ouverte automatiquement, cours pas encore commencé (avant l'heure, ou personne ne l'anime encore) : les
+  // étudiants arrivent et émargent. Pas de « Présentation seule » (même gardée d'un autre cours) : le bandeau, le
+  // code et le QR restent à l'écran jusqu'au début du cours.
+  const attente = statut === "en_direct" && (etat.attenteAnimateur || classeOuverteEnAvance({ statut, debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }, maintenant));
+  const seule = statut === "en_direct" && presentation && !groupe && !petit && !attente;
   // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
   // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
   return (
     <div className={seule ? "relative h-dvh w-screen overflow-hidden bg-black" : "flex min-h-dvh flex-col lg:h-dvh lg:overflow-hidden"}>
-      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe && !petit ? entrer : undefined} />}
+      {!seule && <BandeauHaut seance={seance} siteId={siteId} onPresentation={statut === "en_direct" && !groupe && !petit && !attente ? entrer : undefined} />}
       {statut === "annulee" ? (
         <Message titre="Cours annulé" texte={etat.motifAnnulation ?? seance.motifAnnulation ?? "Le formateur a un empêchement."} seance={seance} />
       ) : statut === "terminee" ? (
@@ -280,7 +288,12 @@ function Message({ titre, texte, seance }: { titre: string; texte: string; seanc
 
 // ── Code d'émargement renouvelé chaque minute (useCodeSalle : EmargementSalle.tsx) ──
 
-function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; siteId: number | null; compact?: boolean; mini?: boolean }) {
+/**
+ * compact : pendant le cours, le code seul dans la colonne de droite ; colonne : la même colonne avant le début d'un
+ * cours ouvert automatiquement (le code, puis le QR dessous : les étudiants arrivent et émargent) ; sinon (avant le
+ * cours, page pleine) le code et le QR côte à côte.
+ */
+function BlocCode({ seance, siteId, compact, mini, colonne }: { seance: SeanceDetailDto; siteId: number | null; compact?: boolean; mini?: boolean; colonne?: boolean }) {
   const ouvert = seance.statut === "en_direct" || new Date(seance.debut).getTime() - maintenantServeur() < 60 * 60_000;
   const { code, erreur } = useCodeSalle(seance.id, siteId, ouvert);
   const maintenant = useMaintenant(1000);
@@ -307,11 +320,11 @@ function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; 
   }
   const chemin = cheminEmargement(code.url);
   return (
-    <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact ? "flex-col p-5" : "flex-col p-6 sm:flex-row sm:items-center lg:p-7")}>
+    <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact || colonne ? "flex-col p-5" : "flex-col p-6 sm:flex-row sm:items-center lg:p-7")}>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">Émargement · {code.salle}</p>
         <p
-          className={cn("whitespace-nowrap font-black tabular-nums leading-none tracking-[0.08em] text-white", compact ? "text-[clamp(48px,4.6vw,88px)]" : "text-[clamp(64px,7.2vw,150px)]")}
+          className={cn("whitespace-nowrap font-black tabular-nums leading-none tracking-[0.08em] text-white", compact || colonne ? "text-[clamp(48px,4.6vw,88px)]" : "text-[clamp(64px,7.2vw,150px)]")}
           aria-live="polite"
           aria-label={`Code d'émargement ${code.code.split("").join(" ")}`}
         >
@@ -326,7 +339,7 @@ function BlocCode({ seance, siteId, compact, mini }: { seance: SeanceDetailDto; 
         </p>
       </div>
       <div
-        className={cn("shrink-0 self-center rounded-2xl bg-white p-2.5", compact ? "hidden" : "w-44 xl:w-52")}
+        className={cn("shrink-0 self-center rounded-2xl bg-white p-2.5", compact ? "hidden" : colonne ? "w-40 xl:w-48" : "w-44 xl:w-52")}
         dangerouslySetInnerHTML={{ __html: code.qrSvg }}
         aria-label={`QR d'émargement, code ${code.code}`}
         role="img"
@@ -507,6 +520,17 @@ function PendantLeCours({
   const devoir = sondage ? null : devoirEnCours;
   const commandes = useCommandesVisibles(presentation);
   const cacheeParFormateur = !etat.copie && (etat.diapo.masquee || etat.diapo.disposition === "cameras");
+  // Classe ouverte automatiquement, le cours pas encore commencé : avant l'heure, les salles règlent le son et
+  // l'image ; l'heure passée sans personne pour l'animer, « le formateur arrive ». Dans les deux cas, le code
+  // d'émargement reste en grand avec son QR : les étudiants arrivent pendant ce temps-là.
+  const maintenant = useMaintenant(5000);
+  const ouverteEnAvance = classeOuverteEnAvance(
+    { statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe ?? seance.demarreeLe, debutCours: etat.debutCours },
+    maintenant,
+  );
+  const attenteFormateur = !ouverteEnAvance && etat.statut === "en_direct" && etat.attenteAnimateur;
+  const avantLeCours = ouverteEnAvance || attenteFormateur;
+  const txOuverture = useTextes(textesOuverture);
   return (
     <main
       className={
@@ -516,6 +540,16 @@ function PendantLeCours({
       }
     >
       <div className={presentation ? "absolute inset-0" : "flex min-w-0 flex-col gap-4 lg:min-h-0"}>
+        {avantLeCours && !presentation && (
+          <div className="shrink-0 rounded-[22px] bg-nuit-panneau px-6 py-3" role="status">
+            <p className="text-[clamp(20px,2vw,36px)] font-black leading-tight">
+              {ouverteEnAvance ? txOuverture("ouverte.salle.titre", { v: { heure: heure(seance.debut) } }) : txOuverture("attente.salle.titre")}
+            </p>
+            <p className="text-[clamp(15px,1.3vw,22px)] text-nuit-doux">
+              {ouverteEnAvance ? txOuverture("ouverte.salle.texte") : txOuverture("attente.salle.texte", { v: { heure: heure(seance.debut) } })}
+            </p>
+          </div>
+        )}
         {aLaParole && (
           <div
             className={cn(
@@ -585,7 +619,8 @@ function PendantLeCours({
               Comme pour un sondage, le code d'émargement passe sur une ligne, sous la carte, et reste visible
               pour les retardataires : la colonne coupe ce qui dépasse, la consigne se raccourcit d'abord. */}
           {devoir && <DevoirSurEcran devoir={devoir} />}
-          <BlocCode seance={seance} siteId={siteId} compact mini={Boolean(sondage || devoir)} />
+          {/* Avant le début du cours (classe ouverte automatiquement) : le code en grand AVEC son QR, comme avant le cours. */}
+          <BlocCode seance={seance} siteId={siteId} compact={!avantLeCours} colonne={avantLeCours} mini={Boolean(sondage || devoir)} />
           {!sondage && !devoir && <CompteursEmarges etat={etat} liste />}
         </aside>
       )}

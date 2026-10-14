@@ -485,7 +485,7 @@ async function propositions(etudiants: EtudiantRappel[], maintenant: number): Pr
     // « Rattrapée » = un vrai travail sur la séance (même règle que l'objectif du jour) : une simple ouverture ne suffit pas.
     const lignes = await facultatif("rattrapage", () => avecTraces(async (traces) => {
       const r = await db.execute<{ uid: number; seance_id: number; debut: string; cours: string }>(sql`
-        SELECT DISTINCT ON (a.uid) a.uid, a.seance_id, COALESCE(s.demarree_le, a.debut) AS debut, c.titre AS cours
+        SELECT DISTINCT ON (a.uid) a.uid, a.seance_id, a.debut, c.titre AS cours
         FROM (${sqlAttendus({ depuis: new Date(maintenant - 4 * JOUR_MS), sites: null })}) a
         JOIN campus.seances s ON s.id = a.seance_id AND s.demarree_le >= ${iso(maintenant - 3 * JOUR_MS)}::timestamptz
         JOIN campus.cours c ON c.id = a.cours_id

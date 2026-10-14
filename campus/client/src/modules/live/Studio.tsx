@@ -8,7 +8,7 @@ import { alleger, api, post, suppr } from "@/lib/api";
 import { useMoiConnecte } from "@/lib/auth";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { heureDouble } from "@/lib/dates";
+import { heure, heureDouble } from "@/lib/dates";
 import { Bouton } from "@/components/ui/bouton";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Champ, ZoneTexte, Interrupteur } from "@/components/ui/champs";
@@ -34,6 +34,8 @@ import { useTextes } from "@/lib/textes";
 import { QuestionsRappel } from "./QuestionsRappel";
 import { RappelInteraction } from "./RappelInteraction";
 import type { EtatDirectDto, MainDirectDto, SeanceDetailDto, SondageDto, ResultatsSondageDto } from "@shared/schema";
+import { debutDuCours } from "@shared/ouverture";
+import { t as textesOuverture } from "@shared/textes/direct";
 
 type OngletStudio = "mains" | "questions" | "discussion" | "sondages" | "devoir" | "campus";
 
@@ -237,6 +239,9 @@ export default function Studio({ seance, observation = false }: { seance: Seance
           }
         />
 
+        {/* Classe ouverte automatiquement : avant l'heure, les salles s'installent ; après, en attente d'un animateur. */}
+        {!observation && <BandeauClasseOuverte seance={seance} etat={etat} onAgir={(chemin, message) => agir(chemin, {}, message)} />}
+
         {/* Avec des diapos, la scène et la diapo prennent la largeur : le plan passe dessous. */}
         <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !presentation && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>
           {/* Colonne du plan (sous la scène sur les écrans moyens) */}
@@ -335,7 +340,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
             style={hauteurAside ? { maxHeight: hauteurAside } : undefined}
             className={cn("order-2 flex min-h-[520px] flex-col overflow-hidden rounded-[22px] bg-nuit-panneau", !presentation && "xl:order-3")}
           >
-            {!observation && <RappelInteraction seanceId={seance.id} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
+            {!observation && <RappelInteraction seanceId={seance.id} debut={seance.debut} etat={etat} masque={onglet === "sondages"} onVoir={() => setOnglet("sondages")} />}
             <OngletsPanneau
               valeur={onglet}
               onChange={setOnglet}
@@ -734,13 +739,67 @@ function PanneauSondages({ seance, etat, lectureSeule }: { seance: SeanceDetailD
   );
 }
 
+// ── Classe ouverte automatiquement ─────────────────────────────────────────
+
+/**
+ * Bandeau du Studio d'une classe ouverte automatiquement (shared/ouverture.ts) :
+ *   - avant le début du cours : rien à démarrer, le cours commence à son heure ; « Commencer le cours maintenant »
+ *     pour l'animateur qui veut commencer plus tôt (chrono, retards et enregistrement partent de là) ;
+ *   - l'heure passée, personne ne l'anime encore : la direction ou la vie scolaire qui regarde le lit, et peut
+ *     « prendre la classe » (POST /demarrer : son arrivée est notée) ; regarder seulement ne compte pas, la classe
+ *     finira « Séance non tenue » si personne ne vient.
+ * Le formateur du cours n'y voit jamais l'attente : ouvrir son Studio suffit à l'animer (GET /direct).
+ */
+function BandeauClasseOuverte({ seance, etat, onAgir }: { seance: SeanceDetailDto; etat: EtatDirectDto; onAgir: (chemin: string, message: string) => Promise<boolean> }) {
+  const maintenant = useMaintenant(5000);
+  const moi = useMoiConnecte();
+  const tx = useTextes(textesOuverture);
+  const [envoi, setEnvoi] = useState(false);
+  if (etat.statut !== "en_direct" || !etat.demarreeLe) return null;
+  const debutCours = debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime();
+  // Marge de l'horloge (rafraîchie toutes les 5 s) : après « Commencer le cours maintenant », le bandeau s'efface aussitôt.
+  const avance = debutCours > maintenant + 5000;
+  if (!avance && !etat.attenteAnimateur) return null;
+  const peutAnimer = seance.monRole === "formateur" && seance.peutModifier;
+  const agir = async (chemin: string, message: string) => {
+    setEnvoi(true);
+    await onAgir(chemin, message);
+    setEnvoi(false);
+  };
+  return (
+    <div role="status" className="flex flex-col gap-3 rounded-[18px] bg-nuit-panneau px-4 py-3 text-[14px] leading-snug text-nuit-texte sm:flex-row sm:items-center sm:justify-between">
+      <p className="flex items-start gap-2">
+        <Clock className="mt-0.5 h-4 w-4 shrink-0 text-orange-peche" aria-hidden />
+        <span>
+          {avance ? tx("ouverte.studio", { v: { heure: heure(seance.debut) } }) : tx("attente.studio", { v: { heure: heure(seance.debut) } })}
+          {!avance && moi.role !== "formateur" && <span className="mt-1 block text-nuit-doux">{tx("attente.studio.direction")}</span>}
+        </span>
+      </p>
+      {peutAnimer && avance && (
+        <Bouton variante="nuit-actif" taille="sm" icone={<Play className="h-4 w-4" />} chargement={envoi} onClick={() => void agir("commencer", tx("ouverte.commencer.ok"))} className="shrink-0">
+          {tx("ouverte.commencer")}
+        </Bouton>
+      )}
+      {peutAnimer && !avance && (
+        <Bouton variante="nuit-actif" taille="sm" icone={<Play className="h-4 w-4" />} chargement={envoi} onClick={() => void agir("demarrer", tx("attente.prendre.ok"))} className="shrink-0">
+          {tx("attente.prendre")}
+        </Bouton>
+      )}
+    </div>
+  );
+}
+
 // ── Chrono et plan de séance ───────────────────────────────────────────────
 
 function ChronoPlan({ seance, etat }: { seance: SeanceDetailDto; etat: EtatDirectDto }) {
   const maintenant = useMaintenant(1000);
-  const demarree = etat.demarreeLe ? new Date(etat.demarreeLe).getTime() : null;
+  // Début du cours : l'heure prévue pour une classe ouverte en avance (ouverture automatique), ou l'instant de
+  // « Commencer le cours maintenant » ; d'ici là, compte à rebours jusqu'à elle, et la fin prévue reste la fin
+  // prévue. Personne n'anime encore la classe (attente du formateur) : pas de chrono.
+  const debutCours = etat.demarreeLe && !etat.attenteAnimateur ? debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }).getTime() : null;
+  const demarree = debutCours !== null && debutCours <= maintenant ? debutCours : null;
   const ecouleMin = demarree ? (maintenant - demarree) / 60_000 : 0;
-  const finPrevue = (demarree ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
+  const finPrevue = (debutCours ?? new Date(seance.debut).getTime()) + seance.dureeMinutes * 60_000;
   const resteMin = Math.round((finPrevue - maintenant) / 60_000);
   let cumul = 0;
   const etapes = seance.plan.map((e) => {

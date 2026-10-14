@@ -19,6 +19,7 @@ const FR = {
   "classe.chezVous": "{heure} chez vous ({ville})",
   "classe.dans": "dans",
   "classe.attendent": "Vos étudiants vous attendent.",
+  "classe.ouverteAvance": "Les salles s'installent et règlent le son : le cours commence à {heure}.",
   "classe.ensuite": "Ensuite : {titre}, {quand}",
   "classe.aucune.titre": "Pas de cours prévu",
   "classe.aucune.texte": "Votre prochaine classe s'affichera ici dès que la direction l'aura programmée.",

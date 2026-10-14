@@ -153,7 +153,15 @@ function appliquer(etat: EtatDirectDto, e: EvenementFlux, privilegie: boolean): 
   const d = e.data;
   switch (e.type) {
     case "statut":
-      return { ...etat, statut: d.statut, demarreeLe: d.demarreeLe ?? etat.demarreeLe, motifAnnulation: d.motif ?? etat.motifAnnulation };
+      // Début du cours et attente d'un animateur (classe ouverte automatiquement) : envoyés par live.ts (publierStatut).
+      return {
+        ...etat,
+        statut: d.statut,
+        demarreeLe: d.demarreeLe ?? etat.demarreeLe,
+        motifAnnulation: d.motif ?? etat.motifAnnulation,
+        debutCours: "debutCours" in d ? d.debutCours : etat.debutCours,
+        attenteAnimateur: Boolean(d.attenteAnimateur),
+      };
     case "question":
       return fusionnerQuestion(etat, d as QuestionDirectDto);
     case "question:votes":

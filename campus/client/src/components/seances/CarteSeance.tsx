@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { formaterDate, type Traducteur } from "@shared/textes";
 import { selonNombre, t, type CleTravail } from "@shared/textes/travail";
 import type { FilSeance } from "@shared/engagement/fil";
+import { debutDuCours } from "@shared/ouverture";
 
 type Tx = Traducteur<CleTravail>;
 export type EtatPastille = "fait" | "enCours" | "pasEncore";
@@ -28,7 +29,8 @@ const surBareme = (moyenne: number, bareme: number) => `${nombre(moyenne)}/${nom
 
 export function CarteSeance({ seance, avecFormateur = false, className }: { seance: FilSeance; avecFormateur?: boolean; className?: string }) {
   const tx = useTextes(t);
-  const quand = seance.demarreeLe ?? seance.debut;
+  // Le jour et l'heure du cours : l'heure prévue pour une classe ouverte en avance (debutDuCours).
+  const quand = seance.demarreeLe ? debutDuCours({ debut: seance.debut, demarreeLe: seance.demarreeLe, debutCours: seance.debutCours }).toISOString() : seance.debut;
   const jour = formaterDate(quand, { style: "jour" });
   const heure = formaterDate(quand, { style: "heure" });
   // Les séances s'appellent souvent « Initiation à l'IA · lundi 5 octobre » : le nom du cours ne se répète pas.

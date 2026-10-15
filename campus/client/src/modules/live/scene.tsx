@@ -81,7 +81,15 @@ export function Scene(p: PropsScene) {
   const planB = etat.planB ?? seance.planB;
   // Bascule locale quand Daily échoue deux fois (ou que la visio est complète) : on écoute la radio sans quitter la page.
   const [secoursRadio, setSecoursRadio] = useState<RaisonSecours | null>(null);
-  useEffect(() => setSecoursRadio(null), [seance.fournisseur]);
+  // Chaque entrée en vidéo repart d'une visio neuve : un refus d'avant (visio complète, vidéo des étudiants coupée)
+  // ne remplace pas la visio quand l'étudiant y revient pour parler.
+  useEffect(() => setSecoursRadio(null), [seance.fournisseur, mode]);
+  // L'étudiant à qui le formateur donne la parole retente la visio (il y entre toujours : place gardée), au lieu de
+  // rester sur la radio de secours avec « La visio est complète ».
+  const parleEnVideo = role === "etudiant" && mode === "video" && Boolean(p.micro);
+  useEffect(() => {
+    if (parleEnVideo) setSecoursRadio(null);
+  }, [parleEnVideo]);
   // Partage d'écran du formateur (ou d'une salle) dans la visio : il passe en grand, devant la diapo.
   const [ecranPartage, setEcranPartage] = useState(false);
   let contenu: ReactNode;

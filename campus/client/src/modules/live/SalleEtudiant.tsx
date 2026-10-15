@@ -288,12 +288,19 @@ function SalleEnDirect({ seance, mode: modeChoisi, onChangerMode }: { seance: Se
   // Retour de la parole : la radio reprend d'elle-même (le geste « Ouvrir mon micro » est déjà fait).
   const [radioAuto, setRadioAuto] = useState(false);
   const mode: ModeSuivi = videoPermise ? modeChoisi : jaiLaParole && pourParler ? "video" : "radio";
+  // Parole donnée pendant les groupes de travail, vidéo des étudiants coupée : le groupe n'a pas de visio pour lui ;
+  // l'étudiant revient le temps de parler dans la classe (la visio où le formateur l'entend), puis retrouve son groupe.
+  const parleEnClasse = !videoPermise && jaiLaParole && pourParler;
   useEffect(() => {
     if (jaiLaParole || !pourParler) return;
     setPourParler(false);
     if (!videoPermise) {
-      setRadioAuto(true);
-      toast("Ta parole est finie : tu repasses en son + diapos.", "info");
+      if (groupe) {
+        toast("Ta parole est finie : tu retrouves ton groupe.", "info");
+      } else {
+        setRadioAuto(true);
+        toast("Ta parole est finie : tu repasses en son + diapos.", "info");
+      }
     }
   }, [jaiLaParole]);
   // Une seule reprise : la radio lit cette consigne à son affichage, ensuite le bouton redevient la règle.
@@ -411,6 +418,9 @@ function SalleEnDirect({ seance, mode: modeChoisi, onChangerMode }: { seance: Se
             <span className="flex items-center gap-2 text-lg font-black">
               <Mic className="h-5 w-5" /> {mode === "video" ? "Tu as la parole : ton micro est ouvert." : "Le formateur te donne la parole."}
             </span>
+            {mode !== "video" && groupe && !videoPermise && (
+              <span className="w-full text-[14px] font-semibold leading-snug sm:order-last">Tu reviens en classe le temps de parler, puis tu retrouves ton groupe.</span>
+            )}
             {mode !== "video" && (
               <Bouton variante="encre" onClick={ouvrirMicro}>
                 Ouvrir mon micro
@@ -422,11 +432,11 @@ function SalleEnDirect({ seance, mode: modeChoisi, onChangerMode }: { seance: Se
         {/* Devoir donné en direct : avant la vue du groupe, il reste visible pendant le travail en groupe. */}
         {etat.devoirDirect && <DevoirEnDirect seance={seance} etat={etat} groupes={groupes} moi={moi} jaiLaParole={jaiLaParole} modeVideo={mode === "video"} />}
 
-        {groupe && groupes ? (
+        {groupe && groupes && !parleEnClasse ? (
           <VueGroupeEtudiant seance={seance} groupes={groupes} groupe={groupe} moiId={moi.id} mode={mode} appelDiscret={devoirARendre(etat)} />
         ) : (
         <>
-        {enDirect && groupes?.session?.choixLibre && <ChoixGroupe seanceId={seance.id} groupes={groupes} />}
+        {enDirect && groupes?.session?.choixLibre && !groupe && <ChoixGroupe seanceId={seance.id} groupes={groupes} />}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
           <div className="flex min-w-0 flex-col gap-3">
             <Scene seance={seance} etat={etat} role="etudiant" mode={mode} micro={micro} radioAuto={radioAuto} onConsommationVisio={surVisio} onConsommationRadio={surRadio} />

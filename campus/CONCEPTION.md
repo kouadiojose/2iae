@@ -331,7 +331,13 @@ minutes venaient d'étudiants en vidéo).
   la vidéo des étudiants est coupée (`videoEtudiantsCoupee()`,
   `server/visio.ts`) ; un nombre plus grand que 0 rouvre tout comme avant.
   La page le dit en tête : « Vidéo des étudiants coupée : ils suivent en son +
-  diapos. »
+  diapos. » Par prudence, tant que la ligne des réglages n'a pas pu être lue en
+  base (incident au démarrage), la vidéo des étudiants est coupée et la lecture
+  est retentée toutes les 10 s (`chargerReglagesVisio`) ; `GET
+  /api/visio/reglages` répond alors 503 `reglages_illisibles` plutôt que de
+  montrer les valeurs par défaut (30 places), qu'un enregistrement du
+  formulaire remettrait en base. Sans ligne en base (campus neuf), les valeurs
+  par défaut restent la règle.
 - **Règle serveur unique** (`verifierVideoEtudiant`, avant toute salle ouverte
   chez Daily) : aucun jeton Daily pour un compte étudiant dans la salle d'une
   séance (`POST /api/seances/:id/rejoindre`, mode vidéo), dans un groupe de
@@ -345,6 +351,14 @@ minutes venaient d'étudiants en vidéo).
   (micro, caméra, partage d'écran). Les écrans de salle (comptes « salle » et
   comptes de campus), le formateur, la régie, l'équipe qui observe et le
   formateur d'un autre cours invité ne changent pas.
+- **La parole, seulement le temps de parler** : le jeton remis à l'étudiant
+  qui a la parole ne sert qu'à entrer dans les 10 minutes
+  (`expirationJetonParole` ; le `exp` d'un jeton Daily n'éjecte pas : il reste
+  tant qu'il parle, et une nouvelle entrée pendant la parole demande un nouveau
+  jeton). La parole finie (reprise par le formateur, main baissée, parole
+  donnée à un autre, fin du cours), le serveur le sort de la salle chez Daily
+  une seconde plus tard (`sortirCompteDeSalle` : présence lue, puis éjection de
+  ses sessions), sauf si la parole lui a aussitôt été redonnée.
 - **Ce que le client sait** : `GET /api/visio/options` → `videoEtudiants`
   (faux quand c'est coupé ; `videoEtudiantParDefaut` est alors faux aussi) ;
   `GroupesDto.videoEtudiants` ; `InfoInviteDto.video` (faux pour l'invité
@@ -356,23 +370,37 @@ minutes venaient d'étudiants en vidéo).
   la parole, « Ouvrir mon micro » fait entrer l'étudiant dans la visio le temps
   de parler ; la parole finie, il revient au son + diapos (« Ta parole est
   finie : tu repasses en son + diapos. »), et la radio reprend d'elle-même
-  (`LecteurRadio`, `demarrerSeul` : le geste est déjà fait). Groupes de travail : la consigne, le
-  minuteur et la discussion écrite, sans cadre vidéo (« Ton groupe travaille
-  par écrit : lis la consigne et écris dans la discussion. »). « Tester ma
-  visio » garde le micro, la radio et le navigateur, sans salle d'essai.
-  L'étudiant émargé en salle (mode compagnon) ne change pas.
-- **Lien invité** : l'invité simple n'a que « Son + diapos » ; l'intervenant
-  garde sa visio. Le texte du lien invité suit (« suivent en son + diapos »).
+  (`LecteurRadio`, `demarrerSeul` : le geste est déjà fait). Un refus d'avant
+  (visio complète, vidéo coupée) ne bloque pas cette entrée : la scène repart
+  d'une visio neuve à chaque passage en vidéo et quand la parole arrive.
+  Groupes de travail : la consigne, le minuteur et la discussion écrite, sans
+  cadre vidéo (« Ton groupe travaille par écrit : lis la consigne et écris dans
+  la discussion. ») ; si le formateur donne la parole pendant les groupes,
+  « Ouvrir mon micro » fait revenir l'étudiant dans la classe le temps de
+  parler (la visio de la classe, où le formateur l'entend), puis il retrouve
+  son groupe (« Ta parole est finie : tu retrouves ton groupe. »). Côté
+  formateur, la fenêtre « Groupes de travail » le dit (« les étudiants en ligne
+  travaillent par écrit ; les salles gardent leur visio ») et la visite d'un
+  groupe sans salle montre sa discussion, sans visio vide. La page de test
+  s'appelle alors « Tester mon micro » pour l'étudiant (comme le bouton qui y
+  mène) : le micro, la radio et le navigateur, sans salle d'essai. L'étudiant
+  émargé en salle (mode compagnon) ne change pas.
+- **Lien invité** : l'invité simple n'a que « Son + diapos » (une seule carte,
+  sans « Changer de mode ») ; l'intervenant garde sa visio. Le texte du lien
+  invité suit (« suivent en son + diapos »).
 - **Salle de séance** : au moins 20 places (`TAILLE_MIN_SALLE_SEANCE` : les 15
   places gardées + une marge pour l'étudiant qui a la parole, les intervenants,
   un second ordinateur de campus) ; à 0 place étudiante elle en aurait eu 15.
   La taille ne coûte rien chez Daily.
-- **Limites** : un étudiant déjà dans la visio au moment où la direction coupe
-  y reste jusqu'à ce qu'il en sorte (la coupure vaut pour les entrées
-  suivantes) ; la visio intégrée « campus » (secours) n'est pas bloquée côté
-  serveur, seuls les écrans ne la proposent plus ; un étudiant qui a eu la
-  parole garde son jeton jusqu'à la fin de la salle s'il ne quitte pas la
-  visio (le client, lui, repasse en son + diapos).
+- **Limites** : la coupure vaut pour les jetons remis ensuite. Un jeton remis
+  à un étudiant AVANT que la direction coupe (places au-dessus de 0) reste
+  valable chez Daily jusqu'à la fin de sa salle (fin prévue + 2 h) : l'étudiant
+  déjà dans la visio y reste, et peut même y revenir avec ce jeton s'il en
+  sort (un jeton Daily ne se retire pas). Couper hors des heures de cours, au
+  moins 2 h après la fin du dernier cours, évite ce cas : ses salles et leurs
+  jetons ont alors expiré. La visio intégrée
+  « campus » (secours) n'est pas bloquée côté serveur, seuls les écrans ne la
+  proposent plus.
 
 ## 11. Passage au réel (26 septembre 2026)
 

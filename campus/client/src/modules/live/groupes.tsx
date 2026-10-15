@@ -22,7 +22,7 @@ import { Fenetre } from "@/components/ui/fenetre";
 import { ZoneTexte, Selection, CaseACocher } from "@/components/ui/champs";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { toast, toastErreur } from "@/components/ui/toast";
-import { CadreDaily } from "@/modules/visio";
+import { CadreDaily, useOptionsVisio } from "@/modules/visio";
 import { PanneauDiscussion } from "./discussion";
 import type { AccesDaily, GroupesDto, GroupeTravailDto, ModeSuivi, ParticipantGroupeDto, RoleSeance, SeanceDetailDto } from "@shared/schema";
 
@@ -157,6 +157,8 @@ export function CompositeurGroupes({ seance, ouverte, onFermer }: { seance: Sean
   const [duree, setDuree] = useState<number | null>(15);
   const [retourLibre, setRetourLibre] = useState(true);
   const [envoi, setEnvoi] = useState(false);
+  // Vidéo des étudiants coupée par la direction : les étudiants en ligne travaillent par écrit (pas de visio de groupe).
+  const videoEtudiants = useOptionsVisio()?.videoEtudiants !== false;
 
   // À répartir : les salles et les étudiants en ligne ; un étudiant émargé dans une salle suit sa salle.
   const unites = useMemo(() => (presents ?? []).filter((p) => p.role === "salle" || p.mode !== "salle"), [presents]);
@@ -229,7 +231,11 @@ export function CompositeurGroupes({ seance, ouverte, onFermer }: { seance: Sean
       onFermer={onFermer}
       large
       titre="Groupes de travail"
-      description="Chaque groupe a sa visio, sa discussion et votre consigne. Vous passez d'un groupe à l'autre, puis vous rappelez la classe."
+      description={
+        videoEtudiants
+          ? "Chaque groupe a sa visio, sa discussion et votre consigne. Vous passez d'un groupe à l'autre, puis vous rappelez la classe."
+          : "Chaque groupe a sa discussion et votre consigne. Les étudiants en ligne travaillent par écrit (vidéo des étudiants coupée) ; les salles gardent leur visio. Vous passez d'un groupe à l'autre, puis vous rappelez la classe."
+      }
       pied={
         <>
           <Bouton variante="fantome" onClick={onFermer}>
@@ -516,6 +522,10 @@ export function VisiteGroupe({ seance, groupes, groupe, role, moiId, onFermer }:
   // Geste retour du téléphone, Échap, focus : la visite se referme sans quitter le Studio (ni le direct).
   const vue = useRef<HTMLDivElement>(null);
   useVueSuperposee(vue, onFermer);
+  // Vidéo des étudiants coupée : les étudiants en ligne n'ont pas de visio de groupe, ils écrivent dans la discussion.
+  // Sans salle dans le groupe, la visio resterait vide : pas de visio, la discussion seulement.
+  const sansVideoEtudiants = groupes.videoEtudiants === false;
+  const avecSalle = groupe.membres.some((m) => m.role === "salle");
   return createPortal(
     <div ref={vue} tabIndex={-1} className="fixed inset-0 z-[60] flex flex-col bg-nuit text-white outline-none" role="dialog" aria-modal="true" aria-label={`Visite du ${groupe.nom}`}>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-nuit-ligne px-4 py-3">
@@ -523,13 +533,16 @@ export function VisiteGroupe({ seance, groupes, groupe, role, moiId, onFermer }:
         <span className="min-w-0 max-w-full truncate text-[13px] text-nuit-doux">{groupe.membres.map((m) => m.nom).join(", ") || "Personne pour l'instant"}</span>
         {groupes.session && <MinuteurGroupes session={groupes.session} className="font-mono text-[13px] text-orange-peche" />}
         <span className="text-[12px] text-nuit-gris">Votre micro est coupé dans la classe pendant la visite.</span>
+        {sansVideoEtudiants && avecSalle && <span className="text-[12px] font-semibold text-orange-peche">Les étudiants en ligne de ce groupe écrivent dans la discussion.</span>}
         <Bouton className="ml-auto" variante="nuit-actif" taille="sm" onClick={onFermer} icone={<ArrowLeft className="h-4 w-4" />}>
           Revenir au studio
         </Bouton>
       </header>
       <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[minmax(0,1fr)_380px] lg:overflow-hidden">
         <div className="min-h-[50vh] overflow-hidden rounded-[18px] bg-black lg:min-h-0">
-          {groupes.visioDisponible ? (
+          {sansVideoEtudiants && !avecSalle ? (
+            <SansVisio texte="Vidéo des étudiants coupée : les étudiants en ligne de ce groupe écrivent dans la discussion, à côté. Répondez-leur par écrit." />
+          ) : groupes.visioDisponible ? (
             <CadreDaily key={groupe.id} obtenirAcces={accesVisio(seance.id, groupe.id)} role="formateur" tu={false} microAuDepart cameraAuDepart />
           ) : (
             <SansVisio texte="La visio des groupes n'est pas disponible : échangez avec le groupe dans sa discussion." />

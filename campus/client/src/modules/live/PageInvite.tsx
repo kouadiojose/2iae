@@ -154,7 +154,7 @@ export default function PageInvite({ jeton }: { jeton: string }) {
                     </span>
                   </div>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className={cn("grid gap-3", info.video && "sm:grid-cols-2")}>
                     <ChoixMode actif={mode === "radio"} onClick={() => setMode("radio")} icone={<Radio className="h-5 w-5" />} titre="Son + diapos" detail="≈ 12 à 15 Mo par heure · recommandé en 3G/4G" />
                     {info.video && (
                       <ChoixMode actif={mode === "video"} onClick={() => setMode("video")} icone={<MonitorPlay className="h-5 w-5" />} titre="Vidéo" detail="150 à 250 Mo par heure · au Wi-Fi" />
@@ -315,9 +315,12 @@ function Suivi({ info, racine, mode, nom, onChanger, onTermine }: { info: InfoIn
         {info.intervenant && info.statut === "en_direct" && Date.now() >= new Date(info.debut).getTime() && <TerminerCours racine={racine} nom={nom} onTermine={onTermine} />}
         {!info.intervenant && (
           <div className="flex gap-2">
-            <Bouton variante="nuit" taille="sm" onClick={onChanger}>
-              Changer de mode
-            </Bouton>
+            {/* Un seul mode (vidéo des étudiants coupée) : rien à changer, la radio ne s'arrête pas pour rien. */}
+            {info.video && (
+              <Bouton variante="nuit" taille="sm" onClick={onChanger}>
+                Changer de mode
+              </Bouton>
+            )}
             <a href="/connexion" className="inline-flex items-center rounded-[10px] bg-orange px-3 py-2 text-[13px] font-bold text-encre no-underline hover:bg-orange-peche">
               Me connecter
             </a>

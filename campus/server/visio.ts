@@ -130,15 +130,40 @@ const REGLAGES_DEFAUT: Reglages = {
 
 let reglages: Reglages = { ...REGLAGES_DEFAUT };
 
-/** Charge les réglages de la visio (au démarrage ; sans base, les valeurs par défaut restent). */
-export async function chargerReglagesVisio(): Promise<void> {
+/**
+ * Les réglages ont-ils été lus en base ? Tant que non (base injoignable ou illisible au démarrage), la vidéo des
+ * étudiants reste coupée par prudence (placesEtudiants vaut 0 : videoEtudiantsCoupee) et la lecture est retentée
+ * toutes les 10 s : un incident passager ne rouvre jamais la vidéo des étudiants avec les valeurs par défaut.
+ * Sans ligne en base (campus neuf), les valeurs par défaut sont la règle.
+ */
+let reglagesLus = false;
+let relectureReglages: ReturnType<typeof setTimeout> | null = null;
+const RELECTURE_REGLAGES_MS = 10_000;
+
+/** Charge les réglages de la visio (au démarrage ; base illisible : nouvel essai toutes les 10 s, vidéo des étudiants coupée d'ici là). */
+export async function chargerReglagesVisio(): Promise<boolean> {
   try {
     const [r] = await db.select().from(reglagesVisio).where(eq(reglagesVisio.id, 1));
     if (r) reglages = { ...REGLAGES_DEFAUT, ...r };
+    const premiereLecture = !reglagesLus;
+    reglagesLus = true;
+    if (premiereLecture) console.log(`[visio] réglages lus : ${placesEtudiants()} étudiant(s) en vidéo par séance`);
+    return true;
   } catch (e) {
-    console.warn("[visio] réglages illisibles, valeurs par défaut :", (e as Error).message);
+    console.warn(`[visio] réglages illisibles : vidéo des étudiants coupée par prudence, nouvel essai dans ${RELECTURE_REGLAGES_MS / 1000} s :`, (e as Error).message);
+    if (!reglagesLus && relectureReglages === null) {
+      relectureReglages = setTimeout(() => {
+        relectureReglages = null;
+        if (!reglagesLus) void chargerReglagesVisio();
+      }, RELECTURE_REGLAGES_MS);
+      relectureReglages.unref?.();
+    }
+    return false;
   }
 }
+
+/** Faux tant que les réglages n'ont pas pu être lus en base (la vidéo des étudiants est alors coupée par prudence). */
+export const reglagesLusEnBase = () => reglagesLus;
 
 export const reglagesCourants = (): Reglages => reglages;
 
@@ -150,6 +175,7 @@ export async function enregistrerReglagesVisio(maj: Partial<Omit<Reglages, "majL
     .onConflictDoUpdate({ target: reglagesVisio.id, set: valeurs })
     .returning();
   reglages = { ...REGLAGES_DEFAUT, ...r };
+  reglagesLus = true;
   return reglages;
 }
 
@@ -314,8 +340,11 @@ function erreurDaily(statut: number, donnees: unknown): ErreurHttp {
   return new ErreurHttp(502, "Le service de visio a refusé la demande. Réessayez, ou passez à la visio du campus ou à la radio.", { code: "daily_refus" });
 }
 
-/** Places vidéo étudiantes d'une séance : le réglage, dans la limite du forfait Daily (un ancien réglage trop haut ne prend pas les places réservées). */
-const placesEtudiants = () => Math.max(0, Math.min(reglages.placesDailyEtudiants, placesDailyEtudiantsMax()));
+/**
+ * Places vidéo étudiantes d'une séance : le réglage, dans la limite du forfait Daily (un ancien réglage trop haut ne
+ * prend pas les places réservées). 0 tant que les réglages n'ont pas pu être lus en base (prudence : chargerReglagesVisio).
+ */
+const placesEtudiants = () => (reglagesLus ? Math.max(0, Math.min(reglages.placesDailyEtudiants, placesDailyEtudiantsMax())) : 0);
 
 /**
  * Marge de la salle pour les personnes qui entrent toujours, sans place comptée : l'étudiant à qui le formateur donne
@@ -683,6 +712,45 @@ export async function jetonDaily(o: {
 
 /** Expiration d'un jeton de séance (jusqu'à la fin de la salle). */
 export const expirationJetonSeance = (s: Pick<Seance, "debut" | "dureeMinutes">) => expirationSalle(s);
+
+/**
+ * Vidéo des étudiants coupée : l'étudiant à qui le formateur donne la parole reçoit un jeton qui ne sert qu'à ENTRER
+ * dans les 10 minutes (le exp d'un jeton Daily n'éjecte pas : il reste dans la visio tant qu'il parle). Une nouvelle
+ * entrée pendant la parole (page rechargée, réseau coupé) demande un nouveau jeton, qui n'est remis que tant qu'il a la
+ * parole ; la parole finie, il est sorti de la salle (sortirCompteDeSalle) et l'ancien jeton n'ouvre plus rien.
+ */
+export const ENTREE_PAROLE_S = 10 * 60;
+export const expirationJetonParole = (s: Pick<Seance, "debut" | "dureeMinutes">) => Math.min(expirationSalle(s), Math.floor(Date.now() / 1000) + ENTREE_PAROLE_S);
+
+/**
+ * Sort d'une salle Daily les sessions d'un compte (user_id de son jeton), lues dans la présence, par l'API d'éjection
+ * (comme fermerSalleReunion). Sert à la fin de la parole d'un étudiant quand la vidéo des étudiants est coupée : il
+ * n'était dans la visio que pour parler. Renvoie le nombre de sessions sorties ; jamais d'erreur (Daily injoignable :
+ * 0, la page de l'étudiant le remet de toute façon en son + diapos).
+ */
+export async function sortirCompteDeSalle(nom: string, utilisateurId: number): Promise<number> {
+  if (!dailyDisponible()) return 0;
+  const chemin = `/rooms/${encodeURIComponent(nom)}`;
+  try {
+    const p = await appelDaily<{ data?: { id?: string | null; userId?: string | null; user_id?: string | null }[] }>(`${chemin}/presence`);
+    if (p.statut !== 200) return 0;
+    const ids = (p.donnees?.data ?? [])
+      .filter((x) => String(x.userId ?? x.user_id ?? "") === String(utilisateurId))
+      .map((x) => x.id)
+      .filter((x): x is string => typeof x === "string" && x.length > 0);
+    if (!ids.length) return 0;
+    const r = await appelDaily<{ ejected?: string[] }>(`${chemin}/eject`, { methode: "POST", corps: { ids } });
+    if (r.statut !== 200) {
+      console.warn(`[visio] sortie du compte ${utilisateurId} de ${nom} refusée (${r.statut})`);
+      return 0;
+    }
+    cachePresents.delete(nom);
+    return r.donnees?.ejected?.length ?? ids.length;
+  } catch (e) {
+    console.warn(`[visio] sortie du compte ${utilisateurId} de ${nom} impossible :`, (e as Error).message);
+    return 0;
+  }
+}
 
 /** Le formateur doit-il déclencher l'enregistrement ? Seulement une vraie séance (pas une répétition, pas un essai). */
 export const enregistrementAutomatique = () => ENREGISTREMENT_AUTO;

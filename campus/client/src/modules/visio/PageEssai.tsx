@@ -45,7 +45,7 @@ export default function PageEssai() {
   const t = (vTu: string, vVous: string) => (tu ? vTu : vVous);
 
   const verifications = [
-    { ok: webrtcDisponible(), libelle: "Classe en visio", aide: t("Ouvre le campus avec Chrome à jour.", "Ouvrez le campus avec Chrome ou Edge à jour.") },
+    { ok: webrtcDisponible(), libelle: sansVisio ? "Prendre la parole dans la classe" : "Classe en visio", aide: t("Ouvre le campus avec Chrome à jour.", "Ouvrez le campus avec Chrome ou Edge à jour.") },
     { ok: lectureRadioPossible(), libelle: "Écoute de la radio du cours", aide: t("Ouvre le campus avec Chrome.", "Ouvrez le campus avec Chrome ou Edge.") },
     { ok: mediasDisponibles(), libelle: "Accès au micro", aide: t("Ouvre le campus à une adresse en https.", "Ouvrez le campus à une adresse en https.") },
     ...(tu ? [] : [{ ok: formatRadio() !== null, libelle: "Émission de la radio", aide: "Ouvrez le campus avec Chrome, Edge ou Firefox." }]),
@@ -55,11 +55,16 @@ export default function PageEssai() {
     <Page className="max-w-3xl">
       <EnTetePage
         etiquette="Avant le cours"
-        titre="Tester ma visio"
-        sousTitre={t(
-          "Quelques minutes pour vérifier que tout marche avant d'entrer dans la classe.",
-          "Quelques minutes pour vérifier votre installation avant la classe, et une salle d'essai ouverte à tout moment.",
-        )}
+        // Vidéo des étudiants coupée : le bouton qui mène ici dit « Tester mon micro » (PageRepetition), le titre aussi.
+        titre={sansVisio ? "Tester mon micro" : "Tester ma visio"}
+        sousTitre={
+          sansVisio
+            ? "Quelques minutes pour vérifier ton micro, la radio du cours et ton navigateur avant d'entrer dans la classe."
+            : t(
+                "Quelques minutes pour vérifier que tout marche avant d'entrer dans la classe.",
+                "Quelques minutes pour vérifier votre installation avant la classe, et une salle d'essai ouverte à tout moment.",
+              )
+        }
       />
       <ConfirmationFuseau />
       <nav aria-label="Étapes de l'essai" className="-mt-2 flex flex-wrap gap-2">

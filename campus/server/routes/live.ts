@@ -763,7 +763,27 @@ async function finirParole(seanceId: number): Promise<MainLevee | null> {
     ? await db.update(mainsLevees).set({ baisseeLe: new Date() }).where(and(eq(mainsLevees.id, p.mainId), isNull(mainsLevees.baisseeLe))).returning()
     : [];
   paroles.set(seanceId, null);
+  if (p.type === "etudiant" && p.utilisateurId) sortirApresParole(seanceId, p.utilisateurId);
   return main ?? null;
+}
+
+/**
+ * Vidéo des étudiants coupée : l'étudiant n'était dans la visio que pour parler ; la parole finie, il en sort chez Daily
+ * (sa page le remet d'elle-même en son + diapos, et son jeton d'entrée ne valait que 10 minutes :
+ * visio.expirationJetonParole). Une seconde plus tard, hors de la réponse : Daily lent ou injoignable ne retarde ni
+ * n'empêche la fin de la parole, et la parole aussitôt redonnée au même étudiant (même main) le laisse dans la visio.
+ */
+function sortirApresParole(seanceId: number, utilisateurId: number) {
+  const minuteur = setTimeout(() => {
+    void (async () => {
+      if (!visio.videoEtudiantsCoupee()) return;
+      const p = await paroleCourante(seanceId);
+      if (p?.type === "etudiant" && p.utilisateurId === utilisateurId) return;
+      const n = await visio.sortirCompteDeSalle(visio.nomSalleVisio(seanceId), utilisateurId);
+      if (n) console.log(`[visio] parole finie (séance ${seanceId}) : l'étudiant ${utilisateurId} sort de la visio (vidéo des étudiants coupée)`);
+    })().catch((e) => console.warn(`[visio] sortie après la parole (séance ${seanceId}) impossible :`, (e as Error).message));
+  }, 1000);
+  minuteur.unref?.();
 }
 
 const versParolePublique = (p: ParoleInterne | null): ParoleDto | null => {
@@ -2336,6 +2356,9 @@ export function enregistrerLive(app: Express) {
           // Vidéo des étudiants coupée (réglage de pilotage à 0) : pas de jeton Daily pour un compte étudiant, sauf le temps
           // de la parole ; vérifié avant d'ouvrir la salle chez Daily (409 « video_etudiants_coupee », journal).
           if (u.role === "etudiant") await visio.verifierVideoEtudiant({ chemin: "seance", utilisateurId: u.id, seanceId: s.id, exception: aLaParole });
+          // Entré seulement grâce à la parole : son jeton n'ouvre la salle que 10 minutes (pas jusqu'à la fin du cours) ;
+          // la parole finie, il est sorti de la visio (finirParole).
+          const pourParlerSeulement = u.role === "etudiant" && aLaParole && visio.videoEtudiantsCoupee();
           const salle = await visio.obtenirSalleDaily(s);
           if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole || invite });
@@ -2360,7 +2383,7 @@ export function enregistrerLive(app: Express) {
             nomAffiche,
             utilisateurId: u.id,
             profil,
-            exp: visio.expirationJetonSeance(s),
+            exp: pourParlerSeulement ? visio.expirationJetonParole(s) : visio.expirationJetonSeance(s),
             enregistrer: enregistrement && s.statut === "en_direct" && !enAvance,
             enregistrementMaxS: visio.dureeMaxEnregistrement(s),
             ejecterApres: enRepetition ? visio.DUREE_MAX_REPETITION_S : undefined,

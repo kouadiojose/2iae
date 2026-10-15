@@ -117,6 +117,11 @@ const schemaReglages = z
   .partial();
 
 async function versReglagesDto(): Promise<ReglagesVisioDto> {
+  // Réglages pas encore lus en base (incident au démarrage) : on relit ; toujours illisibles, on ne montre pas les
+  // valeurs par défaut (30 places) : un enregistrement du formulaire rouvrirait la vidéo des étudiants.
+  if (!visio.reglagesLusEnBase() && !(await visio.chargerReglagesVisio())) {
+    throw new ErreurHttp(503, "Les réglages de la visio ne sont pas lisibles pour le moment : la vidéo des étudiants reste coupée par prudence. Réessayez dans un instant.", { code: "reglages_illisibles" });
+  }
   const r = visio.reglagesCourants();
   const [stock] = await db.select({ nombre: sql<number>`count(*)::int`, octets: sql<number>`coalesce(sum(${replaysStockes.tailleOctets}), 0)::float8` }).from(replaysStockes);
   return {

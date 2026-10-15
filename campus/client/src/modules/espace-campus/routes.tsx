@@ -12,6 +12,7 @@ export const routes: DefRoute[] = [
   { chemin: "/mon-campus/cours/:coursId/lecons", page: lazy(() => import("./PageLeconsCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId/resumes", page: lazy(() => import("./PageResumesCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId/examens", page: lazy(() => import("./PageExamensCampus")), acces, droit: "espace_campus", coquille: "aucune" },
+  { chemin: "/mon-campus/cours/:coursId/mur", page: lazy(() => import("./PageMurCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId/notes", page: lazy(() => import("./PageNotesCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus/cours/:coursId", page: lazy(() => import("./PageCoursCampus")), acces, droit: "espace_campus", coquille: "aucune" },
   { chemin: "/mon-campus", page: lazy(() => import("./PageAccueilCampus")), acces, droit: "espace_campus", coquille: "aucune" },

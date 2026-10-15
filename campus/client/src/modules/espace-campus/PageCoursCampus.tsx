@@ -7,6 +7,7 @@ import { useTextes } from "@/lib/textes";
 import { t as textesCampus } from "@shared/textes/campus";
 import type { CoursCampusDto } from "@shared/espace-campus";
 import { BandeauApercu, BoutonRetour, ErreurCampus, GrosBloc, PageCampus, Patience, PastilleRepere, lienCampus, styleCouleur, useApiCampus } from "./composants";
+import { BlocMurCampus } from "./mur-campus";
 
 /** Clé (sessionStorage) : « on arrive sur l'écran du live par un toucher » (pas de voile à l'arrivée). */
 export const CLE_GESTE_LIVE = "campus:live-geste";
@@ -79,6 +80,7 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
                 naviguer(lienCampus(`/mon-campus/cours/${id}/live`));
               }}
             />
+            <BlocMurCampus coursId={id} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
               <GrosBloc testId="lecons" icone={<BookOpen className="h-12 w-12" />} titre={tx("bloc.lecons")} sousTitre={compte("lecons", data.compteurs.lecons)} href={lienCampus(`/mon-campus/cours/${id}/lecons`)} />
               <GrosBloc testId="resumes" icone={<FileText className="h-12 w-12" />} titre={tx("bloc.resumes")} sousTitre={compte("resumes", data.compteurs.resumes)} href={lienCampus(`/mon-campus/cours/${id}/resumes`)} />

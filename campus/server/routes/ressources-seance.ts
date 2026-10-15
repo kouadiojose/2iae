@@ -39,7 +39,7 @@ const projetable = (r: Pick<RessourceSeanceDto, "type">) => r.type === "youtube"
 const titreDuFichier = (nom: string) => nom.replace(/\.[a-z0-9]{1,6}$/i, "").slice(0, 200);
 
 /** Titre d'un lien sans titre : le site et le chemin, lisibles. */
-function titreDuLien(url: string): string {
+export function titreDuLien(url: string): string {
   try {
     const u = new URL(url);
     const chemin = decodeURIComponent(u.pathname).replace(/\/+$/, "");
@@ -50,7 +50,7 @@ function titreDuLien(url: string): string {
 }
 
 /** Titre d'une vidéo YouTube (page oEmbed publique), sinon null : le formateur pourra le saisir. */
-async function titreYoutube(url: string): Promise<string | null> {
+export async function titreYoutube(url: string): Promise<string | null> {
   try {
     const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(4000) });
     if (!r.ok) return null;

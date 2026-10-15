@@ -5,7 +5,8 @@ import { ArrowLeft } from "lucide-react";
 import { Page } from "@/components/layout/coquille";
 import { useTextes } from "@/lib/textes";
 import { t as tEnseigner } from "@shared/textes/enseigner";
-import { BandeCours, LienPlus, TroisBlocs, useAccueilSimple } from "./simple/blocs";
+import { LienPlus, useAccueilSimple } from "./simple/blocs";
+import { BandeDuCours, BlocsDuCours } from "./simple/blocs-cours";
 
 export default function PageMonCours({ coursId }: { coursId: string }) {
   const tx = useTextes(tEnseigner);
@@ -33,8 +34,8 @@ export default function PageMonCours({ coursId }: { coursId: string }) {
         </div>
       ) : (
         <>
-          <BandeCours c={c} />
-          <TroisBlocs c={c} />
+          <BandeDuCours c={c} />
+          <BlocsDuCours c={c} />
           <LienPlus aFaire={data.aFaire} />
         </>
       )}

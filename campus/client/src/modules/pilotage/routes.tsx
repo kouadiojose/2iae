@@ -14,6 +14,8 @@ export const routes: DefRoute[] = [
   { chemin: "/pilotage/fiches", page: lazy(() => import("./PageFiches")), acces: EQUIPE, coquille: "aucune", droit: ["nouveau_code", "comptes_gerer"] },
   { chemin: "/pilotage/classes", page: lazy(() => import("./PageClasses")), acces: EQUIPE },
   { chemin: "/pilotage/cours", page: lazy(() => import("./PageCours")), acces: EQUIPE, droit: "programme" },
+  // Les professeurs : créer, inviter, attacher à un ou plusieurs cours (15 octobre 2026).
+  { chemin: "/pilotage/professeurs", page: lazy(() => import("./PageProfesseurs")), acces: EQUIPE, droit: ["programme", "comptes_personnel"] },
   { chemin: "/pilotage/planning", page: lazy(() => import("./PagePlanning")), acces: EQUIPE },
   { chemin: "/pilotage/presences", page: lazy(() => import("./PagePresences")), acces: EQUIPE, droit: "presences_voir" },
   { chemin: "/pilotage/rentree", page: lazy(() => import("./PageRentree")), acces: EQUIPE, droit: "outils_campus" },

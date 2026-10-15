@@ -47,6 +47,9 @@ import { enregistrerCrm } from "./crm";
 import { enregistrerScolarite } from "./scolarite";
 import { enregistrerVisioCampus } from "../visio-campus";
 import { enregistrerTravauxIa } from "./travaux-ia";
+import { enregistrerProfesseurs } from "./professeurs";
+import { enregistrerMur } from "./mur";
+import { enregistrerEspaceProf } from "./espace-prof";
 import { filtreCompteCampus } from "../campus-filtre";
 
 export function enregistrerRoutes(app: Express) {
@@ -59,6 +62,8 @@ export function enregistrerRoutes(app: Express) {
   enregistrerCompte(app);
   enregistrerAccueil(app);
   enregistrerCours(app);
+  enregistrerMur(app); // le mur du cours (professeurs → étudiants, espace du campus en lecture)
+  enregistrerEspaceProf(app); // blocs du professeur, « Vidéos et examens », examens proposés par l'IA
   enregistrerMediatheque(app);
   enregistrerRegie(app); // régie des cours (Chargé de cours) : AVANT live, ses intergiciels (garde, journal) passent en premier
   enregistrerLive(app);
@@ -72,6 +77,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerAnnonces(app);
   enregistrerAgenda(app);
   enregistrerAdmin(app);
+  enregistrerProfesseurs(app); // page « Professeurs » du pilotage
   enregistrerCrm(app);
   enregistrerScolarite(app);
   enregistrerIa(app);

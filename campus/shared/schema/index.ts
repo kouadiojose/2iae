@@ -36,3 +36,4 @@ export * from "./enseigner-suivi"; // C7
 export * from "./progression"; // C5
 export * from "./relances-auto"; // C4
 export * from "./corrections"; // correction automatique des copies (8 octobre 2026)
+export * from "./ext-mur"; // le mur du cours (15 octobre 2026)

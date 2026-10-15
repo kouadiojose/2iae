@@ -147,6 +147,8 @@ export type CoursDetail = {
   mediatheque: AccesMediatheque;
   /** La direction ou le responsable du programme peut changer ce réglage (PATCH /api/cours/:id/mediatheque). */
   peutReglerMediatheque: boolean;
+  /** Le mur du cours (shared/mur.ts) : null si la personne ne le lit pas. */
+  mur: { total: number; nonLus: number } | null;
 };
 
 export type FichierDeLecon = { id: number; nom: string; mime: string; taille: number; url: string };

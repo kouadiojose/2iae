@@ -1026,19 +1026,21 @@ const lienPerimeInvitation = () =>
 /** Nom d'un compte de formateur préparé sans le connaître : la personne le saisit en ouvrant son invitation. */
 const NOM_A_FOURNIR = "À compléter";
 
-/** Cours dont la personne est le formateur principal, et sa salle : la prochaine séance, sinon le cours s'il est seul. */
+/**
+ * Cours de la personne (professeur principal ou autre professeur : cours_formateurs), et où elle arrive : l'accueil du
+ * professeur à gros blocs (/enseigner) dès qu'elle a un cours (José, 15 octobre 2026).
+ */
 async function coursEtSalle(id: number): Promise<{ cours: string[]; destination: string | null }> {
   const liste = (
-    await pool.query<{ id: number; titre: string }>(`SELECT id, titre FROM campus.cours WHERE formateur_id = $1 AND statut <> 'archive' ORDER BY id`, [id])
+    await pool.query<{ id: number; titre: string }>(
+      `SELECT id, titre FROM campus.cours
+        WHERE statut <> 'archive' AND (formateur_id = $1 OR EXISTS (SELECT 1 FROM campus.cours_formateurs cf WHERE cf.cours_id = cours.id AND cf.formateur_id = $1))
+        ORDER BY id`,
+      [id],
+    )
   ).rows;
   if (!liste.length) return { cours: [], destination: null };
-  const seance = (
-    await pool.query<{ id: number }>(
-      `SELECT id FROM campus.seances WHERE cours_id = ANY($1::int[]) AND statut IN ('planifiee', 'en_direct') AND debut + (duree_minutes || ' minutes')::interval > now() ORDER BY debut LIMIT 1`,
-      [liste.map((c) => c.id)],
-    )
-  ).rows[0];
-  return { cours: liste.map((c) => c.titre), destination: seance ? `/enseigner/seances/${seance.id}` : liste.length === 1 ? `/cours/${liste[0].id}` : null };
+  return { cours: liste.map((c) => c.titre), destination: "/enseigner" };
 }
 
 async function lireInvitation(jeton: string): Promise<{ ligneId: number; expireLe: Date; compte: Utilisateur } | null> {
@@ -1097,6 +1099,54 @@ async function prevenirCompteCree(c: Utilisateur, guideEnvoye: boolean) {
 }
 
 // ── Routes ─────────────────────────────────────────────────────────────────
+
+/**
+ * Crée le lien d'invitation d'un compte (formateur ou équipe) : un seul lien valable à la fois (les précédents
+ * tombent, les sessions ouvertes par un ancien lien aussi), message prêt avec le prochain cours, lien WhatsApp,
+ * e-mail si demandé, journal « invitation ». Appelée par « Inviter » (pilotage) et par « Nouveau professeur »
+ * (routes/professeurs.ts). Les contrôles (compte gérable, invitable, actif, pas encore activé) sont ceux de l'appelant.
+ */
+export async function creerInvitation(u: Pick<Utilisateur, "id">, c: Utilisateur, { parEmail = false }: { parEmail?: boolean } = {}): Promise<InvitationRemise> {
+  // Un seul lien d'invitation valable à la fois : les précédents ne marchent plus. On ne le signale
+  // que si une invitation avait vraiment été envoyée (le jeton créé avec le compte n'a été remis à personne).
+  const dejaInvite = (
+    await pool.query(`SELECT 1 FROM campus.journal WHERE action IN ('invitation', 'invitation_email') AND details->>'compteId' = $1 LIMIT 1`, [String(c.id)])
+  ).rowCount;
+  await db
+    .update(reinitialisations)
+    .set({ utiliseLe: new Date() })
+    .where(and(eq(reinitialisations.utilisateurId, c.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
+  // Le lien précédent a pu être ouvert par quelqu'un d'autre (invitation partie au mauvais numéro) : il avait
+  // alors une session sur ce compte, qui n'est pas encore activé. Elle tombe avec le lien : seul le nouveau
+  // lien ouvre le compte.
+  const appareilsDeconnectes = Number(
+    (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM campus.session WHERE (sess->>'utilisateurId')::int = $1 AND expire > now()`, [c.id])).rows[0]?.n ?? 0,
+  );
+  await fermerAutresSessions(c.id);
+  oublierUtilisateur(c.id);
+  const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
+  const jeton = await creerJeton(c.id, "activation", DUREE_CODE_PROVISOIRE_MS);
+  const lienTexte = lienInvitation(jeton);
+  const premier = await prochainCours(c.id);
+  const message = messageInvitation(c, lienTexte, expireLe, premier);
+  let envoye = false;
+  if (parEmail && c.email) envoye = await envoyerInvitationEmail(c, c.email, lienTexte, expireLe, premier);
+  await journaliser(u, "invitation", { compteId: c.id, canal: envoye ? "email" : "lien", ...(appareilsDeconnectes ? { appareilsDeconnectes } : {}) });
+  const r: InvitationRemise = {
+    compteId: c.id,
+    lien: lienTexte,
+    jeton,
+    expireLe: expireLe.toISOString(),
+    message,
+    whatsapp: lienWhatsApp(c.telephone, message),
+    premierCours: premier,
+    email: { adresse: c.email, disponible: emailDisponible(), envoye },
+    // Tout lien d'une invitation précédente, qu'il ait servi ou non, ne marche plus.
+    remplaceUnLien: Boolean(dejaInvite),
+    appareilsDeconnectes,
+  };
+  return r;
+}
 
 export function enregistrerLancement(app: Express) {
   // La liste de contrôle de la rentrée, recalculée à chaque visite.
@@ -1160,44 +1210,7 @@ export function enregistrerLancement(app: Express) {
       if (!c.actif) throw invalide("Ce compte est désactivé : réactivez-le d'abord.");
       if (!c.doitChangerMotDePasse) throw new ErreurHttp(409, `${nomAffiche(c)} a déjà activé son compte. Mot de passe oublié : « Nouveau code » sur sa fiche.`);
 
-      // Un seul lien d'invitation valable à la fois : les précédents ne marchent plus. On ne le signale
-      // que si une invitation avait vraiment été envoyée (le jeton créé avec le compte n'a été remis à personne).
-      const dejaInvite = (
-        await pool.query(`SELECT 1 FROM campus.journal WHERE action IN ('invitation', 'invitation_email') AND details->>'compteId' = $1 LIMIT 1`, [String(c.id)])
-      ).rowCount;
-      await db
-        .update(reinitialisations)
-        .set({ utiliseLe: new Date() })
-        .where(and(eq(reinitialisations.utilisateurId, c.id), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe)));
-      // Le lien précédent a pu être ouvert par quelqu'un d'autre (invitation partie au mauvais numéro) : il avait
-      // alors une session sur ce compte, qui n'est pas encore activé. Elle tombe avec le lien : seul le nouveau
-      // lien ouvre le compte.
-      const appareilsDeconnectes = Number(
-        (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM campus.session WHERE (sess->>'utilisateurId')::int = $1 AND expire > now()`, [c.id])).rows[0]?.n ?? 0,
-      );
-      await fermerAutresSessions(c.id);
-      oublierUtilisateur(c.id);
-      const expireLe = new Date(Date.now() + DUREE_CODE_PROVISOIRE_MS);
-      const jeton = await creerJeton(c.id, "activation", DUREE_CODE_PROVISOIRE_MS);
-      const lienTexte = lienInvitation(jeton);
-      const premier = await prochainCours(c.id);
-      const message = messageInvitation(c, lienTexte, expireLe, premier);
-      let envoye = false;
-      if (parEmail && c.email) envoye = await envoyerInvitationEmail(c, c.email, lienTexte, expireLe, premier);
-      await journaliser(u, "invitation", { compteId: c.id, canal: envoye ? "email" : "lien", ...(appareilsDeconnectes ? { appareilsDeconnectes } : {}) });
-      const r: InvitationRemise = {
-        compteId: c.id,
-        lien: lienTexte,
-        jeton,
-        expireLe: expireLe.toISOString(),
-        message,
-        whatsapp: lienWhatsApp(c.telephone, message),
-        premierCours: premier,
-        email: { adresse: c.email, disponible: emailDisponible(), envoye },
-        // Tout lien d'une invitation précédente, qu'il ait servi ou non, ne marche plus.
-        remplaceUnLien: Boolean(dejaInvite),
-        appareilsDeconnectes,
-      };
+      const r = await creerInvitation(u, c, { parEmail: Boolean(parEmail) });
       res.json(r);
     }),
   );

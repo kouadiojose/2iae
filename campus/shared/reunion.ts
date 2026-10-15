@@ -18,6 +18,10 @@ export const FORMAT_JETON_REUNION = /^[0-9a-f]{32}$/;
 /** Nom d'une salle : de 2 à 60 caractères. */
 export const NOM_REUNION_MAX = 60;
 
+/** Dernier geste sur une salle, gardé avec elle (« Lien changé par … », « Fermée par … »). */
+export const ACTIONS_REUNION = ["creee", "ouverte", "fermee", "lien"] as const;
+export type ActionReunion = (typeof ACTIONS_REUNION)[number];
+
 /** Une personne dans la réunion, lue chez Daily (sans rejoindre la salle). */
 export type PresentReunionDto = { nom: string; depuis: string };
 
@@ -33,7 +37,8 @@ export type ReunionDto = {
   message: string;
   /** https://wa.me/?text=… (on choisit le destinataire dans WhatsApp). */
   whatsapp: string;
-  /** Dernière ouverture, fermeture ou changement de lien, et par qui. */
+  /** Dernier geste sur la salle (ajout, ouverture, fermeture, changement de lien), quand et par qui. */
+  majAction: ActionReunion | null;
   majLe: string | null;
   majPar: string | null;
   /** Qui est dans la réunion en ce moment (réunion ouverte, Daily configuré). */
@@ -46,7 +51,10 @@ export type ReunionsDto = {
   reunions: ReunionDto[];
   /** La visio Daily est configurée sur ce campus (sinon personne ne peut entrer). */
   daily: boolean;
-  /** La direction ajoute et retire des salles ; l'équipe ouvre, ferme, partage et change le lien. */
+  /**
+   * La direction ouvre, ferme, change le lien, ajoute et retire des salles. L'équipe des écrans et de la visio
+   * (droit « outils_campus ») voit la page : le lien, Copier, WhatsApp, Entrer, qui est dedans.
+   */
   peutGerer: boolean;
   max: number;
 };

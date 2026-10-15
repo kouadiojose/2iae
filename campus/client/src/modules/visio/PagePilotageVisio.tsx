@@ -128,15 +128,24 @@ function Consommation({ u }: { u: UsageVisioDto }) {
   }
   const totalProfils = u.parProfil.reduce((t, p) => t + p.minutes, 0) || 1;
   const restantes = Math.max(0, u.cout.minutesOffertes - u.minutes - u.minutesAutresSalles - (u.minutesReunions ?? 0));
+  // Coût de l'école : les cours, plus la salle de réunion de l'administration (comptée à part, payée pareil).
+  const reunion = u.coutReunions ?? { usd: 0, fcfa: 0, minutesFacturables: 0 };
+  const usd = Math.round((u.cout.usd + reunion.usd) * 100) / 100;
+  const fcfa = u.cout.fcfa + reunion.fcfa;
+  const facturees = u.cout.minutesFacturables + reunion.minutesFacturables;
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Chiffre valeur={nombre(u.minutes)} libelle="Minutes-participant" detail={`${nombre(u.reunions)} séance${u.reunions > 1 ? "s" : ""} de visio · lu ${relatif(u.lu)}`} />
         <Chiffre
-          valeur={dollars(u.cout.usd)}
+          valeur={dollars(usd)}
           libelle="Coût estimé"
-          ton={u.cout.usd > 0 ? "orange" : "succes"}
-          detail={u.cout.usd > 0 ? `≈ ${nombre(u.cout.fcfa)} FCFA · ${nombre(u.cout.minutesFacturables)} minutes facturées` : "Dans les minutes offertes par Daily."}
+          ton={usd > 0 ? "orange" : "succes"}
+          detail={
+            usd > 0
+              ? `≈ ${nombre(fcfa)} FCFA · ${nombre(facturees)} minutes facturées${reunion.minutesFacturables > 0 ? `, dont ${nombre(reunion.minutesFacturables)} de réunion` : ""}`
+              : "Dans les minutes offertes par Daily."
+          }
         />
         <Chiffre valeur={nombre(restantes)} libelle="Minutes offertes restantes" detail={`Sur ${nombre(u.cout.minutesOffertes)} par mois pour tout le compte Daily.`} />
       </div>
@@ -183,8 +192,12 @@ function Consommation({ u }: { u: UsageVisioDto }) {
         </div>
       )}
       {(u.minutesReunions ?? 0) > 0 && (
-        <p className="rounded-2xl bg-creme px-4 py-3 text-[14px] leading-snug text-texte-doux">
-          Salle de réunion de l'administration : {nombre(u.minutesReunions)} minutes ce mois-ci. Elles ne sont pas comptées avec les cours, mais elles puisent dans les mêmes minutes offertes.
+        <p className="rounded-2xl bg-creme px-4 py-3 text-[14px] leading-snug text-texte-doux" data-cout-reunion>
+          Salle de réunion de l'administration : {nombre(u.minutesReunions)} minutes ce mois-ci.{" "}
+          {reunion.usd > 0
+            ? `Coût : environ ${dollars(reunion.usd)} (≈ ${nombre(reunion.fcfa)} FCFA), déjà compris dans le coût estimé ci-dessus.`
+            : "Elles tiennent pour l'instant dans les minutes offertes."}{" "}
+          Elles ne sont pas mêlées aux cours.
         </p>
       )}
       {u.minutesAutresSalles > 0 && (

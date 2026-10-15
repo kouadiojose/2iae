@@ -227,7 +227,7 @@ export function politiquePermissions(): string {
 
 // ── Daily.co : appels à l'API ──────────────────────────────────────────────
 
-type SalleDaily = { id: string; name: string; url: string; config?: { exp?: number; max_participants?: number } };
+type SalleDaily = { id: string; name: string; url: string; config?: { exp?: number; max_participants?: number; eject_at_room_exp?: boolean } };
 
 async function appelDaily<T>(chemin: string, options: { methode?: "GET" | "POST" | "DELETE"; corps?: unknown } = {}): Promise<{ statut: number; donnees: T | null }> {
   const cle = config.visio.dailyCle;
@@ -462,21 +462,42 @@ export async function obtenirSalleGroupeDaily(nom: string, exp: number): Promise
 
 /** Une réunion de l'administration tient dans une salle de cinquante personnes (garde-fou du coût). */
 const TAILLE_SALLE_REUNION = 50;
+/**
+ * Fin d'une salle de réunion : 6 h après la dernière entrée (repoussée à chaque entrée dès qu'il reste moins de 5 h,
+ * soit la sortie d'office des jetons). Sans eject_at_room_exp : la fin n'empêche que d'entrer, elle ne sort personne.
+ * Une salle oubliée (personne n'entre plus) ne reste donc jamais ouverte chez Daily.
+ */
+const VIE_SALLE_REUNION_S = 6 * 3600;
+const RESTE_MIN_SALLE_REUNION_S = 5 * 3600;
 
 /**
  * Crée (ou retrouve) la salle Daily d'une réunion de l'administration : privée (jeton obligatoire), sans salle
  * d'attente ni écran d'accueil Daily, discussion écrite permise, partage d'écran permis, jamais enregistrée,
- * cinquante personnes au plus, sans date de fin (la réunion est permanente ; sa fermeture la vide : fermerSalleReunion).
+ * cinquante personnes au plus. La réunion est permanente, mais chaque salle a une fin (VIE_SALLE_REUNION_S, repoussée
+ * à chaque entrée) ; sa fermeture la vide (fermerSalleReunion). Une salle qu'on est en train de fermer
+ * (eject_at_room_exp déjà posé) n'est jamais prolongée.
  */
 export async function obtenirSalleReunion(nom: string): Promise<{ nom: string; url: string }> {
+  const maintenant = Math.floor(Date.now() / 1000);
   const existante = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
-  if (existante.statut === 200 && existante.donnees) return { nom, url: existante.donnees.url };
+  if (existante.statut === 200 && existante.donnees) {
+    const cfg = existante.donnees.config ?? {};
+    if (!cfg.eject_at_room_exp && (cfg.exp ?? 0) < maintenant + RESTE_MIN_SALLE_REUNION_S) await mettreAJourSalle(nom, { exp: maintenant + VIE_SALLE_REUNION_S }, false);
+    return { nom, url: existante.donnees.url };
+  }
   const creee = await appelDaily<SalleDaily>("/rooms", {
     methode: "POST",
     corps: {
       name: nom,
       privacy: "private",
-      properties: { ...PROPRIETES_COMMUNES, enable_chat: true, start_video_off: false, start_audio_off: true, max_participants: TAILLE_SALLE_REUNION },
+      properties: {
+        ...PROPRIETES_COMMUNES,
+        enable_chat: true,
+        start_video_off: false,
+        start_audio_off: true,
+        max_participants: TAILLE_SALLE_REUNION,
+        exp: maintenant + VIE_SALLE_REUNION_S,
+      },
     },
   });
   if (creee.statut === 200 && creee.donnees) return { nom, url: creee.donnees.url };
@@ -491,7 +512,9 @@ export async function obtenirSalleReunion(nom: string): Promise<{ nom: string; u
  * en sortant quiconque y serait encore (eject_at_room_exp), puis elle est effacée deux minutes plus tard. La salle
  * suivante porte un autre numéro (nomSalleReunion) : un ancien jeton n'y entre pas. Jamais d'erreur : Daily
  * injoignable, la réunion est fermée quand même (plus aucun jeton n'est remis), et la page de la réunion quitte la
- * visio d'elle-même dès qu'elle lit « fermée ».
+ * visio d'elle-même dès qu'elle lit « fermée ». L'effacement est prévu même quand la salle n'existe pas encore : une
+ * entrée commencée juste avant la fermeture peut la créer dans la seconde qui suit (routes/reunions.ts la refuse
+ * alors, et l'efface aussi).
  */
 export async function fermerSalleReunion(nom: string): Promise<{ sortis: number }> {
   if (!dailyDisponible()) return { sortis: 0 };
@@ -499,15 +522,17 @@ export async function fermerSalleReunion(nom: string): Promise<{ sortis: number 
   let sortis = 0;
   try {
     const p = await appelDaily<{ data?: { id?: string | null }[] }>(`${chemin}/presence`);
-    if (p.statut === 404) return { sortis: 0 }; // personne n'est jamais entré : il n'y a pas de salle
-    const ids = (p.donnees?.data ?? []).map((x) => x.id).filter((x): x is string => typeof x === "string" && x.length > 0);
-    if (ids.length) {
-      const r = await appelDaily<{ ejected?: string[] }>(`${chemin}/eject`, { methode: "POST", corps: { ids } });
-      if (r.statut === 200) sortis = r.donnees?.ejected?.length ?? ids.length;
-      else console.warn(`[visio] sortie des personnes de ${nom} refusée (${r.statut})`);
+    // 404 : personne n'est entré dans cette salle (elle n'existe pas) ; rien à vider, l'effacement reste prévu.
+    if (p.statut !== 404) {
+      const ids = (p.donnees?.data ?? []).map((x) => x.id).filter((x): x is string => typeof x === "string" && x.length > 0);
+      if (ids.length) {
+        const r = await appelDaily<{ ejected?: string[] }>(`${chemin}/eject`, { methode: "POST", corps: { ids } });
+        if (r.statut === 200) sortis = r.donnees?.ejected?.length ?? ids.length;
+        else console.warn(`[visio] sortie des personnes de ${nom} refusée (${r.statut})`);
+      }
+      const fin = await appelDaily(chemin, { methode: "POST", corps: { properties: { exp: Math.floor(Date.now() / 1000) + 5, eject_at_room_exp: true } } });
+      if (fin.statut !== 200) console.warn(`[visio] fin de la salle ${nom} refusée (${fin.statut})`);
     }
-    const fin = await appelDaily(chemin, { methode: "POST", corps: { properties: { exp: Math.floor(Date.now() / 1000) + 5, eject_at_room_exp: true } } });
-    if (fin.statut !== 200) console.warn(`[visio] fin de la salle ${nom} refusée (${fin.statut})`);
   } catch (e) {
     console.warn(`[visio] fermeture de la salle ${nom} incomplète :`, (e as Error).message);
   }
@@ -813,6 +838,7 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
     cout: { usd: 0, fcfa: 0, minutesFacturables: 0, prixMinuteUsd: r.prixMinuteUsd, minutesOffertes: r.minutesOffertes, tauxFcfa: r.tauxFcfa },
     minutesAutresSalles: 0,
     minutesReunions: 0,
+    coutReunions: { usd: 0, fcfa: 0, minutesFacturables: 0 },
     lu: new Date().toISOString(),
   });
   if (!dailyDisponible()) return vide("La visio Daily n'est pas configurée sur ce campus (clé DAILY_API_KEY absente).");
@@ -899,11 +925,14 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
   const minutes = duCampus.reduce((t, m) => t + minutesDe(m), 0);
   const minutesAutres = autres.reduce((t, m) => t + minutesDe(m), 0);
   const minutesReunions = salleReunion.reduce((t, m) => t + minutesDe(m), 0);
-  // Les minutes offertes valent pour tout le compte Daily : on les déduit du total du compte, au prorata du campus.
+  // Les minutes offertes valent pour tout le compte Daily : on les déduit du total du compte, au prorata du campus
+  // (cours d'un côté, salles de réunion de l'administration de l'autre : toutes deux à la charge de l'école).
   const total = minutes + minutesAutres + minutesReunions;
   const facturablesCompte = Math.max(0, total - r.minutesOffertes);
   const minutesFacturables = total > 0 ? facturablesCompte * (minutes / total) : 0;
   const usd = minutesFacturables * r.prixMinuteUsd;
+  const facturablesReunions = total > 0 ? facturablesCompte * (minutesReunions / total) : 0;
+  const usdReunions = facturablesReunions * r.prixMinuteUsd;
   const valeur: UsageVisioDto = {
     mois,
     disponible: true,
@@ -926,6 +955,7 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
     },
     minutesAutresSalles: Math.round(minutesAutres),
     minutesReunions: Math.round(minutesReunions),
+    coutReunions: { usd: Math.round(usdReunions * 100) / 100, fcfa: Math.round(usdReunions * r.tauxFcfa), minutesFacturables: Math.round(facturablesReunions) },
     lu: new Date().toISOString(),
   };
   cacheUsage.set(mois, { exp: Date.now() + 5 * 60_000, valeur });

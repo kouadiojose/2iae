@@ -1,12 +1,14 @@
 // Salle de réunion de l'administration (demande de José du 13 octobre 2026, réglages dans CONCEPTION.md §11) :
 // un lien permanent, à partager à tous les participants de la réunion, qui marche sans compte et à tout moment.
 //
-//   Pilotage (direction, et équipe avec le droit « outils_campus », celui des écrans et de la visio) :
+//   Pilotage. La page se voit avec le droit « outils_campus » (celui des écrans et de la visio : direction, vie
+//   scolaire) ; tout ce qui la règle est à la direction seule, comme les réglages de la visio et de l'ouverture
+//   automatique (PUT /api/visio/reglages, /api/visio/ouverture-auto) :
 //   GET    /api/pilotage/reunions                  les salles, leur lien, leur message WhatsApp, qui est dedans
-//   POST   /api/pilotage/reunions/:id/etat         { ouverte } : ouvrir, ou fermer (personne n'entre plus, les présents sortent)
-//   POST   /api/pilotage/reunions/:id/nouveau-lien  un nouveau lien ; l'ancien ne marche plus, les présents sortent
-//   POST   /api/pilotage/reunions                  { nom } : une autre salle (direction seule, 5 salles au plus)
-//   DELETE /api/pilotage/reunions/:id              retirer une autre salle (direction seule ; jamais la principale)
+//   POST   /api/pilotage/reunions/:id/etat         { ouverte } : ouvrir, ou fermer (personne n'entre plus, les présents sortent) — direction
+//   POST   /api/pilotage/reunions/:id/nouveau-lien  un nouveau lien ; l'ancien ne marche plus, les présents sortent — direction
+//   POST   /api/pilotage/reunions                  { nom } : une autre salle (5 salles au plus) — direction
+//   DELETE /api/pilotage/reunions/:id              retirer une autre salle (jamais la principale) — direction
 //
 //   Lien public (sans compte ; le compte de campus passe aussi : campus-filtre.ts) :
 //   GET    /api/reunion/:jeton                     { etat: "ouverte", nom, personnel } ou { etat: "fermee" } (rien d'autre)
@@ -17,25 +19,27 @@
 // liste blanche de clés (routes/public.ts). Le jeton : 32 caractères hexadécimaux tirés au hasard (128 bits).
 // La salle Daily (« reunion-2iae-<id>-<série> », visio.ts) est distincte des salles de cours ; son numéro de série
 // change à chaque fermeture et à chaque nouveau lien : un ancien jeton Daily n'entre jamais dans la nouvelle salle.
-// Journal : reunion_ouverte, reunion_fermee, reunion_nouveau_lien, reunion_entree, reunion_creee, reunion_supprimee
-// (jamais le jeton ni le lien).
+// Journal : reunion_ouverte, reunion_fermee, reunion_nouveau_lien, reunion_entree, reunion_creee, reunion_supprimee,
+// reunion_limite (trop d'entrées sur un lien, une fois par quart d'heure) ; jamais le jeton ni le lien.
 import crypto from "crypto";
 import type { Express, Request } from "express";
 import { z } from "zod";
 import { eq, inArray, like } from "drizzle-orm";
 import { db, pool } from "../db";
 import { config } from "../config";
-import { exigerDroit, exigerRole, moi, peut } from "../auth";
+import { exigerDroit, exigerRole, moi } from "../auth";
 import { route, valider, ErreurHttp } from "../http";
 import * as visio from "../visio";
 import { t } from "@shared/textes/reunion";
 import {
+  ACTIONS_REUNION,
   FORMAT_JETON_REUNION,
   ID_REUNION_PRINCIPALE,
   NOM_REUNION_MAX,
   NOM_REUNION_PRINCIPALE,
   PREFIXE_CLE_REUNION,
   REUNIONS_MAX,
+  type ActionReunion,
   type PresentReunionDto,
   type ReunionDto,
   type ReunionPubliqueDto,
@@ -58,6 +62,8 @@ const schemaValeur = z.object({
   jeton: z.string().regex(FORMAT_JETON_REUNION),
   serie: z.number().int().min(0),
   creeLe: z.string(),
+  /** Dernier geste (« Lien changé par … ») ; absent sur une salle jamais touchée. */
+  derniere: z.enum(ACTIONS_REUNION).optional(),
 });
 type Valeur = z.infer<typeof schemaValeur>;
 type Reunion = Valeur & { id: string; majLe: Date; majParId: number | null };
@@ -112,12 +118,12 @@ async function reunionParId(id: string): Promise<Reunion> {
  */
 async function changer(
   id: string,
-  maj: { ouverte?: boolean; jeton?: string; serieSuivante?: boolean },
+  maj: { ouverte?: boolean; jeton?: string; serieSuivante?: boolean; derniere: ActionReunion },
   parId: number,
   quand: "toujours" | "ouverte" | "fermee" = "toujours",
 ): Promise<{ avant: Reunion; apres: Reunion } | null> {
   const avant = await reunionParId(id);
-  const champs: Record<string, unknown> = {};
+  const champs: Record<string, unknown> = { derniere: maj.derniere };
   if (maj.ouverte !== undefined) champs.ouverte = maj.ouverte;
   if (maj.jeton !== undefined) champs.jeton = maj.jeton;
   const condition = quand === "ouverte" ? "AND (valeur->>'ouverte')::boolean = true" : quand === "fermee" ? "AND (valeur->>'ouverte')::boolean = false" : "";
@@ -176,6 +182,7 @@ async function versDto(liste: Reunion[], u: Utilisateur): Promise<ReunionsDto> {
         message,
         whatsapp: `https://wa.me/?text=${encodeURIComponent(message)}`,
         // Une salle jamais touchée depuis sa création n'a pas d'auteur à montrer.
+        majAction: r.majParId !== null ? (r.derniere ?? (r.ouverte ? "ouverte" : "fermee")) : null,
         majLe: r.majParId !== null ? r.majLe.toISOString() : null,
         majPar: r.majParId !== null ? (noms.get(r.majParId) ?? null) : null,
         presents: p.presents,
@@ -213,10 +220,11 @@ async function viderSalle(nomSalle: string, u: Utilisateur, action: string, deta
 
 // ── Limites de demandes (anti-abus du lien public) ─────────────────────────
 
-/** Au plus `max` demandes par `fenetre` et par clé (compteur en mémoire). Renvoie faux quand la limite est dépassée. */
+/** Au plus `max` demandes par `fenetre` et par clé (compteur en mémoire). */
 function limiteur(max: number, fenetre: number) {
   const compteurs = new Map<string, { n: number; jusqua: number }>();
   return {
+    /** Compte une demande ; renvoie faux quand la limite est dépassée. */
     compter(cle: string): boolean {
       const maintenant = Date.now();
       const c = compteurs.get(cle);
@@ -227,30 +235,57 @@ function limiteur(max: number, fenetre: number) {
       }
       return ++c.n <= max;
     },
+    /** La limite est atteinte (sans rien compter). */
     depasse(cle: string): boolean {
       const c = compteurs.get(cle);
       return Boolean(c && c.jusqua >= Date.now() && c.n >= max);
     },
   };
 }
-/** Lecture de l'état : la page relit toutes les 10 s ; 300 par minute laissent passer tout un bureau derrière une même adresse. */
+/**
+ * Lecture de l'état : la page relit toutes les 10 s ; 300 par minute laissent passer tout un bureau derrière une même
+ * adresse. Un mauvais lien lu (GET) répond toujours 404 : une page restée sur un ancien lien, derrière une adresse qui a
+ * vu d'autres mauvais liens, lit bien « ce lien ne marche pas » et quitte la réunion. Avec un jeton de 128 bits, ces
+ * 300 lectures par minute ne permettent pas de deviner un lien.
+ */
 const lectures = limiteur(300, MINUTE);
 /**
- * Mauvais liens : au-delà de 20 par quart d'heure et par adresse, « trop de demandes » au lieu de « ce lien ne marche
- * pas » (un lien de 128 bits ne se devine pas ; le bon lien, lui, marche toujours : un bureau derrière une même adresse
- * n'est pas bloqué par l'onglet resté ouvert sur un ancien lien).
+ * Mauvais liens pour ENTRER : au-delà de 20 par quart d'heure et par adresse, « trop de demandes » au lieu de « ce lien
+ * ne marche pas » (le bon lien, lui, entre toujours depuis cette adresse).
  */
 const mauvaisLiens = limiteur(20, 15 * MINUTE);
-/** Entrées (chaque jeton Daily) : 30 par quart d'heure et par adresse, 200 par quart d'heure et par salle. */
-const entreesParAdresse = limiteur(30, 15 * MINUTE);
-const entreesParSalle = limiteur(200, 15 * MINUTE);
+/** Demandes d'entrée : 30 par quart d'heure par adresse (invité) ou par compte (personnel connecté). */
+const entreesParPersonne = limiteur(30, 15 * MINUTE);
+/**
+ * Entrées des invités sur un lien : 200 jetons remis par quart d'heure. Seuls les jetons vraiment remis comptent (un
+ * nom refusé, une réunion fermée, ne comptent pas) ; le compteur est celui du LIEN (« Changer le lien » le remet à
+ * zéro) ; le personnel connecté n'y est pas soumis (la direction entre toujours dans sa réunion).
+ */
+const entreesParLien = limiteur(200, 15 * MINUTE);
+/** Dépassements déjà notés au journal (un par lien et par quart d'heure). */
+const limitesNotees = new Map<string, number>();
 
 const trop = () => new ErreurHttp(429, t("serveur.trop"));
 const lienMort = () => new ErreurHttp(404, t("serveur.lienMort"));
+const fermee = () => new ErreurHttp(409, t("serveur.fermee"), { code: "reunion_fermee" });
 const adresse = (req: Request) => String(req.ip ?? "");
+/** Le compteur d'entrées d'un lien : la salle ET son jeton (le jeton lui-même n'est gardé qu'en mémoire, jamais écrit). */
+const cleLien = (r: Pick<Reunion, "id" | "jeton">) => `${r.id}|${r.jeton}`;
 
-/** La salle d'un lien. Mauvais lien (inconnu, ancien, mal formé) : 404, sans dire pourquoi ; trop d'essais : 429. */
-async function reunionDuJeton(req: Request): Promise<Reunion> {
+async function noterLimite(r: Reunion): Promise<void> {
+  const cle = cleLien(r);
+  const deja = limitesNotees.get(cle);
+  if (deja && Date.now() - deja < 15 * MINUTE) return;
+  if (limitesNotees.size > 500) limitesNotees.clear();
+  limitesNotees.set(cle, Date.now());
+  await db.insert(journal).values({ utilisateurId: null, action: "reunion_limite", details: { reunion: r.id, salle: r.nom, entrees: 200, minutes: 15 } });
+}
+
+/**
+ * La salle d'un lien. Mauvais lien (inconnu, ancien, mal formé) : 404, sans dire pourquoi. Pour entrer seulement
+ * (`compterMauvais`), trop de mauvais liens depuis une adresse : 429.
+ */
+async function reunionDuJeton(req: Request, compterMauvais: boolean): Promise<Reunion> {
   const ip = adresse(req);
   const jeton = String(req.params.jeton ?? "");
   const recu = FORMAT_JETON_REUNION.test(jeton) ? Buffer.from(jeton) : null;
@@ -263,8 +298,10 @@ async function reunionDuJeton(req: Request): Promise<Reunion> {
     }
   }
   if (!trouvee) {
-    if (mauvaisLiens.depasse(ip)) throw trop();
-    mauvaisLiens.compter(ip);
+    if (compterMauvais) {
+      if (mauvaisLiens.depasse(ip)) throw trop();
+      mauvaisLiens.compter(ip);
+    }
     throw lienMort();
   }
   return trouvee;
@@ -291,8 +328,18 @@ async function noterEntree(r: Reunion, nomAffiche: string, utilisateurId: number
   await db.insert(journal).values({ utilisateurId, action: "reunion_entree", details: { reunion: r.id, salle: r.nom, personne: nomAffiche, compte: utilisateurId !== null } });
 }
 
+/** Une panne de Daily dite avec les mots de la réunion (jamais « visio du campus » ni « radio », qui sont ceux des cours). */
+function enMotsDeReunion(e: unknown): unknown {
+  const code = e instanceof ErreurHttp ? (e.details as { code?: unknown } | undefined)?.code : undefined;
+  if (e instanceof ErreurHttp && typeof code === "string" && code.startsWith("daily_")) {
+    return new ErreurHttp(e.statut, t(code === "daily_compte" ? "serveur.daily.compte" : "serveur.daily"), { code });
+  }
+  return e;
+}
+
 export function enregistrerReunions(app: Express) {
   // ── Pilotage ─────────────────────────────────────────────────────────────
+  // Voir la page (le lien, Copier, WhatsApp, Entrer, qui est dedans) : direction et vie scolaire (outils_campus).
   app.get(
     "/api/pilotage/reunions",
     exigerDroit("outils_campus"),
@@ -302,19 +349,20 @@ export function enregistrerReunions(app: Express) {
     }),
   );
 
+  // Ouvrir, fermer, changer le lien : la direction seule (réglage de tout le groupe, comme l'ouverture automatique).
   app.post(
     "/api/pilotage/reunions/:id/etat",
-    exigerDroit("outils_campus"),
+    exigerRole("admin"),
     route(async (req, res) => {
       const u = moi(req);
       const { ouverte } = valider(z.object({ ouverte: z.boolean() }), req.body);
       const id = String(req.params.id);
       if (ouverte) {
-        const c = await changer(id, { ouverte: true }, u.id, "fermee");
+        const c = await changer(id, { ouverte: true, derniere: "ouverte" }, u.id, "fermee");
         if (c) await db.insert(journal).values({ utilisateurId: u.id, action: "reunion_ouverte", details: { reunion: id, salle: c.apres.nom } });
       } else {
         // Fermer : plus aucun jeton (état en base), salle Daily suivante (numéro), présents sortis de l'ancienne.
-        const c = await changer(id, { ouverte: false, serieSuivante: true }, u.id, "ouverte");
+        const c = await changer(id, { ouverte: false, serieSuivante: true, derniere: "fermee" }, u.id, "ouverte");
         if (c) await viderSalle(salleDailyDe(c.avant), u, "reunion_fermee", { reunion: id, salle: c.apres.nom });
       }
       res.json(await reponseEquipe(u));
@@ -323,11 +371,11 @@ export function enregistrerReunions(app: Express) {
 
   app.post(
     "/api/pilotage/reunions/:id/nouveau-lien",
-    exigerDroit("outils_campus"),
+    exigerRole("admin"),
     route(async (req, res) => {
       const u = moi(req);
       const id = String(req.params.id);
-      const c = await changer(id, { jeton: nouveauJeton(), serieSuivante: true }, u.id);
+      const c = await changer(id, { jeton: nouveauJeton(), serieSuivante: true, derniere: "lien" }, u.id);
       if (!c) throw new ErreurHttp(404, t("serveur.introuvable"));
       await viderSalle(salleDailyDe(c.avant), u, "reunion_nouveau_lien", { reunion: id, salle: c.apres.nom });
       res.json(await reponseEquipe(u));
@@ -343,7 +391,7 @@ export function enregistrerReunions(app: Express) {
       await assurerPrincipale();
       if ((await lireReunions()).length >= REUNIONS_MAX) throw new ErreurHttp(409, t("serveur.max", { v: { max: REUNIONS_MAX } }));
       const id = crypto.randomBytes(4).toString("hex");
-      const valeur: Valeur = { nom, principale: false, ouverte: true, jeton: nouveauJeton(), serie: 0, creeLe: new Date().toISOString() };
+      const valeur: Valeur = { nom, principale: false, ouverte: true, jeton: nouveauJeton(), serie: 0, creeLe: new Date().toISOString(), derniere: "creee" };
       await db.insert(contenusSite).values({ cle: cleDe(id), valeur, majParId: u.id });
       await db.insert(journal).values({ utilisateurId: u.id, action: "reunion_creee", details: { reunion: id, salle: nom } });
       res.status(201).json(await reponseEquipe(u));
@@ -370,7 +418,7 @@ export function enregistrerReunions(app: Express) {
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("X-Robots-Tag", "noindex");
       if (!lectures.compter(adresse(req))) throw trop();
-      const r = await reunionDuJeton(req);
+      const r = await reunionDuJeton(req, false);
       // Fermée : rien d'autre (ni le nom de la réunion, ni qui est dedans).
       if (!r.ouverte) return res.json({ etat: "fermee" } satisfies ReunionPubliqueDto);
       const u = req.utilisateur;
@@ -383,39 +431,67 @@ export function enregistrerReunions(app: Express) {
     route(async (req, res) => {
       res.setHeader("Cache-Control", "no-store");
       const ip = adresse(req);
-      if (!entreesParAdresse.compter(ip)) throw trop();
-      const r = await reunionDuJeton(req);
-      if (!r.ouverte) throw new ErreurHttp(409, t("serveur.fermee"), { code: "reunion_fermee" });
-      if (!entreesParSalle.compter(r.id)) throw trop();
-      if (!visio.dailyDisponible()) throw new ErreurHttp(503, t("serveur.sansDaily"), { code: "daily_absent" });
       const u = req.utilisateur;
       const membre = personnel(u);
+      if (!entreesParPersonne.compter(membre ? `compte:${u.id}` : `adresse:${ip}`)) throw trop();
+      let r = await reunionDuJeton(req, true);
+      if (!r.ouverte) throw fermee();
+      if (!visio.dailyDisponible()) throw new ErreurHttp(503, t("serveur.sansDaily"), { code: "daily_absent" });
       let nomAffiche: string;
       if (membre) nomAffiche = `${u.prenom} ${u.nom}`.trim();
       else nomAffiche = `${valider(z.object({ nom: NOM }), req.body ?? {}).nom} · invité`;
-      // Qui gère la réunion (direction, équipe des écrans et de la visio) en est propriétaire dans la visio :
-      // il coupe un micro ou sort quelqu'un. Les autres : micro, caméra et partage d'écran, comme tout le monde.
-      const proprietaire = membre && peut(u, "outils_campus");
-      const salle = await visio.obtenirSalleReunion(salleDailyDe(r));
+      // Trop d'invités entrés par ce lien ce quart d'heure : refus, noté au journal (le lien a sans doute trop circulé).
+      if (!membre && entreesParLien.depasse(cleLien(r))) {
+        await noterLimite(r).catch((e) => console.warn(`[reunion] journal de la limite : ${(e as Error).message}`));
+        throw trop();
+      }
+      // La direction, qui règle la réunion, en est propriétaire dans la visio : elle coupe un micro ou sort quelqu'un.
+      // Les autres (vie scolaire, formateurs, invités) : micro, caméra et partage d'écran, comme tout le monde.
+      const proprietaire = membre && u.role === "admin";
       // Un identifiant négatif pour un invité : jamais confondu avec un compte.
       const utilisateurId = membre ? u.id : -crypto.randomInt(1, 2_000_000_000);
-      const jeton = await visio.jetonDaily({
-        salle: salle.nom,
-        nomAffiche,
-        utilisateurId,
-        profil: proprietaire ? "formateur" : "etudiant",
-        exp: Math.floor(Date.now() / 1000) + VALIDITE_JETON_S,
-        ejecterApres: SORTIE_AUTO_S,
-        // Jamais d'enregistrement : ni lancé, ni permis au propriétaire.
-        enregistrementPermis: false,
-        envoi: ["video", "audio"],
-        partageEcran: true,
-        // Caméra ouverte, micro coupé en entrant (on l'ouvre pour parler).
-        silencieux: true,
-        cameraAuDepart: true,
-      });
+      let acces: { salle: { nom: string; url: string }; jeton: string } | null = null;
+      for (let essai = 0; !acces; essai++) {
+        let salle: { nom: string; url: string };
+        let jeton: string;
+        try {
+          salle = await visio.obtenirSalleReunion(salleDailyDe(r));
+          jeton = await visio.jetonDaily({
+            salle: salle.nom,
+            nomAffiche,
+            utilisateurId,
+            profil: proprietaire ? "formateur" : "etudiant",
+            exp: Math.floor(Date.now() / 1000) + VALIDITE_JETON_S,
+            ejecterApres: SORTIE_AUTO_S,
+            // Jamais d'enregistrement : ni lancé, ni permis au propriétaire.
+            enregistrementPermis: false,
+            envoi: ["video", "audio"],
+            partageEcran: true,
+            // Caméra ouverte, micro coupé en entrant (on l'ouvre pour parler).
+            silencieux: true,
+            cameraAuDepart: true,
+          });
+        } catch (e) {
+          throw enMotsDeReunion(e);
+        }
+        // Daily a pris du temps : la réunion a pu être fermée, ou son lien changé, pendant ce temps. On relit la salle
+        // AVANT de remettre le jeton ; si elle a changé, ce jeton n'est jamais remis et la salle Daily de l'ancien numéro
+        // (que cette entrée a pu créer à l'instant) est vidée et effacée.
+        // Salle retirée entre-temps : null (lien mort) ; toute autre erreur (base) remonte telle quelle.
+        const maintenant = await reunionParId(r.id).catch((e) => (e instanceof ErreurHttp && e.statut === 404 ? null : Promise.reject(e)));
+        if (maintenant && maintenant.ouverte && maintenant.jeton === r.jeton && maintenant.serie === r.serie) {
+          acces = { salle, jeton };
+          break;
+        }
+        void visio.fermerSalleReunion(salle.nom).catch(() => undefined);
+        if (!maintenant || maintenant.jeton !== r.jeton) throw lienMort();
+        if (!maintenant.ouverte || essai >= 1) throw fermee();
+        // Fermée puis rouverte entre-temps (même lien, numéro suivant) : on recommence une fois, dans la nouvelle salle.
+        r = maintenant;
+      }
+      if (!membre) entreesParLien.compter(cleLien(r));
       await noterEntree(r, nomAffiche, membre ? u.id : null, ip);
-      res.json({ url: salle.url, jeton, nomAffiche, profil: proprietaire ? "formateur" : "etudiant" } satisfies AccesDaily);
+      res.json({ url: acces.salle.url, jeton: acces.jeton, nomAffiche, profil: proprietaire ? "formateur" : "etudiant" } satisfies AccesDaily);
     }),
   );
 }

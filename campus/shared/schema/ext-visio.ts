@@ -231,6 +231,8 @@ export type UsageVisioDto = {
   minutesAutresSalles: number;
   /** Minutes des salles de réunion de l'administration (non comptées ci-dessus : ce ne sont pas des cours). */
   minutesReunions: number;
+  /** Leur part du coût (même prix, minutes offertes du compte déduites au prorata), à la charge de l'école comme les cours. */
+  coutReunions: { usd: number; fcfa: number; minutesFacturables: number };
   lu: string;
 };
 

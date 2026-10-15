@@ -5,7 +5,8 @@ export { EmetteurRadio } from "./EmetteurRadio";
 export { LecteurRadio } from "./LecteurRadio";
 export { TestMicroCamera } from "./TestMicroCamera";
 // Daily : cadre commun (classe, essai, répétition), outils du Studio, préparation du formateur.
-export { CadreDaily, type ParticipantCadre, type RoleCadre } from "./CadreDaily";
+export { CadreDaily, type ParticipantCadre, type RoleCadre, type TextesCadre } from "./CadreDaily";
+export type { ProblemeVisio } from "./daily";
 export { OutilsStudio } from "./OutilsStudio";
 export { CartePretClasse } from "./CartePretClasse";
 export { ChoixFuseau, ConfirmationFuseau } from "./Fuseau";

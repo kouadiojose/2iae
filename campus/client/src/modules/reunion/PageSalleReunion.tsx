@@ -3,7 +3,8 @@
 // quand il le faut (personne n'entre plus, les présents sortent) et la rouvre (le même lien remarche) ; « Changer le
 // lien » donne un nouveau lien si l'ancien a trop circulé. La direction ajoute d'autres salles (« Conseil
 // pédagogique »). « Entrer dans la réunion » ouvre la page du lien : on y entre sous son nom. Serveur :
-// server/routes/reunions.ts ; droits : direction et équipe avec le droit des écrans et de la visio (outils_campus).
+// server/routes/reunions.ts ; droits : la page se voit avec le droit des écrans et de la visio (outils_campus :
+// direction, vie scolaire) ; l'interrupteur, « Changer le lien », l'ajout et le retrait sont à la direction seule.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, DoorOpen, Handshake, MessageCircle, Plus, RefreshCw, Trash2, Users } from "lucide-react";
@@ -96,13 +97,13 @@ function CarteReunion({ r, peutGerer }: { r: ReunionDto; peutGerer: boolean }) {
     else fermer();
   };
 
-  const maj = r.majLe
-    ? tx(r.majPar ? "maj" : "maj.sansNom", { v: { action: tx(r.ouverte ? "maj.ouverte" : "maj.fermee"), nom: r.majPar ?? "", quand: relatif(r.majLe) } })
-    : null;
+  // Le dernier geste tel qu'il a eu lieu : « Lien changé par … », « Fermée par … », « Ajoutée par … ».
+  const action = r.majAction ?? (r.ouverte ? "ouverte" : "fermee");
+  const maj = r.majLe ? tx(r.majPar ? "maj" : "maj.sansNom", { v: { action: tx(`maj.${action}`), nom: r.majPar ?? "", quand: relatif(r.majLe) } }) : null;
 
   return (
     <Carte className={cn("flex flex-col gap-5", !r.ouverte && "bg-creme")} data-reunion={r.id}>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl", r.ouverte ? "bg-orange text-encre" : "bg-ligne text-texte-doux")}>
             <Handshake className="h-6 w-6" aria-hidden />
@@ -115,14 +116,23 @@ function CarteReunion({ r, peutGerer }: { r: ReunionDto; peutGerer: boolean }) {
             </div>
           </div>
         </div>
-        {/* Toute l'étiquette (48 px de haut au moins) actionne l'interrupteur : une zone facile à toucher. */}
-        <label className={cn("-my-2 flex min-h-[48px] shrink-0 cursor-pointer items-center gap-2 pl-2", envoi && "pointer-events-none opacity-60")} data-zone-interrupteur>
-          <span className="hidden text-[14px] font-bold sm:inline">{tx("interrupteur")}</span>
-          <Interrupteur actif={r.ouverte} onChange={basculer} libelle={tx("interrupteur")} />
-        </label>
+        {/* Toute l'étiquette (48 px de haut au moins) actionne l'interrupteur : une zone facile à toucher. Son texte se
+            lit à toutes les largeurs : sur téléphone, sous le titre, sur toute la largeur. La direction seule. */}
+        {peutGerer && (
+          <label
+            className={cn(
+              "flex min-h-[48px] shrink-0 cursor-pointer items-center justify-between gap-3 rounded-xl border border-ligne px-3 sm:-my-2 sm:justify-start sm:border-0 sm:px-0 sm:pl-2",
+              envoi && "pointer-events-none opacity-60",
+            )}
+            data-zone-interrupteur
+          >
+            <span className="text-[15px] font-bold sm:text-[14px]">{tx("interrupteur")}</span>
+            <Interrupteur actif={r.ouverte} onChange={basculer} libelle={tx("interrupteur")} />
+          </label>
+        )}
       </div>
 
-      <p className="text-[15px] leading-snug text-texte-doux">{tx(r.ouverte ? "etat.ouverte.texte" : "etat.fermee.texte")}</p>
+      <p className="text-[15px] leading-snug text-texte-doux">{tx(r.ouverte ? "etat.ouverte.texte" : peutGerer ? "etat.fermee.texte" : "etat.fermee.texte.equipe")}</p>
 
       {confirmer === "fermer" && (
         <Confirmer
@@ -166,7 +176,7 @@ function CarteReunion({ r, peutGerer }: { r: ReunionDto; peutGerer: boolean }) {
             </a>
           ) : (
             <span className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ligne px-5 py-3 text-[15px] font-bold text-texte-doux" aria-disabled="true">
-              <DoorOpen className="h-4 w-4" /> {tx("entrer.ferme")}
+              <DoorOpen className="h-4 w-4" /> {tx(peutGerer ? "entrer.ferme" : "entrer.ferme.equipe")}
             </span>
           )}
         </div>
@@ -192,16 +202,18 @@ function CarteReunion({ r, peutGerer }: { r: ReunionDto; peutGerer: boolean }) {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-t border-ligne-douce pt-4">
-        <Bouton variante="fantome" taille="sm" className="min-h-[44px]" icone={<RefreshCw className="h-4 w-4" />} onClick={() => setConfirmer("changer")} disabled={envoi}>
-          {tx("changer")}
-        </Bouton>
-        {peutGerer && !r.principale && (
-          <Bouton variante="fantome" taille="sm" className="min-h-[44px]" icone={<Trash2 className="h-4 w-4" />} onClick={() => setConfirmer("supprimer")} disabled={envoi}>
-            {tx("supprimer")}
+      {peutGerer && (
+        <div className="flex flex-wrap gap-2 border-t border-ligne-douce pt-4">
+          <Bouton variante="fantome" taille="sm" className="min-h-[44px]" icone={<RefreshCw className="h-4 w-4" />} onClick={() => setConfirmer("changer")} disabled={envoi}>
+            {tx("changer")}
           </Bouton>
-        )}
-      </div>
+          {!r.principale && (
+            <Bouton variante="fantome" taille="sm" className="min-h-[44px]" icone={<Trash2 className="h-4 w-4" />} onClick={() => setConfirmer("supprimer")} disabled={envoi}>
+              {tx("supprimer")}
+            </Bouton>
+          )}
+        </div>
+      )}
 
       {confirmer === "changer" && (
         <Confirmer

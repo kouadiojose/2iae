@@ -6,8 +6,12 @@
 // devient l'écran de la salle pour CE cours), « Les cours », « Les résumés de cours », « Les examens », « Les notes ».
 // Aucune dépendance : commun au serveur et au client.
 
-/** Repère d'un carré : en direct, classe ouverte avant l'heure, prévu aujourd'hui, ou rien. */
-export type RepereCarre = "direct" | "ouvert" | "aujourdhui" | null;
+/**
+ * Repère d'un carré : en direct, classe ouverte avant l'heure (« ouvert »), classe ouverte qui attend encore son
+ * formateur après l'heure (« attente » : « Salle ouverte · le formateur arrive », comme le bandeau du live), prévu
+ * aujourd'hui, ou rien.
+ */
+export type RepereCarre = "direct" | "ouvert" | "attente" | "aujourdhui" | null;
 
 /** Un carré de l'accueil du campus. */
 export type CarreCampusDto = {
@@ -114,6 +118,11 @@ export type LiveCampusDto = {
   motif: string | null;
   /** Prévue, mais une séance précédente du même cours est encore en direct : la salle s'ouvre quand elle se ferme. */
   apresPrecedente: boolean;
+  /**
+   * « 8h30 » : une séance plus tôt du même cours, le même jour, est encore prévue (séance choisie par ?seance=) : elle
+   * passe d'abord, celle-ci ne s'ouvre pas (jamais deux séances du même cours en direct). Null sinon.
+   */
+  passeDabord: string | null;
   /** Postes d'écran de ce campus sur cette classe en ce moment. */
   ecransDuCampus: number;
   apercu: boolean;

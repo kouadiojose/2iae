@@ -32,6 +32,7 @@ import { relancerSons } from "@/modules/visio/composants";
 import { CadreDaily } from "@/modules/visio";
 import { EcranSeance } from "@/modules/live/PageSalle";
 import { useEcranAllume } from "@/modules/live/outils";
+import { EcranDuCampus } from "@/lib/ecran-campus";
 import { t as textesCampus } from "@shared/textes/campus";
 import { classeOuverteEnAvance } from "@shared/ouverture";
 import { deCampus, type FermetureCampusDto, type LiveCampusDto } from "@shared/espace-campus";
@@ -165,7 +166,9 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
       titre={seance?.coursTitre || d.cours.titre}
       onAjouter={() => setFeuille("ajouter")}
       onFermer={() => {
-        if (d.etat === "ouverte" || d.etat === "a_venir") {
+        // Classe ouverte : la feuille « Fermer » (fermer la salle, terminer le cours). Pas encore ouverte, ou pas de
+        // cours : aucune salle à fermer, l'ordinateur revient simplement à la page du cours (sans « Salle fermée »).
+        if (d.etat === "ouverte") {
           void refetch();
           setFeuille("fermer");
         } else sortir(false);
@@ -237,12 +240,14 @@ export default function PageLiveCampus({ coursId }: { coursId: string }) {
                 <Play className="h-10 w-10 shrink-0 sm:h-12 sm:w-12" aria-hidden />
                 <span className="whitespace-nowrap">{ouverture ? tx("live.ouverture") : tx("live.ouvrir")}</span>
               </button>
+              {/* Une seule fois l'heure du cours : « Ouvrez la salle » suffit (l'ouverture automatique n'est pas redite). */}
               <p className="text-[24px] font-bold">{tx("live.ouvrir.texte", { v: { heure: data.heure ?? "" } })}</p>
-              {data.ouvertureAutoA && <p className="text-[20px] text-nuit-doux">{tx("live.attendre.auto", { v: { heure: data.heure ?? "", ouverture: data.ouvertureAutoA } })}</p>}
             </>
           ) : (
             <p className="rounded-[24px] bg-nuit-carte px-6 py-5 text-[26px] font-black leading-snug sm:text-[32px]" role="status">
-              {data.apresPrecedente && !data.ouvertureAutoA
+              {data.passeDabord
+                ? tx("live.passeDabord", { v: { heure: data.passeDabord } })
+                : data.apresPrecedente && !data.ouvertureAutoA
                 ? tx("live.apresPrecedente", { v: { heure: data.heure ?? "" } })
                 : data.ouvertureAutoA
                   ? tx("live.attendre.auto", { v: { heure: data.heure ?? "", ouverture: data.ouvertureAutoA } })
@@ -368,7 +373,7 @@ function FeuilleFermer({
   if (fermeture?.formateurPresent) details.push(tx("terminer.formateurLa"));
   if (fermeture?.terminer === "fin_passee" && fermeture.autresSalles > 0) details.push(tx("terminer.autresSalles"));
   return (
-    <FeuilleCampus ouverte={ouverte} titre={tx("fermer.titre")} onFermer={onRester}>
+    <FeuilleCampus ouverte={ouverte} titre={tx("fermer.titre")} onFermer={onRester} libelleFermer={tx("feuille.retour")}>
       <BlocNuit testId="fermer-salle" icone={<DoorClosed className="h-8 w-8" strokeWidth={2.25} />} titre={tx("fermer.salle")} sousTitre={tx("fermer.salle.texte")} onClick={() => setConfirmer("salle")} />
       {fermeture?.terminer ? (
         <BlocNuit
@@ -439,6 +444,7 @@ function SalleEssai({ titre, motif, prochaine, retour, onRetour }: { titre: stri
   const tx = useTextes(textesCampus);
   const [essai, setEssai] = useState(false);
   const [indisponible, setIndisponible] = useState(false);
+  const refEssai = useRef<HTMLDivElement>(null);
   const obtenirAcces = async () => {
     try {
       return await post<AccesDaily>("/api/visio/essai/rejoindre");
@@ -447,34 +453,63 @@ function SalleEssai({ titre, motif, prochaine, retour, onRetour }: { titre: stri
       throw e;
     }
   };
+  // L'essai lancé : la ligne « Salle d'essai… · Fermer la salle d'essai » monte en haut de l'écran, et le cadre tient
+  // dessous en entier (1024×600 compris) : la personne voit son image et entend le son.
+  useEffect(() => {
+    if (essai) refEssai.current?.scrollIntoView({ block: "start" });
+  }, [essai]);
+  const lienRetour = (
+    <Link
+      href={retour}
+      onClick={onRetour}
+      className="flex min-h-[80px] w-full max-w-xl items-center justify-center gap-3 rounded-[24px] border-2 border-nuit-bord bg-nuit-carte px-6 text-[26px] font-black text-white no-underline hover:border-orange/60 hover:text-white"
+    >
+      <ArrowLeft className="h-8 w-8" aria-hidden />
+      {tx("live.revenir")}
+    </Link>
+  );
+  if (essai && !indisponible) {
+    return (
+      <main className="mx-auto flex w-full max-w-5xl flex-col items-center gap-3 px-4 py-3 text-center sm:py-4" data-salle-essai>
+        <div ref={refEssai} className="flex w-full scroll-mt-0 flex-wrap items-center gap-3">
+          <p className="min-w-[16rem] flex-1 rounded-[20px] bg-nuit-carte px-5 py-3 text-left text-[20px] font-bold leading-snug text-orange-peche" data-essai-bandeau>
+            {tx("live.essai.bandeau")}
+          </p>
+          <button
+            type="button"
+            onClick={() => setEssai(false)}
+            className="min-h-[64px] shrink-0 rounded-[20px] border-[3px] border-white px-6 text-[22px] font-black text-white hover:bg-white hover:text-encre max-sm:w-full"
+            data-quitter-essai
+          >
+            {tx("live.essai.quitter")}
+          </button>
+        </div>
+        <div className="w-full overflow-hidden rounded-[28px] border-2 border-nuit-bord bg-black" style={{ height: "max(240px, min(calc(100dvh - 190px), 640px))" }} data-cadre-essai>
+          <EcranDuCampus.Provider value>
+            <CadreDaily obtenirAcces={obtenirAcces} role="salle" tu={false} cameraAuDepart microAuDepart />
+          </EcranDuCampus.Provider>
+        </div>
+        {prochaine && <p className="text-[22px] font-bold text-nuit-doux">{tx("live.prochain", { v: { jour: prochaine.jour, heure: prochaine.heure } })}</p>}
+        {lienRetour}
+      </main>
+    );
+  }
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col items-center gap-7 px-4 py-12 text-center sm:py-16" data-salle-essai>
-      <p className="text-[44px] font-black leading-[1.02] sm:text-[72px]">{titre}</p>
+    <main className="mx-auto flex w-full max-w-4xl flex-col items-center gap-7 px-4 py-12 text-center sm:py-16 [@media(max-height:700px)]:!gap-5 [@media(max-height:700px)]:!py-6" data-salle-essai>
+      <p className="text-[44px] font-black leading-[1.02] sm:text-[72px] [@media(max-height:700px)]:!text-[48px]">{titre}</p>
       {motif && <p className="rounded-[24px] bg-nuit-carte px-6 py-4 text-[26px] font-semibold">{motif}</p>}
       <p className="text-[26px] font-bold text-nuit-doux">{tx("live.essai.texte")}</p>
       {indisponible ? (
         <p className="rounded-[22px] bg-nuit-carte px-6 py-5 text-[24px] font-bold" role="status" data-essai-indisponible>
           {tx("live.essai.indisponible")}
         </p>
-      ) : essai ? (
-        <div className="flex w-full flex-col gap-4">
-          <p className="rounded-[20px] bg-nuit-carte px-5 py-3 text-[20px] font-bold text-orange-peche" data-essai-bandeau>
-            {tx("live.essai.bandeau")}
-          </p>
-          <div className="w-full overflow-hidden rounded-[28px] border-2 border-nuit-bord bg-black" style={{ height: "min(62dvh, 640px)" }} data-cadre-essai>
-            <CadreDaily obtenirAcces={obtenirAcces} role="salle" tu={false} cameraAuDepart microAuDepart />
-          </div>
-          <button type="button" onClick={() => setEssai(false)} className="min-h-[72px] rounded-[22px] border-[3px] border-white px-6 text-[24px] font-black text-white hover:bg-white hover:text-encre" data-quitter-essai>
-            {tx("live.essai.quitter")}
-          </button>
-        </div>
       ) : (
         <button
           type="button"
           onClick={() => setEssai(true)}
           className="flex min-h-[120px] w-full max-w-2xl items-center justify-center gap-4 rounded-[26px] px-6 text-[30px] font-black text-encre shadow-carte transition-transform duration-150 hover:-translate-y-0.5 active:scale-[.985] sm:text-[36px]"
           style={{ background: "linear-gradient(135deg, #E4793A 0%, #F0A066 100%)" }}
-              data-degrade="#E4793A,#F0A066"
+          data-degrade="#E4793A,#F0A066"
           data-tester-son
         >
           <Volume2 className="h-12 w-12 shrink-0" aria-hidden />
@@ -482,14 +517,7 @@ function SalleEssai({ titre, motif, prochaine, retour, onRetour }: { titre: stri
         </button>
       )}
       {prochaine && <p className="text-[26px] font-bold text-nuit-doux">{tx("live.prochain", { v: { jour: prochaine.jour, heure: prochaine.heure } })}</p>}
-      <Link
-        href={retour}
-        onClick={onRetour}
-        className="flex min-h-[80px] w-full max-w-xl items-center justify-center gap-3 rounded-[24px] border-2 border-nuit-bord bg-nuit-carte px-6 text-[26px] font-black text-white no-underline hover:border-orange/60 hover:text-white"
-      >
-        <ArrowLeft className="h-8 w-8" aria-hidden />
-        {tx("live.revenir")}
-      </Link>
+      {lienRetour}
     </main>
   );
 }
@@ -520,8 +548,10 @@ function BandeauCampus({
   const maintenant = useMaintenant(1000);
   const ecrans = etat?.campus.find((c) => c.siteId === d.campus.id)?.ecrans ?? d.ecransDuCampus;
   const enDirect = etat?.statut === "en_direct";
-  const enAttente =
-    enDirect && seance && (etat.attenteAnimateur || classeOuverteEnAvance({ statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }, maintenant));
+  const avantLHeure = Boolean(enDirect && seance && classeOuverteEnAvance({ statut: etat.statut, debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }, maintenant));
+  // Avant l'heure : « Salle ouverte · début à 8h30 » ; après, sans formateur : « Salle ouverte · le formateur arrive »
+  // (même repère que le carré et la page du cours).
+  const enAttente = avantLHeure || Boolean(enDirect && etat.attenteAnimateur);
   const pilule = "flex min-h-[56px] shrink-0 items-center gap-2 rounded-full px-5 text-[18px] font-bold transition-colors duration-150";
   // Le QR de présence (une minute au début, à +15 et à +45 min) commence sous le bandeau : « Ajouter » et « Fermer »
   // restent à portée, sans rien recouvrir d'autre. Le bandeau publie son bord bas visible (0 une fois défilé).
@@ -565,7 +595,7 @@ function BandeauCampus({
             {enAttente ? (
               <span className="inline-flex items-center gap-2.5 rounded-full bg-nuit-carte px-4 py-2 text-[18px] font-bold text-[#7BD3A6]">
                 <PointVivant fixe />
-                {tx("live.ouvert", { v: { heure: d.heure ?? "" } })}
+                {avantLHeure ? tx("live.ouvert", { v: { heure: d.heure ?? "" } }) : tx("live.attente")}
               </span>
             ) : (
               <BadgeDirect className="px-4 py-2 text-sm" />

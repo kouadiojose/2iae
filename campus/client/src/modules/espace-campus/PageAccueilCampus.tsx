@@ -10,7 +10,7 @@ import { Carre, EnTeteCampus, ErreurCampus, PageCampus, Patience, lienCampus, us
 
 function Grille({ cours }: { cours: CarreCampusDto[] }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 [@media(max-height:800px)]:!gap-4">
       {cours.map((c) => (
         <Carre key={c.coursId} carre={c} href={lienCampus(`/mon-campus/cours/${c.coursId}`)} />
       ))}
@@ -26,7 +26,7 @@ export default function PageAccueilCampus() {
   return (
     <PageCampus>
       <EnTeteCampus apercu={data?.apercu} campus={data?.campus.nomCourt} accueil={data ? { libelle: data.libelle, consigne: data.cours.length > 0 } : undefined} />
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pt-8 sm:px-8 sm:pt-10">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pt-8 sm:px-8 sm:pt-10 [@media(max-height:800px)]:!gap-5 [@media(max-height:800px)]:!pt-4">
         {isLoading ? (
           <Patience />
         ) : error || !data ? (
@@ -39,14 +39,14 @@ export default function PageAccueilCampus() {
         ) : (
           <>
             {aujourdhui.length > 0 && (
-              <section className="flex flex-col gap-5" data-section="aujourdhui">
-                {autres.length > 0 && <h2 className="text-[32px] text-encre">{tx("accueil.aujourdhui")}</h2>}
+              <section className="flex flex-col gap-5 [@media(max-height:800px)]:gap-3" data-section="aujourdhui">
+                {autres.length > 0 && <h2 className="text-[32px] leading-tight text-encre [@media(max-height:800px)]:text-[28px]">{tx("accueil.aujourdhui")}</h2>}
                 <Grille cours={aujourdhui} />
               </section>
             )}
             {autres.length > 0 && (
-              <section className="flex flex-col gap-5" data-section="autres">
-                {aujourdhui.length > 0 && <h2 className="text-[32px] text-encre">{tx("accueil.autres")}</h2>}
+              <section className="flex flex-col gap-5 [@media(max-height:800px)]:gap-3" data-section="autres">
+                {aujourdhui.length > 0 && <h2 className="text-[32px] leading-tight text-encre [@media(max-height:800px)]:text-[28px]">{tx("accueil.autres")}</h2>}
                 <Grille cours={autres} />
               </section>
             )}

@@ -355,6 +355,7 @@ const FR = {
   "ajouts.video.envoi": "Envoi de la vidéo… {n} %",
   "ajouts.video.ok": "Vidéo ajoutée.",
   "ajouts.video.autreLien": "Ce lien n'est pas une vidéo YouTube : il est rangé avec les documents (il ne se projette pas).",
+  "ajouts.video.lienOk": "Lien ajouté aux documents.",
   "ajouts.video.projeter": "La projeter maintenant dans les salles",
   "ajouts.video.projetee": "Vidéo projetée dans les salles : pilotez-la dans « Vidéos et documents ».",
   "ajouts.video.autre": "Ajouter une autre vidéo",

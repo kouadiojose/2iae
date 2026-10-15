@@ -66,7 +66,7 @@ export function BoutonRetour({ href, libelle }: { href: string; libelle: string 
   return (
     <Link
       href={href}
-      className="inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[22px] font-extrabold text-encre no-underline shadow-carte transition-[border-color,box-shadow] duration-150 hover:border-orange/60 hover:text-encre hover:shadow-survol focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 sm:w-auto sm:justify-start"
+      className="inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[22px] font-extrabold text-encre no-underline shadow-carte transition-[border-color,box-shadow] duration-150 hover:border-orange/60 hover:text-encre hover:shadow-survol focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 sm:w-auto sm:justify-start [@media(max-height:700px)]:min-h-[56px]"
       data-retour
     >
       <ArrowLeft className="h-7 w-7 shrink-0 text-orange-profond" strokeWidth={2.25} aria-hidden />
@@ -75,7 +75,10 @@ export function BoutonRetour({ href, libelle }: { href: string; libelle: string 
   );
 }
 
-/** Pastille du repère d'un carré : « En direct maintenant » (point vivant), « Salle ouverte · début à 8h30 », « Aujourd'hui à 8h30 ». */
+/**
+ * Pastille du repère d'un carré : « En direct maintenant » (point vivant), « Salle ouverte · début à 8h30 », « Salle
+ * ouverte · le formateur arrive » (après l'heure, la classe attend son formateur), « Aujourd'hui à 8h30 ».
+ */
 export function PastilleRepere({ repere, heure, grande = false, sansIcone = false }: { repere: RepereCarre; heure: string | null; grande?: boolean; sansIcone?: boolean }) {
   const tx = useTextes(textesCampus);
   if (!repere) return null;
@@ -85,10 +88,10 @@ export function PastilleRepere({ repere, heure, grande = false, sansIcone = fals
         {tx("repere.direct")}
       </Pastille>
     );
-  if (repere === "ouvert")
+  if (repere === "ouvert" || repere === "attente")
     return (
       <Pastille ton="ouvert" grande={grande}>
-        {tx("repere.ouvert", { v: { heure: heure ?? "" } })}
+        {repere === "attente" ? tx("repere.attente") : tx("repere.ouvert", { v: { heure: heure ?? "" } })}
       </Pastille>
     );
   return (
@@ -100,7 +103,7 @@ export function PastilleRepere({ repere, heure, grande = false, sansIcone = fals
 
 /** Icône d'un carré : la salle (en direct ou ouverte), le calendrier (aujourd'hui), le livre (les autres cours). */
 export function IconeRepere({ repere, className = "h-7 w-7" }: { repere: RepereCarre; className?: string }) {
-  const Icone = repere === "direct" || repere === "ouvert" ? MonitorPlay : repere === "aujourdhui" ? CalendarClock : BookOpen;
+  const Icone = repere === "direct" || repere === "ouvert" || repere === "attente" ? MonitorPlay : repere === "aujourdhui" ? CalendarClock : BookOpen;
   return <Icone className={className} strokeWidth={2.25} />;
 }
 
@@ -154,7 +157,7 @@ export function Confirmation({
   if (!ouverte) return null;
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-[rgba(15,14,13,.78)] px-4 py-6" role="dialog" aria-modal="true" aria-label={titre} data-confirmation>
-      <div className={cn("flex w-full max-w-xl flex-col gap-5 rounded-[28px] p-6 shadow-survol sm:p-8", nuit ? "border-2 border-nuit-bord bg-nuit-panneau text-white" : "bg-white text-encre")}>
+      <div className={cn("flex w-full max-w-2xl flex-col gap-5 rounded-[28px] p-6 shadow-survol sm:p-8", nuit ? "border-2 border-nuit-bord bg-nuit-panneau text-white" : "bg-white text-encre")}>
         <p className="text-[32px] font-black leading-tight">{titre}</p>
         {texte && <p className={cn("text-[22px] leading-snug", nuit ? "text-nuit-doux" : "text-texte-doux")}>{texte}</p>}
         {details}
@@ -163,7 +166,7 @@ export function Confirmation({
             type="button"
             onClick={onOui}
             disabled={attente}
-            className={cn("min-h-[72px] flex-1 rounded-[20px] px-6 text-[24px] font-black disabled:opacity-70", danger ? "bg-[#C2410C] text-white" : "bg-orange text-encre")}
+            className={cn("min-h-[72px] flex-1 rounded-[20px] px-6 text-[24px] font-black leading-tight disabled:opacity-70 sm:flex-[2]", danger ? "bg-[#C2410C] text-white" : "bg-orange text-encre")}
             data-confirmer
           >
             {oui}
@@ -171,7 +174,7 @@ export function Confirmation({
           <button
             type="button"
             onClick={onNon}
-            className={cn("min-h-[72px] flex-1 rounded-[20px] border-[3px] px-6 text-[24px] font-black", nuit ? "border-white text-white" : "border-encre text-encre")}
+            className={cn("min-h-[72px] flex-1 rounded-[20px] border-[3px] px-6 text-[24px] font-black leading-tight", nuit ? "border-white text-white" : "border-encre text-encre")}
           >
             {non}
           </button>
@@ -213,7 +216,9 @@ export function BoutonDeconnexion({ apercu = false }: { apercu?: boolean }) {
 
 /**
  * En-tête de l'espace : bande crème pleine largeur, le logo à gauche, « Se déconnecter » à droite. Sur l'accueil
- * (`accueil`), la bande s'agrandit : « ESPACE DU CAMPUS », « Campus de Yamoussoukro », la date, la consigne.
+ * (`accueil`), la bande s'agrandit : « ESPACE DU CAMPUS », « Campus de Yamoussoukro », la date, la consigne. Sur un
+ * écran bas (hauteur de 800 px au plus : vieux ordinateurs de salle en 1024×600, portables en 1366×768), elle se resserre : sans l'étiquette,
+ * titre de 36 px, la date et la consigne sur une seule ligne, pour que les carrés des cours restent à l'écran.
  */
 export function EnTeteCampus({ apercu, campus, accueil }: { apercu?: boolean; campus?: string; accueil?: { libelle: string; consigne: boolean } }) {
   const tx = useTextes(textesCampus);
@@ -221,23 +226,30 @@ export function EnTeteCampus({ apercu, campus, accueil }: { apercu?: boolean; ca
     <>
       {apercu && campus && <BandeauApercu campus={campus} />}
       <header className="w-full border-b border-ligne bg-creme" data-entete-campus>
-        <div className={cn("mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-5 sm:px-8", accueil ? "pb-10" : "pb-5")}>
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-5 sm:px-8 [@media(max-height:800px)]:gap-2 [@media(max-height:800px)]:pt-3",
+            accueil ? "pb-10 [@media(max-height:800px)]:pb-4" : "pb-5 [@media(max-height:800px)]:pb-3",
+          )}
+        >
           <div className="flex items-center justify-between gap-4">
             {/* Le blanc du logo se fond dans la bande crème (multiply), sans cadre blanc autour. */}
-            <img src="/marque-2iae.png" alt="Groupe Écoles 2IAE" className="h-12 w-auto mix-blend-multiply sm:h-14" />
+            <img src="/marque-2iae.png" alt="Groupe Écoles 2IAE" className="h-12 w-auto mix-blend-multiply sm:h-14 [@media(max-height:800px)]:!h-10" />
             <BoutonDeconnexion apercu={apercu} />
           </div>
           {accueil && campus && (
-            <div className="flex flex-col gap-3">
-              <Etiquette>{tx("accueil.etiquette")}</Etiquette>
-              <h1 className="text-[44px] leading-[1.02] text-encre sm:text-[60px]">{tx("accueil.titre", { v: { deCampus: deCampus(campus) } })}</h1>
-              <p className="text-[22px] text-texte-doux">{accueil.libelle}</p>
-              {accueil.consigne && (
-                <p className="mt-1 inline-flex w-fit items-center gap-3 rounded-full bg-white px-5 py-3 text-[20px] font-bold text-encre shadow-carte">
-                  <Pointer className="h-6 w-6 shrink-0 text-orange" strokeWidth={2.25} aria-hidden />
-                  {tx("accueil.consigne")}
-                </p>
-              )}
+            <div className="flex flex-col gap-3 [@media(max-height:800px)]:gap-2">
+              <Etiquette className="[@media(max-height:800px)]:hidden">{tx("accueil.etiquette")}</Etiquette>
+              <h1 className="text-[44px] leading-[1.02] text-encre sm:text-[60px] [@media(max-height:800px)]:!text-[36px]">{tx("accueil.titre", { v: { deCampus: deCampus(campus) } })}</h1>
+              <div className="flex flex-col gap-3 [@media(max-height:800px)]:flex-row [@media(max-height:800px)]:flex-wrap [@media(max-height:800px)]:items-center [@media(max-height:800px)]:gap-x-5 [@media(max-height:800px)]:gap-y-2">
+                <p className="text-[22px] text-texte-doux">{accueil.libelle}</p>
+                {accueil.consigne && (
+                  <p className="mt-1 inline-flex w-fit items-center gap-3 rounded-full bg-white px-5 py-3 text-[20px] font-bold text-encre shadow-carte [@media(max-height:800px)]:mt-0 [@media(max-height:800px)]:py-2">
+                    <Pointer className="h-6 w-6 shrink-0 text-orange" strokeWidth={2.25} aria-hidden />
+                    {tx("accueil.consigne")}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -278,7 +290,25 @@ export function PageCampus({ children, className }: { children: ReactNode; class
  * Feuille plein écran de l'écran du live (« Ajouter », « Fermer ») : fond nuit presque opaque, sans flou ; contenu
  * centré qui défile (écran bas de 1024×600 compris) ; « Fermer ✕ » de 56 px ; Échap ferme.
  */
-export function FeuilleCampus({ ouverte, titre, onFermer, children, retour }: { ouverte: boolean; titre: string; onFermer: () => void; children: ReactNode; retour?: () => void }) {
+export function FeuilleCampus({
+  ouverte,
+  titre,
+  onFermer,
+  children,
+  retour,
+  libelleFermer,
+}: {
+  ouverte: boolean;
+  titre: string;
+  onFermer: () => void;
+  children: ReactNode;
+  retour?: () => void;
+  /**
+   * Libellé du bouton qui referme la feuille (« Fermer ✕ » par défaut). La feuille « Fermer » dit « ← Retour » : un
+   * « Fermer ✕ » qui ne ferme pas la salle y tromperait la personne (relecture du 15 octobre 2026).
+   */
+  libelleFermer?: string;
+}) {
   const tx = useTextes(textesCampus);
   useEffect(() => {
     if (!ouverte) return;
@@ -305,8 +335,17 @@ export function FeuilleCampus({ ouverte, titre, onFermer, children, retour }: { 
             className="flex min-h-[56px] shrink-0 items-center gap-2 rounded-full border-2 border-nuit-bord px-5 text-[20px] font-bold text-white hover:border-orange/60"
             data-fermer-feuille
           >
-            {tx("feuille.fermer")}
-            <X className="h-6 w-6" aria-hidden />
+            {libelleFermer ? (
+              <>
+                <ArrowLeft className="h-6 w-6" aria-hidden />
+                {libelleFermer}
+              </>
+            ) : (
+              <>
+                {tx("feuille.fermer")}
+                <X className="h-6 w-6" aria-hidden />
+              </>
+            )}
           </button>
         </div>
         {children}

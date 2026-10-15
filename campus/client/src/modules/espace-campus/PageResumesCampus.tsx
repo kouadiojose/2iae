@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, FileText } from "lucide-react";
 import { useTextes } from "@/lib/textes";
+import { CercleIcone } from "@/components/ui/gros-blocs";
 import { t as textesCampus } from "@shared/textes/campus";
 import type { CoursCompletARevise } from "@shared/engagement/revision";
 import type { CoursCampusDto } from "@shared/espace-campus";
@@ -30,21 +31,23 @@ export default function PageResumesCampus({ coursId }: { coursId: string }) {
         ) : error || !data ? (
           <ErreurCampus message={error instanceof Error ? error.message : undefined} onReessayer={() => void refetch()} />
         ) : data.length === 0 ? (
-          <p className="rounded-[24px] border-[3px] border-encre p-6 text-[24px] font-bold">{tx("resumes.vide")}</p>
+          <p className="rounded-[24px] border-2 border-ligne bg-creme p-6 text-[24px] font-bold shadow-carte">{tx("resumes.vide")}</p>
         ) : (
           <div className="flex flex-col gap-3">
             {data.map((r) => (
               <Link
                 key={r.seanceId}
                 href={lienCampus(`/mon-campus/cours/${id}/resumes/${r.seanceId}`)}
-                className="flex min-h-[80px] items-center gap-4 rounded-[20px] border-[3px] border-encre bg-white px-5 py-3 text-encre no-underline hover:bg-creme"
+                className="flex min-h-[80px] items-center gap-4 rounded-[22px] border-2 border-ligne bg-white px-5 py-3 text-encre no-underline shadow-carte transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-orange/60 hover:text-encre hover:shadow-survol active:scale-[.985] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50"
               >
-                <FileText className="h-8 w-8 shrink-0 text-orange-fonce" aria-hidden />
+                <CercleIcone taille={48} fond="#EAF1FE" couleur="#1D4ED8">
+                  <FileText className="h-6 w-6" strokeWidth={2.25} />
+                </CercleIcone>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-[22px] font-bold">{tx("resumes.ligne", { v: { date: jourEnLettres(r.debut) } })}</span>
                   <span className="break-words text-[18px] text-texte-doux">{r.titre}</span>
                 </span>
-                <ChevronRight className="h-7 w-7 shrink-0" aria-hidden />
+                <ChevronRight className="h-7 w-7 shrink-0 text-orange-profond" aria-hidden />
               </Link>
             ))}
           </div>

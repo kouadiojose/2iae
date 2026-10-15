@@ -12,10 +12,10 @@
 // veut, depuis le 15 octobre 2026 à 5 h : la classe finie est fermée d'abord, routes/espace-campus.ts) ; pour le
 // formateur, dans l'heure qui précède son début. La salle voit le bon cours (son compte à rebours, son code de
 // présence) et le formateur ouvre la bonne séance ; la classe finie se ferme aussi toute seule (fermerLesClassesVides).
-import { and, asc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { seances, type Seance } from "@shared/schema";
-import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
 import { heureSimple, type RepereCarre } from "@shared/espace-campus";
 
 const MINUTE = 60_000;
@@ -125,12 +125,17 @@ export async function seancesDuMoment(
   return carte;
 }
 
-/** Repère d'un carré (campus) : en direct (cours commencé), classe ouverte avant l'heure, prévu aujourd'hui, ou rien. */
+/**
+ * Repère d'un carré (campus) : en direct (cours commencé, animé), classe ouverte avant l'heure, classe ouverte qui attend
+ * encore son formateur après l'heure (même règle que le bandeau du live : jamais « En direct » sur le carré et « Salle
+ * ouverte » sur l'écran), prévu aujourd'hui, ou rien.
+ */
 export function repereDe(s: Seance | null, maintenant: number): { repere: RepereCarre; heure: string | null } {
   if (!s) return { repere: null, heure: null };
   const heure = heureSimple(s.debut);
   if (s.statut === "en_direct") {
     if (classeOuverteEnAvance(s, maintenant)) return { repere: "ouvert", heure };
+    if (enAttenteAnimateur(s)) return { repere: "attente", heure };
     return { repere: "direct", heure };
   }
   if (s.statut === "planifiee" && finPrevueMs(s) > maintenant && debutDuJour(s.debut.getTime()) === debutDuJour(maintenant)) return { repere: "aujourdhui", heure };
@@ -139,7 +144,7 @@ export function repereDe(s: Seance | null, maintenant: number): { repere: Repere
 
 /** Ordre des carrés : en direct, puis ouvert, puis aujourd'hui (par heure), puis les autres (par titre). */
 export function trierCarres<T extends { repere: RepereCarre; titre: string }>(liste: T[], heureDe: (c: T) => number): T[] {
-  const rang = (r: RepereCarre) => (r === "direct" ? 0 : r === "ouvert" ? 1 : r === "aujourdhui" ? 2 : 3);
+  const rang = (r: RepereCarre) => (r === "direct" ? 0 : r === "ouvert" || r === "attente" ? 1 : r === "aujourdhui" ? 2 : 3);
   return [...liste].sort((a, b) => rang(a.repere) - rang(b.repere) || (a.repere && b.repere ? heureDe(a) - heureDe(b) : 0) || a.titre.localeCompare(b.titre, "fr"));
 }
 
@@ -178,4 +183,29 @@ export async function refusAjoutCampus(s: Seance, maintenant: number): Promise<s
     .orderBy(asc(seances.debut), asc(seances.id))
     .limit(1);
   return prochaine && prochaine.debut.getTime() === s.debut.getTime() ? null : "Ajoutez au cours du jour ou au prochain.";
+}
+
+/**
+ * Séance plus tôt du même cours, le même jour d'Abidjan, encore prévue et pas finie (autre heure, pas un essai) : elle
+ * passe d'abord. Ouvrir la séance de 14 h à 6 h laisserait celle de 8 h 30 sans ouverture automatique, puis deux séances
+ * du même cours en direct au « Démarrer » du formateur (relecture du 15 octobre 2026). Null sinon.
+ */
+export async function seancePrevueAvant(s: Seance, maintenant: number): Promise<Seance | null> {
+  const [x] = await db
+    .select()
+    .from(seances)
+    .where(
+      and(
+        eq(seances.coursId, s.coursId),
+        ne(seances.id, s.id),
+        eq(seances.statut, "planifiee"),
+        gte(seances.debut, new Date(debutDuJour(s.debut.getTime()))),
+        lt(seances.debut, s.debut),
+        sansEssai,
+        sql`${seances.debut} + make_interval(mins => ${seances.dureeMinutes}) > ${new Date(maintenant).toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(asc(seances.debut), asc(seances.id))
+    .limit(1);
+  return x ?? null;
 }

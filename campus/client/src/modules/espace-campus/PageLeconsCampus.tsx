@@ -5,6 +5,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Link2, Paperclip, PlayCircle, File, ChevronRight } from "lucide-react";
 import { useTextes } from "@/lib/textes";
+import { CercleIcone } from "@/components/ui/gros-blocs";
 import { t as textesCampus } from "@shared/textes/campus";
 import type { CoursDetail, TypeLecon } from "@shared/schema";
 import { BoutonRetour, ErreurCampus, PageCampus, Patience, lienCampus } from "./composants";
@@ -31,11 +32,11 @@ export default function PageLeconsCampus({ coursId }: { coursId: string }) {
         ) : error || !data ? (
           <ErreurCampus message={error instanceof Error ? error.message : undefined} onReessayer={() => void refetch()} />
         ) : chapitres.length === 0 ? (
-          <p className="rounded-[24px] border-[3px] border-encre p-6 text-[24px] font-bold">{tx("lecons.vide")}</p>
+          <p className="rounded-[24px] border-2 border-ligne bg-creme p-6 text-[24px] font-bold shadow-carte">{tx("lecons.vide")}</p>
         ) : (
           chapitres.map((ch) => (
             <section key={ch.id} className="flex flex-col gap-3">
-              <h2 className="text-[18px] font-bold uppercase tracking-wide text-texte-pale">
+              <h2 className="pt-2 font-mono text-[15px] font-semibold uppercase leading-snug tracking-[0.14em] text-orange-profond">
                 {ch.numero}. {ch.titre}
               </h2>
               {ch.lecons.map((l) => {
@@ -44,11 +45,13 @@ export default function PageLeconsCampus({ coursId }: { coursId: string }) {
                   <Link
                     key={l.id}
                     href={lienCampus(`/mon-campus/cours/${id}/lecons/${l.id}`)}
-                    className="flex min-h-[72px] items-center gap-4 rounded-[20px] border-[3px] border-encre bg-white px-5 py-3 text-[22px] font-bold text-encre no-underline hover:bg-creme"
+                    className="flex min-h-[72px] items-center gap-4 rounded-[22px] border-2 border-ligne bg-white px-5 py-3 text-[22px] font-bold text-encre no-underline shadow-carte transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:border-orange/60 hover:text-encre hover:shadow-survol active:scale-[.985] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50"
                   >
-                    <Icone className="h-8 w-8 shrink-0 text-orange-fonce" aria-hidden />
-                    <span className="min-w-0 flex-1 break-words">{l.titre}</span>
-                    <ChevronRight className="h-7 w-7 shrink-0" aria-hidden />
+                    <CercleIcone taille={48} fond="#FFF1E6" couleur="#A34C17">
+                      <Icone className="h-6 w-6" strokeWidth={2.25} />
+                    </CercleIcone>
+                    <span className="min-w-0 flex-1 break-words leading-snug">{l.titre}</span>
+                    <ChevronRight className="h-7 w-7 shrink-0 text-orange-profond" aria-hidden />
                   </Link>
                 );
               })}

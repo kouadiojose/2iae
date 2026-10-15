@@ -10,7 +10,7 @@
 // n'ont pas besoin d'attendre que le professeur arrive pour ouvrir »).
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, CheckCircle2, ClipboardList, FileText, GraduationCap, MonitorPlay, Volume2 } from "lucide-react";
+import { BookOpen, CheckCircle2, ClipboardList, FileText, GraduationCap, MonitorPlay, Volume2, X } from "lucide-react";
 import { useTextes } from "@/lib/textes";
 import { maintenantServeur } from "@/lib/horloge";
 import { rafraichir } from "@/lib/queryClient";
@@ -70,7 +70,7 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
   const [ligneFermee, setLigneFermee] = useState(salleFermee);
   useEffect(() => {
     if (!ligneFermee) return;
-    const t = setTimeout(() => setLigneFermee(false), 20_000);
+    const t = setTimeout(() => setLigneFermee(false), 12_000);
     return () => clearTimeout(t);
   }, [ligneFermee]);
   const compte = (cle: Compteur, n: number) => tx(n === 0 ? `compteur.${cle}.zero` : n === 1 ? `compteur.${cle}.un` : `compteur.${cle}`, { v: { n } });
@@ -90,7 +90,7 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
     const d = degradeCours(data.cours.couleur);
     const live = data.live;
     const aOuvrir = live.repere === "aujourdhui";
-    const ouvert = live.repere === "direct" || live.repere === "ouvert";
+    const ouvert = live.repere === "direct" || live.repere === "ouvert" || live.repere === "attente";
     const sousTitreLive = live.essai
       ? live.fin === "fini"
         ? tx("bloc.live.essai.fini")
@@ -103,7 +103,9 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
         ? tx("repere.direct")
         : live.repere === "ouvert"
           ? tx("repere.ouvert", { v: { heure: live.heure ?? "" } })
-          : tx("bloc.live.ouvrir", { v: { heure: live.heure ?? "" } });
+          : live.repere === "attente"
+            ? tx("repere.attente")
+            : tx("bloc.live.ouvrir", { v: { heure: live.heure ?? "" } });
     const toucherLive = () => {
       // Plus d'une heure avant le cours : une confirmation d'un toucher (contre le carré touché par erreur).
       if (aOuvrir && live.debut && Date.parse(live.debut) - maintenantServeur() > AVANCE_MAX_OUVERTURE_MIN * 60_000) return setConfirmer(true);
@@ -111,30 +113,43 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
     };
     contenu = (
       <>
+        {/* « Salle fermée. » : un bandeau posé au-dessus de la page, qui part seul (il ne repousse pas « Entrer dans le live »). */}
         {ligneFermee && (
-          <p className="flex items-center gap-3 rounded-[22px] border-2 border-[#B9E2CC] bg-succes-clair px-5 py-4 text-[22px] font-bold text-vif-texte" role="status" data-salle-fermee>
-            <CheckCircle2 className="h-7 w-7 shrink-0" aria-hidden />
-            {tx("fermer.salle.fait")}
-          </p>
+          <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[70] flex justify-center px-4" data-salle-fermee-zone>
+            <p
+              className="pointer-events-auto flex w-full max-w-2xl items-center gap-3 rounded-[22px] border-2 border-[#B9E2CC] bg-succes-clair px-5 py-4 text-[22px] font-bold text-vif-texte shadow-survol"
+              role="status"
+              data-salle-fermee
+            >
+              <CheckCircle2 className="h-7 w-7 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1">{tx("fermer.salle.fait")}</span>
+              <button type="button" onClick={() => setLigneFermee(false)} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/70" aria-label={tx("feuille.fermer")}>
+                <X className="h-6 w-6" aria-hidden />
+              </button>
+            </p>
+          </div>
         )}
-        {/* Héros du cours : dégradé doux de sa couleur, bulles, code, titre, formateur, repère en grand. */}
+        {/* Héros du cours : dégradé doux de sa couleur, bulles, code, titre, formateur, repère en grand. Écran bas
+            (1024×600) : plus serré, la pastille sur la ligne du formateur, pour garder « Entrer dans le live » à l'écran. */}
         <section
-          className="relative isolate flex flex-col gap-4 overflow-hidden rounded-[32px] p-7 shadow-carte sm:p-10"
+          className="relative isolate flex flex-col gap-4 overflow-hidden rounded-[32px] p-7 shadow-carte sm:p-10 [@media(max-height:700px)]:!gap-2 [@media(max-height:700px)]:!p-5"
           style={{ background: d.css, color: d.texte }}
           data-degrade={`${d.fond},${d.a}`}
           data-heros
         >
           <Bulles voile={d.voile} grandes />
           <span className="font-mono text-[15px] font-semibold uppercase tracking-[0.14em]">{data.cours.code}</span>
-          <h1 className="break-words text-[40px] leading-[1.02] sm:text-[56px]" style={{ color: d.texte }}>
+          <h1 className="break-words text-[40px] leading-[1.02] sm:text-[56px] [@media(max-height:700px)]:!text-[32px]" style={{ color: d.texte }}>
             {data.cours.titre}
           </h1>
-          {data.cours.formateur && <p className="text-[22px] font-semibold">{tx("cours.avec", { v: { formateur: data.cours.formateur } })}</p>}
-          {live.repere && (
-            <span>
-              <PastilleRepere repere={live.repere} heure={live.heure} grande />
-            </span>
-          )}
+          <div className="flex flex-col gap-4 [@media(max-height:700px)]:flex-row [@media(max-height:700px)]:flex-wrap [@media(max-height:700px)]:items-center [@media(max-height:700px)]:gap-x-5 [@media(max-height:700px)]:gap-y-2">
+            {data.cours.formateur && <p className="text-[22px] font-semibold">{tx("cours.avec", { v: { formateur: data.cours.formateur } })}</p>}
+            {live.repere && (
+              <span>
+                <PastilleRepere repere={live.repere} heure={live.heure} grande />
+              </span>
+            )}
+          </div>
         </section>
         <GrosBloc
           grand
@@ -190,7 +205,7 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
   return (
     <PageCampus className="bg-white">
       {data?.apercu && <BandeauApercu campus={data.campus.nomCourt} />}
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-5 sm:gap-8 sm:px-8 sm:pt-8">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-5 sm:gap-8 sm:px-8 sm:pt-8 [@media(max-height:700px)]:!gap-4 [@media(max-height:700px)]:!pt-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <BoutonRetour href={lienCampus("/mon-campus")} libelle={tx("cours.retour")} />
           {data && <Etiquette className="hidden sm:inline">{data.campus.nomCourt}</Etiquette>}

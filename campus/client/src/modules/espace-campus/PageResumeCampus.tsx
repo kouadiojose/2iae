@@ -15,7 +15,7 @@ export default function PageResumeCampus({ coursId, seanceId }: { coursId: strin
   const id = Number(coursId);
   const { data, error, refetch, isLoading } = useQuery<CoursCompletRevision>({ queryKey: [`/api/seances/${Number(seanceId)}/cours-complet`] });
   const d = data?.dossier ?? null;
-  const section = "flex flex-col gap-3 rounded-[24px] border-[3px] border-encre p-5 sm:p-6";
+  const section = "flex flex-col gap-3 rounded-[24px] border-2 border-ligne bg-white p-5 shadow-carte sm:p-6";
   const titreSection = "text-[26px] font-black leading-tight sm:text-[30px]";
   return (
     <PageCampus>
@@ -36,7 +36,7 @@ export default function PageResumeCampus({ coursId, seanceId }: { coursId: strin
               <h1 className="break-words text-[34px] font-black leading-tight sm:text-[44px]">{d?.titre || data.seance.titre}</h1>
             </div>
             {!d || data.statut !== "prete" ? (
-              <p className="rounded-[24px] border-[3px] border-encre p-6 text-[24px] font-bold">{tx("resume.pasPret")}</p>
+              <p className="rounded-[24px] border-2 border-ligne bg-creme p-6 text-[24px] font-bold shadow-carte">{tx("resume.pasPret")}</p>
             ) : (
               <>
                 {d.resume.trim() && (

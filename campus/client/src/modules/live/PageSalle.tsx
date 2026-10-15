@@ -42,7 +42,9 @@ import type { EnCours, SeanceResume } from "@shared/api";
 import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
 import { t as textesOuverture } from "@shared/textes/direct";
-import { classeOuverteEnAvance } from "@shared/ouverture";
+import { classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { t as textesCampus } from "@shared/textes/campus";
+import { EcranDuCampus, useEcranDuCampus } from "@/lib/ecran-campus";
 
 const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d'internet", "Salle bruyante"];
 
@@ -266,8 +268,10 @@ export function EcranSeance({ seanceId, siteId, campus }: { seanceId: number; si
   const attente = statut === "en_direct" && (etat.attenteAnimateur || classeOuverteEnAvance({ statut, debut: seance.debut, demarreeLe: etat.demarreeLe, debutCours: etat.debutCours }, maintenant));
   const seule = !campus && statut === "en_direct" && presentation && !groupe && !petit && !attente;
   // Sur l'écran de la salle (grand écran), tout tient dans la hauteur : aucun défilement. En présentation
-  // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas.
+  // seule, bandeau et console disparaissent sans démonter la scène : la visio ne se recharge pas. Écran du compte de
+  // campus : les briques prennent les mots du campus (lib/ecran-campus.ts).
   return (
+    <EcranDuCampus.Provider value={Boolean(campus)}>
     <div
       className={
         seule
@@ -306,6 +310,7 @@ export function EcranSeance({ seanceId, siteId, campus }: { seanceId: number; si
       {/* Émargement : le QR en grand au démarrage, à +15 et +45 min, ou à la demande du Studio (une minute). */}
       {statut === "en_direct" && <EmargementPleinEcran seance={seance} etat={etat} siteId={siteId} enGroupe={Boolean(groupe)} sousBandeau={Boolean(campus)} />}
     </div>
+    </EcranDuCampus.Provider>
   );
 }
 
@@ -331,15 +336,23 @@ function Message({ titre, texte, seance }: { titre: string; texte: string; seanc
  * cours, page pleine) le code et le QR côte à côte.
  */
 function BlocCode({ seance, siteId, compact, mini, colonne }: { seance: SeanceDetailDto; siteId: number | null; compact?: boolean; mini?: boolean; colonne?: boolean }) {
-  const ouvert = seance.statut === "en_direct" || new Date(seance.debut).getTime() - maintenantServeur() < 60 * 60_000;
-  const { code, erreur } = useCodeSalle(seance.id, siteId, ouvert);
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
   const maintenant = useMaintenant(1000);
+  // Même fenêtre que le serveur (fenetreEmargementOuverte) : une heure avant le début du COURS, même quand la classe est
+  // ouverte bien plus tôt (compte de campus qui teste le son à 6 h pour 16 h) ; une classe démarrée à la main : dès son
+  // démarrage.
+  const debut = seance.statut === "en_direct" ? debutDuCours(seance).getTime() : new Date(seance.debut).getTime();
+  const ouvert = debut - maintenant < 60 * 60_000;
+  const { code, erreur } = useCodeSalle(seance.id, siteId, ouvert);
   const restant = 60 - Math.floor((maintenant / 1000) % 60);
+  const libelle = ecranCampus ? txCampus("ecran.presence") : "Émargement";
+  const ariaCode = (c: string) => (ecranCampus ? txCampus("ecran.presence.aria", { v: { code: c.split("").join(" ") } }) : `Code d'émargement ${c.split("").join(" ")}`);
   if (!ouvert) {
     return (
       <div className="rounded-[28px] bg-nuit-panneau p-6">
-        <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">Émargement</p>
-        <p className="mt-2 text-2xl font-bold text-nuit-doux">Le code s'affichera une heure avant le début.</p>
+        <p className="font-mono text-sm uppercase tracking-wider text-orange-peche">{libelle}</p>
+        <p className="mt-2 text-2xl font-bold text-nuit-doux">{ecranCampus ? txCampus("ecran.presence.attente") : "Le code s'affichera une heure avant le début."}</p>
       </div>
     );
   }
@@ -348,8 +361,8 @@ function BlocCode({ seance, siteId, compact, mini, colonne }: { seance: SeanceDe
     // Pendant un sondage ou un devoir en direct : le code reste visible pour les retardataires, sur une seule ligne.
     return (
       <div className="flex shrink-0 items-center justify-between gap-4 rounded-[20px] bg-nuit-panneau px-5 py-3">
-        <span className="font-mono text-sm uppercase tracking-[0.12em] text-orange-peche">Émargement</span>
-        <span className="text-4xl font-black tabular-nums tracking-[0.08em]" aria-live="polite" aria-label={`Code d'émargement ${code.code.split("").join(" ")}`}>
+        <span className="font-mono text-sm uppercase tracking-[0.12em] text-orange-peche">{libelle}</span>
+        <span className="text-4xl font-black tabular-nums tracking-[0.08em]" aria-live="polite" aria-label={ariaCode(code.code)}>
           {code.code}
         </span>
       </div>
@@ -359,11 +372,11 @@ function BlocCode({ seance, siteId, compact, mini, colonne }: { seance: SeanceDe
   return (
     <div className={cn("flex gap-5 rounded-[28px] bg-nuit-panneau", compact || colonne ? "flex-col p-5" : "flex-col p-6 sm:flex-row sm:items-center lg:p-7")}>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">Émargement · {code.salle}</p>
+        <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">{ecranCampus ? txCampus("ecran.presence.salle", { v: { salle: code.salle } }) : `Émargement · ${code.salle}`}</p>
         <p
           className={cn("whitespace-nowrap font-black tabular-nums leading-none tracking-[0.08em] text-white", compact || colonne ? "text-[clamp(48px,4.6vw,88px)]" : "text-[clamp(64px,7.2vw,150px)]")}
           aria-live="polite"
-          aria-label={`Code d'émargement ${code.code.split("").join(" ")}`}
+          aria-label={ariaCode(code.code)}
         >
           {code.code}
         </p>
@@ -378,18 +391,26 @@ function BlocCode({ seance, siteId, compact, mini, colonne }: { seance: SeanceDe
       <div
         className={cn("shrink-0 self-center rounded-2xl bg-white p-2.5", compact ? "hidden" : colonne ? "w-40 xl:w-48" : "w-44 xl:w-52")}
         dangerouslySetInnerHTML={{ __html: code.qrSvg }}
-        aria-label={`QR d'émargement, code ${code.code}`}
+        aria-label={ecranCampus ? `QR · ${ariaCode(code.code)}` : `QR d'émargement, code ${code.code}`}
         role="img"
       />
     </div>
   );
 }
 
+/** « Émargés par campus » ; sur l'écran du compte de campus, « Présents par campus ». */
+function useTitreCompteurs(): string {
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
+  return ecranCampus ? txCampus("ecran.presents") : "Émargés par campus";
+}
+
 function CompteursEmarges({ etat, grand, liste }: { etat: EtatDirectDto; grand?: boolean; liste?: boolean }) {
+  const titre = useTitreCompteurs();
   if (liste) {
     return (
       <div className="flex flex-col rounded-[24px] bg-nuit-panneau px-5 py-3">
-        <p className="py-2 font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
+        <p className="py-2 font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">{titre}</p>
         {etat.campus.map((c) => (
           <div key={c.siteId} className="flex items-center justify-between border-t border-nuit-ligne py-2.5">
             <span className={cn("flex items-center gap-2.5 text-xl font-bold", c.salleConnectee ? "text-white" : "text-nuit-gris")}>
@@ -455,6 +476,8 @@ function AvantLeCours({ seance, etat, siteId, campus }: { seance: SeanceDetailDt
   const visioOuverte = visioPossible && (visioDemandee || avantDebutMin <= VISIO_AUTO_MIN);
   // Sans la diapo : la vidéo en grand, et la salle se voit elle-même pour régler sa caméra.
   const etatReglages = useMemo(() => ({ ...etat, diapo: { ...etat.diapo, url: null }, projection: null, copie: null }), [etat]);
+  const txCampus = useTextes(textesCampus);
+  const titreCompteurs = useTitreCompteurs();
   return (
     <main className="grid flex-1 gap-6 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-10 lg:px-10">
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
@@ -478,12 +501,14 @@ function AvantLeCours({ seance, etat, siteId, campus }: { seance: SeanceDetailDt
         )}
         {visioOuverte ? (
           <div className="flex flex-col gap-2 lg:min-h-0 lg:flex-1">
-            <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">Réglages de la salle · visio ouverte</p>
+            <p className="font-mono text-sm uppercase tracking-[0.14em] text-orange-peche">{campus ? txCampus("ecran.reglages") : "Réglages de la salle · visio ouverte"}</p>
             <div className="lg:min-h-0 lg:flex-1">
               <Scene seance={seance} etat={etatReglages} role="salle" camera className="mx-auto w-full lg:h-full lg:w-auto lg:max-w-full" />
             </div>
             <p className="text-[15px] leading-snug text-nuit-doux">
-              Vérifiez l'image, le son et le micro (bouton du micro dans la visio). Les salles déjà connectées vous voient. Au début du cours, le micro se coupe : le formateur vous donne la parole.
+              {campus
+                ? txCampus("ecran.reglages.texte")
+                : "Vérifiez l'image, le son et le micro (bouton du micro dans la visio). Les salles déjà connectées vous voient. Au début du cours, le micro se coupe : le formateur vous donne la parole."}
             </p>
           </div>
         ) : (
@@ -505,7 +530,7 @@ function AvantLeCours({ seance, etat, siteId, campus }: { seance: SeanceDetailDt
       <div className="flex min-w-0 flex-col gap-5 lg:min-h-0">
         <BlocCode seance={seance} siteId={siteId} />
         <div className="flex flex-col gap-3">
-          <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">Émargés par campus</p>
+          <p className="font-mono text-sm uppercase tracking-[0.14em] text-nuit-gris">{titreCompteurs}</p>
           <CompteursEmarges etat={etat} grand />
         </div>
         {!campus && <GuideChargeDeCours />}
@@ -575,6 +600,11 @@ function PendantLeCours({
   const attenteFormateur = !ouverteEnAvance && etat.statut === "en_direct" && etat.attenteAnimateur;
   const avantLeCours = ouverteEnAvance || attenteFormateur;
   const txOuverture = useTextes(textesOuverture);
+  const txCampus = useTextes(textesCampus);
+  // Classe ouverte très tôt (plus de 30 min avant le cours : compte de campus qui teste le son à 6 h pour 16 h), ou sans
+  // autre salle connectée : « Testez le son et l'image », pas « avec les autres salles : le formateur arrive ».
+  const autresSalles = etat.campus.some((c) => c.siteId !== siteId && c.salleConnectee);
+  const testerSeul = ouverteEnAvance && (debutDuCours({ debut: seance.debut, demarreeLe: etat.demarreeLe ?? seance.demarreeLe, debutCours: etat.debutCours }).getTime() - maintenant > 30 * 60_000 || !autresSalles);
   return (
     <main
       className={
@@ -587,10 +617,20 @@ function PendantLeCours({
         {avantLeCours && !presentation && (
           <div className="shrink-0 rounded-[22px] bg-nuit-panneau px-6 py-3" role="status">
             <p className="text-[clamp(20px,2vw,36px)] font-black leading-tight">
-              {ouverteEnAvance ? txOuverture("ouverte.salle.titre", { v: { heure: heure(seance.debut) } }) : txOuverture("attente.salle.titre")}
+              {ouverteEnAvance
+                ? campus
+                  ? txCampus("ecran.ouverte.titre", { v: { heure: heure(seance.debut) } })
+                  : txOuverture("ouverte.salle.titre", { v: { heure: heure(seance.debut) } })
+                : txOuverture("attente.salle.titre")}
             </p>
             <p className="text-[clamp(15px,1.3vw,22px)] text-nuit-doux">
-              {ouverteEnAvance ? txOuverture("ouverte.salle.texte") : txOuverture("attente.salle.texte", { v: { heure: heure(seance.debut) } })}
+              {ouverteEnAvance
+                ? testerSeul
+                  ? campus
+                    ? txCampus("ecran.ouverte.tot")
+                    : txOuverture("ouverte.salle.texte.tot")
+                  : txOuverture("ouverte.salle.texte")
+                : txOuverture("attente.salle.texte", { v: { heure: heure(seance.debut) } })}
             </p>
             {/* Écran du campus : le conseil pour la personne, sous la ligne « Classe ouverte », toujours visible. */}
             {campus && (

@@ -20,6 +20,7 @@ import { manuelsDuRole } from "@/modules/manuels/manuels";
 import { useTextes } from "@/lib/textes";
 import { t as textesManuels } from "@shared/textes/manuels";
 import { LIBELLES_ROLES, estProfilCampus, estProfilRegie, libelleProfil } from "@shared/schema";
+import { classeOuverteEnAvance } from "@shared/ouverture";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
 /** `compacte` : sur téléphone, le logo seul (l'en-tête du campus garde la place des boutons Plus, Live, cloche). */
@@ -474,6 +475,11 @@ export function Coquille({ children, pleinEcran = false, autreCasquette = false 
               const actif = estActif(el, chemin);
               const Icone = el.icone;
               const direct = el.central && enCours?.enDirect;
+              // Classe ouverte avant l'heure (le campus teste le son tôt le matin) : « Salle ouverte », pas « En direct ».
+              const ouverteTot =
+                direct && enCours?.enDirect
+                  ? classeOuverteEnAvance({ statut: enCours.enDirect.statut, debut: enCours.enDirect.debut, demarreeLe: enCours.enDirect.demarreeLe ?? null, debutCours: enCours.enDirect.debutCours ?? null }, maintenantServeur())
+                  : false;
               if (el.central) {
                 return (
                   <Link key={el.href} href={lienEntree(el, moi.role, enCours)} className="-mt-5 flex flex-col items-center gap-1 no-underline" aria-current={actif ? "page" : undefined}>
@@ -486,7 +492,7 @@ export function Coquille({ children, pleinEcran = false, autreCasquette = false 
                       <Icone className="h-6 w-6" />
                     </span>
                     <span className={cn("whitespace-nowrap pb-2 text-[11px] font-bold", direct ? "text-direct" : actif ? "text-orange-fonce" : "text-texte-gris")}>
-                      {direct ? "En direct" : el.libelle}
+                      {direct ? (ouverteTot ? "Salle ouverte" : "En direct") : el.libelle}
                     </span>
                   </Link>
                 );

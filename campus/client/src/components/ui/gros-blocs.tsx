@@ -108,7 +108,12 @@ export function CarteCours({
   return (
     <Link
       href={href}
-      className={cn("relative isolate flex min-h-[180px] flex-col justify-between gap-5 overflow-hidden rounded-[28px] p-6 no-underline hover:-translate-y-1 active:translate-y-0 sm:min-h-[220px] sm:p-7", CLASSES_VIVANTES)}
+      className={cn(
+        "relative isolate flex min-h-[180px] flex-col justify-between gap-5 overflow-hidden rounded-[28px] p-6 no-underline hover:-translate-y-1 active:translate-y-0 sm:min-h-[220px] sm:p-7 lg:min-h-[180px]",
+        // Écran bas (1024×600, 1366×768) : carrés plus serrés, pour voir les titres de deux rangées.
+        "[@media(max-height:800px)]:!min-h-[150px] [@media(max-height:800px)]:gap-3 [@media(max-height:800px)]:!p-5",
+        CLASSES_VIVANTES,
+      )}
       style={{ background: d.css, color: d.texte }}
       data-carre={testId ?? code}
       data-degrade={`${d.fond},${d.a}`}
@@ -121,7 +126,7 @@ export function CarteCours({
       {/* Interligne et marge basse : les jambages (g, p, y) de la dernière ligne ne sont pas coupés. */}
       <span className="flex flex-col gap-1.5">
         <span className="font-mono text-[15px] font-semibold uppercase tracking-[0.14em]">{code}</span>
-        <span className="line-clamp-3 break-words pb-[0.12em] text-[32px] font-black leading-[1.08] sm:text-[40px]">{titre}</span>
+        <span className="line-clamp-3 break-words pb-[0.12em] text-[32px] font-black leading-[1.08] sm:text-[40px] [@media(max-height:800px)]:!text-[30px]">{titre}</span>
         {classes && <span className="text-[20px] font-bold leading-snug">{classes}</span>}
       </span>
     </Link>
@@ -185,7 +190,7 @@ export function GrosBloc({
   const style: CSSProperties | undefined = ton === "teinte" ? { background: fond ?? "#FFFFFF" } : t.style;
   const classes = cn(
     "relative isolate flex w-full items-center gap-5 overflow-hidden rounded-[26px] border-2 px-5 text-left no-underline sm:px-7",
-    grand ? "min-h-[140px] py-6 sm:min-h-[160px]" : "min-h-[112px] py-5 sm:min-h-[128px]",
+    grand ? "min-h-[140px] py-6 sm:min-h-[160px] [@media(max-height:700px)]:!min-h-[124px] [@media(max-height:700px)]:!py-4" : "min-h-[112px] py-5 sm:min-h-[128px]",
     t.classe,
     actif ? cn(CLASSES_VIVANTES, "hover:-translate-y-0.5 active:translate-y-0") : "shadow-none",
     className,

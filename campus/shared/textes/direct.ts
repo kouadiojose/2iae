@@ -34,8 +34,10 @@ export const t = creerTextes({
   "ouverte.studio": "Classe ouverte avant l'heure : les salles s'installent et règlent le son. Le cours commence à {heure} ; le chrono et l'enregistrement partent à ce moment-là, ou dès que vous commencez.",
   "ouverte.commencer": "Commencer le cours maintenant",
   "ouverte.commencer.ok": "Le cours commence : le chrono et l'enregistrement démarrent.",
-  "ouverte.salle.titre": "Classe ouverte · le cours commence à {heure}",
+  "ouverte.salle.titre": "Salle ouverte · le cours commence à {heure}",
   "ouverte.salle.texte": "Réglez le son et l'image avec les autres salles : le formateur arrive.",
+  // Classe ouverte très tôt (plus de 30 min avant), ou aucune autre salle connectée.
+  "ouverte.salle.texte.tot": "Testez le son et l'image en attendant le cours.",
 
   // ── Classe ouverte automatiquement que personne n'anime encore, l'heure du cours passée ──
   "attente.entete": "En attente du formateur",

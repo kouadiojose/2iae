@@ -458,6 +458,8 @@ async function resumesSeances(entrees: { s: Seance; code: string; titreCours: st
     fournisseur: s.fournisseur,
     replayDisponible: replayDisponible(s),
     formateur: (formateurId && parId.get(formateurId)) || null,
+    demarreeLe: s.demarreeLe ? s.demarreeLe.toISOString() : null,
+    debutCours: s.debutCours ? s.debutCours.toISOString() : null,
   }));
 }
 
@@ -531,7 +533,15 @@ async function enCoursPour(ids: number[], regard: Regard = {}): Promise<EnCours>
       finies.add(l.s.id);
       if (!(await animateurConnecte(l.s))) abandonnees.add(l.s.id);
     }
-    if (finies.size) directs.sort((a, b) => Number(finies.has(a.s.id)) - Number(finies.has(b.s.id)) || Number(abandonnees.has(a.s.id)) - Number(abandonnees.has(b.s.id)));
+    // « Très en avance » reste la première clé : une classe ouverte à 6 h pour 16 h ne passe jamais devant le cours qui
+    // déborde encore avec son formateur (relecture du 15 octobre 2026).
+    if (finies.size)
+      directs.sort(
+        (a, b) =>
+          Number(tresEnAvance(a)) - Number(tresEnAvance(b)) ||
+          Number(finies.has(a.s.id)) - Number(finies.has(b.s.id)) ||
+          Number(abandonnees.has(a.s.id)) - Number(abandonnees.has(b.s.id)),
+      );
   }
   const essais = regard.etudiant || regard.salle ? await essaisParmi(directs.map((l) => l.s.id)) : new Set<number>();
   const vrais = directs.filter((l) => !essais.has(l.s.id));
@@ -3314,7 +3324,7 @@ export function enregistrerLive(app: Express) {
       if (!site) throw introuvable("Salle");
       // Pas de code pour un campus dont aucune classe ne suit ce cours : ses étudiants émargeraient à la mauvaise séance.
       if (!(await coursDuSite(siteId)).includes(s.coursId)) throw new ErreurHttp(409, `Ce cours n'est suivi par aucune classe de ${site.nomCourt} : pas d'émargement dans cette salle.`);
-      if (!fenetreEmargementOuverte(s)) throw new ErreurHttp(409, "Le code d'émargement s'affiche une heure avant le début du cours, et jusqu'à sa fin.");
+      if (!fenetreEmargementOuverte(s)) throw new ErreurHttp(409, "Le code de présence s'affiche une heure avant le début du cours, et jusqu'à sa fin.");
       const maintenant = Date.now();
       const code = codeEmargement(s.id, siteId, fenetreCourante(maintenant));
       const url = `${origineRequete(req)}/emargement/${code}`;

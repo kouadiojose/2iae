@@ -113,6 +113,8 @@ function Bloc({
   const t = TONS[ton];
   const classe = cn(
     "relative isolate flex min-h-[120px] w-full items-center gap-5 overflow-hidden rounded-[26px] border-2 px-5 py-5 text-left no-underline sm:min-h-[136px] lg:min-h-[208px] lg:flex-col lg:items-start lg:justify-between lg:gap-4 lg:p-7",
+    // Écran bas (1024×600) : les trois blocs entiers à l'écran, sous la bande du cours.
+    "[@media(max-height:700px)]:lg:!min-h-[176px] [@media(max-height:700px)]:lg:!gap-3 [@media(max-height:700px)]:lg:!p-5",
     t.classe,
     actif ? cn(CLASSES_VIVANTES, "hover:-translate-y-0.5 active:translate-y-0") : "",
   );
@@ -261,10 +263,15 @@ export function LienPlus({ aFaire }: { aFaire: number }) {
 export function BandeCours({ c }: { c: CarreFormateurDto }) {
   const d = degradeCours(c.couleur);
   return (
-    <div className="relative isolate flex flex-col gap-2 overflow-hidden rounded-[32px] px-7 py-7 shadow-carte sm:px-10 sm:py-9" style={{ background: d.css, color: d.texte }} data-degrade={`${d.fond},${d.a}`} data-heros>
+    <div
+      className="relative isolate flex flex-col gap-2 overflow-hidden rounded-[32px] px-7 py-7 shadow-carte sm:px-10 sm:py-9 [@media(max-height:700px)]:!gap-1 [@media(max-height:700px)]:!px-6 [@media(max-height:700px)]:!py-4"
+      style={{ background: d.css, color: d.texte }}
+      data-degrade={`${d.fond},${d.a}`}
+      data-heros
+    >
       <Bulles voile={d.voile} grandes />
       <span className="font-mono text-[15px] font-semibold uppercase tracking-[0.14em]">{c.code}</span>
-      <h2 className="break-words text-[38px] leading-[1.02] sm:text-[52px]" style={{ color: d.texte }}>
+      <h2 className="break-words text-[38px] leading-[1.02] sm:text-[52px] [@media(max-height:700px)]:!text-[34px]" style={{ color: d.texte }}>
         {c.titre}
       </h2>
     </div>

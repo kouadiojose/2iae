@@ -61,7 +61,7 @@ import {
 import { ajouterFichiersRessource, ajouterLien, projeter, ressourceDeLaSeance, ressourcesDe, retirerRessource } from "./ressources-seance";
 import { sitesDuCours } from "./participation-direct";
 import { notesPubliees } from "./evaluations";
-import { debutDuJour, finPrevueMs, refusAjoutCampus, repereDe, seanceCibleCampus, seancesDuMoment, trierCarres, type MomentCours } from "../espace-campus";
+import { debutDuJour, finPrevueMs, refusAjoutCampus, repereDe, seanceCibleCampus, seancePrevueAvant, seancesDuMoment, trierCarres, type MomentCours } from "../espace-campus";
 import {
   EVENEMENT_GESTE_CAMPUS,
   capitale,
@@ -153,9 +153,13 @@ const campusDto = (site: Site) => ({ id: site.id, nomCourt: site.nomCourt });
 /** Cet ordinateur : « compte|session » (deux ordinateurs du même compte de campus sont deux postes). */
 const posteDe = (req: Request) => `${moi(req).id}|${req.sessionID}`;
 
-/** Fenêtre glissante en mémoire : `max` dépôts par compte et par usage en 10 minutes ; 429 au-delà. */
+/**
+ * Fenêtre glissante en mémoire : `max` dépôts par compte et par usage en 10 minutes ; 429 au-delà. La place est prise
+ * avant de recevoir les fichiers (deux envois simultanés ne la prennent pas deux fois), puis rendue si le dépôt échoue
+ * (format refusé, aucun fichier, envoi coupé) : seuls les dépôts réussis comptent (relecture du 15 octobre 2026).
+ */
 const depots = new Map<string, number[]>();
-function quota(cle: string, max: number) {
+function reserverDepot(cle: string, max: number, res: Response) {
   const maintenant = Date.now();
   const recents = (depots.get(cle) ?? []).filter((t) => maintenant - t < FENETRE_QUOTA_MS);
   if (recents.length >= max) {
@@ -164,6 +168,19 @@ function quota(cle: string, max: number) {
   }
   recents.push(maintenant);
   depots.set(cle, recents);
+  const rendre = () => {
+    const liste = depots.get(cle);
+    const i = liste ? liste.indexOf(maintenant) : -1;
+    if (liste && i >= 0) liste.splice(i, 1);
+  };
+  let fini = false;
+  res.once("finish", () => {
+    fini = true;
+    if (res.statusCode >= 400) rendre();
+  });
+  res.once("close", () => {
+    if (!fini) rendre();
+  });
 }
 setInterval(() => {
   const maintenant = Date.now();
@@ -201,7 +218,7 @@ const avantDepotCampus =
     seanceAjoutCampus(req, res).then(
       (ajout) => {
         try {
-          quota(`${usage}:${ajout.ctx.u.id}`, max);
+          reserverDepot(`${usage}:${ajout.ctx.u.id}`, max, res);
         } catch (e) {
           return next(e);
         }
@@ -337,6 +354,7 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
       ouvertureAutoA: null,
       motif: null,
       apresPrecedente: false,
+      passeDabord: null,
       ecransDuCampus: 0,
       essai: false,
       ajouts,
@@ -357,6 +375,7 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
       ouvertureAutoA: null,
       motif: null,
       apresPrecedente: false,
+      passeDabord: null,
       ecransDuCampus: 0,
       essai: true,
       ajouts,
@@ -379,8 +398,10 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
   const autres = enDirect.filter((x) => x.id !== s.id && x.debut.getTime() !== s.debut.getTime());
   const bloquantes: Seance[] = [];
   if (s.statut === "planifiee") for (const x of autres) if (!(await finieSansAnimateur(x, maintenant))) bloquantes.push(x);
+  // Une séance plus tôt du même cours, ce jour-là, encore prévue : elle passe d'abord (séance choisie par ?seance=).
+  const avant = s.statut === "planifiee" ? await seancePrevueAvant(s, maintenant) : null;
   // À toute heure du jour d'Abidjan de la séance, jusqu'à sa fin prévue (José, 15 octobre 2026 à 5 h).
-  const peutOuvrir = s.statut === "planifiee" && jourAbidjan(s.debut) === jourAbidjan(maintenant) && maintenant < finPrevueMs(s) && !bloquantes.length;
+  const peutOuvrir = s.statut === "planifiee" && jourAbidjan(s.debut) === jourAbidjan(maintenant) && maintenant < finPrevueMs(s) && !bloquantes.length && !avant;
   let ouvertureAutoA: string | null = null;
   if (s.statut === "planifiee") {
     const reglage = await lireReglageOuverture();
@@ -422,6 +443,7 @@ async function liveDe(ctx: Contexte, c: typeof cours.$inferSelect, s: Seance | n
     ouvertureAutoA,
     motif: s.statut === "annulee" && s.motifAnnulation !== MOTIF_NON_TENUE ? s.motifAnnulation : null,
     apresPrecedente: s.statut === "planifiee" && bloquantes.some((x) => x.debut.getTime() < s.debut.getTime()),
+    passeDabord: avant ? heureSimple(avant.debut) : null,
     ecransDuCampus: s.statut === "en_direct" || s.statut === "planifiee" ? postesSur(canal(s.id), (x) => estEcran(x) && x.siteId === ctx.site.id) : 0,
     essai: s.statut !== "planifiee" && s.statut !== "en_direct",
     ajouts,
@@ -565,6 +587,9 @@ export function enregistrerEspaceCampus(app: Express) {
         throw new ErreurHttp(409, tCampus("live.pasAujourdhui", { v: { jour: jourEnLettres(s.debut), heure: heureSimple(s.debut) } }), { code: "pas_aujourdhui" });
       }
       if (finPrevueMs(s) <= maintenant) throw new ErreurHttp(409, tCampus("ajout.fini"), { code: "fini" });
+      // Le cours de 8h30 encore prévu passe avant celui de 14h00 (jamais deux séances du même cours en direct).
+      const avant = await seancePrevueAvant(s, maintenant);
+      if (avant) throw new ErreurHttp(409, tCampus("live.passeDabord", { v: { heure: heureSimple(avant.debut) } }), { code: "pas_encore", seanceId: avant.id });
       const autres = await db
         .select()
         .from(seances)

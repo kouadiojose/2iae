@@ -18,7 +18,10 @@ import { get } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useCanal } from "@/lib/flux";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
+import { useEcranDuCampus } from "@/lib/ecran-campus";
+import { useTextes } from "@/lib/textes";
 import { t } from "@shared/textes/direct";
+import { t as textesCampus } from "@shared/textes/campus";
 import {
   classementEmargement,
   decisionEmargement,
@@ -145,6 +148,9 @@ export function EmargementPleinEcran({
   sousBandeau?: boolean;
 }) {
   const { fenetre, maintenant, sitesDuCours, attendus } = useFenetreEmargement(seance, etat, siteId, enGroupe);
+  // Écran du compte de campus : « présence », jamais « émargement » (lib/ecran-campus.ts).
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
   const visible = Boolean(fenetre && siteId);
   const { code } = useCodeSalle(seance.id, siteId, visible);
   // Le code d'une autre séance (minute précédente, rechargement) ne s'affiche jamais.
@@ -173,7 +179,8 @@ export function EmargementPleinEcran({
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <p className="flex items-center gap-3 font-mono text-[clamp(14px,1.25vw,24px)] uppercase tracking-[0.14em] text-orange-peche">
-          <QrCode className="h-[1.4em] w-[1.4em]" /> {t("salle.qr.etiquette", { v: { salle: code.salle, site: code.site } })}
+          <QrCode className="h-[1.4em] w-[1.4em]" />{" "}
+          {ecranCampus ? txCampus("ecran.qr.etiquette", { v: { salle: code.salle, site: code.site } }) : t("salle.qr.etiquette", { v: { salle: code.salle, site: code.site } })}
         </p>
         <p className="flex items-center gap-2 rounded-full bg-nuit-carte px-4 py-2 font-mono text-[clamp(13px,1.05vw,20px)] text-nuit-doux">
           <Timer className="h-[1.2em] w-[1.2em]" /> {t("salle.qr.retrait", { v: { n: restant } })}
@@ -186,7 +193,7 @@ export function EmargementPleinEcran({
             sousBandeau ? "lg:h-[min(calc(100dvh_-_var(--bandeau-campus,0px)_-_8rem),44vw)]" : "lg:h-[min(68vh,44vw)]",
           )}
           dangerouslySetInnerHTML={{ __html: code.qrSvg }}
-          aria-label={`QR d'émargement, code ${code.code}`}
+          aria-label={ecranCampus ? `QR · ${txCampus("ecran.presence.aria", { v: { code: code.code } })}` : `QR d'émargement, code ${code.code}`}
           role="img"
         />
         <div className="flex w-full min-w-0 flex-col gap-[2.6vh]">
@@ -211,15 +218,19 @@ export function EmargementPleinEcran({
                 <span className="flex items-center gap-[0.25em] text-[clamp(56px,6.2vw,132px)] font-black leading-none tabular-nums text-orange">
                   <CheckCircle2 className="h-[0.6em] w-[0.6em]" /> {n}
                 </span>
-                <span className="text-[clamp(24px,2.5vw,52px)] font-extrabold leading-tight">{t(n > 1 ? "salle.qr.emarges" : "salle.qr.emarges.un", { v: { site: code.site } })}</span>
+                <span className="text-[clamp(24px,2.5vw,52px)] font-extrabold leading-tight">
+                  {ecranCampus ? txCampus(n > 1 ? "ecran.qr.n" : "ecran.qr.un", { v: { site: code.site } }) : t(n > 1 ? "salle.qr.emarges" : "salle.qr.emarges.un", { v: { site: code.site } })}
+                </span>
               </>
             ) : (
-              <span className="text-[clamp(24px,2.5vw,52px)] font-extrabold leading-tight">{t("salle.qr.emarges.zero", { v: { site: code.site } })}</span>
+              <span className="text-[clamp(24px,2.5vw,52px)] font-extrabold leading-tight">
+                {ecranCampus ? txCampus("ecran.qr.zero", { v: { site: code.site } }) : t("salle.qr.emarges.zero", { v: { site: code.site } })}
+              </span>
             )}
           </div>
           {liste.length > 1 && (
             <div className="flex flex-col gap-[1.2vh]">
-              <p className="font-mono text-[clamp(12px,1.05vw,20px)] uppercase tracking-[0.14em] text-nuit-gris">{t("salle.qr.classement")}</p>
+              <p className="font-mono text-[clamp(12px,1.05vw,20px)] uppercase tracking-[0.14em] text-nuit-gris">{ecranCampus ? txCampus("ecran.qr.classement") : t("salle.qr.classement")}</p>
               <ul className="flex flex-wrap gap-[0.8vw]">
                 {liste.map((c) => (
                   <li

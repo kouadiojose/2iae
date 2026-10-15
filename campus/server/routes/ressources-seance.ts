@@ -46,12 +46,48 @@ import {
 /** Au-delà, la liste ne se lit plus : 40 ressources par séance. */
 const RESSOURCES_MAX = 40;
 
-/** Identifiant d'une vidéo YouTube (watch, youtu.be, shorts, embed, live). */
+/** Les seuls hôtes de YouTube (« exemple-piege.com/youtube.com/watch?v=… » n'en est pas un : relecture du 15 octobre 2026). */
+const HOTES_YOUTUBE = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtube-nocookie.com",
+  "www.youtube-nocookie.com",
+  "youtu.be",
+  "www.youtu.be",
+]);
+const ID_YOUTUBE = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * Identifiant d'une vidéo YouTube (watch, youtu.be, shorts, embed, live), lu sur l'adresse analysée : protocole http(s),
+ * hôte de YouTube, sans identifiants ni port ; null sinon.
+ */
 export function idYoutube(url: string | null | undefined): string | null {
   if (!url) return null;
-  const m = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/.exec(url);
+  let u: URL;
+  try {
+    u = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(u.protocol) || u.username || u.password || u.port) return null;
+  const hote = u.hostname.toLowerCase().replace(/\.$/, "");
+  if (!HOTES_YOUTUBE.has(hote)) return null;
+  if (hote === "youtu.be" || hote === "www.youtu.be") {
+    const id = u.pathname.split("/")[1] ?? "";
+    return ID_YOUTUBE.test(id) ? id : null;
+  }
+  if (u.pathname.replace(/\/+$/, "") === "/watch") {
+    const v = u.searchParams.get("v") ?? "";
+    return ID_YOUTUBE.test(v) ? v : null;
+  }
+  const m = /^\/(?:embed|shorts|live|v)\/([A-Za-z0-9_-]{11})(?:[/?#]|$)/.exec(u.pathname);
   return m ? m[1] : null;
 }
+
+/** Adresse canonique d'une vidéo YouTube : jamais l'adresse saisie (compte de campus). */
+export const adresseYoutube = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 
 export const estVideo = (mime: string) => /^video\/(mp4|webm|quicktime)$/.test(mime);
 const projetable = (r: Pick<RessourceSeanceDto, "type">) => r.type === "youtube" || r.type === "video";
@@ -177,11 +213,13 @@ export async function ajouterLien(
   if (!/^https?:$/.test(adresse.protocol) || !adresse.hostname.includes(".")) throw invalide(youtubeSeulement ? PAS_YOUTUBE : LIEN_INVALIDE);
   const youtube = idYoutube(url);
   if (youtubeSeulement && !youtube) throw invalide(PAS_YOUTUBE);
+  // Compte de campus : l'adresse canonique de la vidéo, jamais l'adresse saisie.
+  const enregistree = youtubeSeulement && youtube ? adresseYoutube(youtube) : url;
   await verifierPlace(s.id, 1);
-  const titreFinal = titre || (youtube ? ((await titreYoutube(url)) ?? "") : titreDuLien(url));
+  const titreFinal = titre || (youtube ? ((await titreYoutube(enregistree)) ?? "") : titreDuLien(url));
   const [ressource] = await db
     .insert(ressourcesSeances)
-    .values({ seanceId: s.id, type: youtube ? "youtube" : "lien", titre: titreFinal, url, ordre: await prochainOrdre(s.id), creePar: u.id })
+    .values({ seanceId: s.id, type: youtube ? "youtube" : "lien", titre: titreFinal, url: enregistree, ordre: await prochainOrdre(s.id), creePar: u.id })
     .returning();
   prevenirPages(s.id);
   return { ressource, ressources: await ressourcesDe(s.id) };

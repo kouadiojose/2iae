@@ -153,7 +153,10 @@ export function CartesAjoutsCampus({ ajouts, onFait }: { ajouts: AjoutsCampusDto
           </CercleIcone>
           <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="text-[24px] font-black leading-tight sm:text-[26px]">{tx("ajout.video")}</span>
-            <span className="text-[20px] font-semibold leading-snug text-texte-doux">{`${ligne} · ${compteVideos(tx, ajouts.videos)}`}</span>
+            {/* Le lien YouTube se dit d'emblée (José : « fichier ou lien YouTube ») ; le compte, seulement s'il y en a. */}
+            <span className="text-[20px] font-semibold leading-snug text-texte-doux">
+              {[tx("ajout.video.court"), ligne, ajouts.videos > 0 ? compteVideos(tx, ajouts.videos) : null].filter(Boolean).join(" · ")}
+            </span>
           </span>
         </button>
       </div>
@@ -247,7 +250,7 @@ export function FeuilleAjouterCampus({
             testId="video"
             icone={<Clapperboard className="h-8 w-8" strokeWidth={2.25} />}
             titre={tx("ajout.video")}
-            sousTitre={`${tx("video.fichier.texte")} ${compteVideos(tx, ajouts.videos)}.`}
+            sousTitre={ajouts.videos > 0 ? `${tx("ajout.video.texte")} ${compteVideos(tx, ajouts.videos)}.` : tx("ajout.video.texte")}
             onClick={() => {
               video.reinitialiser();
               setVue("video");
@@ -315,9 +318,20 @@ function VideosDuCours({ seanceId, projectionPermise, mesAjouts, onFait }: { sea
         <ul className="flex flex-col gap-3">
           {videos.map((r) => {
             const montree = projection?.ressourceId === r.id;
+            // Un seul bouton : sur la ligne du titre ; deux ou trois (vidéo montrée : « Pause », « Arrêter », « Retirer ») :
+            // sur leur propre rangée, pour garder au titre toute la largeur (relecture du 15 octobre 2026).
+            const nbBoutons = (projectionPermise ? (montree && projection ? 2 : 1) : 0) + (mesAjouts.includes(r.id) ? 1 : 0);
             return (
-              <li key={r.id} className={cn("flex min-h-[88px] flex-col gap-3 rounded-[22px] border-2 px-4 py-3 sm:flex-row sm:items-center", montree ? "border-orange bg-[#24211F]" : "border-nuit-bord bg-nuit-carte")} data-video={r.id}>
-                <span className="flex min-w-0 flex-1 items-center gap-4">
+              <li
+                key={r.id}
+                className={cn(
+                  "flex min-h-[88px] flex-col gap-3 rounded-[22px] border-2 px-4 py-3",
+                  nbBoutons <= 1 && "sm:flex-row sm:items-center",
+                  montree ? "border-orange bg-[#24211F]" : "border-nuit-bord bg-nuit-carte",
+                )}
+                data-video={r.id}
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-4 sm:min-w-[14rem]">
                   <CercleIcone taille={48} fond="rgba(228,121,58,.15)" couleur="#E4793A">
                     {r.type === "youtube" ? <Youtube className="h-6 w-6" /> : <Video className="h-6 w-6" />}
                   </CercleIcone>
@@ -327,7 +341,7 @@ function VideosDuCours({ seanceId, projectionPermise, mesAjouts, onFait }: { sea
                     {r.ajoutePar && <span className="text-[16px] font-semibold text-nuit-doux">{tx("video.ajouteePar", { v: { deCampus: r.ajoutePar.replace(/^Campus /, "") } })}</span>}
                   </span>
                 </span>
-                <span className="flex flex-wrap gap-2">
+                <span className={cn("flex flex-wrap gap-2", nbBoutons > 1 && "sm:justify-end")}>
                   {projectionPermise &&
                     (montree && projection ? (
                       <>

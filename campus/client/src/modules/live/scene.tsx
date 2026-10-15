@@ -17,7 +17,9 @@ import type { EtatDirectDto, SeanceDetailDto, RejoindreDto, RejoindreVisioDto, M
 import { CarteVideoProjetee, VideoProjetee } from "./ressources";
 import { CopieProjetee, dispositionAvecCopie } from "./copie-projetee";
 import { useTextes } from "@/lib/textes";
+import { useEcranDuCampus } from "@/lib/ecran-campus";
 import { t as textesCopies } from "@shared/textes/copies-direct";
+import { t as textesCampus } from "@shared/textes/campus";
 import { maintenantServeur } from "@/lib/horloge";
 import { debutDuCours } from "@shared/ouverture";
 
@@ -403,6 +405,8 @@ function SceneExterne({ seance, etat }: PropsScene) {
 }
 
 function SceneJitsi({ seance, role }: PropsScene) {
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
   const [infos, setInfos] = useState<RejoindreDto | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   useEffect(() => {
@@ -411,7 +415,7 @@ function SceneJitsi({ seance, role }: PropsScene) {
       .catch((e: Error) => setErreur(e.message));
   }, [seance.id]);
   if (erreur || infos?.message) return <MessageScene icone={<WifiOff className="h-6 w-6" />} texte={erreur ?? infos?.message ?? ""} />;
-  if (!infos?.url) return <MessageScene icone={<Loader2 className="h-6 w-6 animate-spin" />} texte="Connexion à la visio…" />;
+  if (!infos?.url) return <MessageScene icone={<Loader2 className="h-6 w-6 animate-spin" />} texte={ecranCampus ? txCampus("ecran.connexion") : "Connexion à la visio…"} />;
   return <iframe src={infos.url} title="Visio du cours" allow="camera; microphone; fullscreen; display-capture; autoplay" className="h-full w-full border-0" />;
 }
 
@@ -442,6 +446,8 @@ function SceneCampusOuRegie(p: PropsScene) {
 }
 
 function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVisio }: PropsScene) {
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
   const [nomAffiche, setNomAffiche] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
   useEffect(() => {
@@ -450,7 +456,7 @@ function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVis
       .catch((e: Error) => setErreur(e.message));
   }, [seance.id]);
   if (erreur) return <MessageScene icone={<WifiOff className="h-6 w-6" />} texte={erreur} />;
-  if (!nomAffiche) return <MessageScene icone={<Loader2 className="h-6 w-6 animate-spin" />} texte="Connexion à la visio du campus…" />;
+  if (!nomAffiche) return <MessageScene icone={<Loader2 className="h-6 w-6 animate-spin" />} texte={ecranCampus ? txCampus("ecran.connexion") : "Connexion à la visio du campus…"} />;
   const roleVisio = role === "formateur" ? "formateur" : role === "salle" ? "salle" : "etudiant";
   return (
     <SceneVisioCampus

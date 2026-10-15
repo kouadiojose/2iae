@@ -7,7 +7,7 @@
 //   - BlocsAjouts : les deux gros boutons du formateur, en tête de « Préparer le cours » et dans le Studio.
 // L'espace du campus (modules/espace-campus/ajouts-campus.tsx) les réutilise avec ses propres routes et ses textes.
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
-import { CheckCircle2, Clapperboard, ClipboardPaste, Laptop, MonitorPlay, Presentation, Youtube, X } from "lucide-react";
+import { CheckCircle2, Clapperboard, ClipboardPaste, FileText, Laptop, MonitorPlay, Presentation, Youtube, X } from "lucide-react";
 import { alleger, post } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
@@ -126,6 +126,8 @@ export type TextesVideo = {
   ok: string;
   envoi: (n: number) => string;
   autreLien?: string;
+  /** Un lien qui n'est pas YouTube (formateur) : « Lien ajouté aux documents. », sans la coche de la vidéo. */
+  lienOk?: string;
   retour: string;
 };
 
@@ -141,6 +143,13 @@ export function ChoixVideo({ video, textes, nuit = false, apres }: { video: Retu
   useEffect(() => {
     if (vue === "lien") champ.current?.focus();
   }, [vue]);
+  // Vidéo ajoutée : « Ajouter une autre vidéo » repart des deux choix (fichier ou lien), champ vide.
+  useEffect(() => {
+    if (e.phase === "fait") {
+      setVue("choix");
+      setLien("");
+    }
+  }, [e.phase]);
   const coller = async () => {
     try {
       const texte = await navigator.clipboard.readText();
@@ -155,11 +164,17 @@ export function ChoixVideo({ video, textes, nuit = false, apres }: { video: Retu
   );
   const doux = nuit ? "text-nuit-doux" : "text-texte-doux";
   if (e.phase === "fait") {
+    // Un lien qui n'est pas YouTube n'est pas une vidéo : pas de « ✓ Vidéo ajoutée. » suivi d'un démenti.
+    const simpleLien = e.ressource?.type === "lien";
     return (
       <div className="flex flex-col gap-4" role="status">
-        <p className="flex items-center gap-3 text-[24px] font-black">
-          <CheckCircle2 className="h-8 w-8 shrink-0 text-vif-texte" style={nuit ? { color: "#7BD3A6" } : undefined} aria-hidden />
-          {textes.ok}
+        <p className="flex items-center gap-3 text-[24px] font-black" data-video-fait={simpleLien ? "lien" : "video"}>
+          {simpleLien ? (
+            <FileText className={cn("h-8 w-8 shrink-0", doux)} aria-hidden />
+          ) : (
+            <CheckCircle2 className="h-8 w-8 shrink-0 text-vif-texte" style={nuit ? { color: "#7BD3A6" } : undefined} aria-hidden />
+          )}
+          {simpleLien ? (textes.lienOk ?? textes.ok) : textes.ok}
         </p>
         {e.ressource && <p className={cn("text-[18px] font-semibold", doux)}>{e.ressource.titre}</p>}
         {e.ressource?.type === "lien" && textes.autreLien && <p className={cn("text-[16px]", doux)}>{textes.autreLien}</p>}
@@ -372,6 +387,7 @@ export function BlocsAjouts({ seance, variante }: { seance: SeanceDetailDto; var
     ok: tx("ajouts.video.ok"),
     envoi: (n) => tx("ajouts.video.envoi", { v: { n } }),
     autreLien: tx("ajouts.video.autreLien"),
+    lienOk: tx("ajouts.video.lienOk"),
     retour: tx("ajouts.retour"),
   };
   const nuit = variante === "studio";

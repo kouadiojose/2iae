@@ -46,6 +46,13 @@ const PREFIXE_SALLE = process.env.DAILY_ROOM_PREFIX?.trim() || "campus-2iae-";
 /** Salle d'essai permanente du campus, ouverte à tout compte connecté. */
 export const NOM_SALLE_ESSAI = `${PREFIXE_SALLE}essai`;
 
+/**
+ * Salle d'essai d'un compte de campus (« Tester le son et l'image ») : une par campus. Dans la salle commune, deux campus
+ * qui testent en même temps s'entendraient par les haut-parleurs de leur salle de conférence (relecture du 15 octobre
+ * 2026), et un étudiant qui teste verrait la salle.
+ */
+export const nomSalleEssaiCampus = (siteId: number) => `${NOM_SALLE_ESSAI}-site-${siteId}`;
+
 /** Enregistrement cloud lancé automatiquement quand le formateur est en direct (désactivable). */
 const ENREGISTREMENT_AUTO = process.env.DAILY_ENREGISTREMENT_AUTO?.trim() !== "non";
 
@@ -397,8 +404,7 @@ export async function obtenirSalleDaily(s: Pick<Seance, "id" | "debut" | "dureeM
  * quinze étudiants au plus : reserverPlaceDaily), jamais enregistrée. Créée à
  * la première demande ; une salle créée plus petite est agrandie.
  */
-export async function obtenirSalleEssai(): Promise<{ nom: string; url: string }> {
-  const nom = NOM_SALLE_ESSAI;
+export async function obtenirSalleEssai(nom: string = NOM_SALLE_ESSAI): Promise<{ nom: string; url: string }> {
   const existante = await appelDaily<SalleDaily>(`/rooms/${encodeURIComponent(nom)}`);
   if (existante.statut === 200 && existante.donnees) {
     if ((existante.donnees.config?.max_participants ?? MAX_PARTICIPANTS_DEFAUT_DAILY) !== TAILLE_SALLE_ESSAI) {
@@ -819,7 +825,7 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
     parSalle.set(m.room, e);
   }
   const libelleSalle = (nom: string) => {
-    if (nom === NOM_SALLE_ESSAI) return "Salle d'essai";
+    if (nom === NOM_SALLE_ESSAI || nom.startsWith(`${NOM_SALLE_ESSAI}-site-`)) return "Salle d'essai";
     const suite = nom.slice(PREFIXE_SALLE.length);
     const id = parseInt(suite, 10);
     const titre = titres.get(id);

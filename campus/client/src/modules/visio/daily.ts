@@ -141,11 +141,19 @@ export function relanceAutomatique(role: RoleVisio, pb: ProblemeVisio | null): b
   return pb.genre === "pleine" || pb.genre === "reseau" || pb.genre === "compte" || pb.genre === "acces" || pb.genre === "autre";
 }
 
-/** Erreur fatale Daily (événement « error » ou refus de join()) traduite en français. */
-export function traduireErreurDaily(ev: { errorMsg?: string; error?: { type?: string; msg?: string } | null } | Error | null | undefined, role: RoleVisio, tu: boolean): ProblemeVisio {
+/**
+ * Erreur fatale Daily (événement « error » ou refus de join()) traduite en français. daily-js rejette parfois join()
+ * avec une simple chaîne (« Timed out attempting to load the call… », Daily injoignable) : elle est lue comme un
+ * message, sans jamais lever d'exception (`"error" in` sur une chaîne en lèverait une).
+ */
+export function traduireErreurDaily(ev: { errorMsg?: string; error?: { type?: string; msg?: string } | null } | Error | string | null | undefined, role: RoleVisio, tu: boolean): ProblemeVisio {
   const t = (a: string, b: string) => (tu ? a : b);
-  const type = ev && "error" in ev ? (ev.error?.type ?? "") : "";
-  const msg = `${(ev as { errorMsg?: string } | null)?.errorMsg ?? (ev instanceof Error ? ev.message : "")} ${(ev && "error" in ev ? ev.error?.msg : "") ?? ""}`.toLowerCase();
+  const brut: unknown = typeof ev === "string" ? { errorMsg: ev } : ev;
+  const objet = brut && typeof brut === "object" ? (brut as { errorMsg?: unknown; error?: unknown }) : null;
+  const erreur = objet && "error" in objet && objet.error && typeof objet.error === "object" ? (objet.error as { type?: unknown; msg?: unknown }) : null;
+  const type = typeof erreur?.type === "string" ? erreur.type : "";
+  const texteBrut = typeof objet?.errorMsg === "string" ? objet.errorMsg : brut instanceof Error ? brut.message : "";
+  const msg = `${texteBrut} ${typeof erreur?.msg === "string" ? erreur.msg : ""}`.toLowerCase();
   switch (type) {
     case "exp-token":
     case "nbf-token":

@@ -14,7 +14,7 @@ import { post, ErreurApi } from "@/lib/api";
 import { useMoi, profilPermet } from "@/lib/auth";
 import { useTextes } from "@/lib/textes";
 import { Bouton } from "@/components/ui/bouton";
-import { CadreDaily, type ProblemeVisio, type TextesCadre } from "@/modules/visio";
+import { CadreDaily, type EtatVisio, type ProblemeVisio, type TextesCadre } from "@/modules/visio";
 import { t as textes } from "@shared/textes/reunion";
 import type { ReunionPubliqueDto } from "@shared/reunion";
 import type { AccesDaily } from "@shared/schema";
@@ -288,6 +288,16 @@ function Dedans({
 }) {
   const tx = useTextes(textes);
   const nom = useRef(reunion.personnel ? reunion.personnel.nom : lireNom());
+  // « Vous êtes dans la réunion » seulement une fois la vidéo connectée (aussi pendant une reconnexion) ; pendant la
+  // connexion, « Vous entrez sous le nom … » ; rien quand la connexion a échoué (le cadre dit le problème).
+  const [etatCadre, setEtatCadre] = useState<EtatVisio>("connexion");
+  const nomVu = nomAffiche || nom.current;
+  const ligneNom =
+    etatCadre === "connecte" || etatCadre === "reconnexion"
+      ? tx("lien.dedans", { v: { nom: nomVu } })
+      : etatCadre === "connexion"
+        ? tx("lien.entree", { v: { nom: nomVu } })
+        : "";
   return (
     <div className="flex flex-1 flex-col gap-3">
       <div className="h-[calc(100dvh-190px)] min-h-[360px] overflow-hidden rounded-[22px] border-2 border-nuit-ligne bg-nuit-carte sm:h-[calc(100dvh-200px)]" data-cadre-reunion>
@@ -303,6 +313,7 @@ function Dedans({
           cameraAuDepart
           microAuDepart={false}
           textes={textesCadre}
+          onEtat={setEtatCadre}
           // Sortie de la salle : l'état est relu avant de dire quoi que ce soit (fermée ? lien changé ? encore ouverte ?).
           onEchecs={(_n, pb) => {
             if (!pb) return;
@@ -313,7 +324,7 @@ function Dedans({
         />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 text-[14px] text-nuit-doux">
-        <span>{tx("lien.dedans", { v: { nom: nomAffiche || nom.current } })}</span>
+        <span data-ligne-nom={etatCadre}>{ligneNom}</span>
         <Bouton variante="nuit" taille="sm" className="min-h-[44px]" icone={<LogOut className="h-4 w-4" />} onClick={onQuitter}>
           {tx("lien.quitter")}
         </Bouton>

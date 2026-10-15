@@ -232,6 +232,8 @@ export const t = creerTextes({
   "ecran.connexion": "Connexion…",
   "ecran.lent": "La connexion est lente. Patientez.",
   "ecran.panne": "La salle ne répond pas.",
+  // Conseil sous « La salle ne répond pas. » quand le réseau est en cause (à la place de celui des écrans de salle).
+  "ecran.panne.conseil": "Vérifiez internet. Essayez la 4G d'un téléphone.",
   "ecran.presence": "Présence",
   "ecran.presence.salle": "Présence · {salle}",
   "ecran.presence.attente": "Le code s'affichera une heure avant le début.",

@@ -79,6 +79,7 @@ export const t = creerTextes({
   "lien.conseil": "Autorisez le micro et la caméra quand le navigateur le demande. Votre micro est coupé en entrant.",
   "lien.entrer": "Entrer dans la réunion",
   "lien.dedans": "Vous êtes dans la réunion sous le nom {nom}.",
+  "lien.entree": "Vous entrez sous le nom {nom}.",
   "lien.quitter": "Quitter la réunion",
   "lien.quitte.titre": "Vous avez quitté la réunion.",
   "lien.quitte.texte": "Le lien marche toujours : vous pouvez revenir.",

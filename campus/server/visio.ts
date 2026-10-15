@@ -28,6 +28,7 @@ import {
   directsImmediats,
   utilisateurs,
   seances,
+  sites,
   journal,
   type FournisseurVisio,
   type Seance,
@@ -37,6 +38,7 @@ import {
   type UsageVisioDto,
   estEcran,
 } from "@shared/schema";
+import { deCampus } from "@shared/espace-campus";
 
 const API_DAILY = "https://api.daily.co/v1";
 
@@ -912,6 +914,19 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
     const lignes = await db.select({ id: seances.id, titre: seances.titre, debut: seances.debut }).from(seances).where(inArray(seances.id, idsSeances));
     for (const l of lignes) titres.set(l.id, `${l.titre} · ${l.debut.toISOString().slice(8, 10)}/${l.debut.toISOString().slice(5, 7)}`);
   }
+  // Salle d'essai d'un compte de campus (« campus-2iae-essai-site-3 ») : « Salle d'essai · campus de Yamoussoukro »,
+  // pour que la direction voie quel campus a consommé (sinon autant de lignes « Salle d'essai » que de campus).
+  const prefixeEssaiSite = `${NOM_SALLE_ESSAI}-site-`;
+  const siteDeSalle = (nom: string): number | null => {
+    const suite = nom.startsWith(prefixeEssaiSite) ? nom.slice(prefixeEssaiSite.length) : "";
+    return /^\d{1,9}$/.test(suite) && Number(suite) > 0 ? Number(suite) : null;
+  };
+  const idsSites = [...new Set(duCampus.map((m) => siteDeSalle(m.room)).filter((n): n is number => n !== null))];
+  const nomsSites = new Map<number, string>();
+  if (idsSites.length) {
+    const lignes = await db.select({ id: sites.id, nomCourt: sites.nomCourt }).from(sites).where(inArray(sites.id, idsSites));
+    for (const l of lignes) nomsSites.set(l.id, l.nomCourt);
+  }
   const parSalle = new Map<string, { minutes: number; reunions: number }>();
   for (const m of duCampus) {
     const e = parSalle.get(m.room) ?? { minutes: 0, reunions: 0 };
@@ -920,7 +935,11 @@ export async function usageDaily(mois: string): Promise<UsageVisioDto> {
     parSalle.set(m.room, e);
   }
   const libelleSalle = (nom: string) => {
-    if (nom === NOM_SALLE_ESSAI || nom.startsWith(`${NOM_SALLE_ESSAI}-site-`)) return "Salle d'essai";
+    if (nom === NOM_SALLE_ESSAI) return "Salle d'essai";
+    const site = siteDeSalle(nom);
+    if (site !== null) return nomsSites.has(site) ? `Salle d'essai · campus ${deCampus(nomsSites.get(site) ?? "")}` : `Salle d'essai · campus n° ${site}`;
+    // Toute autre salle « campus-2iae-essai-… » reste une salle d'essai, jamais une « séance supprimée ».
+    if (nom.startsWith(`${NOM_SALLE_ESSAI}-`)) return "Salle d'essai";
     const suite = nom.slice(PREFIXE_SALLE.length);
     const id = parseInt(suite, 10);
     const titre = titres.get(id);

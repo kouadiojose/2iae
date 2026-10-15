@@ -1,4 +1,4 @@
-// Salle de réunion de l'administration (demande de José du 13 octobre 2026, réglages dans CONCEPTION.md §11) :
+// Salle de réunion de l'administration (demande de José du 13 octobre 2026, réglages dans CONCEPTION.md §13) :
 // un lien permanent, à partager à tous les participants de la réunion, qui marche sans compte et à tout moment.
 //
 //   Pilotage. La page se voit avec le droit « outils_campus » (celui des écrans et de la visio : direction, vie

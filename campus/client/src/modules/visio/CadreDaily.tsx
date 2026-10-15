@@ -261,7 +261,8 @@ export function CadreDaily(p: PropsCadreDaily) {
           startAudioOff: !(p.microAuDepart ?? role === "formateur"),
         });
       } catch (e) {
-        echouer(traduireErreurDaily(e as Error, role, tu));
+        // join() peut être rejeté avec une Error, un objet Daily ou une simple chaîne (Daily injoignable).
+        echouer(traduireErreurDaily(e as Error | string, role, tu));
       }
     })();
     return () => {
@@ -323,14 +324,23 @@ export function CadreDaily(p: PropsCadreDaily) {
 
   // Mots de l'attente et de la panne : 1) `textes` explicites du parent (la réunion ; le problème est déjà réécrit
   // par textes.probleme dans noterEchec) ; 2) écran du compte de campus (lib/ecran-campus.ts) ; 3) mots des cours.
+  // Écran du campus : le conseil d'un problème de réseau ou de compte est celui des écrans de salle (« visio », radio,
+  // conseilReseau de daily.ts) : il prend les mots du campus. Les autres conseils (navigateur, salle pleine, salle pas
+  // encore ouverte, page à recharger) n'emploient aucun de ces mots et restent tels quels.
   const mots = p.textes
-    ? { connexion: p.textes.connexion, lent: p.textes.lent, panne: probleme?.texte ?? p.textes.sansReponse }
+    ? { connexion: p.textes.connexion, lent: p.textes.lent, panne: probleme?.texte ?? p.textes.sansReponse, conseil: probleme?.conseil ?? null }
     : ecranCampus
-      ? { connexion: txCampus("ecran.connexion"), lent: txCampus("ecran.lent"), panne: txCampus("ecran.panne") }
+      ? {
+          connexion: txCampus("ecran.connexion"),
+          lent: txCampus("ecran.lent"),
+          panne: txCampus("ecran.panne"),
+          conseil: probleme?.conseil && (probleme.genre === "reseau" || probleme.genre === "compte") ? txCampus("ecran.panne.conseil") : (probleme?.conseil ?? null),
+        }
       : {
           connexion: t("Connexion à la visio…", "Connexion à la visio…"),
           lent: t("La visio met du temps à répondre…", "La visio met du temps à répondre…"),
           panne: probleme?.texte ?? t("La visio ne répond pas.", "La visio ne répond pas."),
+          conseil: probleme?.conseil ?? null,
         };
 
   return (
@@ -358,7 +368,7 @@ export function CadreDaily(p: PropsCadreDaily) {
                   : mots.connexion
                 : mots.panne}
             </p>
-            {etat === "erreur" && probleme?.conseil && <p className="max-w-md text-[14px] leading-snug text-nuit-doux">{probleme.conseil}</p>}
+            {etat === "erreur" && mots.conseil && <p className="max-w-md text-[14px] leading-snug text-nuit-doux">{mots.conseil}</p>}
             {etat === "erreur" && prochainEssai && <CompteRelance cible={prochainEssai} />}
             {(etat === "erreur" || lent) && probleme?.genre !== "absente" && (
               <Bouton variante="nuit-actif" icone={<RotateCcw className="h-4 w-4" />} onClick={reessayer}>

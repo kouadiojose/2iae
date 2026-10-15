@@ -23,13 +23,17 @@ import { LIBELLES_ROLES, estProfilCampus, estProfilRegie, libelleProfil } from "
 import { classeOuverteEnAvance } from "@shared/ouverture";
 import type { EnCours, CompteurNotifications } from "@shared/api";
 
-/** `compacte` : sur téléphone, le logo seul (l'en-tête du campus garde la place des boutons Plus, Live, cloche). */
+/**
+ * `compacte` : sur téléphone, le logo seul (l'en-tête du campus garde la place des boutons Plus, Live, cloche) ; de même
+ * de 1024 à 1279 px, où la barre de navigation s'affiche : sinon l'en-tête du personnel déborde à 1024 px (la cloche et
+ * l'avatar coupés à droite, « Campus numérique » recouvert par les entrées). Dès 1280 px, le libellé revient.
+ */
 export function Marque({ sousTitre = true, sombre = false, compacte = false }: { sousTitre?: boolean; sombre?: boolean; compacte?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-3 no-underline" aria-label="Campus numérique 2IAE, accueil">
       {/* Sur fond sombre : l'ovale détouré (sans rectangle blanc autour). */}
       <img src={sombre ? "/marque-2iae-detouree.png" : "/marque-2iae.png"} alt="" className="h-9 w-auto sm:h-10" />
-      <span className={cn("flex flex-col border-l pl-3", sombre ? "border-nuit-ligne" : "border-ligne-forte", compacte && "hidden sm:flex")}>
+      <span className={cn("flex flex-col border-l pl-3", sombre ? "border-nuit-ligne" : "border-ligne-forte", compacte && "hidden sm:flex lg:hidden xl:flex")}>
         <span className={cn("whitespace-nowrap text-[15px] font-extrabold leading-tight tracking-[-0.01em]", sombre ? "text-white" : "text-encre")}>Campus numérique</span>
         {sousTitre && <span className={cn("font-mono text-[11px]", sombre ? "text-nuit-gris" : "text-texte-gris")}>Groupe 2IAE International</span>}
       </span>

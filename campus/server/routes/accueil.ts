@@ -689,6 +689,16 @@ export async function accueilSimple(u: Utilisateur, maintenant = Date.now()): Pr
   );
   const jour0 = debutDuJour(maintenant);
   const avance = AVANCE_MAX_OUVERTURE_MIN * MINUTE;
+  // « Préparer le cours » dit ce qui est déjà prêt : diapos (la séance les porte) et vidéos (une requête groupée).
+  const idsSeances = [...moments.values()].map((m) => m.seance?.id).filter((x): x is number => typeof x === "number");
+  const videosParSeance = new Map<number, number>();
+  if (idsSeances.length) {
+    const { rows } = await db.execute<{ seance_id: number; n: number }>(sql`
+      SELECT seance_id, count(*)::int AS n FROM campus.ressources_seances
+      WHERE seance_id IN (${sql.join(idsSeances.map((id) => sql`${id}`), sql`, `)}) AND type IN ('youtube', 'video')
+      GROUP BY seance_id`);
+    for (const r of rows) videosParSeance.set(Number(r.seance_id), Number(r.n));
+  }
   const carres: (CarreFormateurDto & { t: number })[] = liste.map((c) => {
     const s = moments.get(c.id)?.seance ?? null;
     let repere: RepereFormateur = null;
@@ -723,6 +733,7 @@ export async function accueilSimple(u: Utilisateur, maintenant = Date.now()): Pr
       seance: s ? { id: s.id, debut: s.debut.toISOString(), fin: new Date(finPrevueMs(s)).toISOString(), statut: s.statut } : null,
       live,
       liens: { cours: `/cours/${c.id}`, live: s ? `/live/${s.id}` : null, preparer: s ? `/enseigner/seances/${s.id}` : null },
+      preparation: s ? { diapos: s.diapos.length, videos: videosParSeance.get(s.id) ?? 0 } : null,
       t: s ? s.debut.getTime() : Number.MAX_SAFE_INTEGER,
     };
   });

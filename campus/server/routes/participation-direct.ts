@@ -125,8 +125,8 @@ const nuitPour = (fuseau: string | null, maintenant: Date) => {
   return h >= HEURES_CALMES.debut || h < HEURES_CALMES.fin;
 };
 
-/** Campus dont une classe suit ce cours : ceux dont l'écran de salle montre le cours. */
-async function sitesDuCours(coursId: number): Promise<number[]> {
+/** Campus dont une classe suit ce cours : ceux dont l'écran de salle montre le cours (aussi : espace du campus, « seul campus »). */
+export async function sitesDuCours(coursId: number): Promise<number[]> {
   const r = await db.execute<{ site_id: number }>(sql`
     SELECT DISTINCT cl.site_id FROM campus.cours_classes cc
     JOIN campus.classes cl ON cl.id = cc.classe_id
@@ -211,7 +211,11 @@ export async function envoyerRappelsEmargement(maintenant = new Date()): Promise
     WHERE s.statut = 'en_direct'
       AND s.demarree_le > ${new Date(maintenant.getTime() - REPORT_MAX_EMARGEMENT_MS).toISOString()}::timestamptz
       AND s.demarree_le <= ${new Date(maintenant.getTime() - DELAI_FILET_MS).toISOString()}::timestamptz
-      AND NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id AND NOT di.prevenir)`);
+      AND NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id AND NOT di.prevenir)
+      -- Classe ouverte très tôt par le compte de campus : son avis attend encore (avis différé, live.ts) ; le filet
+      -- attend aussi, sinon il préviendrait les étudiants à 6 h pour un cours de 8 h 30.
+      AND (NOT EXISTS (SELECT 1 FROM campus.rappels_live ad WHERE ad.seance_id = s.id AND ad.type = 'avis-differe')
+        OR EXISTS (SELECT 1 FROM campus.rappels_live rd WHERE rd.seance_id = s.id AND rd.type = 'rappel-demarrage'))`);
   let envoyes = 0;
   for (const s of directs.rows) {
     const ecrans = new Set(

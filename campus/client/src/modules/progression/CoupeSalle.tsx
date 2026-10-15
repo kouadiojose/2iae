@@ -8,6 +8,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Trophy } from "lucide-react";
 import { useTextes } from "@/lib/textes";
+import { useEcranDuCampus } from "@/lib/ecran-campus";
+import { t as textesCampus } from "@shared/textes/campus";
 import { cn } from "@/lib/utils";
 import { t } from "@shared/textes/progression";
 import type { CoupeSalleDto } from "@shared/engagement/progression";
@@ -15,6 +17,9 @@ import { rangTexte } from "./donnees";
 
 export function CoupeSalle({ siteId }: { siteId: number | null }) {
   const tx = useTextes(t);
+  // Écran du compte de campus : « présence », jamais « émargement » (lib/ecran-campus.ts).
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
   const { data } = useQuery<CoupeSalleDto>({
     queryKey: [`/api/coupe/salle${siteId ? `?site=${siteId}` : ""}`],
     refetchInterval: 5 * 60_000,
@@ -32,7 +37,9 @@ export function CoupeSalle({ siteId }: { siteId: number | null }) {
           ? tx("salle.progression", { v: { nom: c.nom, n: c.progression } })
           : c.nom === data.meneur
             ? null
-            : tx("salle.relance", { v: { nom: c.nom } });
+            : ecranCampus
+              ? txCampus("ecran.coupe.relance", { v: { nom: c.nom } })
+              : tx("salle.relance", { v: { nom: c.nom } });
   return (
     // Compacte : avant le cours, l'écran de la salle tient dans la hauteur sans défiler ; sur un écran bas,
     // le podium et la consigne d'émargement (déjà donnée par le bloc du code) s'effacent.
@@ -55,7 +62,7 @@ export function CoupeSalle({ siteId }: { siteId: number | null }) {
           ))}
         </ol>
       )}
-      <p className="text-[clamp(14px,1vw,19px)] text-nuit-gris lg:[@media(max-height:800px)]:hidden">{tx("salle.emarger")}</p>
+      <p className="text-[clamp(14px,1vw,19px)] text-nuit-gris lg:[@media(max-height:800px)]:hidden">{ecranCampus ? txCampus("ecran.coupe.consigne") : tx("salle.emarger")}</p>
     </section>
   );
 }

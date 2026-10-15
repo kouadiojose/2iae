@@ -18,7 +18,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, WifiOff, RotateCcw, AlertTriangle } from "lucide-react";
 import type { DailyCall, DailyParticipant } from "@daily-co/daily-js";
 import { cn } from "@/lib/utils";
+import { useEcranDuCampus } from "@/lib/ecran-campus";
+import { useTextes } from "@/lib/textes";
 import { Bouton } from "@/components/ui/bouton";
+import { t as textesCampus } from "@shared/textes/campus";
 import type { AccesDaily, RejoindreVisioDto } from "@shared/schema";
 import type { EtatVisio } from "./SceneVisioCampus";
 import {
@@ -91,6 +94,9 @@ function versParticipants(call: DailyCall): ParticipantCadre[] {
 export function CadreDaily(p: PropsCadreDaily) {
   const { role, tu } = p;
   const t = (a: string, b: string) => (tu ? a : b);
+  // Écran du compte de campus : ni « visio » ni « Daily » (lib/ecran-campus.ts).
+  const ecranCampus = useEcranDuCampus();
+  const txCampus = useTextes(textesCampus);
   const conteneur = useRef<HTMLDivElement>(null);
   const appel = useRef<DailyCall | null>(null);
   const [etat, setEtat] = useState<"connexion" | "connecte" | "erreur">("connexion");
@@ -310,9 +316,15 @@ export function CadreDaily(p: PropsCadreDaily) {
             <p className="max-w-md text-[15px] font-semibold text-nuit-texte" role="status" aria-live="polite">
               {etat === "connexion"
                 ? lent
-                  ? t("La visio met du temps à répondre…", "La visio met du temps à répondre…")
-                  : t("Connexion à la visio…", "Connexion à la visio…")
-                : (probleme?.texte ?? t("La visio ne répond pas.", "La visio ne répond pas."))}
+                  ? ecranCampus
+                    ? txCampus("ecran.lent")
+                    : t("La visio met du temps à répondre…", "La visio met du temps à répondre…")
+                  : ecranCampus
+                    ? txCampus("ecran.connexion")
+                    : t("Connexion à la visio…", "Connexion à la visio…")
+                : ecranCampus
+                  ? txCampus("ecran.panne")
+                  : (probleme?.texte ?? t("La visio ne répond pas.", "La visio ne répond pas."))}
             </p>
             {etat === "erreur" && probleme?.conseil && <p className="max-w-md text-[14px] leading-snug text-nuit-doux">{probleme.conseil}</p>}
             {etat === "erreur" && prochainEssai && <CompteRelance cible={prochainEssai} />}

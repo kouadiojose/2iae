@@ -91,7 +91,7 @@ import { t as tCopies } from "@shared/textes/copies-direct";
 import { t as tDirect } from "@shared/textes/devoir-direct";
 import { devoirDirectPour, devoirsDirectDeLaSeance } from "../devoirs-direct";
 import { notifier } from "../notifications";
-import { rappelerDemarrage } from "./participation-direct";
+import { rappelerDemarrage, sitesDuCours } from "./participation-direct";
 import { etatsPresence } from "../engagement/presence";
 import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia";
 import { prevenirSite } from "../site";
@@ -193,10 +193,10 @@ import {
 import type { SeanceResume, EnCours, DirectDuCampus } from "@shared/api";
 import { estPublicSalle, nomDeSalle } from "@shared/salles";
 import { coursDuSite, nomSalleDuCours, type RegardSalle } from "../salles-outils";
-import { lireReglageOuverture, REPERE_OUVERTURE_AUTO, REPERE_RAPPEL_DEMARRAGE } from "../ouverture-auto";
-import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
+import { lireReglageOuverture, REPERE_AVIS_DIFFERE, REPERE_OUVERTURE_AUTO, REPERE_RAPPEL_DEMARRAGE } from "../ouverture-auto";
+import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours, demarreeHorsCreneau, enAttenteAnimateur } from "@shared/ouverture";
 import { t as tOuverture } from "@shared/textes/direct";
-import { deCampus, heureSimple as heureCourte } from "@shared/espace-campus";
+import { deCampus, heureSimple as heureCourte, type FermetureCampusDto } from "@shared/espace-campus";
 
 const executer = promisify(execFile);
 
@@ -458,6 +458,8 @@ async function resumesSeances(entrees: { s: Seance; code: string; titreCours: st
     fournisseur: s.fournisseur,
     replayDisponible: replayDisponible(s),
     formateur: (formateurId && parId.get(formateurId)) || null,
+    demarreeLe: s.demarreeLe ? s.demarreeLe.toISOString() : null,
+    debutCours: s.debutCours ? s.debutCours.toISOString() : null,
   }));
 }
 
@@ -509,10 +511,17 @@ async function enCoursPour(ids: number[], regard: Regard = {}): Promise<EnCours>
     .limit(10);
   // Hors écran de salle : une classe dont le cours a commencé passe avant une classe ouverte en avance (la suivante
   // de la matinée, ouverte 30 min avant) ; l'écran d'une salle garde déjà la plus ancienne (asc).
+  // Classe ouverte très en avance (plus d'une heure avant le début de son cours : compte de campus qui teste le son à
+  // 6 h pour un cours de 16 h) : du point de vue de l'ancien écran d'une salle, elle ne passe pas devant le cours du
+  // moment de la salle.
+  const tresEnAvance = (l: (typeof directs)[number]) => debutDuCours(l.s).getTime() - maintenant > AVANCE_MAX_MS;
   if (!regard.salle) {
     const commence = (l: (typeof directs)[number]) => (debutDuCours(l.s).getTime() <= maintenant ? 0 : 1);
     directs.sort((a, b) => commence(a) - commence(b));
-  } else if (directs.length > 1) {
+  } else {
+    directs.sort((a, b) => Number(tresEnAvance(a)) - Number(tresEnAvance(b)));
+  }
+  if (regard.salle && directs.length > 1) {
     // Ancien écran d'une salle, deux classes en direct dans la salle (plus d'attente de la salle depuis le 15 octobre :
     // Anglais déborde, Marketing s'ouvre à son heure) : d'abord les classes dont l'heure de fin n'est pas passée (le
     // cours prévu garde la salle), puis celles qu'un animateur anime encore, puis la plus ancienne. La classe qui
@@ -524,7 +533,15 @@ async function enCoursPour(ids: number[], regard: Regard = {}): Promise<EnCours>
       finies.add(l.s.id);
       if (!(await animateurConnecte(l.s))) abandonnees.add(l.s.id);
     }
-    if (finies.size) directs.sort((a, b) => Number(finies.has(a.s.id)) - Number(finies.has(b.s.id)) || Number(abandonnees.has(a.s.id)) - Number(abandonnees.has(b.s.id)));
+    // « Très en avance » reste la première clé : une classe ouverte à 6 h pour 16 h ne passe jamais devant le cours qui
+    // déborde encore avec son formateur (relecture du 15 octobre 2026).
+    if (finies.size)
+      directs.sort(
+        (a, b) =>
+          Number(tresEnAvance(a)) - Number(tresEnAvance(b)) ||
+          Number(finies.has(a.s.id)) - Number(finies.has(b.s.id)) ||
+          Number(abandonnees.has(a.s.id)) - Number(abandonnees.has(b.s.id)),
+      );
   }
   const essais = regard.etudiant || regard.salle ? await essaisParmi(directs.map((l) => l.s.id)) : new Set<number>();
   const vrais = directs.filter((l) => !essais.has(l.s.id));
@@ -533,6 +550,12 @@ async function enCoursPour(ids: number[], regard: Regard = {}): Promise<EnCours>
     // Un essai ne s'affiche en salle que si aucune vraie classe du campus n'est sur le point de commencer.
     const vraieImminente = candidates.some((l) => l.s.debut.getTime() - AVANT_CODE_MS <= maintenant && finPrevue(l.s) > maintenant);
     if (vraieImminente) direct = undefined;
+  }
+  // Ancien écran d'une salle : la seule classe en direct est ouverte très en avance, et une séance prévue de la salle
+  // commence avant elle : l'écran garde le compte à rebours du cours du moment (il le rejoint à son ouverture).
+  if (regard.salle && direct && tresEnAvance(direct)) {
+    const avant = candidates.find((l) => l.s.debut.getTime() < direct!.s.debut.getTime() && finPrevue(l.s) > maintenant);
+    if (avant) direct = undefined;
   }
   const prochaine = candidates.find((l) => finPrevue(l.s) > maintenant && l.s.id !== direct?.s.id);
   const [enDirect, suivante] = await resumesSeances([direct, prochaine].filter((x): x is NonNullable<typeof x> => Boolean(x)));
@@ -1360,6 +1383,61 @@ async function convertirPdf(u: Utilisateur, f: Express.Multer.File): Promise<num
   }
 }
 
+/**
+ * Ajoute des diapos à la fin de celles de la séance : PowerPoint (LibreOffice puis pdftoppm), PDF (pdftoppm) ou images.
+ * Cœur commun de la route du formateur (POST /api/seances/:id/diapos) et de celle du chargé du campus
+ * (routes/espace-campus.ts). Refus (format, convertisseur absent) : les fichiers reçus sont effacés. `masquerSiVide` :
+ * la séance n'avait aucune diapo et la classe est en direct : la première reste cachée (diapoCourante -1) jusqu'au geste
+ * du formateur (le compte de campus ne change jamais ce que voit la classe). La séance est relue après la conversion
+ * (une minute pour un gros PowerPoint) : les diapos ajoutées entre-temps par quelqu'un d'autre sont gardées.
+ */
+export async function ajouterDiapos(
+  u: Utilisateur,
+  s: Seance,
+  recus: Express.Multer.File[],
+  { masquerSiVide = false }: { masquerSiVide?: boolean } = {},
+): Promise<{ maj: Seance; ajoutees: number }> {
+  const nettoyer = () => Promise.all(recus.map((f) => fs.promises.rm(f.path, { force: true })));
+  if (!recus.length) throw invalide("Aucun fichier reçu.");
+  await convertisseursPrets();
+  const presentationOk = officeDisponible && pdfDisponible;
+  const refuses = recus.filter(
+    (f) => !/^image\/(jpeg|png|webp|gif)$/.test(f.mimetype) && !(f.mimetype === "application/pdf" && pdfDisponible) && !(estPresentation(f) && presentationOk),
+  );
+  if (refuses.length) {
+    await nettoyer();
+    const pdf = refuses.some((f) => f.mimetype === "application/pdf");
+    const ppt = refuses.some(estPresentation);
+    throw invalide(
+      ppt
+        ? "Ce serveur ne sait pas encore lire les PowerPoint : enregistrez votre présentation en PDF (Fichier → Enregistrer sous → PDF), puis déposez le PDF."
+        : pdf
+          ? "Ce serveur ne sait pas encore convertir les PDF : exportez vos diapos en images (JPEG ou PNG) depuis PowerPoint ou Google Slides, puis déposez-les."
+          : "Déposez un PowerPoint, un PDF ou des images (JPEG, PNG, WebP).",
+    );
+  }
+  const nouveaux: number[] = [];
+  try {
+    for (const f of recus) {
+      if (estPresentation(f)) nouveaux.push(...(await convertirPresentation(u, f)));
+      else if (f.mimetype === "application/pdf") nouveaux.push(...(await convertirPdf(u, f)));
+      else nouveaux.push((await enregistrerFichier(u, f, "diapo")).id);
+    }
+  } catch (e) {
+    await nettoyer();
+    throw e;
+  }
+  const actuelle = await chargerSeance(s.id);
+  const masquer = masquerSiVide && actuelle.diapos.length === 0 && actuelle.statut === "en_direct";
+  const [maj] = await db
+    .update(seances)
+    .set({ diapos: [...actuelle.diapos, ...nouveaux].slice(0, 200), ...(masquer && { diapoCourante: -1 }) })
+    .where(eq(seances.id, s.id))
+    .returning();
+  publier(canal(s.id), "diapo", diapoCourante(maj));
+  return { maj, ajoutees: Math.max(0, maj.diapos.length - actuelle.diapos.length) };
+}
+
 // ── Code d'émargement : 4 chiffres par (séance, salle), renouvelé chaque minute ──
 
 const fenetreCourante = (t = Date.now()) => Math.floor(t / MINUTE);
@@ -1382,8 +1460,13 @@ function codeEmargement(seanceId: number, siteId: number, fenetre: number): stri
   return String((base + (seanceId * 8 + siteId) * 7919) % 10_000).padStart(4, "0");
 }
 
+/**
+ * Le code de présence (et son QR) : une heure avant le début du cours jusqu'à 15 min après sa fin prévue ; en direct,
+ * dès une heure avant le DÉBUT DU COURS (debutDuCours) : une classe ouverte à 6 h par le compte de campus pour un cours
+ * de 8 h 30 n'affiche son code qu'à 7 h 30. Une classe démarrée à la main a commencé : son code s'affiche aussitôt.
+ */
 function fenetreEmargementOuverte(s: Seance, t = Date.now()): boolean {
-  if (s.statut === "en_direct") return true;
+  if (s.statut === "en_direct") return t >= debutDuCours(s).getTime() - AVANT_CODE_MS;
   if (s.statut !== "planifiee") return false;
   const debut = s.debut.getTime();
   return t >= debut - AVANT_CODE_MS && t <= finPrevue(s) + APRES_CODE_MS;
@@ -1973,6 +2056,8 @@ export function enregistrerLive(app: Express) {
       await consigner(s.id, "cours_commence", { par: u.id, avance: Math.round((s.debut.getTime() - Date.parse(maintenant)) / MINUTE) });
       publierStatut(maj);
       annoncer(maj);
+      // Classe ouverte très tôt par le compte de campus, avis encore différé : le cours commence, les étudiants sont prévenus.
+      reveiller("live-rappels");
       res.json(await detailSeance(u, maj));
     }),
   );
@@ -2112,12 +2197,20 @@ export function enregistrerLive(app: Express) {
         await tx.delete(fichesRevision).where(and(eq(fichesRevision.seanceId, s.id), eq(fichesRevision.validee, false)));
         // Le fil de l'essai (démarrage, diapos, fin) ne doit pas se mêler au vrai cours (replay synchronisé, bilan).
         await tx.delete(evenementsSeances).where(and(eq(evenementsSeances.seanceId, s.id), gte(evenementsSeances.creeLe, depuis)));
+        // Classe ouverte très tôt par le compte de campus, avis encore différé : personne n'a été prévenu.
+        const reperes = await tx.select({ type: rappelsLive.type }).from(rappelsLive).where(eq(rappelsLive.seanceId, s.id));
+        const avisEnAttente = reperes.some((r) => r.type === REPERE_AVIS_DIFFERE) && !reperes.some((r) => r.type === REPERE_RAPPEL_DEMARRAGE);
+        await tx.delete(rappelsLive).where(and(eq(rappelsLive.seanceId, s.id), eq(rappelsLive.type, REPERE_AVIS_DIFFERE)));
         if (s.debut.getTime() - Date.now() <= AVANCE_MAX_MS) {
           await tx.insert(rappelsLive).values({ seanceId: s.id, type: REPERE_OUVERTURE_AUTO }).onConflictDoNothing();
+        } else {
+          // Essai effacé plus d'une heure avant le cours (classe ouverte tôt par le compte de campus) : l'ouverture
+          // automatique fera son travail à l'heure dite (le repère posé par l'ouverture du campus est retiré).
+          await tx.delete(rappelsLive).where(and(eq(rappelsLive.seanceId, s.id), eq(rappelsLive.type, REPERE_OUVERTURE_AUTO)));
         }
         // Ouverte avant l'heure (automatiquement, ou par la régie : debut_cours) : les étudiants ont lu « la classe est
-        // ouverte, le cours commence à 08h30 ».
-        if (s.ouvertureAuto || s.debutCours) {
+        // ouverte, le cours commence à 08h30 » (sauf si cet avis attendait encore : rien n'est parti).
+        if ((s.ouvertureAuto || s.debutCours) && !avisEnAttente) {
           await tx
             .insert(rappelsLive)
             .values(([REPERE_RAPPEL_DEMARRAGE, "15min", "jour"] as const).map((type) => ({ seanceId: s.id, type })))
@@ -3089,44 +3182,14 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       const recus = (req.files as Express.Multer.File[] | undefined) ?? [];
-      const nettoyer = () => Promise.all(recus.map((f) => fs.promises.rm(f.path, { force: true })));
       let s: Seance;
       try {
         s = await seanceAnimee(u, idParam(req));
       } catch (e) {
-        await nettoyer();
+        await Promise.all(recus.map((f) => fs.promises.rm(f.path, { force: true })));
         throw e;
       }
-      if (!recus.length) throw invalide("Aucun fichier reçu.");
-      await convertisseursPrets();
-      const presentationOk = officeDisponible && pdfDisponible;
-      const refuses = recus.filter(
-        (f) => !/^image\/(jpeg|png|webp|gif)$/.test(f.mimetype) && !(f.mimetype === "application/pdf" && pdfDisponible) && !(estPresentation(f) && presentationOk),
-      );
-      if (refuses.length) {
-        await nettoyer();
-        const pdf = refuses.some((f) => f.mimetype === "application/pdf");
-        const ppt = refuses.some(estPresentation);
-        throw invalide(
-          ppt
-            ? "Ce serveur ne sait pas encore lire les PowerPoint : enregistrez votre présentation en PDF (Fichier → Enregistrer sous → PDF), puis déposez le PDF."
-            : pdf
-              ? "Ce serveur ne sait pas encore convertir les PDF : exportez vos diapos en images (JPEG ou PNG) depuis PowerPoint ou Google Slides, puis déposez-les."
-              : "Déposez un PowerPoint, un PDF ou des images (JPEG, PNG, WebP).",
-        );
-      }
-      const nouveaux: number[] = [];
-      for (const f of recus) {
-        if (estPresentation(f)) nouveaux.push(...(await convertirPresentation(u, f)));
-        else if (f.mimetype === "application/pdf") nouveaux.push(...(await convertirPdf(u, f)));
-        else nouveaux.push((await enregistrerFichier(u, f, "diapo")).id);
-      }
-      const [maj] = await db
-        .update(seances)
-        .set({ diapos: [...s.diapos, ...nouveaux].slice(0, 200) })
-        .where(eq(seances.id, s.id))
-        .returning();
-      publier(canal(s.id), "diapo", diapoCourante(maj));
+      const { maj } = await ajouterDiapos(u, s, recus);
       res.status(201).json(versDiapos(maj));
     }),
   );
@@ -3261,7 +3324,7 @@ export function enregistrerLive(app: Express) {
       if (!site) throw introuvable("Salle");
       // Pas de code pour un campus dont aucune classe ne suit ce cours : ses étudiants émargeraient à la mauvaise séance.
       if (!(await coursDuSite(siteId)).includes(s.coursId)) throw new ErreurHttp(409, `Ce cours n'est suivi par aucune classe de ${site.nomCourt} : pas d'émargement dans cette salle.`);
-      if (!fenetreEmargementOuverte(s)) throw new ErreurHttp(409, "Le code d'émargement s'affiche une heure avant le début du cours, et jusqu'à sa fin.");
+      if (!fenetreEmargementOuverte(s)) throw new ErreurHttp(409, "Le code de présence s'affiche une heure avant le début du cours, et jusqu'à sa fin.");
       const maintenant = Date.now();
       const code = codeEmargement(s.id, siteId, fenetreCourante(maintenant));
       const url = `${origineRequete(req)}/emargement/${code}`;
@@ -3292,7 +3355,8 @@ export function enregistrerLive(app: Express) {
               and(
                 inArray(seances.coursId, ids),
                 inArray(seances.statut, ["planifiee", "en_direct"]),
-                lte(seances.debut, new Date(maintenant + AVANT_CODE_MS)),
+                // Une classe en direct suit la fenêtre de son début de cours (fenetreEmargementOuverte, ci-dessous).
+                or(lte(seances.debut, new Date(maintenant + AVANT_CODE_MS)), eq(seances.statut, "en_direct")),
                 gte(seances.debut, new Date(maintenant - 10 * 3600_000)),
               ),
             )
@@ -4010,13 +4074,18 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       if (d.intervenant) return `Fin du direct par ${String(d.nom ?? "l'intervenant")} (lien intervenant)`;
       if (d.logique) return tOuverture(Number(d.presents ?? 0) >= 1 ? "fin.logique.un" : "fin.logique.zero");
       if (d.coursAttendu) return tOuverture("fin.coursAttendu");
+      // « Terminer le cours » depuis l'écran du campus (15 octobre 2026 à 5 h).
+      if (d.campus) return tOuverture("bilan.fin.campus", { v: { deCampus: deCampus(site ?? "?") } });
       // Fils écrits avant le 15 octobre 2026 (attente de la salle, retirée).
       if (d.salleAttendue) return "Fin automatique : le formateur était parti et le cours suivant attendait la salle";
       return "Fin du direct";
     case "annulation":
       if (d.logique) return `Séance non tenue : ${tOuverture(Number(d.presents ?? 0) >= 1 ? "fin.logique.un" : "fin.logique.zero").replace(/^Fermée toute seule : /, "")}`;
       if (d.coursAttendu) return `Séance non tenue : ${tOuverture("fin.coursAttendu").replace(/^Fermée toute seule : /, "")}`;
+      if (d.campus) return tOuverture("bilan.nonTenu.campus", { v: { deCampus: deCampus(site ?? "?") } });
       return `Séance annulée${d.automatique ? " automatiquement" : ""} : ${String(d.motif ?? "")}`;
+    case "salle_fermee":
+      return tOuverture("bilan.salleFermee", { v: { site: site ?? "Une salle" } });
     case "plan_b":
       return "Plan B : bascule sur le lien de secours";
     case "invite":
@@ -4175,12 +4244,18 @@ function publierStatut(s: Seance, motif: string | null = null): void {
  * avant l'heure : « le cours commence à 08h30 ». Jamais un second rappel pour le même horaire : après « C'était un
  * essai » sur une classe ouverte automatiquement, les étudiants savent déjà (repère « rappel-demarrage »).
  */
-async function suitesDuDemarrage(avant: Seance, maj: Seance, { parId, auto = false }: { parId: number | null; auto?: boolean }): Promise<void> {
+async function suitesDuDemarrage(
+  avant: Seance,
+  maj: Seance,
+  { parId, auto = false, avisDiffere = false }: { parId: number | null; auto?: boolean; avisDiffere?: boolean },
+): Promise<void> {
   const reprise = Boolean(avant.demarreeLe);
   if (!auto) await consigner(maj.id, "demarrage", { par: parId, ...(reprise && { reprise: true }) });
   publierStatut(maj);
   annoncer(maj);
-  if (!reprise) {
+  // Classe ouverte très tôt par le compte de campus : le rappel aux étudiants attend l'heure de l'ouverture automatique
+  // (repère « avis-differe », envoyerAvisDifferes).
+  if (!reprise && !avisDiffere) {
     const [dejaPrevenus] = await db
       .select({ type: rappelsLive.type })
       .from(rappelsLive)
@@ -4351,6 +4426,96 @@ export async function terminerParIntervenant(s: Seance, nom: string | null): Pro
   const maj = await terminerSeance(animee, null, { intervenant: true, nom: nom?.trim() || null });
   intervenantsPresents.delete(s.id);
   return maj;
+}
+
+// ── Écran du chargé du campus : fermer sa salle, terminer le cours (José, 15 octobre 2026 à 5 h) ──────────────
+
+/** Ce que l'écran d'un campus propose dans « Fermer » (règle exacte : terminaisonCampus). */
+export type TerminaisonCampus = FermetureCampusDto;
+
+/**
+ * « Terminer le cours » depuis l'écran du campus : proposé seulement quand c'est sans danger, recalculé à chaque
+ * demande (`poste` : « compte|session » de CET ordinateur, pour ne pas se compter lui-même) :
+ *   - jamais avant le début du cours (classe ouverte en avance : « pas_commence ») ;
+ *   - classe qui attend encore son formateur (personne n'est venu l'animer) : seulement après sa fin prévue, et elle
+ *     finit « Séance non tenue » (« non_tenu ») ; avant, « attente_formateur » ;
+ *   - sinon, si le campus est le SEUL à suivre ce cours (« seul_campus »), ou si la fin de la classe est passée
+ *     (finDeLaClasse, comptée depuis le début réel du cours : « fin_passee »), ou si personne d'autre n'est là : ni
+ *     formateur (formateur du cours, personne qui a démarré ou pris la classe, intervenant), ni autre écran (autres
+ *     campus, autre ordinateur de ce campus, ancien écran « salle ») (« personne »). Les étudiants ne comptent pas.
+ */
+export async function terminaisonCampus(s: Seance, siteId: number, poste: string, maintenant = Date.now()): Promise<TerminaisonCampus> {
+  const rien: TerminaisonCampus = { terminer: null, sinon: null, formateurPresent: false, autresSalles: 0 };
+  if (s.statut !== "en_direct" || (await essaisParmi([s.id])).size) return rien;
+  const formateurPresent = await animateurConnecte(s);
+  const autresSalles = postesSur(canal(s.id), estEcran, maintenant, { sauf: poste });
+  const base = { formateurPresent, autresSalles };
+  if (debutDuCours(s).getTime() > maintenant) return { ...base, terminer: null, sinon: "pas_commence" };
+  if (enAttenteAnimateur(s)) return finPrevue(s) <= maintenant ? { ...base, terminer: "non_tenu", sinon: null } : { ...base, terminer: null, sinon: "attente_formateur" };
+  const sites = await sitesDuCours(s.coursId);
+  const terminer = sites.length === 1 && sites[0] === siteId ? "seul_campus" : finDeLaClasse(s) <= maintenant ? "fin_passee" : !formateurPresent && autresSalles === 0 ? "personne" : null;
+  return { ...base, terminer, sinon: terminer ? null : "autres" };
+}
+
+/**
+ * « Terminer le cours » confirmé par le chargé du campus : la règle est recalculée (terminaisonCampus) ; refus 409
+ * { code: "pas_permis", sinon } quand ce n'est plus sans danger. Classe que personne n'a animée : « Séance non tenue »
+ * (fermée par le campus) ; sinon terminée (« fin » { campus, siteId, raison } : le formateur qui revient la relance par
+ * « Démarrer » dans les 2 h). Renvoie la séance relue.
+ */
+export async function terminerParCampus(s: Seance, u: Utilisateur, siteId: number, poste: string, messages: Record<NonNullable<TerminaisonCampus["sinon"]>, string>) {
+  const regle = await terminaisonCampus(s, siteId, poste);
+  if (!regle.terminer) {
+    const sinon = regle.sinon ?? "autres";
+    throw new ErreurHttp(409, messages[sinon], { code: "pas_permis", sinon });
+  }
+  if (regle.terminer === "non_tenu") await marquerNonTenue(s, { campus: true, siteId, par: u.id });
+  else await terminerSeance(s, u.id, { campus: true, siteId, raison: regle.terminer });
+  return { regle, seance: await chargerSeance(s.id) };
+}
+
+/**
+ * « Fermer la salle » : cet ordinateur quitte la classe ; la classe continue pour le formateur et les autres salles.
+ * Si aucun autre écran de ce campus ne la montre : la parole donnée à sa salle est rendue au formateur et la main levée
+ * de la salle baissée. Consigné au fil (« salle_fermee »), le Studio est prévenu. Sans effet hors direct.
+ */
+export async function fermerSalleCampus(s: Seance, u: Utilisateur, siteId: number, poste: string): Promise<boolean> {
+  if (s.statut !== "en_direct") return false;
+  const autresEcransDuCampus = postesSur(canal(s.id), (x) => estEcran(x) && x.siteId === siteId, Date.now(), { sauf: poste });
+  const touchees: (MainLevee | null)[] = [];
+  if (!autresEcransDuCampus) {
+    const p = await paroleCourante(s.id);
+    if (p?.type === "salle" && p.siteId === siteId) {
+      touchees.push(await finirParole(s.id));
+      publier(canal(s.id), "parole", null);
+    }
+    // La main levée « pour la salle » de ce campus (pas celles des étudiants en ligne) est baissée.
+    const baissees = await db
+      .update(mainsLevees)
+      .set({ baisseeLe: new Date() })
+      .where(and(eq(mainsLevees.seanceId, s.id), eq(mainsLevees.siteId, siteId), eq(mainsLevees.pourSalle, true), isNull(mainsLevees.baisseeLe)))
+      .returning();
+    touchees.push(...baissees);
+  }
+  await consigner(s.id, "salle_fermee", { siteId, par: u.id, ...(autresEcransDuCampus ? { autresEcrans: autresEcransDuCampus } : {}) });
+  if (touchees.length) await signalerMains(s.id, touchees);
+  // L'ordinateur quitte le canal juste après (la page change) : la carte des campus est rediffusée un peu plus tard.
+  diffuserBientot(`campus:${s.id}`, () => diffuserCampus(s.id), 2500);
+  return true;
+}
+
+/**
+ * Une autre séance du même cours, finie et que personne n'anime (finieSansAnimateur), retient celle que le campus
+ * ouvre : elle est fermée d'abord, comme la fermeture « même cours » (fin automatique : elle se rouvre pendant 2 h).
+ * Jamais animée : « Séance non tenue ». Renvoie faux si elle est encore animée (ou pas finie) : rien n'est fermé.
+ */
+export async function fermerClasseFinie(autre: Seance, attendue: Seance, siteId: number): Promise<boolean> {
+  if (!(await finieSansAnimateur(autre))) return false;
+  if (enAttenteAnimateur(autre)) await marquerNonTenue(autre, { coursAttendu: attendue.id, campus: true, siteId });
+  else await terminerSeance(autre, null, { coursAttendu: attendue.id, campus: true, siteId });
+  basDepuis.delete(autre.id);
+  sansAnimateurDepuis.delete(autre.id);
+  return true;
 }
 
 /**
@@ -4525,7 +4690,10 @@ export async function envoyerRappelsLive(maintenant = Date.now()): Promise<void>
   }
 }
 
-planifier("live-rappels", MINUTE, () => envoyerRappelsLive());
+planifier("live-rappels", MINUTE, async () => {
+  await envoyerRappelsLive();
+  await envoyerAvisDifferes();
+});
 
 /**
  * Ouverture automatique tardive (après l'heure du cours : serveur relancé pendant le créneau d'un cours jamais
@@ -4541,13 +4709,22 @@ const RESTE_MIN_OUVERTURE_TARDIVE_MS = 15 * MINUTE;
  * le journal et l'avis aux formateurs du cours (vouvoyés, l'heure d'Abidjan et celle de chez eux). Null si la séance a
  * été démarrée, annulée ou déjà ouverte entre-temps : rien n'est consigné ni envoyé.
  *
- * `par` : le compte de campus qui appuie sur « Ouvrir le cours » (routes/espace-campus.ts, dès 1 h avant) : même
- * ouverture, au nom de son campus (« demarrage » { campus, siteId }, journal « live_ouvert_campus »). Il n'est jamais
- * animateur (demarrage.par reste nul) : la classe attend son formateur, comme après l'ouverture automatique.
+ * `par` : le compte de campus qui ouvre la salle (routes/espace-campus.ts, « Entrer dans le live », à toute heure du jour
+ * du cours) : même ouverture, au nom de son campus (« demarrage » { campus, siteId }, journal « live_ouvert_campus »). Il
+ * n'est jamais animateur (demarrage.par reste nul) : la classe attend son formateur, comme après l'ouverture
+ * automatique. `avisDiffere` : ouverte avant l'heure où l'ouverture automatique aurait prévenu (momentAvis : 6 h pour
+ * 8 h 30), la classe s'ouvre sans prévenir personne ; le repère « avis-differe » est posé dans la même transaction, et
+ * l'avis aux étudiants et au formateur part à momentAvis (envoyerAvisDifferes, tâche « live-rappels »).
  */
 export async function ouvrirCommeAuto(
   s: Seance,
-  { code, minutes = null, maintenant = new Date(), par }: { code: string; minutes?: number | null; maintenant?: Date; par?: Pick<Utilisateur, "id" | "siteId"> },
+  {
+    code,
+    minutes = null,
+    maintenant = new Date(),
+    par,
+    avisDiffere = false,
+  }: { code: string; minutes?: number | null; maintenant?: Date; par?: Pick<Utilisateur, "id" | "siteId">; avisDiffere?: boolean },
 ): Promise<Seance | null> {
   const maj = await db.transaction(async (tx) => {
     const pris = await tx.insert(rappelsLive).values({ seanceId: s.id, type: REPERE_OUVERTURE_AUTO }).onConflictDoNothing().returning();
@@ -4558,19 +4735,32 @@ export async function ouvrirCommeAuto(
     // Daté du démarrage lui-même (et non du début de la transaction, un peu plus tôt) : « C'était un essai » efface
     // le fil depuis demarree_le, ce « demarrage » compris.
     if (ouverte) {
-      const donnees = { par: null, auto: true, ...(par && { campus: par.id, siteId: par.siteId }) };
+      const donnees = { par: null, auto: true, ...(par && { campus: par.id, siteId: par.siteId }), ...(avisDiffere && { avisDiffere: true }) };
       await tx.insert(evenementsSeances).values({ seanceId: s.id, type: "demarrage", donnees, creeLe: ouverte.demarreeLe ?? new Date() });
+      if (avisDiffere) await tx.insert(rappelsLive).values({ seanceId: s.id, type: REPERE_AVIS_DIFFERE }).onConflictDoNothing();
     }
     return ouverte;
   });
   if (!maj) return null;
-  await suitesDuDemarrage(s, maj, { parId: null, auto: true });
+  await suitesDuDemarrage(s, maj, { parId: null, auto: true, avisDiffere });
   const ecartMin = Math.round((s.debut.getTime() - maintenant.getTime()) / MINUTE);
   await db.insert(journal).values(
     par
-      ? { utilisateurId: par.id, action: "live_ouvert_campus", details: { seanceId: s.id, siteId: par.siteId, coursId: s.coursId, debut: s.debut.toISOString(), ecartMin } }
+      ? { utilisateurId: par.id, action: "live_ouvert_campus", details: { seanceId: s.id, siteId: par.siteId, coursId: s.coursId, debut: s.debut.toISOString(), ecartMin, avisDiffere } }
       : { action: "live_ouvert_auto", details: { seanceId: s.id, coursId: s.coursId, minutes, debut: s.debut.toISOString(), ecartMin } },
   );
+  if (!avisDiffere) await prevenirFormateursOuverture(s, code, maintenant);
+  const quand = ecartMin > 0 ? `${ecartMin} min avant` : ecartMin < 0 ? `${-ecartMin} min après` : "à";
+  console.log(
+    `[live] classe ouverte ${par ? `par le campus ${par.siteId ?? "?"}` : "automatiquement"} : séance ${s.id} (${code}), ${quand} ${heureA(s.debut)}${minutes ? ` (réglage : ${minutes} min avant)` : ""}`,
+  );
+  // Le formateur qui attendait dans son Studio, ou l'intervenant déjà dans la visio : ils animent dès l'ouverture.
+  if (par) await noterArriveesDesPresents([maj]).catch((e) => console.error("[live] arrivées des animateurs :", (e as Error).message));
+  return maj;
+}
+
+/** Avis aux formateurs du cours que leur classe est ouverte (vouvoyés, l'heure d'Abidjan et celle de chez eux). */
+async function prevenirFormateursOuverture(s: Pick<Seance, "id" | "coursId" | "titre" | "debut">, code: string, maintenant: Date): Promise<void> {
   const enRetard = s.debut.getTime() <= maintenant.getTime();
   for (const f of await formateursDuCours(s.coursId)) {
     if (!f.actif) continue;
@@ -4583,13 +4773,51 @@ export async function ouvrirCommeAuto(
       urgent: true,
     });
   }
-  const quand = ecartMin > 0 ? `${ecartMin} min avant` : ecartMin < 0 ? `${-ecartMin} min après` : "à";
-  console.log(
-    `[live] classe ouverte ${par ? `par le campus ${par.siteId ?? "?"}` : "automatiquement"} : séance ${s.id} (${code}), ${quand} ${heureA(s.debut)}${minutes ? ` (réglage : ${minutes} min avant)` : ""}`,
-  );
-  // Le formateur qui attendait dans son Studio, ou l'intervenant déjà dans la visio : ils animent dès l'ouverture.
-  if (par) await noterArriveesDesPresents([maj]).catch((e) => console.error("[live] arrivées des animateurs :", (e as Error).message));
-  return maj;
+}
+
+/**
+ * Moment où une classe prévue aurait été annoncée aux étudiants : l'heure de l'ouverture automatique (réglage actif :
+ * 30 min avant par défaut), sinon celle du rappel « Dans 15 min ». Avant ce moment, une ouverture par le compte de
+ * campus ne prévient personne (avis différé) : les salles testent le son sans réveiller les étudiants à 6 h.
+ */
+export async function momentAvis(s: Pick<Seance, "debut">): Promise<number> {
+  const reglage = await lireReglageOuverture();
+  return s.debut.getTime() - (reglage.actif ? reglage.minutes : 15) * MINUTE;
+}
+
+/**
+ * Avis différés (tâche « live-rappels », chaque minute) : classes en direct ouvertes très tôt par le compte de campus
+ * (repère « avis-differe ») dont l'avis n'est pas encore parti (pas de « rappel-demarrage ») et dont le moment est
+ * venu : momentAvis atteint, ou le cours a commencé plus tôt (« Commencer le cours maintenant »). Un seul envoi par
+ * séance (repère « rappel-demarrage » posé d'abord, ON CONFLICT) : le rappel unique aux étudiants, et l'avis aux
+ * formateurs si personne n'anime encore la classe. Classe fermée, annulée ou remise à venir d'ici là : rien ne part.
+ */
+export async function envoyerAvisDifferes(maintenant = Date.now()): Promise<number> {
+  const enAttente = await db
+    .select({ s: seances, code: cours.code })
+    .from(seances)
+    .innerJoin(cours, eq(cours.id, seances.coursId))
+    .where(
+      and(
+        eq(seances.statut, "en_direct"),
+        sql`EXISTS (SELECT 1 FROM campus.rappels_live a WHERE a.seance_id = ${seances.id} AND a.type = ${REPERE_AVIS_DIFFERE})`,
+        sql`NOT EXISTS (SELECT 1 FROM campus.rappels_live r WHERE r.seance_id = ${seances.id} AND r.type = ${REPERE_RAPPEL_DEMARRAGE})`,
+      ),
+    );
+  let envoyes = 0;
+  for (const { s, code } of enAttente) {
+    const commence = debutDuCours(s).getTime() <= maintenant;
+    if ((await momentAvis(s)) > maintenant && !commence) continue;
+    const pris = await db.insert(rappelsLive).values({ seanceId: s.id, type: REPERE_RAPPEL_DEMARRAGE }).onConflictDoNothing().returning();
+    if (!pris.length) continue;
+    // Le cours a déjà commencé (« Commencer le cours maintenant ») : « Le cours commence », pas « la classe est ouverte ».
+    const pourTexte = commence && s.debutCours && s.debutCours.getTime() < s.debut.getTime() ? { ...s, ouvertureAuto: false, debutCours: null } : s;
+    await rappelerDemarrage(pourTexte, code);
+    if (!s.animateurLe) await prevenirFormateursOuverture(s, code, new Date(maintenant));
+    await db.insert(journal).values({ action: "live_avis_differe", details: { seanceId: s.id, coursId: s.coursId, debut: s.debut.toISOString(), commence } });
+    envoyes++;
+  }
+  return envoyes;
 }
 
 /**
@@ -4694,14 +4922,15 @@ planifier("live-ouverture-auto", MINUTE, async () => {
 /**
  * Fin d'une classe pour la fin automatique : la plus tardive des deux fins, prévue ou comptée depuis le début du cours
  * (debutDuCours : un live commencé en retard n'est pas coupé en plein cours) ; la fin depuis le démarrage réel pour une
- * séance lancée bien avant son heure (plus d'une heure : celle d'une autre semaine, ouverte par erreur) ; la fin
- * PRÉVUE pour une classe ouverte automatiquement que personne n'a jamais animée.
+ * séance lancée à la main bien avant son heure (plus d'une heure, sans debut_cours : celle d'une autre semaine, ouverte
+ * par erreur : demarreeHorsCreneau) ; la fin PRÉVUE pour une classe ouverte automatiquement que personne n'a jamais
+ * animée. Une classe ouverte exprès très tôt (compte de campus à 6 h pour 8 h 30) garde sa fin prévue, même si le
+ * formateur « commence le cours » plus tôt : elle n'est jamais coupée avant l'heure de fin.
  */
-function finDeLaClasse(s: Seance): number {
+export function finDeLaClasse(s: Seance): number {
   const finReelle = s.demarreeLe ? debutDuCours(s).getTime() + s.dureeMinutes * MINUTE : 0;
   if (enAttenteAnimateur(s)) return finPrevue(s);
-  const enAvance = s.demarreeLe !== null && s.demarreeLe.getTime() < s.debut.getTime() - AVANCE_MAX_MS;
-  return enAvance ? finReelle : Math.max(finPrevue(s), finReelle);
+  return demarreeHorsCreneau(s) ? finReelle : Math.max(finPrevue(s), finReelle);
 }
 
 /**
@@ -4714,13 +4943,13 @@ export async function finieSansAnimateur(s: Seance, maintenant = Date.now()): Pr
 }
 
 /**
- * Fin de référence de la fermeture logique : la fin PRÉVUE (heure du cours + durée), sauf une séance démarrée plus
- * d'une heure avant son heure (autre créneau ouvert par erreur), dont la fin se compte depuis le démarrage réel
- * (même règle que finDeLaClasse).
+ * Fin de référence de la fermeture logique : la fin PRÉVUE (heure du cours + durée), sauf une séance démarrée à la main
+ * plus d'une heure avant son heure (autre créneau ouvert par erreur : demarreeHorsCreneau), dont la fin se compte depuis
+ * le démarrage réel (même règle que finDeLaClasse). Une classe ouverte très tôt par le compte de campus garde sa fin
+ * prévue : à 6 h pour un cours de 8 h 30 à 12 h 30, rien ne ferme avant 12 h 40.
  */
 function finDeReference(s: Seance): number {
-  const enAvance = s.demarreeLe !== null && s.demarreeLe.getTime() < s.debut.getTime() - AVANCE_MAX_MS;
-  return enAvance ? debutDuCours(s).getTime() + s.dureeMinutes * MINUTE : finPrevue(s);
+  return demarreeHorsCreneau(s) ? debutDuCours(s).getTime() + s.dureeMinutes * MINUTE : finPrevue(s);
 }
 
 /**

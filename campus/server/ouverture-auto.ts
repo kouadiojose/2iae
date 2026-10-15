@@ -23,6 +23,13 @@ export const REPERE_OUVERTURE_AUTO = "ouverture-auto";
  */
 export const REPERE_RAPPEL_DEMARRAGE = "rappel-demarrage";
 
+/**
+ * Repère « classe ouverte très tôt par le compte de campus, l'avis aux étudiants et au formateur attend » (avis
+ * différé : routes/live.ts, envoyerAvisDifferes). Posé dans la transaction de l'ouverture ; l'envoi pose ensuite
+ * « rappel-demarrage ». Effacé par « C'était un essai ».
+ */
+export const REPERE_AVIS_DIFFERE = "avis-differe";
+
 let cache: { reglage: ReglageOuvertureAuto; majLe: Date | null } | null = null;
 
 /** Le réglage courant (gardé en mémoire : une seule instance, vidé à chaque modification). */

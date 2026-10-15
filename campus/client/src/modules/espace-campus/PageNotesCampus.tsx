@@ -41,11 +41,11 @@ export default function PageNotesCampus({ coursId }: { coursId: string }) {
         ) : error || !data ? (
           <ErreurCampus message={error instanceof Error ? error.message : undefined} onReessayer={() => void refetch()} />
         ) : aucuneNote ? (
-          <p className="rounded-[24px] border-[3px] border-encre p-6 text-[24px] font-bold">{tx("notes.vide")}</p>
+          <p className="rounded-[24px] border-2 border-ligne bg-creme p-6 text-[24px] font-bold shadow-carte">{tx("notes.vide")}</p>
         ) : (
           <>
             {data.etudiants.length >= 15 && (
-              <label className="flex min-h-[64px] items-center gap-3 rounded-[20px] border-[3px] border-encre bg-white px-4">
+              <label className="flex min-h-[64px] items-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-4 shadow-carte focus-within:border-orange/60">
                 <Search className="h-7 w-7 shrink-0" aria-hidden />
                 <span className="sr-only">{tx("notes.chercher")}</span>
                 <input
@@ -63,7 +63,7 @@ export default function PageNotesCampus({ coursId }: { coursId: string }) {
                 {liste.map((e) => {
                   const lignes = data.devoirs.filter((d) => e.notes[d.id] !== null && e.notes[d.id] !== undefined).map((d) => `${d.titre} : ${note(e.notes[d.id] as number)}/20`);
                   return (
-                    <li key={e.id} className="flex flex-col gap-1 rounded-[20px] border-[3px] border-encre bg-white px-5 py-4" data-etudiant={e.id}>
+                    <li key={e.id} className="flex flex-col gap-1 rounded-[22px] border-2 border-ligne bg-white px-5 py-4 shadow-carte" data-etudiant={e.id}>
                       <span className="break-words text-[22px] font-black">
                         {e.nom.toUpperCase()} {e.prenom}
                         {e.classe ? <span className="font-semibold text-texte-doux"> · {e.classe}</span> : null}

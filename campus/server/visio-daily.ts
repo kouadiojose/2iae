@@ -31,6 +31,7 @@ import {
   type ReglagesVisioDto,
   type PreferencesUtilisateur,
   LIEUX_MAX,
+  estProfilCampus,
 } from "@shared/schema";
 import { nomDeSalle } from "@shared/salles";
 import { DELAIS_OUVERTURE_AUTO, type DelaiOuvertureAuto, type ReglageOuvertureAutoDto } from "@shared/ouverture";
@@ -58,6 +59,8 @@ async function nomDansLaSalle(u: Utilisateur): Promise<string> {
     case "admin":
       return `${u.prenom} ${u.nom} · direction`;
     case "vie_scolaire":
+      // Le compte de campus (« Tester le son et l'image ») porte le nom de la salle du campus, comme dans une classe.
+      if (estProfilCampus(u)) return `${site?.salleConference || "Salle"} · ${site?.nomCourt ?? ""}`.trim();
       return `${u.prenom} ${u.nom} · vie scolaire`;
     case "salle":
       return `${site ? nomDeSalle(u, site) : (u.salleNom ?? "Salle")} · ${site?.nomCourt ?? ""}`.trim();
@@ -80,6 +83,9 @@ async function presence(nom: string): Promise<PresenceSalleVisio> {
   cachePresence.set(nom, { exp: Date.now() + 5000, valeur });
   return valeur;
 }
+
+/** Salle d'essai de la personne : celle de son campus pour un compte de campus, la salle commune pour les autres. */
+const salleEssaiDe = (u: Utilisateur) => (estProfilCampus(u) && u.siteId ? visio.nomSalleEssaiCampus(u.siteId) : visio.NOM_SALLE_ESSAI);
 
 // Garde-fou : une demande de jeton d'essai toutes les 3 s par personne.
 const derniersJetons = new Map<number, number>();
@@ -160,7 +166,7 @@ export function enregistrerVisioDaily(app: Express) {
       const dernier = derniersJetons.get(u.id) ?? 0;
       if (Date.now() - dernier < 3000) throw new ErreurHttp(429, "Un instant : la salle d'essai s'ouvre déjà.");
       derniersJetons.set(u.id, Date.now());
-      const salle = await visio.obtenirSalleEssai();
+      const salle = await visio.obtenirSalleEssai(salleEssaiDe(u));
       const nomAffiche = await nomDansLaSalle(u);
       // Propriétaire : formateur et direction. Salle et vie scolaire : caméra et micro. Étudiant : micro seulement (pas de caméra étudiante).
       const profil = u.role === "formateur" || u.role === "admin" ? "formateur" : u.role === "salle" || u.role === "vie_scolaire" ? "salle" : "etudiant";
@@ -186,7 +192,7 @@ export function enregistrerVisioDaily(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       res.setHeader("Cache-Control", "no-store");
-      const p = await presence(visio.NOM_SALLE_ESSAI);
+      const p = await presence(salleEssaiDe(u));
       // Un étudiant voit combien de personnes sont là, pas leurs noms.
       if (u.role === "etudiant") return res.json({ ...p, presents: p.presents.map((x) => ({ ...x, nom: "Une personne" })) });
       res.json(p);

@@ -8,17 +8,19 @@
 //   4. sinon, aucune ; `prochaine` = la première séance prévue après aujourd'hui (campus), ou plus tard (formateur).
 // Deux séances du même cours à la même heure (deux sessions) : `choix` les donne toutes les deux, la personne choisit.
 // Une classe en direct FINIE que personne n'anime plus (`finieSansAnimateur`, routes/live.ts) ne cache pas la séance
-// suivante du même cours dans l'heure qui précède son début : la salle voit le bon cours (son compte à rebours, son code
-// de présence) et le formateur ouvre la bonne séance ; la classe finie se ferme toute seule (fermerLesClassesVides).
-import { and, asc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+// suivante du même cours : pour le campus, la séance suivante DU MÊME JOUR, à toute heure (il ouvre la salle quand il
+// veut, depuis le 15 octobre 2026 à 5 h : la classe finie est fermée d'abord, routes/espace-campus.ts) ; pour le
+// formateur, dans l'heure qui précède son début. La salle voit le bon cours (son compte à rebours, son code de
+// présence) et le formateur ouvre la bonne séance ; la classe finie se ferme aussi toute seule (fermerLesClassesVides).
+import { and, asc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { seances, type Seance } from "@shared/schema";
-import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { AVANCE_MAX_OUVERTURE_MIN, classeOuverteEnAvance, debutDuCours, enAttenteAnimateur } from "@shared/ouverture";
 import { heureSimple, type RepereCarre } from "@shared/espace-campus";
 
 const MINUTE = 60_000;
 const JOUR = 86_400_000;
-/** La séance suivante du même cours passe devant une classe finie dans l'heure qui précède son début. */
+/** Formateur : la séance suivante du même cours passe devant une classe finie dans l'heure qui précède son début. */
 const AVANCE_OUVERTURE_MS = AVANCE_MAX_OUVERTURE_MIN * MINUTE;
 
 export type MomentCours = {
@@ -96,8 +98,9 @@ export async function seancesDuMoment(
     let prochaine: Seance | null = jour ? (suivante.get(id) ?? null) : null;
     if (seance && finieSansAnimateur) {
       const enCours = seance;
+      // Campus : la suivante du jour, à toute heure ; formateur : la suivante, dans l'heure qui précède son début.
       const apres = (jour ? prevues : [suivante.get(id)].filter((x): x is Seance => Boolean(x))).find(
-        (p) => p.debut.getTime() > enCours.debut.getTime() && p.debut.getTime() - AVANCE_OUVERTURE_MS <= maintenant,
+        (p) => p.debut.getTime() > enCours.debut.getTime() && (jour || p.debut.getTime() - AVANCE_OUVERTURE_MS <= maintenant),
       );
       if (apres && (await finieSansAnimateur(enCours))) seance = apres;
     }
@@ -122,12 +125,17 @@ export async function seancesDuMoment(
   return carte;
 }
 
-/** Repère d'un carré (campus) : en direct (cours commencé), classe ouverte avant l'heure, prévu aujourd'hui, ou rien. */
+/**
+ * Repère d'un carré (campus) : en direct (cours commencé, animé), classe ouverte avant l'heure, classe ouverte qui attend
+ * encore son formateur après l'heure (même règle que le bandeau du live : jamais « En direct » sur le carré et « Salle
+ * ouverte » sur l'écran), prévu aujourd'hui, ou rien.
+ */
 export function repereDe(s: Seance | null, maintenant: number): { repere: RepereCarre; heure: string | null } {
   if (!s) return { repere: null, heure: null };
   const heure = heureSimple(s.debut);
   if (s.statut === "en_direct") {
     if (classeOuverteEnAvance(s, maintenant)) return { repere: "ouvert", heure };
+    if (enAttenteAnimateur(s)) return { repere: "attente", heure };
     return { repere: "direct", heure };
   }
   if (s.statut === "planifiee" && finPrevueMs(s) > maintenant && debutDuJour(s.debut.getTime()) === debutDuJour(maintenant)) return { repere: "aujourdhui", heure };
@@ -136,6 +144,68 @@ export function repereDe(s: Seance | null, maintenant: number): { repere: Repere
 
 /** Ordre des carrés : en direct, puis ouvert, puis aujourd'hui (par heure), puis les autres (par titre). */
 export function trierCarres<T extends { repere: RepereCarre; titre: string }>(liste: T[], heureDe: (c: T) => number): T[] {
-  const rang = (r: RepereCarre) => (r === "direct" ? 0 : r === "ouvert" ? 1 : r === "aujourdhui" ? 2 : 3);
+  const rang = (r: RepereCarre) => (r === "direct" ? 0 : r === "ouvert" || r === "attente" ? 1 : r === "aujourdhui" ? 2 : 3);
   return [...liste].sort((a, b) => rang(a.repere) - rang(b.repere) || (a.repere && b.repere ? heureDe(a) - heureDe(b) : 0) || a.titre.localeCompare(b.titre, "fr"));
+}
+
+/**
+ * La séance que le chargé du campus complète (PowerPoint, vidéos) pour un cours : celle du moment si elle est prévue
+ * ou en direct aujourd'hui (deux séances à la même heure : les deux, la personne choisit) ; sinon la prochaine séance
+ * prévue du cours (et sa jumelle à la même heure) ; sinon aucune.
+ */
+export async function seanceCibleCampus(moment: MomentCours, maintenant: number): Promise<Seance[]> {
+  const s = moment.seance;
+  if (s && (s.statut === "en_direct" || (s.statut === "planifiee" && debutDuJour(s.debut.getTime()) === debutDuJour(maintenant)))) {
+    return moment.choix ?? [s];
+  }
+  const p = moment.prochaine;
+  if (!p) return [];
+  return db
+    .select()
+    .from(seances)
+    .where(and(eq(seances.coursId, p.coursId), eq(seances.debut, p.debut), eq(seances.statut, "planifiee"), sansEssai))
+    .orderBy(asc(seances.id));
+}
+
+/**
+ * Le chargé du campus peut-il compléter cette séance ? La séance du jour de ce cours (prévue, pas finie, ou en direct),
+ * ou sa prochaine séance prévue (et sa jumelle à la même heure). Message de refus, sinon null. Le cours, le campus et
+ * l'essai de visio sont vérifiés par l'appelant (404).
+ */
+export async function refusAjoutCampus(s: Seance, maintenant: number): Promise<string | null> {
+  if (s.statut === "en_direct") return null;
+  if (s.statut !== "planifiee" || finPrevueMs(s) <= maintenant) return "Ce cours est fini.";
+  if (debutDuJour(s.debut.getTime()) === debutDuJour(maintenant)) return null;
+  const [prochaine] = await db
+    .select({ debut: seances.debut })
+    .from(seances)
+    .where(and(eq(seances.coursId, s.coursId), eq(seances.statut, "planifiee"), gte(seances.debut, new Date(debutDuJour(maintenant) + JOUR)), sansEssai))
+    .orderBy(asc(seances.debut), asc(seances.id))
+    .limit(1);
+  return prochaine && prochaine.debut.getTime() === s.debut.getTime() ? null : "Ajoutez au cours du jour ou au prochain.";
+}
+
+/**
+ * Séance plus tôt du même cours, le même jour d'Abidjan, encore prévue et pas finie (autre heure, pas un essai) : elle
+ * passe d'abord. Ouvrir la séance de 14 h à 6 h laisserait celle de 8 h 30 sans ouverture automatique, puis deux séances
+ * du même cours en direct au « Démarrer » du formateur (relecture du 15 octobre 2026). Null sinon.
+ */
+export async function seancePrevueAvant(s: Seance, maintenant: number): Promise<Seance | null> {
+  const [x] = await db
+    .select()
+    .from(seances)
+    .where(
+      and(
+        eq(seances.coursId, s.coursId),
+        ne(seances.id, s.id),
+        eq(seances.statut, "planifiee"),
+        gte(seances.debut, new Date(debutDuJour(s.debut.getTime()))),
+        lt(seances.debut, s.debut),
+        sansEssai,
+        sql`${seances.debut} + make_interval(mins => ${seances.dureeMinutes}) > ${new Date(maintenant).toISOString()}::timestamptz`,
+      ),
+    )
+    .orderBy(asc(seances.debut), asc(seances.id))
+    .limit(1);
+  return x ?? null;
 }

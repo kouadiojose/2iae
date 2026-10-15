@@ -21,7 +21,9 @@
 // L'ouverture automatique ne ferme jamais un cours ; elle ne regarde plus l'occupation des salles depuis le 15 octobre
 // 2026 (une classe oubliée retenait la salle) : la fermeture logique ferme une classe dont la fin prévue est passée et
 // où il reste au plus une personne depuis 10 min (server/routes/live.ts, fermerLesClassesVides). Le compte de campus
-// qui appuie sur « Ouvrir le cours » (dès 1 h avant) fait comme l'ouverture automatique. La régie de l'équipe (chargé de cours, vie scolaire) qui ouvre la classe avant l'heure fait comme l'ouverture
+// qui ouvre la salle (« Entrer dans le live », à toute heure du jour du cours depuis le 15 octobre 2026 à 5 h : les salles
+// testent le son avant l'arrivée du professeur) fait comme l'ouverture automatique : le cours commence à son heure, et
+// l'avis aux étudiants et au formateur part à l'heure où l'ouverture automatique l'aurait envoyé (avis différé). La régie de l'équipe (chargé de cours, vie scolaire) qui ouvre la classe avant l'heure fait comme l'ouverture
 // automatique pour le début du cours (debut_cours = l'heure prévue), sans attendre d'animateur : elle est là.
 // Tout ce qui se compte depuis le début du cours (retards, minutes de présence, seuil des 70 %, fin du cours,
 // échéance « fin du cours » d'un devoir, chrono du Studio, moments de l'émargement, transcription du replay,
@@ -44,12 +46,21 @@ export const OUVERTURE_AUTO_PAR_DEFAUT: ReglageOuvertureAuto = { actif: true, mi
 export type ReglageOuvertureAutoDto = ReglageOuvertureAuto & { majLe: string | null };
 
 /**
- * La plus grande avance permise à l'ouverture automatique (60 min). Une séance démarrée plus tôt que cela avant son
- * heure l'a été pour un autre créneau (séance d'une autre semaine ouverte par erreur : séance #26, chantier C8).
+ * La plus grande avance de l'ouverture automatique, de la régie et du « Entrer dans le live » du formateur (60 min). Le
+ * compte de campus, lui, ouvre à toute heure du jour du cours (debut_cours posé : demarreeHorsCreneau reste faux).
  */
 export const AVANCE_MAX_OUVERTURE_MIN = 60;
 
 const temps = (d: Date | string) => (d instanceof Date ? d.getTime() : new Date(d).getTime());
+
+/**
+ * « Démarrer » à la main plus d'une heure avant l'heure (autre créneau ouvert par erreur : séance #26, chantier C8) : la
+ * fin de la classe se compte alors depuis ce démarrage. Jamais une classe ouverte en avance exprès (ouverture
+ * automatique, compte de campus, régie, accueil du formateur) : celle-ci a debut_cours posé.
+ */
+export function demarreeHorsCreneau(s: DatesSeance): boolean {
+  return !s.debutCours && Boolean(s.demarreeLe) && temps(s.demarreeLe!) < temps(s.debut) - AVANCE_MAX_OUVERTURE_MIN * 60_000;
+}
 
 /**
  * Ce qu'il faut savoir d'une séance pour dater le début de son cours. debutCours est obligatoire (même null) :

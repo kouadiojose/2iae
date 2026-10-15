@@ -33,12 +33,12 @@ export default function PageExamensCampus({ coursId }: { coursId: string }) {
         ) : error || !data ? (
           <ErreurCampus message={error instanceof Error ? error.message : undefined} onReessayer={() => void refetch()} />
         ) : data.length === 0 ? (
-          <p className="rounded-[24px] border-[3px] border-encre p-6 text-[24px] font-bold">{tx("examens.vide")}</p>
+          <p className="rounded-[24px] border-2 border-ligne bg-creme p-6 text-[24px] font-bold shadow-carte">{tx("examens.vide")}</p>
         ) : (
           <div className="flex flex-col gap-4">
             {data.map((e) => (
-              <article key={e.id} className={`flex flex-col gap-2 rounded-[24px] border-[3px] p-5 sm:p-6 ${e.etat === "en_cours" ? "border-orange bg-orange-pale" : "border-encre bg-white"}`} data-examen={e.id}>
-                <span className="flex items-center gap-2 text-[18px] font-bold uppercase tracking-wide text-texte-pale">
+              <article key={e.id} className={`flex flex-col gap-2 rounded-[24px] border-2 p-5 shadow-carte sm:p-6 ${e.etat === "en_cours" ? "border-orange bg-orange-pale" : "border-ligne bg-white"}`} data-examen={e.id}>
+                <span className="flex items-center gap-2 font-mono text-[15px] font-semibold uppercase leading-snug tracking-[0.14em] text-orange-profond">
                   {e.type === "quiz" ? <Timer className="h-6 w-6" aria-hidden /> : <ClipboardList className="h-6 w-6" aria-hidden />}
                   {tx(e.type === "quiz" ? "examens.quiz" : "examens.depot")}
                 </span>

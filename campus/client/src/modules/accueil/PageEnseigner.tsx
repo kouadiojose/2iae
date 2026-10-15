@@ -12,6 +12,7 @@ import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { jourLong } from "@/lib/dates";
 import { useTextes } from "@/lib/textes";
 import { t as tEnseigner } from "@shared/textes/enseigner";
+import { Etiquette } from "@/components/ui/gros-blocs";
 import { majuscule } from "./outils";
 import { BandeCours, CarreCours, LienPlus, TroisBlocs, useAccueilSimple } from "./simple/blocs";
 
@@ -23,9 +24,9 @@ export default function PageEnseigner() {
   const seul = data?.seul ? data.cours.find((c) => c.coursId === data.seul) : undefined;
   return (
     <Page className="gap-6 sm:gap-8">
-      <header className="flex flex-col gap-1">
-        <span className="text-[18px] font-semibold text-texte-pale">{majuscule(jourLong(maintenant))}</span>
-        <h1 className="text-[34px] font-black leading-[1.05] tracking-serre sm:text-[40px]">{data ? `${data.salutation} ${data.prenom}.` : " "}</h1>
+      <header className="flex flex-col gap-2">
+        <Etiquette>{majuscule(jourLong(maintenant))}</Etiquette>
+        <h1 className="text-[40px] leading-[1.02] text-encre sm:text-[52px]">{data ? `${data.salutation} ${data.prenom}.` : " "}</h1>
       </header>
       {isLoading ? (
         <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">
@@ -45,15 +46,15 @@ export default function PageEnseigner() {
         </>
       ) : montres.length ? (
         <>
-          <p className="text-[22px] font-bold">{tx("blocs.choisir")}</p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+          <p className="inline-flex w-fit items-center rounded-full bg-creme px-5 py-3 text-[20px] font-bold shadow-carte">{tx("blocs.choisir")}</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
             {montres.map((c) => (
               <CarreCours key={c.coursId} c={c} />
             ))}
           </div>
         </>
       ) : (
-        <div className="rounded-[24px] border-[3px] border-encre p-6 sm:p-8">
+        <div className="rounded-[28px] border-2 border-ligne bg-creme p-6 shadow-carte sm:p-8">
           <p className="text-[30px] font-black leading-tight">{tx("blocs.aucun.titre")}</p>
           <p className="mt-2 text-[22px] text-texte-doux">{tx("blocs.aucun.texte")}</p>
         </div>

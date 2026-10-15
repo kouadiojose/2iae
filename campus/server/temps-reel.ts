@@ -183,10 +183,12 @@ function postesHttp(canal: string, maintenant = Date.now()): Map<string, Utilisa
  * (même session) comptent une fois ; deux ordinateurs du même compte de campus (deux sessions) comptent deux fois.
  * Sert à la fermeture logique (routes/live.ts : presentsDans) et aux écrans du campus (campusDirect, « ecrans »).
  */
-export function postesSur(canal: string, filtre?: (u: Utilisateur) => boolean, maintenant = Date.now()): number {
+export function postesSur(canal: string, filtre?: (u: Utilisateur) => boolean, maintenant = Date.now(), { sauf }: { sauf?: string } = {}): number {
   const vus = new Set<string>();
   for (const c of parCanal.get(canal) ?? []) if (!filtre || filtre(c.utilisateur)) vus.add(`${c.utilisateur.id}|${c.sessionId}`);
   for (const [cle, u] of postesHttp(canal, maintenant)) if (!filtre || filtre(u)) vus.add(cle);
+  // « Les autres » (terminer depuis l'écran du campus) : sans CE poste (« compte|session » de la requête).
+  if (sauf) vus.delete(sauf);
   return vus.size;
 }
 

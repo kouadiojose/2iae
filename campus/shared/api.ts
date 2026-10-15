@@ -34,6 +34,9 @@ export type SeanceResume = {
   fournisseur: FournisseurVisio;
   replayDisponible: boolean;
   formateur: { id: number; prenom: string; nom: string; localisation: string | null; photoUrl: string | null } | null;
+  /** Démarrage et début du cours (classe ouverte avant l'heure : « Salle ouverte » plutôt que « En direct »). */
+  demarreeLe?: string | null;
+  debutCours?: string | null;
 };
 
 /** GET /api/live/en-cours — séance en direct maintenant et prochaine séance de la personne. */

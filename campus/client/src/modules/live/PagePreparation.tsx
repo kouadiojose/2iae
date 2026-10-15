@@ -15,11 +15,15 @@ import { BoutonLienIntervenant } from "@/modules/regie/LienIntervenant";
 import { t as textesRegie } from "@shared/textes/regie";
 import { estProfilRegie } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { dateEtHeure, depuisChampDate, heureDouble, versChampDate } from "@/lib/dates";
+import { dateEtHeure, depuisChampDate, heure, heureDouble, versChampDate } from "@/lib/dates";
+import { maintenantServeur } from "@/lib/horloge";
+import { classeOuverteEnAvance } from "@shared/ouverture";
+import { t as textesOuverture } from "@shared/textes/direct";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
 import { GestionRessources, ListeRessources } from "./ressources";
+import { BlocsAjouts } from "./ajouts";
 import { BoutonLienInvite } from "./LienInvite";
 import { Champ, ZoneTexte, Selection, CaseACocher } from "@/components/ui/champs";
 import { Badge, BadgeDirect, Chargement, EtatVide, Erreur, Chiffre } from "@/components/ui/divers";
@@ -72,6 +76,7 @@ function NouvelleSeance({ coursId }: { coursId: number | null }) {
 function SeanceExistante({ id }: { id: number }) {
   const moi = useMoiConnecte();
   const txRegie = useTextes(textesRegie);
+  const txOuverture = useTextes(textesOuverture);
   const { data: seance, error, isLoading, refetch } = useSeance(id);
   const [, naviguer] = useLocation();
   const [onglet, setOnglet] = useState<Onglet | null>(null);
@@ -120,7 +125,21 @@ function SeanceExistante({ id }: { id: number }) {
         sousTitre={`${dateEtHeure(seance.debut)} · ${seance.dureeMinutes} min · ${LIBELLES_FOURNISSEUR[seance.fournisseur]}`}
         actions={
           <>
-            {seance.statut === "en_direct" ? <BadgeDirect /> : <Badge ton={seance.statut === "annulee" ? "danger" : "gris"}>{LIBELLES_STATUT_SEANCE[seance.statut]}</Badge>}
+            {/* Classe ouverte avant l'heure (le campus teste le son à 6 h pour 16 h) : comme le Studio, « Classe ouverte ·
+                début 16h00 », pas « En direct » ; l'heure passée sans animateur : « En attente du formateur ». */}
+            {seance.statut === "en_direct" ? (
+              <BadgeDirect
+                libelle={
+                  classeOuverteEnAvance(seance, maintenantServeur())
+                    ? txOuverture("ouverte.entete", { v: { heure: heure(seance.debut) } })
+                    : seance.attenteAnimateur
+                      ? txOuverture("attente.entete")
+                      : undefined
+                }
+              />
+            ) : (
+              <Badge ton={seance.statut === "annulee" ? "danger" : "gris"}>{LIBELLES_STATUT_SEANCE[seance.statut]}</Badge>
+            )}
             {(seance.statut === "planifiee" || seance.statut === "en_direct") && (
               <LienBouton href={`/live/${seance.id}`} icone={<Radio className="h-4 w-4" />}>
                 {seance.monRole === "equipe" ? "Observer" : "Ouvrir le studio"}
@@ -175,6 +194,8 @@ function SeanceExistante({ id }: { id: number }) {
           className="w-fit"
         />
       )}
+      {/* « Ajouter un PowerPoint », « Ajouter une vidéo » : en tête, visibles sans chercher (José, 15 octobre 2026 à 5 h). */}
+      {courant === "preparer" && seance.peutModifier && seance.statut !== "terminee" && seance.statut !== "annulee" && <BlocsAjouts seance={seance} variante="preparation" />}
       {courant === "preparer" && (
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-4">

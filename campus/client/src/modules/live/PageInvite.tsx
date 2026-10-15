@@ -1,6 +1,8 @@
 // /invite/:jeton : suivre UNE séance sans compte ni identifiant (lien invité
 // partagé par le formateur ou l'équipe). L'invité donne son nom, puis suit en
-// son + diapos (léger, ≈ 12 à 15 Mo/h) ou en vidéo. Il ne pose pas de question
+// son + diapos (léger, ≈ 12 à 15 Mo/h) ou en vidéo (seulement quand la vidéo
+// des étudiants est ouverte : info.video ; coupée par la direction, l'invité
+// simple n'a que le son + diapos, l'intervenant garde sa visio). Il ne pose pas de question
 // et n'émarge pas : pour cela, il faut se connecter avec son compte. La diapo
 // suit par une relecture toutes les 2 secondes (pas de temps réel sans compte).
 //
@@ -64,6 +66,14 @@ export default function PageInvite({ jeton }: { jeton: string }) {
     if (info?.intervenant) setMode("video");
   }, [info?.intervenant]);
   const [entre, setEntre] = useState<Mode | null>(null);
+  // Invité simple sans vidéo (vidéo des étudiants coupée par la direction, ou pas de visio Daily) : son + diapos, même
+  // si la vidéo avait été choisie avant (page restée ouverte).
+  const sansVideo = Boolean(info && !info.intervenant && !info.video);
+  useEffect(() => {
+    if (!sansVideo) return;
+    setMode((m) => (m === "video" ? "radio" : m));
+    setEntre((m) => (m === "video" ? "radio" : m));
+  }, [sansVideo]);
   // L'intervenant a terminé le cours (ou la classe est terminée) : plus de visio, un mot de fin.
   const [termine, setTermine] = useState(false);
   const [envoi, setEnvoi] = useState(false);

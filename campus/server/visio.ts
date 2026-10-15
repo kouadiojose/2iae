@@ -18,7 +18,9 @@
 // Coût : Daily facture à la minute-participant. L'usage est pensé pour le
 // formateur et les cinq écrans de salle ; l'étudiant au téléphone arrive en
 // « son + diapos » (radio) et ne rejoint Daily que s'il choisit la vidéo.
-// Le nombre d'étudiants en vidéo est plafonné par salle (réglage).
+// Le nombre d'étudiants en vidéo est plafonné par salle (réglage) ; à 0, la
+// vidéo des étudiants est coupée partout (videoEtudiantsCoupee) : seuls
+// l'étudiant qui a la parole et l'intervenant du lien intervenant entrent.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { config } from "./config";
 import { db } from "./db";
@@ -315,8 +317,68 @@ function erreurDaily(statut: number, donnees: unknown): ErreurHttp {
 /** Places vidéo étudiantes d'une séance : le réglage, dans la limite du forfait Daily (un ancien réglage trop haut ne prend pas les places réservées). */
 const placesEtudiants = () => Math.max(0, Math.min(reglages.placesDailyEtudiants, placesDailyEtudiantsMax()));
 
-/** Taille maximale d'une salle de séance : les places vidéo étudiantes + formateur, salles et équipe, dans la limite du forfait Daily. */
-const tailleSalleSeance = () => Math.min(PLAFOND_DAILY, Math.max(10, placesEtudiants() + PLACES_HORS_ETUDIANTS));
+/**
+ * Marge de la salle pour les personnes qui entrent toujours, sans place comptée : l'étudiant à qui le formateur donne
+ * la parole, les intervenants du lien intervenant, un second ordinateur d'un campus. Sans elle, une salle réglée à 0
+ * place étudiante ferait 15 personnes : juste pour le formateur, les cinq salles et l'équipe. La taille d'une salle ne
+ * coûte rien chez Daily (on paie les minutes des présents).
+ */
+const PLACES_EXCEPTIONS = 5;
+/** Taille d'une salle de séance au moins (20) : formateur, salles, équipe, et la marge des exceptions. */
+export const TAILLE_MIN_SALLE_SEANCE = PLACES_HORS_ETUDIANTS + PLACES_EXCEPTIONS;
+
+/** Taille maximale d'une salle de séance : les places vidéo étudiantes + formateur, salles et équipe (et la marge), dans la limite du forfait Daily. */
+const tailleSalleSeance = () => Math.min(PLAFOND_DAILY, Math.max(TAILLE_MIN_SALLE_SEANCE, placesEtudiants() + PLACES_HORS_ETUDIANTS));
+
+// ── Vidéo des étudiants coupée (son + diapos pour tous) ────────────────────
+
+/**
+ * José, 15 octobre 2026 : « Tous les étudiants passent en son + diapos sans exception » (facture Daily : en octobre,
+ * 46 % des minutes-participant venaient d'étudiants en vidéo). Le réglage de pilotage « Étudiants en vidéo par séance »
+ * à 0 est le SEUL interrupteur : tant qu'il vaut 0, aucun jeton Daily pour un compte étudiant (salles de séance, groupes
+ * de travail, salle d'essai) ni pour un invité simple du lien invité. Seules exceptions : l'étudiant à qui le formateur
+ * donne la parole (le temps de parler) et l'intervenant du lien intervenant. Les écrans de salle (comptes « salle » et
+ * comptes de campus), le formateur, la régie et l'équipe qui observe ne changent pas. Un nombre plus grand que 0 rouvre
+ * tout comme avant.
+ */
+export const videoEtudiantsCoupee = () => placesEtudiants() === 0;
+
+/** Où un étudiant (ou un invité simple) demande un jeton Daily. */
+export type CheminVideoEtudiant = "seance" | "groupe" | "essai" | "invite";
+
+const MESSAGES_VIDEO_COUPEE: Record<CheminVideoEtudiant, string> = {
+  seance: "La vidéo est coupée pour les étudiants : suis le cours en « son + diapos ». Tu entends tout, avec les diapos. Si le formateur te donne la parole, ton micro s'ouvre.",
+  groupe: "Pas de vidéo dans les groupes : écris avec ton groupe dans la discussion.",
+  essai: "La salle d'essai n'est plus ouverte aux étudiants : les cours se suivent en « son + diapos ». Teste ton micro et la radio du cours sur cette page.",
+  invite: "La vidéo est réservée aux salles et aux intervenants : suivez le cours en « son + diapos ».",
+};
+
+/** Refus déjà notés au journal (personne, chemin, séance) : une ligne toutes les 10 minutes au plus. */
+const refusNotes = new Map<string, number>();
+const INTERVALLE_NOTE_REFUS_MS = 10 * 60_000;
+
+/**
+ * La règle, à chaque remise d'un jeton Daily à un compte étudiant ou à un invité simple : quand la vidéo des étudiants
+ * est coupée, 409 « video_etudiants_coupee » (message tutoyé pour l'étudiant, vouvoyé pour l'invité), noté au journal
+ * (« video_etudiant_refusee »). `exception` : l'étudiant qui a la parole, l'intervenant. Rien ne change sinon.
+ */
+export async function verifierVideoEtudiant(o: { chemin: CheminVideoEtudiant; utilisateurId: number | null; seanceId?: number; groupeId?: number; exception?: boolean }): Promise<void> {
+  if (o.exception || !videoEtudiantsCoupee()) return;
+  const maintenant = Date.now();
+  const cle = `${o.chemin}:${o.utilisateurId ?? "invite"}:${o.seanceId ?? ""}`;
+  if (maintenant - (refusNotes.get(cle) ?? 0) > INTERVALLE_NOTE_REFUS_MS) {
+    if (refusNotes.size > 5000) for (const [k, t] of refusNotes) if (maintenant - t > INTERVALLE_NOTE_REFUS_MS) refusNotes.delete(k);
+    refusNotes.set(cle, maintenant);
+    const details = { chemin: o.chemin, ...(o.seanceId !== undefined && { seanceId: o.seanceId }), ...(o.groupeId !== undefined && { groupeId: o.groupeId }), ...(o.utilisateurId === null && { invite: true }) };
+    console.log(`[visio] vidéo des étudiants coupée : jeton Daily refusé (${o.chemin}${o.seanceId !== undefined ? `, séance ${o.seanceId}` : ""}${o.utilisateurId === null ? ", invité" : ""})`);
+    try {
+      await db.insert(journal).values({ utilisateurId: o.utilisateurId, action: "video_etudiant_refusee", details });
+    } catch (e) {
+      console.warn("[visio] journal du refus impossible :", (e as Error).message);
+    }
+  }
+  throw new ErreurHttp(409, MESSAGES_VIDEO_COUPEE[o.chemin], { code: "video_etudiants_coupee" });
+}
 
 /** Propriétés communes : pas d'écran d'attente Daily (nos pré-tests le remplacent), pas de discussion Daily (les questions du campus la remplacent). */
 const PROPRIETES_COMMUNES = {

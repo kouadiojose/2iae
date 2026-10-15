@@ -8,6 +8,10 @@
 // José : on suit le cours ensemble devant l'écran) : l'émargement lui est
 // proposé en premier, « Son + diapos » ensuite. En ligne, une jauge montre sa
 // présence ; « Quitter » arrête vraiment le comptage (SortieDuLive).
+// Vidéo des étudiants coupée par la direction (places vidéo étudiantes à 0,
+// /api/visio/options : videoEtudiants faux) : plus d'option « Vidéo » ; un mode
+// « video » gardé se lit « son + diapos » ; la visio seulement le temps de
+// parler, quand le formateur donne la parole (« Ouvrir mon micro »).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Hand, LogOut, Radio, Video, Users, Mic, CalendarPlus, Signal } from "lucide-react";
@@ -108,6 +112,8 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
   // Coût de la visio (module visio) : « son + diapos » par défaut ; la vidéo seulement si
   // la direction l'a réglée par défaut et que l'étudiant suit sur ordinateur sans données réduites.
   const reglagesVisio = useOptionsVisio();
+  // Vidéo des étudiants coupée par la direction : pas d'option « Vidéo » (ni tant que les options ne sont pas lues).
+  const videoPermise = reglagesVisio?.videoEtudiants === true;
   // Supposé en salle (campus, pas de suivi en ligne déclaré) : l'émargement d'abord, présélectionné.
   const salleDabord = dejaEnSalle || moi.preferences?.modeSuivi === "salle" || supposeEnSalle(seance, moi);
   const parDefaut = (videoAutorisee: boolean): ModeSuivi =>
@@ -117,15 +123,19 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
         ? "video"
         : "radio";
   // Déjà émargé dans sa salle (QR ou code de la salle) : le mode compagnon est proposé d'office.
-  const [choix, setChoixEtat] = useState<ModeSuivi>(() => parDefaut(Boolean(reglagesVisio?.videoEtudiantParDefaut)));
+  const [choix, setChoixEtat] = useState<ModeSuivi>(() => parDefaut(videoPermise && Boolean(reglagesVisio?.videoEtudiantParDefaut)));
   const touche = useRef(false);
   const setChoix = (m: ModeSuivi) => {
     touche.current = true;
     setChoixEtat(m);
   };
   useEffect(() => {
-    if (reglagesVisio && !touche.current) setChoixEtat(parDefaut(reglagesVisio.videoEtudiantParDefaut));
-  }, [reglagesVisio?.videoEtudiantParDefaut]);
+    if (reglagesVisio && !touche.current) setChoixEtat(parDefaut(videoPermise && reglagesVisio.videoEtudiantParDefaut));
+  }, [reglagesVisio?.videoEtudiantParDefaut, videoPermise]);
+  // La vidéo coupée pendant que cet écran est ouvert : un choix « Vidéo » repasse en son + diapos.
+  useEffect(() => {
+    if (!videoPermise && choix === "video") setChoixEtat("radio");
+  }, [videoPermise, choix]);
   const [code, setCode] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [erreurCode, setErreurCode] = useState<string | null>(null);
@@ -154,8 +164,8 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
   // « Recommandé en 4G » ne vaut que pour qui suit en ligne ; en salle, l'émargement passe en tête.
   type Option = { m: ModeSuivi; icone: ReactNode; recommande?: boolean };
   const enLigne: Option[] = [
-    { m: "radio", icone: <Radio className="h-6 w-6" />, recommande: !salleDabord },
-    { m: "video", icone: <Video className="h-6 w-6" /> },
+    { m: "radio", icone: <Radio className="h-6 w-6" />, recommande: !salleDabord && videoPermise },
+    ...(videoPermise ? [{ m: "video" as const, icone: <Video className="h-6 w-6" /> }] : []),
   ];
   const salle: Option = { m: "compagnon", icone: <Users className="h-6 w-6" /> };
   const options: Option[] = salleDabord ? [salle, ...enLigne] : [...enLigne, salle];
@@ -205,6 +215,12 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
             );
           })}
         </div>
+        {reglagesVisio && !videoPermise && choix === "radio" && (
+          <p className="flex items-start gap-2 text-[14px] leading-snug text-nuit-doux">
+            <Mic className="mt-0.5 h-4 w-4 shrink-0 text-orange-peche" aria-hidden />
+            Si le formateur te donne la parole, tu pourras ouvrir ton micro.
+          </p>
+        )}
 
         {choix === "compagnon" && !dejaEnSalle && (
           <div className="flex flex-col gap-3 rounded-[22px] bg-nuit-panneau p-5">
@@ -235,8 +251,9 @@ function ChoixMode({ seance, onChoix }: { seance: SeanceDetailDto; onChoix: (m: 
 
 // ── La salle en direct ─────────────────────────────────────────────────────
 
-function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDto; mode: ModeSuivi; onChangerMode: (m: ModeSuivi | null) => void }) {
+function SalleEnDirect({ seance, mode: modeChoisi, onChangerMode }: { seance: SeanceDetailDto; mode: ModeSuivi; onChangerMode: (m: ModeSuivi | null) => void }) {
   const moi = useMoiConnecte();
+  const optionsVisio = useOptionsVisio();
   const [panneau, setPanneau] = useState<Panneau>("questions");
   const nonLus = useNonLusDiscussion(seance.id, false, moi.id, panneau === "discussion");
   const [rattrapage, setRattrapage] = useState<RattrapageDto | null>(null);
@@ -262,6 +279,30 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
   }, [groupe?.id]);
   const maMain: MainDirectDto | undefined = etat?.mains[0];
   const jaiLaParole = etat?.parole?.type === "etudiant" && etat.parole.utilisateurId === moi.id;
+  // Vidéo des étudiants coupée par la direction (ou options pas encore lues) : l'étudiant suit en son + diapos, quel que
+  // soit le mode gardé (une préférence « video » se lit « son + diapos »). Il ne rejoint la visio que pour parler, quand
+  // le formateur lui donne la parole (« Ouvrir mon micro ») ; la parole finie, il revient au son + diapos, sans que
+  // « video » devienne sa préférence.
+  const videoPermise = optionsVisio?.videoEtudiants === true;
+  const [pourParler, setPourParler] = useState(false);
+  // Retour de la parole : la radio reprend d'elle-même (le geste « Ouvrir mon micro » est déjà fait).
+  const [radioAuto, setRadioAuto] = useState(false);
+  const mode: ModeSuivi = videoPermise ? modeChoisi : jaiLaParole && pourParler ? "video" : "radio";
+  useEffect(() => {
+    if (jaiLaParole || !pourParler) return;
+    setPourParler(false);
+    if (!videoPermise) {
+      setRadioAuto(true);
+      toast("Ta parole est finie : tu repasses en son + diapos.", "info");
+    }
+  }, [jaiLaParole]);
+  // Une seule reprise : la radio lit cette consigne à son affichage, ensuite le bouton redevient la règle.
+  useEffect(() => {
+    if (!radioAuto) return;
+    const id = setTimeout(() => setRadioAuto(false), 3000);
+    return () => clearTimeout(id);
+  }, [radioAuto]);
+  const ouvrirMicro = () => (videoPermise ? onChangerMode("video") : setPourParler(true));
 
   // Présence : un battement par minute pendant le direct. Au retour d'une coupure
   // de plus de 2 min, le serveur donne l'heure (la sienne) du battement précédent :
@@ -371,7 +412,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
               <Mic className="h-5 w-5" /> {mode === "video" ? "Tu as la parole : ton micro est ouvert." : "Le formateur te donne la parole."}
             </span>
             {mode !== "video" && (
-              <Bouton variante="encre" onClick={() => onChangerMode("video")}>
+              <Bouton variante="encre" onClick={ouvrirMicro}>
                 Ouvrir mon micro
               </Bouton>
             )}
@@ -388,7 +429,7 @@ function SalleEnDirect({ seance, mode, onChangerMode }: { seance: SeanceDetailDt
         {enDirect && groupes?.session?.choixLibre && <ChoixGroupe seanceId={seance.id} groupes={groupes} />}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
           <div className="flex min-w-0 flex-col gap-3">
-            <Scene seance={seance} etat={etat} role="etudiant" mode={mode} micro={micro} onConsommationVisio={surVisio} onConsommationRadio={surRadio} />
+            <Scene seance={seance} etat={etat} role="etudiant" mode={mode} micro={micro} radioAuto={radioAuto} onConsommationVisio={surVisio} onConsommationRadio={surRadio} />
             {mode === "video" ? (
               <div className="hidden sm:block">
                 <VignettesSalles campus={etat.campus} paroleSiteId={etat.parole?.type === "salle" ? etat.parole.siteId : null} />

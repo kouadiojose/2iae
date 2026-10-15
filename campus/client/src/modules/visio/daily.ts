@@ -199,6 +199,8 @@ export function problemeDepuisApi(e: unknown, role: RoleVisio, tu: boolean): Pro
   if (code === "daily_compte") return { genre: "compte", texte: message, conseil: null, relancer: false };
   // Places vidéo étudiantes (ou d'observation) toutes prises : le serveur le dit avant même d'entrer.
   if (code === "daily_plein") return { genre: "pleine", texte: message, conseil: role === "etudiant" ? null : conseilSallePleine(role), relancer: false };
+  // Vidéo des étudiants coupée (réglage de la direction) : comme une visio complète, l'étudiant passe en son + diapos.
+  if (code === "video_etudiants_coupee") return { genre: "pleine", texte: message, conseil: null, relancer: false };
   if (code === "daily_absent") return { genre: "absente", texte: message, conseil: null, relancer: false };
   if (code === "daily_injoignable" || code === "daily_occupe" || code === "daily_refus") return { genre: "reseau", texte: message, conseil: null, relancer: false };
   if (e instanceof ErreurApi && e.statut === 409) return { genre: "fermee", texte: message, conseil: null, relancer: false };

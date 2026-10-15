@@ -14,12 +14,15 @@ import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import type { RejoindreVisioDto, SeanceDetailDto } from "@shared/schema";
 import { SalleVisio } from "./SalleVisio";
 import { roleCadreDuCompte } from "./SectionVisioClasse";
+import { useOptionsVisio } from "./options";
 
 export default function PageRepetition({ seanceId }: { seanceId: string }) {
   const id = Number(seanceId);
   const moi = useMoiConnecte();
   const tu = moi.role === "etudiant";
   const { data: seance, error, isLoading, refetch } = useQuery<SeanceDetailDto>({ queryKey: [`/api/seances/${id}`] });
+  // Vidéo des étudiants coupée par la direction : plus de salle d'essai pour l'étudiant, seulement le micro et la radio.
+  const videoEtudiants = useOptionsVisio()?.videoEtudiants === true;
 
   if (isLoading) return <Page className="max-w-4xl"><Chargement lignes={3} /></Page>;
   if (error || !seance) return <Page className="max-w-4xl"><Erreur message={(error as Error)?.message ?? "Séance introuvable."} reessayer={() => void refetch()} /></Page>;
@@ -30,7 +33,11 @@ export default function PageRepetition({ seanceId }: { seanceId: string }) {
   if (moi.role === "etudiant") {
     return (
       <Page className="max-w-3xl">
-        <EtatVide titre="La classe ouvre 30 minutes avant le début." texte="En attendant, tu peux tester ton micro et la visio dans la salle d'essai." action={<LienBouton href="/visio/essai">Tester ma visio</LienBouton>} />
+        <EtatVide
+          titre="La classe ouvre 30 minutes avant le début."
+          texte={videoEtudiants ? "En attendant, tu peux tester ton micro et la visio dans la salle d'essai." : "En attendant, tu peux tester ton micro et la radio du cours."}
+          action={<LienBouton href="/visio/essai">{videoEtudiants ? "Tester ma visio" : "Tester mon micro"}</LienBouton>}
+        />
       </Page>
     );
   }

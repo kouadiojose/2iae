@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SectionVisioClasse } from "./SectionVisioClasse";
 import { ConfirmationFuseau } from "./Fuseau";
+import { useOptionsVisio } from "./options";
 import { CheckCircle2, XCircle, Radio, Square } from "lucide-react";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,10 @@ export default function PageEssai() {
   const moi = useMoiConnecte();
   useAncre();
   const tu = moi.role === "etudiant";
+  // Vidéo des étudiants coupée par la direction (ou options pas encore lues) : ni vérifications de la visio, ni salle
+  // d'essai pour l'étudiant (le serveur la refuse : 409 « video_etudiants_coupee ») ; micro, radio et navigateur restent.
+  const options = useOptionsVisio();
+  const sansVisio = tu && options?.videoEtudiants !== true;
   // Pas de caméra étudiante en v1 : on ne demande que ce qui servira.
   const camera = !tu;
   const t = (vTu: string, vVous: string) => (tu ? vTu : vVous);
@@ -61,8 +66,8 @@ export default function PageEssai() {
         {[
           ["#essai-micro-section", camera ? "1. Micro et caméra" : "1. Micro et son"],
           ["#essai-radio", "2. La radio"],
-          ["#salle-essai", "3. La visio de la classe"],
-          ["#essai-compat", t("4. Ton navigateur", "4. Votre navigateur")],
+          ...(sansVisio ? [] : [["#salle-essai", "3. La visio de la classe"]]),
+          ["#essai-compat", sansVisio ? "3. Ton navigateur" : t("4. Ton navigateur", "4. Votre navigateur")],
         ].map(([href, libelle]) => (
           <a key={href} href={href} className="rounded-full border border-ligne bg-white px-3.5 py-2 text-[14px] font-semibold text-encre no-underline hover:border-orange hover:text-encre">
             {libelle}
@@ -90,11 +95,18 @@ export default function PageEssai() {
         <EssaiRadio tu={tu} />
       </section>
 
-      <SectionVisioClasse />
+      {sansVisio ? (
+        // Garde l'ancre « #salle-essai » des anciens liens : l'étudiant arrive ici, pas sur une salle fermée.
+        <p id="salle-essai" className="scroll-mt-24 rounded-2xl bg-creme px-4 py-3.5 text-[15px] leading-snug text-texte-doux">
+          Les cours se suivent en « son + diapos » : la radio du cours, c'est ce que tu entendras. Si le formateur te donne la parole, tu pourras ouvrir ton micro dans la classe.
+        </p>
+      ) : (
+        <SectionVisioClasse />
+      )}
 
       <section id="essai-compat" className="flex scroll-mt-24 flex-col gap-3" aria-labelledby="essai-compat-titre">
         <h2 id="essai-compat-titre" className="text-xl font-extrabold">
-          4. {t("Ton navigateur", "Votre navigateur")}
+          {sansVisio ? "3" : "4"}. {t("Ton navigateur", "Votre navigateur")}
         </h2>
         <ul className="flex flex-col divide-y divide-ligne-douce rounded-2xl border border-ligne bg-white">
           {verifications.map((v) => (

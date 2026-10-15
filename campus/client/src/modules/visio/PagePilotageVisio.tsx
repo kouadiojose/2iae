@@ -6,7 +6,7 @@
 // (fournisseur par défaut, vidéo étudiante par défaut, places).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FlaskConical, HardDrive, Save, Video } from "lucide-react";
+import { ChevronLeft, ChevronRight, FlaskConical, HardDrive, Save, Video, VideoOff } from "lucide-react";
 import { put } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
@@ -71,6 +71,7 @@ export default function PagePilotageVisio() {
         }
       />
       <ConfirmationFuseau />
+      {reglages.data && reglages.data.placesDailyEtudiants === 0 && <BandeauVideoCoupee />}
 
       {/* Le réglage qui change le déroulé de chaque cours : en premier, avant la consommation. */}
       <section className="flex flex-col gap-4" aria-labelledby="titre-ouverture">
@@ -119,6 +120,24 @@ export default function PagePilotageVisio() {
         {reglages.data ? <FormulaireReglages r={reglages.data} modifiable={moi.role === "admin"} /> : reglages.error ? <Erreur message={(reglages.error as Error).message} /> : <Chargement lignes={2} />}
       </section>
     </Page>
+  );
+}
+
+/**
+ * Places vidéo étudiantes à 0 (José, 15 octobre 2026 : « Tous les étudiants passent en son + diapos sans exception ») :
+ * le serveur ne remet plus de jeton Daily aux étudiants ni aux invités simples (server/visio.ts, videoEtudiantsCoupee).
+ */
+function BandeauVideoCoupee() {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-orange/40 bg-orange-pale px-4 py-3.5 sm:px-5" role="status" data-video-coupee>
+      <VideoOff className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+      <div className="flex flex-col gap-1">
+        <p className="text-[16px] font-extrabold text-encre">Vidéo des étudiants coupée : ils suivent en son + diapos.</p>
+        <p className="text-[14px] leading-snug text-texte-doux">
+          Seuls l'étudiant à qui le formateur donne la parole et l'intervenant du lien intervenant entrent dans la visio. Les salles, les formateurs et l'équipe ne changent pas. Pour la rouvrir, mettez un nombre plus grand que 0 dans « Étudiants en vidéo par séance ».
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -288,9 +307,11 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
         <div>
           <p className="text-[16px] font-extrabold">Vidéo pour les étudiants, par défaut</p>
           <p className="mt-0.5 text-[14px] leading-snug text-texte-pale">
-            {f.videoEtudiantParDefaut
-              ? "Un étudiant sur ordinateur entre en vidéo. Chaque étudiant en vidéo compte dans les minutes Daily (150 à 250 Mo par heure pour lui)."
-              : "Recommandé : chaque étudiant entre en « son + diapos » (12 à 15 Mo par heure, rien chez Daily) et choisit la vidéo s'il le veut."}
+            {Number(f.placesDailyEtudiants) === 0
+              ? "Sans effet tant que la vidéo des étudiants est coupée (0 étudiant en vidéo par séance)."
+              : f.videoEtudiantParDefaut
+                ? "Un étudiant sur ordinateur entre en vidéo. Chaque étudiant en vidéo compte dans les minutes Daily (150 à 250 Mo par heure pour lui)."
+                : "Recommandé : chaque étudiant entre en « son + diapos » (12 à 15 Mo par heure, rien chez Daily) et choisit la vidéo s'il le veut."}
           </p>
         </div>
         <div className={cn("pt-1", !modifiable && "pointer-events-none opacity-60")}>
@@ -306,7 +327,11 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
         disabled={!modifiable}
         value={String(f.placesDailyEtudiants)}
         onChange={(e) => setF({ ...f, placesDailyEtudiants: Number(e.target.value) })}
-        aide={`De 0 à ${r.placesDailyMax}. Au-delà, un étudiant qui choisit la vidéo suit en son + diapos. ${r.placesHorsEtudiants} autres places sont gardées dans chaque salle : le formateur, les cinq écrans de salle et l'équipe qui observe y entrent toujours, même en dernier (${Number(f.placesDailyEtudiants) + r.placesHorsEtudiants} personnes au plus par salle).`}
+        aide={
+          Number(f.placesDailyEtudiants) === 0
+            ? `0 : vidéo des étudiants coupée, ils suivent tous en son + diapos (pas de salle d'essai ni de visio des groupes pour eux). L'étudiant qui a la parole et l'intervenant du lien intervenant entrent toujours. De 1 à ${r.placesDailyMax} : la vidéo revient comme avant.`
+            : `De 0 à ${r.placesDailyMax} (0 coupe la vidéo des étudiants). Au-delà, un étudiant qui choisit la vidéo suit en son + diapos. ${r.placesHorsEtudiants} autres places sont gardées dans chaque salle : le formateur, les cinq écrans de salle et l'équipe qui observe y entrent toujours, même en dernier (${Math.max(Number(f.placesDailyEtudiants) + r.placesHorsEtudiants, r.tailleMinSalle ?? 0)} personnes au plus par salle).`
+        }
       />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Champ libelle="Prix d'une minute (dollars)" type="number" step="0.0001" min={0} disabled={!modifiable} value={String(f.prixMinuteUsd)} onChange={(e) => setF({ ...f, prixMinuteUsd: Number(e.target.value) })} />

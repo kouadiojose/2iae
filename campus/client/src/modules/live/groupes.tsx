@@ -5,6 +5,8 @@
 //    tous et rappelle la classe (compte à rebours de 60 s) ;
 //  - l'étudiant retrouve son groupe : visio du groupe, discussion, consigne,
 //    « Appeler le formateur » ; il suit l'écran de sa salle s'il y est émargé ;
+//    vidéo des étudiants coupée par la direction (videoEtudiants faux) : pas de
+//    visio, il travaille par écrit (consigne, minuteur, discussion) ;
 //  - l'écran d'une salle montre la visio de son groupe en grand.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -670,6 +672,12 @@ export function VueGroupeEtudiant({
           <div className="rounded-[22px] bg-nuit-panneau">
             <SansVisio texte="Tu es dans la salle de conférence : ton groupe se retrouve sur l'écran de la salle. Écris ici pour partager des idées ou des documents." />
           </div>
+        ) : groupes.videoEtudiants === false ? (
+          // Vidéo des étudiants coupée par la direction : ni cadre vidéo ni jeton, la consigne, le minuteur et la discussion.
+          <p className="flex items-center gap-3 rounded-[22px] bg-nuit-panneau px-4 py-3.5 text-[15px] font-semibold leading-snug text-nuit-texte" data-groupe-sans-video>
+            <MessageSquareText className="h-5 w-5 shrink-0 text-orange" aria-hidden />
+            Ton groupe travaille par écrit : lis la consigne et écris dans la discussion.
+          </p>
         ) : groupes.visioDisponible ? (
           <div className="flex flex-col gap-1.5">
             <div className="aspect-video min-h-[260px] overflow-hidden rounded-[22px] bg-black">

@@ -8,7 +8,7 @@ import type { DailyCall, DailyEventObjectParticipant } from "@daily-co/daily-js"
 import { patch, post } from "@/lib/api";
 import { useMoi } from "@/lib/auth";
 import { t as textesRegie } from "@shared/textes/regie";
-import { rafraichir } from "@/lib/queryClient";
+import { queryClient, rafraichir } from "@/lib/queryClient";
 import { cn, initiales } from "@/lib/utils";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { toast, toastErreur } from "@/components/ui/toast";
@@ -29,6 +29,8 @@ export type PropsScene = {
   role: RoleSeance;
   /** Étudiant : façon de suivre choisie à l'entrée. */
   mode?: ModeSuivi;
+  /** Étudiant en son + diapos : la radio reprend d'elle-même (retour de la parole quand la vidéo des étudiants est coupée). */
+  radioAuto?: boolean;
   /** Micro ouvert (formateur, salle ou étudiant qui a reçu la parole). */
   micro?: boolean;
   camera?: boolean;
@@ -257,7 +259,7 @@ function PortraitFormateur({ seance, sousTitre }: { seance: SeanceDetailDto; sou
 /** Pourquoi on écoute la radio au lieu de la visio Daily. */
 type RaisonSecours = "echec" | "pleine";
 
-function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, raisonSecours }: PropsScene & { retourVisio?: () => void; raisonSecours?: RaisonSecours }) {
+function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, raisonSecours, radioAuto }: PropsScene & { retourVisio?: () => void; raisonSecours?: RaisonSecours }) {
   const dernier = etat.sousTitres[etat.sousTitres.length - 1];
   const tu = role === "etudiant";
   return (
@@ -306,7 +308,7 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
         {seance.fournisseur === "demo" ? (
           <p className="text-center text-[13px] text-nuit-doux">Pas de son pour cette séance : diapos et sous-titres arrivent en direct.</p>
         ) : (
-          <LecteurRadio seanceId={seance.id} nuit onConsommation={onConsommationRadio} />
+          <LecteurRadio seanceId={seance.id} nuit onConsommation={onConsommationRadio} demarrerSeul={radioAuto} />
         )}
       </div>
     </div>
@@ -735,9 +737,13 @@ function SceneDaily({
       onRejoint={() => setConnecte(true)}
       onEtat={onEtatVisio}
       onConsommation={onConsommationVisio}
-      // Étudiant : visio complète (places vidéo prises) : il passe tout de suite en son + diapos.
+      // Étudiant : visio complète (places vidéo prises) ou vidéo des étudiants coupée : il passe tout de suite en son +
+      // diapos, et relit les options de la visio (la page ne propose plus la vidéo si la direction l'a coupée entre-temps).
       onEchecs={(_n, probleme) => {
-        if (role === "etudiant" && probleme?.genre === "pleine") onSecoursRadio("pleine");
+        if (role === "etudiant" && probleme?.genre === "pleine") {
+          onSecoursRadio("pleine");
+          void queryClient.invalidateQueries({ queryKey: ["/api/visio/options"] });
+        }
       }}
       secours={secours}
     />

@@ -136,7 +136,14 @@ export type OptionsVisio = {
   domaineDaily: string | null;
   fournisseurParDefaut: FournisseurVisio;
   fournisseurs: FournisseurVisio[];
+  /** Un étudiant sur ordinateur entre en vidéo par défaut (toujours faux quand la vidéo des étudiants est coupée). */
   videoEtudiantParDefaut: boolean;
+  /**
+   * Vidéo des étudiants ouverte : le réglage « Étudiants en vidéo par séance » vaut plus que 0. Faux : la vidéo des
+   * étudiants est coupée (José, 15 octobre 2026), ils suivent en son + diapos ; ni « Vidéo » au choix du mode, ni salle
+   * d'essai, ni visio des groupes ; la visio seulement le temps de parler, quand le formateur leur donne la parole.
+   */
+  videoEtudiants: boolean;
 };
 
 /** Profil d'une personne dans une salle Daily (droits du jeton). */
@@ -245,6 +252,11 @@ export type ReglagesVisioDto = {
   placesDailyMax: number;
   /** Places gardées dans chaque salle pour le formateur, les cinq écrans de salle et l'équipe. */
   placesHorsEtudiants: number;
+  /**
+   * Taille d'une salle de séance au moins (places gardées + marge pour l'étudiant qui a la parole et les intervenants,
+   * qui entrent toujours) : même à 0 place étudiante, la salle n'est jamais plus petite.
+   */
+  tailleMinSalle: number;
   prixMinuteUsd: number;
   minutesOffertes: number;
   tauxFcfa: number;

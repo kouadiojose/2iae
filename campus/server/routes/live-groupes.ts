@@ -160,10 +160,12 @@ export function creerModuleGroupes(o: OutilsGroupes) {
    */
   async function etatGroupes(u: Utilisateur, s: Seance, role: RoleSeance): Promise<GroupesDto> {
     const visioDisponible = visio.dailyDisponible();
+    // Vidéo des étudiants coupée : l'étudiant voit la consigne, la discussion et le minuteur, sans cadre vidéo.
+    const videoEtudiants = !visio.videoEtudiantsCoupee();
     const session = await sessionOuverte(s.id);
     // Étudiant : son groupe pour le devoir en direct en groupe, aussi quand les groupes sont fermés (devoirs-direct.ts).
     const groupeDevoir = role === "etudiant" ? await groupeDevoirPour(s.id, u) : null;
-    if (!session) return { session: null, groupes: [], monGroupeId: null, visioDisponible, groupeDevoir };
+    if (!session) return { session: null, groupes: [], monGroupeId: null, visioDisponible, videoEtudiants, groupeDevoir };
     await rattacherCompagnon(u, s, session);
     const [groupes, membres, sitesParId] = await Promise.all([
       db.select().from(groupesTravail).where(eq(groupesTravail.sessionId, session.id)).orderBy(asc(groupesTravail.numero)),
@@ -219,6 +221,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
       groupes: liste,
       monGroupeId,
       visioDisponible,
+      videoEtudiants,
       groupeDevoir,
     };
   }
@@ -545,6 +548,9 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         const g = await groupeDeLaSession(session.id, idParam(req, "gid"));
         if (!privilegie(role) && (await monGroupe(session.id, u.id)) !== g.id) throw interdit("Cette visio est celle d'un autre groupe.");
         if (!visio.dailyDisponible()) throw new ErreurHttp(503, "La visio des groupes n'est pas disponible : échangez dans la discussion du groupe.");
+        // Vidéo des étudiants coupée (réglage de pilotage à 0) : l'étudiant travaille par écrit (consigne, discussion,
+        // minuteur), sans jeton Daily ; les écrans de salle et le formateur en visite gardent la visio du groupe.
+        if (role === "etudiant" && u.role === "etudiant") await visio.verifierVideoEtudiant({ chemin: "groupe", utilisateurId: u.id, seanceId: s.id, groupeId: g.id });
         const exp = Math.floor(session.creeLe.getTime() / 1000) + VIE_SALLE_GROUPE_S;
         const salle = await visio.obtenirSalleGroupeDaily(g.salleVisio ?? visio.nomSalleGroupe(s.id, g.id), exp);
         if (!g.salleVisio) await db.update(groupesTravail).set({ salleVisio: salle.nom }).where(and(eq(groupesTravail.id, g.id), isNull(groupesTravail.salleVisio)));

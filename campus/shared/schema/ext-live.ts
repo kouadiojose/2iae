@@ -428,6 +428,12 @@ export type GroupesDto = {
   monGroupeId: number | null;
   /** Visio des groupes possible (Daily configuré) ; sinon, discussion écrite seulement. */
   visioDisponible: boolean;
+  /**
+   * Vidéo des étudiants ouverte (réglage de pilotage « Étudiants en vidéo par séance » plus grand que 0). Faux : la
+   * vidéo des étudiants est coupée, l'étudiant travaille dans son groupe par écrit (consigne, discussion, minuteur),
+   * sans visio ; les écrans de salle et le formateur gardent la visio du groupe.
+   */
+  videoEtudiants: boolean;
   /** Étudiant : son groupe pour le devoir en direct en groupe (même après la fermeture des groupes). */
   groupeDevoir?: GroupeDevoirDto | null;
 };

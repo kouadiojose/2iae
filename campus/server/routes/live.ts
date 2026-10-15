@@ -2324,8 +2324,6 @@ export function enregistrerLive(app: Express) {
       }
       switch (s.fournisseur) {
         case "daily": {
-          const salle = await visio.obtenirSalleDaily(s);
-          if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           // La direction qui répète (ou qui a lancé le direct) parle comme un formateur ; sinon elle observe.
           // Le formateur d'un autre cours entre en invité : micro et caméra (comme un intervenant), sans être propriétaire.
           const invite = role === "equipe" && u.role === "formateur";
@@ -2335,6 +2333,11 @@ export function enregistrerLive(app: Express) {
           // L'étudiant à qui le formateur donne la parole entre toujours (il prend une des places gardées).
           const parole = profil === "etudiant" ? await paroleCourante(s.id) : null;
           const aLaParole = parole?.type === "etudiant" && parole.utilisateurId === u.id;
+          // Vidéo des étudiants coupée (réglage de pilotage à 0) : pas de jeton Daily pour un compte étudiant, sauf le temps
+          // de la parole ; vérifié avant d'ouvrir la salle chez Daily (409 « video_etudiants_coupee », journal).
+          if (u.role === "etudiant") await visio.verifierVideoEtudiant({ chemin: "seance", utilisateurId: u.id, seanceId: s.id, exception: aLaParole });
+          const salle = await visio.obtenirSalleDaily(s);
+          if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole || invite });
           // Replay : seulement une vraie séance (ni répétition, ni essai de direct sans étudiants).
           const enregistrement = profil === "formateur" && !enRepetition && visio.enregistrementAutomatique() && !(await visio.estEssaiDirect(s.id));

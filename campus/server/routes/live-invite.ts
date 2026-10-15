@@ -7,6 +7,9 @@
 // L'invité donne seulement son nom ; il suit en son + diapos (léger) ou en
 // vidéo (visio Daily, sans micro ni caméra). Il ne pose pas de question, ne
 // vote pas, n'émarge pas : son passage est noté au fil de la séance (bilan).
+// Vidéo des étudiants coupée (places vidéo étudiantes à 0, visio.ts :
+// videoEtudiantsCoupee) : l'invité simple n'a que le son + diapos (pas de
+// jeton Daily : 409 « video_etudiants_coupee ») ; l'intervenant garde sa visio.
 //
 // Lien INTERVENANT : même forme, autre signature (un lien invité ne se
 // transforme pas en lien intervenant). La même page, mais en vidéo avec micro
@@ -122,7 +125,8 @@ async function infoInvite(s: Seance, jeton: string, intervenant: boolean): Promi
     fin: finPrevue(s).toISOString(),
     statut: s.statut,
     valide: lienValide(s),
-    video: s.fournisseur === "daily",
+    // Vidéo des étudiants coupée : l'invité simple suit en son + diapos ; l'intervenant garde sa visio.
+    video: s.fournisseur === "daily" && (intervenant || !visio.videoEtudiantsCoupee()),
     diapo: { index, total, masquee, url: total && !masquee ? `/api/invite/${jeton}/diapo/${index}` : null },
     sousTitre: st?.texte ?? null,
     intervenant,
@@ -232,7 +236,9 @@ export function enregistrerInvite(app: Express) {
     route(async (req, res) => {
       const { s, intervenant } = await seanceDuJeton(req);
       exigerValide(s);
-      const { nom, mode } = valider(z.object({ nom: NOM, mode: z.enum(["radio", "video"]) }), req.body);
+      const { nom, mode: demande } = valider(z.object({ nom: NOM, mode: z.enum(["radio", "video"]) }), req.body);
+      // Vidéo des étudiants coupée : un invité simple (page restée ouverte d'avant) est noté en son + diapos.
+      const mode = demande === "video" && !intervenant && visio.videoEtudiantsCoupee() ? "radio" : demande;
       const cle = `${s.id}|${req.ip}|${nom.toLowerCase()}|${intervenant ? "i" : "v"}`;
       if (!passages.has(cle)) {
         if (passages.size > 20_000) passages.clear();
@@ -276,6 +282,9 @@ export function enregistrerInvite(app: Express) {
       if (s.fournisseur !== "daily") throw new ErreurHttp(409, "Pas de vidéo pour ce cours : suivez-le en son + diapos.");
       if (s.statut === "terminee") throw new ErreurHttp(409, "Ce cours est terminé.");
       if (s.statut === "planifiee" && s.debut.getTime() - Date.now() > OUVERTURE_VIDEO_MS) throw new ErreurHttp(409, "La classe ouvre 30 minutes avant le début.");
+      // Vidéo des étudiants coupée (réglage de pilotage à 0) : pas de jeton Daily pour un invité simple (409, journal) ;
+      // l'intervenant (micro, caméra, partage d'écran) entre comme avant.
+      await visio.verifierVideoEtudiant({ chemin: "invite", utilisateurId: null, seanceId: s.id, exception: intervenant });
       const cleIp = `invite-visio|${req.ip}`;
       verifierTentatives(cleIp, 20);
       noterEchec(cleIp); // chaque jeton compte : 20 par quart d'heure et par adresse

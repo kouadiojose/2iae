@@ -312,7 +312,7 @@ fournisseur**, et rester supportable en 3G/4G. Trois couches coexistent :
 
 | Couche | Pour qui | Technique | Consommation | Configuration |
 |---|---|---|---|---|
-| **Daily.co** (fournisseur principal) | formateur ↔ 5 salles, étudiants en vidéo | visio SFU hébergée (`@daily-co/daily-js`, salles privées `campus-2iae-<id>`, jetons par rôle, enregistrement cloud → replay) | vidéo 150–250 Mo/h | `DAILY_API_KEY` |
+| **Daily.co** (fournisseur principal) | formateur ↔ 5 salles, étudiants en vidéo (coupée depuis le 15 octobre 2026, voir ci-dessous) | visio SFU hébergée (`@daily-co/daily-js`, salles privées `campus-2iae-<id>`, jetons par rôle, enregistrement cloud → replay) | vidéo 150–250 Mo/h | `DAILY_API_KEY` |
 | **Visio intégrée « campus »** (repli / Plan B) | formateur ↔ 5 salles (+ quelques étudiants) | WebRTC pair-à-pair en étoile autour du formateur, signalisation par le temps réel du campus, relais de la parole par le navigateur du formateur | idem vidéo ; son seul ≈ 20 Mo/h | aucune ; `TURN_URLS`/`TURN_USERNAME`/`TURN_CREDENTIAL` recommandés pour les réseaux mobiles |
 | **Radio du cours** (tous fournisseurs) | étudiants en ligne en 3G/4G, jusqu'à des centaines | son du formateur (WebM/Opus 24 kbit/s) envoyé au serveur par tranches d'une seconde et rediffusé en flux HTTP, + diapos synchronisées + sous-titres | ≈ 12 à 15 Mo/h (affiché partout ainsi) | aucune |
 
@@ -320,6 +320,59 @@ Le mode compagnon (étudiant présent en salle) ne consomme presque rien
 (< 5 Mo/h) : ni son ni image, seulement questions, votes, sondages et
 ressenti. L'écran de la salle de conférence rejoint la visio comme un
 participant « Salle … » avec la caméra et le micro de la salle.
+
+**Vidéo des étudiants coupée : son + diapos pour tous (15 octobre 2026).**
+José : « Tous les étudiants passent en son + diapos sans exception. » Raison :
+la facture Daily (0,004 $ la minute-participant ; en octobre, 46 % des
+minutes venaient d'étudiants en vidéo).
+
+- **Un seul interrupteur** : le réglage « Étudiants en vidéo par séance » de
+  « Pilotage · visio » (`placesDailyEtudiants`, `PUT /api/visio/reglages`). À 0,
+  la vidéo des étudiants est coupée (`videoEtudiantsCoupee()`,
+  `server/visio.ts`) ; un nombre plus grand que 0 rouvre tout comme avant.
+  La page le dit en tête : « Vidéo des étudiants coupée : ils suivent en son +
+  diapos. »
+- **Règle serveur unique** (`verifierVideoEtudiant`, avant toute salle ouverte
+  chez Daily) : aucun jeton Daily pour un compte étudiant dans la salle d'une
+  séance (`POST /api/seances/:id/rejoindre`, mode vidéo), dans un groupe de
+  travail (`POST /api/seances/:id/groupes/:gid/visio`), dans la salle d'essai
+  (`POST /api/visio/essai/rejoindre`), ni pour un invité simple du lien invité
+  (`POST /api/invite/:jeton/visio`). Réponse 409, code
+  `video_etudiants_coupee`, message tutoyé (vouvoyé pour l'invité), journal
+  `video_etudiant_refusee` (une ligne par personne, chemin et séance toutes
+  les 10 min au plus). **Seules exceptions** : l'étudiant à qui le formateur
+  donne la parole (le temps de parler) et l'intervenant du lien intervenant
+  (micro, caméra, partage d'écran). Les écrans de salle (comptes « salle » et
+  comptes de campus), le formateur, la régie, l'équipe qui observe et le
+  formateur d'un autre cours invité ne changent pas.
+- **Ce que le client sait** : `GET /api/visio/options` → `videoEtudiants`
+  (faux quand c'est coupé ; `videoEtudiantParDefaut` est alors faux aussi) ;
+  `GroupesDto.videoEtudiants` ; `InfoInviteDto.video` (faux pour l'invité
+  simple, vrai pour l'intervenant).
+- **Écrans étudiants** : « Comment suis-tu le cours ? » ne propose plus
+  « Vidéo » (son + diapos, ou la salle) ; un mode « video » gardé sur le
+  téléphone se lit « son + diapos » (sans être effacé : il revient si la vidéo
+  rouvre). Dans le live, plus de passage à la vidéo : quand le formateur donne
+  la parole, « Ouvrir mon micro » fait entrer l'étudiant dans la visio le temps
+  de parler ; la parole finie, il revient au son + diapos (« Ta parole est
+  finie : tu repasses en son + diapos. »), et la radio reprend d'elle-même
+  (`LecteurRadio`, `demarrerSeul` : le geste est déjà fait). Groupes de travail : la consigne, le
+  minuteur et la discussion écrite, sans cadre vidéo (« Ton groupe travaille
+  par écrit : lis la consigne et écris dans la discussion. »). « Tester ma
+  visio » garde le micro, la radio et le navigateur, sans salle d'essai.
+  L'étudiant émargé en salle (mode compagnon) ne change pas.
+- **Lien invité** : l'invité simple n'a que « Son + diapos » ; l'intervenant
+  garde sa visio. Le texte du lien invité suit (« suivent en son + diapos »).
+- **Salle de séance** : au moins 20 places (`TAILLE_MIN_SALLE_SEANCE` : les 15
+  places gardées + une marge pour l'étudiant qui a la parole, les intervenants,
+  un second ordinateur de campus) ; à 0 place étudiante elle en aurait eu 15.
+  La taille ne coûte rien chez Daily.
+- **Limites** : un étudiant déjà dans la visio au moment où la direction coupe
+  y reste jusqu'à ce qu'il en sorte (la coupure vaut pour les entrées
+  suivantes) ; la visio intégrée « campus » (secours) n'est pas bloquée côté
+  serveur, seuls les écrans ne la proposent plus ; un étudiant qui a eu la
+  parole garde son jeton jusqu'à la fin de la salle s'il ne quitte pas la
+  visio (le client, lui, repasse en son + diapos).
 
 ## 11. Passage au réel (26 septembre 2026)
 

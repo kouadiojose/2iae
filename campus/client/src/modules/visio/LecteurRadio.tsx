@@ -29,12 +29,18 @@ export function LecteurRadio({
   nuit,
   onConsommation,
   base,
+  demarrerSeul,
 }: {
   seanceId: number;
   nuit?: boolean;
   onConsommation?: (octets: number) => void;
   /** Adresse de la radio pour un invité sans compte (« /api/invite/<jeton>/radio ») ; sinon celle de la séance. */
   base?: string;
+  /**
+   * Lecture lancée d'elle-même à l'affichage : le geste est déjà fait (l'étudiant revient de la parole, vidéo des
+   * étudiants coupée). Si le navigateur refuse quand même, le bouton « Écouter le cours » revient.
+   */
+  demarrerSeul?: boolean;
 }) {
   const racine = base ?? `/api/radio/${seanceId}`;
   const { moi } = useMoi();
@@ -150,6 +156,11 @@ export function LecteurRadio({
       minuteur.current = setTimeout(brancher, 400);
     }
   });
+
+  // Retour de la parole : la radio reprend sans nouveau geste (à l'affichage, ou dès que la consigne arrive juste après).
+  useEffect(() => {
+    if (demarrerSeul && possible && phaseRef.current === "arret") ecouter();
+  }, [demarrerSeul]);
 
   // En attente : dès que l'interrogation voit la radio en direct, on branche.
   useEffect(() => {

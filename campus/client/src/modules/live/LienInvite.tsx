@@ -13,6 +13,7 @@ import { heure, jourLong } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { Qr } from "@/modules/pilotage/composants/Qr";
 import { copier } from "@/modules/pilotage/outils";
+import { useOptionsVisio } from "@/modules/visio";
 
 type SeanceLien = { id: number; titre: string; debut: string };
 
@@ -43,6 +44,8 @@ export function BoutonLienInvite({
 
 function FenetreLienInvite({ seance, onFermer, qrGrand }: { seance: SeanceLien; onFermer: () => void; qrGrand?: boolean }) {
   const { data, error, isLoading } = useQuery<LienInviteDto>({ queryKey: [`/api/seances/${seance.id}/lien-invite`] });
+  // Vidéo des étudiants coupée par la direction : les invités suivent en son + diapos seulement.
+  const video = useOptionsVisio()?.videoEtudiants !== false;
   const message = data
     ? `Cours « ${seance.titre} » (${jourLong(seance.debut)} à ${heure(seance.debut)}, heure d'Abidjan) : suivez-le sans compte ni mot de passe avec ce lien :\n${data.url}\nIl ne vaut que pour ce cours.`
     : "";
@@ -52,7 +55,7 @@ function FenetreLienInvite({ seance, onFermer, qrGrand }: { seance: SeanceLien; 
       onFermer={onFermer}
       large={qrGrand}
       titre="Lien invité de la séance"
-      description="Sans compte ni mot de passe : pour les étudiants qui n'arrivent pas à se connecter. Ils donnent leur nom, puis suivent en son + diapos ou en vidéo."
+      description={`Sans compte ni mot de passe : pour les étudiants qui n'arrivent pas à se connecter. Ils donnent leur nom, puis suivent en son + diapos${video ? " ou en vidéo" : ""}.`}
       pied={
         data ? (
           <>

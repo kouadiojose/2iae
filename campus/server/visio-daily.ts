@@ -125,6 +125,7 @@ async function versReglagesDto(): Promise<ReglagesVisioDto> {
     placesDailyEtudiants: Math.min(r.placesDailyEtudiants, visio.placesDailyEtudiantsMax()),
     placesDailyMax: visio.placesDailyEtudiantsMax(),
     placesHorsEtudiants: visio.PLACES_HORS_ETUDIANTS,
+    tailleMinSalle: visio.TAILLE_MIN_SALLE_SEANCE,
     prixMinuteUsd: r.prixMinuteUsd,
     minutesOffertes: r.minutesOffertes,
     tauxFcfa: r.tauxFcfa,
@@ -144,12 +145,15 @@ export function enregistrerVisioDaily(app: Express) {
     "/api/visio/options",
     exigerConnexion,
     route(async (_req, res) => {
+      // Vidéo des étudiants coupée (places vidéo étudiantes à 0) : les écrans étudiants ne proposent plus la vidéo.
+      const videoEtudiants = !visio.videoEtudiantsCoupee();
       res.json({
         daily: visio.dailyDisponible(),
         domaineDaily: visio.domaineDailyConnu(),
         fournisseurParDefaut: visio.fournisseurParDefaut(),
         fournisseurs: visio.fournisseursDisponibles(),
-        videoEtudiantParDefaut: visio.reglagesCourants().videoEtudiantParDefaut,
+        videoEtudiantParDefaut: videoEtudiants && visio.reglagesCourants().videoEtudiantParDefaut,
+        videoEtudiants,
       } satisfies OptionsVisio);
     }),
   );
@@ -163,6 +167,9 @@ export function enregistrerVisioDaily(app: Express) {
       if (!visio.dailyDisponible()) {
         throw new ErreurHttp(503, "La visio Daily n'est pas configurée sur ce campus : la salle d'essai n'existe pas encore.", { code: "daily_absent" });
       }
+      // Vidéo des étudiants coupée : la salle d'essai n'est plus ouverte aux comptes étudiants (409, journal) ; les
+      // formateurs, la direction, la vie scolaire, les écrans de salle et les comptes de campus y entrent comme avant.
+      if (u.role === "etudiant") await visio.verifierVideoEtudiant({ chemin: "essai", utilisateurId: u.id });
       const dernier = derniersJetons.get(u.id) ?? 0;
       if (Date.now() - dernier < 3000) throw new ErreurHttp(429, "Un instant : la salle d'essai s'ouvre déjà.");
       derniersJetons.set(u.id, Date.now());

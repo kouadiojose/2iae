@@ -8,6 +8,8 @@
 //   GET  /api/enseigner/mon-cours/:id/resume            les compteurs des blocs d'un cours
 //   GET  /api/enseigner/mon-cours/:id/videos-examens    replays, cours résumés, examens et devoirs du cours
 //   POST /api/enseigner/mon-cours/:id/examen/proposer   l'IA propose des questions (écrites + critères, ou QCM)
+//   GET  /api/enseigner/mon-cours/:id/documents-passes  les documents des séances passées du cours (« Mes documents »)
+//   POST /api/enseigner/mon-cours/:id/documents-passes/:rid/reutiliser   une ressource passée → le prochain cours
 //
 // Accès : un professeur du cours (principal ou autre) et la direction (coursEnseigne).
 import type { Express } from "express";
@@ -15,12 +17,14 @@ import { z } from "zod";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerRole, moi } from "../auth";
-import { route, valider, idParam, ErreurHttp, invalide } from "../http";
+import { route, valider, idParam, ErreurHttp, invalide, introuvable } from "../http";
 import { coursEnseigne } from "../acces";
 import { seancesDuMoment } from "../espace-campus";
 import { intervenantsDesSeances } from "../programme-outils";
 import { demanderJson, iaDisponible, verifierQuota } from "../ia";
-import { finieSansAnimateur } from "./live";
+import { canal, finieSansAnimateur, seanceAnimee } from "./live";
+import { ressourcesDe } from "./ressources-seance";
+import { publier } from "../temps-reel";
 import { resumeMurs } from "../mur";
 import {
   coursClasses,
@@ -34,10 +38,9 @@ import {
   ressourcesSeances,
   seances,
   sites,
-  utilisateurs,
   type DossierCours,
 } from "@shared/schema";
-import type { ExamenProfDto, PropositionExamenDto, ResumeCoursProfDto, SeanceVideoDto, VideosExamensDto } from "@shared/espace-prof";
+import type { DocumentsPassesDto, ExamenProfDto, PropositionExamenDto, ResumeCoursProfDto, SeanceVideoDto, VideosExamensDto } from "@shared/espace-prof";
 
 /** « 1BTS · 2BTS · 5 campus » (une requête). */
 async function classesDuCours(coursId: number): Promise<string> {
@@ -55,6 +58,22 @@ async function classesDuCours(coursId: number): Promise<string> {
 
 const replayDisponible = (s: { statut: string; replayUrl: string | null; enregistrementId: string | null; resumeValide: unknown; transcription: string }) =>
   s.statut === "terminee" && Boolean(s.replayUrl || s.enregistrementId || s.resumeValide || s.transcription.trim());
+
+/**
+ * Séances passées du cours qui ont des documents (diapos ou ressources), les plus récentes d'abord : terminées, ou
+ * dont l'heure de fin est passée (jamais annulées) ; jamais la séance du moment (« Mes documents » la montre déjà).
+ */
+async function seancesPasseesAvecDocuments(coursId: number, sauf: number | null, limite = 30) {
+  const { rows } = await db.execute<{ id: number; titre: string; debut: Date | string; diapos: number; ressources: number }>(sql`
+    SELECT s.id, s.titre, s.debut, jsonb_array_length(coalesce(s.diapos, '[]'::jsonb))::int AS diapos,
+      (SELECT count(*)::int FROM campus.ressources_seances r WHERE r.seance_id = s.id) AS ressources
+    FROM campus.seances s
+    WHERE s.cours_id = ${coursId} AND s.id <> ${sauf ?? 0} AND s.statut <> 'annulee'
+      AND (s.statut = 'terminee' OR s.debut + make_interval(mins => s.duree_minutes) < ${new Date()})
+      AND (jsonb_array_length(coalesce(s.diapos, '[]'::jsonb)) > 0 OR EXISTS (SELECT 1 FROM campus.ressources_seances r WHERE r.seance_id = s.id))
+    ORDER BY s.debut DESC LIMIT ${limite}`);
+  return rows.map((r) => ({ id: Number(r.id), titre: r.titre, debut: new Date(r.debut), diapos: Number(r.diapos), ressources: Number(r.ressources) }));
+}
 
 /** Devoirs du cours préparés par l'IA après une séance (devoirs-auto). */
 async function devoirsParIa(coursId: number): Promise<Set<number>> {
@@ -222,12 +241,10 @@ export function enregistrerEspaceProf(app: Express) {
       let intervenant: string | null = null;
       let documents: ResumeCoursProfDto["documents"] = null;
       if (s) {
+        // Seulement quand l'emploi du temps nomme quelqu'un d'autre pour cette séance : un co-professeur nommé par la
+        // direction n'est pas averti à chaque live que « le cours est celui du principal ».
         const iv = (await intervenantsDesSeances([s.id])).get(s.id);
         if (iv?.id && iv.id !== u.id) intervenant = iv.nom;
-        else if (!iv && c.formateurId && c.formateurId !== u.id && u.role === "formateur") {
-          const [p] = await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, c.formateurId));
-          intervenant = p ? `${p.prenom} ${p.nom}`.trim() : null;
-        }
         const res2 = await db
           .select({ type: ressourcesSeances.type, n: sql<number>`count(*)::int` })
           .from(ressourcesSeances)
@@ -247,12 +264,14 @@ export function enregistrerEspaceProf(app: Express) {
             .where(and(inArray(etudesSeances.seanceId, terminees.map((x) => x.id)), eq(etudesSeances.statut, "prete")))
         : [{ n: 0 }];
       const examens = await examensDuCours(c.id);
+      const passees = await seancesPasseesAvecDocuments(c.id, s?.id ?? null, 200);
       const dto: ResumeCoursProfDto = {
         coursId: c.id,
         classes: await classesDuCours(c.id),
         seance: s ? { id: s.id, debut: s.debut.toISOString(), statut: s.statut } : null,
         intervenant,
         documents,
+        documentsPasses: passees.reduce((n, p) => n + p.ressources + (p.diapos ? 1 : 0), 0),
         mur: (await resumeMurs([c.id])).get(c.id) ?? { total: 0, dernierLe: null },
         videos: { replays: terminees.filter(replayDisponible).length, resumes: Number(prets[0]?.n ?? 0) },
         examens: {
@@ -295,6 +314,59 @@ export function enregistrerEspaceProf(app: Express) {
         .filter((s) => s.replay || s.resume);
       const dto: VideosExamensDto = { seances: seancesDto, examens: await examensDuCours(c.id), iaDisponible: iaDisponible() };
       res.json(dto);
+    }),
+  );
+
+  // ── Mes documents des cours passés ───────────────────────────────────────
+  app.get(
+    "/api/enseigner/mon-cours/:id(\\d+)/documents-passes",
+    garde,
+    route(async (req, res) => {
+      const u = moi(req);
+      const c = await coursEnseigne(u, idParam(req));
+      res.setHeader("Cache-Control", "no-store");
+      const s = (await seancesDuMoment([c.id], Date.now(), { jour: false, finieSansAnimateur })).get(c.id)?.seance ?? null;
+      const passees = await seancesPasseesAvecDocuments(c.id, s?.id ?? null);
+      const dto: DocumentsPassesDto = {
+        prochaine: s ? { id: s.id, debut: s.debut.toISOString() } : null,
+        seances: await Promise.all(passees.map(async (p) => ({ id: p.id, titre: p.titre, debut: p.debut.toISOString(), diapos: p.diapos, ressources: await ressourcesDe(p.id) }))),
+      };
+      res.json(dto);
+    }),
+  );
+
+  // ── Réutiliser une ressource d'un cours passé pour le prochain cours ─────
+  app.post(
+    "/api/enseigner/mon-cours/:id(\\d+)/documents-passes/:rid(\\d+)/reutiliser",
+    garde,
+    route(async (req, res) => {
+      const u = moi(req);
+      const c = await coursEnseigne(u, idParam(req));
+      const [r] = await db
+        .select({ r: ressourcesSeances, coursId: seances.coursId })
+        .from(ressourcesSeances)
+        .innerJoin(seances, eq(seances.id, ressourcesSeances.seanceId))
+        .where(eq(ressourcesSeances.id, idParam(req, "rid")));
+      if (!r || r.coursId !== c.id) throw introuvable("Document");
+      const prochaine = (await seancesDuMoment([c.id], Date.now(), { jour: false, finieSansAnimateur })).get(c.id)?.seance ?? null;
+      if (!prochaine) throw new ErreurHttp(409, "Pas de cours prévu pour l'instant : le document ne peut pas être rangé.");
+      const s = await seanceAnimee(u, prochaine.id);
+      if (s.id === r.r.seanceId) throw new ErreurHttp(409, "Ce document est déjà prêt pour ce cours.");
+      const deja = await db.select({ url: ressourcesSeances.url, fichierId: ressourcesSeances.fichierId, ordre: ressourcesSeances.ordre }).from(ressourcesSeances).where(eq(ressourcesSeances.seanceId, s.id));
+      if (deja.some((x) => (r.r.fichierId ? x.fichierId === r.r.fichierId : Boolean(r.r.url) && x.url === r.r.url))) throw new ErreurHttp(409, "Ce document est déjà prêt pour ce cours.");
+      if (deja.length >= 40) throw invalide("40 documents au plus par cours : retirez-en avant d'en ajouter.");
+      await db.insert(ressourcesSeances).values({
+        seanceId: s.id,
+        type: r.r.type,
+        titre: r.r.titre,
+        url: r.r.url,
+        fichierId: r.r.fichierId,
+        ordre: deja.reduce((m, x) => Math.max(m, x.ordre), -1) + 1,
+        creePar: u.id,
+      });
+      // Comme un ajout : la page de la séance se met à jour, les étudiants sont prévenus par l'annonce habituelle.
+      publier(canal(s.id), "seance", null);
+      res.status(201).json({ seanceId: s.id, ressources: await ressourcesDe(s.id) });
     }),
   );
 

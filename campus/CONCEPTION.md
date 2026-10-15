@@ -391,3 +391,19 @@ créer des examens et donner les critères à l'IA pour la correction. » Spéci
   (`POST /api/enseigner/mon-cours/:id/examen/proposer`, quota de la personne, jamais sans relecture) → critères pour l'IA
   (enregistrés comme corrigé validé par le professeur : après la date limite, la correction automatique existante note
   chaque copie avec eux) → publier ou garder en brouillon.
+- **Relecture adverse (19 défauts, même jour)** : coordonnées des professeurs (téléphone, e-mail, dates) seulement avec
+  « comptes du personnel » ; « Professeurs du cours » : cours visible requis (`coursVisible`), `gerable` renvoyé (pas de
+  bouton voué à l'échec), retrait confirmé, toasts ; emploi du temps : « Mettre en principal » repasse l'ancien principal
+  à `principal = false` dans `formateurs_programme` (la publication suivante le retire s'il n'intervient plus) et oublie
+  le nouveau (choix de la direction) ; « Retirer » le principal ne promeut qu'un compte actif (sinon plus de principal) et
+  rend à l'emploi du temps le promu qui venait de lui ; `POST /api/pilotage/professeurs/verifier` (numéro ou e-mail pris,
+  dès l'étape 1) ; état « Lien préparé le … » (rien ne prouve l'envoi) ; « Gérer ses cours › » sur la carte. Le co-
+  professeur n'est averti « {nom} donne ce cours » que si l'emploi du temps nomme un autre intervenant pour la séance.
+  « Mes documents des cours passés » (`GET …/documents-passes`, « Réutiliser » : `POST …/documents-passes/:rid/reutiliser`
+  copie la ressource dans la prochaine séance, sans toucher `routes/ressources-seance.ts`) ; le bloc compte ces documents.
+  « Créer un examen » : un brouillon se rouvre prérempli (`?devoir=ID`, aussi pour « Relire et publier ») ; changer de type
+  à l'étape 1 change le type du brouillon (questions de QCM retirées) ; consigne et critères enregistrés à chaque
+  « Suivant » et en partant (« Retour à Vidéos et examens ») ; critères proposés par le campus laissés tels quels :
+  validés (`POST /api/enseigner/corriges/:id/valider`) ; QCM : « Modifier » une question, « Remplacer ou ajouter ? » au
+  deuxième appel à l'IA, retrait confirmé. Reste à faire : retenir les notes de l'IA jusqu'à la relecture du professeur
+  (elles partent dès la correction, comme avant).

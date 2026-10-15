@@ -9,6 +9,9 @@ export const MUR_PAR_HEURE = 20;
 /** Poids maximal d'un fichier joint (Mo) ; au-delà, « Mes documents » (300 Mo). */
 export const MUR_FICHIER_MO = 25;
 
+/** Poids lisible d'un fichier : « 58 Ko », « 2,4 Mo » (jamais « 1 Mo » pour 58 octets). */
+export const poids = (o: number) => (o >= 1_000_000 ? `${(o / 1_000_000).toFixed(1).replace(".", ",")} Mo` : `${Math.max(1, Math.round(o / 1000))} Ko`);
+
 /** Un lien dans un texte : http(s)://… ou www.… (jamais javascript:, data:…). */
 export const MOTIF_LIEN = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 /** Ponctuation de fin de phrase qui ne fait pas partie du lien. */

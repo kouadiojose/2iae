@@ -76,14 +76,18 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
   };
 
   // « 24 diapos · 2 vidéos · 1 document », « Pas encore de document », « Pas de cours prévu ».
+  // Rien pour le prochain cours mais des documents des cours passés : on les compte (ils sont dans « Mes documents »).
   const d = r?.documents;
+  const passes = r?.documentsPasses ?? 0;
   const texteDocuments = !r
     ? tx("blocs.documents.texte")
-    : !d
-      ? tx("blocs.documents.aucun")
-      : d.diapos + d.videos + d.documents === 0
-        ? tx("blocs.documents.vide")
-        : [
+    : (!d || d.diapos + d.videos + d.documents === 0) && passes > 0
+      ? tx(passes === 1 ? "blocs.documents.passes.un" : "blocs.documents.passes.n", { v: { n: passes } })
+      : !d
+        ? tx("blocs.documents.aucun")
+        : d.diapos + d.videos + d.documents === 0
+          ? tx("blocs.documents.vide")
+          : [
             d.diapos ? tx(d.diapos === 1 ? "blocs.documents.diapos.un" : "blocs.documents.diapos.n", { v: { n: d.diapos } }) : null,
             d.videos ? tx(d.videos === 1 ? "blocs.documents.videos.un" : "blocs.documents.videos.n", { v: { n: d.videos } }) : null,
             d.documents ? tx(d.documents === 1 ? "blocs.documents.documents.un" : "blocs.documents.documents.n", { v: { n: d.documents } }) : null,
@@ -136,6 +140,7 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
         <GrosBlocProf
           testId="documents"
+          carre
           icone={<FolderOpen className="h-8 w-8" strokeWidth={2.25} />}
           cercle={{ fond: "#141414", icone: "#FFFFFF" }}
           titre={tx("blocs.documents")}
@@ -144,6 +149,7 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
         />
         <GrosBlocProf
           testId="mur"
+          carre
           icone={<Newspaper className="h-8 w-8" strokeWidth={2.25} />}
           cercle={{ fond: "#FFF1E6", icone: "#A34C17" }}
           titre={tx("blocs.mur")}
@@ -152,6 +158,7 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
         />
         <GrosBlocProf
           testId="videos"
+          carre
           className="sm:col-span-2 lg:col-span-1"
           icone={<Clapperboard className="h-8 w-8" strokeWidth={2.25} />}
           cercle={{ fond: "#EAF1FE", icone: "#1D4ED8" }}

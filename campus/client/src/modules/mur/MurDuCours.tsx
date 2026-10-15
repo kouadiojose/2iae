@@ -15,7 +15,7 @@ import { useTextes } from "@/lib/textes";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
 import { Avatar } from "@/components/ui/divers";
-import { decouperTexte, MUR_FICHIERS_MAX, MUR_FICHIER_MO, MUR_TEXTE_MAX, type MurDto, type PublicationDto } from "@shared/mur";
+import { decouperTexte, poids, MUR_FICHIERS_MAX, MUR_FICHIER_MO, MUR_TEXTE_MAX, type MurDto, type PublicationDto } from "@shared/mur";
 import { t as tMur } from "@shared/textes/mur";
 
 export type VarianteMur = "professeur" | "etudiant" | "equipe" | "campus";
@@ -27,7 +27,6 @@ export function urlMur(coursId: number, variante: VarianteMur): string {
   return `/api/mon-campus/cours/${coursId}/mur${site && /^\d+$/.test(site) ? `?site=${site}` : ""}`;
 }
 
-const poids = (o: number) => (o >= 1_000_000 ? `${(o / 1_000_000).toFixed(1).replace(".", ",")} Mo` : `${Math.max(1, Math.round(o / 1000))} Ko`);
 const cleBrouillon = (coursId: number) => `campus:mur:brouillon:${coursId}`;
 const lireLocal = (cle: string) => {
   try {
@@ -185,9 +184,11 @@ function EcrireSurLeMur({ coursId, mur }: { coursId: number; mur: MurDto }) {
       {fichiers.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
           {fichiers.map((f, i) => (
-            <li key={`${f.name}-${i}`} className="flex min-h-[56px] items-center gap-3 rounded-[16px] border border-ligne bg-white px-4">
+            <li key={`${f.name}-${i}`} className="flex min-h-[56px] flex-wrap items-center gap-x-3 gap-y-1 rounded-[16px] border border-ligne bg-white px-4 py-2">
               <IconeFichier mime={f.type} />
-              <span className="min-w-0 flex-1 truncate text-[17px] font-bold">{f.name}</span>
+              <span className="line-clamp-3 min-w-0 flex-1 basis-[160px] break-words text-[17px] font-bold leading-snug [overflow-wrap:anywhere]" title={f.name}>
+                {f.name}
+              </span>
               <span className="text-[15px] text-texte-doux">{poids(f.size)}</span>
               <button type="button" onClick={() => setFichiers(fichiers.filter((_, j) => j !== i))} className="flex min-h-[44px] items-center gap-1 px-2 text-[16px] font-bold text-[#B42318]">
                 <X className="h-4 w-4" aria-hidden /> {tx("fichier.retirer")}
@@ -261,7 +262,9 @@ function CartePublication({ p, coursId, grand, url }: { p: PublicationDto; cours
       <header className="flex items-center gap-3">
         <Avatar prenom={p.auteur.nom.split(" ")[0]} nom={p.auteur.nom.split(" ").slice(1).join(" ")} photo={p.auteur.photoUrl} taille={48} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[18px] font-extrabold leading-tight">{p.auteur.nom}</p>
+          <p className="line-clamp-2 break-words text-[18px] font-extrabold leading-tight [overflow-wrap:anywhere]" data-auteur>
+            {p.auteur.nom}
+          </p>
           <p className="font-mono text-[12px] font-semibold uppercase tracking-[0.12em] text-orange-profond">{tx(p.auteur.etiquette === "direction" ? "etiquette.direction" : "etiquette.professeur")}</p>
         </div>
         <time className="shrink-0 text-[15px] text-texte-doux" dateTime={p.creeLe} title={dateEtHeure(p.creeLe)}>
@@ -308,18 +311,22 @@ function CartePublication({ p, coursId, grand, url }: { p: PublicationDto; cours
                 </a>
               </li>
             ) : (
-              <li key={f.id} className="flex min-h-[64px] items-center gap-3 rounded-[16px] border border-ligne px-4" data-fichier-mur>
-                <IconeFichier mime={f.mime} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[17px] font-bold">{f.nom}</span>
-                  <span className="text-[14px] text-texte-doux">{poids(f.taille)}</span>
+              <li key={f.id} className="flex min-h-[64px] flex-col gap-2 rounded-[16px] border border-ligne px-4 py-3 sm:flex-row sm:items-center sm:gap-3" data-fichier-mur>
+                <span className="flex min-w-0 flex-1 items-center gap-3">
+                  <IconeFichier mime={f.mime} />
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-3 break-words text-[17px] font-bold leading-snug [overflow-wrap:anywhere]" title={f.nom} data-nom>
+                      {f.nom}
+                    </span>
+                    <span className="text-[14px] text-texte-doux">{poids(f.taille)}</span>
+                  </span>
                 </span>
                 {f.image ? (
-                  <button type="button" onClick={() => setImagesVues(new Set([...imagesVues, f.id]))} className="min-h-[44px] rounded-[14px] border-2 border-encre px-4 text-[16px] font-bold">
+                  <button type="button" onClick={() => setImagesVues(new Set([...imagesVues, f.id]))} className="min-h-[48px] rounded-[14px] border-2 border-encre px-4 text-[16px] font-bold">
                     {tx("image.voir", { v: { taille: poids(f.taille) } })}
                   </button>
                 ) : (
-                  <a href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white no-underline hover:bg-orange hover:text-encre">
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[48px] items-center justify-center rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white no-underline hover:bg-orange hover:text-encre">
                     {tx("fichier.ouvrir")}
                   </a>
                 )}

@@ -6,19 +6,24 @@
 //   GET    /api/pilotage/professeurs                         les professeurs, leurs cours, leur état (droit « programme »)
 //   GET    /api/pilotage/professeurs/cours                   les cours qu'on peut leur attacher (droit « programme »)
 //   POST   /api/pilotage/professeurs                         créer un professeur (+ cours) et son lien d'invitation
-//   GET    /api/pilotage/cours/:id/professeurs               les professeurs d'un cours
+//   POST   /api/pilotage/professeurs/verifier                téléphone et e-mail libres ? (dès l'étape 1 de la création)
+//   GET    /api/pilotage/cours/:id/professeurs               les professeurs d'un cours (et s'ils sont gérables)
 //   POST   /api/pilotage/cours/:id/professeurs               attacher { formateurId } (le premier devient principal)
 //   PUT    /api/pilotage/cours/:id/professeurs/principal     nommer principal { formateurId } (l'ancien reste professeur)
 //   DELETE /api/pilotage/cours/:id/professeurs/:formateurId  retirer (le suivant devient principal)
 //
 // Règles : créer et inviter, comme dans « Comptes » (direction, ou équipe de tout le groupe avec « comptes du
 // personnel ») ; attacher et retirer : droit « programme », et pour une vie scolaire de campus seulement les cours
-// dont toutes les classes sont de son campus (comme modifier un cours). Chaque action va au journal.
+// dont toutes les classes sont de son campus (comme modifier un cours). Chaque action va au journal. Coordonnées
+// (téléphone, e-mail, invitation, dernière connexion) : seulement avec « comptes du personnel » (comme « Comptes »).
+// Emploi du temps : ce qu'il a ajouté est noté dans formateurs_programme ; changer le principal ou retirer met cette
+// note à jour pour que la publication suivante défasse encore ce qu'elle a fait (et jamais ce qu'a fait la direction).
 import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerDroit, hacher, moi, motDePasseProvisoire, peut, perimetreSites, DUREE_CODE_PROVISOIRE_MS } from "../auth";
+import { coursVisible } from "../acces";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit } from "../http";
 import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
@@ -46,7 +51,9 @@ import type {
   ProfesseurDto,
   ProfesseurDuCoursDto,
   ProfesseursDto,
+  ProfesseursDuCoursDto,
   ReponseProfesseursCours,
+  VerificationProfesseurDto,
 } from "@shared/professeurs";
 
 const vous = { registre: "vous" as const };
@@ -247,6 +254,8 @@ export function enregistrerProfesseurs(app: Express) {
       const invites = await invitationsDe(comptes.map((c) => c.id));
       const programmes = await programmesDe();
       const perimetre = perimetreSites(u);
+      // Coordonnées et dates : réservées à « comptes du personnel » (« Comptes » ne montre pas ces comptes aux autres).
+      const coordonnees = peut(u, "comptes_personnel");
       const professeurs: ProfesseurDto[] = [];
       for (const f of comptes) {
         const siens: CoursDuProfesseurDto[] = [];
@@ -277,11 +286,11 @@ export function enregistrerProfesseurs(app: Express) {
           nom: f.nom,
           titre: f.titre,
           photoUrl: f.photoUrl,
-          telephone: f.telephone,
-          email: f.email,
+          telephone: coordonnees ? f.telephone : null,
+          email: coordonnees ? f.email : null,
           etat: etatDe(f, invites.get(f.id)),
-          inviteLe: invites.get(f.id)?.toISOString() ?? null,
-          vuLe: f.derniereConnexion?.toISOString() ?? null,
+          inviteLe: coordonnees ? (invites.get(f.id)?.toISOString() ?? null) : null,
+          vuLe: coordonnees ? (f.derniereConnexion?.toISOString() ?? null) : null,
           cours: siens,
         });
       }
@@ -353,7 +362,7 @@ export function enregistrerProfesseurs(app: Express) {
       // Sans e-mail, son téléphone devient son identifiant : il ne doit mener qu'à lui.
       if (!d.email && telephone) {
         const [pris] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.telephone, telephone)).limit(1);
-        if (pris) throw new ErreurHttp(409, "Ce numéro est déjà utilisé par un autre compte : il ne peut pas servir d'identifiant. Laissez-le vide, le formateur choisira son identifiant en activant son compte.");
+        if (pris) throw new ErreurHttp(409, t("erreur.telephonePris", vous));
       }
       const { compte, attaches } = await db.transaction(async (tx) => {
         const [cree] = await tx
@@ -425,20 +434,41 @@ export function enregistrerProfesseurs(app: Express) {
     }),
   );
 
+  // ── Téléphone et e-mail libres ? (étape 1 de « Nouveau professeur ») ─────
+  app.post(
+    "/api/pilotage/professeurs/verifier",
+    exigerDroit("comptes_personnel"),
+    route(async (req, res) => {
+      const u = moi(req);
+      if (!peutCreer(u)) throw interdit(t("erreur.perimetre", vous));
+      const d = valider(z.object({ telephone: optionnel(z.string().trim().max(30)), email: optionnel(schemaEmailCompte) }), req.body ?? {});
+      const dto: VerificationProfesseurDto = { telephone: null, email: null };
+      if (d.email) {
+        const [x] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.email, d.email)).limit(1);
+        if (x) dto.email = t("erreur.emailPris", vous);
+      }
+      const telephone = telephoneSaisi(d.telephone);
+      if (!d.email && telephone) {
+        const [x] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.telephone, telephone)).limit(1);
+        if (x) dto.telephone = t("erreur.telephonePris", vous);
+      }
+      res.setHeader("Cache-Control", "no-store");
+      res.json(dto);
+    }),
+  );
+
   // ── Les professeurs d'un cours ───────────────────────────────────────────
   app.get(
     "/api/pilotage/cours/:id(\\d+)/professeurs",
     exigerDroit("programme"),
     route(async (req, res) => {
-      const c = await coursGerable(moi(req), idParam(req)).catch(async (e) => {
-        // Lecture : une vie scolaire de campus voit les professeurs d'un cours partagé, sans pouvoir les changer.
-        if (e instanceof ErreurHttp && e.statut === 403) {
-          const [x] = await db.select().from(cours).where(eq(cours.id, idParam(req)));
-          if (x) return x;
-        }
-        throw e;
-      });
-      res.json(await professeursDuCours(c.id));
+      const u = moi(req);
+      // Lecture : un cours que la personne voit (une vie scolaire de campus : un cours que suit son campus) ; elle ne
+      // change ses professeurs que s'il est gérable (toutes ses classes dans son campus).
+      const c = await coursVisible(u, idParam(req));
+      const sitesDuCours = (await classesLibelle([c.id])).get(c.id)?.sites ?? [];
+      const dto: ProfesseursDuCoursDto = { professeurs: await professeursDuCours(c.id), gerable: gerableAvec(u, sitesDuCours) };
+      res.json(dto);
     }),
   );
 
@@ -481,7 +511,17 @@ export function enregistrerProfesseurs(app: Express) {
       await db.transaction(async (tx) => {
         await tx.update(cours).set({ formateurId, majLe: new Date() }).where(eq(cours.id, c.id));
         await tx.delete(coursFormateurs).where(and(eq(coursFormateurs.coursId, c.id), eq(coursFormateurs.formateurId, formateurId)));
-        if (c.formateurId) await tx.insert(coursFormateurs).values({ coursId: c.id, formateurId: c.formateurId }).onConflictDoNothing();
+        // Le nouveau principal est un choix de la direction : l'emploi du temps ne le défera pas.
+        await tx.delete(formateursProgramme).where(and(eq(formateursProgramme.coursId, c.id), eq(formateursProgramme.formateurId, formateurId)));
+        if (c.formateurId) {
+          await tx.insert(coursFormateurs).values({ coursId: c.id, formateurId: c.formateurId }).onConflictDoNothing();
+          // L'ancien principal, s'il venait de l'emploi du temps, y redevient un professeur comme les autres : la
+          // publication suivante le retire quand il n'intervient plus dans ce cours.
+          await tx
+            .update(formateursProgramme)
+            .set({ principal: false })
+            .where(and(eq(formateursProgramme.coursId, c.id), eq(formateursProgramme.formateurId, c.formateurId)));
+        }
       });
       await journaliser(u, "cours_formateur", { coursId: c.id, de: c.formateurId, vers: formateurId, via: "professeurs" });
       await notifier([f.id], { type: "cours", titre: `Un cours vous est confié : ${c.code}`, corps: c.titre, lien: `/enseigner/mon-cours/${c.id}`, push: false });
@@ -515,17 +555,24 @@ export function enregistrerProfesseurs(app: Express) {
       let nouveauPrincipal: string | null = null;
       await db.transaction(async (tx) => {
         if (principal) {
-          // Le suivant : le premier des autres professeurs actifs, par nom puis prénom.
-          const suivants = await tx
-            .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, actif: utilisateurs.actif })
+          // Le suivant : le premier des autres professeurs ACTIFS, par nom puis prénom ; aucun : le cours n'a plus de
+          // principal (le prochain professeur attaché le devient).
+          const [suivant] = await tx
+            .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom })
             .from(coursFormateurs)
             .innerJoin(utilisateurs, eq(utilisateurs.id, coursFormateurs.formateurId))
-            .where(eq(coursFormateurs.coursId, c.id))
-            .orderBy(desc(utilisateurs.actif), asc(utilisateurs.nom), asc(utilisateurs.prenom));
-          const suivant = suivants[0];
+            .where(and(eq(coursFormateurs.coursId, c.id), eq(utilisateurs.actif, true), eq(utilisateurs.role, "formateur")))
+            .orderBy(asc(utilisateurs.nom), asc(utilisateurs.prenom))
+            .limit(1);
           await tx.update(cours).set({ formateurId: suivant?.id ?? null, majLe: new Date() }).where(eq(cours.id, c.id));
           if (suivant) {
             await tx.delete(coursFormateurs).where(and(eq(coursFormateurs.coursId, c.id), eq(coursFormateurs.formateurId, suivant.id)));
+            // Promu d'office : s'il venait de l'emploi du temps, celui-ci le tient pour son principal et le remplacera
+            // par l'intervenant du moment quand il n'interviendra plus.
+            await tx
+              .update(formateursProgramme)
+              .set({ principal: true })
+              .where(and(eq(formateursProgramme.coursId, c.id), eq(formateursProgramme.formateurId, suivant.id)));
             nouveauPrincipal = `${suivant.prenom} ${suivant.nom}`.trim();
           }
         } else {

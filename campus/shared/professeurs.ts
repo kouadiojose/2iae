@@ -31,10 +31,11 @@ export type ProfesseurDto = {
   nom: string;
   titre: string | null;
   photoUrl: string | null;
+  /** Coordonnées et dates : null sans le droit « comptes du personnel ». */
   telephone: string | null;
   email: string | null;
   etat: EtatProfesseur;
-  /** Dernière invitation envoyée (ISO), dernière connexion (ISO). */
+  /** Dernier lien d'invitation préparé (ISO), dernière connexion (ISO). */
   inviteLe: string | null;
   vuLe: string | null;
   cours: CoursDuProfesseurDto[];
@@ -66,6 +67,12 @@ export type ProfesseurDuCoursDto = {
   etat: EtatProfesseur;
   programme: string | null;
 };
+
+/** GET /api/pilotage/cours/:id/professeurs : la liste, et si la personne peut la changer (ajouter, principal, retirer). */
+export type ProfesseursDuCoursDto = { professeurs: ProfesseurDuCoursDto[]; gerable: boolean };
+
+/** POST /api/pilotage/professeurs/verifier { telephone?, email? } : le message d'erreur de chaque champ déjà pris, sinon null. */
+export type VerificationProfesseurDto = { telephone: string | null; email: string | null };
 
 /** POST, PUT, DELETE /api/pilotage/cours/:id/professeurs… */
 export type ReponseProfesseursCours = {

@@ -2,10 +2,12 @@
 // Trois gros blocs : « Ajouter un PowerPoint », « Ajouter une vidéo », « Ajouter un document » ; ils se rangent dans la
 // séance du moment (celle de l'accueil : en direct, sinon la prochaine), puis « Déjà prêt pour ce cours ». Aucune route
 // nouvelle : POST /api/seances/:id/diapos, …/ressources (lien), …/ressources/fichiers, DELETE …/ressources/:rid.
-// Sans séance : on renvoie au mur du cours (ses fichiers ne dépendent pas de l'emploi du temps).
+// Sans séance : on renvoie au mur du cours (ses fichiers ne dépendent pas de l'emploi du temps). En bas, « Mes documents
+// des cours passés » (GET /api/enseigner/mon-cours/:id/documents-passes) : rien ne disparaît après le cours, et un
+// document se remet dans le prochain cours d'un toucher (« Réutiliser »).
 import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clapperboard, FileText, Film, Link2, Loader2, PlayCircle, Presentation, Upload, X } from "lucide-react";
+import { Check, Clapperboard, FileText, Film, Link2, Loader2, PlayCircle, Presentation, RotateCcw, Upload, X } from "lucide-react";
 import { Page } from "@/components/layout/coquille";
 import { BandeauCours, GrosBlocProf, GrosBouton, RetourGros } from "@/components/ui/gros-blocs";
 import { toast } from "@/components/ui/toast";
@@ -15,6 +17,8 @@ import { rafraichir } from "@/lib/queryClient";
 import { useTextes } from "@/lib/textes";
 import { t as tProf } from "@shared/textes/espace-prof";
 import type { RessourceSeanceDto, SeanceDetailDto } from "@shared/schema";
+import type { DocumentsPassesDto } from "@shared/espace-prof";
+import { poids } from "@shared/mur";
 import { useAccueilSimple } from "./simple/blocs";
 import { cleResumeCours, useResumeCours } from "./simple/blocs-cours";
 
@@ -40,6 +44,23 @@ function envoyerAvecProgression(url: string, donnees: FormData, surProgression: 
   });
 }
 
+/** « 8h30 » comme les blocs (et pas « 08h30 »). */
+const heureSimple = (x: string) => heure(x).replace(/^0(\d)/, "$1");
+
+/** Sous-titre d'une ressource : son poids (fichier), sinon son adresse lisible (« fr.wikipedia.org/wiki/Comptabilité »). */
+function sousTitre(r: RessourceSeanceDto): string {
+  if (r.taille) return poids(r.taille);
+  let adresse = r.url;
+  try {
+    adresse = decodeURI(r.url);
+  } catch {
+    /* adresse mal encodée : telle quelle */
+  }
+  return adresse.replace(/^https?:\/\/(www\.)?/, "").slice(0, 80);
+}
+
+export const cleDocumentsPasses = (coursId: number) => `/api/enseigner/mon-cours/${coursId}/documents-passes`;
+
 const ACCEPT_PPT = ".ppt,.pptx,.pps,.ppsx,.odp,.pdf,image/*,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf";
 const ACCEPT_VIDEO = "video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov";
 const ACCEPT_DOC = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt,.csv,.zip,image/*";
@@ -60,7 +81,7 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
   const entreePpt = useRef<HTMLInputElement>(null);
 
   const apres = async () => {
-    await rafraichir(`/api/seances/${seanceId}`, cleResumeCours(id), "/api/enseigner/accueil-simple");
+    await rafraichir(`/api/seances/${seanceId}`, cleResumeCours(id), "/api/enseigner/accueil-simple", cleDocumentsPasses(id));
   };
   const deposerPpt = async (liste: FileList | null) => {
     if (!liste?.length || !seanceId) return;
@@ -117,8 +138,8 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
   const s = seance.data;
   const pour = c?.seance
     ? c.repere === "direct" || c.repere === "ouvert" || c.repere === "aujourdhui"
-      ? tx("documents.pour.aujourdhui", { v: { heure: heure(c.seance.debut).replace(":", "h") } })
-      : tx("documents.pour.jour", { v: { jour: jourLong(c.seance.debut), heure: heure(c.seance.debut).replace(":", "h") } })
+      ? tx("documents.pour.aujourdhui", { v: { heure: heureSimple(c.seance.debut) } })
+      : tx("documents.pour.jour", { v: { jour: jourLong(c.seance.debut), heure: heureSimple(c.seance.debut) } })
     : null;
 
   return (
@@ -207,12 +228,8 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
               </div>
             )}
             {s?.ressources.map((r) => (
-              <div key={r.id} className="flex min-h-[72px] flex-wrap items-center gap-3 rounded-[22px] border-2 border-ligne bg-white p-4 shadow-carte" data-ressource={r.id}>
-                <IconeRessource type={r.type} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[18px] font-bold">{r.titre || r.nom || r.url}</span>
-                  <span className="text-[15px] text-texte-doux">{r.taille ? `${Math.max(1, Math.round(r.taille / 1_000_000))} Mo` : r.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 60)}</span>
-                </span>
+              <div key={r.id} className="flex min-h-[72px] flex-col gap-3 rounded-[22px] border-2 border-ligne bg-white p-4 shadow-carte sm:flex-row sm:items-center" data-ressource={r.id}>
+                <LigneRessource r={r} />
                 {aRetirer?.id === r.id ? (
                   <span className="flex w-full flex-col gap-2 rounded-[16px] bg-danger-clair p-3 sm:w-auto sm:flex-row sm:items-center">
                     <span className="text-[16px] font-bold text-[#7A2E0E]">{tx("documents.retirer.titre", { v: { titre: r.titre || r.nom || "" } })}</span>
@@ -224,8 +241,8 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
                     </button>
                   </span>
                 ) : (
-                  <span className="flex gap-2">
-                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[48px] items-center rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white no-underline hover:bg-orange hover:text-encre">
+                  <span className="flex w-full gap-2 sm:w-auto">
+                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white no-underline hover:bg-orange hover:text-encre sm:flex-none">
                       {tx("documents.ouvrir")}
                     </a>
                     <button type="button" onClick={() => setARetirer(r)} className="min-h-[48px] rounded-[14px] px-3 text-[16px] font-bold text-[#B42318]">
@@ -236,13 +253,106 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
               </div>
             ))}
             {s && !s.diapos.length && !s.ressources.length && <p className="text-[19px] text-texte-doux">{tx("documents.vide")}</p>}
-            <a href={`/enseigner/seances/${c.seance.id}`} className="self-start text-[18px] font-bold text-orange-profond underline underline-offset-4">
+            <a href={`/enseigner/seances/${c.seance.id}`} className="inline-flex min-h-[48px] items-center self-start text-[18px] font-bold text-orange-profond underline underline-offset-4">
               {tx("documents.detail")}
             </a>
           </section>
         </>
       )}
+      {!accueil.isLoading && <DocumentsPasses coursId={id} />}
     </Page>
+  );
+}
+
+/** Icône, nom (trois lignes au plus, coupé entre les lettres s'il le faut : jamais « C… » sur téléphone) et poids ou adresse. */
+function LigneRessource({ r }: { r: RessourceSeanceDto }) {
+  const nom = r.titre || r.nom || r.url;
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-3">
+      <IconeRessource type={r.type} />
+      <span className="min-w-0 flex-1">
+        <span className="line-clamp-3 break-words text-[18px] font-bold leading-snug [overflow-wrap:anywhere]" title={nom} data-nom>
+          {nom}
+        </span>
+        {sousTitre(r) !== nom && <span className="block break-words text-[15px] text-texte-doux [overflow-wrap:anywhere]">{sousTitre(r)}</span>}
+      </span>
+    </span>
+  );
+}
+
+/** « Mes documents des cours passés » : par séance, les plus récentes d'abord ; « Ouvrir », « Réutiliser » (prochain cours). */
+function DocumentsPasses({ coursId }: { coursId: number }) {
+  const tx = useTextes(tProf);
+  const { data } = useQuery<DocumentsPassesDto>({ queryKey: [cleDocumentsPasses(coursId)], staleTime: 10_000 });
+  const [enCours, setEnCours] = useState<number | null>(null);
+  const [faits, setFaits] = useState<Set<number>>(new Set());
+  if (!data?.seances.length) return null;
+  const reutiliser = async (r: RessourceSeanceDto) => {
+    setEnCours(r.id);
+    try {
+      await post(`/api/enseigner/mon-cours/${coursId}/documents-passes/${r.id}/reutiliser`, {});
+      setFaits(new Set([...faits, r.id]));
+      toast(tx("documents.passes.reutilise"));
+      await rafraichir(cleResumeCours(coursId), "/api/enseigner/accueil-simple", ...(data.prochaine ? [`/api/seances/${data.prochaine.id}`] : []));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "erreur");
+    } finally {
+      setEnCours(null);
+    }
+  };
+  return (
+    <section className="flex flex-col gap-4" data-documents-passes>
+      <h2 className="font-sans text-[26px] font-black">{tx("documents.passes.titre")}</h2>
+      {data.seances.map((s) => (
+        <div key={s.id} className="flex flex-col gap-2" data-seance-passee={s.id}>
+          <p className="text-[15px] font-semibold uppercase tracking-[0.08em] text-texte-doux">
+            {jourLong(s.debut)} · {heureSimple(s.debut)}
+          </p>
+          {s.diapos > 0 && (
+            <div className="flex min-h-[72px] flex-col gap-3 rounded-[22px] border-2 border-ligne bg-white p-4 shadow-carte sm:flex-row sm:items-center">
+              <span className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-orange-clair text-orange-profond" aria-hidden>
+                  <Presentation className="h-6 w-6" />
+                </span>
+                <span className="text-[18px] font-bold">{tx(s.diapos === 1 ? "documents.passes.diapos.un" : "documents.passes.diapos.n", { v: { n: s.diapos } })}</span>
+              </span>
+              <a href={`/enseigner/seances/${s.id}`} className="inline-flex min-h-[48px] items-center justify-center rounded-[14px] border-2 border-encre px-4 text-[16px] font-bold text-encre no-underline hover:bg-orange-pale">
+                {tx("documents.voirDiapos")}
+              </a>
+            </div>
+          )}
+          {s.ressources.map((r) => (
+            <div key={r.id} className="flex min-h-[72px] flex-col gap-3 rounded-[22px] border-2 border-ligne bg-white p-4 shadow-carte sm:flex-row sm:items-center" data-ressource-passee={r.id}>
+              <LigneRessource r={r} />
+              <span className="flex w-full gap-2 sm:w-auto">
+                <a href={r.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-[14px] bg-encre px-4 text-[16px] font-bold text-white no-underline hover:bg-orange hover:text-encre sm:flex-none">
+                  {tx("documents.ouvrir")}
+                </a>
+                {data.prochaine &&
+                  (faits.has(r.id) ? (
+                    <span className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-1 px-3 text-[16px] font-bold text-[#145F3F] sm:flex-none">
+                      <Check className="h-5 w-5" aria-hidden /> {tx("documents.passes.reutiliseOk")}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void reutiliser(r)}
+                      disabled={enCours === r.id}
+                      title={tx("documents.passes.reutiliser.aide")}
+                      aria-label={`${tx("documents.passes.reutiliser.aide")} : ${r.titre || r.nom || ""}`}
+                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-[14px] border-2 border-encre bg-white px-4 text-[16px] font-bold text-encre hover:bg-orange-pale disabled:opacity-60 sm:flex-none"
+                      data-reutiliser={r.id}
+                    >
+                      {enCours === r.id ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <RotateCcw className="h-5 w-5" aria-hidden />}
+                      {tx("documents.passes.reutiliser")}
+                    </button>
+                  ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </section>
   );
 }
 

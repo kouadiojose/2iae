@@ -1,6 +1,7 @@
 // L'espace du professeur dans un cours (José, 15 octobre 2026) : contrats partagés entre server/routes/espace-prof.ts et
 // les pages du professeur (client/src/modules/accueil : blocs du cours, « Mes documents », « Vidéos et examens »,
 // « Créer un examen »). Tout le reste (séances, ressources, devoirs, corrigés, copies) passe par les routes existantes.
+import type { RessourceSeanceDto } from "./schema/ext-live";
 
 /** GET /api/enseigner/mon-cours/:id/resume : ce que disent les gros blocs d'un cours. */
 export type ResumeCoursProfDto = {
@@ -13,11 +14,20 @@ export type ResumeCoursProfDto = {
   intervenant: string | null;
   /** Ce qui est prêt pour la séance du moment (null sans séance). */
   documents: { diapos: number; videos: number; documents: number } | null;
+  /** Documents des séances passées (ressources, et un PowerPoint par séance qui en a un) : ils restent à portée. */
+  documentsPasses: number;
   mur: { total: number; dernierLe: string | null };
   /** Séances terminées avec un replay, et cours résumés prêts. */
   videos: { replays: number; resumes: number };
   /** Examens et devoirs du cours ; à relire : brouillons et QCM préparés par l'IA, copies « à revoir ». */
   examens: { total: number; aRelire: number };
+};
+
+/** GET /api/enseigner/mon-cours/:id/documents-passes : les documents des cours passés, les plus récents d'abord. */
+export type DocumentsPassesDto = {
+  /** La séance où « Réutiliser » range un document (celle du moment, sinon la prochaine). */
+  prochaine: { id: number; debut: string } | null;
+  seances: { id: number; titre: string; debut: string; diapos: number; ressources: RessourceSeanceDto[] }[];
 };
 
 export type SeanceVideoDto = {

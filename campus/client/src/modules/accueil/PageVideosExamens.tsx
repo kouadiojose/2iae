@@ -1,8 +1,9 @@
 // /enseigner/mon-cours/:coursId/videos-examens — « Vidéos et examens » (José, 15 octobre 2026 : « un bloc où ils voient
 // les vidéos des cours, les résumés de session, les examens QCM et autres faits par l'IA ; maintenant il peut lui aussi
 // créer des examens et donner les critères à l'IA pour la correction »). En haut, le gros bouton « Créer un examen » ;
-// puis les examens et devoirs du cours (ceux de l'IA marqués, à relire et publier dans l'éditeur existant ; les notes
-// dans la page des copies existante) ; puis les vidéos des séances (replay, résumé tiré de l'enregistrement).
+// puis les examens et devoirs du cours (ceux de l'IA marqués ; un brouillon se relit et se publie dans « Créer un
+// examen », rouvert prérempli ; un examen publié se modifie dans l'éditeur existant ; les notes dans la page des copies
+// existante) ; puis les vidéos des séances (replay, résumé tiré de l'enregistrement).
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ClipboardList, FileText, PlayCircle, Plus, Sparkles } from "lucide-react";
@@ -58,7 +59,7 @@ export default function PageVideosExamens({ coursId }: { coursId: string }) {
             ) : (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {data.examens.map((e) => (
-                  <CarteExamen key={e.id} e={e} />
+                  <CarteExamen key={e.id} e={e} coursId={id} />
                 ))}
               </div>
             )}
@@ -103,7 +104,7 @@ export default function PageVideosExamens({ coursId }: { coursId: string }) {
 }
 
 /** Une carte d'examen : son type, son état, ses copies, ses critères ; « Relire et publier » ou « Voir les notes ». */
-function CarteExamen({ e }: { e: ExamenProfDto }) {
+function CarteExamen({ e, coursId }: { e: ExamenProfDto; coursId: number }) {
   const tx = useTextes(tProf);
   const etat =
     e.etat === "brouillon"
@@ -145,7 +146,7 @@ function CarteExamen({ e }: { e: ExamenProfDto }) {
       )}
       <div className="mt-1 flex flex-col gap-2 sm:flex-row">
         <Link
-          href={`/enseigner/devoirs/${e.id}`}
+          href={e.etat === "brouillon" ? `/enseigner/mon-cours/${coursId}/examen/nouveau?devoir=${e.id}` : `/enseigner/devoirs/${e.id}`}
           className={cn(
             "inline-flex min-h-[56px] flex-1 items-center justify-center rounded-[16px] px-4 text-[18px] font-black no-underline",
             aRelire ? "bg-orange text-encre hover:bg-encre hover:text-white" : "border-2 border-encre bg-white text-encre hover:bg-orange-pale",

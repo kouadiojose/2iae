@@ -58,13 +58,18 @@ export function BandeauCours({ couleur, etiquette, titre, sousTitre, children }:
   );
 }
 
-/** « Retour » : 64 px, contour, pleine largeur sur téléphone. */
-export function RetourGros({ href, children }: { href: string; children: ReactNode }) {
+/** « Retour » : 64 px, contour, pleine largeur sur téléphone. « onClick » : un bouton (la page enregistre avant de partir). */
+export function RetourGros({ href, children, onClick }: { href: string; children: ReactNode; onClick?: () => void }) {
+  const classe = "inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[20px] font-extrabold text-encre no-underline shadow-carte transition-colors hover:border-orange hover:text-encre focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 sm:w-auto sm:self-start";
+  if (onClick)
+    return (
+      <button type="button" onClick={onClick} className={classe} data-retour={href}>
+        <ArrowLeft className="h-6 w-6" aria-hidden />
+        {children}
+      </button>
+    );
   return (
-    <Link
-      href={href}
-      className="inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[20px] font-extrabold text-encre no-underline shadow-carte transition-colors hover:border-orange hover:text-encre focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 sm:w-auto sm:self-start"
-    >
+    <Link href={href} className={classe}>
       <ArrowLeft className="h-6 w-6" aria-hidden />
       {children}
     </Link>
@@ -100,6 +105,7 @@ export function GrosBlocProf({
   grand,
   chargement,
   vivant,
+  carre,
   className,
 }: {
   icone: ReactNode;
@@ -116,6 +122,8 @@ export function GrosBlocProf({
   chargement?: boolean;
   /** Point « En direct » vivant devant le texte. */
   vivant?: boolean;
+  /** Bloc d'une grille de trois (grand écran) : icône au-dessus du titre, flèche en haut à droite, titre sur une ligne. */
+  carre?: boolean;
   className?: string;
 }) {
   const t = TONS[ton];
@@ -123,6 +131,7 @@ export function GrosBlocProf({
   const classe = cn(
     "group relative isolate flex w-full items-center gap-4 overflow-hidden rounded-[26px] border-2 px-5 py-5 text-left no-underline shadow-carte sm:gap-5 sm:px-6",
     grand ? "min-h-[136px] sm:min-h-[168px] sm:py-7" : "min-h-[120px] sm:min-h-[160px]",
+    carre && "lg:flex-col lg:items-start lg:justify-start lg:gap-4 lg:py-6",
     t.carte,
     !inactif && MOUVEMENT,
     inactif && "cursor-default",
@@ -137,7 +146,7 @@ export function GrosBlocProf({
       >
         {chargement ? <Loader2 className="h-8 w-8 animate-spin" /> : icone}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
+      <span className={cn("flex min-w-0 flex-1 flex-col gap-1", carre && "lg:w-full lg:flex-none")}>
         <span className={cn("break-words font-black leading-tight", grand ? "text-[28px] sm:text-[36px]" : "text-[24px] sm:text-[26px]")}>{titre}</span>
         {texte && (
           <span className="flex items-center gap-2 text-[18px] font-semibold leading-snug sm:text-[20px]">
@@ -147,7 +156,15 @@ export function GrosBlocProf({
         )}
       </span>
       {!inactif && (
-        <span className={cn("hidden shrink-0 place-items-center rounded-full sm:grid", grand ? "h-14 w-14" : "h-11 w-11", ton === "blanc" || ton === "gris" ? "bg-creme" : "bg-white/20")} aria-hidden>
+        <span
+          className={cn(
+            "hidden shrink-0 place-items-center rounded-full sm:grid",
+            grand ? "h-14 w-14" : "h-11 w-11",
+            ton === "blanc" || ton === "gris" ? "bg-creme" : "bg-white/20",
+            carre && "lg:absolute lg:right-5 lg:top-5",
+          )}
+          aria-hidden
+        >
           <ChevronRight className="h-7 w-7" />
         </span>
       )}
@@ -208,7 +225,7 @@ export function GrosBouton({
   externe?: boolean;
 }) {
   const classe = cn(
-    "inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] px-7 text-[20px] font-black no-underline transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 sm:w-auto",
+    "inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] px-5 text-center text-[20px] font-black no-underline transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 sm:w-auto sm:px-7",
     ton === "orange" && "bg-orange text-encre hover:bg-encre hover:text-white",
     ton === "encre" && "bg-encre text-white hover:bg-orange hover:text-encre",
     ton === "contour" && "border-2 border-encre bg-white text-encre hover:bg-orange-pale hover:text-encre",

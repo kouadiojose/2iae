@@ -4,7 +4,7 @@
 // « Professeurs du cours » de la fenêtre d'un cours. API : server/routes/professeurs.ts ; contrats : shared/professeurs.ts.
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, CheckCircle2, Copy, Link2, MessageCircle, Plus, Search, TriangleAlert, UserPlus } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, Copy, Link2, MessageCircle, Plus, Search, TriangleAlert, UserPlus } from "lucide-react";
 import { Fenetre } from "@/components/ui/fenetre";
 import { Avatar } from "@/components/ui/divers";
 import { GrosBouton } from "@/components/ui/gros-blocs";
@@ -22,7 +22,9 @@ import type {
   ProfesseurCreeDto,
   ProfesseurDto,
   ProfesseurDuCoursDto,
+  ProfesseursDuCoursDto,
   ReponseProfesseursCours,
+  VerificationProfesseurDto,
 } from "@shared/professeurs";
 import type { InvitationRemise } from "@shared/lancement";
 import { copier } from "../outils";
@@ -55,7 +57,9 @@ export function PastilleEtat({ p }: { p: Pick<ProfesseurDto, "etat" | "inviteLe"
   const tx = useTextes(tProfs);
   const texte =
     p.etat === "invite"
-      ? tx("etat.invite", { v: { date: p.inviteLe ? dateCourte(p.inviteLe) : "" } })
+      ? p.inviteLe
+        ? tx("etat.invite", { v: { date: dateCourte(p.inviteLe) } })
+        : tx("etat.invite.sansDate")
       : p.etat === "connecte"
         ? p.vuLe
           ? tx("etat.connecte", { v: { quand: relatif(p.vuLe) } })
@@ -112,8 +116,8 @@ export function CarteProfesseur({
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
   };
   return (
-    <article className="flex flex-col gap-4 rounded-[28px] border-2 border-ligne bg-white p-5 shadow-carte transition-colors hover:border-orange sm:p-6" data-professeur={p.id}>
-      <button type="button" onClick={onOuvrir} className="flex items-start gap-4 text-left" aria-label={`${tx("carte.ouvrir")} : ${nomDe(p)}`}>
+    <article className="flex flex-col gap-4 rounded-[28px] border-2 border-ligne bg-white p-5 shadow-carte sm:p-6" data-professeur={p.id}>
+      <button type="button" onClick={onOuvrir} className="group flex items-start gap-4 rounded-[18px] text-left" aria-label={`${tx("carte.ouvrir")} : ${nomDe(p)}`}>
         <Avatar prenom={p.prenom} nom={p.nom} photo={p.photoUrl} taille={64} />
         <span className="min-w-0 flex-1">
           <span className="block break-words text-[24px] font-black leading-tight sm:text-[26px]">{nomDe(p)}</span>
@@ -122,15 +126,24 @@ export function CarteProfesseur({
             <PastilleEtat p={p} />
           </span>
         </span>
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-creme text-encre transition-colors group-hover:bg-orange" aria-hidden>
+          <ChevronRight className="h-6 w-6" />
+        </span>
       </button>
       <div>
         <p className="font-mono text-[13px] font-semibold uppercase tracking-[0.14em] text-orange-profond">{tx("carte.cours")}</p>
         {p.cours.length ? (
-          <ul className="mt-1 divide-y divide-ligne-douce">
-            {p.cours.map((c) => (
-              <LigneCours key={c.coursId} c={c} />
-            ))}
-          </ul>
+          <>
+            <ul className="mt-1 divide-y divide-ligne-douce">
+              {p.cours.map((c) => (
+                <LigneCours key={c.coursId} c={c} />
+              ))}
+            </ul>
+            {/* « Retirer », « Mettre en principal », « Changer les classes » : dans sa fiche, à un toucher d'ici. */}
+            <button type="button" onClick={onOuvrir} className="mt-1 inline-flex min-h-[48px] items-center gap-1 rounded-[14px] px-1 text-[17px] font-bold text-orange-profond underline underline-offset-4 hover:text-encre" data-action="gerer">
+              {tx("carte.gerer")} <ChevronRight className="h-5 w-5" aria-hidden />
+            </button>
+          </>
         ) : (
           <p className="mt-2 rounded-[16px] border-2 border-dashed border-ligne bg-creme px-4 py-3 text-[17px] font-semibold text-texte-doux">{tx("carte.aucunCours")}</p>
         )}
@@ -357,6 +370,7 @@ export function FenetreNouveauProfesseur({
   const [coches, setCoches] = useState<Set<number>>(new Set(coursPreCoche ? [coursPreCoche] : []));
   const [envoi, setEnvoi] = useState(false);
   const [cree, setCree] = useState<ProfesseurCreeDto | null>(null);
+  const [erreurs, setErreurs] = useState<VerificationProfesseurDto>({ telephone: null, email: null });
   const { data: cours } = useQuery<CoursAAttacherDto[]>({ queryKey: [CLE_COURS_A_ATTACHER], enabled: ouverte && peutAttacher });
   const fermer = () => {
     setEtape(1);
@@ -367,7 +381,24 @@ export function FenetreNouveauProfesseur({
     setMalgre(false);
     setCoches(new Set(coursPreCoche ? [coursPreCoche] : []));
     setCree(null);
+    setErreurs({ telephone: null, email: null });
     onFermer();
+  };
+  /** Étape 1 → suivante : téléphone et e-mail vérifiés tout de suite (l'erreur s'affiche sous le champ). */
+  const suivant = async () => {
+    setEnvoi(true);
+    try {
+      const v = await post<VerificationProfesseurDto>(`${CLE_PROFESSEURS}/verifier`, { telephone: telephone || undefined, email: email || undefined });
+      setErreurs(v);
+      if (v.telephone || v.email) return;
+    } catch (e) {
+      toastErreur(e);
+      return;
+    } finally {
+      setEnvoi(false);
+    }
+    if (peutAttacher) setEtape(2);
+    else void creer();
   };
   const doublon = existants.find((p) => sansAccents(nomDe(p)) === sansAccents(`${prenom} ${nom}`));
   const creer = async () => {
@@ -379,7 +410,15 @@ export function FenetreNouveauProfesseur({
       await toutRelire();
       await rafraichir(CLE_COURS_A_ATTACHER);
     } catch (e) {
-      toastErreur(e);
+      // Pris entre-temps : retour à l'étape 1, l'erreur sous le champ concerné.
+      const message = e instanceof Error ? e.message : String(e);
+      if (/numéro/i.test(message)) {
+        setErreurs({ telephone: message, email: null });
+        setEtape(1);
+      } else if (/e-mail/i.test(message)) {
+        setErreurs({ telephone: null, email: message });
+        setEtape(1);
+      } else toastErreur(e);
     } finally {
       setEnvoi(false);
     }
@@ -410,13 +449,49 @@ export function FenetreNouveauProfesseur({
             </div>
             <label className="flex flex-col gap-1.5 text-[17px] font-bold">
               {tx("nouveau.telephone")}
-              <input className={champ} type="tel" inputMode="tel" value={telephone} onChange={(e) => setTelephone(e.target.value)} data-champ="telephone" />
-              <span className="text-[15px] font-normal text-texte-doux">{tx("nouveau.telephone.aide")}</span>
+              <input
+                className={cn(champ, erreurs.telephone && "border-[#B42318]")}
+                type="tel"
+                inputMode="tel"
+                value={telephone}
+                onChange={(e) => {
+                  setTelephone(e.target.value);
+                  setErreurs({ ...erreurs, telephone: null });
+                }}
+                aria-invalid={Boolean(erreurs.telephone)}
+                aria-describedby={erreurs.telephone ? "erreur-telephone" : undefined}
+                data-champ="telephone"
+              />
+              {erreurs.telephone ? (
+                <span id="erreur-telephone" role="alert" className="text-[16px] font-bold text-[#B42318]" data-erreur="telephone">
+                  {erreurs.telephone}
+                </span>
+              ) : (
+                <span className="text-[15px] font-normal text-texte-doux">{tx("nouveau.telephone.aide")}</span>
+              )}
             </label>
             <label className="flex flex-col gap-1.5 text-[17px] font-bold">
               {tx("nouveau.email")}
-              <input className={champ} type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} data-champ="email" />
-              <span className="text-[15px] font-normal text-texte-doux">{tx("nouveau.email.aide")}</span>
+              <input
+                className={cn(champ, erreurs.email && "border-[#B42318]")}
+                type="email"
+                inputMode="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setErreurs({ ...erreurs, email: null });
+                }}
+                aria-invalid={Boolean(erreurs.email)}
+                aria-describedby={erreurs.email ? "erreur-email" : undefined}
+                data-champ="email"
+              />
+              {erreurs.email ? (
+                <span id="erreur-email" role="alert" className="text-[16px] font-bold text-[#B42318]" data-erreur="email">
+                  {erreurs.email}
+                </span>
+              ) : (
+                <span className="text-[15px] font-normal text-texte-doux">{tx("nouveau.email.aide")}</span>
+              )}
             </label>
             {doublon && !malgre && (
               <div className="flex flex-col gap-3 rounded-[18px] bg-[#FDF3E1] p-4" role="alert">
@@ -437,8 +512,8 @@ export function FenetreNouveauProfesseur({
               </div>
             )}
             <GrosBouton
-              onClick={() => (peutAttacher ? setEtape(2) : void creer())}
-              disabled={!prenom.trim() || !nom.trim() || (Boolean(doublon) && !malgre)}
+              onClick={() => void suivant()}
+              disabled={!prenom.trim() || !nom.trim() || (Boolean(doublon) && !malgre) || Boolean(erreurs.telephone || erreurs.email)}
               chargement={envoi}
               className="sm:self-start"
             >
@@ -617,67 +692,99 @@ export function FenetreProfesseur({
   );
 }
 
-/** « Professeurs du cours » dans la fenêtre d'un cours (Pilotage · Cours) : liste, principal, retirer, ajouter. */
+/** « Professeurs du cours » dans la fenêtre d'un cours (Pilotage · Cours) : liste, principal, retirer (confirmé), ajouter. */
 export function ProfesseursDuCours({ coursId, titreCours }: { coursId: number; titreCours: string }) {
   const tx = useTextes(tProfs);
   const cle = `/api/pilotage/cours/${coursId}/professeurs`;
-  const { data } = useQuery<ProfesseurDuCoursDto[]>({ queryKey: [cle] });
+  const { data } = useQuery<ProfesseursDuCoursDto>({ queryKey: [cle] });
   const tous = useQuery<{ professeurs: ProfesseurDto[] }>({ queryKey: [CLE_PROFESSEURS] });
   const [ajout, setAjout] = useState(false);
   const [q, setQ] = useState("");
-  const liste = data ?? [];
+  const [aRetirer, setARetirer] = useState<ProfesseurDuCoursDto | null>(null);
+  const [envoi, setEnvoi] = useState(false);
+  const liste = data?.professeurs ?? [];
+  const gerable = data?.gerable ?? false;
   const ids = new Set(liste.map((p) => p.id));
-  const ajouter = async (id: number) => {
+  const ajouter = async (p: ProfesseurDto) => {
     try {
-      await post(cle, { formateurId: id });
+      const r = await post<ReponseProfesseursCours>(cle, { formateurId: p.id });
+      toast(r.principal ? tx("attacher.toast.principal", { v: { nom: nomDe(p), titre: titreCours } }) : tx("attacher.toast", { v: { nom: nomDe(p), titre: titreCours } }));
       await toutRelire(coursId);
     } catch (e) {
       toastErreur(e);
     }
   };
-  const principal = async (id: number) => {
+  const principal = async (p: ProfesseurDuCoursDto) => {
     try {
-      await put(`${cle}/principal`, { formateurId: id });
+      await put(`${cle}/principal`, { formateurId: p.id });
+      toast(tx("principal.toast", { v: { nom: nomDe(p) } }));
       await toutRelire(coursId);
     } catch (e) {
       toastErreur(e);
     }
   };
   const retirer = async (p: ProfesseurDuCoursDto) => {
+    setEnvoi(true);
     try {
       const r = await suppr<ReponseProfesseursCours>(`${cle}/${p.id}`);
       toast(tx("retirer.toast", { v: { nom: nomDe(p), titre: titreCours } }));
       if (r.avertissement) toast(r.avertissement, "info");
+      setARetirer(null);
       await toutRelire(coursId);
     } catch (e) {
       toastErreur(e);
+    } finally {
+      setEnvoi(false);
     }
   };
   const candidats = (tous.data?.professeurs ?? []).filter((p) => p.etat !== "desactive" && !ids.has(p.id) && (!q.trim() || sansAccents(nomDe(p)).includes(sansAccents(q))));
   return (
-    <section className="flex flex-col gap-2" data-professeurs-du-cours={coursId}>
+    <section className="flex flex-col gap-2" data-professeurs-du-cours={coursId} data-gerable={gerable}>
       <h3 className="text-[18px] font-extrabold">{tx("cours.professeurs")}</h3>
       {!liste.length && <p className="text-[16px] text-texte-doux">{tx("cours.aucun")}</p>}
       <ul className="flex flex-col divide-y divide-ligne-douce">
         {liste.map((p) => (
-          <li key={p.id} className="flex min-h-[64px] flex-wrap items-center gap-3 py-2">
-            <Avatar prenom={p.prenom} nom={p.nom} photo={p.photoUrl} taille={40} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[17px] font-bold">{nomDe(p)}</span>
-              <span className="font-mono text-[12px] font-semibold uppercase tracking-wider text-orange-profond">{p.principal ? tx("carte.principal") : tx("carte.professeur")}</span>
-            </span>
-            {!p.principal && (
-              <button type="button" onClick={() => void principal(p.id)} className="min-h-[44px] rounded-[12px] border-2 border-encre px-3 text-[15px] font-bold">
-                {tx("carte.principal")}
-              </button>
+          <li key={p.id} className="flex flex-col py-2">
+            <div className="flex min-h-[56px] flex-wrap items-center gap-3">
+              <Avatar prenom={p.prenom} nom={p.nom} photo={p.photoUrl} taille={40} />
+              <span className="min-w-0 flex-1">
+                <span className="block break-words text-[17px] font-bold">{nomDe(p)}</span>
+                <span className="font-mono text-[12px] font-semibold uppercase tracking-wider text-orange-profond">{p.principal ? tx("carte.principal") : tx("carte.professeur")}</span>
+              </span>
+              {gerable && (
+                <span className="flex flex-wrap gap-1">
+                  {!p.principal && (
+                    <button type="button" onClick={() => void principal(p)} className="min-h-[44px] rounded-[12px] px-3 text-[15px] font-bold text-encre underline underline-offset-4" data-principal-cours={p.id}>
+                      {tx("fiche.principal")}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setARetirer(p)} className="min-h-[44px] px-2 text-[15px] font-bold text-[#B42318]" data-retirer-cours={p.id}>
+                    {tx("fiche.retirer")}
+                  </button>
+                </span>
+              )}
+            </div>
+            {aRetirer?.id === p.id && (
+              <div className="mt-2 flex flex-col gap-3 rounded-[16px] bg-danger-clair p-4" role="alertdialog" aria-label={tx("retirer.titre", { v: { nom: nomDe(p), titre: titreCours } })}>
+                <p className="text-[17px] font-black text-[#7A2E0E]">{tx("retirer.titre", { v: { nom: nomDe(p), titre: titreCours } })}</p>
+                <p className="text-[15px] text-[#7A2E0E]">{tx("retirer.texte")}</p>
+                {p.programme && <p className="rounded-[12px] bg-[#FDF3E1] p-3 text-[15px] font-bold text-[#7A4B0C]">{tx("retirer.programme", { v: { nom: nomDe(p), quand: p.programme } })}</p>}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button type="button" onClick={() => void retirer(p)} disabled={envoi} className="min-h-[48px] rounded-[14px] bg-[#B42318] px-5 text-[16px] font-black text-white" data-confirmer-retrait-cours>
+                    {tx("retirer.oui")}
+                  </button>
+                  <button type="button" onClick={() => setARetirer(null)} className="min-h-[48px] rounded-[14px] border-2 border-encre bg-white px-5 text-[16px] font-bold">
+                    {tx("retirer.non")}
+                  </button>
+                </div>
+              </div>
             )}
-            <button type="button" onClick={() => void retirer(p)} className="min-h-[44px] px-2 text-[15px] font-bold text-[#B42318]">
-              {tx("fiche.retirer")}
-            </button>
           </li>
         ))}
       </ul>
-      {ajout ? (
+      {!gerable ? (
+        data && <p className="text-[15px] text-texte-doux" data-cours-partage>{tx("cours.partage")}</p>
+      ) : ajout ? (
         <div className="flex flex-col gap-2 rounded-[16px] border-2 border-ligne p-3">
           <input
             type="search"
@@ -692,10 +799,10 @@ export function ProfesseursDuCours({ coursId, titreCours }: { coursId: number; t
               <li key={p.id} className="flex min-h-[56px] items-center gap-3">
                 <Avatar prenom={p.prenom} nom={p.nom} photo={p.photoUrl} taille={36} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[16px] font-bold">{nomDe(p)}</span>
+                  <span className="block break-words text-[16px] font-bold">{nomDe(p)}</span>
                   <span className="block truncate text-[14px] text-texte-doux">{p.cours.map((c) => c.code).join(" · ")}</span>
                 </span>
-                <button type="button" onClick={() => void ajouter(p.id)} className="min-h-[44px] rounded-[12px] bg-orange px-4 text-[15px] font-black text-encre">
+                <button type="button" onClick={() => void ajouter(p)} className="min-h-[44px] rounded-[12px] bg-orange px-4 text-[15px] font-black text-encre">
                   {tx("cours.ajouter.bouton")}
                 </button>
               </li>

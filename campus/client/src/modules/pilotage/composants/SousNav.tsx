@@ -29,6 +29,7 @@ const PAGES: ({ href: string; libelle: string; prefixes?: string[] } & Pick<Elem
   { href: "/pilotage/site", libelle: "Site public", droit: "outils_campus" },
   { href: "/pilotage/formateurs", libelle: "Présentations", prefixes: ["/pilotage/formateurs"], direction: true },
   { href: "/pilotage/visio", libelle: "Visio", droit: "outils_campus" },
+  { href: "/pilotage/reunion", libelle: "Salle de réunion", droit: "outils_campus" },
   { href: "/pilotage/ia", libelle: "Budget IA", droit: "outils_campus" },
 ];
 

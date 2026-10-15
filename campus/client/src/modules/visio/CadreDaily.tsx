@@ -13,7 +13,14 @@
 //  - dans la classe (relanceAuto), le formateur et l'écran de salle (aucun
 //    clic sur l'écran d'une salle) réessaient tout seuls, de plus en plus
 //    espacé, tant que le problème peut passer : salle pleine, réseau, service
-//    occupé ou compte à régler.
+//    occupé ou compte à régler ;
+//  - mots du cadre (attente, lenteur, panne), par ordre de priorité :
+//    1) `textes` explicites du parent (hors des cours, la réunion de
+//       l'administration : ni radio, ni formateur, ni cours ; chaque problème
+//       y est réécrit avec ses mots) ;
+//    2) le contexte de l'écran du compte de campus (lib/ecran-campus.ts :
+//       ni « visio » ni « Daily », mots de shared/textes/campus.ts) ;
+//    3) les mots des cours.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, WifiOff, RotateCcw, AlertTriangle } from "lucide-react";
 import type { DailyCall, DailyParticipant } from "@daily-co/daily-js";
@@ -51,6 +58,17 @@ const DELAIS_RELANCE_S = [20, 30, 45, 60];
 
 type Acces = Pick<AccesDaily, "url" | "jeton"> & { message?: string };
 
+/**
+ * Mots du cadre hors des cours (réunion de l'administration) : l'attente, et chaque problème réécrit avec les mots du
+ * parent. `probleme` garde le genre et la relance du problème (seuls le texte et le conseil changent).
+ */
+export type TextesCadre = {
+  connexion: string;
+  lent: string;
+  sansReponse: string;
+  probleme: (pb: ProblemeVisio) => ProblemeVisio;
+};
+
 export type PropsCadreDaily = {
   /** Demande un accès au campus (jeton signé par le serveur). */
   obtenirAcces: () => Promise<AccesDaily | RejoindreVisioDto>;
@@ -75,6 +93,11 @@ export type PropsCadreDaily = {
   secours?: ReactNode;
   /** Classe en direct : le formateur et l'écran de salle réessaient tout seuls (la salle d'essai, elle, montre l'échec tel quel). */
   relanceAuto?: boolean;
+  /**
+   * Mots d'un autre contexte que le cours (sinon ceux des cours, radio et formateur compris). Prioritaires sur tout :
+   * ils l'emportent aussi sur le vocabulaire de l'écran du campus (lib/ecran-campus.ts).
+   */
+  textes?: TextesCadre;
   className?: string;
 };
 
@@ -113,7 +136,10 @@ export function CadreDaily(p: PropsCadreDaily) {
   const rappels = useRef(p);
   rappels.current = p;
 
-  const noterEchec = (pb: ProblemeVisio) => {
+  const noterEchec = (brut: ProblemeVisio) => {
+    // Hors des cours, le parent redit le problème avec ses mots (même genre, même relance).
+    const textes = rappels.current.textes;
+    const pb = textes ? { ...textes.probleme(brut), genre: brut.genre, relancer: brut.relancer } : brut;
     echecs.current += 1;
     setProbleme(pb);
     setEtat("erreur");
@@ -295,6 +321,18 @@ export function CadreDaily(p: PropsCadreDaily) {
     setEssai((n) => n + 1);
   };
 
+  // Mots de l'attente et de la panne : 1) `textes` explicites du parent (la réunion ; le problème est déjà réécrit
+  // par textes.probleme dans noterEchec) ; 2) écran du compte de campus (lib/ecran-campus.ts) ; 3) mots des cours.
+  const mots = p.textes
+    ? { connexion: p.textes.connexion, lent: p.textes.lent, panne: probleme?.texte ?? p.textes.sansReponse }
+    : ecranCampus
+      ? { connexion: txCampus("ecran.connexion"), lent: txCampus("ecran.lent"), panne: txCampus("ecran.panne") }
+      : {
+          connexion: t("Connexion à la visio…", "Connexion à la visio…"),
+          lent: t("La visio met du temps à répondre…", "La visio met du temps à répondre…"),
+          panne: probleme?.texte ?? t("La visio ne répond pas.", "La visio ne répond pas."),
+        };
+
   return (
     <div className={cn("relative h-full w-full", p.className)}>
       <div ref={conteneur} className="h-full w-full" />
@@ -316,15 +354,9 @@ export function CadreDaily(p: PropsCadreDaily) {
             <p className="max-w-md text-[15px] font-semibold text-nuit-texte" role="status" aria-live="polite">
               {etat === "connexion"
                 ? lent
-                  ? ecranCampus
-                    ? txCampus("ecran.lent")
-                    : t("La visio met du temps à répondre…", "La visio met du temps à répondre…")
-                  : ecranCampus
-                    ? txCampus("ecran.connexion")
-                    : t("Connexion à la visio…", "Connexion à la visio…")
-                : ecranCampus
-                  ? txCampus("ecran.panne")
-                  : (probleme?.texte ?? t("La visio ne répond pas.", "La visio ne répond pas."))}
+                  ? mots.lent
+                  : mots.connexion
+                : mots.panne}
             </p>
             {etat === "erreur" && probleme?.conseil && <p className="max-w-md text-[14px] leading-snug text-nuit-doux">{probleme.conseil}</p>}
             {etat === "erreur" && prochainEssai && <CompteRelance cible={prochainEssai} />}

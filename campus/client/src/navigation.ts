@@ -36,6 +36,7 @@ import {
   CalendarCheck,
   ClipboardCheck,
   Presentation,
+  Handshake,
 } from "lucide-react";
 import { estProfilCampus, estProfilRegie, type Droit, type Moi, type Role } from "@shared/schema";
 import { profilPermet } from "@/lib/auth";
@@ -155,6 +156,8 @@ const EQUIPE: ElementNav[] = [
   { href: "/pilotage/site", libelle: "Site public", icone: Globe, prefixes: ["/pilotage/site"], droit: "outils_campus" },
   { href: "/pilotage/formateurs", libelle: "Présentations", icone: Clapperboard, prefixes: ["/pilotage/formateurs"], direction: true },
   { href: "/pilotage/visio", libelle: "Visio", icone: Video, prefixes: ["/pilotage/visio", "/visio"], droit: "outils_campus" },
+  // Le lien permanent des réunions de l'administration (ouvrir, fermer, partager) : même droit que la visio.
+  { href: "/pilotage/reunion", libelle: "Salle de réunion", icone: Handshake, prefixes: ["/pilotage/reunion"], droit: "outils_campus" },
   { href: "/messages", libelle: "Messages", icone: MessageCircle, mobile: true, prefixes: ["/messages"] },
   { href: "/mediatheque", libelle: "Médiathèque", icone: MonitorPlay, prefixes: ["/mediatheque"] },
   { href: "/direct", libelle: "Live", icone: Radio, prefixes: ["/direct", "/live"], droit: ["programme", "presences", "presences_voir"] },

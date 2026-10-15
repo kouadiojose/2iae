@@ -85,6 +85,13 @@ export const t = creerTextes({
   "compteur.notes.zero": "Pas encore de note",
   "compteur.notes.un": "Notes de 1 étudiant",
   "compteur.notes": "Notes de {n} étudiants",
+  // Le mur du cours (lecture seule pour le campus : ce que les professeurs y postent)
+  "bloc.mur": "Le mur du cours",
+  "compteur.mur.zero": "Rien pour l'instant",
+  "compteur.mur.un": "1 message",
+  "compteur.mur": "{n} messages",
+  "compteur.mur.dernier": "{compte} · dernier {quand}",
+  "mur.retour": "Retour au cours",
 
   // ── Les cours, les résumés, les examens, les notes ────────────────────────
   retour: "Retour",

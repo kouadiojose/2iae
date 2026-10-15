@@ -1,25 +1,20 @@
-// /enseigner/mon-cours/:coursId — les trois gros blocs d'UN cours, quand le formateur en a plusieurs (il a touché son
-// carré sur l'accueil) : « Le cours », « Entrer dans le live », « Préparer le cours ». Gros bouton « Retour à mes cours ».
-import { Link } from "wouter";
-import { ArrowLeft } from "lucide-react";
+// /enseigner/mon-cours/:coursId — les gros blocs d'UN cours, quand le professeur en a plusieurs (il a touché son carré
+// sur l'accueil) : « Commencer le live », « Mes documents », « Le mur du cours », « Vidéos et examens » et la ligne
+// « Leçons, devoirs et notes » (simple/blocs-cours.tsx). Gros bouton « Retour à mes cours ».
 import { Page } from "@/components/layout/coquille";
+import { RetourGros } from "@/components/ui/gros-blocs";
 import { useTextes } from "@/lib/textes";
 import { t as tEnseigner } from "@shared/textes/enseigner";
-import { BandeCours, LienPlus, TroisBlocs, useAccueilSimple } from "./simple/blocs";
+import { LienPlus, useAccueilSimple } from "./simple/blocs";
+import { BandeDuCours, BlocsDuCours } from "./simple/blocs-cours";
 
 export default function PageMonCours({ coursId }: { coursId: string }) {
   const tx = useTextes(tEnseigner);
   const { data, error, refetch, isLoading } = useAccueilSimple();
   const c = data?.cours.find((x) => x.coursId === Number(coursId));
   return (
-    <Page className="gap-6 sm:gap-8 [@media(max-height:700px)]:!gap-4 [@media(max-height:700px)]:!pt-4">
-      <Link
-        href="/enseigner"
-        className="inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[22px] font-extrabold text-encre no-underline shadow-carte transition-[border-color,box-shadow] duration-150 hover:border-orange/60 hover:text-encre hover:shadow-survol sm:w-auto sm:self-start [@media(max-height:700px)]:min-h-[56px]"
-      >
-        <ArrowLeft className="h-7 w-7 text-orange-profond" strokeWidth={2.25} aria-hidden />
-        {tx("blocs.retour")}
-      </Link>
+    <Page className="gap-6 sm:gap-8 [@media(min-height:701px)_and_(max-height:800px)]:!gap-5 [@media(min-height:701px)_and_(max-height:800px)]:!pt-5 [@media(max-height:700px)]:!gap-4 [@media(max-height:700px)]:!pt-4">
+      <RetourGros href="/enseigner">{tx("blocs.retour")}</RetourGros>
       {isLoading ? (
         <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">
           {tx("blocs.chargement")}
@@ -33,8 +28,8 @@ export default function PageMonCours({ coursId }: { coursId: string }) {
         </div>
       ) : (
         <>
-          <BandeCours c={c} />
-          <TroisBlocs c={c} />
+          <BandeDuCours c={c} />
+          <BlocsDuCours c={c} />
           <LienPlus aFaire={data.aFaire} />
         </>
       )}

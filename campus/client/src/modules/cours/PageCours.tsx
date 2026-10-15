@@ -1,11 +1,12 @@
 // Page d'un cours : en-tête coloré puis onglets Leçons · Réviser · Séances ·
 // Devoirs · Questions du cours · À propos. L'étudiant reprend où il en était ;
 // le formateur modifie son cours. La page s'ouvre sur le premier onglet qui a
-// du contenu : sans leçon, les cours complets à réviser (chantier C1).
+// du contenu : sans leçon, les cours complets à réviser (chantier C1). Onglet « Le mur » : les messages des
+// professeurs du cours (liens, fichiers), modules/mur (15 octobre 2026).
 import { useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, CheckCircle2, MapPin, MessageCircle, PenLine, RotateCcw, Target, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, CheckCircle2, MapPin, MessageCircle, Newspaper, PenLine, RotateCcw, Target, Users } from "lucide-react";
 import { Page } from "@/components/layout/coquille";
 import { LienBouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
@@ -21,6 +22,9 @@ import { DevoirsDuCours } from "@/modules/evaluations/DevoirsDuCours";
 import { PauseIaCours } from "@/modules/ia/PauseIaCours";
 import { ReglageMediatheque } from "@/modules/mediatheque/ReglageMediatheque";
 import { OngletReviser, cleCoursComplets } from "@/modules/revision/OngletReviser";
+import { MurDuCours } from "@/modules/mur/MurDuCours";
+import { post } from "@/lib/api";
+import { rafraichir } from "@/lib/queryClient";
 import { EnTeteCours } from "./composants/EnTeteCours";
 import { ProgrammeLecons } from "./composants/ProgrammeLecons";
 import { classeSansSite, listeObjectifs, texteSur, typographie } from "./outils";
@@ -28,8 +32,8 @@ import type { CoursDetail } from "@shared/schema";
 import type { CoursDetailSuivi } from "@shared/engagement/objectif";
 import type { CoursCompletARevise } from "@shared/engagement/revision";
 
-type Onglet = "lecons" | "reviser" | "seances" | "devoirs" | "questions" | "apropos";
-const ONGLETS: Onglet[] = ["lecons", "reviser", "seances", "devoirs", "questions", "apropos"];
+type Onglet = "lecons" | "mur" | "reviser" | "seances" | "devoirs" | "questions" | "apropos";
+const ONGLETS: Onglet[] = ["lecons", "mur", "reviser", "seances", "devoirs", "questions", "apropos"];
 
 export default function PageCours({ id }: { id: string }) {
   const moi = useMoiConnecte();
@@ -49,7 +53,8 @@ export default function PageCours({ id }: { id: string }) {
     enabled: (sansLecon && !demande) || demande === "reviser",
     staleTime: 60_000,
   });
-  const parDefaut: Onglet = !sansLecon ? "lecons" : !coursComplets || coursComplets.length ? "reviser" : "seances";
+  // Sans leçon : le mur s'il a au moins un message, sinon les cours complets, sinon les séances.
+  const parDefaut: Onglet = !sansLecon ? "lecons" : (cours?.mur?.total ?? 0) > 0 ? "mur" : !coursComplets || coursComplets.length ? "reviser" : "seances";
   const onglet: Onglet = demande && ONGLETS.includes(demande) ? demande : parDefaut;
   const changerOnglet = (o: Onglet) => naviguer(o === parDefaut ? chemin : `${chemin}?onglet=${o}`, { replace: true });
 
@@ -61,6 +66,20 @@ export default function PageCours({ id }: { id: string }) {
     const actif = bandeOnglets.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
     actif?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [onglet, charge]);
+
+  // L'étudiant ouvre le mur avec des messages pas encore vus : ses notifications du mur passent lues (une fois).
+  const nonLusMur = etudiant ? (cours?.mur?.nonLus ?? 0) : 0;
+  const vuEnvoye = useRef(false);
+  useEffect(() => {
+    if (onglet !== "mur" || !nonLusMur || vuEnvoye.current) return;
+    vuEnvoye.current = true;
+    void post(`/api/cours/${coursId}/mur/vu`)
+      .then(() => rafraichir("/api/cours", "/api/notifications"))
+      .catch(() => undefined)
+      .finally(() => {
+        vuEnvoye.current = false;
+      });
+  }, [onglet, nonLusMur, coursId]);
 
   if (isLoading) {
     return (
@@ -150,6 +169,19 @@ export default function PageCours({ id }: { id: string }) {
       {cours.enseignant && <PauseIaCours coursId={cours.id} />}
       <ReglageMediatheque cours={cours} />
 
+      {etudiant && nonLusMur > 0 && onglet !== "mur" && (
+        <button
+          type="button"
+          onClick={() => changerOnglet("mur")}
+          className="flex min-h-[56px] w-full items-center gap-3 rounded-[18px] border-2 border-orange bg-orange-clair px-4 py-3 text-left text-[17px] font-bold text-encre"
+          data-bandeau-mur
+        >
+          <Newspaper className="h-5 w-5 shrink-0 text-orange-profond" aria-hidden />
+          <span className="flex-1">{nonLusMur === 1 ? "Nouveau sur le mur : un message." : `Nouveau sur le mur : ${nonLusMur} messages.`}</span>
+          <span className="rounded-full bg-encre px-4 py-1.5 text-[15px] text-white">Voir</span>
+        </button>
+      )}
+
       {/* Sur téléphone, les onglets défilent : un fondu à droite l'indique. */}
       <div ref={bandeOnglets} className="relative after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-10 after:bg-gradient-to-l after:from-creme after:to-transparent sm:after:hidden -mx-4 sm:mx-0">
       <Onglets<Onglet>
@@ -157,6 +189,7 @@ export default function PageCours({ id }: { id: string }) {
         onChange={changerOnglet}
         options={[
           { valeur: "lecons", libelle: "Leçons", compteur: nbLecons || undefined },
+          ...(cours.mur ? [{ valeur: "mur" as const, libelle: "Le mur", compteur: (etudiant ? cours.mur.nonLus : cours.mur.total) || undefined }] : []),
           // L'étudiant y révise ; le formateur et l'équipe y retrouvent les cours résumés de chaque séance.
           { valeur: "reviser", libelle: etudiant ? "Réviser" : "Cours résumés", compteur: coursComplets?.length || undefined },
           { valeur: "seances", libelle: "Séances" },
@@ -193,6 +226,8 @@ export default function PageCours({ id }: { id: string }) {
               texte={`${cours.formateur ? `${cours.formateur.prenom} ${cours.formateur.nom} prépare` : "Ton formateur prépare"} les leçons de ce cours. Tu recevras une notification dès qu'une leçon sera publiée.`}
             />
           ))}
+
+        {onglet === "mur" && cours.mur && <MurDuCours coursId={cours.id} variante={etudiant ? "etudiant" : "equipe"} />}
 
         {onglet === "reviser" && <OngletReviser coursId={cours.id} etudiant={etudiant} />}
 

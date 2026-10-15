@@ -117,7 +117,7 @@ type Contexte = { u: Utilisateur; site: Site; apercu: boolean };
  * Le campus de la personne : le sien pour le compte de campus (409 sans campus) ; pour la direction (aperçu), celui
  * qu'elle demande (?site=, obligatoire). Les autres comptes n'arrivent pas jusqu'ici (exigerDroit).
  */
-async function contexteDe(req: Request, res: Response): Promise<Contexte> {
+export async function contexteDe(req: Request, res: Response): Promise<Contexte> {
   const u = moi(req);
   res.setHeader("Cache-Control", "no-store");
   let siteId: number;
@@ -141,7 +141,7 @@ async function coursPermis(siteId: number): Promise<number[]> {
 }
 
 /** Le cours, s'il est suivi par le campus ; sinon 404 (« Ce cours n'est pas suivi par votre campus. »). */
-async function coursDuCampus(siteId: number, coursId: number) {
+export async function coursDuCampus(siteId: number, coursId: number) {
   if (!(await coursPermis(siteId)).includes(coursId)) throw new ErreurHttp(404, "Ce cours n'est pas suivi par votre campus.");
   const [c] = await db.select().from(cours).where(eq(cours.id, coursId));
   if (!c) throw new ErreurHttp(404, "Ce cours n'est pas suivi par votre campus.");

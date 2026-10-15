@@ -19,6 +19,7 @@ const PAGES: ({ href: string; libelle: string; prefixes?: string[] } & Pick<Elem
   { href: "/pilotage/comptes", libelle: "Comptes", prefixes: ["/pilotage/comptes", "/pilotage/fiches"], droit: "comptes_voir" },
   { href: "/pilotage/classes", libelle: "Classes et campus" },
   { href: "/pilotage/cours", libelle: "Cours", droit: "programme" },
+  { href: "/pilotage/professeurs", libelle: "Professeurs", droit: ["programme", "comptes_personnel"] },
   { href: "/pilotage/programme", libelle: "Emploi du temps", prefixes: ["/pilotage/programme"], droit: "programme" },
   { href: "/emploi-du-temps", libelle: "Emploi du temps", sansDroit: "programme" },
   { href: "/pilotage/planning", libelle: "Planning" },

@@ -24,6 +24,7 @@ import { idsCoursAccessibles, coursVisible, coursEnseigne, enseigneCours, peutVo
 import { enregistrerGardienFichier, urlFichier } from "../fichiers";
 import { intervenantsDesSeances } from "../programme-outils";
 import { notifier } from "../notifications";
+import { resumeMurPour } from "../mur";
 import { prevenirSite } from "../site";
 import { demanderClaude, iaDisponible, verifierQuota } from "../ia";
 import { progressionsCours } from "../engagement/progression-cours";
@@ -375,6 +376,8 @@ async function detailCours(u: Utilisateur, c: Cours): Promise<CoursDetailSuivi> 
     nbEtudiants,
     mediatheque: c.mediatheque,
     peutReglerMediatheque: await peutReglerMediatheque(u, c.id),
+    // Le mur du cours (server/mur.ts) : nombre de messages et, pour un étudiant, ceux qu'il n'a pas encore vus.
+    mur: await resumeMurPour(u, c.id),
   };
 }
 
@@ -894,6 +897,8 @@ export function enregistrerCours(app: Express) {
         if (c.statut === "publie") await prevenirEtudiantsCours(c);
       }
       if (maj.formateurId !== undefined) {
+        // Le nouveau principal n'est plus aussi « autre professeur » du cours (pas de doublon dans cours_formateurs).
+        if (c.formateurId) await db.delete(coursFormateurs).where(and(eq(coursFormateurs.coursId, c.id), eq(coursFormateurs.formateurId, c.formateurId)));
         await db.insert(journal).values({ utilisateurId: u.id, action: "cours_formateur", details: { coursId: c.id, de: avant.formateurId, vers: c.formateurId } });
         if (c.formateurId && c.formateurId !== u.id) {
           await notifier([c.formateurId], { type: "cours", titre: `Un cours vous est confié : ${c.code}`, corps: c.titre, lien: `/enseigner/cours/${c.id}`, push: false });

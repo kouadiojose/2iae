@@ -33,7 +33,8 @@ const cheminLocal = (cle: string) => {
 // « site » : photo d'un campus pour le site public (publique seulement une fois choisie par la direction, voir routes/public.ts).
 // « source-profil » : PDF du profil LinkedIn ou photo d'un formateur pour sa présentation (module showreel, routes/showreel.ts).
 // « ressource » : lien ou fichier déposé par le formateur pour une séance (routes/ressources-seance.ts).
-export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site", "source-profil", "chat", "piece", "ressource"] as const;
+// « mur » : fichier joint à un message du mur du cours (routes/mur.ts, server/mur.ts).
+export const USAGES_FICHIER = ["lecon", "rendu", "message", "avatar", "devoir", "annonce", "import", "diapo", "site", "source-profil", "chat", "piece", "ressource", "mur"] as const;
 export type UsageFichier = (typeof USAGES_FICHIER)[number];
 
 const MIMES_AUTORISES = [

@@ -18,6 +18,7 @@ import { rafraichir } from "@/lib/queryClient";
 import { dateCourte, heure } from "@/lib/dates";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
+import { ProfesseursDuCours } from "./composants/professeurs";
 
 const STATUTS: Record<StatutCours, { texte: string; ton: "gris" | "succes" | "encre" }> = {
   brouillon: { texte: "Brouillon", ton: "gris" },
@@ -170,10 +171,10 @@ function FenetreCreationCours({ ouverte, onFermer, onCree }: { ouverte: boolean;
   );
 }
 
-function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
+/** Fenêtre d'un cours (état, professeurs, classes) : aussi ouverte par la page « Professeurs » (« Changer les classes »). */
+export function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
   const detail = useQuery<CoursDetail>({ queryKey: [`/api/cours/${id}`] });
   const options = useQuery<OptionsEditionCours>({ queryKey: ["/api/cours/options"] });
-  const formateurs = useFormateurs(true);
   const [coches, setCoches] = useState<Set<number> | null>(null);
   const [envoi, setEnvoi] = useState<null | "formateur" | "statut" | "classes">(null);
   const c = detail.data;
@@ -240,22 +241,9 @@ function FenetreCours({ id, onFermer }: { id: number; onFermer: () => void }) {
         <Erreur message={(detail.error as Error)?.message ?? "Cours introuvable."} />
       ) : (
         <div className="flex flex-col gap-5 pb-2">
+          {/* Plusieurs professeurs par cours (15 octobre 2026) : le principal et les autres, à la place du menu « Formateur principal ». */}
+          <ProfesseursDuCours coursId={c.id} titreCours={c.titre} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Selection
-              libelle="Formateur principal"
-              value={c.formateur ? String(c.formateur.id) : ""}
-              disabled={envoi === "formateur" || !options.data?.peutChangerFormateur}
-              onChange={(e) => maj("formateur", { formateurId: e.target.value ? Number(e.target.value) : null }, "Formateur mis à jour : il est prévenu.")}
-            >
-              <option value="">Aucun pour l'instant</option>
-              {(formateurs.data ?? [])
-                .filter((f) => f.actif || f.id === c.formateur?.id)
-                .map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.prenom} {f.nom}
-                  </option>
-                ))}
-            </Selection>
             <Selection libelle="État du cours" value={c.statut} disabled={envoi === "statut"} onChange={(e) => maj("statut", { statut: e.target.value }, "État du cours mis à jour")}>
               <option value="brouillon">Brouillon (invisible des étudiants)</option>
               <option value="publie">Ouvert aux étudiants</option>

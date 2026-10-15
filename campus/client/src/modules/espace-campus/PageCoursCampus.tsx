@@ -1,7 +1,7 @@
 // /mon-campus/cours/:coursId : un cours, en gros blocs. Le héros du cours (dégradé de sa couleur), « Entrer dans le
 // live » (orange : à ouvrir aujourd'hui ; vert, point vivant : ouvert ou en direct ; nuit : pas de cours aujourd'hui,
-// tester le son et l'image), « Ajouter un PowerPoint » et « Ajouter une vidéo », puis « Les cours », « Les résumés de
-// cours », « Les examens », « Les notes ».
+// tester le son et l'image), « Ajouter un PowerPoint » et « Ajouter une vidéo », puis « Le mur du cours » (lecture
+// seule : ce que les professeurs y postent) et « Les cours », « Les résumés de cours », « Les examens », « Les notes ».
 //
 // Toucher « Entrer dans le live » demande le plein écran dans le même geste (le navigateur le permet), puis ouvre
 // l'écran de la salle. Séance du jour à venir : la salle s'ouvre (…/live?ouvrir=1 : la page du live l'ouvre une seule
@@ -21,6 +21,7 @@ import { AVANCE_MAX_OUVERTURE_MIN } from "@shared/ouverture";
 import type { CoursCampusDto } from "@shared/espace-campus";
 import { BandeauApercu, BoutonRetour, Confirmation, ErreurCampus, PageCampus, Patience, PastilleRepere, lienCampus, useApiCampus } from "./composants";
 import { CartesAjoutsCampus } from "./ajouts-campus";
+import { BlocMurCampus } from "./mur-campus";
 
 /** Clé (sessionStorage) : « on arrive sur l'écran du live par un toucher » (pas de voile à l'arrivée). */
 export const CLE_GESTE_LIVE = "campus:live-geste";
@@ -167,6 +168,7 @@ export default function PageCoursCampus({ coursId }: { coursId: string }) {
         </section>
         <section className="flex flex-col gap-4" aria-label={tx("bloc.lectures")}>
           <h2 className="text-[30px] text-encre">{tx("bloc.lectures")}</h2>
+          <BlocMurCampus coursId={id} couleur={data.cours.couleur} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
             {LECTURES.map((l) => {
               const Icone = l.icone;

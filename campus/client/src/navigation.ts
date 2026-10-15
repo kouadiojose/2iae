@@ -6,6 +6,7 @@
 // « Plus ». La direction commence par « Le travail du campus », puis « Copies et notes » (/corrections).
 import type { LucideIcon } from "lucide-react";
 import {
+  School,
   Home,
   BookOpen,
   Radio,
@@ -140,6 +141,8 @@ const EQUIPE: ElementNav[] = [
   },
   { href: "/pilotage/scolarite", libelle: "Scolarité", icone: Wallet, prefixes: ["/pilotage/scolarite", "/pilotage/recus"], droit: "argent" },
   { href: "/pilotage/comptes", libelle: "Comptes", icone: Users, prefixes: ["/pilotage/comptes", "/pilotage/fiches", "/pilotage/classes"], droit: "comptes_voir" },
+  // Les professeurs et leurs cours (José, 15 octobre 2026).
+  { href: "/pilotage/professeurs", libelle: "Professeurs", icone: School, prefixes: ["/pilotage/professeurs"], droit: ["programme", "comptes_personnel"] },
   { href: "/pilotage/programme", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/pilotage/programme"], droit: "programme" },
   // Sans le droit « programme » : l'emploi du temps en lecture.
   { href: "/emploi-du-temps", libelle: "Emploi du temps", icone: CalendarRange, mobile: true, prefixes: ["/emploi-du-temps"], sansDroit: "programme" },

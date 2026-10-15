@@ -260,6 +260,13 @@
       "when": 1791967599145,
       "tag": "0036_ouverture_auto",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792044708698,
+      "tag": "0037_mur_du_cours",
+      "breakpoints": true
     }
   ]
 }

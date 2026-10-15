@@ -16,7 +16,7 @@ export type ElementFile = {
   corps: Record<string, unknown>;
   /** Fichiers à téléverser d'abord ; leurs identifiants sont ajoutés à corps[champFichiers]. */
   fichiers?: { nom: string; type: string; blob: Blob }[];
-  usageFichiers?: "rendu" | "message";
+  usageFichiers?: "rendu" | "message" | "mur";
   /** « fichierIds » (tableau) ou « fichierId » (un seul). */
   champFichiers?: string;
   /** Compte qui a préparé l'envoi : sur un téléphone partagé, il ne part jamais au nom d'un autre. */

@@ -20,6 +20,7 @@ import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte, TitreSection } from "@/components/ui/carte";
 import { GestionRessources, ListeRessources } from "./ressources";
+import { BlocsAjouts } from "./ajouts";
 import { BoutonLienInvite } from "./LienInvite";
 import { Champ, ZoneTexte, Selection, CaseACocher } from "@/components/ui/champs";
 import { Badge, BadgeDirect, Chargement, EtatVide, Erreur, Chiffre } from "@/components/ui/divers";
@@ -175,6 +176,8 @@ function SeanceExistante({ id }: { id: number }) {
           className="w-fit"
         />
       )}
+      {/* « Ajouter un PowerPoint », « Ajouter une vidéo » : en tête, visibles sans chercher (José, 15 octobre 2026 à 5 h). */}
+      {courant === "preparer" && seance.peutModifier && seance.statut !== "terminee" && seance.statut !== "annulee" && <BlocsAjouts seance={seance} variante="preparation" />}
       {courant === "preparer" && (
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex min-w-0 flex-col gap-4">

@@ -50,6 +50,41 @@ export function couleurLisible(hex: string): { fond: string; texte: string } {
   return { fond: "#141414", texte: "#FFFFFF" };
 }
 
+/** Mélange deux couleurs hexadécimales (part de la seconde : 0 à 1), calculé ici : pas de color-mix (vieux navigateurs des salles). */
+export function melanger(hex: string, autre: string, part: number): string {
+  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex) || !/^#[0-9a-fA-F]{6}$/.test(autre)) return hex;
+  const a = rgb(hex);
+  const b = rgb(autre);
+  return `#${a.map((v, i) => Math.round(v + (b[i] - v) * part).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Contraste WCAG entre deux couleurs hexadécimales (1 à 21). */
+export function contraste(a: string, b: string): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * Fond en dégradé doux d'un carré de cours (José, 15 octobre 2026 à 5 h : « des gros blocs, mais un peu de beauté ») :
+ * la couleur lisible du cours (couleurLisible), puis un second arrêt qui va TOUJOURS dans le sens du contraste
+ * (18 % de noir sous un texte blanc, 22 % de blanc sous un texte encre) : le texte garde 4,5:1 au moins sur tout le
+ * dégradé. `voile` : la couleur des bulles décoratives et des cercles d'icône (jamais vers le texte).
+ */
+export function degradeCours(hex: string): { fond: string; a: string; texte: string; voile: string; css: string } {
+  const { fond, texte } = couleurLisible(hex);
+  const blanc = texte === "#FFFFFF";
+  const a = blanc ? melanger(fond, "#000000", 0.18) : melanger(fond, "#FFFFFF", 0.22);
+  return { fond, a, texte, voile: blanc ? "rgba(0,0,0,.12)" : "rgba(255,255,255,.28)", css: `linear-gradient(135deg, ${fond} 0%, ${a} 100%)` };
+}
+
+/** Teinte très douce de la couleur du cours (part de couleur, 7 % par défaut, mêlée de blanc) : fond des blocs de lecture. */
+export function teinteDouce(hex: string, part = 0.07): string {
+  const { fond } = couleurLisible(hex);
+  return melanger("#FFFFFF", fond, part);
+}
+
 /** Le texte le plus lisible sur une couleur de cours : encre ou blanc (contraste le plus élevé). */
 export function texteSur(hex: string): "encre" | "blanc" {
   const l = luminance(hex);

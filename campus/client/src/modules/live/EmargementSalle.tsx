@@ -127,7 +127,23 @@ function useFenetreEmargement(seance: SeanceDetailDto, etat: EtatDirectDto, site
 
 // ── Le QR en grand ─────────────────────────────────────────────────────────
 
-export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seance: SeanceDetailDto; etat: EtatDirectDto; siteId: number | null; enGroupe: boolean }) {
+/**
+ * `sousBandeau` (écran du compte de campus) : le QR laisse visible le bandeau du campus (« Ajouter », « Fermer ») ; il
+ * commence sous lui, à la hauteur que le bandeau publie dans la variable CSS `--bandeau-campus`.
+ */
+export function EmargementPleinEcran({
+  seance,
+  etat,
+  siteId,
+  enGroupe,
+  sousBandeau = false,
+}: {
+  seance: SeanceDetailDto;
+  etat: EtatDirectDto;
+  siteId: number | null;
+  enGroupe: boolean;
+  sousBandeau?: boolean;
+}) {
   const { fenetre, maintenant, sitesDuCours, attendus } = useFenetreEmargement(seance, etat, siteId, enGroupe);
   const visible = Boolean(fenetre && siteId);
   const { code } = useCodeSalle(seance.id, siteId, visible);
@@ -147,7 +163,10 @@ export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seanc
   const n = ici?.emarges ?? 0;
   return (
     <div
-      className="animate-monte fixed inset-0 z-[70] flex flex-col gap-[2.2vh] overflow-y-auto bg-nuit px-5 py-5 text-white lg:overflow-hidden lg:px-[3.5vw] lg:py-[3.5vh]"
+      className={cn(
+        "animate-monte fixed z-[70] flex flex-col gap-[2.2vh] overflow-y-auto bg-nuit px-5 py-5 text-white lg:px-[3.5vw] lg:py-[3.5vh]",
+        sousBandeau ? "inset-x-0 bottom-0 top-[var(--bandeau-campus,0px)]" : "inset-0 lg:overflow-hidden",
+      )}
       role="dialog"
       aria-modal="false"
       aria-label={t("salle.qr.titre")}
@@ -162,7 +181,10 @@ export function EmargementPleinEcran({ seance, etat, siteId, enGroupe }: { seanc
       </header>
       <main className="flex min-h-0 flex-1 flex-col items-center gap-6 lg:grid lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center lg:gap-[4vw]">
         <div
-          className="aspect-square w-full max-w-[520px] shrink-0 rounded-[24px] bg-white p-3 lg:h-[min(68vh,44vw)] lg:w-auto lg:max-w-none lg:rounded-[3vh] lg:p-[1.6vh] [&>svg]:h-full [&>svg]:w-full"
+          className={cn(
+            "aspect-square w-full max-w-[520px] shrink-0 rounded-[24px] bg-white p-3 lg:w-auto lg:max-w-none lg:rounded-[3vh] lg:p-[1.6vh] [&>svg]:h-full [&>svg]:w-full",
+            sousBandeau ? "lg:h-[min(calc(100dvh_-_var(--bandeau-campus,0px)_-_8rem),44vw)]" : "lg:h-[min(68vh,44vw)]",
+          )}
           dangerouslySetInnerHTML={{ __html: code.qrSvg }}
           aria-label={`QR d'émargement, code ${code.code}`}
           role="img"

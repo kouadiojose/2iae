@@ -31,6 +31,7 @@ import {
   type ReglagesVisioDto,
   type PreferencesUtilisateur,
   LIEUX_MAX,
+  estProfilCampus,
 } from "@shared/schema";
 import { nomDeSalle } from "@shared/salles";
 import { DELAIS_OUVERTURE_AUTO, type DelaiOuvertureAuto, type ReglageOuvertureAutoDto } from "@shared/ouverture";
@@ -58,6 +59,8 @@ async function nomDansLaSalle(u: Utilisateur): Promise<string> {
     case "admin":
       return `${u.prenom} ${u.nom} · direction`;
     case "vie_scolaire":
+      // Le compte de campus (« Tester le son et l'image ») porte le nom de la salle du campus, comme dans une classe.
+      if (estProfilCampus(u)) return `${site?.salleConference || "Salle"} · ${site?.nomCourt ?? ""}`.trim();
       return `${u.prenom} ${u.nom} · vie scolaire`;
     case "salle":
       return `${site ? nomDeSalle(u, site) : (u.salleNom ?? "Salle")} · ${site?.nomCourt ?? ""}`.trim();

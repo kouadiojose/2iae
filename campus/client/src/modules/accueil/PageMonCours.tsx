@@ -15,9 +15,9 @@ export default function PageMonCours({ coursId }: { coursId: string }) {
     <Page className="gap-6 sm:gap-8">
       <Link
         href="/enseigner"
-        className="inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-[3px] border-encre bg-white px-6 text-[22px] font-extrabold text-encre no-underline hover:bg-creme sm:w-auto sm:self-start"
+        className="inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[22px] font-extrabold text-encre no-underline shadow-carte transition-[border-color,box-shadow] duration-150 hover:border-orange/60 hover:text-encre hover:shadow-survol sm:w-auto sm:self-start"
       >
-        <ArrowLeft className="h-7 w-7" aria-hidden />
+        <ArrowLeft className="h-7 w-7 text-orange-profond" strokeWidth={2.25} aria-hidden />
         {tx("blocs.retour")}
       </Link>
       {isLoading ? (

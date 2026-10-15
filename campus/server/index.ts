@@ -8,6 +8,7 @@ import { configurationSession, chargerUtilisateur } from "./auth";
 import { enregistrerTempsReel } from "./temps-reel";
 import { enregistrerFichiers } from "./fichiers";
 import { enregistrerRoutes } from "./routes";
+import { filtreCompteCampus } from "./campus-filtre";
 import { gestionnaireErreurs, verifierOrigine } from "./http";
 import { brancherVite, servirStatique } from "./vite";
 import { pool } from "./db";
@@ -92,6 +93,9 @@ app.get("/api/health", async (_req, res) => {
 app.use("/api", verifierOrigine);
 app.use(session(configurationSession()));
 app.use(chargerUtilisateur);
+// Compte de campus : refus par défaut AVANT toute route de l'API, téléversement (POST /api/fichiers) et temps réel compris
+// (campus-filtre.ts ; aussi posé en tête de enregistrerRoutes, pour les serveurs d'essai qui n'ont que les routes).
+app.use("/api", filtreCompteCampus);
 
 enregistrerTempsReel(app);
 enregistrerFichiers(app);

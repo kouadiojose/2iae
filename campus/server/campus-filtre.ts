@@ -6,6 +6,14 @@
 // pilotage, l'emploi du temps, l'assistant IA ou la bibliothèque à tous les ordinateurs des salles (relecture du
 // 15 octobre 2026 : plusieurs routes de pilotage ne contrôlaient que le rôle vie scolaire).
 //
+// Ses gestes de chargé du campus (15 octobre 2026 à 5 h) passent TOUS par /api/mon-campus (routes/espace-campus.ts) :
+// ouvrir la salle, ajouter un PowerPoint (…/seances/:id/diapos), une vidéo (…/videos, …/videos/fichiers), retirer ses
+// propres vidéos (…/ressources/:rid), montrer une vidéo quand son campus est le seul du cours (…/projection), fermer sa
+// salle (…/fermer-salle), terminer le cours quand c'est sans danger (…/terminer). Chacune vérifie le cours, le campus et
+// la séance, et journalise : aucune ligne n'est ajoutée ici. Les routes du formateur (/api/seances/:id/diapos,
+// /ressources, /projection, /terminer, /demarrer, /diapo, /lien-intervenant) gardent leur refus (seanceAnimee : 403),
+// comme POST /api/fichiers (refusé ici).
+//
 // Le code secret du campus est donné par la direction (« Nouveau code », routes/admin.ts) : le compte ne le change pas
 // lui-même (sauf le premier choix d'un compte créé par lien d'invitation), ne ferme pas les sessions des autres
 // ordinateurs et ne change pas son e-mail.

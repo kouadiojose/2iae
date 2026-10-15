@@ -34,6 +34,45 @@ export type EspaceCampusDto = {
   cours: CarreCampusDto[];
 };
 
+/**
+ * Ce que le chargé du campus peut compléter (José, 15 octobre 2026 à 5 h : « le chargé du campus aussi doit pouvoir
+ * rajouter les vidéos ») : la séance du jour de ce cours (prévue ou en direct), sinon sa prochaine séance prévue. Null :
+ * aucune séance à compléter (« Pas de cours prévu »).
+ */
+export type AjoutsCampusDto = {
+  seanceId: number;
+  /** jour null : aujourd'hui (« Pour le cours de 8h30 ») ; sinon « samedi 17 octobre ». */
+  pour: { jour: string | null; heure: string };
+  diapos: number;
+  videos: number;
+  /** Deux séances du même cours à la même heure : la personne choisit (« Pour quel groupe ? »). */
+  choix: { seanceId: number; libelle: string }[] | null;
+} | null;
+
+/**
+ * « Terminer le cours » depuis l'écran du campus, proposé seulement quand c'est sans danger (règle exacte :
+ * server/routes/live.ts, terminaisonCampus). `terminer` : la raison de le proposer ; sinon `sinon` : pourquoi non.
+ */
+export type FermetureCampusDto = {
+  terminer: "seul_campus" | "fin_passee" | "personne" | "non_tenu" | null;
+  sinon: "pas_commence" | "attente_formateur" | "autres" | null;
+  /** Le formateur (ou l'intervenant, ou la personne qui anime) est connecté à la classe. */
+  formateurPresent: boolean;
+  /** Autres écrans connectés à la classe (autres campus, autres ordinateurs de ce campus, anciens écrans « salle »). */
+  autresSalles: number;
+};
+
+/**
+ * Geste du chargé du campus annoncé sur le canal de la séance (« seance:<id> ») : le Studio du formateur l'affiche
+ * (« Yamoussoukro a ajouté un PowerPoint (3 diapos). »). Événement distinct de « campus » (état des salles).
+ */
+export const EVENEMENT_GESTE_CAMPUS = "campus:geste";
+export type GesteCampusDto =
+  | { type: "ajout_ppt"; site: string; siteId: number; diapos: number }
+  | { type: "ajout_video"; site: string; siteId: number; titre: string }
+  | { type: "salle_fermee"; site: string; siteId: number }
+  | { type: "termine"; site: string; siteId: number };
+
 /** GET /api/mon-campus/cours/:id */
 export type CoursCampusDto = {
   campus: { id: number; nomCourt: string };
@@ -41,9 +80,11 @@ export type CoursCampusDto = {
   cours: { id: number; code: string; titre: string; couleur: string; formateur: string | null };
   /**
    * Le live du jour : repère (en direct, ouvert, prévu aujourd'hui), ou `fin` quand la séance du jour est finie,
-   * annulée ou n'a pas eu lieu (le bloc « Entrer dans le live » est alors grisé, sans plein écran).
+   * annulée ou n'a pas eu lieu. `debut` : l'heure prévue (ISO) de la séance du jour (confirmation « plus d'une heure
+   * avant »). `essai` : pas de séance du jour prévue ou en direct : le bloc mène à la salle d'essai (tester le son).
    */
-  live: { repere: RepereCarre; heure: string | null; fin: "fini" | "annule" | "non_tenu" | null };
+  live: { repere: RepereCarre; heure: string | null; fin: "fini" | "annule" | "non_tenu" | null; debut: string | null; essai: boolean };
+  ajouts: AjoutsCampusDto;
   compteurs: { lecons: number; resumes: number; examens: number; notes: number };
 };
 
@@ -60,10 +101,11 @@ export type LiveCampusDto = {
   /** Heure prévue du cours (ISO) et « 8h30 ». */
   debut: string | null;
   heure: string | null;
-  /** « Ouvrir le cours » possible maintenant (dès 1 h avant, jusqu'à la fin prévue, aucune autre séance du cours en direct). */
+  /**
+   * « Ouvrir la salle » possible maintenant : séance prévue AUJOURD'HUI (jour d'Abidjan), à toute heure, jusqu'à sa fin
+   * prévue, aucune autre séance du cours en direct (ou celle qui l'est est finie et personne ne l'anime).
+   */
   peutOuvrir: boolean;
-  /** « 7h30 » : le moment où il pourra ouvrir (encore à venir), sinon null. */
-  ouvrableA: string | null;
   /** « 8h00 » : l'ouverture automatique de la salle (réglage actif, cours publié, pas déjà ouverte à cet horaire). */
   ouvertureAutoA: string | null;
   /** Prochaine séance après aujourd'hui (état « aucune ») : « lundi 19 octobre », « 8h30 ». */
@@ -75,6 +117,16 @@ export type LiveCampusDto = {
   /** Postes d'écran de ce campus sur cette classe en ce moment. */
   ecransDuCampus: number;
   apercu: boolean;
+  /** Pas de séance du jour prévue ou en direct : l'écran propose la salle d'essai (tester le son et l'image). */
+  essai: boolean;
+  /** La séance que le chargé du campus complète (PowerPoint, vidéos). */
+  ajouts: AjoutsCampusDto;
+  /** « Montrer dans la salle » : la classe est en direct et SON campus est le seul à suivre ce cours. */
+  projectionPermise: boolean;
+  /** Ressources de la séance ajoutées par ce compte (« Retirer »). */
+  mesAjouts: number[];
+  /** « Fermer » : ce que l'écran propose (null hors direct). */
+  fermeture: FermetureCampusDto | null;
 };
 
 /** GET /api/mon-campus/cours/:id/examens */

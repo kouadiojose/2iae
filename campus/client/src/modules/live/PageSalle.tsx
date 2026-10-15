@@ -304,7 +304,7 @@ export function EcranSeance({ seanceId, siteId, campus }: { seanceId: number; si
       )}
       {siteId && !seule && !campus && (statut === "planifiee" || statut === "en_direct") && <ConsoleResponsable seance={seance} etat={etat} siteId={siteId} petit={petit} />}
       {/* Émargement : le QR en grand au démarrage, à +15 et +45 min, ou à la demande du Studio (une minute). */}
-      {statut === "en_direct" && <EmargementPleinEcran seance={seance} etat={etat} siteId={siteId} enGroupe={Boolean(groupe)} />}
+      {statut === "en_direct" && <EmargementPleinEcran seance={seance} etat={etat} siteId={siteId} enGroupe={Boolean(groupe)} sousBandeau={Boolean(campus)} />}
     </div>
   );
 }

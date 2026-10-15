@@ -33,6 +33,8 @@ export type CarreFormateurDto = {
     ouvreChezVous: string | null;
   };
   liens: { cours: string; live: string | null; preparer: string | null };
+  /** Ce qui est déjà prêt pour la séance du moment : diapos et vidéos (« 24 diapos · 2 vidéos »). Null sans séance. */
+  preparation: { diapos: number; videos: number } | null;
 };
 
 /** GET /api/enseigner/accueil-simple */

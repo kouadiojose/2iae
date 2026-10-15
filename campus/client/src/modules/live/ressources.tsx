@@ -16,6 +16,8 @@ import { Bouton } from "@/components/ui/bouton";
 import { Champ } from "@/components/ui/champs";
 import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
+import { useTextes } from "@/lib/textes";
+import { t as tEnseigner } from "@shared/textes/enseigner";
 import type { ProjectionDto, RessourceSeanceDto, SeanceDetailDto } from "@shared/schema";
 
 // ── Position et lecteur synchronisé ────────────────────────────────────────
@@ -361,6 +363,16 @@ export function CommandesProjection({ seanceId, projection }: { seanceId: number
 
 // ── Liste des ressources (étudiants, salles, formateur) ─────────────────────
 
+/** « Ajoutée par le campus de Yamoussoukro » : la ressource vient du chargé du campus (ajoutePar : « Campus de … »). */
+export function AjouteePar({ qui, nuit }: { qui: string; nuit?: boolean }) {
+  const tx = useTextes(tEnseigner);
+  return (
+    <p className={cn("truncate text-[12px] font-semibold", nuit ? "text-orange-peche" : "text-orange-profond")} data-ajoutee-par>
+      {tx("ajouts.ajouteePar", { v: { deCampus: qui.replace(/^Campus /, "") } })}
+    </p>
+  );
+}
+
 function IconeRessource({ r, className }: { r: RessourceSeanceDto; className?: string }) {
   const Icone = r.type === "youtube" ? Youtube : r.type === "video" ? Video : r.type === "lien" ? Link2 : FileText;
   return <Icone className={className} />;
@@ -406,6 +418,7 @@ export function ListeRessources({
             <div className="min-w-0 flex-1">
               <p className="truncate text-[15px] font-bold">{r.titre}</p>
               <p className={cn("truncate text-[13px]", nuit ? "text-nuit-doux" : "text-texte-gris")}>{detailRessource(r)}</p>
+              {r.ajoutePar && <AjouteePar qui={r.ajoutePar} nuit={nuit} />}
             </div>
             {onProjeter && projetable(r) && (
               <Bouton taille="sm" variante={projeteeId === r.id ? "nuit-actif" : nuit ? "nuit" : "contour"} icone={<MonitorPlay className="h-4 w-4" />} onClick={() => onProjeter(r)}>
@@ -431,15 +444,25 @@ export function ListeRessources({
 
 // ── Gestion (préparation de la séance, Studio) ─────────────────────────────
 
-/** Envoi avec la progression (une vidéo de l'ordinateur peut peser des centaines de Mo). */
-function envoyerAvecProgression(url: string, donnees: FormData, surProgression: (part: number) => void): Promise<void> {
+/**
+ * Envoi avec la progression (une vidéo de l'ordinateur peut peser des centaines de Mo ; un PowerPoint se convertit
+ * ensuite côté serveur : `surEnvoye` dit quand l'envoi est fini). Résout avec la réponse JSON du serveur (ou null).
+ */
+export function envoyerAvecProgression<T = unknown>(url: string, donnees: FormData, surProgression: (part: number) => void, surEnvoye?: () => void): Promise<T> {
   return new Promise((ok, ko) => {
     const x = new XMLHttpRequest();
     x.open("POST", url);
     x.withCredentials = true;
     x.upload.onprogress = (e) => e.lengthComputable && surProgression(e.loaded / e.total);
+    x.upload.onload = () => surEnvoye?.();
     x.onload = () => {
-      if (x.status >= 200 && x.status < 300) return ok();
+      if (x.status >= 200 && x.status < 300) {
+        try {
+          return ok(JSON.parse(x.responseText) as T);
+        } catch {
+          return ok(null as T);
+        }
+      }
       let message = "L'envoi n'a pas abouti. Réessayez.";
       try {
         message = (JSON.parse(x.responseText) as { message?: string }).message ?? message;
@@ -589,6 +612,7 @@ export function GestionRessources({ seance, nuit }: { seance: SeanceDetailDto; n
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-bold">{r.titre}</p>
                   <p className={cn("truncate text-[13px]", nuit ? "text-nuit-doux" : "text-texte-gris")}>{detailRessource(r)}</p>
+                  {r.ajoutePar && <AjouteePar qui={r.ajoutePar} nuit={nuit} />}
                 </div>
               )}
               <div className="flex shrink-0 items-center">

@@ -66,6 +66,10 @@ export const t = creerTextes({
   "fin.logique.zero": "Fermée toute seule : plus personne, 10 min après l'heure de fin",
   "fin.coursAttendu": "Fermée toute seule : le formateur était parti, la séance suivante du cours attendait",
   "demarrage.campus": "Classe ouverte par le campus {deCampus} (les salles s'installent)",
+  // Gestes du chargé du campus depuis l'écran de sa salle (15 octobre 2026 à 5 h).
+  "bilan.salleFermee": "{site} a fermé sa salle",
+  "bilan.fin.campus": "Cours terminé par le campus {deCampus}",
+  "bilan.nonTenu.campus": "Séance non tenue · fermée par le campus {deCampus}",
 
   // ── Écran de salle : mini-guide du chargé de cours (avant le cours) ──────
   "guide.etiquette": "Chargé de cours",

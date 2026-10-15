@@ -40,6 +40,8 @@ export default {
         },
         direct: "#FF5A36",
         succes: "#1F8A5B",
+        // Vert « en direct » des gros blocs : texte blanc à 5,56:1 (succes, 4,33:1, ne suffit pas au texte de 20 px).
+        vif: { DEFAULT: "#16774C", fonce: "#0F5F3C", texte: "#145F3F" },
         "succes-clair": "#E7F5EE",
         alerte: "#B7791F",
         "alerte-clair": "#FDF3E1",
@@ -84,6 +86,8 @@ export default {
       },
       boxShadow: {
         carte: "0 1px 2px rgba(20,20,20,.04), 0 8px 24px -12px rgba(20,20,20,.12)",
+        // Gros blocs au survol (espace du campus, accueil du formateur) : une ombre qui s'allonge, sans flou de fond.
+        survol: "0 2px 4px rgba(20,20,20,.08), 0 18px 36px -16px rgba(20,20,20,.40)",
         telephone: "0 30px 60px -20px rgba(20,20,20,.35)",
       },
     },

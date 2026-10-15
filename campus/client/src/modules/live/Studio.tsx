@@ -18,6 +18,8 @@ import { toast, toastErreur } from "@/components/ui/toast";
 import { EmetteurRadio, LieuDuCours, TestMicroCamera, useRadioClasse } from "@/modules/visio";
 import { Scene } from "./scene";
 import { PanneauRessourcesStudio } from "./ressources";
+import { BlocsAjouts } from "./ajouts";
+import { useGestesCampus } from "./gestes-campus";
 import { ChoixMiseEnPage, PanneauPresentateur, modeScene, ouvrirFenetrePresentateur, useClavierDiapos, usePilotageDiapos, type ModeScene } from "./presentateur";
 import { PanneauQuestions, PanneauCampus, VignettesSalles, Barometre, ResultatsParCampus, OngletsPanneau } from "./panneaux";
 import { EnTeteLive, FinDeSeance } from "./ui";
@@ -130,6 +132,8 @@ export default function Studio({ seance, observation = false }: { seance: Seance
   const [partageLocal, setPartageLocal] = useState(false);
   const { revenirAuxDiapos } = useCopieDirect(seance.id);
   useAvisCopieRemplacee(seance.id, !observation);
+  // Le chargé d'un campus ajoute un PowerPoint ou une vidéo, ferme sa salle, termine le cours : le Studio le dit.
+  useGestesCampus(seance.id, !observation);
 
   // Diapos : ← →, télécommande (PageUp / PageDown), vignettes ; mise en page : 1 à 4. Pendant une copie, ← →
   // tournent ses pages puis ramènent les diapos ; coupés tant que la vue « Devoirs » est ouverte.
@@ -261,6 +265,9 @@ export default function Studio({ seance, observation = false }: { seance: Seance
 
         {/* Classe ouverte automatiquement : avant l'heure, les salles s'installent ; après, en attente d'un animateur. */}
         {!observation && <BandeauClasseOuverte seance={seance} etat={etat} onAgir={(chemin, message) => agir(chemin, {}, message)} />}
+
+        {/* « Ajouter un PowerPoint », « Ajouter une vidéo » : deux gros boutons, avant et pendant le cours (hors Plan B). */}
+        {!observation && !planB && seance.peutModifier && <BlocsAjouts seance={seance} variante="studio" />}
 
         {/* Avec des diapos, la scène et la diapo prennent la largeur : le plan passe dessous. */}
         <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]", !presentation && "xl:grid-cols-[250px_minmax(0,1fr)_400px]")}>

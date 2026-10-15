@@ -10,6 +10,7 @@
 // 15 octobre 2026 (José) : les blocs d'un cours sont « Commencer le live », « Mes documents », « Le mur du cours »,
 // « Vidéos et examens » et la ligne « Leçons, devoirs et notes » (simple/blocs-cours.tsx) ; plus aucun cours caché :
 // ceux qui ne sont pas montrés viennent dessous, en « Mes autres cours ».
+import { cn } from "@/lib/utils";
 import { Page } from "@/components/layout/coquille";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
 import { jourLong } from "@/lib/dates";
@@ -31,10 +32,14 @@ export default function PageEnseigner() {
   // Plus aucun cours caché (José, 15 octobre 2026) : ceux qui ne sont pas « montrés » viennent dessous, en « Mes autres cours ».
   const autres = data ? data.cours.filter((c) => !data.montres.includes(c.coursId)) : [];
   return (
-    <Page className="gap-6 sm:gap-8 [@media(min-height:701px)_and_(max-height:800px)]:!gap-5 [@media(min-height:701px)_and_(max-height:800px)]:!pt-5 [@media(max-height:700px)]:!gap-4 [@media(max-height:700px)]:!pt-4">
-      <header className="flex flex-col gap-2">
-        <Etiquette>{majuscule(jourLong(maintenant))}</Etiquette>
-        <h1 className="text-[40px] leading-[1.02] text-encre sm:text-[52px]">{data ? `${data.salutation} ${data.prenom}.` : " "}</h1>
+    <Page className="gap-4 pt-4 sm:gap-8 [@media(min-height:701px)_and_(max-height:800px)]:!gap-5 [@media(min-height:701px)_and_(max-height:800px)]:!pt-5 [@media(max-height:700px)]:!gap-3 [@media(max-height:700px)]:!pt-4">
+      {/* Écran bas (1024×600) ou téléphone, un seul cours : la date s'efface et le « Bonjour » rétrécit, pour garder les
+          quatre blocs du cours entiers à l'écran. */}
+      <header className="flex flex-col gap-2 [@media(max-height:700px)]:!gap-1">
+        <Etiquette className={seul ? "max-sm:hidden [@media(max-height:700px)]:hidden" : undefined}>{majuscule(jourLong(maintenant))}</Etiquette>
+        <h1 className={cn("leading-[1.02] text-encre sm:text-[52px]", seul ? "text-[32px] [@media(max-height:700px)]:!text-[32px]" : "text-[40px]")}>
+          {data ? `${data.salutation} ${data.prenom}.` : " "}
+        </h1>
       </header>
       {isLoading ? (
         <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">
@@ -49,7 +54,7 @@ export default function PageEnseigner() {
         </div>
       ) : seul ? (
         <>
-          <BandeDuCours c={seul} />
+          <BandeDuCours c={seul} niveau="h2" />
           <BlocsDuCours c={seul} />
         </>
       ) : montres.length ? (

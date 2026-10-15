@@ -324,7 +324,10 @@ function useDepot(surDepot: (f: FileList) => void, actif: boolean) {
  * `preparation` : deux cartes blanches en tête de « Préparer le cours » (on peut y lâcher un fichier) ; `studio` : deux
  * boutons nuit sous l'en-tête du Studio, avant et pendant le cours (une vidéo ajoutée en direct se projette d'un geste).
  */
-export function BlocsAjouts({ seance, variante }: { seance: SeanceDetailDto; variante: "preparation" | "studio" }) {
+/** Troisième carte facultative de « Préparer » (Mes documents : « Ajouter un document »), dans la même grille. */
+export type CarteEnPlus = { titre: string; texte: string; icone: ReactNode; onClick?: () => void; testId?: string };
+
+export function BlocsAjouts({ seance, variante, enPlus }: { seance: SeanceDetailDto; variante: "preparation" | "studio"; enPlus?: CarteEnPlus }) {
   const tx = useTextes(tEnseigner);
   const [feuille, setFeuille] = useState(false);
   const [projetee, setProjetee] = useState(false);
@@ -450,7 +453,7 @@ export function BlocsAjouts({ seance, variante }: { seance: SeanceDetailDto; var
   const carte = (survol: boolean) =>
     cn("relative flex min-h-[120px] w-full items-center gap-5 rounded-[26px] border-2 bg-white px-5 py-5 text-left sm:px-6", CLASSES_VIVANTES, "hover:-translate-y-0.5", survol ? "border-dashed border-orange bg-orange-pale" : "border-ligne hover:border-orange/60");
   return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5" aria-label={`${tx("ajouts.ppt")} · ${tx("ajouts.video")}`} data-ajouts-preparation>
+    <section className={cn("grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5", enPlus && "lg:grid-cols-3")} aria-label={`${tx("ajouts.ppt")} · ${tx("ajouts.video")}`} data-ajouts-preparation>
       {ppt.champ}
       <button type="button" className={carte(depotPpt.survol)} onClick={() => ppt.choisir()} disabled={ppt.occupe} {...depotPpt.props} data-ajout="ppt">
         <CercleIcone taille={64} fond="#E4793A" couleur="#141414">
@@ -473,6 +476,17 @@ export function BlocsAjouts({ seance, variante }: { seance: SeanceDetailDto; var
           <span className="text-[18px] font-semibold leading-snug text-texte-doux">{sousTitreVideo}</span>
         </span>
       </button>
+      {enPlus && (
+        <button type="button" className={cn(carte(false), "sm:col-span-2 lg:col-span-1")} onClick={enPlus.onClick} disabled={!enPlus.onClick} data-bloc={enPlus.testId}>
+          <CercleIcone taille={64} fond="#EAF1FE" couleur="#1D4ED8">
+            {enPlus.icone}
+          </CercleIcone>
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-[24px] font-black leading-tight">{enPlus.titre}</span>
+            <span className="text-[18px] font-semibold leading-snug text-texte-doux">{enPlus.texte}</span>
+          </span>
+        </button>
+      )}
       {fenetre}
     </section>
   );

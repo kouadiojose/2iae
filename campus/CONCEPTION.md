@@ -418,17 +418,31 @@ créer des examens et donner les critères à l'IA pour la correction. » Spéci
   (elles partent dès la correction, comme avant).
 - **Réunion avec « Campus simple, suite » (15 octobre 2026)** : les deux chantiers du même jour sont réunis sans rien
   perdre. **Un seul jeu de briques** (`components/ui/gros-blocs.tsx`) : `GrosBloc` sert partout (espace du campus,
-  professeur, examens), avec `carre` (grille de trois sur grand écran, icône au-dessus du titre, 208 px ; écran bas :
-  150 px), le ton `encre` et `pointFixe` ; `BandeauCours` (héros en dégradé), `RetourGros`, `LigneBloc`, `GrosBouton`
+  professeur, examens), avec `carre` (grille de trois sur grand écran, icône au-dessus du titre, 208 px ; de 701 à
+  800 px de haut : icône à gauche, 160 px ; sous 701 px : 120 px, titre de 20 px, ligne de 16 px), le ton `encre` et
+  `pointFixe` ; `BandeauCours` (héros en dégradé), `RetourGros`, `LigneBloc`, `GrosBouton`
   y vivent aussi ; `degradeCours` et `teinteDouce` restent dans `modules/cours/outils.ts`. **Accueil et page d'un cours
   du professeur** : ce sont les blocs ci-dessus (« Commencer le live », « Mes documents », « Le mur du cours », « Vidéos
   et examens ») qui remplacent les trois blocs de « Campus simple » (`TroisBlocs`, `BandeCours`, supprimés), avec
   l'esthétique de « Campus simple, suite » : bande du cours en dégradé de sa couleur, icônes dans un cercle, ombre, blocs
   « À lire » dans la teinte douce du cours, point « En direct » pulsé seulement en direct (classe ouverte en avance :
-  « Salle ouverte · début à 16h00 », point fixe), variante compacte `[@media(max-height:700px)]` (à 1024×600, les quatre
-  blocs entiers à l'écran). « Mes documents » porte le compte (« 24 diapos · 2 vidéos · 1 document ») et reprend les
-  deux gros boutons « Ajouter un PowerPoint » / « Ajouter une vidéo » de « Préparer le cours » et du Studio
-  (`BlocsAjouts` de `modules/live/ajouts.tsx` : glisser-déposer, progression, YouTube, « La projeter maintenant ») ;
-  « Ajouter un document » reste à côté. **Espace du campus** : la page du cours de « Campus simple, suite » (live,
+  « Salle ouverte · début à 16h00 », point fixe), variante compacte `[@media(max-height:700px)]` : le live garde
+  124 px (160 px au-dessus de 700 px de haut, 120 px sur téléphone), la bande du cours et le « Bonjour » se resserrent
+  (date masquée quand il n'y a qu'un cours). Mesuré à 1024×600 (essais `ui-hauteurs.mjs`, `audit.mjs`) : les quatre
+  blocs entiers sur l'accueil d'un professeur à un seul cours (bas à 510 px) et sur la page d'un cours en direct ou non
+  (bas à 543 px) ; à 1366×768, live 160 px et carrés 160 px (bas à 665 et 683 px). Sur un téléphone de 360×640, « Mes
+  documents » tient au-dessus de la barre du bas sur MKT-C (bas à 518 px), pas tout à fait sur IA-C (581 px, sous-titre
+  du live plus long). Sur l'accueil, la bande du cours est un h2 sous le h1 « Bonjour … » (`BandeauCours niveau`).
+  « Mes documents » porte le compte (« 24 diapos · 2 vidéos · 1 document ») et reprend les deux gros boutons « Ajouter
+  un PowerPoint » / « Ajouter une vidéo » de « Préparer le cours » et du Studio (`BlocsAjouts` de
+  `modules/live/ajouts.tsx` : glisser-déposer, progression, YouTube, « La projeter maintenant ») ; « Ajouter un
+  document » est la troisième carte de la même grille (`enPlus`), pour voir les trois sans défiler à 1366×768, en
+  direct compris. La page dit « Ajoutée par le campus de … » sous une vidéo du campus et se relit toutes les 8 s en
+  direct (le campus peut ajouter une vidéo pendant qu'elle est ouverte). **Espace du campus** : la page du cours de « Campus simple, suite » (live,
   ajouts, compacte) gagne le bloc « Le mur du cours » en tête de « À lire » (même teinte, textes de
-  `shared/textes/campus.ts`), et `/mon-campus/cours/:id/mur` le héros en dégradé.
+  `shared/textes/campus.ts`), et `/mon-campus/cours/:id/mur` le même en-tête que le mur du professeur (`BandeauCours`).
+  **Étudiant, classe ouverte en avance** : « Mes cours », l'en-tête du cours et l'onglet « Séances » disent « La classe
+  est ouverte · début à 16h00 » (point fixe) au lieu de « En direct maintenant » (`classeOuverteEnAvance` ;
+  `prochaineSeance` porte `demarreeLe` et `debutCours`), sans « Aucun live programmé » juste dessous. **Retirer un
+  professeur** pendant son direct (409) : il est vu présent par le flux temps réel ou par HTTP
+  (`utilisateursPresentsSur`), comme dans le reste du live.

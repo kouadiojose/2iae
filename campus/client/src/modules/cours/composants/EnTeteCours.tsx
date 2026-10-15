@@ -15,6 +15,8 @@ import type { FormateurDuCours } from "@shared/schema";
 import { libelleSuivi, type CoursDetailSuivi } from "@shared/engagement/objectif";
 import type { Traducteur } from "@shared/textes";
 import { t, type CleObjectif } from "@shared/textes/objectif";
+import { classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { maintenantServeur } from "@/lib/horloge";
 
 /** Progression à afficher : celle de la carte du cours (suivi) ; à défaut (ancienne réponse), les leçons seules. */
 function progressionAffichee(cours: CoursDetailSuivi, tx: Traducteur<CleObjectif>) {
@@ -39,6 +41,9 @@ export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetailSui
     .filter((x): x is FormateurDuCours => Boolean(x))
     .sort((a, b) => Number(b.id === vedette) - Number(a.id === vedette));
   const animeParUnAutre = Boolean(s?.animateur && s.animateur.id !== f?.id);
+  // Classe ouverte avant l'heure (le campus ouvre la salle le matin) : « La classe est ouverte », pas « En direct ».
+  const dates = s ? { statut: s.statut, debut: s.debut, demarreeLe: s.demarreeLe ?? null, debutCours: s.debutCours ?? null } : null;
+  const ouverteTot = dates ? classeOuverteEnAvance(dates, maintenantServeur()) : false;
   return (
     <header
       className={cn("relative overflow-hidden rounded-[24px] px-5 py-6 sm:px-8 sm:py-8", clair ? "text-encre" : "text-white")}
@@ -80,7 +85,16 @@ export function EnTeteCours({ cours, action, etudiant }: { cours: CoursDetailSui
           <p className={cn("flex items-start gap-2 text-[15px] leading-snug", clair ? "text-encre/85" : "text-white/90")}>
             {s.statut === "en_direct" ? (
               <Link href={`/live/${s.id}`} className={cn("inline-flex items-center gap-2 font-bold underline underline-offset-2", clair ? "text-encre hover:text-encre" : "text-white hover:text-white")}>
-                <span className="point-direct" /> En direct maintenant : {s.titre}
+                {ouverteTot && dates ? (
+                  <>
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-current" aria-hidden /> La classe est ouverte · début à{" "}
+                    {etudiant ? heure(debutDuCours(dates)) : heureDouble(debutDuCours(dates))}
+                  </>
+                ) : (
+                  <>
+                    <span className="point-direct" /> En direct maintenant : {s.titre}
+                  </>
+                )}
               </Link>
             ) : (
               <>

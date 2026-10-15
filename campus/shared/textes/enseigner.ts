@@ -305,9 +305,6 @@ const FR = {
   // ── Accueil à trois gros blocs (José, 14 octobre 2026 au soir : « le professeur se connecte et il veut voir de gros
   // blocs : Le cours, Entrer dans le live, Préparer le cours ») ─────────────────────────────────────────────────────
   "blocs.choisir": "Touchez le carré du cours.",
-  "blocs.cours": "Le cours",
-  "blocs.cours.texte": "Leçons, devoirs et notes",
-  "blocs.live": "Entrer dans le live",
   "blocs.live.direct": "En direct maintenant",
   "blocs.live.ouvert": "Salle ouverte · début à {heure}",
   "blocs.live.aujourdhui": "Aujourd'hui à {heure}",
@@ -318,17 +315,7 @@ const FR = {
   "blocs.live.revenir": "Revenez à {heure}",
   "blocs.live.revenir.jour": "Revenez {jour} à {heure}",
   "blocs.live.aucun": "Pas de live prévu",
-  "blocs.live.tropTot": "Le live s'ouvre 1 heure avant le cours, à {heure}.",
   "blocs.live.ouverture": "Ouverture…",
-  "blocs.preparer": "Préparer le cours",
-  "blocs.preparer.texte": "PowerPoint, vidéos et plan",
-  "blocs.preparer.aucun": "Pas de cours prévu",
-  "blocs.preparer.diapos.zero": "Pas encore de PowerPoint",
-  "blocs.preparer.diapos.un": "1 diapo",
-  "blocs.preparer.diapos": "{n} diapos",
-  "blocs.preparer.videos.zero": "pas de vidéo",
-  "blocs.preparer.videos.un": "1 vidéo",
-  "blocs.preparer.videos": "{n} vidéos",
 
   // ── Ajouter un PowerPoint, une vidéo (José, 15 octobre 2026 à 5 h : « le professeur doit pouvoir rajouter ses
   // vidéos, ses diapositives ») : Préparer le cours et Studio ──

@@ -150,9 +150,10 @@ const TONS: Record<TonBloc, { classe: string; style?: CSSProperties; degrade?: s
 /**
  * Un gros bloc : icône dans un cercle, titre fort, une ligne dessous, flèche dans un cercle à droite (ordinateur).
  * Lien (href), bouton (onClick), ou inerte (ni l'un ni l'autre, ou `inerte`). `grand` : le bloc du live (160 px au
- * moins sur ordinateur, cercle de 80 px). `fond` : la teinte douce d'un bloc « teinte ». `enfants` : sous le texte
+ * moins sur ordinateur, 124 px sous 701 px de haut, 120 px sur téléphone ; cercle de 80 px). `fond` : la teinte douce d'un bloc « teinte ». `enfants` : sous le texte
  * (barre de progression d'un envoi). `carre` : bloc d'une grille de trois (grand écran : icône au-dessus du titre,
- * flèche en bas à droite, 208 px de haut ; écran bas : 150 px). `pointFixe` : le point devant le sous-titre ne pulse
+ * flèche en bas à droite, 208 px de haut ; de 701 à 800 px de haut : icône à gauche, 160 px ; sous 701 px : 120 px au
+ * moins, titre de 20 px, ligne de 16 px). `pointFixe` : le point devant le sous-titre ne pulse
  * pas (classe ouverte en avance : « Salle ouverte · début à 16h00 », pas « En direct »).
  */
 export function GrosBloc({
@@ -200,20 +201,20 @@ export function GrosBloc({
   const classes = cn(
     "relative isolate flex w-full items-center gap-5 overflow-hidden rounded-[26px] border-2 px-5 text-left no-underline sm:px-7",
     grand
-      ? "min-h-[140px] py-6 sm:min-h-[160px] [@media(max-height:700px)]:!min-h-[124px] [@media(max-height:700px)]:!py-4"
+      ? "min-h-[120px] py-4 sm:min-h-[160px] sm:py-6 [@media(max-height:700px)]:!min-h-[124px] [@media(max-height:700px)]:!py-4"
       : carre
         ? "min-h-[120px] py-5 sm:min-h-[160px] lg:min-h-[208px] lg:flex-col lg:items-start lg:justify-between lg:gap-4 lg:p-7"
         : "min-h-[112px] py-5 sm:min-h-[128px]",
     // Écran bas (1366×768, 1024×600) : icône à gauche du titre, sans flèche, pour voir les blocs entiers sous la bande
-    // du cours et le live (160 px au moins jusqu'à 701 px de haut, 120 px en dessous).
+    // du cours et le live (160 px au moins jusqu'à 701 px de haut, 124 px en dessous).
     carre &&
-      "[@media(max-height:800px)]:lg:!flex-row [@media(max-height:800px)]:lg:!items-center [@media(max-height:800px)]:lg:!justify-start [@media(min-height:701px)_and_(max-height:800px)]:lg:!gap-4 [@media(min-height:701px)_and_(max-height:800px)]:lg:!p-5 [@media(min-height:701px)_and_(max-height:800px)]:lg:!min-h-[160px] [@media(max-height:700px)]:lg:!gap-3 [@media(max-height:700px)]:lg:!p-4 [@media(max-height:700px)]:lg:!min-h-[112px]",
+      "[@media(max-height:800px)]:lg:!flex-row [@media(max-height:800px)]:lg:!items-center [@media(max-height:800px)]:lg:!justify-start [@media(min-height:701px)_and_(max-height:800px)]:lg:!gap-4 [@media(min-height:701px)_and_(max-height:800px)]:lg:!p-5 [@media(min-height:701px)_and_(max-height:800px)]:lg:!min-h-[160px] [@media(max-height:700px)]:lg:!gap-3 [@media(max-height:700px)]:lg:!p-4 [@media(max-height:700px)]:lg:!min-h-[120px]",
     t.classe,
     actif ? cn(CLASSES_VIVANTES, "hover:-translate-y-0.5 active:translate-y-0") : "shadow-none",
     className,
   );
   // Le cercle grandit avec l'écran : 64 px (grand : 64 puis 80) ; 56 puis 64 sinon.
-  const tailleCercle = grand ? "h-16 w-16 sm:h-20 sm:w-20" : "h-14 w-14 sm:h-16 sm:w-16";
+  const tailleCercle = grand ? "h-14 w-14 sm:h-20 sm:w-20" : "h-14 w-14 sm:h-16 sm:w-16";
   const cercleParDefaut = ton === "blanc" || ton === "teinte" || ton === "gris" ? { fond: "#FFF1E6", couleur: "#A34C17" } : { fond: "rgba(255,255,255,.22)", couleur: "currentColor" };
   const c = cercle ?? (ton === "nuit" || ton === "encre" ? { fond: "#E4793A", couleur: "#141414" } : cercleParDefaut);
   const contenu = (
@@ -225,14 +226,14 @@ export function GrosBloc({
         <span
           className={cn(
             "break-words font-black leading-tight",
-            grand ? "text-[30px] sm:text-[36px] [@media(max-height:700px)]:!text-[28px]" : "text-[24px] sm:text-[28px]",
-            carre && "[@media(min-height:701px)_and_(max-height:800px)]:lg:!text-[24px] [@media(max-height:700px)]:lg:!text-[22px]",
+            grand ? "text-[24px] sm:text-[36px] [@media(max-height:700px)]:sm:!text-[28px]" : "text-[24px] sm:text-[28px]",
+            carre && "[@media(min-height:701px)_and_(max-height:800px)]:lg:!text-[24px] [@media(max-height:700px)]:lg:!text-[20px]",
           )}
         >
           {titre}
         </span>
         {sousTitre && (
-          <span className={cn("flex items-center gap-2.5 font-semibold leading-snug", grand ? "text-[20px] sm:text-[22px]" : "text-[20px]", carre && "[@media(max-height:700px)]:lg:!text-[18px]")}>
+          <span className={cn("flex items-center gap-2.5 font-semibold leading-snug", grand ? "text-[17px] sm:text-[22px]" : "text-[20px]", carre && "[@media(max-height:700px)]:lg:!text-[16px]")}>
             {vivant && <PointVivant fixe={pointFixe} />}
             <span className="min-w-0">{sousTitre}</span>
           </span>
@@ -286,28 +287,44 @@ export function Etiquette({ children, className }: { children: ReactNode; classN
  * Bande d'en-tête d'un cours (pages du professeur) : dégradé doux de sa couleur, deux bulles, étiquette (code ou nom
  * du cours) en Plex Mono, titre en grand, une ligne dessous (ses classes). Écran bas : plus serrée.
  */
-export function BandeauCours({ couleur, etiquette, titre, sousTitre, children }: { couleur: string; etiquette?: string; titre: string; sousTitre?: string | null; children?: ReactNode }) {
+export function BandeauCours({
+  couleur,
+  etiquette,
+  titre,
+  sousTitre,
+  children,
+  niveau = "h1",
+}: {
+  couleur: string;
+  etiquette?: string;
+  titre: string;
+  sousTitre?: string | null;
+  children?: ReactNode;
+  /** « h2 » quand la page a déjà son h1 (accueil du professeur à un seul cours : « Bonjour … »). */
+  niveau?: "h1" | "h2";
+}) {
   const d = degradeCours(couleur);
+  const Titre = niveau;
   return (
     <div
-      className="relative isolate flex flex-col gap-2 overflow-hidden rounded-[32px] px-7 py-7 shadow-carte sm:px-10 sm:py-9 [@media(max-height:800px)]:!gap-1 [@media(min-height:701px)_and_(max-height:800px)]:!py-5 [@media(max-height:700px)]:!px-6 [@media(max-height:700px)]:!py-4"
+      className="relative isolate flex flex-col gap-1 overflow-hidden rounded-[32px] px-6 py-4 shadow-carte sm:gap-2 sm:px-10 sm:py-9 [@media(max-height:800px)]:!gap-1 [@media(min-height:701px)_and_(max-height:800px)]:!py-5 [@media(max-height:700px)]:!px-6 [@media(max-height:700px)]:!py-3"
       style={{ background: d.css, color: d.texte }}
       data-degrade={`${d.fond},${d.a}`}
       data-heros
     >
       <Bulles voile={d.voile} grandes />
       {etiquette && <span className="font-mono text-[15px] font-semibold uppercase tracking-[0.14em]">{etiquette}</span>}
-      <h1 className="break-words pb-[0.08em] text-[38px] leading-[1.02] sm:text-[52px] [@media(min-height:701px)_and_(max-height:800px)]:!text-[40px] [@media(max-height:700px)]:!text-[32px]" style={{ color: d.texte }}>
+      <Titre className="break-words pb-[0.08em] text-[30px] leading-[1.02] sm:text-[52px] [@media(min-height:701px)_and_(max-height:800px)]:sm:!text-[40px] [@media(max-height:700px)]:sm:!text-[32px]" style={{ color: d.texte }}>
         {titre}
-      </h1>
-      {sousTitre && <p className="text-[20px] font-bold leading-snug [@media(max-height:700px)]:!text-[18px]">{sousTitre}</p>}
+      </Titre>
+      {sousTitre && <p className="text-[16px] font-bold leading-snug sm:text-[20px] [@media(max-height:700px)]:sm:!text-[18px]">{sousTitre}</p>}
       {children}
     </div>
   );
 }
 
 const CLASSE_RETOUR =
-  "inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[20px] font-extrabold text-encre no-underline shadow-carte transition-[border-color,box-shadow] duration-150 hover:border-orange/60 hover:text-encre hover:shadow-survol focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 sm:w-auto sm:self-start [@media(max-height:700px)]:min-h-[56px]";
+  "inline-flex min-h-[64px] w-full items-center justify-center gap-3 rounded-[20px] border-2 border-ligne bg-white px-6 text-[20px] font-extrabold text-encre no-underline shadow-carte transition-[border-color,box-shadow] duration-150 hover:border-orange/60 hover:text-encre hover:shadow-survol focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/50 sm:w-auto sm:self-start max-sm:min-h-[56px] [@media(max-height:700px)]:min-h-[48px]";
 
 /** « Retour » : 64 px, contour, pleine largeur sur téléphone. « onClick » : un bouton (la page enregistre avant de partir). */
 export function RetourGros({ href, children, onClick }: { href: string; children: ReactNode; onClick?: () => void }) {

@@ -27,7 +27,7 @@ import { coursVisible } from "../acces";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit } from "../http";
 import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
-import { connectesSur } from "../temps-reel";
+import { utilisateursPresentsSur } from "../temps-reel";
 import { espaces, journaliser, schemaEmailCompte, telephoneSaisi, texteCourt, verifierUnicite, optionnel } from "./admin";
 import { creerInvitation } from "./lancement";
 import { t } from "@shared/textes/professeurs";
@@ -548,7 +548,9 @@ export function enregistrerProfesseurs(app: Express) {
       if (!principal && !autre) return res.json({ professeurs: await professeursDuCours(c.id), deja: true } satisfies ReponseProfesseursCours);
       // Il fait cours en direct en ce moment dans ce cours : après le cours.
       const enDirect = await db.select({ id: seances.id }).from(seances).where(and(eq(seances.coursId, c.id), eq(seances.statut, "en_direct")));
-      if (enDirect.some((s) => connectesSur(`seance:${s.id}`).has(formateurId))) {
+      // Même présence que le reste du live (flux temps réel, ou Studio qui relit la classe par HTTP quand le flux est
+      // retenu en route : antivirus, proxy, réseau de la salle) : sinon on lui retirerait la régie en plein cours.
+      if (enDirect.some((s) => utilisateursPresentsSur(`seance:${s.id}`).some((x) => x.id === formateurId))) {
         throw new ErreurHttp(409, t("erreur.enDirect", { ...vous, v: { nom: `${f.prenom} ${f.nom}`.trim() } }));
       }
       const programme = await intervientAuProgramme(c.id, formateurId);

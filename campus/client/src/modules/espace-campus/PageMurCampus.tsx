@@ -1,10 +1,9 @@
 // /mon-campus/cours/:coursId/mur — le mur du cours en grand pour les salles du campus (lecture seule : ni écriture, ni
-// suppression). La direction l'ouvre avec ?site= (bandeau « Aperçu »). En-tête : le héros du cours (dégradé doux de sa
-// couleur, comme la page du cours).
+// suppression). La direction l'ouvre avec ?site= (bandeau « Aperçu »). En-tête : BandeauCours, comme le mur chez le
+// professeur (dégradé doux de la couleur du cours, nom du cours en Plex Mono, « Le mur du cours » en grand).
 import { useQuery } from "@tanstack/react-query";
 import { useTextes } from "@/lib/textes";
-import { Bulles } from "@/components/ui/gros-blocs";
-import { degradeCours } from "@/modules/cours/outils";
+import { BandeauCours } from "@/components/ui/gros-blocs";
 import { MurDuCours, urlMur } from "@/modules/mur/MurDuCours";
 import { t as textesCampus } from "@shared/textes/campus";
 import type { MurDto } from "@shared/mur";
@@ -14,7 +13,6 @@ export default function PageMurCampus({ coursId }: { coursId: string }) {
   const tx = useTextes(textesCampus);
   const id = Number(coursId);
   const { data } = useQuery<MurDto>({ queryKey: [urlMur(id, "campus")], staleTime: 10_000 });
-  const d = data ? degradeCours(data.cours.couleur) : null;
   return (
     <PageCampus className="bg-white">
       <EnTeteCampus apercu={Boolean(siteApercu())} />
@@ -22,15 +20,8 @@ export default function PageMurCampus({ coursId }: { coursId: string }) {
         <div>
           <BoutonRetour href={lienCampus(`/mon-campus/cours/${id}`)} libelle={tx("mur.retour")} />
         </div>
-        {data && d && (
-          <section className="relative isolate flex flex-col gap-1 overflow-hidden rounded-[32px] px-7 py-6 shadow-carte sm:px-9" style={{ background: d.css, color: d.texte }} data-degrade={`${d.fond},${d.a}`} data-heros>
-            <Bulles voile={d.voile} />
-            <p className="text-[20px] font-bold">{data.cours.titre}</p>
-            <h1 className="text-[40px] leading-[1.05]" style={{ color: d.texte }}>
-              {tx("bloc.mur")}
-            </h1>
-          </section>
-        )}
+        {/* Même en-tête que le mur chez le professeur (BandeauCours) : la même identité partout. */}
+        {data && <BandeauCours couleur={data.cours.couleur} etiquette={data.cours.titre} titre={tx("bloc.mur")} />}
         <MurDuCours coursId={id} variante="campus" />
       </main>
     </PageCampus>

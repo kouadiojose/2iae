@@ -15,10 +15,22 @@ import { LIBELLES_STATUT } from "../outils";
 import type { CoursResume } from "@shared/schema";
 import { libelleSuivi, type CoursResumeSuivi } from "@shared/engagement/objectif";
 import { t } from "@shared/textes/objectif";
+import { classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { maintenantServeur } from "@/lib/horloge";
 
 function LigneSeance({ cours, formateur }: { cours: CoursResume; formateur?: boolean }) {
   const s = cours.prochaineSeance;
   if (!s) return null;
+  // Classe ouverte avant l'heure (le campus ouvre la salle le matin) : « La classe est ouverte », pas « En direct ».
+  const dates = { statut: s.statut, debut: s.debut, demarreeLe: s.demarreeLe ?? null, debutCours: s.debutCours ?? null };
+  if (classeOuverteEnAvance(dates, maintenantServeur())) {
+    const debut = debutDuCours(dates);
+    return (
+      <span className="inline-flex items-center gap-2 text-[13px] font-semibold text-direct">
+        <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-direct" aria-hidden /> La classe est ouverte · début à {formateur ? heureDouble(debut) : heure(debut)}
+      </span>
+    );
+  }
   if (s.statut === "en_direct") {
     return (
       <span className="inline-flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-direct">

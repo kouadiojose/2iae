@@ -9,6 +9,9 @@ import { TitreSection } from "@/components/ui/carte";
 import { DecompteCourt } from "@/components/ui/compte-a-rebours";
 import { LigneSeance, LienAgenda } from "./ui";
 import type { SeanceResume } from "@shared/api";
+import { classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
+import { maintenantServeur } from "@/lib/horloge";
+import { heure, heureDouble } from "@/lib/dates";
 
 export function SeancesDuCours({ coursId, enseignant }: { coursId: number; enseignant: boolean }) {
   const { data, error, isLoading, refetch } = useQuery<SeanceResume[]>({ queryKey: [`/api/seances?cours=${coursId}`] });
@@ -19,6 +22,9 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
   const avenir = liste.filter((s) => s.statut === "planifiee" || (s.statut === "annulee" && new Date(s.debut).getTime() > Date.now()));
   const passees = liste.filter((s) => s.statut === "terminee").reverse();
   const prochaine = avenir.find((s) => s.statut === "planifiee");
+  // Classe ouverte avant l'heure (le campus ouvre la salle le matin) : « La classe est ouverte », pas « En direct ».
+  const datesDirect = direct ? { statut: direct.statut, debut: direct.debut, demarreeLe: direct.demarreeLe ?? null, debutCours: direct.debutCours ?? null } : null;
+  const ouverteTot = datesDirect ? classeOuverteEnAvance(datesDirect, maintenantServeur()) : false;
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,9 +38,16 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
       {direct && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-[22px] bg-encre p-5 text-white">
           <div className="flex min-w-0 flex-col gap-1">
-            <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-[#FF8A6B]">
-              <span className="point-direct" /> En direct
-            </span>
+            {ouverteTot && datesDirect ? (
+              <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-[#FF8A6B]">
+                <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-current" aria-hidden /> La classe est ouverte · début à{" "}
+                {enseignant ? heureDouble(debutDuCours(datesDirect)) : heure(debutDuCours(datesDirect))}
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-[#FF8A6B]">
+                <span className="point-direct" /> En direct
+              </span>
+            )}
             <span className="break-words text-xl font-extrabold">{direct.titre}</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -67,6 +80,9 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
               <LigneSeance key={s.id} s={s} enseignant={enseignant} />
             ),
           )
+        ) : ouverteTot ? (
+          // La séance du jour est ouverte (au-dessus) : pas de « Aucun live programmé » juste dessous.
+          <p className="py-3 text-[15px] text-texte-pale">Pas d'autre live prévu pour l'instant.</p>
         ) : (
           <EtatVide
             icone={<Radio className="h-6 w-6" />}

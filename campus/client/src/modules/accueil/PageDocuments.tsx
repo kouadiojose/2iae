@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, FileText, Film, Link2, Loader2, PlayCircle, Presentation, RotateCcw, Upload, X } from "lucide-react";
 import { Page } from "@/components/layout/coquille";
-import { BandeauCours, GrosBloc, GrosBouton, RetourGros } from "@/components/ui/gros-blocs";
+import { BandeauCours, GrosBouton, RetourGros } from "@/components/ui/gros-blocs";
 import { toast } from "@/components/ui/toast";
 import { post, suppr } from "@/lib/api";
 import { heure, jourLong } from "@/lib/dates";
@@ -22,6 +22,7 @@ import type { RessourceSeanceDto, SeanceDetailDto } from "@shared/schema";
 import type { DocumentsPassesDto } from "@shared/espace-prof";
 import { poids } from "@shared/mur";
 import { BlocsAjouts } from "@/modules/live/ajouts";
+import { AjouteePar } from "@/modules/live/ressources";
 import { useAccueilSimple } from "./simple/blocs";
 import { cleResumeCours, useResumeCours } from "./simple/blocs-cours";
 
@@ -74,7 +75,13 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
   const c = accueil.data?.cours.find((x) => x.coursId === id);
   const { data: resume } = useResumeCours(id);
   const seanceId = c?.seance?.id ?? null;
-  const seance = useQuery<SeanceDetailDto>({ queryKey: [`/api/seances/${seanceId}`], enabled: Boolean(seanceId), staleTime: 5_000 });
+  // En direct, le campus peut ajouter une vidéo pendant que la page est ouverte (/api/mon-campus/…) : relue toutes les 8 s.
+  const seance = useQuery<SeanceDetailDto>({
+    queryKey: [`/api/seances/${seanceId}`],
+    enabled: Boolean(seanceId),
+    staleTime: 5_000,
+    refetchInterval: c?.seance?.statut === "en_direct" ? 8_000 : false,
+  });
   const [feuille, setFeuille] = useState(false);
   const [envoi, setEnvoi] = useState<null | { part: number }>(null);
   const [aRetirer, setARetirer] = useState<RessourceSeanceDto | null>(null);
@@ -157,15 +164,25 @@ export default function PageDocuments({ coursId }: { coursId: string }) {
             // Classe ouverte en avance (« Salle ouverte · début à 16h00 ») : pas « en direct » avant l'heure du cours.
             <p className="rounded-[18px] bg-[#E7F5EE] px-5 py-3 text-[19px] font-bold text-[#145F3F]">{tx(c.repere === "ouvert" ? "documents.ouvert" : "documents.direct")}</p>
           )}
-          {s ? <BlocsAjouts seance={s} variante="preparation" /> : <p className="text-[20px] font-bold text-texte-doux" aria-busy="true">…</p>}
-          <GrosBloc
-            testId="document"
-            icone={<FileText className="h-8 w-8" strokeWidth={2.25} />}
-            cercle={{ fond: "#EAF1FE", couleur: "#1D4ED8" }}
-            titre={tx("documents.doc")}
-            sousTitre={tx("documents.doc.texte")}
-            onClick={envoi ? undefined : () => setFeuille(true)}
-          />
+          {/* PowerPoint, vidéo et document dans la même grille : les trois visibles sans défiler à 1366×768, en direct
+              compris (spécification espace-profs §8.3 n° 7). */}
+          {s ? (
+            <BlocsAjouts
+              seance={s}
+              variante="preparation"
+              enPlus={{
+                testId: "document",
+                titre: tx("documents.doc"),
+                texte: tx("documents.doc.texte"),
+                icone: <FileText className="h-8 w-8" strokeWidth={2.25} />,
+                onClick: envoi ? undefined : () => setFeuille(true),
+              }}
+            />
+          ) : (
+            <p className="text-[20px] font-bold text-texte-doux" aria-busy="true">
+              …
+            </p>
+          )}
           {feuille && <FeuilleAjout envoi={envoi ? envoi.part : null} onFermer={() => setFeuille(false)} onFichiers={(l) => void deposerFichiers(l)} onLien={ajouterLien} />}
 
           <section className="flex flex-col gap-3" data-deja-pret>
@@ -237,6 +254,8 @@ function LigneRessource({ r }: { r: RessourceSeanceDto }) {
           {nom}
         </span>
         {sousTitre(r) !== nom && <span className="block break-words text-[15px] text-texte-doux [overflow-wrap:anywhere]">{sousTitre(r)}</span>}
+        {/* Ajoutée par un campus (« Ajouter une vidéo » du chargé du campus), comme dans « Préparer » et le Studio. */}
+        {r.ajoutePar && <AjouteePar qui={r.ajoutePar} />}
       </span>
     </span>
   );

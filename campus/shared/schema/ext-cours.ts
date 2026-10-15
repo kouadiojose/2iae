@@ -48,6 +48,12 @@ export type SeanceDuCours = {
    * M. Konaté le vendredi) ; absent ou null : le formateur principal du cours.
    */
   animateur?: { id: number | null; nom: string } | null;
+  /**
+   * Démarrage et début du cours (shared/ouverture.ts) : une classe ouverte avant l'heure (le campus ouvre la salle le
+   * matin) se dit « La classe est ouverte · début à 16h00 », pas « En direct maintenant ».
+   */
+  demarreeLe?: string | null;
+  debutCours?: string | null;
 };
 
 /** GET /api/cours — un élément de la liste « Mes cours ». */

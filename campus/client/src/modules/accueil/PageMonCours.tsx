@@ -13,7 +13,7 @@ export default function PageMonCours({ coursId }: { coursId: string }) {
   const { data, error, refetch, isLoading } = useAccueilSimple();
   const c = data?.cours.find((x) => x.coursId === Number(coursId));
   return (
-    <Page className="gap-6 sm:gap-8 [@media(min-height:701px)_and_(max-height:800px)]:!gap-5 [@media(min-height:701px)_and_(max-height:800px)]:!pt-5 [@media(max-height:700px)]:!gap-4 [@media(max-height:700px)]:!pt-4">
+    <Page className="gap-4 pt-4 sm:gap-8 [@media(min-height:701px)_and_(max-height:800px)]:!gap-5 [@media(min-height:701px)_and_(max-height:800px)]:!pt-5 [@media(max-height:700px)]:!gap-3 [@media(max-height:700px)]:!pt-4">
       <RetourGros href="/enseigner">{tx("blocs.retour")}</RetourGros>
       {isLoading ? (
         <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">

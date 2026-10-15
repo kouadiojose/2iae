@@ -158,6 +158,8 @@ async function prochainesSeances(coursIds: number[], etudiant = false): Promise<
       debut: seances.debut,
       dureeMinutes: seances.dureeMinutes,
       statut: seances.statut,
+      demarreeLe: seances.demarreeLe,
+      debutCours: seances.debutCours,
     })
     .from(seances)
     .where(
@@ -171,7 +173,15 @@ async function prochainesSeances(coursIds: number[], etudiant = false): Promise<
     .orderBy(asc(seances.debut));
   for (const s of lignes) {
     if (!resultat.has(s.coursId)) {
-      resultat.set(s.coursId, { id: s.id, titre: s.titre, debut: s.debut.toISOString(), dureeMinutes: s.dureeMinutes, statut: s.statut });
+      resultat.set(s.coursId, {
+        id: s.id,
+        titre: s.titre,
+        debut: s.debut.toISOString(),
+        dureeMinutes: s.dureeMinutes,
+        statut: s.statut,
+        demarreeLe: s.demarreeLe ? s.demarreeLe.toISOString() : null,
+        debutCours: s.debutCours ? s.debutCours.toISOString() : null,
+      });
     }
   }
   // L'intervenant du créneau de l'emploi du temps, quand la séance en vient (il n'est pas toujours le formateur principal).

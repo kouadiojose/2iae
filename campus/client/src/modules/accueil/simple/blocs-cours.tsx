@@ -126,14 +126,14 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
         testId="live"
         ton={tonLive}
         cercle={tonLive === "gris" ? { fond: "#E2DDD8", couleur: "#5E554F" } : tonLive === "vert" ? { fond: "rgba(255,255,255,.2)", couleur: "#FFFFFF" } : { fond: "rgba(255,255,255,.3)", couleur: "#141414" }}
-        icone={<MonitorPlay className="h-9 w-9 sm:h-10 sm:w-10" strokeWidth={2.25} />}
+        icone={<MonitorPlay className="h-8 w-8 sm:h-10 sm:w-10" strokeWidth={2.25} />}
         titre={live.etat === "direct" ? tx("blocs.live.entrer") : tx("blocs.live.commencer")}
         sousTitre={envoi ? te("blocs.live.ouverture") : texteLive}
         vivant={live.etat === "direct"}
         pointFixe={ouverteEnAvance}
         attente={envoi}
         onClick={live.etat === "aucun" ? undefined : entrer}
-        className="[@media(max-height:800px)]:!py-4 [@media(max-height:700px)]:!min-h-[104px]"
+        className="[@media(max-height:800px)]:!py-4"
       />
       {revenir && texteRevenir && (
         <p className="rounded-[20px] border-2 border-ligne bg-creme px-5 py-4 text-[22px] font-bold" role="status" data-revenir>
@@ -194,8 +194,8 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
 }
 
 /** La bande du cours : sa couleur en dégradé, son nom en grand, ses classes dessous. */
-export function BandeDuCours({ c }: { c: CarreFormateurDto }) {
+export function BandeDuCours({ c, niveau }: { c: CarreFormateurDto; niveau?: "h1" | "h2" }) {
   const tx = useTextes(tProf);
   const { data: r } = useResumeCours(c.coursId);
-  return <BandeauCours couleur={c.couleur} etiquette={c.code} titre={c.titre} sousTitre={r ? r.classes || tx("blocs.classes.aucune") : null} />;
+  return <BandeauCours couleur={c.couleur} etiquette={c.code} titre={c.titre} sousTitre={r ? r.classes || tx("blocs.classes.aucune") : null} niveau={niveau} />;
 }

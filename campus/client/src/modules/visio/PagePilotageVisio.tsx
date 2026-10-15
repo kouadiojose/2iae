@@ -127,7 +127,7 @@ function Consommation({ u }: { u: UsageVisioDto }) {
     return <EtatVide icone={<Video className="h-6 w-6" />} titre="Consommation indisponible" texte={u.raison ?? "Le service Daily n'a pas répondu. Réessayez dans quelques minutes."} />;
   }
   const totalProfils = u.parProfil.reduce((t, p) => t + p.minutes, 0) || 1;
-  const restantes = Math.max(0, u.cout.minutesOffertes - u.minutes - u.minutesAutresSalles);
+  const restantes = Math.max(0, u.cout.minutesOffertes - u.minutes - u.minutesAutresSalles - (u.minutesReunions ?? 0));
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -181,6 +181,11 @@ function Consommation({ u }: { u: UsageVisioDto }) {
             </ul>
           </Carte>
         </div>
+      )}
+      {(u.minutesReunions ?? 0) > 0 && (
+        <p className="rounded-2xl bg-creme px-4 py-3 text-[14px] leading-snug text-texte-doux">
+          Salle de réunion de l'administration : {nombre(u.minutesReunions)} minutes ce mois-ci. Elles ne sont pas comptées avec les cours, mais elles puisent dans les mêmes minutes offertes.
+        </p>
       )}
       {u.minutesAutresSalles > 0 && (
         <p className="rounded-2xl bg-creme px-4 py-3 text-[14px] leading-snug text-texte-doux">

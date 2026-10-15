@@ -43,6 +43,7 @@ import { enregistrerInscriptionEtudiants } from "./inscription-etudiants";
 import { enregistrerFormateurs } from "./formateurs";
 import { enregistrerAndroid } from "./android";
 import { enregistrerInvite } from "./live-invite";
+import { enregistrerReunions } from "./reunions";
 import { enregistrerCrm } from "./crm";
 import { enregistrerScolarite } from "./scolarite";
 import { enregistrerVisioCampus } from "../visio-campus";
@@ -65,6 +66,7 @@ export function enregistrerRoutes(app: Express) {
   enregistrerEspaceCampus(app); // espace du campus (un compte par campus : carrés des cours, écran de la salle)
   enregistrerRessourcesSeance(app);
   enregistrerInvite(app);
+  enregistrerReunions(app); // salle de réunion de l'administration : lien permanent, ouvert ou fermé par la direction
   enregistrerEvaluations(app);
   enregistrerCopiesDirect(app); // devoirs et copies dans le Studio, copie montrée à la classe
   enregistrerDevoirsDirect(app); // devoir donné en direct depuis le Studio, rendu depuis la classe

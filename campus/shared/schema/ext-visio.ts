@@ -229,6 +229,8 @@ export type UsageVisioDto = {
   cout: { usd: number; fcfa: number; minutesFacturables: number; prixMinuteUsd: number; minutesOffertes: number; tauxFcfa: number };
   /** Minutes des autres salles du même compte Daily (non comptées ci-dessus). */
   minutesAutresSalles: number;
+  /** Minutes des salles de réunion de l'administration (non comptées ci-dessus : ce ne sont pas des cours). */
+  minutesReunions: number;
   lu: string;
 };
 

@@ -1087,6 +1087,7 @@ const CHEMINS_PRIVES = [
   "/hors-ligne",
   "/visio/",
   "/invite/",
+  "/reunion/",
 ];
 
 async function sitemap(): Promise<string> {

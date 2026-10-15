@@ -34,6 +34,9 @@ const OUVERTES: Ouverte[] = [
   { motif: /^\/api\/visio\/(options|ice)$/, lecture: true },
   { motif: /^\/api\/visio\/\d+\/(rejoindre|battement|quitter|signal)$/ },
   { motif: /^\/api\/visio\/essai\// },
+  // Le lien de la réunion de l'administration reste public : le compte de campus y entre comme tout invité (il tape un
+  // nom). Les routes qui la règlent (/api/pilotage/reunions) restent refusées.
+  { motif: /^\/api\/reunion\/[^/]+(\/entrer)?$/ },
 ];
 
 const CODE_DE_LA_DIRECTION = "Le code du campus est donné par la direction. Demandez-lui un nouveau code.";

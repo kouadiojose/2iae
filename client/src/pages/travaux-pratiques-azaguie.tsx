@@ -7,6 +7,10 @@
 // journée du « samedi 18 octobre » : le samedi était le 17, date retenue.
 // Les noms des intervenants professionnels, mal restitués par la
 // transcription, ne sont pas publiés.
+//
+// Le même jour, le campus de Yamoussoukro partait pour le site de Sinfra :
+// seules les vidéos du départ (campus, car) sont arrivées, le récit s'en
+// tient donc au départ.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/lib/seo";
@@ -14,6 +18,7 @@ import { usePageMeta } from "@/lib/seo";
 const N = " ";
 const D = "/images/tp-azaguie-2026";
 const V = "/videos/tp-azaguie-2026";
+const S = "/videos/sinfra-2026";
 
 export const PHOTOS_TP_AZAGUIE = [
   { src: `${D}/p06.jpg`, legende: "Bâtiment : les premières années, casqués et équipés, avant le terrain" },
@@ -99,6 +104,16 @@ export default function TravauxPratiquesAzaguiePage() {
               l'Université de l'Entrepreneuriat, à Azaguié Ahoua. Pas en salle : en situation, chacun dans son futur
               métier.
             </p>
+
+            <aside className="rounded-xl border-l-4 border-[#0d2c54] bg-[#eef2f8] px-5 py-4 mb-2" data-testid="encadre-sinfra">
+              <p className="text-xs tracking-[0.2em] uppercase text-[#0d2c54] font-semibold mb-1">Au même moment, à Sinfra</p>
+              <p className="text-foreground leading-relaxed">
+                Le même jour, les étudiants du campus de Yamoussoukro prenaient le car pour le site de l'école à Sinfra.{" "}
+                <a href="#sinfra" className="font-semibold text-[#0d2c54] underline underline-offset-4">
+                  Leur départ en vidéo ↓
+                </a>
+              </p>
+            </aside>
 
             <h2 className="font-serif text-2xl md:text-3xl text-foreground mt-10 mb-4">Chaque filière à son poste</h2>
             <p className="text-muted-foreground leading-relaxed mb-5">
@@ -199,6 +214,38 @@ export default function TravauxPratiquesAzaguiePage() {
                 </figcaption>
               </figure>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Au même moment : le campus de Yamoussoukro part pour Sinfra */}
+      <section id="sinfra" className="py-16 bg-[#0b1f3a] text-white scroll-mt-20" data-testid="section-sinfra">
+        <div className="container mx-auto px-4 max-w-6xl">
+          <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-10 items-center">
+            <div>
+              <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">Au même moment · Yamoussoukro{N}→{N}Sinfra</p>
+              <h2 className="font-serif text-3xl md:text-4xl leading-tight mb-5">Le campus de Yamoussoukro prend la route.</h2>
+              <p className="text-white/80 leading-relaxed mb-4">
+                Pendant que les premières années étaient à Azaguié, les étudiants du campus de Yamoussoukro embarquaient,
+                garçons comme filles, dans le car offert par l'école. Direction : le site de l'école à Sinfra, pour leur
+                première sortie de l'année 2026‑2027.
+              </p>
+              <p className="border-l-4 border-[#E8720C] pl-4 font-serif text-xl leading-snug">
+                «{N}Ce n'est pas le verbe, c'est en action. Le pratico-pratique en action.{N}»
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-5 [&_figcaption]:text-white/70">
+              <Video
+                src={`${S}/depart-campus-yamoussoukro.mp4`}
+                poster={`${S}/depart-campus-yamoussoukro-poster.jpg`}
+                titre="Le départ du campus de Yamoussoukro · 42 s"
+              />
+              <Video
+                src={`${S}/embarquement-car-sinfra.mp4`}
+                poster={`${S}/embarquement-car-sinfra-poster.jpg`}
+                titre="L'embarquement pour Sinfra · 1 min 47"
+              />
+            </div>
           </div>
         </div>
       </section>

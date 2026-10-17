@@ -16,6 +16,7 @@ import { RencontreParentsYopougon } from "@/components/rencontre-parents-yopougo
 import { RencontreParentsAzaguie } from "@/components/rencontre-parents-azaguie";
 import { RentreeEffective } from "@/components/rentree-effective";
 import { TemoignagesRentree } from "@/components/temoignages-rentree";
+import { TravauxPratiquesAzaguie } from "@/components/travaux-pratiques-azaguie";
 import { SectionCampusAccueil } from "@/components/campus-numerique";
 
 interface News {
@@ -381,6 +382,9 @@ export default function AccueilPage() {
 
       {/* La rentrée a eu lieu — appel aux retardataires (auto-expirant) */}
       <RentreeEffective />
+
+      {/* La journée de travaux pratiques d'Azaguié (17 octobre 2026) */}
+      <TravauxPratiquesAzaguie />
 
       {/* Les étudiants racontent leurs premiers jours, et le prochain cours en direct */}
       <TemoignagesRentree />

@@ -110,6 +110,21 @@ const RENTREE_COURS_IA = {
   },
 };
 
+const VIDEO_TP_AZAGUIE = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "Journée de travaux pratiques à l'Université de l'Entrepreneuriat d'Azaguié",
+  description:
+    "Le 17 octobre 2026, au centre d'incubation d'Azaguié Ahoua, Séraphin Koua, PDG du Groupe 2IAE, présente la journée d'immersion des étudiants de première année : bâtiment, production végétale et animale, apprentissage par compétences.",
+  thumbnailUrl: [SITE + "/videos/tp-azaguie-2026/pdg-journee-immersion-poster.jpg"],
+  contentUrl: SITE + "/videos/tp-azaguie-2026/pdg-journee-immersion.mp4",
+  uploadDate: "2026-10-17",
+  duration: "PT2M3S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: { "@type": "Organization", name: "Groupe Écoles 2IAE International", url: SITE },
+};
+
 const PAGES: Record<string, MetaPage> = {
   "/": {
     titre: "Groupe 2IAE International — 5e Grande École de Côte d'Ivoire | BTS, Licences, Entrepreneuriat",
@@ -153,6 +168,13 @@ const PAGES: Record<string, MetaPage> = {
       "Azaguié 83,54 %, Yamoussoukro 68,18 %, Yopougon 64,13 %, Palmeraie 58,40 % — 67,38 % au global contre 42,48 % au national. 5e du classement officiel MESRS (BTS 2022) et 66 % d'insertion vérifiée par 60 Decibels.",
     image: SITE + "/images/resultats-bts-2026.jpg",
     jsonLd: [filAriane("Résultats BTS 2026", "/resultats-bts-2026"), REPORTAGE_RTI],
+  },
+  "/travaux-pratiques-azaguie": {
+    titre: "Journée de travaux pratiques à Azaguié : les premières années en immersion | Groupe 2IAE",
+    description:
+      "Samedi 17 octobre 2026, les étudiants de première année du Groupe 2IAE en immersion à l'Université de l'Entrepreneuriat d'Azaguié : production végétale, production animale, bâtiment. L'apprentissage par compétences, sur le terrain.",
+    image: SITE + "/images/tp-azaguie-2026/p06.jpg",
+    jsonLd: [filAriane("Travaux pratiques à Azaguié", "/travaux-pratiques-azaguie"), VIDEO_TP_AZAGUIE],
   },
   "/actualites": {
     titre: "Actualités du Groupe 2IAE — vie des campus, résultats, événements",

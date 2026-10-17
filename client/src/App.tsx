@@ -43,6 +43,7 @@ import FaqPage from "@/pages/faq";
 import PreinscriptionPage from "@/pages/preinscription";
 import TemoignagesPage from "@/pages/temoignages";
 import Resultats2026Page from "@/pages/resultats-2026";
+import TravauxPratiquesAzaguiePage from "@/pages/travaux-pratiques-azaguie";
 import CampusNumeriquePage from "@/pages/campus-numerique";
 import CampusNumeriqueCoursPage from "@/pages/campus-numerique-cours";
 import CampusNumeriqueFormateurPage from "@/pages/campus-numerique-formateur";
@@ -289,6 +290,11 @@ function Router() {
       <Route path="/resultats-bts-2026">
         <PublicLayout>
           <Resultats2026Page />
+        </PublicLayout>
+      </Route>
+      <Route path="/travaux-pratiques-azaguie">
+        <PublicLayout>
+          <TravauxPratiquesAzaguiePage />
         </PublicLayout>
       </Route>
 

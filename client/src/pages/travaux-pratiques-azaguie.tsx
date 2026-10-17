@@ -9,8 +9,8 @@
 // transcription, ne sont pas publiés.
 //
 // Le même jour, le campus de Yamoussoukro partait pour le site de Sinfra :
-// seules les vidéos du départ (campus, car) sont arrivées, le récit s'en
-// tient donc au départ.
+// le récit s'en tient aux vidéos du départ (campus, car) et aux photos des
+// serres prises sur place.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/lib/seo";
@@ -19,6 +19,14 @@ const N = " ";
 const D = "/images/tp-azaguie-2026";
 const V = "/videos/tp-azaguie-2026";
 const S = "/videos/sinfra-2026";
+
+const PHOTOS_SINFRA = [
+  { src: "/images/sinfra-2026/serres-rangee.jpg", legende: "Le site de Sinfra : la rangée de serres" },
+  { src: "/images/sinfra-2026/serres-visite.jpg", legende: "Les étudiants à l'entrée des serres" },
+  { src: "/images/sinfra-2026/serre-production.jpg", legende: "Une serre en pleine production" },
+  { src: "/images/sinfra-2026/serre-cultures.jpg", legende: "Cultures en lignes" },
+  { src: "/images/sinfra-2026/serre-goutte-a-goutte.jpg", legende: "Goutte-à-goutte : une serre tout juste plantée" },
+];
 
 export const PHOTOS_TP_AZAGUIE = [
   { src: `${D}/p06.jpg`, legende: "Bâtiment : les premières années, casqués et équipés, avant le terrain" },
@@ -110,7 +118,7 @@ export default function TravauxPratiquesAzaguiePage() {
               <p className="text-foreground leading-relaxed">
                 Le même jour, les étudiants du campus de Yamoussoukro prenaient le car pour le site de l'école à Sinfra.{" "}
                 <a href="#sinfra" className="font-semibold text-[#0d2c54] underline underline-offset-4">
-                  Leur départ en vidéo ↓
+                  Le départ et les serres ↓
                 </a>
               </p>
             </aside>
@@ -226,26 +234,55 @@ export default function TravauxPratiquesAzaguiePage() {
               <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">Au même moment · Yamoussoukro{N}→{N}Sinfra</p>
               <h2 className="font-serif text-3xl md:text-4xl leading-tight mb-5">Le campus de Yamoussoukro prend la route.</h2>
               <p className="text-white/80 leading-relaxed mb-4">
-                Pendant que les premières années étaient à Azaguié, les étudiants du campus de Yamoussoukro embarquaient,
-                garçons comme filles, dans le car offert par l'école. Direction : le site de l'école à Sinfra, pour leur
-                première sortie de l'année 2026‑2027.
+                Pendant que les premières années étaient à Azaguié, les étudiants du campus de Yamoussoukro partaient,
+                garçons comme filles, dans le car offert par l'école. À peine la rentrée faite, leur première sortie de
+                l'année 2026‑2027 : le site de l'école à Sinfra.
               </p>
-              <p className="border-l-4 border-[#E8720C] pl-4 font-serif text-xl leading-snug">
-                «{N}Ce n'est pas le verbe, c'est en action. Le pratico-pratique en action.{N}»
+              <p className="border-l-4 border-[#E8720C] pl-4 font-serif text-xl leading-snug mb-2">
+                «{N}Je suis ravie et impatiente.{N}»
+              </p>
+              <p className="text-sm text-white/70 pl-5">
+                Une étudiante, avant le départ. Et le BTS dans deux ans{N}? «{N}Je vous le promets.{N}»
               </p>
             </div>
-            <div className="grid sm:grid-cols-2 gap-5 [&_figcaption]:text-white/70">
-              <Video
-                src={`${S}/depart-campus-yamoussoukro.mp4`}
-                poster={`${S}/depart-campus-yamoussoukro-poster.jpg`}
-                titre="Le départ du campus de Yamoussoukro · 42 s"
-              />
-              <Video
-                src={`${S}/embarquement-car-sinfra.mp4`}
-                poster={`${S}/embarquement-car-sinfra-poster.jpg`}
-                titre="L'embarquement pour Sinfra · 1 min 47"
-              />
-            </div>
+            <Video
+              src={`${S}/avant-depart-yamoussoukro.mp4`}
+              poster={`${S}/avant-depart-yamoussoukro-poster.jpg`}
+              titre="Devant le campus de Yamoussoukro, avant le départ · 1 min 10"
+            />
+          </div>
+
+          <h3 className="font-serif text-2xl md:text-3xl mt-14 mb-3">À Sinfra, les serres de l'école.</h3>
+          <p className="text-white/80 leading-relaxed max-w-3xl mb-6">
+            Une rangée de serres, l'irrigation au goutte‑à‑goutte, des cultures en lignes : certaines serres sont en
+            pleine production, d'autres tout juste plantées. Le pratico-pratique, sous les yeux des étudiants.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="galerie-sinfra">
+            {PHOTOS_SINFRA.map((p, i) => (
+              <figure
+                key={p.src}
+                className={`relative overflow-hidden rounded-xl ${i === 0 ? "col-span-2 md:row-span-2 aspect-[16/9] md:aspect-auto" : "aspect-[16/9]"}`}
+              >
+                <img src={p.src} alt={p.legende} loading="lazy" className="absolute inset-0 w-full !h-full object-cover" />
+                <figcaption className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 to-transparent px-3 pt-8 pb-2 text-xs font-semibold text-white">
+                  {p.legende}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+
+          <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mt-12 mb-4">Le départ en vidéo</p>
+          <div className="grid sm:grid-cols-2 gap-5 [&_figcaption]:text-white/70">
+            <Video
+              src={`${S}/depart-campus-yamoussoukro.mp4`}
+              poster={`${S}/depart-campus-yamoussoukro-poster.jpg`}
+              titre="« Le pratico-pratique en action » · 42 s"
+            />
+            <Video
+              src={`${S}/embarquement-car-sinfra.mp4`}
+              poster={`${S}/embarquement-car-sinfra-poster.jpg`}
+              titre="L'embarquement dans le car · 1 min 47"
+            />
           </div>
         </div>
       </section>

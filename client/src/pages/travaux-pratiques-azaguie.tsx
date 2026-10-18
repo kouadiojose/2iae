@@ -8,27 +8,16 @@
 // Les noms des intervenants professionnels, mal restitués par la
 // transcription, ne sont pas publiés.
 //
-// Le même jour, le campus de Yamoussoukro partait pour le site de Sinfra :
-// visite pédagogique au Centre de développement du vivrier de Sinfra (nom
-// tiré du montage des étudiants). Le récit s'en tient aux vidéos du départ,
-// à ce montage (citations reprises de ses textes) et aux photos des serres.
+// Le même jour, le campus de Yamoussoukro était en travaux pratiques à
+// Sinfra : sa page à part (/travaux-pratiques-sinfra), un renvoi ici.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/lib/seo";
+import { VideoReportage } from "@/components/video-reportage";
 
 const N = " ";
 const D = "/images/tp-azaguie-2026";
 const V = "/videos/tp-azaguie-2026";
-const S = "/videos/sinfra-2026";
-
-const PHOTOS_SINFRA = [
-  { src: "/images/sinfra-2026/serres-rangee.jpg", legende: "Sinfra : la rangée de serres" },
-  { src: "/images/sinfra-2026/serres-visite.jpg", legende: "Les étudiants à l'entrée des serres" },
-  { src: "/images/sinfra-2026/serre-production.jpg", legende: "Une serre en pleine production" },
-  { src: "/images/sinfra-2026/serre-cultures.jpg", legende: "Cultures en lignes" },
-  { src: "/images/sinfra-2026/serre-goutte-a-goutte.jpg", legende: "Goutte-à-goutte : une serre tout juste plantée" },
-];
-
 export const PHOTOS_TP_AZAGUIE = [
   { src: `${D}/p06.jpg`, legende: "Bâtiment : les premières années, casqués et équipés, avant le terrain" },
   { src: `${D}/p09.jpg`, legende: "Bâtiment : la mire en main, sur le site" },
@@ -57,30 +46,10 @@ const FILIERES = [
   ["Comptabilité", "à la gestion des finances"],
 ];
 
-function Video({ src, poster, titre, vertical = false, format }: { src: string; poster: string; titre: string; vertical?: boolean; format?: string }) {
-  return (
-    <figure className={vertical ? "mx-auto w-full max-w-[300px]" : ""}>
-      <div className="rounded-xl overflow-hidden shadow-xl ring-4 ring-[#E8720C]/50 bg-black">
-        <video
-          className={`w-full h-auto block bg-black ${format ?? (vertical ? "aspect-[9/16]" : "aspect-video")}`}
-          src={src}
-          poster={poster}
-          controls
-          playsInline
-          preload="none"
-        >
-          Votre navigateur ne prend pas en charge la lecture vidéo.
-        </video>
-      </div>
-      <figcaption className="text-sm text-muted-foreground mt-2">{titre}</figcaption>
-    </figure>
-  );
-}
-
 export default function TravauxPratiquesAzaguiePage() {
   usePageMeta(
     "Journée de travaux pratiques à Azaguié : les premières années en immersion | Groupe 2IAE",
-    "Samedi 17 octobre 2026, les étudiants de première année du Groupe 2IAE en immersion à l'Université de l'Entrepreneuriat d'Azaguié : production végétale, production animale, bâtiment. L'apprentissage par compétences, sur le terrain, avant même les cours de spécialité.",
+    "Samedi 17 octobre 2026, les premières années des campus d'Abidjan (Yopougon, Riviera Palmeraie) et d'Azaguié en immersion à l'Université de l'Entrepreneuriat d'Azaguié : production végétale, production animale, bâtiment. L'apprentissage par compétences, sur le terrain, avant même les cours de spécialité.",
     "/travaux-pratiques-azaguie",
   );
 
@@ -109,20 +78,26 @@ export default function TravauxPratiquesAzaguiePage() {
         <div className="container mx-auto px-4 max-w-6xl grid lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] gap-12 items-start">
           <article className="max-w-none">
             <p className="text-xl text-foreground leading-relaxed mb-6">
-              Ce samedi, les étudiants de première année du Groupe 2IAE ont passé la journée au centre d'incubation de
-              l'Université de l'Entrepreneuriat, à Azaguié Ahoua. Pas en salle : en situation, chacun dans son futur
+              Ce samedi, les étudiants de première année des campus d'Abidjan (Yopougon et Riviera Palmeraie) et
+              d'Azaguié ont passé la journée au centre d'incubation de l'Université de l'Entrepreneuriat, à Azaguié Ahoua. Pas en salle : en situation, chacun dans son futur
               métier.
             </p>
 
-            <aside className="rounded-xl border-l-4 border-[#0d2c54] bg-[#eef2f8] px-5 py-4 mb-2" data-testid="encadre-sinfra">
-              <p className="text-xs tracking-[0.2em] uppercase text-[#0d2c54] font-semibold mb-1">Au même moment, à Sinfra</p>
-              <p className="text-foreground leading-relaxed">
-                Le même jour, les étudiants du campus de Yamoussoukro prenaient le car pour une visite pédagogique au Centre de développement du vivrier de Sinfra.{" "}
-                <a href="#sinfra" className="font-semibold text-[#0d2c54] underline underline-offset-4">
-                  La visite en vidéo ↓
-                </a>
-              </p>
-            </aside>
+            <Link href="/travaux-pratiques-sinfra">
+              <aside
+                className="group flex items-center gap-4 rounded-xl border-l-4 border-[#0d2c54] bg-[#eef2f8] px-5 py-4 mb-2 cursor-pointer hover:bg-[#e3e9f3] transition-colors"
+                data-testid="encadre-sinfra"
+              >
+                <img src="/images/sinfra-2026/serres-visite.jpg" alt="" className="hidden sm:block w-24 !h-16 rounded-lg object-cover shrink-0" />
+                <span>
+                  <span className="block text-xs tracking-[0.2em] uppercase text-[#0d2c54] font-semibold mb-1">Le même jour, à Sinfra</span>
+                  <span className="block text-foreground leading-relaxed">
+                    Les étudiants de Yamoussoukro en travaux pratiques dans les serres de l'école.{" "}
+                    <span className="font-semibold text-[#0d2c54] underline underline-offset-4 group-hover:no-underline">Leur journée →</span>
+                  </span>
+                </span>
+              </aside>
+            </Link>
 
             <h2 className="font-serif text-2xl md:text-3xl text-foreground mt-10 mb-4">Chaque filière à son poste</h2>
             <p className="text-muted-foreground leading-relaxed mb-5">
@@ -177,20 +152,20 @@ export default function TravauxPratiquesAzaguiePage() {
           </article>
 
           <aside className="flex flex-col gap-8 lg:sticky lg:top-24">
-            <Video
+            <VideoReportage
               src={`${V}/pdg-journee-immersion.mp4`}
               poster={`${V}/pdg-journee-immersion-poster.jpg`}
               titre="Séraphin Koua, PDG du Groupe 2IAE, au centre d'incubation d'Azaguié · 2 min"
             />
             <div className="grid grid-cols-2 gap-4">
-              <Video
+              <VideoReportage
                 vertical
                 src={`${V}/pdg-recolte-papaye.mp4`}
                 poster={`${V}/pdg-recolte-papaye-poster.jpg`}
                 titre="Au verger, la papaye du jour"
               />
               <div className="flex flex-col gap-4">
-                <Video
+                <VideoReportage
                   src={`${V}/etudiants-souverainete-alimentaire.mp4`}
                   poster={`${V}/etudiants-souverainete-alimentaire-poster.jpg`}
                   titre="« Déterminés et engagés »"
@@ -223,87 +198,6 @@ export default function TravauxPratiquesAzaguiePage() {
                 </figcaption>
               </figure>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Au même moment : le campus de Yamoussoukro part pour Sinfra */}
-      <section id="sinfra" className="py-16 bg-[#0b1f3a] text-white scroll-mt-20" data-testid="section-sinfra">
-        <div className="container mx-auto px-4 max-w-6xl">
-          <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-10 items-center">
-            <div>
-              <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mb-3">Au même moment · Yamoussoukro{N}→{N}Sinfra</p>
-              <h2 className="font-serif text-3xl md:text-4xl leading-tight mb-5">Le campus de Yamoussoukro prend la route.</h2>
-              <p className="text-white/80 leading-relaxed mb-4">
-                Pendant que les premières années étaient à Azaguié, les étudiants du campus de Yamoussoukro partaient,
-                garçons comme filles, dans le car offert par l'école. À peine la rentrée faite, leur première sortie de
-                l'année 2026‑2027 : une visite pédagogique au Centre de développement du vivrier de Sinfra.
-              </p>
-              <p className="border-l-4 border-[#E8720C] pl-4 font-serif text-xl leading-snug mb-2">
-                «{N}Je suis ravie et impatiente.{N}»
-              </p>
-              <p className="text-sm text-white/70 pl-5">
-                Une étudiante, avant le départ. Et le BTS dans deux ans{N}? «{N}Je vous le promets.{N}»
-              </p>
-            </div>
-            <Video
-              src={`${S}/avant-depart-yamoussoukro.mp4`}
-              poster={`${S}/avant-depart-yamoussoukro-poster.jpg`}
-              titre="Devant le campus de Yamoussoukro, avant le départ · 1 min 10"
-            />
-          </div>
-
-          <h3 className="font-serif text-2xl md:text-3xl mt-14 mb-3">Au Centre de développement du vivrier de Sinfra.</h3>
-          <p className="text-white/80 leading-relaxed max-w-3xl mb-8">
-            Une rangée de serres, l'irrigation au goutte‑à‑goutte, des cultures en lignes : certaines serres sont en
-            pleine production, d'autres tout juste plantées. Le pratico-pratique, sous les yeux des étudiants.
-          </p>
-          <div className="grid md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] gap-6 items-start">
-            <div className="w-full max-w-[320px] mx-auto md:max-w-none md:sticky md:top-24">
-            <Video
-              format="aspect-[368/496]"
-              src={`${S}/visite-vivrier-sinfra.mp4`}
-              poster={`${S}/visite-vivrier-sinfra-poster.jpg`}
-              titre="La visite, racontée par les étudiants · 55 s"
-            />
-            </div>
-            <div>
-              <div className="grid grid-cols-2 gap-3" data-testid="galerie-sinfra">
-                {PHOTOS_SINFRA.map((p, i) => (
-                  <figure key={p.src} className={`relative overflow-hidden rounded-xl aspect-[16/9] ${i === 0 ? "col-span-2" : ""}`}>
-                    <img src={p.src} alt={p.legende} loading="lazy" className="absolute inset-0 w-full !h-full object-cover" />
-                    <figcaption className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 to-transparent px-3 pt-8 pb-2 text-xs font-semibold text-white">
-                      {p.legende}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-              <blockquote className="mt-8 border-l-4 border-[#E8720C] pl-5">
-                <p className="font-serif text-xl md:text-2xl leading-snug">
-                  «{N}Cette immersion nous a permis de découvrir les pratiques agricoles, l'importance des cultures
-                  vivrières et les initiatives qui contribuent au développement de notre agriculture.{N}»
-                </p>
-                <p className="text-white/80 leading-relaxed mt-3">
-                  «{N}Au-delà de la découverte, cette expérience nous rappelle que l'entrepreneuriat, l'innovation et le
-                  travail sont des leviers essentiels pour bâtir l'avenir.{N}»
-                </p>
-                <footer className="text-sm text-white/60 mt-3">Les étudiants du campus de Yamoussoukro, dans leur récit de la visite</footer>
-              </blockquote>
-            </div>
-          </div>
-
-          <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mt-12 mb-4">Le départ en vidéo</p>
-          <div className="grid sm:grid-cols-2 gap-5 [&_figcaption]:text-white/70">
-            <Video
-              src={`${S}/depart-campus-yamoussoukro.mp4`}
-              poster={`${S}/depart-campus-yamoussoukro-poster.jpg`}
-              titre="« Le pratico-pratique en action » · 42 s"
-            />
-            <Video
-              src={`${S}/embarquement-car-sinfra.mp4`}
-              poster={`${S}/embarquement-car-sinfra-poster.jpg`}
-              titre="L'embarquement dans le car · 1 min 47"
-            />
           </div>
         </div>
       </section>

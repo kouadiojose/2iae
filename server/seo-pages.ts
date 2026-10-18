@@ -110,6 +110,21 @@ const RENTREE_COURS_IA = {
   },
 };
 
+const VIDEO_TP_SINFRA = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "Travaux pratiques à Sinfra : les étudiants du campus de Yamoussoukro",
+  description:
+    "Le 17 octobre 2026, les étudiants du campus de Yamoussoukro en travaux pratiques au Centre de développement du vivrier de Sinfra, dans les serres de l'école : la journée racontée par les étudiants.",
+  thumbnailUrl: [SITE + "/videos/sinfra-2026/visite-vivrier-sinfra-poster.jpg"],
+  contentUrl: SITE + "/videos/sinfra-2026/visite-vivrier-sinfra.mp4",
+  uploadDate: "2026-10-18",
+  duration: "PT55S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: { "@type": "Organization", name: "Groupe Écoles 2IAE International", url: SITE },
+};
+
 const VIDEO_TP_AZAGUIE = {
   "@context": "https://schema.org",
   "@type": "VideoObject",
@@ -172,9 +187,16 @@ const PAGES: Record<string, MetaPage> = {
   "/travaux-pratiques-azaguie": {
     titre: "Journée de travaux pratiques à Azaguié : les premières années en immersion | Groupe 2IAE",
     description:
-      "Samedi 17 octobre 2026, les étudiants de première année du Groupe 2IAE en immersion à l'Université de l'Entrepreneuriat d'Azaguié : production végétale, production animale, bâtiment. L'apprentissage par compétences, sur le terrain.",
+      "Samedi 17 octobre 2026, les premières années des campus d'Abidjan (Yopougon, Riviera Palmeraie) et d'Azaguié en immersion à l'Université de l'Entrepreneuriat d'Azaguié : production végétale, production animale, bâtiment. L'apprentissage par compétences, sur le terrain.",
     image: SITE + "/images/tp-azaguie-2026/p06.jpg",
     jsonLd: [filAriane("Travaux pratiques à Azaguié", "/travaux-pratiques-azaguie"), VIDEO_TP_AZAGUIE],
+  },
+  "/travaux-pratiques-sinfra": {
+    titre: "Travaux pratiques à Sinfra : les étudiants de Yamoussoukro dans les serres de l'école | Groupe 2IAE",
+    description:
+      "Samedi 17 octobre 2026, les étudiants du campus de Yamoussoukro en travaux pratiques au Centre de développement du vivrier de Sinfra, dans les serres de l'école : cultures vivrières, irrigation au goutte-à-goutte, pratiques agricoles.",
+    image: SITE + "/images/sinfra-2026/serres-rangee.jpg",
+    jsonLd: [filAriane("Travaux pratiques à Sinfra", "/travaux-pratiques-sinfra"), VIDEO_TP_SINFRA],
   },
   "/actualites": {
     titre: "Actualités du Groupe 2IAE — vie des campus, résultats, événements",

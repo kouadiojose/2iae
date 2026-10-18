@@ -19,7 +19,7 @@ export function TravauxPratiquesAzaguie() {
             Sur le terrain, avant même le premier cours de spécialité.
           </h2>
           <p className="text-white/80 leading-relaxed mb-4">
-            Toute une journée d'immersion pour les premières années, à l'Université de l'Entrepreneuriat : au verger, à
+            Toute une journée d'immersion pour les premières années d'Abidjan et d'Azaguié, à l'Université de l'Entrepreneuriat : au verger, à
             la ferme, sur le chantier. Le bâtiment s'est formé devant des maisons construites par les promotions
             précédentes, de la fondation au crépissage.
           </p>

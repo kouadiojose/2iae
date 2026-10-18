@@ -476,6 +476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `- [Questions fréquentes](${SITE_URL}/faq).`,
         `- [Université de l'Entrepreneuriat d'Azaguié](${SITE_URL}/universite-entrepreneuriat) : campus agro-pastoral avec internat.`,
         `- [Journée de travaux pratiques à Azaguié](${SITE_URL}/travaux-pratiques-azaguie) : 17 octobre 2026, les premières années en immersion (production végétale et animale, bâtiment) selon l'apprentissage par compétences.`,
+        `- [Journée de travaux pratiques à Sinfra](${SITE_URL}/travaux-pratiques-sinfra) : 17 octobre 2026, les étudiants du campus de Yamoussoukro dans les serres de l'école, au Centre de développement du vivrier de Sinfra.`,
         `- [Campus numérique](${SITE_URL}/campus-numerique) : un même formateur enseigne en direct aux salles de conférence des 5 campus et aux étudiants connectés depuis leur téléphone ; cours annoncés, formateurs et prochains lives.`,
       ].join("\n"),
     );
@@ -497,6 +498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ["/videotheque", "monthly", "0.6"],
         ["/universite-entrepreneuriat", "monthly", "0.7"],
         ["/travaux-pratiques-azaguie", "monthly", "0.7"],
+        ["/travaux-pratiques-sinfra", "monthly", "0.7"],
         ["/historique", "yearly", "0.5"],
         ["/objectifs", "yearly", "0.5"],
         ["/nous-trouver", "monthly", "0.6"],

@@ -17,6 +17,7 @@ import { RencontreParentsAzaguie } from "@/components/rencontre-parents-azaguie"
 import { RentreeEffective } from "@/components/rentree-effective";
 import { TemoignagesRentree } from "@/components/temoignages-rentree";
 import { TravauxPratiquesAzaguie } from "@/components/travaux-pratiques-azaguie";
+import { TravauxPratiquesSinfra } from "@/components/travaux-pratiques-sinfra";
 import { SectionCampusAccueil } from "@/components/campus-numerique";
 
 interface News {
@@ -385,6 +386,7 @@ export default function AccueilPage() {
 
       {/* La journée de travaux pratiques d'Azaguié (17 octobre 2026) */}
       <TravauxPratiquesAzaguie />
+      <TravauxPratiquesSinfra />
 
       {/* Les étudiants racontent leurs premiers jours, et le prochain cours en direct */}
       <TemoignagesRentree />

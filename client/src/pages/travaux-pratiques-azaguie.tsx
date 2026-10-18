@@ -9,8 +9,9 @@
 // transcription, ne sont pas publiés.
 //
 // Le même jour, le campus de Yamoussoukro partait pour le site de Sinfra :
-// le récit s'en tient aux vidéos du départ (campus, car) et aux photos des
-// serres prises sur place.
+// visite pédagogique au Centre de développement du vivrier de Sinfra (nom
+// tiré du montage des étudiants). Le récit s'en tient aux vidéos du départ,
+// à ce montage (citations reprises de ses textes) et aux photos des serres.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/lib/seo";
@@ -21,7 +22,7 @@ const V = "/videos/tp-azaguie-2026";
 const S = "/videos/sinfra-2026";
 
 const PHOTOS_SINFRA = [
-  { src: "/images/sinfra-2026/serres-rangee.jpg", legende: "Le site de Sinfra : la rangée de serres" },
+  { src: "/images/sinfra-2026/serres-rangee.jpg", legende: "Sinfra : la rangée de serres" },
   { src: "/images/sinfra-2026/serres-visite.jpg", legende: "Les étudiants à l'entrée des serres" },
   { src: "/images/sinfra-2026/serre-production.jpg", legende: "Une serre en pleine production" },
   { src: "/images/sinfra-2026/serre-cultures.jpg", legende: "Cultures en lignes" },
@@ -56,12 +57,12 @@ const FILIERES = [
   ["Comptabilité", "à la gestion des finances"],
 ];
 
-function Video({ src, poster, titre, vertical = false }: { src: string; poster: string; titre: string; vertical?: boolean }) {
+function Video({ src, poster, titre, vertical = false, format }: { src: string; poster: string; titre: string; vertical?: boolean; format?: string }) {
   return (
     <figure className={vertical ? "mx-auto w-full max-w-[300px]" : ""}>
       <div className="rounded-xl overflow-hidden shadow-xl ring-4 ring-[#E8720C]/50 bg-black">
         <video
-          className={`w-full h-auto block bg-black ${vertical ? "aspect-[9/16]" : "aspect-video"}`}
+          className={`w-full h-auto block bg-black ${format ?? (vertical ? "aspect-[9/16]" : "aspect-video")}`}
           src={src}
           poster={poster}
           controls
@@ -116,9 +117,9 @@ export default function TravauxPratiquesAzaguiePage() {
             <aside className="rounded-xl border-l-4 border-[#0d2c54] bg-[#eef2f8] px-5 py-4 mb-2" data-testid="encadre-sinfra">
               <p className="text-xs tracking-[0.2em] uppercase text-[#0d2c54] font-semibold mb-1">Au même moment, à Sinfra</p>
               <p className="text-foreground leading-relaxed">
-                Le même jour, les étudiants du campus de Yamoussoukro prenaient le car pour le site de l'école à Sinfra.{" "}
+                Le même jour, les étudiants du campus de Yamoussoukro prenaient le car pour une visite pédagogique au Centre de développement du vivrier de Sinfra.{" "}
                 <a href="#sinfra" className="font-semibold text-[#0d2c54] underline underline-offset-4">
-                  Le départ et les serres ↓
+                  La visite en vidéo ↓
                 </a>
               </p>
             </aside>
@@ -236,7 +237,7 @@ export default function TravauxPratiquesAzaguiePage() {
               <p className="text-white/80 leading-relaxed mb-4">
                 Pendant que les premières années étaient à Azaguié, les étudiants du campus de Yamoussoukro partaient,
                 garçons comme filles, dans le car offert par l'école. À peine la rentrée faite, leur première sortie de
-                l'année 2026‑2027 : le site de l'école à Sinfra.
+                l'année 2026‑2027 : une visite pédagogique au Centre de développement du vivrier de Sinfra.
               </p>
               <p className="border-l-4 border-[#E8720C] pl-4 font-serif text-xl leading-snug mb-2">
                 «{N}Je suis ravie et impatiente.{N}»
@@ -252,23 +253,43 @@ export default function TravauxPratiquesAzaguiePage() {
             />
           </div>
 
-          <h3 className="font-serif text-2xl md:text-3xl mt-14 mb-3">À Sinfra, les serres de l'école.</h3>
-          <p className="text-white/80 leading-relaxed max-w-3xl mb-6">
+          <h3 className="font-serif text-2xl md:text-3xl mt-14 mb-3">Au Centre de développement du vivrier de Sinfra.</h3>
+          <p className="text-white/80 leading-relaxed max-w-3xl mb-8">
             Une rangée de serres, l'irrigation au goutte‑à‑goutte, des cultures en lignes : certaines serres sont en
             pleine production, d'autres tout juste plantées. Le pratico-pratique, sous les yeux des étudiants.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="galerie-sinfra">
-            {PHOTOS_SINFRA.map((p, i) => (
-              <figure
-                key={p.src}
-                className={`relative overflow-hidden rounded-xl ${i === 0 ? "col-span-2 md:row-span-2 aspect-[16/9] md:aspect-auto" : "aspect-[16/9]"}`}
-              >
-                <img src={p.src} alt={p.legende} loading="lazy" className="absolute inset-0 w-full !h-full object-cover" />
-                <figcaption className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 to-transparent px-3 pt-8 pb-2 text-xs font-semibold text-white">
-                  {p.legende}
-                </figcaption>
-              </figure>
-            ))}
+          <div className="grid md:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] gap-6 items-start">
+            <div className="w-full max-w-[320px] mx-auto md:max-w-none md:sticky md:top-24">
+            <Video
+              format="aspect-[368/496]"
+              src={`${S}/visite-vivrier-sinfra.mp4`}
+              poster={`${S}/visite-vivrier-sinfra-poster.jpg`}
+              titre="La visite, racontée par les étudiants · 55 s"
+            />
+            </div>
+            <div>
+              <div className="grid grid-cols-2 gap-3" data-testid="galerie-sinfra">
+                {PHOTOS_SINFRA.map((p, i) => (
+                  <figure key={p.src} className={`relative overflow-hidden rounded-xl aspect-[16/9] ${i === 0 ? "col-span-2" : ""}`}>
+                    <img src={p.src} alt={p.legende} loading="lazy" className="absolute inset-0 w-full !h-full object-cover" />
+                    <figcaption className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 to-transparent px-3 pt-8 pb-2 text-xs font-semibold text-white">
+                      {p.legende}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+              <blockquote className="mt-8 border-l-4 border-[#E8720C] pl-5">
+                <p className="font-serif text-xl md:text-2xl leading-snug">
+                  «{N}Cette immersion nous a permis de découvrir les pratiques agricoles, l'importance des cultures
+                  vivrières et les initiatives qui contribuent au développement de notre agriculture.{N}»
+                </p>
+                <p className="text-white/80 leading-relaxed mt-3">
+                  «{N}Au-delà de la découverte, cette expérience nous rappelle que l'entrepreneuriat, l'innovation et le
+                  travail sont des leviers essentiels pour bâtir l'avenir.{N}»
+                </p>
+                <footer className="text-sm text-white/60 mt-3">Les étudiants du campus de Yamoussoukro, dans leur récit de la visite</footer>
+              </blockquote>
+            </div>
           </div>
 
           <p className="text-xs tracking-[0.25em] uppercase text-[#F0A868] mt-12 mb-4">Le départ en vidéo</p>

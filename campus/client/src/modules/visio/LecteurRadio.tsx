@@ -5,6 +5,9 @@
 // « Écouter le cours ». Ensuite tout est automatique : reprise après une
 // coupure (essais de plus en plus espacés), relance quand le formateur
 // redémarre son émission, rattrapage du retard accumulé.
+//
+// iPhone et iPad ne lisent pas ce flux sans fin dans un <audio> : la radio y est décodée dans la page
+// (moteur/radio-decodee.ts, WebCodecs + Web Audio). Ailleurs, après trois échecs sans le moindre son, même bascule.
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Radio, Square } from "lucide-react";
@@ -14,6 +17,7 @@ import { cn, taille } from "@/lib/utils";
 import { Bouton } from "@/components/ui/bouton";
 import type { EtatRadio, EvenementRadio } from "@shared/schema";
 import { lectureRadioPossible } from "./moteur/radio";
+import { appareilApple, decodageRadioPossible, EcouteDecodee, preparerAudio } from "./moteur/radio-decodee";
 import { Pastille } from "./composants";
 
 type Phase = "arret" | "attente" | "connexion" | "direct" | "reconnexion";
@@ -23,6 +27,8 @@ const DEBIT_DEFAUT = 3100;
 const PAUSES_REPRISE = [1000, 2000, 4000, 8000, 15000];
 /** Retard maximal toléré avant de sauter à la fin de ce qui est déjà reçu. */
 const RETARD_MAX_S = 3.5;
+/** Échecs de suite du lecteur <audio> sans aucun son avant de passer au décodage dans la page. */
+const ECHECS_AVANT_DECODAGE = 3;
 
 export function LecteurRadio({
   seanceId,
@@ -59,7 +65,25 @@ export function LecteurRadio({
   const [consomme, setConsomme] = useState(0);
   const rappel = useRef(onConsommation);
   rappel.current = onConsommation;
-  const possible = lectureRadioPossible();
+  // null : vérification en cours (asynchrone). Sur iPhone et iPad, seul le décodage dans la page fonctionne.
+  const [decodage, setDecodage] = useState<boolean | null>(null);
+  const apple = appareilApple();
+  const possible = apple ? decodage !== false : lectureRadioPossible() || decodage !== false;
+  const mode = useRef<"audio" | "decodage">(apple ? "decodage" : "audio");
+  const ecoute = useRef<EcouteDecodee | null>(null);
+  const echecsSansSon = useRef(0);
+  const aJoue = useRef(false);
+  useEffect(() => {
+    let vivant = true;
+    void decodageRadioPossible().then((ok) => {
+      if (!vivant) return;
+      setDecodage(ok);
+      if (!ok) mode.current = "audio";
+    });
+    return () => {
+      vivant = false;
+    };
+  }, []);
 
   const { data: etat, refetch } = useQuery<EtatRadio>({
     queryKey: [racine, "etat"],
@@ -75,10 +99,45 @@ export function LecteurRadio({
     bloque.current = null;
   };
 
+  const surSon = () => {
+    if (bloque.current) clearTimeout(bloque.current);
+    bloque.current = null;
+    essais.current = 0;
+    echecsSansSon.current = 0;
+    aJoue.current = true;
+    if (phaseRef.current !== "arret") setPhase("direct");
+  };
+
   const brancher = () => {
     const a = audio.current;
     if (!a) return;
     annulerMinuteurs();
+    if (mode.current === "decodage") {
+      const ctx = preparerAudio();
+      let e: EcouteDecodee | null = null;
+      try {
+        e = ctx && new EcouteDecodee(`${racine}/ecoute?t=${Date.now()}`, ctx, {
+          enDirect: () => {
+            if (ecoute.current === e) surSon();
+          },
+          fin: () => {
+            if (ecoute.current === e) relancer();
+          },
+          octets: (n) => {
+            octets.current += n;
+          },
+        });
+      } catch {
+        e = null; // WebCodecs absent : lecteur <audio>
+      }
+      if (e) {
+        ecoute.current?.arreter();
+        ecoute.current = e;
+        e.demarrer();
+        return;
+      }
+      mode.current = "audio";
+    }
     // Paramètre unique : le navigateur ne doit jamais resservir une ancienne écoute.
     a.src = `${racine}/ecoute?t=${Date.now()}`;
     a.play().catch((e: Error) => {
@@ -94,6 +153,11 @@ export function LecteurRadio({
     if (phaseRef.current === "arret" || phaseRef.current === "attente") return;
     annulerMinuteurs();
     setPhase("reconnexion");
+    // Le lecteur <audio> échoue sans jamais rien jouer (navigateur qui ne lit pas ce flux) : décodage dans la page.
+    if (mode.current === "audio" && !aJoue.current && ++echecsSansSon.current >= ECHECS_AVANT_DECODAGE && decodage) {
+      mode.current = "decodage";
+      couperLecture();
+    }
     const pause = PAUSES_REPRISE[Math.min(essais.current, PAUSES_REPRISE.length - 1)];
     essais.current++;
     minuteur.current = setTimeout(async () => {
@@ -112,6 +176,8 @@ export function LecteurRadio({
   };
 
   const couperLecture = () => {
+    ecoute.current?.arreter();
+    ecoute.current = null;
     const a = audio.current;
     if (!a) return;
     a.pause();
@@ -121,6 +187,8 @@ export function LecteurRadio({
 
   const ecouter = () => {
     essais.current = 0;
+    // Le geste est là : Web Audio (iPhone) ne peut démarrer que maintenant.
+    if (decodage || mode.current === "decodage") preparerAudio();
     setPhase(etat && !etat.enDirect ? "attente" : "connexion");
     // Le geste est fait : la lecture pourra démarrer seule quand la radio commencera.
     if (etat && !etat.enDirect) return;
@@ -176,13 +244,15 @@ export function LecteurRadio({
     let tics = 0;
     const id = setInterval(() => {
       const a = audio.current;
-      if (!a || a.paused) return;
-      octets.current += debit.current;
+      const decode = mode.current === "decodage";
+      if (!a || (!decode && a.paused)) return;
+      // Décodage dans la page : les octets reçus sont comptés au fil de l'eau (rappel « octets »).
+      if (!decode) octets.current += debit.current;
       if (++tics % 5 === 0) {
         setConsomme(octets.current);
         rappel.current?.(octets.current);
       }
-      if (tics % 2 === 0 && a.buffered.length) {
+      if (!decode && tics % 2 === 0 && a.buffered.length) {
         const fin = a.buffered.end(a.buffered.length - 1);
         if (fin - a.currentTime > RETARD_MAX_S) a.currentTime = fin - 0.5;
       }
@@ -192,6 +262,7 @@ export function LecteurRadio({
 
   useEffect(() => () => {
     annulerMinuteurs();
+    ecoute.current?.arreter();
     const a = audio.current;
     if (a) {
       a.pause();
@@ -202,16 +273,17 @@ export function LecteurRadio({
 
   const evenements = {
     onPlaying: () => {
-      if (bloque.current) clearTimeout(bloque.current);
-      bloque.current = null;
-      essais.current = 0;
-      if (phaseRef.current !== "arret") setPhase("direct");
+      if (mode.current === "audio") surSon();
     },
-    onError: () => relancer(),
-    onEnded: () => relancer(),
+    onError: () => {
+      if (mode.current === "audio") relancer();
+    },
+    onEnded: () => {
+      if (mode.current === "audio") relancer();
+    },
     // Lecture bloquée plus de 8 s (réseau à l'arrêt) : on rouvre l'écoute, au plus près du direct.
     onWaiting: () => {
-      if (bloque.current || phaseRef.current !== "direct") return;
+      if (mode.current !== "audio" || bloque.current || phaseRef.current !== "direct") return;
       bloque.current = setTimeout(() => {
         bloque.current = null;
         relancer();
@@ -227,7 +299,9 @@ export function LecteurRadio({
       <audio ref={audio} preload="none" {...evenements} />
       {!possible ? (
         <p className={cn("text-[15px]", nuit ? "text-nuit-doux" : "text-texte-pale")}>
-          {vous("Ton navigateur ne lit pas la radio du cours. Ouvre le campus avec Chrome.", "Votre navigateur ne lit pas la radio du cours. Ouvrez le campus avec Chrome.")}
+          {apple
+            ? vous("Ton iPhone ne lit pas la radio du cours : mets-le à jour (Réglages › Général › Mise à jour logicielle), ou suis le cours depuis un téléphone Android ou un ordinateur.", "Votre iPhone ne lit pas la radio du cours : mettez-le à jour (Réglages › Général › Mise à jour logicielle), ou suivez le cours depuis un téléphone Android ou un ordinateur.")
+            : vous("Ton navigateur ne lit pas la radio du cours. Ouvre le campus avec Chrome.", "Votre navigateur ne lit pas la radio du cours. Ouvrez le campus avec Chrome.")}
         </p>
       ) : !enEcoute ? (
         <>

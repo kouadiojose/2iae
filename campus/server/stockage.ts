@@ -43,7 +43,8 @@ export function creerBucket(conf: ConfigBucket, nom: string) {
   async function envoyer(cle: string, corps: Readable | Buffer, type: string, attendu: number | null): Promise<number> {
     await new Upload({ client: s3(), params: { Bucket: conf.bucket, Key: cle, Body: corps, ContentType: type }, partSize: 16 * 1024 * 1024, queueSize: 2, leavePartsOnError: false }).done();
     const recu = await taille(cle);
-    if (!recu || (attendu !== null && recu !== attendu)) {
+    // 0 octet est une taille juste (fichier vide déposé) : seul un objet absent ou de la mauvaise taille est un échec.
+    if (recu === null || (attendu !== null && recu !== attendu) || (attendu === null && recu === 0)) {
       await supprimer(cle).catch(() => undefined);
       throw new Error(`copie incomplète dans « ${nom} » (${recu ?? 0} octets reçus sur ${attendu ?? "?"})`);
     }

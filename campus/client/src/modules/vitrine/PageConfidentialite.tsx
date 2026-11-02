@@ -130,7 +130,10 @@ export default function PageConfidentialite() {
             <Liste
               elements={[
                 { titre: "Hébergement", texte: "Railway : le serveur, la base de données et les fichiers déposés." },
-                { titre: "Cours en direct", texte: "Daily : la visioconférence et l'enregistrement des cours." },
+                {
+                  titre: "Cours en direct",
+                  texte: "OVHcloud (France) : le serveur de visio du campus (visioconférence, enregistrement et transcription des cours). Les replays sont ensuite conservés chez Railway.",
+                },
                 {
                   titre: "Assistant IA et correction des copies",
                   texte: "Anthropic (Claude) : il reçoit les questions, les leçons du cours et, pour la correction, les copies de dépôt (pages en images), jamais le nom de l'étudiant.",

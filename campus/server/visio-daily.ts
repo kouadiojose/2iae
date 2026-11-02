@@ -78,7 +78,12 @@ async function presence(nom: string): Promise<PresenceSalleVisio> {
   if (c && c.exp > Date.now()) return c.valeur;
   let valeur: PresenceSalleVisio;
   try {
-    valeur = await visio.presenceSalle(nom);
+    if (nom.startsWith("lk:")) {
+      // Salle LiveKit (« lk:<nom complet> ») : les présents lus sur le serveur du campus.
+      const lu = new Date().toISOString();
+      const presents = await livekit.presentsLivekit(nom.slice(3));
+      valeur = { salle: nom, presents: presents.filter((p) => p.utilisateurId > 0).map((p) => ({ nom: p.nom.slice(0, 60), depuis: p.depuis.toISOString() })), lu, disponible: true };
+    } else valeur = await visio.presenceSalle(nom);
   } catch {
     valeur = { salle: nom, presents: [], lu: new Date().toISOString(), disponible: false };
   }
@@ -131,6 +136,7 @@ async function versReglagesDto(): Promise<ReglagesVisioDto> {
     fournisseurParDefaut: visio.fournisseurParDefaut(),
     moteurCours: r.moteurCours === "livekit" ? "livekit" : "daily",
     livekit: livekit.livekitDisponible(),
+    compteDaily: visio.dailyDisponible(),
     videoEtudiantParDefaut: r.videoEtudiantParDefaut,
     placesDailyEtudiants: Math.min(r.placesDailyEtudiants, visio.placesDailyEtudiantsMax()),
     placesDailyMax: visio.placesDailyEtudiantsMax(),
@@ -140,7 +146,7 @@ async function versReglagesDto(): Promise<ReglagesVisioDto> {
     minutesOffertes: r.minutesOffertes,
     tauxFcfa: r.tauxFcfa,
     fournisseurs: visio.fournisseursDisponibles(),
-    daily: visio.dailyDisponible(),
+    daily: visio.visioSalleDisponible(),
     majLe: r.majLe ? new Date(r.majLe).toISOString() : null,
     replays: { bucket: stockageReplaysDisponible(), nombre: stock?.nombre ?? 0, octets: stock?.octets ?? 0 },
   };
@@ -158,7 +164,8 @@ export function enregistrerVisioDaily(app: Express) {
       // Vidéo des étudiants coupée (places vidéo étudiantes à 0) : les écrans étudiants ne proposent plus la vidéo.
       const videoEtudiants = !visio.videoEtudiantsCoupee();
       res.json({
-        daily: visio.dailyDisponible(),
+        daily: visio.visioSalleDisponible(),
+        moteur: visio.visioLivekit() ? "livekit" : "daily",
         domaineDaily: visio.domaineDailyConnu(),
         fournisseurParDefaut: visio.fournisseurParDefaut(),
         fournisseurs: visio.fournisseursDisponibles(),
@@ -174,8 +181,8 @@ export function enregistrerVisioDaily(app: Express) {
     exigerConnexion,
     route(async (req, res) => {
       const u = moi(req);
-      if (!visio.dailyDisponible()) {
-        throw new ErreurHttp(503, "La visio Daily n'est pas configurée sur ce campus : la salle d'essai n'existe pas encore.", { code: "daily_absent" });
+      if (!visio.visioSalleDisponible()) {
+        throw new ErreurHttp(503, "La visio n'est pas configurée sur ce campus : la salle d'essai n'existe pas encore.", { code: "daily_absent" });
       }
       // Vidéo des étudiants coupée : la salle d'essai n'est plus ouverte aux comptes étudiants (409, journal) ; les
       // formateurs, la direction, la vie scolaire, les écrans de salle et les comptes de campus y entrent comme avant.
@@ -183,8 +190,21 @@ export function enregistrerVisioDaily(app: Express) {
       const dernier = derniersJetons.get(u.id) ?? 0;
       if (Date.now() - dernier < 3000) throw new ErreurHttp(429, "Un instant : la salle d'essai s'ouvre déjà.");
       derniersJetons.set(u.id, Date.now());
-      const salle = await visio.obtenirSalleEssai(salleEssaiDe(u));
       const nomAffiche = await nomDansLaSalle(u);
+      if (visio.visioLivekit()) {
+        // Salle d'essai sur LiveKit : mêmes droits que chez Daily ; la visite s'arrête à la fin du jeton (une heure).
+        const salleLk = await livekit.obtenirSalleLivekit(`essai-${salleEssaiDe(u)}`, { places: 30 });
+        const profilLk = u.role === "formateur" || u.role === "admin" ? "formateur" : u.role === "salle" || u.role === "vie_scolaire" ? "salle" : "etudiant";
+        const jetonLk = await livekit.jetonLivekit({
+          salle: salleLk,
+          utilisateurId: u.id,
+          nomAffiche,
+          profil: profilLk,
+          dureeS: profilLk === "etudiant" ? visio.DUREE_MAX_ESSAI_ETUDIANT_S : visio.DUREE_MAX_ESSAI_S,
+        });
+        return res.json({ fournisseur: "livekit", moteur: "livekit", url: config.visio.livekitUrl!, jeton: jetonLk, nomAffiche, profil: profilLk } satisfies AccesDaily);
+      }
+      const salle = await visio.obtenirSalleEssai(salleEssaiDe(u));
       // Propriétaire : formateur et direction. Salle et vie scolaire : caméra et micro. Étudiant : micro seulement (pas de caméra étudiante).
       const profil = u.role === "formateur" || u.role === "admin" ? "formateur" : u.role === "salle" || u.role === "vie_scolaire" ? "salle" : "etudiant";
       // Quinze étudiants au plus à la fois, un quart d'heure chacun : la salle reste ouverte aux formateurs et aux écrans de salle.
@@ -238,7 +258,7 @@ export function enregistrerVisioDaily(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       res.setHeader("Cache-Control", "no-store");
-      const p = await presence(salleEssaiDe(u));
+      const p = await presence(visio.visioLivekit() ? `lk:${livekit.nomSalleLivekit(`essai-${salleEssaiDe(u)}`)}` : salleEssaiDe(u));
       // Un étudiant voit combien de personnes sont là, pas leurs noms.
       if (u.role === "etudiant") return res.json({ ...p, presents: p.presents.map((x) => ({ ...x, nom: "Une personne" })) });
       res.json(p);
@@ -283,7 +303,8 @@ export function enregistrerVisioDaily(app: Express) {
       }
       res.setHeader("Cache-Control", "no-store");
       if (s.fournisseur !== "daily") return res.json({ salle: "", presents: [], lu: new Date().toISOString(), disponible: false } satisfies PresenceSalleVisio);
-      res.json(await presence(visio.nomSalleVisio(s.id)));
+      const surLivekit = s.salleVisio?.startsWith("lk:") || visio.coursSurLivekit(s, visio.livekitConfigure());
+      res.json(await presence(surLivekit ? `lk:${livekit.salleSeanceLivekit(s.id)}` : visio.nomSalleVisio(s.id)));
     }),
   );
 

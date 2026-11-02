@@ -30,6 +30,7 @@ import { config } from "../config";
 import { exigerDroit, exigerRole, moi } from "../auth";
 import { route, valider, ErreurHttp } from "../http";
 import * as visio from "../visio";
+import * as livekit from "../visio-livekit";
 import { t } from "@shared/textes/reunion";
 import {
   ACTIONS_REUNION,
@@ -72,6 +73,8 @@ const nouveauJeton = () => crypto.randomBytes(16).toString("hex");
 const cleDe = (id: string) => `${PREFIXE_CLE_REUNION}${id}`;
 const lienDe = (r: Pick<Reunion, "jeton">) => `${config.urlCampus}/reunion/${r.jeton}`;
 const salleDailyDe = (r: Pick<Reunion, "id" | "serie">) => visio.nomSalleReunion(r.id, r.serie);
+/** Salle LiveKit de la réunion (même numéro de série que chez Daily : un lien changé ouvre une salle neuve). */
+const salleLivekitDe = (r: Pick<Reunion, "id" | "serie">) => livekit.nomSalleLivekit(`reunion-${r.id}-${r.serie}`);
 /** Identifiant de salle reçu dans l'adresse : « administration » ou 8 caractères hexadécimaux. */
 const ID_VALIDE = /^[a-z0-9]{1,20}$/;
 
@@ -147,14 +150,20 @@ async function changer(
 
 const cachePresence = new Map<string, { exp: number; presents: PresentReunionDto[]; lue: boolean }>();
 async function presenceDe(r: Reunion): Promise<{ presents: PresentReunionDto[]; lue: boolean }> {
-  if (!r.ouverte || !visio.dailyDisponible()) return { presents: [], lue: visio.dailyDisponible() };
-  const nom = salleDailyDe(r);
+  if (!r.ouverte || !visio.visioSalleDisponible()) return { presents: [], lue: visio.visioSalleDisponible() };
+  const surLivekit = visio.visioLivekit();
+  const nom = surLivekit ? salleLivekitDe(r) : salleDailyDe(r);
   const c = cachePresence.get(nom);
   if (c && c.exp > Date.now()) return c;
   let valeur: { presents: PresentReunionDto[]; lue: boolean };
   try {
-    const p = await visio.presenceSalle(nom);
-    valeur = { presents: p.presents, lue: p.disponible };
+    if (surLivekit) {
+      const p = await livekit.presentsLivekit(nom);
+      valeur = { presents: p.map((x) => ({ nom: x.nom.slice(0, 60), depuis: x.depuis.toISOString() })), lue: true };
+    } else {
+      const p = await visio.presenceSalle(nom);
+      valeur = { presents: p.presents, lue: p.disponible };
+    }
   } catch {
     valeur = { presents: [], lue: false };
   }
@@ -190,7 +199,7 @@ async function versDto(liste: Reunion[], u: Utilisateur): Promise<ReunionsDto> {
       };
     }),
   );
-  return { reunions, daily: visio.dailyDisponible(), peutGerer: u.role === "admin", max: REUNIONS_MAX };
+  return { reunions, daily: visio.visioSalleDisponible(), peutGerer: u.role === "admin", max: REUNIONS_MAX };
 }
 
 async function reponseEquipe(u: Utilisateur): Promise<ReunionsDto> {
@@ -207,9 +216,11 @@ async function reponseEquipe(u: Utilisateur): Promise<ReunionsDto> {
  * personnes sorties). La réponse à la direction n'attend pas plus de 4 s : Daily lent, la sortie se termine en arrière-plan
  * (la réunion est déjà fermée en base, aucun jeton n'est plus remis).
  */
-async function viderSalle(nomSalle: string, u: Utilisateur, action: string, details: Record<string, unknown>): Promise<void> {
+async function viderSalle(r: Pick<Reunion, "id" | "serie">, u: Utilisateur, action: string, details: Record<string, unknown>): Promise<void> {
+  // La salle LiveKit du même numéro est fermée aussi (rien à faire si elle n'existe pas).
+  if (visio.livekitConfigure()) void livekit.fermerSalleLivekit(salleLivekitDe(r));
   const travail = visio
-    .fermerSalleReunion(nomSalle)
+    .fermerSalleReunion(salleDailyDe(r))
     .then(async ({ sortis }) => {
       cachePresence.clear();
       await db.insert(journal).values({ utilisateurId: u.id, action, details: { ...details, sortis } });
@@ -363,7 +374,7 @@ export function enregistrerReunions(app: Express) {
       } else {
         // Fermer : plus aucun jeton (état en base), salle Daily suivante (numéro), présents sortis de l'ancienne.
         const c = await changer(id, { ouverte: false, serieSuivante: true, derniere: "fermee" }, u.id, "ouverte");
-        if (c) await viderSalle(salleDailyDe(c.avant), u, "reunion_fermee", { reunion: id, salle: c.apres.nom });
+        if (c) await viderSalle(c.avant, u, "reunion_fermee", { reunion: id, salle: c.apres.nom });
       }
       res.json(await reponseEquipe(u));
     }),
@@ -377,7 +388,7 @@ export function enregistrerReunions(app: Express) {
       const id = String(req.params.id);
       const c = await changer(id, { jeton: nouveauJeton(), serieSuivante: true, derniere: "lien" }, u.id);
       if (!c) throw new ErreurHttp(404, t("serveur.introuvable"));
-      await viderSalle(salleDailyDe(c.avant), u, "reunion_nouveau_lien", { reunion: id, salle: c.apres.nom });
+      await viderSalle(c.avant, u, "reunion_nouveau_lien", { reunion: id, salle: c.apres.nom });
       res.json(await reponseEquipe(u));
     }),
   );
@@ -406,7 +417,7 @@ export function enregistrerReunions(app: Express) {
       const r = await reunionParId(String(req.params.id));
       if (r.principale) throw new ErreurHttp(409, t("serveur.principale"));
       const suppr = await db.delete(contenusSite).where(eq(contenusSite.cle, cleDe(r.id))).returning({ cle: contenusSite.cle });
-      if (suppr.length) await viderSalle(salleDailyDe(r), u, "reunion_supprimee", { reunion: r.id, salle: r.nom });
+      if (suppr.length) await viderSalle(r, u, "reunion_supprimee", { reunion: r.id, salle: r.nom });
       res.json(await reponseEquipe(u));
     }),
   );
@@ -436,7 +447,7 @@ export function enregistrerReunions(app: Express) {
       if (!entreesParPersonne.compter(membre ? `compte:${u.id}` : `adresse:${ip}`)) throw trop();
       let r = await reunionDuJeton(req, true);
       if (!r.ouverte) throw fermee();
-      if (!visio.dailyDisponible()) throw new ErreurHttp(503, t("serveur.sansDaily"), { code: "daily_absent" });
+      if (!visio.visioSalleDisponible()) throw new ErreurHttp(503, t("serveur.sansDaily"), { code: "daily_absent" });
       let nomAffiche: string;
       if (membre) nomAffiche = `${u.prenom} ${u.nom}`.trim();
       else nomAffiche = `${valider(z.object({ nom: NOM }), req.body ?? {}).nom} · invité`;
@@ -455,6 +466,18 @@ export function enregistrerReunions(app: Express) {
         let salle: { nom: string; url: string };
         let jeton: string;
         try {
+          if (visio.visioLivekit()) {
+            // Réunion sur LiveKit : la direction administre la salle ; les autres ont micro, caméra et partage d'écran.
+            salle = { nom: await livekit.obtenirSalleLivekit(`reunion-${r.id}-${r.serie}`, { places: 50 }), url: config.visio.livekitUrl! };
+            jeton = await livekit.jetonLivekit({
+              salle: salle.nom,
+              utilisateurId,
+              nomAffiche,
+              profil: proprietaire ? "formateur" : "etudiant",
+              dureeS: SORTIE_AUTO_S,
+              envoi: ["audio", "video", "ecran"],
+            });
+          } else {
           salle = await visio.obtenirSalleReunion(salleDailyDe(r));
           jeton = await visio.jetonDaily({
             salle: salle.nom,
@@ -471,6 +494,7 @@ export function enregistrerReunions(app: Express) {
             silencieux: true,
             cameraAuDepart: true,
           });
+          }
         } catch (e) {
           throw enMotsDeReunion(e);
         }
@@ -483,7 +507,7 @@ export function enregistrerReunions(app: Express) {
           acces = { salle, jeton };
           break;
         }
-        void visio.fermerSalleReunion(salle.nom).catch(() => undefined);
+        void (salle.url.startsWith("ws") ? livekit.fermerSalleLivekit(salle.nom) : visio.fermerSalleReunion(salle.nom).then(() => undefined)).catch(() => undefined);
         if (!maintenant || maintenant.jeton !== r.jeton) throw lienMort();
         if (!maintenant.ouverte || essai >= 1) throw fermee();
         // Fermée puis rouverte entre-temps (même lien, numéro suivant) : on recommence une fois, dans la nouvelle salle.
@@ -491,7 +515,8 @@ export function enregistrerReunions(app: Express) {
       }
       if (!membre) entreesParLien.compter(cleLien(r));
       await noterEntree(r, nomAffiche, membre ? u.id : null, ip);
-      res.json({ url: acces.salle.url, jeton: acces.jeton, nomAffiche, profil: proprietaire ? "formateur" : "etudiant" } satisfies AccesDaily);
+      const moteur = acces.salle.url.startsWith("ws") ? ("livekit" as const) : ("daily" as const);
+      res.json({ fournisseur: moteur, moteur, url: acces.salle.url, jeton: acces.jeton, nomAffiche, profil: proprietaire ? "formateur" : "etudiant" } satisfies AccesDaily);
     }),
   );
 }

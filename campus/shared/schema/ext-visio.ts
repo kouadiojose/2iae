@@ -133,7 +133,10 @@ export type DirectImmediat = typeof directsImmediats.$inferSelect;
 
 /** GET /api/visio/options : ce que le client doit savoir de la visio de ce campus. */
 export type OptionsVisio = {
+  /** Une visio des salles est disponible (Daily ou LiveKit). */
   daily: boolean;
+  /** Moteur de la visio : LiveKit (serveur du campus) ou Daily. */
+  moteur?: "daily" | "livekit";
   /** Sous-domaine Daily (« schoolofservant » pour schoolofservant.daily.co), s'il est connu. */
   domaineDaily: string | null;
   fournisseurParDefaut: FournisseurVisio;
@@ -257,6 +260,8 @@ export type ReglagesVisioDto = {
   moteurCours: "daily" | "livekit";
   /** LiveKit est relié au campus (sinon le choix est grisé). */
   livekit: boolean;
+  /** Un compte Daily est encore relié (sinon : pas de consommation à la minute ni de choix du moteur). */
+  compteDaily?: boolean;
   videoEtudiantParDefaut: boolean;
   placesDailyEtudiants: number;
   /** Étudiants en vidéo au plus que le forfait Daily permet (salle entière plafonnée, places réservées déduites). */

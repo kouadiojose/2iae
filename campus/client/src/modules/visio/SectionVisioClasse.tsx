@@ -59,6 +59,7 @@ export function SectionVisioClasse() {
           tu={tu}
           camera={camera}
           daily={options.daily}
+          moteur={options.moteur}
           onResultat={(r) => {
             dernier.current = r;
             setResultat(r);
@@ -99,7 +100,7 @@ export function SectionVisioClasse() {
         titreBouton="Entrer dans la salle d'essai"
         tu={tu}
         role={roleCadreDuCompte(moi.role)}
-        indisponible={options && !options.daily ? t("La visio Daily n'est pas encore reliée au campus : la salle d'essai ouvrira dès qu'elle le sera.", "La visio Daily n'est pas encore reliée au campus : la salle d'essai ouvrira dès qu'elle le sera. En attendant, les cours passent par la visio du campus.") : null}
+        indisponible={options && !options.daily ? t("La visio des salles n'est pas encore reliée au campus : la salle d'essai ouvrira dès qu'elle le sera.", "La visio des salles n'est pas encore reliée au campus : la salle d'essai ouvrira dès qu'elle le sera. En attendant, les cours passent par la visio intégrée.") : null}
         obtenirAcces={() => post<AccesDaily>("/api/visio/essai/rejoindre")}
         urlPresence="/api/visio/essai/presence"
         lienPartage={lien}

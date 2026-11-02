@@ -15,6 +15,8 @@ import { seanceVisible } from "../acces";
 import { publier, utilisateursSur } from "../temps-reel";
 import { planifier } from "../taches";
 import * as visio from "../visio";
+import * as livekit from "../visio-livekit";
+import { config } from "../config";
 import { groupeDevoirPour, refusChangementGroupe } from "../devoirs-direct";
 import { t as tDirect } from "@shared/textes/devoir-direct";
 import {
@@ -159,7 +161,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
    * d'une salle ne montre jamais le nom d'un étudiant.
    */
   async function etatGroupes(u: Utilisateur, s: Seance, role: RoleSeance): Promise<GroupesDto> {
-    const visioDisponible = visio.dailyDisponible();
+    const visioDisponible = visio.visioSalleDisponible();
     // Vidéo des étudiants coupée : l'étudiant voit la consigne, la discussion et le minuteur, sans cadre vidéo.
     const videoEtudiants = !visio.videoEtudiantsCoupee();
     const session = await sessionOuverte(s.id);
@@ -260,7 +262,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const salles = await db.select({ salle: groupesTravail.salleVisio }).from(groupesTravail).where(eq(groupesTravail.sessionId, session.id));
     await o.consigner(session.seanceId, "groupes_fermes", { minutes: (Date.now() - session.creeLe.getTime()) / 60_000 }).catch(() => undefined);
     publier(canal(session.seanceId), "groupes", { action: "fermeture" });
-    for (const { salle } of salles) if (salle) void visio.supprimerSalleDaily(salle);
+    for (const { salle } of salles) if (salle) void fermerSalleGroupe(salle);
   }
 
   /** Séance remise à venir (essai effacé) : ses groupes et leurs salles Daily disparaissent aussi. */
@@ -270,8 +272,11 @@ export function creerModuleGroupes(o: OutilsGroupes) {
     const ids = sessions.map((x) => x.id);
     const salles = await db.select({ salle: groupesTravail.salleVisio }).from(groupesTravail).where(inArray(groupesTravail.sessionId, ids));
     await db.delete(sessionsGroupes).where(inArray(sessionsGroupes.id, ids));
-    for (const { salle } of salles) if (salle) void visio.supprimerSalleDaily(salle);
+    for (const { salle } of salles) if (salle) void fermerSalleGroupe(salle);
   }
+
+  /** Salle d'un groupe : LiveKit (« lk:<nom> ») ou Daily. */
+  const fermerSalleGroupe = (salle: string) => (salle.startsWith("lk:") ? livekit.fermerSalleLivekit(salle.slice(3)) : visio.supprimerSalleDaily(salle));
 
   const signaler = (seanceId: number, action: string, donnees: Record<string, unknown> = {}) => publier(canal(seanceId), "groupes", { action, ...donnees });
 
@@ -547,11 +552,33 @@ export function creerModuleGroupes(o: OutilsGroupes) {
         if (!session) throw new ErreurHttp(409, "Les groupes sont fermés : retour en classe.");
         const g = await groupeDeLaSession(session.id, idParam(req, "gid"));
         if (!privilegie(role) && (await monGroupe(session.id, u.id)) !== g.id) throw interdit("Cette visio est celle d'un autre groupe.");
-        if (!visio.dailyDisponible()) throw new ErreurHttp(503, "La visio des groupes n'est pas disponible : échangez dans la discussion du groupe.");
+        if (!visio.visioSalleDisponible()) throw new ErreurHttp(503, "La visio des groupes n'est pas disponible : échangez dans la discussion du groupe.");
         // Vidéo des étudiants coupée (réglage de pilotage à 0) : l'étudiant travaille par écrit (consigne, discussion,
         // minuteur), sans jeton Daily ; les écrans de salle et le formateur en visite gardent la visio du groupe.
         if (role === "etudiant" && u.role === "etudiant") await visio.verifierVideoEtudiant({ chemin: "groupe", utilisateurId: u.id, seanceId: s.id, groupeId: g.id });
         const exp = Math.floor(session.creeLe.getTime() / 1000) + VIE_SALLE_GROUPE_S;
+        const sitesParIdLk = await o.nomsSites();
+        const profilLk = privilegie(role) ? "formateur" : role === "salle" ? "salle" : "etudiant";
+        const nomAfficheLk =
+          role === "salle"
+            ? nomSalle(u.siteId ? sitesParIdLk.get(u.siteId) : undefined, u)
+            : role === "etudiant"
+              ? `${u.prenom} ${u.nom.charAt(0)}.`
+              : `${u.prenom} ${u.nom}${role === "formateur" ? " · formateur" : ""}`;
+        if (visio.visioLivekit() && !(g.salleVisio && !g.salleVisio.startsWith("lk:"))) {
+          // Groupe sur LiveKit : sa propre salle (fermée avec les groupes), mêmes droits que chez Daily.
+          const salleLk = await livekit.obtenirSalleLivekit(`seance-${s.id}-g${g.id}`, { places: 25 });
+          if (!g.salleVisio) await db.update(groupesTravail).set({ salleVisio: `lk:${salleLk}` }).where(and(eq(groupesTravail.id, g.id), isNull(groupesTravail.salleVisio)));
+          const jetonLk = await livekit.jetonLivekit({
+            salle: salleLk,
+            utilisateurId: u.id,
+            nomAffiche: nomAfficheLk,
+            profil: profilLk,
+            dureeS: Math.max(600, exp - Math.floor(Date.now() / 1000)),
+            ...(profilLk === "etudiant" && { envoi: ["audio", "video"] as ("audio" | "video")[] }),
+          });
+          return res.json({ fournisseur: "livekit", moteur: "livekit", url: config.visio.livekitUrl!, jeton: jetonLk, nomAffiche: nomAfficheLk, profil: profilLk } satisfies AccesDaily);
+        }
         const salle = await visio.obtenirSalleGroupeDaily(g.salleVisio ?? visio.nomSalleGroupe(s.id, g.id), exp);
         if (!g.salleVisio) await db.update(groupesTravail).set({ salleVisio: salle.nom }).where(and(eq(groupesTravail.id, g.id), isNull(groupesTravail.salleVisio)));
         const sitesParId = await o.nomsSites();

@@ -657,9 +657,23 @@ async function calculerRentree(u: Utilisateur): Promise<EtatRentree> {
         action: lien("Budget IA", "/pilotage/ia"),
       },
       {
-        libelle: "Visio Daily",
-        detail: config.visio.dailyCle ? "Configurée : les classes en direct passent par Daily" : "Pas configurée : la visio intégrée du campus prend le relais (réglage DAILY_API_KEY)",
-        etat: config.visio.dailyCle ? "fait" : "a_faire",
+        libelle: "Visio des salles",
+        detail:
+          config.visio.livekitUrl && config.visio.livekitCle && config.visio.livekitSecret
+            ? "Serveur de visio du campus (visio.2iae.com) relié : cours, groupes, réunions et replays"
+            : config.visio.dailyCle
+              ? "Daily : les classes en direct passent par Daily (réglages LIVEKIT_* pour le serveur du campus)"
+              : "Pas configurée : la visio intégrée du campus prend le relais (réglages LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)",
+        etat: (config.visio.livekitUrl && config.visio.livekitCle && config.visio.livekitSecret) || config.visio.dailyCle ? "fait" : "a_faire",
+        action: null,
+      },
+      {
+        libelle: "Transcription des replays",
+        detail:
+          config.visio.transcriptionUrl && config.visio.transcriptionJeton
+            ? "Whisper, sur le serveur de visio : chaque replay est transcrit (hors des heures de cours)"
+            : "Pas branchée : pas de texte sous les replays ni de cours complet (réglages TRANSCRIPTION_URL, TRANSCRIPTION_TOKEN)",
+        etat: config.visio.transcriptionUrl && config.visio.transcriptionJeton ? "fait" : "attention",
         action: null,
       },
       {

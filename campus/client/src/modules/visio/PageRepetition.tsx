@@ -54,8 +54,8 @@ export default function PageRepetition({ seanceId }: { seanceId: string }) {
         <EnTetePage etiquette={`Répétition · ${seance.coursCode}`} titre={seance.titre} sousTitre={dateEtHeure(seance.debut)} />
         <EtatVide
           icone={<FlaskConical className="h-6 w-6" />}
-          titre="Cette séance n'utilise pas la visio Daily."
-          texte="La répétition dans la salle d'une séance se fait avec Daily. Choisissez Daily dans la préparation de la séance, ou testez votre installation dans la salle d'essai."
+          titre="Cette séance n'utilise pas la visio des salles."
+          texte="La répétition dans la salle d'une séance se fait avec la visio des salles. Choisissez-la dans la préparation de la séance, ou testez votre installation dans la salle d'essai."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               {animateur && <LienBouton href={`/enseigner/seances/${seance.id}`}>Préparer la séance</LienBouton>}

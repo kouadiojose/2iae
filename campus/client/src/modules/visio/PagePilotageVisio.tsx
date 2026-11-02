@@ -31,7 +31,7 @@ const LIBELLES_PROFIL: Record<UsageVisioDto["parProfil"][number]["profil"], stri
 };
 
 const LIBELLES_FOURNISSEUR: Record<FournisseurVisio, string> = {
-  daily: "Daily (recommandé)",
+  daily: "Visio des salles (recommandé)",
   campus: "Visio du campus",
   jitsi: "Jitsi",
   externe: "Lien externe",
@@ -63,7 +63,11 @@ export default function PagePilotageVisio() {
       <EnTetePage
         etiquette="Pilotage · visio"
         titre="La visio du campus"
-        sousTitre="L'ouverture automatique des classes, ce que la visio Daily a consommé, ce que cela coûte, et les réglages qui gardent la facture basse."
+        sousTitre={
+          reglages.data && !reglages.data.compteDaily
+            ? "L'ouverture automatique des classes et les réglages de la visio. Les cours passent par le serveur du campus (visio.2iae.com)."
+            : "L'ouverture automatique des classes, ce que la visio Daily a consommé, ce que cela coûte, et les réglages qui gardent la facture basse."
+        }
         actions={
           <LienBouton href="/visio/essai#salle-essai" icone={<FlaskConical className="h-4 w-4" />}>
             Entrer dans la salle d'essai
@@ -81,7 +85,16 @@ export default function PagePilotageVisio() {
         <CarteOuvertureAuto modifiable={moi.role === "admin"} />
       </section>
 
-      <section className="flex flex-col gap-4" aria-labelledby="titre-conso">
+      {reglages.data && !reglages.data.compteDaily ? (
+        <Carte className="flex items-start gap-3">
+          <Video className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
+          <p className="text-[15px] leading-snug text-encre">
+            Les cours, les groupes, les réunions et les replays passent par le serveur de visio du campus (visio.2iae.com) : pas de facture à la minute. La
+            transcription des replays tourne aussi sur ce serveur.
+          </p>
+        </Carte>
+      ) : (
+        <section className="flex flex-col gap-4" aria-labelledby="titre-conso">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="titre-conso" className="text-xl font-extrabold">
             Consommation
@@ -109,7 +122,8 @@ export default function PagePilotageVisio() {
         ) : usage.data ? (
           <Consommation u={usage.data} />
         ) : null}
-      </section>
+        </section>
+      )}
 
       <Reperes r={reglages.data} />
 
@@ -316,14 +330,14 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
 
   return (
     <Carte className="flex flex-col gap-5">
-      {!r.daily && (
+      {!r.daily && !r.livekit && (
         <p className="rounded-xl bg-alerte-clair px-4 py-3 text-[15px] text-encre">
-          La visio Daily n'est pas reliée au campus : les cours passent par la visio intégrée. Pour l'activer, la clé du compte Daily doit être ajoutée aux réglages du serveur.
+          Le serveur de visio n'est pas relié au campus : les cours passent par la visio intégrée. Pour le relier, ajoutez LIVEKIT_URL, LIVEKIT_API_KEY et LIVEKIT_API_SECRET aux réglages du serveur.
         </p>
       )}
       <Selection
         libelle="Visio des nouvelles séances"
-        aide="Les séances déjà planifiées gardent leur visio. Daily est recommandé : c'est la visio la plus solide avec les cinq salles."
+        aide="Les séances déjà planifiées gardent leur visio. La visio des salles est recommandée : c'est la plus solide avec les cinq salles."
         value={f.fournisseurParDefaut}
         disabled={!modifiable}
         onChange={(e) => setF({ ...f, fournisseurParDefaut: e.target.value as FournisseurVisio })}
@@ -336,6 +350,7 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
             </option>
           ))}
       </Selection>
+      {r.compteDaily && (
       <div className="flex items-start justify-between gap-4 rounded-2xl bg-creme p-4">
         <div>
           <p className="text-[16px] font-extrabold">Nouvelle visio pour les cours (serveur du campus)</p>
@@ -351,6 +366,7 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
           <Interrupteur actif={f.moteurCours === "livekit"} onChange={(v) => setF({ ...f, moteurCours: v ? "livekit" : "daily" })} libelle="Nouvelle visio pour les cours" />
         </div>
       </div>
+      )}
       {r.livekit && modifiable && <TestEnregistreur />}
       <div className="flex items-start justify-between gap-4 rounded-2xl bg-creme p-4">
         <div>
@@ -359,8 +375,8 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
             {Number(f.placesDailyEtudiants) === 0
               ? "Sans effet tant que la vidéo des étudiants est coupée (0 étudiant en vidéo par séance)."
               : f.videoEtudiantParDefaut
-                ? "Un étudiant sur ordinateur entre en vidéo. Chaque étudiant en vidéo compte dans les minutes Daily (150 à 250 Mo par heure pour lui)."
-                : "Recommandé : chaque étudiant entre en « son + diapos » (12 à 15 Mo par heure, rien chez Daily) et choisit la vidéo s'il le veut."}
+                ? `Un étudiant sur ordinateur entre en vidéo (150 à 250 Mo par heure pour lui${r.compteDaily ? ", et des minutes Daily" : ""}).`
+                : "Recommandé : chaque étudiant entre en « son + diapos » (12 à 15 Mo par heure) et choisit la vidéo s'il le veut."}
           </p>
         </div>
         <div className={cn("pt-1", !modifiable && "pointer-events-none opacity-60")}>
@@ -382,19 +398,23 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
             : `De 0 à ${r.placesDailyMax} (0 coupe la vidéo des étudiants). Au-delà, un étudiant qui choisit la vidéo suit en son + diapos. ${r.placesHorsEtudiants} autres places sont gardées dans chaque salle : le formateur, les cinq écrans de salle et l'équipe qui observe y entrent toujours, même en dernier (${Math.max(Number(f.placesDailyEtudiants) + r.placesHorsEtudiants, r.tailleMinSalle ?? 0)} personnes au plus par salle).`
         }
       />
+      {r.compteDaily && (
+      <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Champ libelle="Prix d'une minute (dollars)" type="number" step="0.0001" min={0} disabled={!modifiable} value={String(f.prixMinuteUsd)} onChange={(e) => setF({ ...f, prixMinuteUsd: Number(e.target.value) })} />
         <Champ libelle="Minutes offertes par mois" type="number" min={0} disabled={!modifiable} value={String(f.minutesOffertes)} onChange={(e) => setF({ ...f, minutesOffertes: Number(e.target.value) })} />
         <Champ libelle="1 dollar en FCFA" type="number" min={1} disabled={!modifiable} value={String(f.tauxFcfa)} onChange={(e) => setF({ ...f, tauxFcfa: Number(e.target.value) })} />
       </div>
       <p className="text-[13px] text-texte-gris">Tarif public de Daily : 0,004 dollar la minute-participant, 10 000 minutes offertes par mois. Ajustez selon votre contrat.</p>
+      </>
+      )}
       <div className="flex items-start gap-3 rounded-2xl bg-creme p-4">
         <HardDrive className="mt-0.5 h-5 w-5 shrink-0 text-orange-fonce" aria-hidden />
         <div>
           <p className="text-[16px] font-extrabold">Stockage des replays</p>
           <p className="mt-0.5 text-[14px] leading-snug text-texte-pale">
             {r.replays.bucket
-              ? `Chaque enregistrement est copié après le cours dans le bucket Railway « campus-replays », puis effacé chez Daily une semaine plus tard. Les étudiants lisent la vidéo directement dans le bucket : l'application ne sert aucune vidéo. ${
+              ? `${r.compteDaily ? "Chaque enregistrement est copié après le cours dans le bucket Railway « campus-replays », puis effacé chez Daily une semaine plus tard." : "Chaque cours est enregistré directement dans le bucket Railway « campus-replays »."} Les étudiants lisent la vidéo directement dans le bucket : l'application ne sert aucune vidéo. ${
                   r.replays.nombre ? `${r.replays.nombre} enregistrement${r.replays.nombre > 1 ? "s" : ""} copié${r.replays.nombre > 1 ? "s" : ""} · ${formaterPoids(r.replays.octets)}.` : "Aucun replay copié pour l'instant."
                 }`
               : "Les replays restent chez Daily : le bucket Railway des replays n'est pas relié au campus."}

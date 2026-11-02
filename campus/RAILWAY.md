@@ -53,6 +53,8 @@ railway domain --service campus                # domaine *.up.railway.app
 | `LIVEKIT_URL` | `wss://visio.2iae.com` : serveur de visio LiveKit du campus (OVH, `campus/infra/livekit/installer.sh`) |
 | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | clé et secret de l'API LiveKit, recopiés depuis `/opt/livekit/.env` sur le serveur (jamais affichés) |
 | `LIVEKIT_ROOM_PREFIX` | facultatif, `campus-2iae` par défaut : préfixe des salles LiveKit |
+| `TRANSCRIPTION_URL` | `https://visio.2iae.com/transcription` : service Whisper du serveur de visio (transcription des replays) |
+| `TRANSCRIPTION_TOKEN` | jeton de ce service, recopié depuis `/opt/livekit/.env` sur le serveur (jamais affiché) |
 
 Les fichiers déposés partent dans le bucket des fichiers dès leur dépôt (le
 volume `UPLOADS_DIR` ne sert plus que de passage, et de repli si le bucket ne
@@ -136,3 +138,10 @@ sont enregistrés par le serveur (Egress) directement dans le bucket des
 replays. Avant le premier cours : « Tester l'enregistrement », la salle
 d'essai de la nouvelle visio (`/visio/essai-livekit`) ouverte. Retour à Daily :
 décocher le réglage.
+
+Sans `DAILY_API_KEY`, tout passe par ce serveur sans réglage : cours, salle
+d'essai, groupes de travail, salles de réunion, présence et vérifications
+automatiques. La transcription des replays passe par le service Whisper du
+même serveur (`TRANSCRIPTION_URL`, `TRANSCRIPTION_TOKEN`) : un morceau à la
+fois, jamais lancé pendant un cours en direct (la machine sert aussi la visio).
+Les anciens replays déjà copiés dans le bucket restent lisibles.

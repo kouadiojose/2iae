@@ -1609,7 +1609,7 @@ const schemaModification = z
   .partial();
 
 function verifierFournisseur(fournisseur: Seance["fournisseur"], lienExterne: string | null | undefined) {
-  if (fournisseur === "daily" && !visio.dailyDisponible()) throw invalide("La visio Daily n'est pas configurée sur ce campus : choisissez la visio du campus.");
+  if (fournisseur === "daily" && !visio.visioSalleDisponible()) throw invalide("La visio des salles n'est pas configurée sur ce campus : choisissez la visio du campus.");
   if (fournisseur === "jitsi" && !visio.jitsiDisponible()) throw invalide("Aucun serveur Jitsi n'est configuré : choisissez la visio du campus.");
   if (fournisseur === "externe" && !lienExterne) throw invalide("Indiquez le lien de la visio externe (Zoom, Meet, Teams…).");
 }
@@ -1992,7 +1992,7 @@ export function enregistrerLive(app: Express) {
           description: s.description,
           debut,
           dureeMinutes: s.dureeMinutes,
-          fournisseur: s.fournisseur === "daily" && !visio.dailyDisponible() ? visio.fournisseurParDefaut() : s.fournisseur,
+          fournisseur: s.fournisseur === "daily" && !visio.visioSalleDisponible() ? visio.fournisseurParDefaut() : s.fournisseur,
           lienExterne: s.lienExterne,
           lienSecours: s.lienSecours,
           plan: s.plan,
@@ -2257,6 +2257,14 @@ export function enregistrerLive(app: Express) {
       // Enregistrement de l'essai : effacé du bucket et chez Daily (hors de la réponse ; un échec n'empêche rien).
       void (async () => {
         for (const r of stockes) await supprimerDuBucket(r.cle).catch((e) => console.error(`[replays] essai séance ${s.id} : copie non effacée`, e));
+        if (livekit.estSalleLivekit(s.salleVisio) && livekit.livekitDisponible()) {
+          // Nouvelle visio : l'enregistrement s'arrête, puis ses fichiers (déjà dans le bucket) sont effacés une fois finalisés.
+          await livekit.arreterEnregistrementsSeance(s.id).catch(() => undefined);
+          await new Promise((r) => setTimeout(r, 90_000));
+          const { morceaux } = await livekit.enregistrementsSeance(s.id).catch(() => ({ morceaux: [] as livekit.MorceauLivekit[] }));
+          for (const m of morceaux.filter((x) => x.debut.getTime() >= depuis.getTime() - 120_000))
+            await supprimerDuBucket(m.cle).catch((e) => console.error(`[replays] essai séance ${s.id} : enregistrement non effacé`, e));
+        }
         if (s.fournisseur === "daily" && s.salleVisio && visio.dailyDisponible()) {
           const debutEssai = Math.floor(depuis.getTime() / 1000) - 120;
           const liste = await visio.enregistrementsDaily(s.salleVisio).catch(() => []);
@@ -5323,7 +5331,10 @@ planifier("livekit-enregistrements", 30_000, async () => {
     for (const s of terminees) {
       try {
         await livekit.arreterEnregistrementsSeance(s.id);
-        const { enCours, morceaux } = await livekit.enregistrementsSeance(s.id);
+        // Seulement ce qui a été enregistré depuis le dernier démarrage (pas un direct remis à venir avant).
+        const depuisDebut = (s.demarreeLe?.getTime() ?? 0) - 300_000;
+        const { enCours, morceaux: tous } = await livekit.enregistrementsSeance(s.id);
+        const morceaux = tous.filter((m) => m.debut.getTime() >= depuisDebut);
         const recente = s.termineeLe && maintenant - s.termineeLe.getTime() < 6 * 3600_000;
         if ((enCours && recente) || !morceaux.length) continue;
         const utiles = morceaux.filter((m) => m.dureeSecondes >= 60);

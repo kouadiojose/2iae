@@ -183,11 +183,11 @@ export async function enregistrerReglagesVisio(maj: Partial<Omit<Reglages, "majL
 /** Fournisseurs proposés dans les formulaires : Daily d'abord ; la démonstration seulement sans aucune vraie visio. */
 export function fournisseursDisponibles(): FournisseurVisio[] {
   const liste: FournisseurVisio[] = [];
-  if (dailyDisponible()) liste.push("daily");
+  if (visioSalleDisponible()) liste.push("daily");
   liste.push("campus");
   if (jitsiDisponible()) liste.push("jitsi");
   liste.push("externe");
-  if (!dailyDisponible() && !jitsiDisponible()) liste.push("demo");
+  if (!visioSalleDisponible() && !jitsiDisponible()) liste.push("demo");
   return liste;
 }
 
@@ -195,7 +195,7 @@ export function fournisseursDisponibles(): FournisseurVisio[] {
 export function fournisseurParDefaut(): FournisseurVisio {
   const choisi = reglages.fournisseurParDefaut;
   if (choisi && choisi !== "externe" && fournisseursDisponibles().includes(choisi)) return choisi;
-  return dailyDisponible() ? "daily" : "campus";
+  return visioSalleDisponible() ? "daily" : "campus";
 }
 
 /**
@@ -205,7 +205,8 @@ export function fournisseurParDefaut(): FournisseurVisio {
  * campus, en secours, quand Daily ne passe pas.
  */
 export function fournisseurImpose(): FournisseurVisio {
-  return dailyDisponible() ? "daily" : fournisseurParDefaut();
+  // « daily » : la visio des salles (Daily, ou LiveKit qui l'a remplacé : coursSurLivekit), avec replay.
+  return visioSalleDisponible() ? "daily" : fournisseurParDefaut();
 }
 
 /**
@@ -216,9 +217,22 @@ export function fournisseurImpose(): FournisseurVisio {
  */
 export function coursSurLivekit(s: Pick<Seance, "salleVisio" | "statut">, livekitPret: boolean): boolean {
   if (s.salleVisio?.startsWith("lk:")) return livekitPret;
-  if (!livekitPret || reglages.moteurCours !== "livekit") return false;
-  return !(s.salleVisio && s.statut === "en_direct");
+  if (!livekitPret || !visioLivekit()) return false;
+  // Daily encore là : une classe déjà ouverte sur Daily y finit son cours. Daily fermé : tout passe par LiveKit.
+  return !(dailyDisponible() && s.salleVisio && s.statut === "en_direct");
 }
+
+/** LiveKit relié au campus (serveur visio.2iae.com, clé et secret). */
+export const livekitConfigure = () => Boolean(config.visio.livekitUrl && config.visio.livekitCle && config.visio.livekitSecret);
+
+/**
+ * Toute la visio (cours, salle d'essai, groupes, réunion) passe par LiveKit : choisi par la direction, ou Daily fermé
+ * (plus de clé Daily). Novembre 2026 : Daily est abandonné pour le serveur du campus.
+ */
+export const visioLivekit = () => livekitConfigure() && (reglages.moteurCours === "livekit" || !dailyDisponible());
+
+/** Une visio de salle (Daily ou LiveKit) est-elle disponible ? */
+export const visioSalleDisponible = () => dailyDisponible() || livekitConfigure();
 
 export const nomSalleVisio = (seanceId: number) => `${PREFIXE_SALLE}${seanceId}`;
 /** Salle d'un groupe de travail : « campus-2iae-17-g42 » (rattachée à la séance 17 dans le suivi de consommation). */

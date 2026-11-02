@@ -59,11 +59,13 @@ export type PropsPreTests = {
   camera: boolean;
   /** Daily est configuré sur ce campus (sinon la qualité n'est pas testée). */
   daily: boolean;
+  /** Service de visio des salles : « livekit » (serveur du campus) ou Daily. */
+  moteur?: "daily" | "livekit";
   /** Résultats de la dernière série, pour la suite de la page et la mémoire du compte. */
   onResultat?: (r: ResultatEssaiVisio) => void;
 };
 
-export function PreTestsDaily({ tu, camera, daily, onResultat }: PropsPreTests) {
+export function PreTestsDaily({ tu, camera, daily, moteur, onResultat }: PropsPreTests) {
   const t = (a: string, b: string) => (tu ? a : b);
   const cles: Cle[] = camera ? ["navigateur", "connexion", "qualite", "camera", "micro"] : ["navigateur", "connexion", "qualite", "micro"];
   const vide = (): Record<Cle, Ligne> => ({
@@ -155,6 +157,73 @@ export function PreTestsDaily({ tu, camera, daily, onResultat }: PropsPreTests) 
     void post("/api/visio/essai/resultat", resultat).catch(() => undefined);
   };
 
+  /** Nouvelle visio : rend false si la série a été relancée entre-temps. */
+  const testerLivekit = async (n: number): Promise<boolean> => {
+    poser(n, "connexion", { statut: "encours", detail: "Connexion au serveur de visio du campus…" });
+    poser(n, "qualite", { statut: "attente", detail: "" });
+    let acces: AccesDaily;
+    try {
+      acces = await post<AccesDaily>("/api/visio/essai/rejoindre");
+    } catch (e) {
+      if (n !== serie.current) return false;
+      const pb = problemeDepuisApi(e, "formateur", tu);
+      poser(n, "connexion", { statut: "echec", detail: pb.texte || "La salle d'essai ne répond pas.", solution: pb.conseil });
+      poser(n, "qualite", { statut: "non_teste", detail: "Non testée : pas de salle d'essai." });
+      return true;
+    }
+    const { ConnectionCheck, CheckStatus } = await import("livekit-client");
+    const verif = new ConnectionCheck(acces.url, acces.jeton);
+    const ws = await avecDelai(verif.checkWebsocket(), 20_000, () => undefined).catch(() => null);
+    if (n !== serie.current) return false;
+    if (!ws || ws === "delai" || ws.status !== CheckStatus.SUCCESS) {
+      poser(n, "connexion", {
+        statut: "echec",
+        detail: t("Ton réseau bloque la visio.", "Votre réseau bloque la visio."),
+        solution: t(
+          "Suis le cours à la radio (son + diapos), ou active un partage de connexion 4G depuis un téléphone, puis relance la vérification.",
+          "Utilisez la radio du cours ou un partage de connexion 4G depuis votre téléphone, puis relancez la vérification. Au campus, prévenez la vie scolaire : le réseau doit laisser passer visio.2iae.com.",
+        ),
+      });
+      poser(n, "qualite", { statut: "non_teste", detail: "Non testée : le service vidéo ne répond pas." });
+      return true;
+    }
+    poser(n, "connexion", { statut: "ok", detail: "Le service vidéo répond depuis ce réseau." });
+    poser(n, "qualite", { statut: "encours", detail: "Appel de test (quelques secondes)…" });
+    const debut = performance.now();
+    const rtc = await avecDelai(verif.checkWebRTC(), 30_000, () => undefined).catch(() => null);
+    if (n !== serie.current) return false;
+    const duree = Math.round(performance.now() - debut);
+    if (!rtc || rtc === "delai" || rtc.status !== CheckStatus.SUCCESS) {
+      // Le relais TURN (port 443/5349) passe parfois là où l'appel direct échoue.
+      const turn = await avecDelai(verif.checkTURN(), 20_000, () => undefined).catch(() => null);
+      if (n !== serie.current) return false;
+      if (turn && turn !== "delai" && turn.status === CheckStatus.SUCCESS) {
+        qualiteMesuree.current = "moyenne";
+        poser(n, "qualite", {
+          statut: "avertissement",
+          detail: "La vidéo passe par le relais du serveur (réseau filtré).",
+          solution: t("La visio devrait passer, un peu moins vite. Si elle coupe, passe en son + diapos.", "La visio devrait passer. Si elle coupe, un partage de connexion 4G aide souvent."),
+        });
+      } else {
+        poser(n, "qualite", {
+          statut: "echec",
+          detail: t("L'appel de test n'a pas pu passer.", "L'appel de test n'a pas pu passer."),
+          solution: t("Le réseau laisse passer la connexion mais pas la vidéo. Suis le cours à la radio, ou essaie un partage de connexion 4G.", "Le réseau laisse passer la connexion mais pas la vidéo. Essayez un partage de connexion 4G, ou passez à la radio."),
+        });
+      }
+      return true;
+    }
+    qualiteMesuree.current = duree < 6000 ? "bonne" : "moyenne";
+    if (duree < 6000) poser(n, "qualite", { statut: "ok", detail: "Bonne. L'appel de test est passé, la vidéo passera bien." });
+    else
+      poser(n, "qualite", {
+        statut: "avertissement",
+        detail: "Moyenne : l'appel de test a mis du temps à passer.",
+        solution: t("Rapproche-toi du routeur Wi-Fi et ferme les autres applications. En cas de coupures, passe en son + diapos.", "Rapprochez-vous du routeur Wi-Fi, fermez les autres applications, et coupez votre caméra si l'image se fige."),
+      });
+    return true;
+  };
+
   const lancer = async () => {
     const n = ++serie.current;
     fermerAppel();
@@ -169,9 +238,18 @@ export function PreTestsDaily({ tu, camera, daily, onResultat }: PropsPreTests) 
     if (n !== serie.current) return;
     poser(n, "navigateur", compat.ok ? { statut: "ok", detail: t("Ton navigateur sait faire la visio.", "Votre navigateur sait faire la visio.") } : { statut: "echec", detail: compat.raison ?? "", solution: compat.conseil });
 
+    // 2-3. Nouvelle visio (serveur du campus) : connexion puis appel de test WebRTC.
+    if (moteur === "livekit") {
+      if (!compat.ok) {
+        poser(n, "connexion", { statut: "non_teste", detail: "Non testée : le navigateur n'est pas compatible." });
+        poser(n, "qualite", { statut: "non_teste", detail: "Non testée : le navigateur n'est pas compatible." });
+      } else if (!(await testerLivekit(n))) return;
+    }
     // 2. Connexion au service vidéo (WebSocket vers les serveurs Daily)
     let connexionOk = false;
-    if (!compat.ok) {
+    if (moteur === "livekit") {
+      /* déjà testée ci-dessus */
+    } else if (!compat.ok) {
       poser(n, "connexion", { statut: "non_teste", detail: "Non testée : le navigateur n'est pas compatible." });
     } else {
       poser(n, "connexion", { statut: "encours", detail: "Connexion aux serveurs de visio…" });
@@ -212,7 +290,9 @@ export function PreTestsDaily({ tu, camera, daily, onResultat }: PropsPreTests) 
     }
 
     // 3. Qualité du réseau (appel de test Daily d'une quinzaine de secondes)
-    if (!daily) {
+    if (moteur === "livekit") {
+      /* déjà testée ci-dessus */
+    } else if (!daily) {
       poser(n, "qualite", { statut: "non_teste", detail: "Non testée : la visio Daily n'est pas configurée sur ce campus." });
     } else if (!connexionOk) {
       poser(n, "qualite", { statut: "non_teste", detail: "Non testée : le service vidéo ne répond pas." });

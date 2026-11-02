@@ -1,12 +1,17 @@
 // Transcription des enregistrements de cours : quand le replay d'une séance est
 // prêt et qu'aucune transcription n'a été prise pendant le direct, le campus
-// demande au service de Daily (Batch Processor) de transcrire la vidéo, morceau
-// par morceau, puis range le texte minuté dans les sous-titres de la séance.
+// demande au service Whisper du serveur de visio (transcription-whisper.ts) de
+// transcrire la vidéo, morceau par morceau, puis range le texte minuté dans les
+// sous-titres de la séance. Sans Whisper, l'ancien service de Daily (Batch
+// Processor) sert encore s'il est configuré.
+// Whisper tourne sur la même machine que la visio : un seul morceau à la fois, et
+// aucune nouvelle demande pendant un cours en direct.
 // La transcription sert au replay (texte à lire et à chercher) et au cours
 // complet préparé ensuite (etude-cours.ts).
 import { and, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "./db";
 import * as visio from "./visio";
+import { etatTranscriptionWhisper, soumettreTranscriptionWhisper, vttTranscriptionWhisper, whisperDisponible } from "./transcription-whisper";
 import { lienReplayBucket, stockageReplaysDisponible } from "./stockage-replays";
 import { directsImmediats, morceauxReplay, replaysStockes, seances, sousTitres, transcriptionsReplays } from "@shared/schema";
 
@@ -43,6 +48,33 @@ async function sourceDe(enregistrementId: string, forcerBucket = false): Promise
   return { recordingId: enregistrementId };
 }
 
+/** Les travaux Whisper sont marqués « w: » : le suivi sait quel service interroger. */
+const PREFIXE_WHISPER = "w:";
+const estWhisper = (travailId: string) => travailId.startsWith(PREFIXE_WHISPER);
+const transcriptionPossible = () => whisperDisponible() || visio.dailyDisponible();
+
+/** Demande la transcription d'un morceau au service disponible (Whisper d'abord, avec la copie du bucket). */
+async function soumettre(enregistrementId: string, forcerBucket = false): Promise<string> {
+  if (whisperDisponible()) {
+    const source = await sourceDe(enregistrementId, true);
+    if (!("uri" in source)) throw new Error("La vidéo de ce morceau n'est pas dans le bucket des replays.");
+    return PREFIXE_WHISPER + (await soumettreTranscriptionWhisper(source.uri));
+  }
+  return visio.soumettreTranscriptionDaily(await sourceDe(enregistrementId, forcerBucket));
+}
+
+/** Whisper : un travail déjà en cours, ou un cours en direct, et on attend. */
+async function whisperOccupe(): Promise<boolean> {
+  const [enCours] = await db
+    .select({ id: transcriptionsReplays.enregistrementId })
+    .from(transcriptionsReplays)
+    .where(and(eq(transcriptionsReplays.statut, "soumise"), sql`${transcriptionsReplays.travailId} LIKE 'w:%'`))
+    .limit(1);
+  if (enCours) return true;
+  const [direct] = await db.select({ id: seances.id }).from(seances).where(eq(seances.statut, "en_direct")).limit(1);
+  return Boolean(direct);
+}
+
 /** Transcriptions en échec depuis plus de 24 h : nouvel essai (quatre au plus), avec la copie du bucket si elle existe. */
 async function reessayerEchecs(): Promise<void> {
   const echecs = await db
@@ -52,7 +84,8 @@ async function reessayerEchecs(): Promise<void> {
     .limit(3);
   for (const tr of echecs) {
     try {
-      const travailId = await visio.soumettreTranscriptionDaily(await sourceDe(tr.enregistrementId, true));
+      if (whisperDisponible() && (await whisperOccupe())) return;
+      const travailId = await soumettre(tr.enregistrementId, true);
       await db
         .update(transcriptionsReplays)
         .set({ travailId, statut: "soumise", essais: tr.essais + 1, debut: new Date(), fin: null })
@@ -66,23 +99,26 @@ async function reessayerEchecs(): Promise<void> {
   }
 }
 
-/** Demande la transcription des enregistrements qui n'en ont pas (deux séances à la fois au plus). */
+/** Demande la transcription des enregistrements qui n'en ont pas (Daily : deux séances à la fois ; Whisper : un morceau). */
 export async function soumettreTranscriptions(): Promise<void> {
-  if (!visio.dailyDisponible()) return;
+  if (!transcriptionPossible()) return;
+  const whisper = whisperDisponible();
+  if (whisper && (await whisperOccupe())) return;
   await reessayerEchecs();
-  for (const s of await seancesATranscrire(2)) {
+  for (const s of await seancesATranscrire(whisper ? 1 : 2)) {
     const morceaux = await db.select().from(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id)).orderBy(asc(morceauxReplay.numero));
     const pieces = morceaux.length
       ? morceaux.map((m) => ({ id: m.enregistrementId, numero: m.numero, decalage: Math.max(0, Math.round((m.debut.getTime() - morceaux[0].debut.getTime()) / 1000)) }))
       : [{ id: s.enregistrementId!, numero: 1, decalage: 0 }];
-    for (const p of pieces) {
+    for (const [i, p] of pieces.entries()) {
       try {
-        const travailId = await visio.soumettreTranscriptionDaily(await sourceDe(p.id));
+        // Whisper : le premier morceau part tout de suite, les suivants attendent leur tour (travail vide).
+        const travailId = whisper && i > 0 ? null : await soumettre(p.id);
         await db
           .insert(transcriptionsReplays)
-          .values({ enregistrementId: p.id, seanceId: s.id, numero: p.numero, decalageSecondes: p.decalage, travailId, statut: "soumise", essais: 1 })
+          .values({ enregistrementId: p.id, seanceId: s.id, numero: p.numero, decalageSecondes: p.decalage, travailId, statut: "soumise", essais: travailId ? 1 : 0 })
           .onConflictDoNothing();
-        console.log(`[transcription] séance ${s.id}, morceau ${p.numero} : demandée (${travailId})`);
+        console.log(`[transcription] séance ${s.id}, morceau ${p.numero} : ${travailId ? `demandée (${travailId})` : "en file"}`);
       } catch (e) {
         await db
           .insert(transcriptionsReplays)
@@ -137,17 +173,33 @@ async function lireTexteDistant(url: string): Promise<string | null> {
 
 /** Suit les transcriptions demandées ; range dans les sous-titres celles qui sont terminées. */
 export async function suivreTranscriptions(): Promise<void> {
-  if (!visio.dailyDisponible()) return;
-  const enAttente = await db.select().from(transcriptionsReplays).where(eq(transcriptionsReplays.statut, "soumise")).limit(20);
+  if (!transcriptionPossible()) return;
+  const enAttente = await db.select().from(transcriptionsReplays).where(eq(transcriptionsReplays.statut, "soumise")).orderBy(asc(transcriptionsReplays.debut), asc(transcriptionsReplays.numero)).limit(20);
   for (const tr of enAttente) {
-    if (!tr.travailId) continue;
+    if (!tr.travailId) {
+      // Morceau en file (Whisper) : il part quand le service est libre et qu'aucun cours n'est en direct.
+      if (!whisperDisponible() || (await whisperOccupe())) continue;
+      try {
+        const travailId = await soumettre(tr.enregistrementId);
+        await db.update(transcriptionsReplays).set({ travailId, essais: tr.essais + 1, debut: new Date() }).where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
+      } catch (e) {
+        await db
+          .update(transcriptionsReplays)
+          .set({ statut: "erreur", essais: tr.essais + 1, fin: new Date(), message: (e as Error).message.slice(0, 300) })
+          .where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
+      }
+      continue;
+    }
+    const whisper = estWhisper(tr.travailId);
+    if (whisper ? !whisperDisponible() : !visio.dailyDisponible()) continue;
     try {
-      const etat = await visio.etatTranscriptionDaily(tr.travailId);
-      if (etat.statut === "finished") {
-        const liens = await visio.liensTranscriptionDaily(tr.travailId);
-        const vtt = liens.find((l) => l.format === "vtt");
+      const idService = whisper ? tr.travailId.slice(PREFIXE_WHISPER.length) : tr.travailId;
+      const etat = whisper ? await etatTranscriptionWhisper(idService) : await visio.etatTranscriptionDaily(idService);
+      if (etat.statut === "finished" || etat.statut === "terminee") {
+        const liens = whisper ? [] : await visio.liensTranscriptionDaily(idService);
+        const vtt = whisper ? { format: "vtt", link: "" } : liens.find((l) => l.format === "vtt");
         const txt = liens.find((l) => l.format === "txt");
-        const brutVtt = vtt ? await lireTexteDistant(vtt.link) : null;
+        const brutVtt = whisper ? await vttTranscriptionWhisper(idService).catch(() => null) : vtt ? await lireTexteDistant(vtt.link) : null;
         let lignes = brutVtt ? lireVtt(brutVtt) : [];
         let brutTxt: string | null = null;
         if (!lignes.length && txt) {
@@ -161,7 +213,7 @@ export async function suivreTranscriptions(): Promise<void> {
           if (Date.now() - new Date(tr.debut).getTime() < DELAI_MAX_MS) continue;
           await db
             .update(transcriptionsReplays)
-            .set({ statut: "erreur", fin: new Date(), message: "Transcription terminée chez Daily mais impossible à récupérer." })
+            .set({ statut: "erreur", fin: new Date(), message: "Transcription terminée mais impossible à récupérer." })
             .where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
           continue;
         }
@@ -173,10 +225,10 @@ export async function suivreTranscriptions(): Promise<void> {
           .set({ statut: "terminee", fin: new Date(), message: lignes.length ? null : "Transcription vide (enregistrement silencieux ?)." })
           .where(eq(transcriptionsReplays.enregistrementId, tr.enregistrementId));
         console.log(`[transcription] séance ${tr.seanceId}, morceau ${tr.numero} : ${lignes.length} lignes`);
-      } else if (etat.statut === "error") {
-        // Premier échec avec l'identifiant Daily : nouvel essai avec la copie du bucket.
+      } else if (etat.statut === "error" || etat.statut === "erreur") {
+        // Premier échec (Daily : avec son identifiant) : nouvel essai avec la copie du bucket.
         if (tr.essais < 2) {
-          const travailId = await visio.soumettreTranscriptionDaily(await sourceDe(tr.enregistrementId, true));
+          const travailId = await soumettre(tr.enregistrementId, true);
           await db
             .update(transcriptionsReplays)
             .set({ travailId, essais: tr.essais + 1, debut: new Date(), message: etat.erreur?.slice(0, 300) ?? null })

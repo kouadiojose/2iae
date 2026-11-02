@@ -62,6 +62,9 @@ export const config = {
     livekitSecret: env("LIVEKIT_API_SECRET"),
     /** Préfixe des salles LiveKit (essais locaux : un autre préfixe isole leurs salles). */
     livekitPrefixe: env("LIVEKIT_ROOM_PREFIX") || "campus-2iae",
+    /** Transcription des replays par Whisper sur le serveur de visio (campus/infra/livekit) : https://visio.2iae.com/transcription et son jeton. */
+    transcriptionUrl: env("TRANSCRIPTION_URL"),
+    transcriptionJeton: env("TRANSCRIPTION_TOKEN"),
     /** Serveurs TURN pour la visio intégrée (réseaux mobiles derrière CGNAT), ex. turns:turn.example.com:443?transport=tcp */
     turnUrls: (env("TURN_URLS") || "").split(",").map((u) => u.trim()).filter(Boolean),
     turnUtilisateur: env("TURN_USERNAME"),

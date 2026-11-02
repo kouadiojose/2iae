@@ -21,7 +21,7 @@
 //    2) le contexte de l'écran du compte de campus (lib/ecran-campus.ts :
 //       ni « visio » ni « Daily », mots de shared/textes/campus.ts) ;
 //    3) les mots des cours.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Loader2, WifiOff, RotateCcw, AlertTriangle } from "lucide-react";
 import type { DailyCall, DailyParticipant } from "@daily-co/daily-js";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,11 @@ import {
   relanceAutomatique,
   type ProblemeVisio,
 } from "./daily";
+
+import type { RappelsLivekit } from "./VueLivekit";
+
+// Salle servie par LiveKit (serveur du campus) : l'image vient de VueLivekit, chargée seulement dans ce cas.
+const VueLivekit = lazy(() => import("./VueLivekit"));
 
 export type RoleCadre = "formateur" | "salle" | "etudiant" | "observateur";
 
@@ -132,6 +137,9 @@ export function CadreDaily(p: PropsCadreDaily) {
   const relancesLongues = useRef(0);
   const [prochainEssai, setProchainEssai] = useState<number | null>(null);
   const recu = useRef(0);
+  // LiveKit : accès reçu (la vue s'affiche) et rappels de la tentative en cours.
+  const [livekit, setLivekit] = useState<{ url: string; jeton: string } | null>(null);
+  const rappelsLivekit = useRef<RappelsLivekit>({ connecte: () => {}, erreur: () => {}, participants: () => {}, reseau: () => {}, octets: () => {} });
   // Les rappels du parent changent à chaque rendu : on garde la dernière version.
   const rappels = useRef(p);
   rappels.current = p;
@@ -157,6 +165,7 @@ export function CadreDaily(p: PropsCadreDaily) {
     rappels.current.onEtat?.("connexion");
 
     const fermer = (c: DailyCall | null) => {
+      setLivekit(null);
       if (appel.current === c) appel.current = null;
       detruireAppel(c);
       rappels.current.onAppel?.(null);
@@ -199,13 +208,45 @@ export function CadreDaily(p: PropsCadreDaily) {
       if (annule) return;
       if (!compat.ok) return echouer({ genre: "navigateur", texte: compat.raison ?? "", conseil: compat.conseil, relancer: false });
       let acces: Acces;
+      let moteur: "daily" | "livekit" = "daily";
       try {
         const r = await rappels.current.obtenirAcces();
         const jeton = "jeton" in r ? r.jeton : undefined;
         if (!r.url || !jeton) throw new Error(("message" in r && r.message) || t("La visio n'est pas disponible pour le moment.", "La visio n'est pas disponible pour le moment."));
         acces = { url: r.url, jeton };
+        if ("fournisseur" in r && r.fournisseur === "livekit") moteur = "livekit";
       } catch (e) {
         return echouer(problemeDepuisApi(e, role, tu));
+      }
+      if (annule || phase !== "connexion") return;
+      if (moteur === "livekit") {
+        // Salle LiveKit : la vue se connecte elle-même ; ses événements reprennent ceux de Daily ci-dessous.
+        rappelsLivekit.current = {
+          connecte: () => {
+            if (annule || phase !== "connexion") return;
+            phase = "connecte";
+            clearTimeout(lentId);
+            clearTimeout(echecId);
+            setLent(false);
+            echecs.current = 0;
+            relances.current = 0;
+            relancesLongues.current = 0;
+            setEtat("connecte");
+            rappels.current.onEtat?.("connecte");
+            rappels.current.onEchecs?.(0, null);
+            rappels.current.onRejoint?.();
+          },
+          erreur: (pb) => {
+            if (annule) return;
+            if (phase === "connecte") phase = "connexion";
+            echouer(pb);
+          },
+          participants: (liste) => !annule && rappels.current.onParticipants?.(liste),
+          reseau: (e) => !annule && phase === "connecte" && rappels.current.onEtat?.(e),
+          octets: (n) => !annule && rappels.current.onConsommation?.(n),
+        };
+        setLivekit(acces);
+        return;
       }
       try {
         const Daily = await chargerDaily();
@@ -346,6 +387,23 @@ export function CadreDaily(p: PropsCadreDaily) {
   return (
     <div className={cn("relative h-full w-full", p.className)}>
       <div ref={conteneur} className="h-full w-full" />
+      {livekit && (
+        <div className="absolute inset-0">
+          <Suspense fallback={null}>
+            <VueLivekit
+              url={livekit.url}
+              jeton={livekit.jeton}
+              role={role}
+              tu={tu}
+              micro={p.micro}
+              camera={p.camera}
+              cameraAuDepart={p.cameraAuDepart ?? (role === "formateur" || role === "salle")}
+              microAuDepart={p.microAuDepart ?? role === "formateur"}
+              rappels={rappelsLivekit}
+            />
+          </Suspense>
+        </div>
+      )}
       {etat === "connecte" && avisMedia && (
         <div className="absolute inset-x-3 bottom-3 flex items-start gap-2 rounded-xl bg-black/80 px-3 py-2 text-[13px] font-semibold text-white" role="alert">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange" />

@@ -8,11 +8,13 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
+import { config } from "./config";
 import { exigerConnexion, exigerRole, exigerDroit, moi, oublierUtilisateur, versMoi, estEquipe } from "./auth";
 import { route, valider, idParam, interdit, ErreurHttp } from "./http";
 import { seanceVisible, enseigneCours, idsCoursAccessibles } from "./acces";
 import { planifier } from "./taches";
 import * as visio from "./visio";
+import * as livekit from "./visio-livekit";
 import { stockageReplaysDisponible } from "./stockage-replays";
 import { prevenirSite } from "./site";
 import {
@@ -195,6 +197,25 @@ export function enregistrerVisioDaily(app: Express) {
         envoi: profil === "etudiant" ? ["audio"] : undefined,
       });
       res.json({ url: salle.url, jeton, nomAffiche, profil } satisfies AccesDaily);
+    }),
+  );
+
+  // ── Salle d'essai sur LiveKit (serveur du campus) : le personnel teste la nouvelle visio, sans toucher aux cours ──
+  app.post(
+    "/api/visio/livekit/essai/rejoindre",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (!livekit.livekitDisponible()) throw new ErreurHttp(503, "La visio LiveKit n'est pas encore reliée au campus.", { code: "daily_absent" });
+      if (u.role === "etudiant") throw interdit("La salle d'essai de la nouvelle visio est réservée au personnel pour l'instant.");
+      const dernier = derniersJetons.get(u.id) ?? 0;
+      if (Date.now() - dernier < 3000) throw new ErreurHttp(429, "Un instant : la salle d'essai s'ouvre déjà.");
+      derniersJetons.set(u.id, Date.now());
+      const salle = await livekit.obtenirSalleLivekit(`essai-${salleEssaiDe(u)}`, { places: 30 });
+      const nomAffiche = await nomDansLaSalle(u);
+      const profil = u.role === "formateur" || u.role === "admin" ? "formateur" : "salle";
+      const jeton = await livekit.jetonLivekit({ salle, utilisateurId: u.id, nomAffiche, profil, dureeS: visio.DUREE_MAX_ESSAI_S, envoi: ["audio", "video", "ecran"] });
+      res.json({ fournisseur: "livekit", url: config.visio.livekitUrl!, jeton, nomAffiche, profil } satisfies AccesDaily);
     }),
   );
 

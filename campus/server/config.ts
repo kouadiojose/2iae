@@ -56,6 +56,12 @@ export const config = {
     /** Sous-domaine Daily (ex. « groupe2iae » pour groupe2iae.daily.co) — facultatif, déduit de l'API sinon. */
     dailyDomaine: env("DAILY_DOMAIN"),
     jitsiDomaine: env("JITSI_DOMAIN"),
+    /** Serveur LiveKit du campus (OVH, campus/infra/livekit) : wss://visio.2iae.com, clé et secret de l'API. */
+    livekitUrl: env("LIVEKIT_URL"),
+    livekitCle: env("LIVEKIT_API_KEY"),
+    livekitSecret: env("LIVEKIT_API_SECRET"),
+    /** Préfixe des salles LiveKit (essais locaux : un autre préfixe isole leurs salles). */
+    livekitPrefixe: env("LIVEKIT_ROOM_PREFIX") || "campus-2iae",
     /** Serveurs TURN pour la visio intégrée (réseaux mobiles derrière CGNAT), ex. turns:turn.example.com:443?transport=tcp */
     turnUrls: (env("TURN_URLS") || "").split(",").map((u) => u.trim()).filter(Boolean),
     turnUtilisateur: env("TURN_USERNAME"),

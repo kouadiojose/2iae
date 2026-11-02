@@ -5,6 +5,8 @@ import type { DefRoute } from "@/routes-types";
 // radio, test du micro, cadre Daily) sont intégrés par le module live via ./index.ts.
 export const routes: DefRoute[] = [
   { chemin: "/visio/essai", page: lazy(() => import("./PageEssai")), acces: "connecte" },
+  // Salle d'essai de la nouvelle visio (LiveKit, serveur du campus) : le personnel seulement.
+  { chemin: "/visio/essai-livekit", page: lazy(() => import("./PageEssaiLivekit")), acces: ["admin", "formateur", "vie_scolaire", "salle"] },
   // Répétition dans la vraie salle Daily d'une séance (formateur, direction ; salles 90 min avant).
   { chemin: "/visio/repetition/:seanceId", page: lazy(() => import("./PageRepetition")), acces: "connecte" },
   // Coût et réglages de la visio (équipe ; la direction seule modifie).

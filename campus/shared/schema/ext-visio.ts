@@ -151,6 +151,8 @@ export type ProfilDaily = "formateur" | "salle" | "etudiant" | "observateur";
 
 /** Accès à une salle Daily : POST /api/visio/essai/rejoindre, ou /api/seances/:id/rejoindre (Daily). */
 export type AccesDaily = {
+  /** Moteur de la visio : Daily (défaut, absent) ou LiveKit (serveur du campus, url wss://…, jeton JWT). */
+  fournisseur?: "daily" | "livekit";
   url: string;
   jeton: string;
   nomAffiche: string;

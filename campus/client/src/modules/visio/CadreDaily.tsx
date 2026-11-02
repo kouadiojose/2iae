@@ -214,7 +214,7 @@ export function CadreDaily(p: PropsCadreDaily) {
         const jeton = "jeton" in r ? r.jeton : undefined;
         if (!r.url || !jeton) throw new Error(("message" in r && r.message) || t("La visio n'est pas disponible pour le moment.", "La visio n'est pas disponible pour le moment."));
         acces = { url: r.url, jeton };
-        if ("fournisseur" in r && r.fournisseur === "livekit") moteur = "livekit";
+        if (("fournisseur" in r && r.fournisseur === "livekit") || ("moteur" in r && r.moteur === "livekit")) moteur = "livekit";
       } catch (e) {
         return echouer(problemeDepuisApi(e, role, tu));
       }

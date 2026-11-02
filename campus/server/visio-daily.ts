@@ -103,6 +103,7 @@ const schemaResultat = z.object({
 const schemaReglages = z
   .object({
     fournisseurParDefaut: z.enum(FOURNISSEURS_VISIO),
+    moteurCours: z.enum(["daily", "livekit"]),
     videoEtudiantParDefaut: z.boolean(),
     // Le forfait Daily plafonne la salle entière (200 personnes par défaut) : formateur, salles et équipe compris.
     placesDailyEtudiants: z
@@ -128,6 +129,8 @@ async function versReglagesDto(): Promise<ReglagesVisioDto> {
   const [stock] = await db.select({ nombre: sql<number>`count(*)::int`, octets: sql<number>`coalesce(sum(${replaysStockes.tailleOctets}), 0)::float8` }).from(replaysStockes);
   return {
     fournisseurParDefaut: visio.fournisseurParDefaut(),
+    moteurCours: r.moteurCours === "livekit" ? "livekit" : "daily",
+    livekit: livekit.livekitDisponible(),
     videoEtudiantParDefaut: r.videoEtudiantParDefaut,
     placesDailyEtudiants: Math.min(r.placesDailyEtudiants, visio.placesDailyEtudiantsMax()),
     placesDailyMax: visio.placesDailyEtudiantsMax(),
@@ -216,6 +219,16 @@ export function enregistrerVisioDaily(app: Express) {
       const profil = u.role === "formateur" || u.role === "admin" ? "formateur" : "salle";
       const jeton = await livekit.jetonLivekit({ salle, utilisateurId: u.id, nomAffiche, profil, dureeS: visio.DUREE_MAX_ESSAI_S, envoi: ["audio", "video", "ecran"] });
       res.json({ fournisseur: "livekit", url: config.visio.livekitUrl!, jeton, nomAffiche, profil } satisfies AccesDaily);
+    }),
+  );
+
+  // Essai de l'enregistreur LiveKit (direction) : 15 s d'une page web dans le bucket des replays, puis effacé.
+  app.post(
+    "/api/visio/livekit/test-enregistrement",
+    exigerRole("admin"),
+    route(async (req, res) => {
+      if (!livekit.livekitDisponible()) throw new ErreurHttp(503, "La visio LiveKit n'est pas reliée au campus.");
+      res.json(await livekit.testerEnregistreur(`${config.urlCampus}/`, livekit.nomSalleLivekit(`essai-${salleEssaiDe(moi(req))}`)));
     }),
   );
 
@@ -408,6 +421,7 @@ export function enregistrerVisioDaily(app: Express) {
       if (d.fournisseurParDefaut && (!visio.fournisseursDisponibles().includes(d.fournisseurParDefaut) || d.fournisseurParDefaut === "externe")) {
         throw new ErreurHttp(400, "Ce fournisseur ne peut pas servir par défaut sur ce campus.");
       }
+      if (d.moteurCours === "livekit" && !livekit.livekitDisponible()) throw new ErreurHttp(400, "La nouvelle visio (LiveKit) n'est pas reliée au campus.");
       await visio.enregistrerReglagesVisio(d, u.id);
       visio.oublierUsage();
       await db.insert(journal).values({ utilisateurId: u.id, action: "reglages_visio", details: d });

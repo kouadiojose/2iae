@@ -47,6 +47,7 @@ import { route, valider, idParam, ErreurHttp, introuvable, interdit } from "../h
 import { enseigneCours, peutVoirCours, seanceVisible } from "../acces";
 import { remettreFichier } from "../fichiers";
 import * as visio from "../visio";
+import * as livekit from "../visio-livekit";
 import { etatRadioSeance, ecouteRadioInvite } from "../visio-campus";
 import { changerDiapo, signalerIntervenant, terminerParIntervenant } from "./live";
 import { seances, cours, utilisateurs, fichiers, sousTitres, evenementsSeances, estProjectionCopie, estProfilCampus, type Seance, type InfoInviteDto, type LienInviteDto, type AccesDaily } from "@shared/schema";
@@ -288,6 +289,25 @@ export function enregistrerInvite(app: Express) {
       const cleIp = `invite-visio|${req.ip}`;
       verifierTentatives(cleIp, 20);
       noterEchec(cleIp); // chaque jeton compte : 20 par quart d'heure et par adresse
+      // Cours sur LiveKit (réglage de la direction) : l'intervenant ou l'invité entre dans la même salle que la classe.
+      if (visio.coursSurLivekit(s, livekit.livekitDisponible())) {
+        const salleLk = await livekit.obtenirSalleLivekit(`seance-${s.id}`, { videAvantFermetureS: 600 });
+        const marque = livekit.marqueSeanceLivekit(s.id);
+        if (s.salleVisio !== marque) await db.update(seances).set({ salleVisio: marque }).where(eq(seances.id, s.id));
+        const idInviteLk = -crypto.randomInt(1, 2_000_000_000);
+        const nomAfficheLk = `${nom} · ${intervenant ? "intervenant" : "invité"}`;
+        const jetonLk = await livekit.jetonLivekit({
+          salle: salleLk,
+          utilisateurId: idInviteLk,
+          nomAffiche: nomAfficheLk,
+          profil: "etudiant",
+          dureeS: Math.max(600, visio.expirationJetonSeance(s) - Math.floor(Date.now() / 1000)),
+          envoi: intervenant ? ["audio", "video", "ecran"] : false,
+        });
+        if (intervenant) await signalerIntervenant(s, nom);
+        const accesLk: AccesDaily = { moteur: "livekit", fournisseur: "livekit", url: config.visio.livekitUrl!, jeton: jetonLk, nomAffiche: nomAfficheLk, profil: "etudiant" };
+        return res.json(accesLk);
+      }
       const salle = await visio.obtenirSalleDaily(s);
       // Un identifiant négatif : jamais confondu avec un compte, ni compté parmi les comptes présents.
       const idInvite = -crypto.randomInt(1, 2_000_000_000);

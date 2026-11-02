@@ -76,7 +76,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import QRCode from "qrcode";
 import { z } from "zod";
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, ne, not, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil, utilisateurParId } from "../auth";
@@ -97,6 +97,7 @@ import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia
 import { prevenirSite } from "../site";
 import { planifier, reveiller } from "../taches";
 import * as visio from "../visio";
+import * as livekit from "../visio-livekit";
 import { creerModuleGroupes, noterModeSuivi } from "./live-groupes";
 import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
 import {
@@ -779,7 +780,10 @@ function sortirApresParole(seanceId: number, utilisateurId: number) {
       if (!visio.videoEtudiantsCoupee()) return;
       const p = await paroleCourante(seanceId);
       if (p?.type === "etudiant" && p.utilisateurId === utilisateurId) return;
-      const n = await visio.sortirCompteDeSalle(visio.nomSalleVisio(seanceId), utilisateurId);
+      const [sp] = await db.select({ salleVisio: seances.salleVisio }).from(seances).where(eq(seances.id, seanceId));
+      const n = livekit.estSalleLivekit(sp?.salleVisio)
+        ? Number(await livekit.sortirDeSalleLivekit(livekit.salleSeanceLivekit(seanceId), utilisateurId))
+        : await visio.sortirCompteDeSalle(visio.nomSalleVisio(seanceId), utilisateurId);
       if (n) console.log(`[visio] parole finie (séance ${seanceId}) : l'étudiant ${utilisateurId} sort de la visio (vidéo des étudiants coupée)`);
     })().catch((e) => console.warn(`[visio] sortie après la parole (séance ${seanceId}) impossible :`, (e as Error).message));
   }, 1000);
@@ -2366,6 +2370,29 @@ export function enregistrerLive(app: Express) {
           // Entré seulement grâce à la parole : son jeton n'ouvre la salle que 10 minutes (pas jusqu'à la fin du cours) ;
           // la parole finie, il est sorti de la visio (finirParole).
           const pourParlerSeulement = u.role === "etudiant" && aLaParole && visio.videoEtudiantsCoupee();
+          // Moteur LiveKit (réglage de la direction) : même séance, mêmes écrans ; l'image passe par le serveur du
+          // campus. L'enregistrement du replay part côté serveur (tâche « livekit-enregistrements »).
+          if (visio.coursSurLivekit(s, livekit.livekitDisponible())) {
+            const salleLk = await livekit.obtenirSalleLivekit(`seance-${s.id}`, { videAvantFermetureS: 600 });
+            const marque = livekit.marqueSeanceLivekit(s.id);
+            if (s.salleVisio !== marque) await db.update(seances).set({ salleVisio: marque }).where(eq(seances.id, s.id));
+            if (profil === "salle") await livekit.reserverPosteLivekit({ salle: salleLk, utilisateurId: u.id, poste, prendre });
+            const fin = pourParlerSeulement ? visio.expirationJetonParole(s) : visio.expirationJetonSeance(s);
+            const dureeS = Math.max(600, fin - Math.floor(Date.now() / 1000));
+            reponse.url = config.visio.livekitUrl!;
+            reponse.moteur = "livekit";
+            reponse.profil = profil;
+            reponse.enregistrement = false;
+            reponse.jeton = await livekit.jetonLivekit({
+              salle: salleLk,
+              utilisateurId: u.id,
+              nomAffiche,
+              profil,
+              dureeS: enRepetition ? Math.min(dureeS, visio.DUREE_MAX_REPETITION_S) : dureeS,
+              ...(invite && { envoi: ["audio", "video"] as ("audio" | "video")[] }),
+            });
+            break;
+          }
           const salle = await visio.obtenirSalleDaily(s);
           if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole || invite });
@@ -2433,6 +2460,26 @@ export function enregistrerLive(app: Express) {
       if ((await roleDans(u, s)) !== "formateur") throw interdit("Seule la personne qui anime le cours diffuse la radio.");
       if (s.fournisseur !== "daily") throw new ErreurHttp(409, "Pas de visio Daily pour ce cours : la radio diffuse le micro du formateur.");
       if (s.statut !== "en_direct") throw new ErreurHttp(409, "La radio de la classe démarre avec le direct.");
+      if (visio.coursSurLivekit(s, livekit.livekitDisponible())) {
+        const salleLk = await livekit.obtenirSalleLivekit(`seance-${s.id}`, { videAvantFermetureS: 600 });
+        const accesLk: AccesDaily = {
+          moteur: "livekit",
+          fournisseur: "livekit",
+          url: config.visio.livekitUrl!,
+          nomAffiche: "Radio des téléphones",
+          profil: "observateur",
+          jeton: await livekit.jetonLivekit({
+            salle: salleLk,
+            utilisateurId: -(2_000_000_000 + s.id),
+            nomAffiche: "Radio des téléphones",
+            profil: "observateur",
+            dureeS: Math.max(600, visio.expirationJetonSeance(s) - Math.floor(Date.now() / 1000)),
+            envoi: false,
+            invisible: true,
+          }),
+        };
+        return res.json(accesLk);
+      }
       const salle = await visio.obtenirSalleDaily(s);
       const acces: AccesDaily = {
         url: salle.url,
@@ -5200,6 +5247,7 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
         eq(seances.statut, "terminee"),
         eq(seances.fournisseur, "daily"),
         isNotNull(seances.salleVisio),
+        not(like(seances.salleVisio, "lk:%")),
         isNull(seances.enregistrementId),
         gt(seances.termineeLe, new Date(Date.now() - 48 * 3600_000)),
       ),
@@ -5228,6 +5276,81 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
     await annoncerReplay({ ...s, enregistrementId: morceaux[0].id, replayDureeSecondes: total }).catch((e) =>
       console.error(`[replays] annonce de la séance ${s.id} :`, (e as Error).message),
     );
+  }
+});
+
+// ── Replays des cours servis par LiveKit ───────────────────────────────────
+//
+// Pas d'enregistrement lancé par le navigateur du formateur (comme Daily) : le serveur s'en charge.
+//  - Cours en direct, commencé (heure du cours passée, quelqu'un l'anime), formateur dans la salle : l'enregistrement
+//    part (un seul à la fois ; relancé s'il s'arrête en route : un nouveau morceau). Jamais une répétition (séance pas
+//    en direct) ni un essai de direct sans étudiants.
+//  - Cours terminé : l'enregistrement s'arrête, puis ses fichiers (déjà dans le bucket des replays) deviennent le
+//    replay : morceaux, copie dans le bucket notée (rien à recopier), annonce aux étudiants, transcription comme avant.
+let livekitEnregistrementsEnCours = false;
+/** Lancements récents par séance : au moins 2 min entre deux, 6 par heure au plus (un enregistreur en panne ne tourne pas en boucle). */
+const lancementsLivekit = new Map<number, number[]>();
+function lancementPermis(seanceId: number, maintenant: number): boolean {
+  const recents = (lancementsLivekit.get(seanceId) ?? []).filter((t) => maintenant - t < 3600_000);
+  lancementsLivekit.set(seanceId, recents);
+  return !recents.length || (maintenant - recents[recents.length - 1] >= 120_000 && recents.length < 6);
+}
+planifier("livekit-enregistrements", 30_000, async () => {
+  if (livekitEnregistrementsEnCours || !livekit.livekitDisponible() || !stockageReplaysDisponible()) return;
+  livekitEnregistrementsEnCours = true;
+  try {
+    const maintenant = Date.now();
+    const enDirect = await db.select().from(seances).where(and(eq(seances.statut, "en_direct"), like(seances.salleVisio, "lk:%")));
+    for (const s of enDirect) {
+      try {
+        if (!visio.enregistrementAutomatique() || debutDuCours(s).getTime() > maintenant || enAttenteAnimateur(s)) continue;
+        if (await visio.estEssaiDirect(s.id)) continue;
+        const presents = await livekit.presentsLivekit(livekit.salleSeanceLivekit(s.id));
+        if (!presents.some((p) => p.profil === "formateur")) continue;
+        if (await livekit.enregistrementEnCours(livekit.salleSeanceLivekit(s.id))) continue;
+        if (!lancementPermis(s.id, maintenant)) continue;
+        lancementsLivekit.get(s.id)!.push(maintenant);
+        const id = await livekit.demarrerEnregistrementSeance(s);
+        if (id) console.log(`[replays] séance ${s.id} : enregistrement LiveKit lancé (${id}, essai ${lancementsLivekit.get(s.id)!.length})`);
+      } catch (e) {
+        console.warn(`[replays] séance ${s.id} : enregistrement LiveKit impossible :`, (e as Error).message);
+      }
+    }
+    const terminees = await db
+      .select()
+      .from(seances)
+      .where(and(eq(seances.statut, "terminee"), like(seances.salleVisio, "lk:%"), isNull(seances.enregistrementId), gt(seances.termineeLe, new Date(maintenant - 48 * 3600_000))));
+    for (const s of terminees) {
+      try {
+        await livekit.arreterEnregistrementsSeance(s.id);
+        const { enCours, morceaux } = await livekit.enregistrementsSeance(s.id);
+        const recente = s.termineeLe && maintenant - s.termineeLe.getTime() < 6 * 3600_000;
+        if ((enCours && recente) || !morceaux.length) continue;
+        const utiles = morceaux.filter((m) => m.dureeSecondes >= 60);
+        const garder = utiles.length ? utiles : morceaux;
+        const total = garder.reduce((t, m) => t + m.dureeSecondes, 0);
+        await db.transaction(async (tx) => {
+          await tx.update(seances).set({ enregistrementId: garder[0].id, replayDureeSecondes: total }).where(eq(seances.id, s.id));
+          await tx.delete(morceauxReplay).where(eq(morceauxReplay.seanceId, s.id));
+          if (garder.length > 1) {
+            await tx.insert(morceauxReplay).values(garder.map((m, i) => ({ seanceId: s.id, numero: i + 1, enregistrementId: m.id, debut: m.debut, dureeSecondes: m.dureeSecondes })));
+          }
+          // Déjà dans le bucket : la copie est notée telle quelle ; « supprimée chez Daily » : rien à effacer là-bas.
+          await tx
+            .insert(replaysStockes)
+            .values(garder.map((m) => ({ enregistrementId: m.id, seanceId: s.id, cle: m.cle, tailleOctets: m.tailleOctets, dailySupprimeLe: new Date() })))
+            .onConflictDoNothing();
+        });
+        console.log(`[replays] séance ${s.id} : replay LiveKit prêt (${garder.length} morceau(x), ${Math.round(total / 60)} min)`);
+        await annoncerReplay({ ...s, enregistrementId: garder[0].id, replayDureeSecondes: total }).catch((e) =>
+          console.error(`[replays] annonce de la séance ${s.id} :`, (e as Error).message),
+        );
+      } catch (e) {
+        console.warn(`[replays] séance ${s.id} : replay LiveKit pas encore récupéré :`, (e as Error).message);
+      }
+    }
+  } finally {
+    livekitEnregistrementsEnCours = false;
   }
 });
 

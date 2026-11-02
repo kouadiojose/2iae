@@ -120,6 +120,7 @@ type Reglages = Omit<ReglagesVisio, "id" | "majParId" | "majLe"> & { majLe: Date
 
 const REGLAGES_DEFAUT: Reglages = {
   fournisseurParDefaut: null,
+  moteurCours: null,
   videoEtudiantParDefaut: false,
   placesDailyEtudiants: 30,
   prixMinuteUsd: 0.004,
@@ -205,6 +206,18 @@ export function fournisseurParDefaut(): FournisseurVisio {
  */
 export function fournisseurImpose(): FournisseurVisio {
   return dailyDisponible() ? "daily" : fournisseurParDefaut();
+}
+
+/**
+ * Visio des cours sur LiveKit (serveur du campus) plutôt que Daily : réglage de la direction (« moteur des cours »),
+ * LiveKit configuré. La séance garde son fournisseur « daily » (écrans, radio, parole, mises en page : rien ne
+ * change) ; seul le moteur de l'image change. Une séance déjà ouverte sur Daily y reste jusqu'à la fin, même si le
+ * réglage change en cours de route (jamais la moitié d'une classe sur chaque moteur).
+ */
+export function coursSurLivekit(s: Pick<Seance, "salleVisio" | "statut">, livekitPret: boolean): boolean {
+  if (s.salleVisio?.startsWith("lk:")) return livekitPret;
+  if (!livekitPret || reglages.moteurCours !== "livekit") return false;
+  return !(s.salleVisio && s.statut === "en_direct");
 }
 
 export const nomSalleVisio = (seanceId: number) => `${PREFIXE_SALLE}${seanceId}`;

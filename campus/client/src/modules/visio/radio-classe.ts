@@ -36,6 +36,8 @@ export function useRadioClasse(o: {
     if (!possible) return;
     let fini = false;
     let call: DailyCall | null = null;
+    // Cours sur LiveKit : même écoute invisible, avec livekit-client (chargé seulement dans ce cas).
+    let salleLk: { disconnect: () => Promise<void> } | null = null;
     let rejoint = false;
     const m = new MelangeurClasse();
     melangeur.current = m;
@@ -63,6 +65,31 @@ export function useRadioClasse(o: {
     void (async () => {
       try {
         const acces = await post<AccesDaily>(`/api/seances/${o.seanceId}/radio-visio`);
+        if (acces.moteur === "livekit" || acces.fournisseur === "livekit") {
+          const { Room, RoomEvent, Track } = await import("livekit-client");
+          if (fini) return;
+          const room = new Room({ adaptiveStream: false, dynacast: false });
+          salleLk = room;
+          const abonner = (pub: { kind: string; setSubscribed: (v: boolean) => void }, identite: string) => {
+            if (pub.kind === Track.Kind.Audio && identite !== exclu) pub.setSubscribed(true);
+          };
+          room.on(RoomEvent.TrackPublished, (pub, p) => abonner(pub, p.identity));
+          room.on(RoomEvent.ParticipantConnected, (p) => p.trackPublications.forEach((pub) => abonner(pub, p.identity)));
+          room.on(RoomEvent.TrackSubscribed, (piste, pub, p) => {
+            if (piste.kind === Track.Kind.Audio && p.identity !== exclu) m.ajouter(`${p.identity}:${pub.trackSid}`, piste.mediaStreamTrack);
+          });
+          room.on(RoomEvent.TrackUnsubscribed, (_piste, pub, p) => m.retirer(`${p.identity}:${pub.trackSid}`));
+          room.on(RoomEvent.ParticipantDisconnected, (p) => p.trackPublications.forEach((pub) => m.retirer(`${p.identity}:${pub.trackSid}`)));
+          await room.connect(acces.url, acces.jeton, { autoSubscribe: false });
+          if (fini) {
+            void room.disconnect();
+            return;
+          }
+          room.remoteParticipants.forEach((p) => p.trackPublications.forEach((pub) => abonner(pub, p.identity)));
+          rejoint = true;
+          verifier();
+          return;
+        }
         const Daily = await chargerDaily();
         if (fini) return;
         call = Daily.createCallObject({ allowMultipleCallInstances: true, subscribeToTracksAutomatically: false, audioSource: false, videoSource: false });
@@ -92,6 +119,9 @@ export function useRadioClasse(o: {
       window.removeEventListener("keydown", reveil);
       setPret(false);
       if (melangeur.current === m) melangeur.current = null;
+      const lk = salleLk;
+      salleLk = null;
+      if (lk) void lk.disconnect().catch(() => undefined);
       const c = call;
       call = null;
       if (c) void c.leave().catch(() => undefined).finally(() => void c.destroy().catch(() => undefined));

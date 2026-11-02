@@ -267,6 +267,13 @@
       "when": 1792044708698,
       "tag": "0037_mur_du_cours",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793649758584,
+      "tag": "0038_visio_moteur_cours",
+      "breakpoints": true
     }
   ]
 }

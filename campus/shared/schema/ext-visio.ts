@@ -99,6 +99,8 @@ export const reglagesVisio = campusSchema.table("reglages_visio", {
   id: integer("id").primaryKey().default(1),
   /** Fournisseur des nouvelles séances (Daily si configuré, sinon la visio du campus). */
   fournisseurParDefaut: text("fournisseur_par_defaut").$type<FournisseurVisio>(),
+  /** Moteur de la visio des cours : null ou « daily » (Daily), « livekit » (serveur du campus, visio.2iae.com). */
+  moteurCours: text("moteur_cours").$type<"daily" | "livekit">(),
   /** Un étudiant en ligne entre-t-il en vidéo par défaut ? Non : « son + diapos », il choisit la vidéo s'il le veut. */
   videoEtudiantParDefaut: boolean("video_etudiant_par_defaut").notNull().default(false),
   /** Étudiants en vidéo dans une salle Daily (au-delà : « complète », ils suivent en son + diapos ; formateur, salles et équipe ont leurs places à part). */
@@ -153,6 +155,7 @@ export type ProfilDaily = "formateur" | "salle" | "etudiant" | "observateur";
 export type AccesDaily = {
   /** Moteur de la visio : Daily (défaut, absent) ou LiveKit (serveur du campus, url wss://…, jeton JWT). */
   fournisseur?: "daily" | "livekit";
+  moteur?: "daily" | "livekit";
   url: string;
   jeton: string;
   nomAffiche: string;
@@ -166,6 +169,8 @@ export type AccesDaily = {
 /** Réponse de /api/seances/:id/rejoindre (contrat RejoindreDto du module live, enrichi pour Daily). */
 export type RejoindreVisioDto = {
   fournisseur: FournisseurVisio;
+  /** Moteur de l'image pour une séance Daily : LiveKit quand la direction l'a choisi (visio.coursSurLivekit). */
+  moteur?: "daily" | "livekit";
   url: string | null;
   jeton?: string;
   nomAffiche: string;
@@ -248,6 +253,10 @@ export type UsageVisioDto = {
 /** GET /api/visio/reglages et PUT (direction). */
 export type ReglagesVisioDto = {
   fournisseurParDefaut: FournisseurVisio;
+  /** Moteur de la visio des cours : Daily, ou LiveKit (serveur du campus). */
+  moteurCours: "daily" | "livekit";
+  /** LiveKit est relié au campus (sinon le choix est grisé). */
+  livekit: boolean;
   videoEtudiantParDefaut: boolean;
   placesDailyEtudiants: number;
   /** Étudiants en vidéo au plus que le forfait Daily permet (salle entière plafonnée, places réservées déduites). */

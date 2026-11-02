@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, FlaskConical, HardDrive, Save, Video, VideoOff } from "lucide-react";
-import { put } from "@/lib/api";
+import { post, put } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
 import { useMoiConnecte } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -255,6 +255,38 @@ function Reperes({ r }: { r?: ReglagesVisioDto }) {
   );
 }
 
+/** Essai de l'enregistreur de la nouvelle visio : 15 s d'une page web dans le bucket des replays, vérifié puis effacé. */
+function TestEnregistreur() {
+  const [enCours, setEnCours] = useState(false);
+  const [resultat, setResultat] = useState<{ ok: boolean; message: string; tailleOctets: number } | null>(null);
+  const tester = async () => {
+    setEnCours(true);
+    setResultat(null);
+    try {
+      setResultat(await post<{ ok: boolean; message: string; tailleOctets: number }>("/api/visio/livekit/test-enregistrement"));
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnCours(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl border border-ligne p-4">
+      <p className="text-[16px] font-extrabold">Tester l'enregistrement des replays (nouvelle visio)</p>
+      <p className="text-[14px] leading-snug text-texte-pale">Enregistre 15 secondes sur le serveur de la visio, vérifie que le fichier arrive dans le bucket des replays, puis l'efface (environ 30 secondes). Pour tester comme un vrai cours, ouvrez d'abord la salle d'essai de la nouvelle visio (/visio/essai-livekit) dans un autre onglet ou sur votre téléphone, entrez-y, puis touchez le bouton.</p>
+      <Bouton variante="contour" chargement={enCours} onClick={() => void tester()} className="self-start">
+        Tester l'enregistrement
+      </Bouton>
+      {resultat && (
+        <p className={cn("rounded-xl px-4 py-3 text-[15px] font-semibold", resultat.ok ? "bg-succes-clair text-encre" : "bg-danger-clair text-encre")} role="status">
+          {resultat.message}
+          {resultat.ok ? ` (${Math.round(resultat.tailleOctets / 1024)} Ko)` : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable: boolean }) {
   const [f, setF] = useState(r);
   const [envoi, setEnvoi] = useState(false);
@@ -266,6 +298,7 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
     try {
       await put<ReglagesVisioDto>("/api/visio/reglages", {
         fournisseurParDefaut: f.fournisseurParDefaut,
+        moteurCours: f.moteurCours,
         videoEtudiantParDefaut: f.videoEtudiantParDefaut,
         placesDailyEtudiants: Number(f.placesDailyEtudiants),
         prixMinuteUsd: Number(f.prixMinuteUsd),
@@ -303,6 +336,22 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
             </option>
           ))}
       </Selection>
+      <div className="flex items-start justify-between gap-4 rounded-2xl bg-creme p-4">
+        <div>
+          <p className="text-[16px] font-extrabold">Nouvelle visio pour les cours (serveur du campus)</p>
+          <p className="mt-0.5 text-[14px] leading-snug text-texte-pale">
+            {!r.livekit
+              ? "Le serveur de la nouvelle visio n'est pas relié au campus."
+              : f.moteurCours === "livekit"
+                ? "Les cours passent par le serveur du campus (visio.2iae.com) : pas de facture à la minute. Replays enregistrés directement dans le bucket. Un cours déjà commencé sur Daily y reste jusqu'à la fin."
+                : "Les cours passent par Daily (facturé à la minute). Activez pour évaluer la nouvelle visio : rien d'autre ne change pour les formateurs, les salles et les étudiants."}
+          </p>
+        </div>
+        <div className={cn("pt-1", (!modifiable || !r.livekit) && "pointer-events-none opacity-60")}>
+          <Interrupteur actif={f.moteurCours === "livekit"} onChange={(v) => setF({ ...f, moteurCours: v ? "livekit" : "daily" })} libelle="Nouvelle visio pour les cours" />
+        </div>
+      </div>
+      {r.livekit && modifiable && <TestEnregistreur />}
       <div className="flex items-start justify-between gap-4 rounded-2xl bg-creme p-4">
         <div>
           <p className="text-[16px] font-extrabold">Vidéo pour les étudiants, par défaut</p>

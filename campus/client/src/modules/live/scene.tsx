@@ -3,7 +3,7 @@
 // compagnon qui ne rejoignent aucune visio. Les bandeaux (parole, diapo,
 // Plan B) se superposent quel que soit le fournisseur.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic, RotateCcw, EyeOff } from "lucide-react";
+import { ExternalLink, Loader2, Radio, WifiOff, Presentation, Mic, RotateCcw, EyeOff, Monitor } from "lucide-react";
 import type { DailyCall, DailyEventObjectParticipant } from "@daily-co/daily-js";
 import { patch, post } from "@/lib/api";
 import { useMoi } from "@/lib/auth";
@@ -496,6 +496,20 @@ function SceneCampus({ seance, etat, role, micro, camera, onFluxLocal, onEtatVis
 // l'enregistrement du replay quand la séance passe en direct (jamais en
 // répétition ni pendant un essai).
 
+/** Identifiant de cet onglet, gardé au rechargement (sessionStorage) : le même écran qui se reconnecte garde sa place. */
+function posteDeCetOnglet(): string {
+  const cle = "campus:poste-visio";
+  try {
+    const deja = sessionStorage.getItem(cle);
+    if (deja && /^[A-Za-z0-9_-]{8,64}$/.test(deja)) return deja;
+    const neuf = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, "");
+    sessionStorage.setItem(cle, neuf);
+    return neuf;
+  } catch {
+    return "poste-sans-memoire";
+  }
+}
+
 const roleCadre = (r: RoleSeance): RoleCadre => (r === "equipe" ? "observateur" : r);
 
 const peutEnvoyerSon = (p: DailyEventObjectParticipant["participant"]) => {
@@ -565,6 +579,10 @@ function SceneDaily({
     };
   }, [call, role, onPartageEcran]);
   const infos = useRef<RejoindreVisioDto | null>(null);
+  // Écran de salle : un seul appareil par compte (serveur : visio.reserverPosteDeSalle). « Utiliser cet appareil
+  // comme écran » reprend la place : le cadre est remonté (nouvelle clé) et demande la place avec prendre.
+  const prendrePlace = useRef(false);
+  const [essaiCadre, setEssaiCadre] = useState(0);
   const enregistre = useRef(false);
   const microVoulu = useRef(micro);
   microVoulu.current = micro;
@@ -717,13 +735,28 @@ function SceneDaily({
         <p className="text-[13px] text-nuit-gris">Les salles et les étudiants basculent avec vous. La radio, les diapos et les questions continuent.</p>
       </>
     ) : (
-      <Bouton variante="nuit-actif" icone={<Radio className="h-4 w-4" />} onClick={() => onSecoursRadio("echec")}>
-        {tu ? "Écouter en son + diapos" : "Écouter le cours à la radio"}
-      </Bouton>
+      <>
+        {role === "salle" && (
+          <Bouton
+            variante="nuit-actif"
+            icone={<Monitor className="h-4 w-4" />}
+            onClick={() => {
+              prendrePlace.current = true;
+              setEssaiCadre((n) => n + 1);
+            }}
+          >
+            Utiliser cet appareil comme écran
+          </Bouton>
+        )}
+        <Bouton variante="nuit-actif" icone={<Radio className="h-4 w-4" />} onClick={() => onSecoursRadio("echec")}>
+          {tu ? "Écouter en son + diapos" : "Écouter le cours à la radio"}
+        </Bouton>
+      </>
     );
 
   return (
     <CadreDaily
+      key={essaiCadre}
       role={roleCadre(role)}
       tu={tu}
       micro={micro}
@@ -734,7 +767,12 @@ function SceneDaily({
       relanceAuto
       obtenirAcces={async () => {
         // Écran de salle (aussi celui que la direction ouvre pour regarder une salle) : il entre comme une salle.
-        const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, { mode: "video", ...(role === "salle" && { ecran: true }) });
+        const prendre = prendrePlace.current;
+        prendrePlace.current = false;
+        const r = await post<RejoindreVisioDto>(`/api/seances/${seance.id}/rejoindre`, {
+          mode: "video",
+          ...(role === "salle" && { ecran: true, poste: posteDeCetOnglet(), ...(prendre && { prendre: true }) }),
+        });
         infos.current = r;
         return r;
       }}

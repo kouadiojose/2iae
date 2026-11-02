@@ -200,6 +200,8 @@ export function problemeDepuisApi(e: unknown, role: RoleVisio, tu: boolean): Pro
   // Places vidéo étudiantes (ou d'observation) toutes prises : le serveur le dit avant même d'entrer.
   if (code === "daily_plein") return { genre: "pleine", texte: message, conseil: role === "etudiant" ? null : conseilSallePleine(role), relancer: false };
   // Vidéo des étudiants coupée (réglage de la direction) : comme une visio complète, l'étudiant passe en son + diapos.
+  // Écran de salle déjà ouvert sur un autre appareil : nouvel essai automatique (il entre dès que l'autre sort).
+  if (code === "salle_deja_connectee") return { genre: "pleine", texte: message, conseil: "Fermez la page de la classe sur l'autre appareil, ou reprenez la place ici.", relancer: false };
   if (code === "video_etudiants_coupee") return { genre: "pleine", texte: message, conseil: null, relancer: false };
   if (code === "daily_absent") return { genre: "absente", texte: message, conseil: null, relancer: false };
   if (code === "daily_injoignable" || code === "daily_occupe" || code === "daily_refus") return { genre: "reseau", texte: message, conseil: null, relancer: false };

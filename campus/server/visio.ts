@@ -752,6 +752,53 @@ export async function sortirCompteDeSalle(nom: string, utilisateurId: number): P
   }
 }
 
+/** Ce compte est-il connecté à cette salle Daily en ce moment ? (Daily injoignable : non, pour ne bloquer personne.) */
+export async function compteDansSalle(nom: string, utilisateurId: number): Promise<boolean> {
+  if (!dailyDisponible()) return false;
+  try {
+    const p = await appelDaily<{ data?: { userId?: string | null; user_id?: string | null }[] }>(`/rooms/${encodeURIComponent(nom)}/presence`);
+    if (p.statut !== 200) return false;
+    return (p.donnees?.data ?? []).some((x) => String(x.userId ?? x.user_id ?? "") === String(utilisateurId));
+  } catch {
+    return false;
+  }
+}
+
+// ── Un seul appareil par écran de salle ────────────────────────────────────
+//
+// Novembre 2026 : le même compte de salle était connecté 4 à 7 fois au même cours (l'écran, l'ordinateur du
+// responsable, des téléphones, et les connexions fantômes laissées par les reconnexions), chacune facturée par
+// Daily : une salle comptait en moyenne trois fois. Désormais un seul appareil (un onglet, repéré par son « poste »)
+// tient la place de la salle. Un autre appareil du même compte est refusé (409 « salle_deja_connectee ») tant que le
+// premier est dans la visio, sauf s'il demande à prendre la place. À chaque entrée, les anciennes connexions du
+// compte sont fermées : une reconnexion ne laisse plus de fantôme.
+
+/** Appareil qui tient la place de chaque compte de salle, par salle Daily (« salle:utilisateur »). */
+const postesDeSalle = new Map<string, { poste: string; t: number }>();
+const DUREE_MEMOIRE_POSTE_MS = 12 * 3600_000;
+
+export const MESSAGE_SALLE_DEJA_CONNECTEE =
+  "Cet écran de salle est déjà ouvert sur un autre appareil. Ici, suivez le cours en son + diapos, ou touchez « Utiliser cet appareil comme écran ».";
+
+/**
+ * Réserve la place de la salle pour cet appareil. `prendre` : l'appareil reprend la place (l'autre est sorti de la
+ * visio). Sans `poste` (page d'avant cette règle, encore en cache), rien ne change.
+ */
+export async function reserverPosteDeSalle(o: { salle: string; utilisateurId: number; poste?: string; prendre?: boolean }): Promise<void> {
+  if (!o.poste) return;
+  const cle = `${o.salle}:${o.utilisateurId}`;
+  const maintenant = Date.now();
+  if (postesDeSalle.size > 500) for (const [k, v] of postesDeSalle) if (maintenant - v.t > DUREE_MEMOIRE_POSTE_MS) postesDeSalle.delete(k);
+  const tenu = postesDeSalle.get(cle);
+  // Autre appareil (ou serveur redémarré : place inconnue) alors que le compte est déjà dans la visio : refus.
+  if ((!tenu || tenu.poste !== o.poste) && !o.prendre && (await compteDansSalle(o.salle, o.utilisateurId))) {
+    throw new ErreurHttp(409, MESSAGE_SALLE_DEJA_CONNECTEE, { code: "salle_deja_connectee" });
+  }
+  postesDeSalle.set(cle, { poste: o.poste, t: maintenant });
+  // Fantômes de ce même appareil, ou l'appareil dont on reprend la place : sortis avant que le nouveau entre.
+  await sortirCompteDeSalle(o.salle, o.utilisateurId);
+}
+
 /** Le formateur doit-il déclencher l'enregistrement ? Seulement une vraie séance (pas une répétition, pas un essai). */
 export const enregistrementAutomatique = () => ENREGISTREMENT_AUTO;
 

@@ -2298,8 +2298,15 @@ export function enregistrerLive(app: Express) {
     route(async (req, res) => {
       const u = moi(req);
       let s = await seanceAccessible(u, idParam(req));
-      const { mode, repetition, ecran } = valider(
-        z.object({ mode: z.enum(["video", "radio", "compagnon"]).optional(), repetition: z.boolean().optional(), ecran: z.boolean().optional() }),
+      const { mode, repetition, ecran, poste, prendre } = valider(
+        z.object({
+          mode: z.enum(["video", "radio", "compagnon"]).optional(),
+          repetition: z.boolean().optional(),
+          ecran: z.boolean().optional(),
+          /** Écran de salle : identifiant de l'onglet (un seul appareil par compte de salle : visio.reserverPosteDeSalle). */
+          poste: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
+          prendre: z.boolean().optional(),
+        }),
         req.body,
       );
       const roleSeance = await roleDans(u, s);
@@ -2362,6 +2369,7 @@ export function enregistrerLive(app: Express) {
           const salle = await visio.obtenirSalleDaily(s);
           if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole || invite });
+          if (profil === "salle") await visio.reserverPosteDeSalle({ salle: salle.nom, utilisateurId: u.id, poste, prendre });
           // Replay : seulement une vraie séance (ni répétition, ni essai de direct sans étudiants).
           const enregistrement = profil === "formateur" && !enRepetition && visio.enregistrementAutomatique() && !(await visio.estEssaiDirect(s.id));
           // Classe ouverte automatiquement avant l'heure : l'enregistrement part au début du cours (debutDuCours :

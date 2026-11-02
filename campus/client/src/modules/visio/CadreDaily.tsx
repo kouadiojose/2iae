@@ -139,7 +139,7 @@ export function CadreDaily(p: PropsCadreDaily) {
   const recu = useRef(0);
   // LiveKit : accès reçu (la vue s'affiche) et rappels de la tentative en cours.
   const [livekit, setLivekit] = useState<{ url: string; jeton: string } | null>(null);
-  const rappelsLivekit = useRef<RappelsLivekit>({ connecte: () => {}, erreur: () => {}, participants: () => {}, reseau: () => {}, octets: () => {} });
+  const rappelsLivekit = useRef<RappelsLivekit>({ connecte: () => {}, erreur: () => {}, participants: () => {}, reseau: () => {}, octets: () => {}, appel: () => {} });
   // Les rappels du parent changent à chaque rendu : on garde la dernière version.
   const rappels = useRef(p);
   rappels.current = p;
@@ -244,6 +244,8 @@ export function CadreDaily(p: PropsCadreDaily) {
           participants: (liste) => !annule && rappels.current.onParticipants?.(liste),
           reseau: (e) => !annule && phase === "connecte" && rappels.current.onEtat?.(e),
           octets: (n) => !annule && rappels.current.onConsommation?.(n),
+          // La salle LiveKit se présente comme un appel Daily : le Studio et l'écran de salle gardent leurs fonctions.
+          appel: (a) => !annule && rappels.current.onAppel?.(a as unknown as DailyCall | null),
         };
         setLivekit(acces);
         return;

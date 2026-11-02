@@ -50,6 +50,9 @@ railway domain --service campus                # domaine *.up.railway.app
 | `REPLAYS_REGION` | `${{campus-replays.REGION}}` |
 | `REPLAYS_ACCESS_KEY_ID` / `REPLAYS_SECRET_ACCESS_KEY` | `${{campus-replays.ACCESS_KEY_ID}}` / `${{campus-replays.SECRET_ACCESS_KEY}}` |
 | `REPLAYS_GARDER_DAILY_JOURS` | facultatif, 7 par défaut : jours pendant lesquels la copie Daily reste en secours après la copie dans le bucket (0 : effacée aussitôt vérifiée) |
+| `LIVEKIT_URL` | `wss://visio.2iae.com` : serveur de visio LiveKit du campus (OVH, `campus/infra/livekit/installer.sh`) |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | clé et secret de l'API LiveKit, recopiés depuis `/opt/livekit/.env` sur le serveur (jamais affichés) |
+| `LIVEKIT_ROOM_PREFIX` | facultatif, `campus-2iae` par défaut : préfixe des salles LiveKit |
 
 Les fichiers déposés partent dans le bucket des fichiers dès leur dépôt (le
 volume `UPLOADS_DIR` ne sert plus que de passage, et de repli si le bucket ne
@@ -121,3 +124,15 @@ DNS (CNAME) à créer chez le registrar du domaine 2iae.com. Ensuite, mettre
 - Une seule réplique : le temps réel (SSE) est en mémoire.
 - Sauvegardes : activer les sauvegardes du service Postgres-Campus.
 - Journaux : `railway logs --service campus`.
+
+## Nouvelle visio (LiveKit)
+
+Le serveur LiveKit du campus tourne sur un serveur dédié OVH (Gravelines),
+installé par `campus/infra/livekit/installer.sh` (Caddy, LiveKit, Redis,
+Egress). Dans Pilotage de la visio, « Nouvelle visio pour les cours » fait
+passer l'image des cours par ce serveur (réglage `reglages_visio.moteur_cours`) ;
+les séances gardent le fournisseur « daily » et tous leurs écrans. Les replays
+sont enregistrés par le serveur (Egress) directement dans le bucket des
+replays. Avant le premier cours : « Tester l'enregistrement », la salle
+d'essai de la nouvelle visio (`/visio/essai-livekit`) ouverte. Retour à Daily :
+décocher le réglage.

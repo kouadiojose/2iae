@@ -44,6 +44,7 @@ import {
   type RoomOptions,
   type Participant,
   type TrackPublication,
+  type LocalVideoTrack,
 } from "livekit-client";
 import { Maximize2, Minimize2 } from "lucide-react";
 import "@livekit/components-styles";
@@ -284,6 +285,75 @@ function Scene({ soiVisible, barreVisible }: { soiVisible: boolean; barreVisible
 }
 
 /** Barre du bas, en français : micro et caméra (avec le choix de l'appareil), partage d'écran, plein écran. */
+const CLE_FLOU = "visio-flou";
+const lireFlou = () => {
+  try {
+    return localStorage.getItem(CLE_FLOU) === "1";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Flou d'arrière-plan (comme dans Daily) : traitement de l'image de la caméra dans le navigateur
+ * (@livekit/track-processors, chargé à la demande). Le choix est gardé sur cet appareil et réappliqué
+ * quand la caméra se rallume.
+ */
+function BoutonFlou() {
+  const { cameraTrack, isCameraEnabled } = useLocalParticipant();
+  const [flou, setFlou] = useState(lireFlou);
+  const [indispo, setIndispo] = useState(false);
+  const [occupe, setOccupe] = useState(false);
+  const piste = cameraTrack?.track as LocalVideoTrack | undefined;
+  useEffect(() => {
+    if (!piste || !isCameraEnabled) return;
+    let annule = false;
+    void (async () => {
+      try {
+        const tp = await import("@livekit/track-processors");
+        if (!tp.supportsBackgroundProcessors()) {
+          if (!annule) setIndispo(true);
+          return;
+        }
+        const actuel = piste.getProcessor();
+        if (flou && !actuel) await piste.setProcessor(tp.BackgroundBlur(12));
+        else if (!flou && actuel) await piste.stopProcessor();
+      } catch (e) {
+        console.warn("[visio] flou d'arrière-plan :", (e as Error).message);
+        if (!annule) setIndispo(true);
+      } finally {
+        if (!annule) setOccupe(false);
+      }
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [piste, isCameraEnabled, flou]);
+  if (indispo) return null;
+  return (
+    <button
+      type="button"
+      className="lk-button"
+      aria-pressed={flou}
+      disabled={occupe || !isCameraEnabled}
+      title={isCameraEnabled ? "Flouter l'arrière-plan de la caméra" : "Allumez la caméra pour flouter l'arrière-plan"}
+      onClick={() => {
+        const v = !flou;
+        setOccupe(true);
+        setFlou(v);
+        try {
+          localStorage.setItem(CLE_FLOU, v ? "1" : "0");
+        } catch {
+          /* stockage indisponible */
+        }
+      }}
+      style={flou ? { background: "#E4793A", color: "#fff" } : undefined}
+    >
+      {flou ? "Flou activé" : "Flou"}
+    </button>
+  );
+}
+
 function Barre({ micro, camera, ecran, pleinEcran, onPleinEcran }: { micro: boolean; camera: boolean; ecran: boolean; pleinEcran: boolean; onPleinEcran: () => void }) {
   const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant();
   return (
@@ -308,6 +378,7 @@ function Barre({ micro, camera, ecran, pleinEcran, onPleinEcran }: { micro: bool
           </div>
         </div>
       )}
+      {camera && <BoutonFlou />}
       {ecran && (
         <TrackToggle source={Track.Source.ScreenShare} captureOptions={{ audio: true, selfBrowserSurface: "include" }} showIcon>
           {isScreenShareEnabled ? "Arrêter le partage" : "Partager"}

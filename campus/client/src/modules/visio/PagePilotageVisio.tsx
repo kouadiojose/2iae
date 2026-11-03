@@ -419,6 +419,11 @@ function FormulaireReglages({ r, modifiable }: { r: ReglagesVisioDto; modifiable
                 }`
               : "Les replays restent chez Daily : le bucket Railway des replays n'est pas relié au campus."}
           </p>
+          {r.replays.bucket && r.replays.nonCopies !== undefined && (
+            <p className={cn("mt-2 text-[15px] font-bold", r.replays.nonCopies ? "text-alerte" : "text-succes")}>
+              Replays Daily pas encore copiés dans le bucket : {r.replays.nonCopies}
+            </p>
+          )}
         </div>
       </div>
       {modifiable ? (

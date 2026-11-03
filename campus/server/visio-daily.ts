@@ -131,6 +131,12 @@ async function versReglagesDto(): Promise<ReglagesVisioDto> {
     throw new ErreurHttp(503, "Les réglages de la visio ne sont pas lisibles pour le moment : la vidéo des étudiants reste coupée par prudence. Réessayez dans un instant.", { code: "reglages_illisibles" });
   }
   const r = visio.reglagesCourants();
+  // Enregistrements Daily d'un replay sans copie dans le bucket : à zéro avant de retirer la clé Daily.
+  const manquants = await db.execute<{ n: number }>(sql`
+    WITH refs AS (
+      SELECT enregistrement_id AS id FROM campus.seances WHERE enregistrement_id IS NOT NULL AND replay_url IS NULL
+      UNION SELECT enregistrement_id FROM campus.morceaux_replay)
+    SELECT count(*)::int AS n FROM refs WHERE NOT EXISTS (SELECT 1 FROM campus.replays_stockes rs WHERE rs.enregistrement_id = refs.id)`);
   const [stock] = await db.select({ nombre: sql<number>`count(*)::int`, octets: sql<number>`coalesce(sum(${replaysStockes.tailleOctets}), 0)::float8` }).from(replaysStockes);
   return {
     fournisseurParDefaut: visio.fournisseurParDefaut(),
@@ -148,7 +154,7 @@ async function versReglagesDto(): Promise<ReglagesVisioDto> {
     fournisseurs: visio.fournisseursDisponibles(),
     daily: visio.visioSalleDisponible(),
     majLe: r.majLe ? new Date(r.majLe).toISOString() : null,
-    replays: { bucket: stockageReplaysDisponible(), nombre: stock?.nombre ?? 0, octets: stock?.octets ?? 0 },
+    replays: { bucket: stockageReplaysDisponible(), nombre: stock?.nombre ?? 0, octets: stock?.octets ?? 0, nonCopies: Number(manquants.rows[0]?.n ?? 0) },
   };
 }
 

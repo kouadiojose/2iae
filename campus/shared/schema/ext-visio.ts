@@ -280,7 +280,7 @@ export type ReglagesVisioDto = {
   daily: boolean;
   majLe: string | null;
   /** Replays : copiés dans le bucket Railway (bucket vrai) ou gardés chez Daily ; nombre et poids déjà copiés. */
-  replays: { bucket: boolean; nombre: number; octets: number };
+  replays: { bucket: boolean; nombre: number; octets: number; /** Enregistrements Daily d'un replay pas encore copiés dans le bucket. */ nonCopies?: number };
 };
 
 // ── Fuseaux horaires des formateurs ────────────────────────────────────────

@@ -2384,7 +2384,8 @@ export function enregistrerLive(app: Express) {
             const salleLk = await livekit.obtenirSalleLivekit(`seance-${s.id}`, { videAvantFermetureS: 600 });
             const marque = livekit.marqueSeanceLivekit(s.id);
             if (s.salleVisio !== marque) await db.update(seances).set({ salleVisio: marque }).where(eq(seances.id, s.id));
-            if (profil === "salle") await livekit.reserverPosteLivekit({ salle: salleLk, utilisateurId: u.id, poste, prendre });
+            // Écrans de salle : un même compte (lien d'installation) peut servir dans plusieurs salles, un ordinateur par
+            // salle ; chaque appareil a donc son identité (les reconnexions d'un même onglet se remplacent d'elles-mêmes).
             const fin = pourParlerSeulement ? visio.expirationJetonParole(s) : visio.expirationJetonSeance(s);
             const dureeS = Math.max(600, fin - Math.floor(Date.now() / 1000));
             reponse.url = config.visio.livekitUrl!;
@@ -2398,13 +2399,14 @@ export function enregistrerLive(app: Express) {
               profil,
               dureeS: enRepetition ? Math.min(dureeS, visio.DUREE_MAX_REPETITION_S) : dureeS,
               ...(invite && { envoi: ["audio", "video"] as ("audio" | "video")[] }),
+              ...(profil === "salle" && { poste: poste ?? crypto.randomBytes(6).toString("hex") }),
             });
             break;
           }
           const salle = await visio.obtenirSalleDaily(s);
           if (s.salleVisio !== salle.nom) await db.update(seances).set({ salleVisio: salle.nom }).where(eq(seances.id, s.id));
           await visio.reserverPlaceDaily({ salle: salle.nom, profil, utilisateurId: u.id, prioritaire: aLaParole || invite });
-          if (profil === "salle") await visio.reserverPosteDeSalle({ salle: salle.nom, utilisateurId: u.id, poste, prendre });
+          // Écrans de salle : un même compte peut servir dans plusieurs salles (un ordinateur chacune) : jamais refusé.
           // Replay : seulement une vraie séance (ni répétition, ni essai de direct sans étudiants).
           const enregistrement = profil === "formateur" && !enRepetition && visio.enregistrementAutomatique() && !(await visio.estEssaiDirect(s.id));
           // Classe ouverte automatiquement avant l'heure : l'enregistrement part au début du cours (debutDuCours :

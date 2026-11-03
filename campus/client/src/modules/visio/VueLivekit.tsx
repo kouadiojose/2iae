@@ -87,7 +87,7 @@ function versParticipants(room: Room): ParticipantCadre[] {
   const tous = [room.localParticipant, ...room.remoteParticipants.values()];
   return tous.map((p) => ({
     id: p.identity,
-    userId: p.identity,
+    userId: p.identity.split("~")[0],
     nom: p.name || "Invité",
     local: p === room.localParticipant,
     micro: p.isMicrophoneEnabled,
@@ -127,7 +127,7 @@ function versDaily(p: Participant, local: boolean): ParticipantDailyLike {
   }
   return {
     session_id: p.identity,
-    user_id: p.identity,
+    user_id: p.identity.split("~")[0],
     user_name: p.name || "Invité",
     local,
     owner: profilDe(p) === "formateur",

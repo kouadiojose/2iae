@@ -6,6 +6,7 @@
 // LiveKit n'a ni date d'expiration de salle ni « éjecter après » : une salle vide se ferme seule (empty_timeout du
 // serveur) ; la durée maximale d'une visite est la durée de vie du jeton à l'entrée, et les sorties forcées
 // passent par removeParticipant.
+import { randomBytes } from "node:crypto";
 import { AccessToken, RoomServiceClient, TrackSource, EgressClient, EgressStatus, EncodedFileOutput, EncodedFileType, EncodingOptionsPreset, S3Upload } from "livekit-server-sdk";
 import { S3Client, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import type { ProfilDaily } from "@shared/schema";
@@ -43,7 +44,18 @@ export type OptionsJetonLivekit = {
   envoi?: ("audio" | "video" | "ecran")[] | false;
   /** Invisible des autres (mixage de la radio de la classe). */
   invisible?: boolean;
+  /**
+   * Appareil (onglet) : le compte d'un campus est l'écran de plusieurs salles à la fois, un ordinateur par salle.
+   * LiveKit ne garde qu'une connexion par identité : chaque appareil a donc la sienne (« compte~appareil »).
+   */
+  poste?: string;
 };
+
+/** Écran de salle : un même compte sert parfois dans plusieurs salles (un ordinateur chacune) : une identité par appareil. */
+export const posteEcran = (profil: string) => (profil === "salle" ? randomBytes(6).toString("hex") : undefined);
+
+/** Compte derrière une identité LiveKit (« 12 » ou « 12~appareil »). */
+export const compteDeIdentite = (identite: string) => Number(identite.split("~")[0]);
 
 const SOURCES: Record<"audio" | "video" | "ecran", TrackSource[]> = {
   audio: [TrackSource.MICROPHONE],
@@ -62,7 +74,7 @@ function envoiParDefaut(profil: ProfilDaily): ("audio" | "video" | "ecran")[] | 
 export async function jetonLivekit(o: OptionsJetonLivekit): Promise<string> {
   const envoi = o.envoi === undefined ? envoiParDefaut(o.profil) : o.envoi;
   const at = new AccessToken(config.visio.livekitCle!, config.visio.livekitSecret!, {
-    identity: String(o.utilisateurId),
+    identity: o.poste ? `${o.utilisateurId}~${o.poste}` : String(o.utilisateurId),
     name: o.nomAffiche,
     ttl: o.dureeS,
     metadata: JSON.stringify({ profil: o.profil }),
@@ -91,7 +103,7 @@ export async function presentsLivekit(salle: string): Promise<{ utilisateurId: n
       } catch {
         /* métadonnées absentes */
       }
-      return { utilisateurId: Number(p.identity), nom: p.name || "Invité", depuis: new Date(Number(p.joinedAt) * 1000), profil };
+      return { utilisateurId: compteDeIdentite(p.identity), nom: p.name || "Invité", depuis: new Date(Number(p.joinedAt) * 1000), profil };
     });
   } catch (e) {
     if (/not found|does not exist|404/i.test((e as Error).message)) return [];
@@ -102,8 +114,10 @@ export async function presentsLivekit(salle: string): Promise<{ utilisateurId: n
 /** Sort un compte de la salle (fin de la parole, écran remplacé). Renvoie vrai s'il y était. */
 export async function sortirDeSalleLivekit(salle: string, utilisateurId: number): Promise<boolean> {
   try {
-    await salles().removeParticipant(salle, String(utilisateurId));
-    return true;
+    const liste = await salles().listParticipants(salle);
+    const siens = liste.filter((p) => compteDeIdentite(p.identity) === utilisateurId);
+    for (const p of siens) await salles().removeParticipant(salle, p.identity).catch(() => undefined);
+    return siens.length > 0;
   } catch {
     return false;
   }

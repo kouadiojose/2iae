@@ -576,6 +576,7 @@ export function creerModuleGroupes(o: OutilsGroupes) {
             profil: profilLk,
             dureeS: Math.max(600, exp - Math.floor(Date.now() / 1000)),
             ...(profilLk === "etudiant" && { envoi: ["audio", "video"] as ("audio" | "video")[] }),
+            poste: livekit.posteEcran(profilLk),
           });
           return res.json({ fournisseur: "livekit", moteur: "livekit", url: config.visio.livekitUrl!, jeton: jetonLk, nomAffiche: nomAfficheLk, profil: profilLk } satisfies AccesDaily);
         }

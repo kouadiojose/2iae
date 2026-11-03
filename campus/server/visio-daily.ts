@@ -201,6 +201,7 @@ export function enregistrerVisioDaily(app: Express) {
           nomAffiche,
           profil: profilLk,
           dureeS: profilLk === "etudiant" ? visio.DUREE_MAX_ESSAI_ETUDIANT_S : visio.DUREE_MAX_ESSAI_S,
+          poste: livekit.posteEcran(profilLk),
         });
         return res.json({ fournisseur: "livekit", moteur: "livekit", url: config.visio.livekitUrl!, jeton: jetonLk, nomAffiche, profil: profilLk } satisfies AccesDaily);
       }

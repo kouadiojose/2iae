@@ -22,3 +22,9 @@ export async function copierVersBucket(source: string, cle: string): Promise<{ t
 export const lienReplayBucket = (cle: string, validiteSecondes = 6 * 3600) => replays.lienSigne(cle, { validiteSecondes });
 
 export const supprimerDuBucket = (cle: string) => replays.supprimer(cle);
+
+/** Envoie une vidéo du disque dans le bucket (taille vérifiée) ; renvoie la taille reçue. */
+export const envoyerReplayLocal = (chemin: string, cle: string) => replays.envoyerFichierLocal(chemin, cle, "video/mp4");
+
+/** Premiers octets d'une vidéo du bucket. */
+export const lireDebutReplay = (cle: string, octets: number) => replays.lireDebut(cle, octets);

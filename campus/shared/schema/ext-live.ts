@@ -106,6 +106,8 @@ export const replaysStockes = campusSchema.table(
     archiveLe: timestamp("archive_le", { withTimezone: true }).notNull().defaultNow(),
     /** La copie Daily a été effacée (après le délai de sécurité). */
     dailySupprimeLe: timestamp("daily_supprime_le", { withTimezone: true }),
+    /** Lecture immédiate (index de la vidéo en tête du fichier) : null = pas encore vérifié, false = abandonné. */
+    lectureRapide: boolean("lecture_rapide"),
   },
   (t) => [index("replays_stockes_seance_idx").on(t.seanceId)],
 );

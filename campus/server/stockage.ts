@@ -81,6 +81,12 @@ export function creerBucket(conf: ConfigBucket, nom: string) {
     return { url, expire: new Date(Date.now() + validite * 1000).toISOString() };
   }
 
+  /** Premiers octets d'un objet (repérer le format d'une vidéo sans la télécharger). */
+  async function lireDebut(cle: string, octets: number): Promise<Buffer> {
+    const r = await s3().send(new GetObjectCommand({ Bucket: conf.bucket, Key: cle, Range: `bytes=0-${octets - 1}` }));
+    return Buffer.from(await r.Body!.transformToByteArray());
+  }
+
   /** Contenu entier (fichiers de taille raisonnable : correction par l'IA, PDF d'un profil). */
   async function lire(cle: string): Promise<Buffer> {
     const r = await s3().send(new GetObjectCommand({ Bucket: conf.bucket, Key: cle }));
@@ -111,5 +117,5 @@ export function creerBucket(conf: ConfigBucket, nom: string) {
     );
   }
 
-  return { nom, disponible, taille, envoyerFichierLocal, envoyerDepuisUrl, lienSigne, lire, supprimer, autoriserLectureNavigateur };
+  return { nom, disponible, taille, envoyerFichierLocal, envoyerDepuisUrl, lienSigne, lire, lireDebut, supprimer, autoriserLectureNavigateur };
 }

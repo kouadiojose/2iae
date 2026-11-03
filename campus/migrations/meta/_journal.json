@@ -274,6 +274,13 @@
       "when": 1793649758584,
       "tag": "0038_visio_moteur_cours",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793685945883,
+      "tag": "0039_replays_lecture_rapide",
+      "breakpoints": true
     }
   ]
 }

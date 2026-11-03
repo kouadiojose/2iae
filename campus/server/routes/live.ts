@@ -100,6 +100,7 @@ import * as visio from "../visio";
 import * as livekit from "../visio-livekit";
 import { creerModuleGroupes, noterModeSuivi } from "./live-groupes";
 import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
+import "../replays-lecture-rapide";
 import {
   seances,
   cours,

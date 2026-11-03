@@ -3,15 +3,19 @@
 //  - dans chaque campus, une classe par BTS présenté sur sa fiche et par
 //    année (« Logistique 1BTS · Yopougon », « Logistique 2BTS · Yopougon ») ;
 //  - dans chaque campus, les licences professionnelles (L1, L2, L3) et les
-//    certificats.
+//    certificats ;
+//  - dans chaque campus, une Licence 3 par filière BTS (licence professionnelle
+//    après le BTS : « Logistique L3 · Yopougon »).
+// Toutes les classes de Licence 3 suivent le cours « Initiation à l'IA »
+// (cours commun, comme pour les BTS).
 // Une classe BTS reçoit aussitôt les cours et les sessions d'emploi du temps
 // du « Tronc commun » de même année et de même campus : les cours communs
 // (Initiation à l'IA…) arrivent donc à ses étudiants, alertes comprises.
 // Relançable sans doublon : une classe qui existe déjà (même campus, filière,
 // niveau et année) n'est pas recréée.
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ilike, sql } from "drizzle-orm";
 import { db } from "./db";
-import { classes, coursClasses, classesProgramme, sessionsClasses, journal, LICENCES_PRO, CERTIFICATS, type Utilisateur, type BilanClassesFilieres } from "@shared/schema";
+import { classes, cours, coursClasses, classesProgramme, sessionsClasses, journal, LICENCES_PRO, CERTIFICATS, type Utilisateur, type BilanClassesFilieres } from "@shared/schema";
 import { lireSitePublic } from "./routes/public";
 
 const TRONC_COMMUN = "Tronc commun";
@@ -29,6 +33,7 @@ export async function creerClassesFilieres(u: Pick<Utilisateur, "id">, simulatio
   for (const c of campus) {
     for (const f of c.filieres) {
       for (const niveau of ["1BTS", "2BTS"]) prevues.push({ siteId: c.id, campus: c.nomCourt, nom: `${f.nom} ${niveau} · ${c.nomCourt}`, filiere: f.nom, niveau, bts: true });
+      prevues.push({ siteId: c.id, campus: c.nomCourt, nom: `${f.nom} L3 · ${c.nomCourt}`, filiere: f.nom, niveau: "Licence 3", bts: false });
     }
     for (const l of LICENCES_PRO) {
       for (const n of [1, 2, 3]) prevues.push({ siteId: c.id, campus: c.nomCourt, nom: `${l} L${n} · ${c.nomCourt}`, filiere: l, niveau: `Licence ${n}`, bts: false });
@@ -92,6 +97,17 @@ export async function creerClassesFilieres(u: Pick<Utilisateur, "id">, simulatio
           .returning();
         bilan.liensSessions += r.length;
       }
+    }
+    // Licence 3 (nouvelles ou déjà là) : le cours commun « Initiation à l'IA ».
+    const l3 = await tx.select({ id: classes.id }).from(classes).where(and(eq(classes.anneeScolaire, annee), eq(classes.niveau, "Licence 3")));
+    const ia = await tx.select({ id: cours.id }).from(cours).where(ilike(cours.titre, "%initiation%IA%"));
+    if (l3.length && ia.length) {
+      const r = await tx
+        .insert(coursClasses)
+        .values(ia.flatMap((c) => l3.map((k) => ({ coursId: c.id, classeId: k.id }))))
+        .onConflictDoNothing()
+        .returning();
+      bilan.liensCours += r.length;
     }
     await tx.insert(journal).values({
       utilisateurId: u.id,

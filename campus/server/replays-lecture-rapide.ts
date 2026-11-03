@@ -34,6 +34,7 @@ const DOSSIER = process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RA
 /** Heures (GMT) où la tâche peut démarrer un fichier : le soir et la nuit, hors cours. */
 const heurePermise = (h: number) => h >= 18 || h < 6;
 const echecs = new Map<string, number>();
+let ffmpegVerifie = false;
 let enCours = false;
 
 /** Boîtes MP4 de premier niveau au début du fichier (« ftyp », « moov », « moof »…). */
@@ -57,9 +58,14 @@ export const lectureImmediate = (boites: string[]) => {
   return moov >= 0 && (mdat < 0 || moov < mdat) && !boites.includes("moof") && !boites.includes("styp");
 };
 
-function lancer(ffmpeg: string, args: string[], delaiMs: number): Promise<{ code: number | null; sortie: string }> {
+/** ffmpeg ne se lance pas du tout sur ce serveur (binaire absent ou illisible) : la tâche s'arrête jusqu'au redémarrage. */
+let ffmpegHorsService: string | null = null;
+
+function lancer(ffmpeg: string, args: string[], delaiMs: number): Promise<{ code: number | null; sortie: string; lancement?: string }> {
   return new Promise((ok) => {
+    let lancement: string | undefined;
     const p = spawn(ffmpeg, args, { stdio: ["ignore", "ignore", "pipe"] });
+    p.on("error", (e) => (lancement = `${(e as NodeJS.ErrnoException).code ?? ""} ${e.message}`.trim()));
     try {
       if (p.pid) os.setPriority(p.pid, 15);
     } catch {
@@ -68,9 +74,9 @@ function lancer(ffmpeg: string, args: string[], delaiMs: number): Promise<{ code
     let sortie = "";
     p.stderr.on("data", (d: Buffer) => (sortie = (sortie + d.toString()).slice(-20_000)));
     const minuteur = setTimeout(() => p.kill("SIGKILL"), delaiMs);
-    p.on("close", (code) => {
+    p.on("close", (code, signal) => {
       clearTimeout(minuteur);
-      ok({ code, sortie });
+      ok({ code, sortie: signal && !sortie ? `arrêté (${signal})` : sortie, lancement });
     });
   });
 }
@@ -88,7 +94,21 @@ const marquer = (id: string, valeurs: Partial<typeof replaysStockes.$inferInsert
 export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<string | null> {
   if (enCours || !stockageReplaysDisponible()) return null;
   const ffmpeg = cheminFfmpeg();
-  if (!ffmpeg) return null;
+  if (!ffmpeg || ffmpegHorsService) return null;
+  // Une fois par démarrage : ffmpeg se lance-t-il vraiment ici ?
+  if (ffmpegHorsService === null && !ffmpegVerifie) {
+    try {
+      await fs.promises.chmod(ffmpeg, 0o755).catch(() => undefined);
+    } catch {
+      /* lecture seule */
+    }
+    const v = await lancer(ffmpeg, ["-hide_banner", "-version"], 30_000);
+    if (v.code !== 0) {
+      ffmpegHorsService = v.lancement ?? `code ${v.code} ${v.sortie.slice(0, 200)}`;
+      return `ffmpeg ne se lance pas sur ce serveur (${ffmpegHorsService}) : réécriture des replays arrêtée`;
+    }
+    ffmpegVerifie = true;
+  }
   if (!o.forcer) {
     if (!heurePermise(new Date().getUTCHours())) return null;
     const [direct] = await db.select({ id: seances.id }).from(seances).where(eq(seances.statut, "en_direct")).limit(1);
@@ -121,6 +141,7 @@ export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<str
       ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source, "-map", "0:v?", "-map", "0:a?", "-c", "copy", "-movflags", "+faststart", local],
       4 * 3600_000,
     );
+    if (res.lancement) throw new Error(`ffmpeg ne se lance pas : ${res.lancement}`);
     if (res.code !== 0) throw new Error(`ffmpeg (code ${res.code}) : ${res.sortie.replace(source, "<lien>").split("?X-Amz")[0].slice(-300)}`);
     const { size } = await fs.promises.stat(local);
     const d = await duree(ffmpeg, local);

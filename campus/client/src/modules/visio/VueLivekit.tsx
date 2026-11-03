@@ -480,6 +480,13 @@ export default function VueLivekit(p: {
   const conteneur = useRef<HTMLDivElement>(null);
   const [affichage, setAffichage] = useState({ soiVisible: true, barreVisible: true });
   const [pleinEcran, setPleinEcran] = useState(false);
+  // Micro ou caméra indisponible (autorisation, autre application, casque débranché) : un bandeau, sans couper la visio.
+  const [avisAppareil, setAvisAppareil] = useState<string | null>(null);
+  useEffect(() => {
+    if (!avisAppareil) return;
+    const t = window.setTimeout(() => setAvisAppareil(null), 12_000);
+    return () => window.clearTimeout(t);
+  }, [avisAppareil]);
   useEffect(() => {
     const maj = () => setPleinEcran(document.fullscreenElement === conteneur.current);
     document.addEventListener("fullscreenchange", maj);
@@ -505,19 +512,34 @@ export default function VueLivekit(p: {
         options={OPTIONS_SALLE}
         onConnected={() => p.rappels.current.connecte()}
         onError={(e) => p.rappels.current.erreur({ genre: "reseau", texte: e.message || "La visio n'arrive pas à se connecter.", conseil: null, relancer: false })}
-        onMediaDeviceFailure={() =>
-          p.rappels.current.erreur({
-            genre: "navigateur",
-            texte: p.tu ? "Ton micro ou ta caméra est bloqué." : "Le micro ou la caméra est bloqué.",
-            conseil: p.tu ? "Autorise le micro dans la barre d'adresse, puis recharge la page." : "Autorisez le micro et la caméra dans la barre d'adresse, puis rechargez la page.",
-            relancer: false,
-          })
-        }
+        onMediaDeviceFailure={(echec, genre) => {
+          const quoi = genre === "videoinput" ? (p.tu ? "Ta caméra" : "La caméra") : genre === "audioinput" ? (p.tu ? "Ton micro" : "Le micro") : p.tu ? "Ton micro ou ta caméra" : "Le micro ou la caméra";
+          const pourquoi =
+            echec === "PermissionDenied"
+              ? p.tu
+                ? "est bloqué : autorise-le dans la barre d'adresse."
+                : "est bloqué : autorisez-le dans la barre d'adresse."
+              : echec === "DeviceInUse"
+                ? p.tu
+                  ? "est pris par une autre application : ferme-la, puis touche le bouton pour réessayer."
+                  : "est pris par une autre application (Zoom, Teams…) : fermez-la, puis touchez le bouton pour réessayer."
+                : echec === "NotFound"
+                  ? "est introuvable : vérifiez qu'il est branché."
+                  : p.tu
+                    ? "ne répond pas : touche le bouton pour réessayer."
+                    : "ne répond pas : touchez le bouton pour réessayer.";
+          setAvisAppareil(`${quoi} ${pourquoi}`);
+        }}
         data-lk-theme="default"
         className="flex h-full w-full flex-col"
         // Couleurs posées sur l'élément du thème lui-même (data-lk-theme les redéfinit sinon).
         style={{ ...THEME_SALLE, background: THEME_DAILY.colors.mainAreaBg }}
       >
+        {avisAppareil && (
+          <div role="status" className="mx-1.5 mt-1.5 rounded-xl bg-[#FFF4E5] px-3 py-2 text-[14px] font-semibold text-[#7A3E00]">
+            {avisAppareil}
+          </div>
+        )}
         <div className="min-h-0 flex-1 p-1.5">
           <Scene soiVisible={affichage.soiVisible} barreVisible={affichage.barreVisible} />
         </div>

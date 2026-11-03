@@ -281,6 +281,13 @@
       "when": 1793685945883,
       "tag": "0039_replays_lecture_rapide",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793731303621,
+      "tag": "0040_replays_lecture_rapide_reprise",
+      "breakpoints": true
     }
   ]
 }

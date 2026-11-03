@@ -13,7 +13,7 @@ import { db } from "./db";
 import * as visio from "./visio";
 import { etatTranscriptionWhisper, soumettreTranscriptionWhisper, vttTranscriptionWhisper, whisperDisponible } from "./transcription-whisper";
 import { lienReplayBucket, stockageReplaysDisponible } from "./stockage-replays";
-import { directsImmediats, morceauxReplay, replaysStockes, seances, sousTitres, transcriptionsReplays } from "@shared/schema";
+import { cours, directsImmediats, morceauxReplay, replaysStockes, seances, sousTitres, transcriptionsReplays } from "@shared/schema";
 
 /** On ne transcrit que les séances des 30 derniers jours. */
 const FENETRE_JOURS = 30;
@@ -53,12 +53,28 @@ const PREFIXE_WHISPER = "w:";
 const estWhisper = (travailId: string) => travailId.startsWith(PREFIXE_WHISPER);
 const transcriptionPossible = () => whisperDisponible() || visio.dailyDisponible();
 
+/**
+ * Vocabulaire du cours pour Whisper (« initial prompt ») : titre du cours, de la séance, description et objectifs.
+ * Les noms propres et termes techniques qui y figurent (« Lovable », « Claude »…) sont alors écrits juste.
+ */
+async function vocabulaireDe(enregistrementId: string): Promise<string | undefined> {
+  const [l] = await db
+    .select({ seance: seances.titre, cours: cours.titre, description: cours.description, objectifs: cours.objectifs })
+    .from(replaysStockes)
+    .innerJoin(seances, eq(seances.id, replaysStockes.seanceId))
+    .innerJoin(cours, eq(cours.id, seances.coursId))
+    .where(eq(replaysStockes.enregistrementId, enregistrementId));
+  if (!l) return undefined;
+  const texte = [`Cours « ${l.cours} » : ${l.seance}.`, l.description, l.objectifs].map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
+  return texte.slice(0, 600);
+}
+
 /** Demande la transcription d'un morceau au service disponible (Whisper d'abord, avec la copie du bucket). */
 async function soumettre(enregistrementId: string, forcerBucket = false): Promise<string> {
   if (whisperDisponible()) {
     const source = await sourceDe(enregistrementId, true);
     if (!("uri" in source)) throw new Error("La vidéo de ce morceau n'est pas dans le bucket des replays.");
-    return PREFIXE_WHISPER + (await soumettreTranscriptionWhisper(source.uri));
+    return PREFIXE_WHISPER + (await soumettreTranscriptionWhisper(source.uri, "fr", await vocabulaireDe(enregistrementId)));
   }
   return visio.soumettreTranscriptionDaily(await sourceDe(enregistrementId, forcerBucket));
 }

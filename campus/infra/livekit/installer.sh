@@ -33,7 +33,7 @@ echo "· 2/6 Pare-feu"
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp comment "SSH"
-ufw allow 80/tcp comment "Certificat Let's Encrypt"
+ufw allow 80/tcp comment "Certificat Lets Encrypt"
 ufw allow 443/tcp comment "LiveKit (wss) via Caddy"
 ufw allow 7881/tcp comment "LiveKit WebRTC TCP"
 ufw allow 3478/udp comment "TURN UDP"
@@ -221,7 +221,10 @@ def transcrire(id_, travail):
         if FAUX:
             segments = [type("S", (), {"start": 0.0, "end": 2.0, "text": "Bonjour à tous."})()]
         else:
-            segments, _ = charger_modele().transcribe(son, language=travail.get("langue") or "fr", vad_filter=True, beam_size=1)
+            # Vocabulaire du cours (titre, description) : les noms propres et termes techniques sont écrits juste.
+            segments, _ = charger_modele().transcribe(
+                son, language=travail.get("langue") or "fr", vad_filter=True, beam_size=1, initial_prompt=travail.get("vocabulaire") or None
+            )
         for seg in segments:
             texte = seg.text.strip()
             if texte:
@@ -328,7 +331,8 @@ class Gestion(BaseHTTPRequestHandler):
         if not url.startswith("https://") and not FAUX:
             return self.repondre(400, {"erreur": "url https attendue"})
         id_ = uuid.uuid4().hex
-        ecrire(id_, {"statut": "en_attente", "url": url, "langue": str(corps.get("langue") or "fr")[:5], "cree": time.time()})
+        vocabulaire = str(corps.get("vocabulaire") or "")[:600]
+        ecrire(id_, {"statut": "en_attente", "url": url, "langue": str(corps.get("langue") or "fr")[:5], "vocabulaire": vocabulaire, "cree": time.time()})
         file_travaux.put(id_)
         self.repondre(202, {"id": id_})
 

@@ -26,8 +26,8 @@ async function appel<T>(chemin: string, init: RequestInit = {}): Promise<{ statu
 const erreur = (quoi: string, statut: number, texte: string) => new Error(`Whisper (${quoi}) : HTTP ${statut} ${texte.slice(0, 200)}`);
 
 /** Demande la transcription d'une vidéo (lien signé) ; rend l'identifiant du travail. */
-export async function soumettreTranscriptionWhisper(url: string, langue = "fr"): Promise<string> {
-  const r = await appel<{ id?: string }>("/travaux", { method: "POST", body: JSON.stringify({ url, langue }) });
+export async function soumettreTranscriptionWhisper(url: string, langue = "fr", vocabulaire?: string): Promise<string> {
+  const r = await appel<{ id?: string }>("/travaux", { method: "POST", body: JSON.stringify({ url, langue, ...(vocabulaire && { vocabulaire }) }) });
   if (r.statut >= 300 || !r.donnees?.id) throw erreur("demande", r.statut, r.texte);
   return r.donnees.id;
 }

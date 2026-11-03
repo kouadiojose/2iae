@@ -136,7 +136,7 @@ EOF
 cat >"$DOSSIER/whisper/Dockerfile" <<'EOF'
 FROM python:3.12-slim
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir faster-whisper==1.1.1 requests
+RUN pip install --no-cache-dir faster-whisper==1.1.1 av==18.1.0 requests
 COPY serveur.py /app/serveur.py
 CMD ["python", "-u", "/app/serveur.py"]
 EOF
@@ -150,7 +150,7 @@ API (jeton : en-tête « Authorization: Bearer <TRANSCRIPTION_TOKEN> ») :
   GET  /travaux/<id>/vtt      -> le fichier WebVTT
 Un travail à la fois. Les travaux survivent à un redémarrage (dossier /donnees) et sont effacés après 7 jours.
 """
-import hmac, json, os, queue, re, subprocess, tempfile, threading, time, uuid
+import hmac, json, os, queue, re, subprocess, tempfile, threading, time, uuid, wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 JETON = os.environ.get("TRANSCRIPTION_TOKEN", "")
@@ -194,10 +194,14 @@ def horodatage(t):
 
 
 modele = None
+numpy = None
 
 
 def charger_modele():
-    global modele
+    global modele, numpy
+    if numpy is None:
+        import numpy as _np
+        numpy = _np
     if modele is None and not FAUX:
         from faster_whisper import WhisperModel
         modele = WhisperModel(MODELE, device="cpu", compute_type="int8", cpu_threads=FILS)
@@ -221,10 +225,17 @@ def transcrire(id_, travail):
         if FAUX:
             segments = [type("S", (), {"start": 0.0, "end": 2.0, "text": "Bonjour à tous."})()]
         else:
+            # Son déjà décodé par ffmpeg (16 kHz, mono, 16 bits) : Whisper le reçoit en tableau, sans passer par PyAV
+            # (av 19 a retiré un argument que faster-whisper 1.1.1 lui passe encore).
+            m = charger_modele()
+            with wave.open(son, "rb") as w:
+                audio = numpy.frombuffer(w.readframes(w.getnframes()), dtype=numpy.int16).astype(numpy.float32) / 32768.0
             # Vocabulaire du cours (titre, description) : les noms propres et termes techniques sont écrits juste.
-            segments, _ = charger_modele().transcribe(
-                son, language=travail.get("langue") or "fr", vad_filter=True, beam_size=1, initial_prompt=travail.get("vocabulaire") or None
+            segments, _ = m.transcribe(
+                audio, language=travail.get("langue") or "fr", vad_filter=True, beam_size=1, initial_prompt=travail.get("vocabulaire") or None
             )
+            segments = list(segments)
+            del audio
         for seg in segments:
             texte = seg.text.strip()
             if texte:

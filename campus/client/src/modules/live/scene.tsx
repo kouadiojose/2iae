@@ -265,7 +265,7 @@ function PortraitFormateur({ seance, sousTitre }: { seance: SeanceDetailDto; sou
 // ── Radio : son du formateur + diapo + sous-titres (≈ 12 à 15 Mo/h) ────────
 
 /** Pourquoi on écoute la radio au lieu de la visio Daily. */
-type RaisonSecours = "echec" | "pleine";
+type RaisonSecours = "echec" | "pleine" | "faible";
 
 function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, raisonSecours, radioAuto }: PropsScene & { retourVisio?: () => void; raisonSecours?: RaisonSecours }) {
   const dernier = etat.sousTitres[etat.sousTitres.length - 1];
@@ -275,7 +275,11 @@ function SceneRadio({ seance, etat, role, onConsommationRadio, retourVisio, rais
       {retourVisio && (
         <div className="flex flex-wrap items-center justify-between gap-2 bg-orange px-4 py-2 text-sm font-bold text-encre">
           <span>
-            {raisonSecours === "pleine"
+            {raisonSecours === "faible"
+              ? tu
+                ? "Ta connexion est trop faible pour la vidéo : tu suis en son + diapos, tu entends tout."
+                : "Connexion trop faible pour la vidéo : le son du cours arrive par la radio."
+              : raisonSecours === "pleine"
               ? tu
                 ? "La visio est complète : tu suis en son + diapos, tu entends tout."
                 : "La visio est complète : le son du cours arrive par la radio."
@@ -784,6 +788,9 @@ function SceneDaily({
       onRejoint={() => setConnecte(true)}
       onEtat={onEtatVisio}
       onConsommation={onConsommationVisio}
+      // Étudiant dont la connexion ne tient pas la vidéo (25 s de suite) : il passe en son + diapos, qui tient sur un
+      // petit réseau ; « Réessayer la visio » le ramène quand ça va mieux.
+      onConnexionFaible={role === "etudiant" ? () => onSecoursRadio("faible") : undefined}
       // Étudiant : visio complète (places vidéo prises) ou vidéo des étudiants coupée : il passe tout de suite en son +
       // diapos, et relit les options de la visio (la page ne propose plus la vidéo si la direction l'a coupée entre-temps).
       onEchecs={(_n, probleme) => {

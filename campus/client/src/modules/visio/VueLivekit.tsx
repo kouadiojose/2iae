@@ -31,6 +31,7 @@ import {
   useLocalParticipant,
   useParticipantPermissions,
   useSpeakingParticipants,
+  useParticipants,
   useLocalParticipantPermissions,
   useTrackRefContext,
   isTrackReference,
@@ -45,6 +46,7 @@ import {
   DisconnectReason,
   VideoPresets,
   ConnectionState,
+  ConnectionQuality,
   type Room,
   type RoomOptions,
   type Participant,
@@ -52,7 +54,7 @@ import {
   type LocalVideoTrack,
   ParticipantEvent,
 } from "livekit-client";
-import { LayoutGrid, LayoutPanelTop, Maximize2, Mic, MicOff, Minimize2, Video, VideoOff } from "lucide-react";
+import { LayoutGrid, LayoutPanelTop, Maximize2, Mic, MicOff, Minimize2, PictureInPicture2, Users, Video, VideoOff, X } from "lucide-react";
 import "@livekit/components-styles";
 import type { ParticipantCadre, RoleCadre } from "./CadreDaily";
 import type { ProblemeVisio } from "./daily";
@@ -66,6 +68,8 @@ export type RappelsLivekit = {
   octets: (total: number) => void;
   /** La salle, vue comme un appel Daily (null à la fermeture). */
   appel: (a: AppelLivekit | null) => void;
+  /** Connexion de cet appareil trop faible pour la vidéo depuis un moment (étudiant : bascule en son + diapos). */
+  faible?: () => void;
 };
 
 const OPTIONS_SALLE: RoomOptions = {
@@ -80,6 +84,17 @@ const OPTIONS_SALLE: RoomOptions = {
   },
   videoCaptureDefaults: { resolution: VideoPresets.h720.resolution },
   audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+};
+
+/**
+ * Le formateur envoie une image plus fine (1080p) : ce qu'il montre à la caméra se lit mieux. Le serveur ne la
+ * transmet qu'à qui la reçoit bien (couches 180p, 360p et 720p pour les autres) : aucun surcoût pour les petites
+ * connexions.
+ */
+const OPTIONS_FORMATEUR: RoomOptions = {
+  ...OPTIONS_SALLE,
+  publishDefaults: { ...OPTIONS_SALLE.publishDefaults, videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360, VideoPresets.h720] },
+  videoCaptureDefaults: { resolution: VideoPresets.h1080.resolution },
 };
 
 const profilDe = (p: Participant): string | null => {
@@ -246,13 +261,76 @@ function BoutonCouperMicros({ seanceId }: { seanceId: number }) {
           .finally(() => setEnvoi(false));
       }}
     >
-      <MicOff className="h-4 w-4" /> Couper tous les micros
+      <MicOff className="h-4 w-4" /> Couper les micros
+    </button>
+  );
+}
+
+const LIBELLE_PROFIL: Record<string, string> = { formateur: "Formateur", salle: "Salle", etudiant: "Étudiant", observateur: "Équipe" };
+
+/** Formateur : tous les participants, leur micro et leur caméra, et les mêmes boutons que sur les vignettes. */
+function ListeParticipants({ seanceId, onFermer }: { seanceId: number; onFermer: () => void }) {
+  const participants = useParticipants();
+  const autres = participants
+    .filter((x) => !x.isLocal)
+    .sort((a, b) => (profilDe(a) ?? "").localeCompare(profilDe(b) ?? "") || (a.name ?? "").localeCompare(b.name ?? ""));
+  return (
+    <div
+      role="dialog"
+      aria-label="Participants"
+      style={{ position: "absolute", right: 8, bottom: 64, width: "min(380px, calc(100% - 16px))", maxHeight: "60%", overflowY: "auto", zIndex: 20, borderRadius: 16, background: "rgba(17,24,39,0.97)", color: "#fff", padding: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.4)" }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <strong style={{ fontSize: 15 }}>Participants · {autres.length}</strong>
+        <button type="button" className="lk-button" onClick={onFermer} aria-label="Fermer la liste">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      {autres.length === 0 && <p style={{ fontSize: 14, opacity: 0.8 }}>Personne d'autre pour l'instant.</p>}
+      <ul style={{ display: "flex", flexDirection: "column", gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
+        {autres.map((x) => (
+          <li key={x.identity} style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", borderRadius: 12, background: "rgba(255,255,255,0.06)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14 }}>
+              <span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "Invité"}</span>
+              <span style={{ opacity: 0.7, flexShrink: 0 }}>
+                {LIBELLE_PROFIL[profilDe(x) ?? ""] ?? ""} {x.isMicrophoneEnabled ? "· micro ouvert" : ""}
+              </span>
+            </div>
+            <ReglagesParticipant participant={x} seanceId={seanceId} enLigne />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Image en incrustation (Picture-in-Picture) : la vidéo du formateur (ou du partage d'écran) reste visible en petit
+ * quand on change d'onglet ou d'application. Seulement sur un navigateur qui sait le faire.
+ */
+function BoutonIncrustation({ conteneur }: { conteneur: React.RefObject<HTMLDivElement | null> }) {
+  if (typeof document === "undefined" || !document.pictureInPictureEnabled) return null;
+  const basculer = async () => {
+    try {
+      if (document.pictureInPictureElement) return void (await document.exitPictureInPicture());
+      const videos = [...(conteneur.current?.querySelectorAll("video") ?? [])].filter((v) => v.readyState >= 2 && v.videoWidth > 0);
+      // La plus grande image affichée : le partage d'écran ou l'orateur en grand, sinon la première vignette.
+      const v = videos.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+      if (v) await v.requestPictureInPicture();
+      else toast("Aucune vidéo à mettre en incrustation pour l'instant.", "info");
+    } catch (e) {
+      toastErreur(e);
+    }
+  };
+  return (
+    <button type="button" className="lk-button" onClick={() => void basculer()} title="Incrustation : garder la vidéo en petit par-dessus les autres fenêtres" aria-label="Incrustation">
+      <PictureInPicture2 className="h-4 w-4" />
     </button>
   );
 }
 
 /** Sur la vignette d'un participant, pour le formateur : ouvrir ou fermer son micro et sa caméra. */
-function ReglagesParticipant({ participant, seanceId }: { participant: Participant; seanceId: number }) {
+function ReglagesParticipant({ participant, seanceId, enLigne }: { participant: Participant; seanceId: number; enLigne?: boolean }) {
   const permissions = useParticipantPermissions({ participant });
   const { isMicrophoneEnabled, isCameraEnabled } = useParticipantInfoEtat(participant);
   const sources = permissions?.canPublish ? (permissions.canPublishSources.length ? permissions.canPublishSources : [1, 2]) : [];
@@ -281,7 +359,7 @@ function ReglagesParticipant({ participant, seanceId }: { participant: Participa
     color: "#fff",
   });
   return (
-    <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 5 }}>
+    <div style={enLigne ? { display: "flex", gap: 4, flexWrap: "wrap" } : { position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 5 }}>
       {(etudiant || micro) && (
         <button type="button" style={style(micro)} title={micro ? "Couper son micro" : "Autoriser son micro"} onClick={() => void regler({ micro: !micro })}>
           {micro ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
@@ -503,6 +581,8 @@ function Barre({
   seanceId,
   vue,
   onVue,
+  conteneur,
+  onListe,
 }: {
   micro: boolean;
   camera: boolean;
@@ -512,7 +592,10 @@ function Barre({
   seanceId: number | null;
   vue: Vue;
   onVue: (v: Vue) => void;
+  conteneur: React.RefObject<HTMLDivElement | null>;
+  onListe?: () => void;
 }) {
+  const nbParticipants = useParticipants().length - 1;
   const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled, localParticipant } = useLocalParticipant();
   // Ce que le serveur permet d'envoyer (étudiant : rien tant que le formateur ne l'a pas autorisé).
   const perm = useLocalParticipantPermissions();
@@ -557,9 +640,15 @@ function Barre({
         </TrackToggle>
       )}
       <button type="button" className="lk-button" onClick={() => onVue(vue === "grille" ? "orateur" : "grille")} title="Changer la disposition des vignettes">
-        {vue === "grille" ? <><LayoutPanelTop className="h-4 w-4" /> Vue orateur</> : <><LayoutGrid className="h-4 w-4" /> Mosaïque</>}
+        {vue === "grille" ? <><LayoutPanelTop className="h-4 w-4" /> Orateur</> : <><LayoutGrid className="h-4 w-4" /> Mosaïque</>}
       </button>
       {seanceId && <BoutonCouperMicros seanceId={seanceId} />}
+      {seanceId && onListe && (
+        <button type="button" className="lk-button" onClick={onListe} title="Participants" aria-label="Participants">
+          <Users className="h-4 w-4" /> {nbParticipants > 0 ? nbParticipants : ""}
+        </button>
+      )}
+      <BoutonIncrustation conteneur={conteneur} />
       <button type="button" className="lk-button" onClick={onPleinEcran} aria-label={pleinEcran ? "Quitter le plein écran" : "Plein écran"}>
         {pleinEcran ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
       </button>
@@ -618,6 +707,21 @@ function Ecouteur({
       if (pub.source === Track.Source.ScreenShare) a.emettre("local-screen-share-stopped");
     };
     const surDroits = (_avant: unknown, p: Participant) => maj(p);
+    // Connexion faible 25 s de suite (ou perdue) : le parent décide (l'étudiant passe en son + diapos).
+    let depuisFaible: number | null = null;
+    let minuteurFaible: ReturnType<typeof setTimeout> | undefined;
+    const surQualite = (q: ConnectionQuality, p: Participant) => {
+      if (p !== room.localParticipant) return;
+      if (q === ConnectionQuality.Poor || q === ConnectionQuality.Lost) {
+        if (depuisFaible === null) {
+          depuisFaible = Date.now();
+          minuteurFaible = setTimeout(() => rappels.current.faible?.(), 25_000);
+        }
+      } else {
+        depuisFaible = null;
+        clearTimeout(minuteurFaible);
+      }
+    };
     const surEtat = (etat: ConnectionState) => {
       if (etat === ConnectionState.Reconnecting || etat === ConnectionState.SignalReconnecting) rappels.current.reseau("reconnexion");
       if (etat === ConnectionState.Connected) rappels.current.reseau("connecte");
@@ -626,6 +730,7 @@ function Ecouteur({
       const pb = problemeDeconnexion(raison, tu);
       if (pb) rappels.current.erreur(pb);
     };
+    room.on(RoomEvent.ConnectionQualityChanged, surQualite);
     room
       .on(RoomEvent.ParticipantConnected, arrivee)
       .on(RoomEvent.ParticipantDisconnected, depart)
@@ -656,7 +761,9 @@ function Ecouteur({
         .off(RoomEvent.LocalTrackPublished, localPubliee)
         .off(RoomEvent.LocalTrackUnpublished, localRetiree)
         .off(RoomEvent.ConnectionStateChanged, surEtat)
-        .off(RoomEvent.Disconnected, surDeconnexion);
+        .off(RoomEvent.Disconnected, surDeconnexion)
+        .off(RoomEvent.ConnectionQualityChanged, surQualite);
+      clearTimeout(minuteurFaible);
       appel.current = null;
       rappels.current.appel(null);
     };
@@ -730,6 +837,7 @@ export default function VueLivekit(p: {
   const [affichage, setAffichage] = useState({ soiVisible: true, barreVisible: true });
   const [pleinEcran, setPleinEcran] = useState(false);
   const [vue, setVueEtat] = useState<Vue>(lireVue);
+  const [liste, setListe] = useState(false);
   const setVue = (v: Vue) => {
     setVueEtat(v);
     try {
@@ -767,7 +875,7 @@ export default function VueLivekit(p: {
         connect
         audio={p.microAuDepart}
         video={p.cameraAuDepart}
-        options={OPTIONS_SALLE}
+        options={p.role === "formateur" ? OPTIONS_FORMATEUR : OPTIONS_SALLE}
         onConnected={() => p.rappels.current.connecte()}
         onError={(e) => p.rappels.current.erreur({ genre: "reseau", texte: e.message || "La visio n'arrive pas à se connecter.", conseil: null, relancer: false })}
         onMediaDeviceFailure={(echec, genre) => {
@@ -791,7 +899,7 @@ export default function VueLivekit(p: {
         data-lk-theme="default"
         className="flex h-full w-full flex-col"
         // Couleurs posées sur l'élément du thème lui-même (data-lk-theme les redéfinit sinon).
-        style={{ ...THEME_SALLE, background: THEME_DAILY.colors.mainAreaBg }}
+        style={{ ...THEME_SALLE, background: THEME_DAILY.colors.mainAreaBg, position: "relative" }}
       >
         {avisAppareil && (
           <div role="status" className="mx-1.5 mt-1.5 rounded-xl bg-[#FFF4E5] px-3 py-2 text-[14px] font-semibold text-[#7A3E00]">
@@ -803,7 +911,19 @@ export default function VueLivekit(p: {
           <Scene soiVisible={affichage.soiVisible} barreVisible={affichage.barreVisible} vue={vue} />
           </ContexteRegie.Provider>
         </div>
-        {(micro || camera || ecran) && <Barre micro={micro} camera={camera} ecran={ecran} pleinEcran={pleinEcran} onPleinEcran={basculerPleinEcran} seanceId={regie} vue={vue} onVue={setVue} />}
+        <Barre
+          micro={micro}
+          camera={camera}
+          ecran={ecran}
+          pleinEcran={pleinEcran}
+          onPleinEcran={basculerPleinEcran}
+          seanceId={regie}
+          vue={vue}
+          onVue={setVue}
+          conteneur={conteneur}
+          onListe={regie ? () => setListe((v) => !v) : undefined}
+        />
+        {regie && liste && <ListeParticipants seanceId={regie} onFermer={() => setListe(false)} />}
         <RoomAudioRenderer />
         <Ecouteur rappels={p.rappels} micro={p.micro} camera={p.camera} tu={p.tu} surAffichage={(o) => setAffichage((a) => ({ ...a, ...o }))} />
       </LiveKitRoom>

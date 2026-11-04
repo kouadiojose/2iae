@@ -92,6 +92,8 @@ export type PropsCadreDaily = {
   onParticipants?: (liste: ParticipantCadre[]) => void;
   /** Octets reçus (total cumulé), mesurés par Daily. */
   onConsommation?: (octets: number) => void;
+  /** Nouvelle visio : la connexion de cet appareil est trop faible pour la vidéo depuis un moment. */
+  onConnexionFaible?: () => void;
   /** L'appel en cours (null à la fermeture), pour les actions du formateur. */
   onAppel?: (call: DailyCall | null) => void;
   /** Nombre d'échecs consécutifs (le parent propose sa bascule à partir de 2). */
@@ -248,6 +250,7 @@ export function CadreDaily(p: PropsCadreDaily) {
           octets: (n) => !annule && rappels.current.onConsommation?.(n),
           // La salle LiveKit se présente comme un appel Daily : le Studio et l'écran de salle gardent leurs fonctions.
           appel: (a) => !annule && rappels.current.onAppel?.(a as unknown as DailyCall | null),
+          faible: () => !annule && rappels.current.onConnexionFaible?.(),
         };
         setLivekit(acces);
         return;

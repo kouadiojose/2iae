@@ -110,6 +110,21 @@ const RENTREE_COURS_IA = {
   },
 };
 
+const VIDEO_PRIX_ICS = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "Prix spéciaux panafricains ICS 2025-2026 : la remise au Groupe 2IAE et à Séraphin Koua",
+  description:
+    "Le 31 octobre 2026 à l'Ivotel (Abidjan-Plateau), l'Interafricaine de communication et de sondages remet au Groupe 2IAE le prix de la Meilleure école de formation et à son fondateur Séraphin Koua celui du Meilleur dirigeant des grandes écoles.",
+  thumbnailUrl: [SITE + "/videos/prix-ics-2026/remise-des-prix-poster.jpg"],
+  contentUrl: SITE + "/videos/prix-ics-2026/remise-des-prix.mp4",
+  uploadDate: "2026-11-04",
+  duration: "PT2M27S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: { "@type": "Organization", name: "Groupe Écoles 2IAE International", url: SITE },
+};
+
 const VIDEO_TP_SINFRA = {
   "@context": "https://schema.org",
   "@type": "VideoObject",
@@ -190,6 +205,13 @@ const PAGES: Record<string, MetaPage> = {
       "Samedi 17 octobre 2026, les premières années des campus d'Abidjan (Yopougon, Riviera Palmeraie) et d'Azaguié en immersion à l'Université de l'Entrepreneuriat d'Azaguié : production végétale, production animale, bâtiment. L'apprentissage par compétences, sur le terrain.",
     image: SITE + "/images/tp-azaguie-2026/p06.jpg",
     jsonLd: [filAriane("Travaux pratiques à Azaguié", "/travaux-pratiques-azaguie"), VIDEO_TP_AZAGUIE],
+  },
+  "/prix-ics-2026": {
+    titre: "Prix ICS 2025-2026 : 2IAE Meilleure école de formation, Séraphin Koua Meilleur dirigeant | Groupe 2IAE",
+    description:
+      "Le Groupe 2IAE reçoit le Prix spécial panafricain ICS 2025-2026 de la Meilleure école de formation, et son fondateur Séraphin Koua celui du Meilleur dirigeant des grandes écoles. Remise le 31 octobre 2026 à l'Ivotel, Abidjan-Plateau.",
+    image: SITE + "/images/prix-ics-2026/p01.jpg",
+    jsonLd: [filAriane("Prix ICS 2025-2026", "/prix-ics-2026"), VIDEO_PRIX_ICS],
   },
   "/travaux-pratiques-sinfra": {
     titre: "Travaux pratiques à Sinfra : les étudiants de Yamoussoukro dans les serres de l'école | Groupe 2IAE",

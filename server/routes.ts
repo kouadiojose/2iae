@@ -309,7 +309,7 @@ CONTACT (les SEULS numéros à communiquer):
 - WhatsApp : (+225) 07 47 72 67 29 et (+225) 05 84 24 90 90
 - Préinscription en ligne (2 minutes, gratuite, sans engagement) : www.2iae.com/preinscription — un conseiller rappelle pour finaliser le dossier.
 
-DISTINCTION RÉCENTE : le 9 septembre 2026, le fondateur Séraphin Koua a reçu le Prix du Meilleur Fondateur, décerné par la structure Excel Ados au Palm Club de Cocody, en présence du Sous-Directeur de l'Enseignement supérieur et de la presse nationale (RTI, Business 24).
+DISTINCTIONS RÉCENTES : le 31 octobre 2026, à l'Ivotel (Abidjan-Plateau), l'Interafricaine de communication et de sondages (ICS) a remis au Groupe 2IAE le Prix spécial panafricain ICS 2025-2026 de la Meilleure école de formation (pour la qualité de la formation et les résultats obtenus), et à son fondateur Séraphin Koua celui du Meilleur dirigeant des grandes écoles. Détails : www.2iae.com/prix-ics-2026. Auparavant, le 9 septembre 2026, le fondateur Séraphin Koua a reçu le Prix du Meilleur Fondateur, décerné par la structure Excel Ados au Palm Club de Cocody, en présence du Sous-Directeur de l'Enseignement supérieur et de la presse nationale (RTI, Business 24).
 
 CLASSEMENT OFFICIEL DE L'ÉTAT (argument massue, incontestable):
 - Au dernier classement officiel des grandes écoles publié par le MESRS (Ministère de l'Enseignement Supérieur), portant sur le BTS 2022, 2IFE-2IAE Azaguié est classée 5e GRANDE ÉCOLE DE TOUTE LA CÔTE D'IVOIRE avec 94,44 % de réussite — devant l'ISFOP, l'ESSECT Poincaré Cocody et l'École Centrale d'Abidjan. Tableau complet : www.2iae.com/resultats-bts-2026.
@@ -477,6 +477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `- [Université de l'Entrepreneuriat d'Azaguié](${SITE_URL}/universite-entrepreneuriat) : campus agro-pastoral avec internat.`,
         `- [Journée de travaux pratiques à Azaguié](${SITE_URL}/travaux-pratiques-azaguie) : 17 octobre 2026, les premières années en immersion (production végétale et animale, bâtiment) selon l'apprentissage par compétences.`,
         `- [Journée de travaux pratiques à Sinfra](${SITE_URL}/travaux-pratiques-sinfra) : 17 octobre 2026, les étudiants du campus de Yamoussoukro dans les serres de l'école, au Centre de développement du vivrier de Sinfra.`,
+        `- [Prix spéciaux panafricains ICS 2025-2026](${SITE_URL}/prix-ics-2026) : le Groupe 2IAE Meilleure école de formation, son fondateur Séraphin Koua Meilleur dirigeant des grandes écoles (remise le 31 octobre 2026).`,
         `- [Campus numérique](${SITE_URL}/campus-numerique) : un même formateur enseigne en direct aux salles de conférence des 5 campus et aux étudiants connectés depuis leur téléphone ; cours annoncés, formateurs et prochains lives.`,
       ].join("\n"),
     );
@@ -499,6 +500,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ["/universite-entrepreneuriat", "monthly", "0.7"],
         ["/travaux-pratiques-azaguie", "monthly", "0.7"],
         ["/travaux-pratiques-sinfra", "monthly", "0.7"],
+        ["/prix-ics-2026", "monthly", "0.8"],
         ["/historique", "yearly", "0.5"],
         ["/objectifs", "yearly", "0.5"],
         ["/nous-trouver", "monthly", "0.6"],

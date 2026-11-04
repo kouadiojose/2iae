@@ -45,6 +45,7 @@ import TemoignagesPage from "@/pages/temoignages";
 import Resultats2026Page from "@/pages/resultats-2026";
 import TravauxPratiquesAzaguiePage from "@/pages/travaux-pratiques-azaguie";
 import TravauxPratiquesSinfraPage from "@/pages/travaux-pratiques-sinfra";
+import PrixIcs2026Page from "@/pages/prix-ics-2026";
 import CampusNumeriquePage from "@/pages/campus-numerique";
 import CampusNumeriqueCoursPage from "@/pages/campus-numerique-cours";
 import CampusNumeriqueFormateurPage from "@/pages/campus-numerique-formateur";
@@ -296,6 +297,11 @@ function Router() {
       <Route path="/travaux-pratiques-azaguie">
         <PublicLayout>
           <TravauxPratiquesAzaguiePage />
+        </PublicLayout>
+      </Route>
+      <Route path="/prix-ics-2026">
+        <PublicLayout>
+          <PrixIcs2026Page />
         </PublicLayout>
       </Route>
       <Route path="/travaux-pratiques-sinfra">

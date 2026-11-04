@@ -16,7 +16,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { config } from "../config";
-import { exigerRole, exigerDroit, equipeAvecDroit, moi, hacher, codeSecretAcceptable, longueurMinimale, perimetreSites, verifierTentatives, noterEchec, versMoi, oublierUtilisateur, dureeSession } from "../auth";
+import { exigerConnexion, exigerRole, exigerDroit, equipeAvecDroit, moi, hacher, codeSecretAcceptable, longueurMinimale, perimetreSites, verifierTentatives, noterEchec, versMoi, oublierUtilisateur, dureeSession } from "../auth";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { notifier } from "../notifications";
 import { emailDisponible, nomAffiche } from "../mail";
@@ -35,6 +35,7 @@ import {
   coursClasses,
   seances,
   cours,
+  passagesClasses,
   type Utilisateur,
   type InfoInscriptionEtudiantDto,
   type InscriptionEtudiantFaite,
@@ -312,7 +313,45 @@ async function creerCompte(req: Request, res: Response, l: { id: number; siteId:
       res.status(201).json(r);
 }
 
+/** Un nouvel étudiant corrige lui-même sa classe pendant ses 30 premiers jours (trois fois au plus). */
+const JOURS_CORRECTION_CLASSE = 30;
+const CORRECTIONS_CLASSE_MAX = 3;
+
 export function enregistrerInscriptionEtudiants(app: Express) {
+  // L'étudiant s'est inscrit dans une classe qui n'est pas la sienne (sa filière n'était pas encore proposée) : il la
+  // corrige lui-même, parmi les classes de l'inscription, sans passer par la vie scolaire (qui est prévenue).
+  app.post(
+    "/api/compte/classe",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "etudiant") throw interdit("Seul un étudiant choisit sa classe.");
+      if (Date.now() - u.creeLe.getTime() > JOURS_CORRECTION_CLASSE * 24 * 3600_000) {
+        throw interdit("Ton compte a plus d'un mois : pour changer de classe, demande à la vie scolaire de ton campus.");
+      }
+      const { classeId } = valider(z.object({ classeId: z.number().int().positive("choisis ta classe") }), req.body);
+      if (classeId === u.classeId) return res.json(await versMoi(u));
+      const [deja] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(journal)
+        .where(and(eq(journal.utilisateurId, u.id), eq(journal.action, "classe_corrigee_par_etudiant")));
+      if ((deja?.n ?? 0) >= CORRECTIONS_CLASSE_MAX) throw interdit("Tu as déjà changé de classe trois fois : demande à la vie scolaire de ton campus.");
+      const ouvertes = await classesInscription(null);
+      const classe = ouvertes.find((c) => c.id === classeId);
+      if (!classe) throw invalide("Choisis ta classe dans la liste.");
+      await db.transaction(async (tx) => {
+        await tx.update(utilisateurs).set({ classeId: classe.id, siteId: classe.siteId }).where(eq(utilisateurs.id, u.id));
+        const [connu] = await tx.select({ id: passagesClasses.id }).from(passagesClasses).where(eq(passagesClasses.utilisateurId, u.id)).limit(1);
+        if (!connu) await tx.insert(passagesClasses).values({ utilisateurId: u.id, classeId: u.classeId, depuis: u.creeLe });
+        await tx.insert(passagesClasses).values({ utilisateurId: u.id, classeId: classe.id, depuis: new Date() });
+        await tx.insert(journal).values({ utilisateurId: u.id, action: "classe_corrigee_par_etudiant", details: { de: u.classeId, vers: classe.id } });
+      });
+      oublierUtilisateur(u.id);
+      const [maj] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, u.id));
+      res.json(await versMoi(maj));
+    }),
+  );
+
   // ── Direction et vie scolaire : les liens ─────────────────────────────────
   app.get(
     P,

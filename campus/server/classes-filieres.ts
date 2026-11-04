@@ -6,14 +6,15 @@
 //    certificats ;
 //  - dans chaque campus, une Licence 3 par filière BTS (licence professionnelle
 //    après le BTS : « Logistique L3 · Yopougon »).
-// Toutes les classes de Licence 3 suivent le cours « Initiation à l'IA »
-// (cours commun, comme pour les BTS).
+// Licences et BTS ne se mélangent pas : les classes de licence (L1 à L3)
+// suivent leur propre cours d'initiation à l'IA (« IA-LIC », copie du cours des
+// BTS, même formateur), et plus le cours des BTS.
 // Une classe BTS reçoit aussitôt les cours et les sessions d'emploi du temps
 // du « Tronc commun » de même année et de même campus : les cours communs
 // (Initiation à l'IA…) arrivent donc à ses étudiants, alertes comprises.
 // Relançable sans doublon : une classe qui existe déjà (même campus, filière,
 // niveau et année) n'est pas recréée.
-import { and, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { classes, cours, coursClasses, classesProgramme, sessionsClasses, journal, LICENCES_PRO, CERTIFICATS, type Utilisateur, type BilanClassesFilieres } from "@shared/schema";
 import { lireSitePublic } from "./routes/public";
@@ -98,17 +99,7 @@ export async function creerClassesFilieres(u: Pick<Utilisateur, "id">, simulatio
         bilan.liensSessions += r.length;
       }
     }
-    // Licence 3 (nouvelles ou déjà là) : le cours commun « Initiation à l'IA ».
-    const l3 = await tx.select({ id: classes.id }).from(classes).where(and(eq(classes.anneeScolaire, annee), eq(classes.niveau, "Licence 3")));
-    const ia = await tx.select({ id: cours.id }).from(cours).where(ilike(cours.titre, "%initiation%IA%"));
-    if (l3.length && ia.length) {
-      const r = await tx
-        .insert(coursClasses)
-        .values(ia.flatMap((c) => l3.map((k) => ({ coursId: c.id, classeId: k.id }))))
-        .onConflictDoNothing()
-        .returning();
-      bilan.liensCours += r.length;
-    }
+    bilan.liensCours += await separerLicences(tx, annee);
     await tx.insert(journal).values({
       utilisateurId: u.id,
       action: "classes_filieres_creees",
@@ -116,6 +107,51 @@ export async function creerClassesFilieres(u: Pick<Utilisateur, "id">, simulatio
     });
   });
   return bilan;
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+const CODE_IA_LICENCE = "IA-LIC";
+
+/**
+ * Le cours d'initiation à l'IA des licences (créé au besoin d'après celui des BTS), rattaché aux seules classes de
+ * licence de l'année ; les classes de licence quittent le cours des BTS. Renvoie le nombre de rattachements ajoutés.
+ */
+async function separerLicences(tx: Tx, annee: string): Promise<number> {
+  const licences = await tx.select({ id: classes.id }).from(classes).where(and(eq(classes.anneeScolaire, annee), ilike(classes.niveau, "Licence%")));
+  if (!licences.length) return 0;
+  let [lic] = await tx.select().from(cours).where(eq(cours.code, CODE_IA_LICENCE));
+  const [base] = await tx
+    .select()
+    .from(cours)
+    .where(and(ne(cours.code, CODE_IA_LICENCE), or(eq(cours.code, "IA-101"), ilike(cours.titre, "%initiation%intelligence artificielle%"), ilike(cours.titre, "initiation à l'IA%"))))
+    .orderBy(cours.id)
+    .limit(1);
+  if (!lic) {
+    if (!base) return 0;
+    [lic] = await tx
+      .insert(cours)
+      .values({
+        code: CODE_IA_LICENCE,
+        slug: `${base.slug}-licence`,
+        titre: `${base.titre} · Licence`,
+        description: base.description,
+        objectifs: base.objectifs,
+        imageUrl: base.imageUrl,
+        couleur: base.couleur,
+        formateurId: base.formateurId,
+        statut: base.statut,
+        mediatheque: base.mediatheque,
+      })
+      .returning();
+  }
+  const ids = licences.map((l) => l.id);
+  if (base) await tx.delete(coursClasses).where(and(eq(coursClasses.coursId, base.id), inArray(coursClasses.classeId, ids)));
+  const r = await tx
+    .insert(coursClasses)
+    .values(ids.map((classeId) => ({ coursId: lic.id, classeId })))
+    .onConflictDoNothing()
+    .returning();
+  return r.length;
 }
 
 /** Filière « Tronc commun » : masquée à l'inscription d'un campus qui a ses classes de filières BTS. */

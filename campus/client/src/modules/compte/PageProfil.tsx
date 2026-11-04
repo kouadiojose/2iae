@@ -16,6 +16,7 @@ import { Agenda } from "./composants/profil/Agenda";
 import { Charte, Securite } from "./composants/profil/Securite";
 import { FicheSite } from "./composants/profil/FicheSite";
 import { Section } from "./composants/profil/Section";
+import { MaClasse, peutCorrigerClasse } from "./composants/profil/MaClasse";
 import { BellRing, Film, Globe } from "lucide-react";
 import { t as texteRelances } from "@shared/textes/relances";
 import { ChoixFuseau } from "@/modules/visio";
@@ -60,6 +61,7 @@ export default function PageProfil() {
         </aside>
         <div className="flex min-w-0 flex-col gap-5">
           <Coordonnees moi={moi} />
+          {peutCorrigerClasse(moi) && <MaClasse moi={moi} />}
           {moi.role === "formateur" && <FicheSite moi={moi} />}
           {/* Module showreel : la présentation animée de 30 secondes du formateur. */}
           {moi.role === "formateur" && (

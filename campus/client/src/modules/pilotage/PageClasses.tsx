@@ -60,7 +60,11 @@ export default function PageClasses() {
     setFilieresEnCours(true);
     try {
       const sim = await post<BilanClassesFilieres>("/api/pilotage/classes/filieres", { simulation: true });
-      if (!sim.creees.length) return toast("Toutes les classes des filières existent déjà.", "info");
+      if (!sim.creees.length) {
+        // Toutes les classes existent : on remet seulement les cours des licences en ordre (cours propre aux licences).
+        const r = await post<BilanClassesFilieres>("/api/pilotage/classes/filieres", { simulation: false });
+        return toast(r.liensCours ? `Toutes les classes existent déjà · ${pluriel(r.liensCours, "cours rattaché", "cours rattachés")}.` : "Toutes les classes des filières existent déjà.", "info");
+      }
       const parCampus = [...new Set(sim.creees.map((c) => c.campus))].map((campus) => `${campus} : ${sim.creees.filter((c) => c.campus === campus).length}`).join(", ");
       const confirme = window.confirm(
         `Créer ${sim.creees.length} classes pour ${sim.anneeScolaire} (${parCampus}) ?\n\nUne classe par BTS de chaque campus et par année, plus les licences (L1 à L3) et les certificats. Chaque classe BTS reçoit les cours et l'emploi du temps du tronc commun de son année.`,

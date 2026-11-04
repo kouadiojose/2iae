@@ -7,7 +7,7 @@
 // serveur) ; la durée maximale d'une visite est la durée de vie du jeton à l'entrée, et les sorties forcées
 // passent par removeParticipant.
 import { randomBytes } from "node:crypto";
-import { AccessToken, RoomServiceClient, TrackSource, EgressClient, EgressStatus, EncodedFileOutput, EncodedFileType, EncodingOptionsPreset, S3Upload } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient, TrackSource, TrackType, EgressClient, EgressStatus, EncodedFileOutput, EncodedFileType, EncodingOptionsPreset, S3Upload } from "livekit-server-sdk";
 import { S3Client, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import type { ProfilDaily } from "@shared/schema";
 import { config } from "./config";
@@ -121,6 +121,62 @@ export async function sortirDeSalleLivekit(salle: string, utilisateurId: number)
   } catch {
     return false;
   }
+}
+
+const profilParticipant = (metadata: string | undefined): string | null => {
+  try {
+    return JSON.parse(metadata || "{}").profil ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Le formateur autorise (ou retire) le micro et la caméra d'un compte dans la salle : tous ses appareils. Retirer coupe
+ * aussi ce qu'il envoyait. Renvoie le nombre d'appareils réglés.
+ */
+export async function reglerEnvoiLivekit(salle: string, utilisateurId: number, o: { micro?: boolean; camera?: boolean }): Promise<number> {
+  const liste = await salles().listParticipants(salle).catch(() => []);
+  let n = 0;
+  for (const p of liste.filter((x) => compteDeIdentite(x.identity) === utilisateurId)) {
+    const actuelles = p.permission?.canPublish ? (p.permission.canPublishSources.length ? p.permission.canPublishSources : [TrackSource.CAMERA, TrackSource.MICROPHONE]) : [];
+    const sources = new Set(actuelles);
+    if (o.micro !== undefined) o.micro ? sources.add(TrackSource.MICROPHONE) : sources.delete(TrackSource.MICROPHONE);
+    if (o.camera !== undefined) o.camera ? sources.add(TrackSource.CAMERA) : sources.delete(TrackSource.CAMERA);
+    // Couper d'abord ce qui part déjà (retirer la permission n'arrête pas forcément une piste publiée).
+    for (const t of p.tracks) {
+      const micro = t.type === TrackType.AUDIO && t.source !== TrackSource.SCREEN_SHARE_AUDIO;
+      const camera = t.type === TrackType.VIDEO && t.source === TrackSource.CAMERA;
+      if ((micro && o.micro === false) || (camera && o.camera === false)) await salles().mutePublishedTrack(salle, p.identity, t.sid, true).catch(() => undefined);
+    }
+    const liste2 = [...sources];
+    await salles().updateParticipant(salle, p.identity, {
+      permission: { canSubscribe: true, canPublishData: true, canPublish: liste2.length > 0, canPublishSources: liste2, hidden: p.permission?.hidden ?? false },
+    });
+    n++;
+  }
+  return n;
+}
+
+/**
+ * « Couper tous les micros » : tous les micros sauf ceux des formateurs. Les étudiants perdent aussi le droit de le
+ * rallumer (le formateur le leur redonne) ; les écrans de salle peuvent le rallumer pour parler.
+ */
+export async function couperMicrosLivekit(salle: string): Promise<number> {
+  const liste = await salles().listParticipants(salle).catch(() => []);
+  let n = 0;
+  for (const p of liste) {
+    const profil = profilParticipant(p.metadata);
+    if (profil === "formateur") continue;
+    for (const t of p.tracks) {
+      if (t.type === TrackType.AUDIO && t.source !== TrackSource.SCREEN_SHARE_AUDIO && !t.muted) {
+        await salles().mutePublishedTrack(salle, p.identity, t.sid, true).catch(() => undefined);
+        n++;
+      }
+    }
+    if (profil === "etudiant") await reglerEnvoiLivekit(salle, compteDeIdentite(p.identity), { micro: false }).catch(() => undefined);
+  }
+  return n;
 }
 
 /** Ferme une salle : tout le monde sort. */

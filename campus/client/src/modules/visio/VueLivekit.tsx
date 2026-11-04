@@ -13,7 +13,9 @@
 // Réseaux faibles : simulcast (trois tailles de vidéo envoyées), adaptiveStream (chaque vignette reçoit la taille
 // qu'elle affiche) et dynacast (une taille que personne ne regarde n'est plus envoyée). Le serveur baisse la qualité
 // puis met la vidéo en pause avant de toucher au son (congestion_control, campus/infra/livekit/installer.sh).
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
+import { post } from "@/lib/api";
+import { toast, toastErreur } from "@/components/ui/toast";
 import {
   LiveKitRoom,
   GridLayout,
@@ -27,6 +29,8 @@ import {
   useTracks,
   useRoomContext,
   useLocalParticipant,
+  useParticipantPermissions,
+  useLocalParticipantPermissions,
   useTrackRefContext,
   isTrackReference,
   VideoTrack,
@@ -45,8 +49,9 @@ import {
   type Participant,
   type TrackPublication,
   type LocalVideoTrack,
+  ParticipantEvent,
 } from "livekit-client";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Mic, MicOff, Minimize2, Video, VideoOff } from "lucide-react";
 import "@livekit/components-styles";
 import type { ParticipantCadre, RoleCadre } from "./CadreDaily";
 import type { ProblemeVisio } from "./daily";
@@ -221,12 +226,98 @@ function problemeDeconnexion(raison: DisconnectReason | undefined, tu: boolean):
 }
 
 /** Contenu d'une vignette, en français : image (ou silhouette), nom, micro coupé, qualité du réseau. */
+/** Séance animée par ce formateur (nouvelle visio) : il règle micros et caméras des participants. Sinon null. */
+const ContexteRegie = createContext<number | null>(null);
+
+function BoutonCouperMicros({ seanceId }: { seanceId: number }) {
+  const [envoi, setEnvoi] = useState(false);
+  return (
+    <button
+      type="button"
+      className="lk-button"
+      disabled={envoi}
+      title="Coupe le micro de tous les participants, sauf le vôtre"
+      onClick={() => {
+        setEnvoi(true);
+        post<{ micros: number }>(`/api/seances/${seanceId}/visio/couper-micros`, {})
+          .then((r) => toast(r.micros ? `${r.micros} micro${r.micros > 1 ? "s" : ""} coupé${r.micros > 1 ? "s" : ""}.` : "Tous les micros étaient déjà coupés.", "info"))
+          .catch(toastErreur)
+          .finally(() => setEnvoi(false));
+      }}
+    >
+      <MicOff className="h-4 w-4" /> Couper tous les micros
+    </button>
+  );
+}
+
+/** Sur la vignette d'un participant, pour le formateur : ouvrir ou fermer son micro et sa caméra. */
+function ReglagesParticipant({ participant, seanceId }: { participant: Participant; seanceId: number }) {
+  const permissions = useParticipantPermissions({ participant });
+  const { isMicrophoneEnabled, isCameraEnabled } = useParticipantInfoEtat(participant);
+  const sources = permissions?.canPublish ? (permissions.canPublishSources.length ? permissions.canPublishSources : [1, 2]) : [];
+  const microPermis = sources.includes(2);
+  const cameraPermis = sources.includes(1);
+  const profil = profilDe(participant);
+  const etudiant = profil === "etudiant";
+  const utilisateurId = Number(participant.identity.split("~")[0]);
+  const regler = (o: { micro?: boolean; camera?: boolean }) =>
+    post(`/api/seances/${seanceId}/visio/envoi`, { utilisateurId, ...o }).catch(toastErreur);
+  // Étudiant : le formateur autorise ou retire. Écran de salle, équipe : seulement couper ce qui part.
+  const micro = etudiant ? microPermis : isMicrophoneEnabled;
+  const camera = etudiant ? cameraPermis : isCameraEnabled;
+  if (!Number.isFinite(utilisateurId) || profil === "formateur") return null;
+  const style = (actif: boolean): CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    border: "none",
+    cursor: "pointer",
+    background: actif ? "rgba(228,121,58,0.95)" : "rgba(17,24,39,0.8)",
+    color: "#fff",
+  });
+  return (
+    <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 5 }}>
+      {(etudiant || micro) && (
+        <button type="button" style={style(micro)} title={micro ? "Couper son micro" : "Autoriser son micro"} onClick={() => void regler({ micro: !micro })}>
+          {micro ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+          {etudiant ? (micro ? "Micro autorisé" : "Autoriser le micro") : "Couper le micro"}
+        </button>
+      )}
+      {(etudiant || camera) && (
+        <button type="button" style={style(camera)} title={camera ? "Couper sa caméra" : "Autoriser sa caméra"} onClick={() => void regler({ camera: !camera })}>
+          {camera ? <Video className="h-3.5 w-3.5" /> : <VideoOff className="h-3.5 w-3.5" />}
+          {etudiant ? (camera ? "Caméra autorisée" : "Autoriser la caméra") : "Couper la caméra"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Micro et caméra allumés d'un participant, tenus à jour (événements de pistes). */
+function useParticipantInfoEtat(participant: Participant) {
+  const [etat, setEtat] = useState({ isMicrophoneEnabled: participant.isMicrophoneEnabled, isCameraEnabled: participant.isCameraEnabled });
+  useEffect(() => {
+    const maj = () => setEtat({ isMicrophoneEnabled: participant.isMicrophoneEnabled, isCameraEnabled: participant.isCameraEnabled });
+    const evts = [ParticipantEvent.TrackMuted, ParticipantEvent.TrackUnmuted, ParticipantEvent.TrackPublished, ParticipantEvent.TrackUnpublished] as const;
+    evts.forEach((e) => participant.on(e, maj));
+    maj();
+    return () => evts.forEach((e) => participant.off(e, maj));
+  }, [participant]);
+  return etat;
+}
+
 function Vignette() {
   const ref = useTrackRefContext();
+  const regie = useContext(ContexteRegie);
   const ecran = ref.source === Track.Source.ScreenShare;
   const nom = ref.participant.name || "Invité";
   return (
     <>
+      {regie && !ecran && !ref.participant.isLocal && <ReglagesParticipant participant={ref.participant} seanceId={regie} />}
       {isTrackReference(ref) && ref.publication.track && !ref.publication.isMuted ? <VideoTrack trackRef={ref} /> : <ParticipantPlaceholder />}
       <div className="lk-participant-metadata">
         <div className="lk-participant-metadata-item">
@@ -354,8 +445,36 @@ function BoutonFlou() {
   );
 }
 
-function Barre({ micro, camera, ecran, pleinEcran, onPleinEcran }: { micro: boolean; camera: boolean; ecran: boolean; pleinEcran: boolean; onPleinEcran: () => void }) {
-  const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled } = useLocalParticipant();
+function Barre({
+  micro,
+  camera,
+  ecran,
+  pleinEcran,
+  onPleinEcran,
+  seanceId,
+}: {
+  micro: boolean;
+  camera: boolean;
+  ecran: boolean;
+  pleinEcran: boolean;
+  onPleinEcran: () => void;
+  seanceId: number | null;
+}) {
+  const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled, localParticipant } = useLocalParticipant();
+  // Ce que le serveur permet d'envoyer (étudiant : rien tant que le formateur ne l'a pas autorisé).
+  const perm = useLocalParticipantPermissions();
+  const sources = perm ? (perm.canPublish ? (perm.canPublishSources.length ? perm.canPublishSources : [1, 2]) : []) : [1, 2];
+  const microPermis = sources.includes(2);
+  const cameraPermis = sources.includes(1);
+  // Autorisation reçue du formateur : micro et caméra s'allument tout seuls (comme quand il donne la parole).
+  const avant = useRef({ micro: microPermis, camera: cameraPermis });
+  useEffect(() => {
+    if (microPermis && !avant.current.micro && micro) void localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
+    if (cameraPermis && !avant.current.camera) void localParticipant.setCameraEnabled(true).catch(() => undefined);
+    avant.current = { micro: microPermis, camera: cameraPermis };
+  }, [microPermis, cameraPermis, micro, localParticipant]);
+  micro = micro && microPermis;
+  camera = (camera || cameraPermis) && cameraPermis;
   return (
     <div className="lk-control-bar" style={{ justifyContent: "center", flexWrap: "wrap", gap: "0.4rem", padding: "0.5rem", borderTop: `1px solid ${THEME_DAILY.colors.border}` }}>
       {micro && (
@@ -384,6 +503,7 @@ function Barre({ micro, camera, ecran, pleinEcran, onPleinEcran }: { micro: bool
           {isScreenShareEnabled ? "Arrêter le partage" : "Partager"}
         </TrackToggle>
       )}
+      {seanceId && <BoutonCouperMicros seanceId={seanceId} />}
       <button type="button" className="lk-button" onClick={onPleinEcran} aria-label={pleinEcran ? "Quitter le plein écran" : "Plein écran"}>
         {pleinEcran ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
       </button>
@@ -547,8 +667,10 @@ export default function VueLivekit(p: {
   cameraAuDepart: boolean;
   microAuDepart: boolean;
   rappels: React.MutableRefObject<RappelsLivekit>;
+  seanceId?: number;
 }) {
   const conteneur = useRef<HTMLDivElement>(null);
+  const regie = p.role === "formateur" && p.seanceId ? p.seanceId : null;
   const [affichage, setAffichage] = useState({ soiVisible: true, barreVisible: true });
   const [pleinEcran, setPleinEcran] = useState(false);
   // Micro ou caméra indisponible (autorisation, autre application, casque débranché) : un bandeau, sans couper la visio.
@@ -612,9 +734,11 @@ export default function VueLivekit(p: {
           </div>
         )}
         <div className="min-h-0 flex-1 p-1.5">
+          <ContexteRegie.Provider value={regie}>
           <Scene soiVisible={affichage.soiVisible} barreVisible={affichage.barreVisible} />
+          </ContexteRegie.Provider>
         </div>
-        {(micro || camera || ecran) && <Barre micro={micro} camera={camera} ecran={ecran} pleinEcran={pleinEcran} onPleinEcran={basculerPleinEcran} />}
+        {(micro || camera || ecran) && <Barre micro={micro} camera={camera} ecran={ecran} pleinEcran={pleinEcran} onPleinEcran={basculerPleinEcran} seanceId={regie} />}
         <RoomAudioRenderer />
         <Ecouteur rappels={p.rappels} micro={p.micro} camera={p.camera} tu={p.tu} surAffichage={(o) => setAffichage((a) => ({ ...a, ...o }))} />
       </LiveKitRoom>

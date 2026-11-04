@@ -757,6 +757,7 @@ function SceneDaily({
   return (
     <CadreDaily
       key={essaiCadre}
+      seanceId={seance.id}
       role={roleCadre(role)}
       tu={tu}
       micro={micro}

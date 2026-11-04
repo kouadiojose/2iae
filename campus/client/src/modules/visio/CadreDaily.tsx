@@ -75,6 +75,8 @@ export type TextesCadre = {
 };
 
 export type PropsCadreDaily = {
+  /** Séance en direct (nouvelle visio : le formateur ouvre et ferme micros et caméras des participants). */
+  seanceId?: number;
   /** Demande un accès au campus (jeton signé par le serveur). */
   obtenirAcces: () => Promise<AccesDaily | RejoindreVisioDto>;
   role: RoleCadre;
@@ -402,6 +404,7 @@ export function CadreDaily(p: PropsCadreDaily) {
               cameraAuDepart={p.cameraAuDepart ?? (role === "formateur" || role === "salle")}
               microAuDepart={p.microAuDepart ?? role === "formateur"}
               rappels={rappelsLivekit}
+              seanceId={p.seanceId}
             />
           </Suspense>
         </div>

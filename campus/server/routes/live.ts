@@ -765,8 +765,37 @@ async function finirParole(seanceId: number): Promise<MainLevee | null> {
     ? await db.update(mainsLevees).set({ baisseeLe: new Date() }).where(and(eq(mainsLevees.id, p.mainId), isNull(mainsLevees.baisseeLe))).returning()
     : [];
   paroles.set(seanceId, null);
-  if (p.type === "etudiant" && p.utilisateurId) sortirApresParole(seanceId, p.utilisateurId);
+  if (p.type === "etudiant" && p.utilisateurId) {
+    autoriserEtudiantLivekit(seanceId, p.utilisateurId, { micro: false, camera: false });
+    sortirApresParole(seanceId, p.utilisateurId);
+  }
   return main ?? null;
+}
+
+// ── Micro et caméra des étudiants sur la nouvelle visio (LiveKit) ─────────────
+// Un étudiant entre sans micro ni caméra (une salle de conférence pleine de téléphones ferait un écho terrible). Le
+// formateur les lui ouvre en lui donnant la parole ou d'un geste sur sa vignette, et les referme ; « Couper tous les
+// micros » ferme ceux de tout le monde sauf le sien. L'autorisation tient le temps du cours (même après un rechargement).
+const autorisationsEtudiants = new Map<string, { micro: boolean; camera: boolean }>();
+
+function envoiEtudiant(seanceId: number, utilisateurId: number, aLaParole: boolean): ("audio" | "video")[] | false {
+  const a = autorisationsEtudiants.get(`${seanceId}:${utilisateurId}`);
+  const envoi: ("audio" | "video")[] = [];
+  if (aLaParole || a?.micro) envoi.push("audio");
+  if (aLaParole || a?.camera) envoi.push("video");
+  return envoi.length ? envoi : false;
+}
+
+function autoriserEtudiantLivekit(seanceId: number, utilisateurId: number, o: { micro?: boolean; camera?: boolean }) {
+  const cle = `${seanceId}:${utilisateurId}`;
+  const a = { ...(autorisationsEtudiants.get(cle) ?? { micro: false, camera: false }), ...o };
+  if (a.micro || a.camera) autorisationsEtudiants.set(cle, a);
+  else autorisationsEtudiants.delete(cle);
+  void (async () => {
+    const [sp] = await db.select({ salleVisio: seances.salleVisio }).from(seances).where(eq(seances.id, seanceId));
+    if (!livekit.estSalleLivekit(sp?.salleVisio) || !livekit.livekitDisponible()) return;
+    await livekit.reglerEnvoiLivekit(livekit.salleSeanceLivekit(seanceId), utilisateurId, o);
+  })().catch((e) => console.warn(`[visio] micro et caméra de l'étudiant ${utilisateurId} (séance ${seanceId}) :`, (e as Error).message));
 }
 
 /**
@@ -2399,7 +2428,12 @@ export function enregistrerLive(app: Express) {
               nomAffiche,
               profil,
               dureeS: enRepetition ? Math.min(dureeS, visio.DUREE_MAX_REPETITION_S) : dureeS,
-              ...(invite && { envoi: ["audio", "video"] as ("audio" | "video")[] }),
+              // Étudiant : ni micro ni caméra, sauf la parole ou l'autorisation du formateur (pas d'écho d'une salle pleine).
+              ...(invite
+                ? { envoi: ["audio", "video"] as ("audio" | "video")[] }
+                : profil === "etudiant"
+                  ? { envoi: envoiEtudiant(s.id, u.id, aLaParole) }
+                  : {}),
               ...(profil === "salle" && { poste: poste ?? crypto.randomBytes(6).toString("hex") }),
             });
             break;
@@ -3048,6 +3082,7 @@ export function enregistrerLive(app: Express) {
       }
       const rendue = await finirParole(s.id);
       paroles.set(s.id, parole);
+      if (parole.type === "etudiant" && parole.utilisateurId) autoriserEtudiantLivekit(s.id, parole.utilisateurId, { micro: true, camera: true });
       await consigner(s.id, "parole", { ...parole });
       publier(canal(s.id), "parole", versParolePublique(parole));
       await signalerMains(s.id, [rendue, mainDonnee]);
@@ -3066,6 +3101,50 @@ export function enregistrerLive(app: Express) {
       publier(canal(s.id), "parole", null);
       await signalerMains(s.id, [rendue]);
       res.json({ ok: true });
+    }),
+  );
+
+  // Nouvelle visio : le formateur ouvre ou ferme le micro et la caméra d'un participant (étudiant : autorisation ;
+  // écran de salle ou équipe : seulement couper).
+  app.post(
+    "/api/seances/:id/visio/envoi",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAnimee(u, idParam(req));
+      exigerStatut(s, ["en_direct"], "La séance n'est pas en direct.");
+      if (!livekit.estSalleLivekit(s.salleVisio) || !livekit.livekitDisponible()) throw new ErreurHttp(409, "Cette séance n'est pas sur la nouvelle visio.");
+      const d = valider(z.object({ utilisateurId: z.number().int().positive(), micro: z.boolean().optional(), camera: z.boolean().optional() }), req.body);
+      const [cible] = await db.select({ role: utilisateurs.role }).from(utilisateurs).where(eq(utilisateurs.id, d.utilisateurId));
+      if (!cible) throw introuvable("Participant");
+      if (cible.role === "etudiant") autoriserEtudiantLivekit(s.id, d.utilisateurId, { micro: d.micro, camera: d.camera });
+      else if (d.micro === true || d.camera === true) throw invalide("Seul un étudiant attend votre autorisation : les écrans de salle allument eux-mêmes micro et caméra.");
+      else await livekit.reglerEnvoiLivekit(livekit.salleSeanceLivekit(s.id), d.utilisateurId, { micro: d.micro === false ? false : undefined, camera: d.camera === false ? false : undefined }).then(() =>
+        // Un écran de salle garde le droit de rallumer (il coupe seulement ce qui part).
+        livekit.reglerEnvoiLivekit(livekit.salleSeanceLivekit(s.id), d.utilisateurId, { micro: d.micro === false ? true : undefined, camera: d.camera === false ? true : undefined }),
+      );
+      await db.insert(journal).values({ utilisateurId: u.id, action: "visio_envoi", details: { seanceId: s.id, utilisateurId: d.utilisateurId, micro: d.micro ?? null, camera: d.camera ?? null } });
+      res.json({ ok: true });
+    }),
+  );
+
+  app.post(
+    "/api/seances/:id/visio/couper-micros",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAnimee(u, idParam(req));
+      exigerStatut(s, ["en_direct"], "La séance n'est pas en direct.");
+      if (!livekit.estSalleLivekit(s.salleVisio) || !livekit.livekitDisponible()) throw new ErreurHttp(409, "Cette séance n'est pas sur la nouvelle visio.");
+      for (const cle of [...autorisationsEtudiants.keys()]) {
+        if (!cle.startsWith(`${s.id}:`)) continue;
+        const a = autorisationsEtudiants.get(cle)!;
+        if (a.camera) autorisationsEtudiants.set(cle, { ...a, micro: false });
+        else autorisationsEtudiants.delete(cle);
+      }
+      const n = await livekit.couperMicrosLivekit(livekit.salleSeanceLivekit(s.id));
+      await db.insert(journal).values({ utilisateurId: u.id, action: "visio_micros_coupes", details: { seanceId: s.id, micros: n } });
+      res.json({ ok: true, micros: n });
     }),
   );
 

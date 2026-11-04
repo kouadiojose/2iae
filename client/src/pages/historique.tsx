@@ -1,4 +1,5 @@
 // Textes d'origine restaurés depuis l'ancien site 2iae.com (pages/historique).
+import { Link } from "wouter";
 import { SectionVideos } from "@/components/video-youtube";
 import { usePageMeta } from "@/lib/seo";
 
@@ -275,6 +276,21 @@ export default function HistoriquePage() {
             Fondateur, décerné par Excel Ados en présence du Sous-Directeur de
             l'Enseignement supérieur.
           </p>
+          <Link href="/prix-ics-2026">
+            <div
+              className="mt-6 flex flex-col sm:flex-row items-stretch gap-4 rounded-xl bg-[#0b1f3a] text-white text-left overflow-hidden cursor-pointer"
+              data-testid="bloc-prix-ics-historique"
+            >
+              <img src="/images/prix-ics-2026/fondateur-trophee.jpg" alt="Séraphin Koua, trophée ICS en main" loading="lazy" className="w-full sm:w-56 !h-56 sm:!h-auto object-cover object-top" />
+              <div className="p-5">
+                <p className="text-xs tracking-[0.2em] uppercase text-[#E9C46A] mb-2">🏆 31 octobre 2026 · Prix spéciaux panafricains ICS 2025-2026</p>
+                <p className="font-serif text-xl leading-snug">
+                  Le Groupe 2IAE, Meilleure école de formation. Séraphin Koua, Meilleur dirigeant des grandes écoles.
+                </p>
+                <span className="inline-block mt-3 text-sm font-semibold text-[#E9C46A] underline underline-offset-4">La remise des prix →</span>
+              </div>
+            </div>
+          </Link>
 
           <div className="mt-10 bg-gray-50 rounded-xl p-6 text-left" data-testid="bloc-audio-radio-historique">
             <p className="text-xs tracking-[0.25em] uppercase text-primary mb-2">

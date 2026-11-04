@@ -15,6 +15,7 @@ import { ReportageRtiBts } from "@/components/reportage-rti";
 import { RencontreParentsYopougon } from "@/components/rencontre-parents-yopougon";
 import { RencontreParentsAzaguie } from "@/components/rencontre-parents-azaguie";
 import { RentreeEffective } from "@/components/rentree-effective";
+import { PrixIcs } from "@/components/prix-ics";
 import { TemoignagesRentree } from "@/components/temoignages-rentree";
 import { TravauxPratiquesAzaguie } from "@/components/travaux-pratiques-azaguie";
 import { TravauxPratiquesSinfra } from "@/components/travaux-pratiques-sinfra";
@@ -380,6 +381,9 @@ export default function AccueilPage() {
           </div>
         </div>
       </section>
+
+      {/* Prix spéciaux panafricains ICS 2025-2026 (31 octobre 2026) */}
+      <PrixIcs />
 
       {/* La rentrée a eu lieu — appel aux retardataires (auto-expirant) */}
       <RentreeEffective />

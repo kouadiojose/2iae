@@ -7,6 +7,7 @@
 // depuis un bucket Railway est gratuite.
 import fs from "node:fs";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { S3Client, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, PutBucketCorsCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -87,6 +88,13 @@ export function creerBucket(conf: ConfigBucket, nom: string) {
     return Buffer.from(await r.Body!.transformToByteArray());
   }
 
+  /** Télécharge un objet sur le disque, en flux (vidéos de plusieurs Go) ; renvoie la taille écrite. */
+  async function telechargerVers(cle: string, chemin: string): Promise<number> {
+    const r = await s3().send(new GetObjectCommand({ Bucket: conf.bucket, Key: cle }));
+    await pipeline(r.Body as Readable, fs.createWriteStream(chemin));
+    return (await fs.promises.stat(chemin)).size;
+  }
+
   /** Contenu entier (fichiers de taille raisonnable : correction par l'IA, PDF d'un profil). */
   async function lire(cle: string): Promise<Buffer> {
     const r = await s3().send(new GetObjectCommand({ Bucket: conf.bucket, Key: cle }));
@@ -117,5 +125,5 @@ export function creerBucket(conf: ConfigBucket, nom: string) {
     );
   }
 
-  return { nom, disponible, taille, envoyerFichierLocal, envoyerDepuisUrl, lienSigne, lire, lireDebut, supprimer, autoriserLectureNavigateur };
+  return { nom, disponible, taille, envoyerFichierLocal, envoyerDepuisUrl, lienSigne, lire, lireDebut, telechargerVers, supprimer, autoriserLectureNavigateur };
 }

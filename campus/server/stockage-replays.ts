@@ -26,5 +26,8 @@ export const supprimerDuBucket = (cle: string) => replays.supprimer(cle);
 /** Envoie une vidéo du disque dans le bucket (taille vérifiée) ; renvoie la taille reçue. */
 export const envoyerReplayLocal = (chemin: string, cle: string) => replays.envoyerFichierLocal(chemin, cle, "video/mp4");
 
+/** Télécharge une vidéo du bucket sur le disque (taille écrite). */
+export const telechargerReplay = (cle: string, chemin: string) => replays.telechargerVers(cle, chemin);
+
 /** Premiers octets d'une vidéo du bucket. */
 export const lireDebutReplay = (cle: string, octets: number) => replays.lireDebut(cle, octets);

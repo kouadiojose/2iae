@@ -14,10 +14,10 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { db } from "./db";
 import { planifier } from "./taches";
-import { envoyerReplayLocal, lienReplayBucket, lireDebutReplay, stockageReplaysDisponible, supprimerDuBucket } from "./stockage-replays";
+import { envoyerReplayLocal, lireDebutReplay, telechargerReplay, stockageReplaysDisponible, supprimerDuBucket } from "./stockage-replays";
 import { replaysStockes, seances } from "@shared/schema";
 
 /** Chemin du binaire ffmpeg (paquet ffmpeg-static), ou null s'il manque. */
@@ -31,8 +31,8 @@ function cheminFfmpeg(): string | null {
 }
 
 const DOSSIER = process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "lecture-rapide") : path.join(os.tmpdir(), "campus-lecture-rapide");
-/** Heures (GMT) où la tâche peut démarrer un fichier : le soir et la nuit, hors cours. */
-const heurePermise = (h: number) => h >= 18 || h < 6;
+/** La tâche démarre un fichier quand aucun cours n'est en direct ni prévu dans les deux heures (sinon elle attend). */
+const MARGE_AVANT_COURS_MS = 2 * 3600_000;
 const echecs = new Map<string, number>();
 let ffmpegVerifie = false;
 let enCours = false;
@@ -108,10 +108,14 @@ export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<str
       return `ffmpeg ne se lance pas sur ce serveur (${ffmpegHorsService}) : réécriture des replays arrêtée`;
     }
     ffmpegVerifie = true;
+    console.log(`[replays] ${v.sortie.split("\n")[0] || "ffmpeg prêt"} (réécriture des replays)`);
   }
   if (!o.forcer) {
-    if (!heurePermise(new Date().getUTCHours())) return null;
-    const [direct] = await db.select({ id: seances.id }).from(seances).where(eq(seances.statut, "en_direct")).limit(1);
+    const [direct] = await db
+      .select({ id: seances.id })
+      .from(seances)
+      .where(or(eq(seances.statut, "en_direct"), and(eq(seances.statut, "planifiee"), gte(seances.debut, new Date(Date.now() - 3600_000)), lte(seances.debut, new Date(Date.now() + MARGE_AVANT_COURS_MS)))))
+      .limit(1);
     if (direct) return null;
   }
   // Les plus récents d'abord : ce sont les plus regardés.
@@ -120,6 +124,7 @@ export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<str
   if (!r) return null;
   enCours = true;
   const local = path.join(DOSSIER, `${randomUUID()}.mp4`);
+  let sourceLocale: string | null = null;
   try {
     const tete = await lireDebutReplay(r.cle, 256 * 1024).catch(() => null);
     if (!tete) {
@@ -132,17 +137,21 @@ export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<str
     }
     await fs.promises.mkdir(DOSSIER, { recursive: true });
     const libre = await fs.promises.statfs(DOSSIER).then((s) => s.bavail * s.bsize).catch(() => Infinity);
-    if (libre < r.tailleOctets * 1.2 + 2e9) return `${r.cle} : pas assez de place sur le disque (${Math.round(libre / 1e9)} Go libres)`;
+    if (libre < r.tailleOctets * 2.2 + 2e9) return `${r.cle} : pas assez de place sur le disque (${Math.round(libre / 1e9)} Go libres)`;
 
-    const source = (await lienReplayBucket(r.cle, 6 * 3600)).url;
+    // La vidéo est d'abord téléchargée sur le disque (en flux), puis réécrite sur place : ffmpeg ne lit rien par le réseau.
     const debut = Date.now();
+    const source = path.join(DOSSIER, `${randomUUID()}-source.mp4`);
+    sourceLocale = source;
+    const recuSource = await telechargerReplay(r.cle, source);
+    if (recuSource !== r.tailleOctets) throw new Error(`téléchargement incomplet (${recuSource} octets sur ${r.tailleOctets})`);
     const res = await lancer(
       ffmpeg,
       ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", source, "-map", "0:v?", "-map", "0:a?", "-c", "copy", "-movflags", "+faststart", local],
       4 * 3600_000,
     );
     if (res.lancement) throw new Error(`ffmpeg ne se lance pas : ${res.lancement}`);
-    if (res.code !== 0) throw new Error(`ffmpeg (code ${res.code}) : ${res.sortie.replace(source, "<lien>").split("?X-Amz")[0].slice(-300)}`);
+    if (res.code !== 0) throw new Error(`ffmpeg (code ${res.code}) : ${res.sortie.slice(-300)}`);
     const { size } = await fs.promises.stat(local);
     const d = await duree(ffmpeg, local);
     const teteLocale = Buffer.alloc(256 * 1024);
@@ -167,6 +176,7 @@ export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<str
     return `${r.cle} : échec ${n}/3 : ${(e as Error).message}`;
   } finally {
     await fs.promises.rm(local, { force: true }).catch(() => undefined);
+    if (sourceLocale) await fs.promises.rm(sourceLocale, { force: true }).catch(() => undefined);
     enCours = false;
   }
 }

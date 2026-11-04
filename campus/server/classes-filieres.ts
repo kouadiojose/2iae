@@ -14,9 +14,9 @@
 // (Initiation à l'IA…) arrivent donc à ses étudiants, alertes comprises.
 // Relançable sans doublon : une classe qui existe déjà (même campus, filière,
 // niveau et année) n'est pas recréée.
-import { and, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { classes, cours, coursClasses, classesProgramme, sessionsClasses, journal, LICENCES_PRO, CERTIFICATS, type Utilisateur, type BilanClassesFilieres } from "@shared/schema";
+import { utilisateurs, passagesClasses, classes, cours, coursClasses, classesProgramme, sessionsClasses, journal, LICENCES_PRO, CERTIFICATS, type Utilisateur, type BilanClassesFilieres } from "@shared/schema";
 import { lireSitePublic } from "./routes/public";
 
 const TRONC_COMMUN = "Tronc commun";
@@ -157,3 +157,49 @@ async function separerLicences(tx: Tx, annee: string): Promise<number> {
 /** Filière « Tronc commun » : masquée à l'inscription d'un campus qui a ses classes de filières BTS. */
 export const estTroncCommun = (c: { filiere: string }) => c.filiere === TRONC_COMMUN;
 
+
+export type BilanPassageLicence = {
+  jour: string;
+  deplaces: { nom: string; de: string; vers: string }[];
+  sansLicence: { nom: string; classe: string }[];
+  simulation: boolean;
+};
+
+/**
+ * Étudiants inscrits un jour donné (GMT) dans une classe de BTS (ou de tronc commun) alors qu'ils sont en licence :
+ * chacun passe dans la Licence 3 de la même filière et du même campus (créée par creerClassesFilieres). Sans Licence 3
+ * correspondante (tronc commun, filière sans licence), il reste où il est et figure dans « sansLicence » : il corrige
+ * sa classe lui-même (Mon profil › Ma classe) ou la vie scolaire le fait.
+ */
+export async function passerEnLicence(u: Pick<Utilisateur, "id">, jour: string, simulation: boolean): Promise<BilanPassageLicence> {
+  const debut = new Date(`${jour}T00:00:00Z`);
+  const fin = new Date(debut.getTime() + 24 * 3600_000);
+  const inscrits = await db
+    .select({ id: utilisateurs.id, prenom: utilisateurs.prenom, nom: utilisateurs.nom, classeId: utilisateurs.classeId, creeLe: utilisateurs.creeLe, classe: classes })
+    .from(utilisateurs)
+    .innerJoin(classes, eq(classes.id, utilisateurs.classeId))
+    .where(and(eq(utilisateurs.role, "etudiant"), gte(utilisateurs.creeLe, debut), lt(utilisateurs.creeLe, fin), sql`${classes.niveau} NOT ILIKE 'Licence%'`, sql`${classes.niveau} <> 'Certificat'`));
+  const l3 = await db.select().from(classes).where(eq(classes.niveau, "Licence 3"));
+  const bilan: BilanPassageLicence = { jour, deplaces: [], sansLicence: [], simulation };
+  const mouvements: { id: number; de: number; vers: number; creeLe: Date }[] = [];
+  for (const i of inscrits) {
+    const cible = l3.find((c) => c.siteId === i.classe.siteId && c.filiere === i.classe.filiere && c.anneeScolaire === i.classe.anneeScolaire);
+    const nom = `${i.prenom} ${i.nom}`;
+    if (!cible) bilan.sansLicence.push({ nom, classe: i.classe.nom });
+    else {
+      bilan.deplaces.push({ nom, de: i.classe.nom, vers: cible.nom });
+      mouvements.push({ id: i.id, de: i.classe.id, vers: cible.id, creeLe: i.creeLe });
+    }
+  }
+  if (simulation || !mouvements.length) return bilan;
+  await db.transaction(async (tx) => {
+    for (const m of mouvements) {
+      await tx.update(utilisateurs).set({ classeId: m.vers }).where(eq(utilisateurs.id, m.id));
+      const [connu] = await tx.select({ id: passagesClasses.id }).from(passagesClasses).where(eq(passagesClasses.utilisateurId, m.id)).limit(1);
+      if (!connu) await tx.insert(passagesClasses).values({ utilisateurId: m.id, classeId: m.de, depuis: m.creeLe });
+      await tx.insert(passagesClasses).values({ utilisateurId: m.id, classeId: m.vers, depuis: new Date() });
+    }
+    await tx.insert(journal).values({ utilisateurId: u.id, action: "inscrits_passes_en_licence", details: { jour, deplaces: mouvements.length, sansLicence: bilan.sansLicence.length } });
+  });
+  return bilan;
+}

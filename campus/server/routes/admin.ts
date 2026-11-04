@@ -43,7 +43,7 @@ import { t as tCampus } from "@shared/textes/campus";
 import { deCampus } from "@shared/espace-campus";
 import { urlFichier } from "../fichiers";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
-import { creerClassesFilieres } from "../classes-filieres";
+import { creerClassesFilieres, passerEnLicence } from "../classes-filieres";
 import { envoyerGuideFormateur } from "./lancement";
 import { prevenirSite } from "../site";
 import { fuseauValide } from "../visio-daily";
@@ -2546,6 +2546,16 @@ export function enregistrerAdmin(app: Express) {
     route(async (req, res) => {
       const { simulation } = valider(z.object({ simulation: z.boolean().default(false) }), req.body ?? {});
       res.json(await creerClassesFilieres(moi(req), simulation));
+    }),
+  );
+
+  // Étudiants de licence inscrits un jour donné dans une classe de BTS : vers la Licence 3 de leur filière et campus.
+  app.post(
+    `${P}/classes/passer-en-licence`,
+    DIRECTION,
+    route(async (req, res) => {
+      const { jour, simulation } = valider(z.object({ jour: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date au format AAAA-MM-JJ"), simulation: z.boolean().default(true) }), req.body ?? {});
+      res.json(await passerEnLicence(moi(req), jour, simulation));
     }),
   );
 

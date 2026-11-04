@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone, Layers, CalendarDays } from "lucide-react";
+import { Plus, Pencil, Trash2, Printer, Users, School, MessageCircle, MonitorSmartphone, Layers, CalendarDays, GraduationCap } from "lucide-react";
 import type { BilanClassesFilieres, ClasseLigne, PageComptes, SiteLigne } from "@shared/schema";
 import { Page, EnTetePage } from "@/components/layout/coquille";
 import { BarreProgression, Chargement, Erreur, EtatVide, Badge } from "@/components/ui/divers";
@@ -55,6 +55,29 @@ export default function PageClasses() {
     return () => window.clearTimeout(t);
   }, [isLoading, sites.length]);
 
+  // Étudiants de licence inscrits un jour donné dans une classe de BTS : aperçu des noms, puis passage en Licence 3.
+  const passerEnLicence = async () => {
+    const hier = new Date(Date.now() - 24 * 3600_000).toISOString().slice(0, 10);
+    const jour = window.prompt("Jour d'inscription des étudiants de licence (AAAA-MM-JJ, heure GMT) :", hier);
+    if (!jour) return;
+    type Bilan = { deplaces: { nom: string; de: string; vers: string }[]; sansLicence: { nom: string; classe: string }[] };
+    try {
+      const sim = await post<Bilan>("/api/pilotage/classes/passer-en-licence", { jour, simulation: true });
+      if (!sim.deplaces.length) {
+        return toast(sim.sansLicence.length ? `${sim.sansLicence.length} inscrit(s) sans Licence 3 correspondante : ils choisissent leur classe dans Mon profil.` : "Aucun étudiant inscrit ce jour-là dans une classe de BTS.", "info");
+      }
+      const liste = sim.deplaces.slice(0, 20).map((d) => `• ${d.nom} : ${d.de} → ${d.vers}`).join("\n");
+      const reste = sim.deplaces.length > 20 ? `\n… et ${sim.deplaces.length - 20} autres` : "";
+      const sans = sim.sansLicence.length ? `\n\n${sim.sansLicence.length} sans Licence 3 correspondante (restent dans leur classe).` : "";
+      if (!window.confirm(`Passer ${sim.deplaces.length} étudiant(s) en Licence 3 ?\n\n${liste}${reste}${sans}\n\nIls pourront encore corriger leur classe dans Mon profil.`)) return;
+      const r = await post<Bilan>("/api/pilotage/classes/passer-en-licence", { jour, simulation: false });
+      toast(`${pluriel(r.deplaces.length, "étudiant passé", "étudiants passés")} en Licence 3.`);
+      void rafraichir("/api/pilotage/classes");
+    } catch (e) {
+      toastErreur(e);
+    }
+  };
+
   // Les classes des filières de 2iae.com : on montre d'abord ce qui sera créé, puis on crée.
   const creerFilieres = async () => {
     setFilieresEnCours(true);
@@ -97,6 +120,11 @@ export default function PageClasses() {
             {refs.data?.estDirection && (
               <Bouton taille="lg" variante="contour" icone={<Layers className="h-5 w-5" />} onClick={() => void creerFilieres()} chargement={filieresEnCours} className="min-h-[52px]">
                 Classes des filières
+              </Bouton>
+            )}
+            {refs.data?.estDirection && (
+              <Bouton taille="lg" variante="contour" icone={<GraduationCap className="h-5 w-5" />} onClick={() => void passerEnLicence()} className="min-h-[52px]">
+                Inscrits en Licence 3
               </Bouton>
             )}
           </>

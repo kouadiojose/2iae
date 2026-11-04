@@ -259,6 +259,9 @@ function ConnexionCommune() {
         <LienBouton href="/inscription" taille="lg" variante="contour" icone={<UserPlus className="h-5 w-5 text-orange-fonce" />} className="min-h-[56px] w-full text-[16px]">
           Nouvel étudiant ? Créer mon compte
         </LienBouton>
+        <a href="/inscription-professeur" className="text-center text-[15px] font-bold text-orange-fonce underline-offset-2 hover:underline">
+          Vous êtes professeur ? Créez votre compte
+        </a>
         <div className="flex gap-3 rounded-2xl bg-creme p-4">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-orange-fonce">
             <QrCode className="h-5 w-5" />

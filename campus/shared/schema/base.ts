@@ -51,6 +51,8 @@ export const classes = campusSchema.table(
 );
 
 export type PreferencesUtilisateur = {
+  /** Professeur inscrit lui-même : compte désactivé jusqu'à la validation de l'administration (Comptes, réactiver). */
+  validationEnAttente?: boolean;
   /** Mode données réduites : live en basse définition, images allégées. */
   donneesReduites?: boolean;
   /** Comment l'étudiant suit le plus souvent les cours. */

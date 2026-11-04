@@ -269,6 +269,68 @@ export function enregistrerFormateurs(app: Express) {
     }),
   );
 
+  // ── Public : un professeur crée son compte sans lien ; l'administration le valide ──
+  // Le compte naît désactivé (preferences.validationEnAttente) : la connexion dit qu'il attend la validation. La
+  // direction est prévenue ; elle le réactive dans Comptes, ce qui envoie au professeur son guide pas à pas.
+  app.post(
+    "/api/inscription-professeur",
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const cle = `inscription-professeur|${reseau(req)}`;
+      verifierTentatives(cle, 8);
+      noterEchec(cle);
+      const d = valider(schemaInscription, req.body);
+      if (adresseDeDemonstration(d.email)) throw invalide("Cette adresse est réservée à la démonstration du campus : tapez votre vraie adresse e-mail.");
+      const minimum = longueurMinimale("formateur");
+      if (d.motDePasse.length < minimum) throw invalide(`Votre mot de passe doit faire au moins ${minimum} caractères.`);
+      if (!codeSecretAcceptable(d.motDePasse)) throw invalide("Ce mot de passe est trop facile à deviner. Mélangez des mots, des chiffres ou des signes.");
+      let telephone: string | null = null;
+      if (d.telephone) {
+        telephone = normaliserTelephone(d.telephone);
+        if (telephone.length < 8 || telephone.length > 15) throw invalide("Numéro de téléphone illisible : tapez l'indicatif du pays puis le numéro (exemple : 07 07 12 34 56).");
+      }
+      const [pris] = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(eq(utilisateurs.email, d.email));
+      if (pris) throw new ErreurHttp(409, "Un compte du campus utilise déjà cette adresse e-mail. Si c'est le vôtre, connectez-vous avec elle (mot de passe oublié : « Code ou mot de passe oublié »).");
+      let compte: Utilisateur;
+      try {
+        [compte] = await db
+          .insert(utilisateurs)
+          .values({
+            role: "formateur",
+            prenom: espaces(d.prenom),
+            nom: espaces(d.nom),
+            email: d.email,
+            telephone,
+            titre: d.titre ? espaces(d.titre) : null,
+            localisation: d.localisation ? espaces(d.localisation) : null,
+            motDePasseHash: await hacher(d.motDePasse),
+            doitChangerMotDePasse: false,
+            motDePasseExpireLe: null,
+            siteId: null,
+            actif: false,
+            preferences: { validationEnAttente: true },
+          })
+          .returning();
+      } catch (e) {
+        if ((e as { code?: string }).code === "23505") throw new ErreurHttp(409, "Cette adresse e-mail vient d'être prise par un autre compte. Tapez-en une autre.");
+        throw e;
+      }
+      await journaliser(compte, "inscription_professeur", { email: d.email });
+      const direction = await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(eq(utilisateurs.role, "admin"), eq(utilisateurs.actif, true)));
+      await notifier(
+        direction.map((x) => x.id),
+        {
+          type: "systeme",
+          titre: `Professeur à valider : ${nomAffiche(compte)}`,
+          corps: `${compte.titre ? `${compte.titre} · ` : ""}${d.email} a créé son compte. Validez-le dans Comptes (réactiver le compte).`,
+          lien: "/pilotage/comptes#formateurs",
+          push: true,
+        },
+      ).catch(() => undefined);
+      res.status(201).json({ ok: true, prenom: compte.prenom });
+    }),
+  );
+
   // ── Public : le formateur ouvre son lien ──────────────────────────────────
   app.get(
     "/api/inscription-formateur/:jeton",

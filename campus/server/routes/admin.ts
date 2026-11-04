@@ -44,6 +44,7 @@ import { deCampus } from "@shared/espace-campus";
 import { urlFichier } from "../fichiers";
 import { route, valider, idParam, ErreurHttp, introuvable, interdit, invalide } from "../http";
 import { creerClassesFilieres } from "../classes-filieres";
+import { envoyerGuideFormateur } from "./lancement";
 import { prevenirSite } from "../site";
 import { fuseauValide } from "../visio-daily";
 import { sqlDebutCours } from "../ouverture-auto";
@@ -2090,6 +2091,11 @@ export function enregistrerAdmin(app: Express) {
       if (d.actif !== undefined && d.actif !== avant.actif) {
         if (avant.id === u.id) throw interdit("Vous ne pouvez pas désactiver votre propre compte.");
         maj.actif = d.actif;
+        // Professeur inscrit lui-même : la réactivation vaut validation (son guide part ci-dessous).
+        if (d.actif && avant.preferences?.validationEnAttente) {
+          const { validationEnAttente: _, ...reste } = avant.preferences;
+          maj.preferences = reste;
+        }
       }
       if (role !== "etudiant" && d.email === null && avant.email) throw invalide("Le personnel se connecte avec son e-mail : il ne peut pas être vide.");
       if (role === "etudiant" && d.matricule === null && avant.matricule) throw invalide("Le matricule d'un étudiant ne peut pas être vide.");
@@ -2110,6 +2116,10 @@ export function enregistrerAdmin(app: Express) {
         await tx.insert(passagesClasses).values({ utilisateurId: avant.id, classeId: maj.classeId ?? null, depuis: new Date() });
       });
       oublierUtilisateur(avant.id);
+      if (maj.actif === true && avant.preferences?.validationEnAttente) {
+        const [valide] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, avant.id));
+        if (valide) void envoyerGuideFormateur(valide).catch((e) => console.warn("[comptes] guide du professeur validé non envoyé :", (e as Error).message));
+      }
       if (maj.actif === false) {
         await fermerAutresSessions(avant.id);
         // Double casquette : l'autre compte ne s'ouvre que depuis celui-ci, il se ferme avec lui.

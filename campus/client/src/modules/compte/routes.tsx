@@ -14,6 +14,7 @@ export const routes: DefRoute[] = [
   { chemin: "/creer-mon-compte", page: lazy(() => import("./PageInscription")), acces: "public", coquille: "aucune" },
   { chemin: "/inscription/:jeton", page: lazy(() => import("./PageInscription")), acces: "public", coquille: "aucune" },
   // Public : l'ancien lien d'inscription d'un formateur (/inscription-formateur) : les liens déjà envoyés restent valables.
+  { chemin: "/inscription-professeur", page: lazy(() => import("./PageInscriptionProfesseur")), acces: "public", coquille: "aucune" },
   { chemin: "/inscription-formateur/:jeton", page: lazy(() => import("./PageInscriptionFormateur")), acces: "public", coquille: "aucune" },
   { chemin: "/mot-de-passe-oublie", page: lazy(() => import("./PageMotDePasseOublie")), acces: "public", coquille: "aucune" },
   { chemin: "/reinitialiser/:jeton", page: lazy(() => import("./PageReinitialiser")), acces: "public", coquille: "aucune" },

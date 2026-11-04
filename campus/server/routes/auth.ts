@@ -61,7 +61,9 @@ export function enregistrerAuth(app: Express) {
       if (u && codeJuste && !u.actif) {
         throw new ErreurHttp(
           403,
-          u.role === "etudiant"
+          u.preferences?.validationEnAttente
+            ? "Votre compte attend la validation de l'administration. Vous recevrez un e-mail dès qu'il sera validé."
+            : u.role === "etudiant"
             ? "Ton accès au campus est en pause. Passe voir la scolarité de ton campus (ou écris-lui sur WhatsApp) pour le réactiver."
             : "Ce compte est désactivé. Contactez la direction pour le réactiver.",
         );

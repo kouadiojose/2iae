@@ -80,7 +80,18 @@ function Bienvenue({ r }: { r: InscriptionFormateurFaite }) {
   );
 }
 
-function Formulaire({ jeton, info, onFaite }: { jeton: string; info: InfoLienFormateurDto; onFaite: (r: InscriptionFormateurFaite) => void }) {
+/** Formulaire du professeur : avec un lien personnel (jeton), compte ouvert tout de suite ; sans lien, compte à valider par l'administration. */
+export function Formulaire({
+  jeton,
+  info,
+  onFaite,
+  onEnAttente,
+}: {
+  jeton?: string;
+  info: InfoLienFormateurDto;
+  onFaite?: (r: InscriptionFormateurFaite) => void;
+  onEnAttente?: (prenom: string) => void;
+}) {
   const [f, setF] = useState({
     prenom: info.prenom,
     nom: info.nom,
@@ -104,7 +115,7 @@ function Formulaire({ jeton, info, onFaite }: { jeton: string; info: InfoLienFor
     if (f.motDePasse !== f.confirmation) return setErreur("Les deux mots de passe ne sont pas identiques.");
     setEnvoi(true);
     try {
-      const r = await post<InscriptionFormateurFaite>(`/api/inscription-formateur/${encodeURIComponent(jeton)}`, {
+      const corps = {
         prenom: f.prenom,
         nom: f.nom,
         email: f.email,
@@ -112,9 +123,15 @@ function Formulaire({ jeton, info, onFaite }: { jeton: string; info: InfoLienFor
         titre: f.titre || undefined,
         localisation: f.localisation || undefined,
         motDePasse: f.motDePasse,
-      });
+      };
+      if (!jeton) {
+        const r = await post<{ prenom: string }>("/api/inscription-professeur", corps);
+        onEnAttente?.(r.prenom);
+        return;
+      }
+      const r = await post<InscriptionFormateurFaite>(`/api/inscription-formateur/${encodeURIComponent(jeton)}`, corps);
       installerMoi(r.moi, true);
-      onFaite(r);
+      onFaite?.(r);
     } catch (x) {
       setErreur((x as Error).message);
     } finally {
@@ -131,8 +148,10 @@ function Formulaire({ jeton, info, onFaite }: { jeton: string; info: InfoLienFor
           <span className="block">Créez votre compte.</span>
         </h1>
         <p className="text-[15px] leading-relaxed text-texte-pale">
-          C'est depuis le campus numérique que vous donnerez vos cours en direct, en même temps aux salles de conférence de nos campus et aux étudiants en ligne. Deux minutes
-          suffisent : dès que c'est fait, vous êtes connecté et votre guide pas à pas part par e-mail.
+          C'est depuis le campus numérique que vous donnerez vos cours en direct, en même temps aux salles de conférence de nos campus et aux étudiants en ligne.{" "}
+          {jeton
+            ? "Deux minutes suffisent : dès que c'est fait, vous êtes connecté et votre guide pas à pas part par e-mail."
+            : "Deux minutes suffisent. L'administration valide ensuite votre compte ; vous recevez alors votre guide pas à pas par e-mail."}
         </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -210,7 +229,7 @@ function Formulaire({ jeton, info, onFaite }: { jeton: string; info: InfoLienFor
         Créer mon compte formateur
       </Bouton>
       <p className="text-center text-[13px] text-texte-gris">
-        Ce lien est personnel et ne sert qu'une fois.{" "}
+        {jeton ? "Ce lien est personnel et ne sert qu'une fois. " : ""}
         <a href="/connexion" className="font-bold text-orange-fonce">
           J'ai déjà un compte
         </a>

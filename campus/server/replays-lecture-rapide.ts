@@ -181,6 +181,9 @@ export async function traiterUnReplay(o: { forcer?: boolean } = {}): Promise<str
   }
 }
 
+// Au démarrage : les fichiers d'un travail interrompu (redémarrage du campus en pleine réécriture) sont effacés.
+void fs.promises.rm(DOSSIER, { recursive: true, force: true }).catch(() => undefined);
+
 // Toutes les 10 minutes : les fichiers un par un (un cours de 4 h prend quelques minutes de travail).
 if (process.env.REPLAYS_LECTURE_RAPIDE !== "non") {
   planifier("replays-lecture-rapide", 10 * 60_000, async () => {

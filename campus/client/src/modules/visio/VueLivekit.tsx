@@ -30,6 +30,7 @@ import {
   useRoomContext,
   useLocalParticipant,
   useParticipantPermissions,
+  useSpeakingParticipants,
   useLocalParticipantPermissions,
   useTrackRefContext,
   isTrackReference,
@@ -51,7 +52,7 @@ import {
   type LocalVideoTrack,
   ParticipantEvent,
 } from "livekit-client";
-import { Maximize2, Mic, MicOff, Minimize2, Video, VideoOff } from "lucide-react";
+import { LayoutGrid, LayoutPanelTop, Maximize2, Mic, MicOff, Minimize2, Video, VideoOff } from "lucide-react";
 import "@livekit/components-styles";
 import type { ParticipantCadre, RoleCadre } from "./CadreDaily";
 import type { ProblemeVisio } from "./daily";
@@ -335,7 +336,14 @@ function Vignette() {
  * Écran de salle en mode « diapo en grand » (setShowLocalVideo / setShowParticipantsBar à faux) : seulement le
  * formateur (ou, à défaut, les autres), sans l'image de la salle elle-même.
  */
-function Scene({ soiVisible, barreVisible }: { soiVisible: boolean; barreVisible: boolean }) {
+function Scene({ soiVisible, barreVisible, vue }: { soiVisible: boolean; barreVisible: boolean; vue: Vue }) {
+  // Vue orateur : la dernière personne qui a parlé reste en grand (pas de saut à chaque bruit), sinon le formateur.
+  const parlent = useSpeakingParticipants();
+  const [orateur, setOrateur] = useState<string | null>(null);
+  useEffect(() => {
+    const p = parlent.find((x) => !x.isLocal) ?? parlent[0];
+    if (p) setOrateur(p.identity);
+  }, [parlent]);
   const toutes = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
@@ -366,6 +374,28 @@ function Scene({ soiVisible, barreVisible }: { soiVisible: boolean; barreVisible
       </FocusLayoutContainer>
     );
   }
+  if (vue === "orateur" && pistes.length > 1) {
+    const cameras = pistes.filter((p) => p.source === Track.Source.Camera);
+    const grand =
+      cameras.find((p) => p.participant.identity === orateur) ?? cameras.find((p) => profilDe(p.participant) === "formateur") ?? cameras[0];
+    if (grand) {
+      const autres = pistes.filter((p) => p !== grand);
+      return (
+        <FocusLayoutContainer className="h-full">
+          {barreVisible && autres.length > 0 && (
+            <CarouselLayout tracks={autres}>
+              <ParticipantTile>
+                <Vignette />
+              </ParticipantTile>
+            </CarouselLayout>
+          )}
+          <FocusLayout trackRef={grand}>
+            <Vignette />
+          </FocusLayout>
+        </FocusLayoutContainer>
+      );
+    }
+  }
   return (
     <GridLayout tracks={pistes} className="h-full">
       <ParticipantTile>
@@ -376,25 +406,31 @@ function Scene({ soiVisible, barreVisible }: { soiVisible: boolean; barreVisible
 }
 
 /** Barre du bas, en français : micro et caméra (avec le choix de l'appareil), partage d'écran, plein écran. */
-const CLE_FLOU = "visio-flou";
-const lireFlou = () => {
+type Fond = "aucun" | "flou" | "image";
+const CLE_FOND = "visio-fond";
+const IMAGE_FOND = "/images/campus-riviera.jpg";
+const lireFond = (): Fond => {
   try {
-    return localStorage.getItem(CLE_FLOU) === "1";
+    const v = localStorage.getItem(CLE_FOND) ?? (localStorage.getItem("visio-flou") === "1" ? "flou" : "aucun");
+    return v === "flou" || v === "image" ? v : "aucun";
   } catch {
-    return false;
+    return "aucun";
   }
 };
+const SUIVANT: Record<Fond, Fond> = { aucun: "flou", flou: "image", image: "aucun" };
+const LIBELLE_FOND: Record<Fond, string> = { aucun: "Fond", flou: "Fond flou", image: "Fond 2IAE" };
 
 /**
- * Flou d'arrière-plan (comme dans Daily) : traitement de l'image de la caméra dans le navigateur
- * (@livekit/track-processors, chargé à la demande). Le choix est gardé sur cet appareil et réappliqué
- * quand la caméra se rallume.
+ * Arrière-plan de la caméra (comme dans Daily) : aucun, flou, ou une photo du campus 2IAE. Traitement de l'image dans
+ * le navigateur (@livekit/track-processors, chargé à la demande). Le choix est gardé sur cet appareil et réappliqué
+ * quand la caméra se rallume ; le bouton disparaît sur un navigateur qui ne sait pas le faire.
  */
 function BoutonFlou() {
   const { cameraTrack, isCameraEnabled } = useLocalParticipant();
-  const [flou, setFlou] = useState(lireFlou);
+  const [fond, setFond] = useState<Fond>(lireFond);
   const [indispo, setIndispo] = useState(false);
   const [occupe, setOccupe] = useState(false);
+  const applique = useRef<Fond>("aucun");
   const piste = cameraTrack?.track as LocalVideoTrack | undefined;
   useEffect(() => {
     if (!piste || !isCameraEnabled) return;
@@ -407,10 +443,13 @@ function BoutonFlou() {
           return;
         }
         const actuel = piste.getProcessor();
-        if (flou && !actuel) await piste.setProcessor(tp.BackgroundBlur(12));
-        else if (!flou && actuel) await piste.stopProcessor();
+        if (actuel && (fond === "aucun" || applique.current !== fond)) await piste.stopProcessor();
+        if (fond !== "aucun" && (!piste.getProcessor() || applique.current !== fond)) {
+          await piste.setProcessor(fond === "flou" ? tp.BackgroundBlur(12) : tp.VirtualBackground(new URL(IMAGE_FOND, window.location.origin).href));
+        }
+        applique.current = fond;
       } catch (e) {
-        console.warn("[visio] flou d'arrière-plan :", (e as Error).message);
+        console.warn("[visio] arrière-plan :", (e as Error).message);
         if (!annule) setIndispo(true);
       } finally {
         if (!annule) setOccupe(false);
@@ -419,31 +458,41 @@ function BoutonFlou() {
     return () => {
       annule = true;
     };
-  }, [piste, isCameraEnabled, flou]);
+  }, [piste, isCameraEnabled, fond]);
   if (indispo) return null;
   return (
     <button
       type="button"
       className="lk-button"
-      aria-pressed={flou}
+      aria-pressed={fond !== "aucun"}
       disabled={occupe || !isCameraEnabled}
-      title={isCameraEnabled ? "Flouter l'arrière-plan de la caméra" : "Allumez la caméra pour flouter l'arrière-plan"}
+      title={isCameraEnabled ? "Arrière-plan de la caméra : aucun, flou ou photo du campus (touchez pour changer)" : "Allumez la caméra pour changer l'arrière-plan"}
       onClick={() => {
-        const v = !flou;
+        const v = SUIVANT[fond];
         setOccupe(true);
-        setFlou(v);
+        setFond(v);
         try {
-          localStorage.setItem(CLE_FLOU, v ? "1" : "0");
+          localStorage.setItem(CLE_FOND, v);
         } catch {
           /* stockage indisponible */
         }
       }}
-      style={flou ? { background: "#E4793A", color: "#fff" } : undefined}
+      style={fond !== "aucun" ? { background: "#E4793A", color: "#fff" } : undefined}
     >
-      {flou ? "Flou activé" : "Flou"}
+      {LIBELLE_FOND[fond]}
     </button>
   );
 }
+
+type Vue = "grille" | "orateur";
+const CLE_VUE = "visio-vue";
+const lireVue = (): Vue => {
+  try {
+    return localStorage.getItem(CLE_VUE) === "orateur" ? "orateur" : "grille";
+  } catch {
+    return "grille";
+  }
+};
 
 function Barre({
   micro,
@@ -452,6 +501,8 @@ function Barre({
   pleinEcran,
   onPleinEcran,
   seanceId,
+  vue,
+  onVue,
 }: {
   micro: boolean;
   camera: boolean;
@@ -459,6 +510,8 @@ function Barre({
   pleinEcran: boolean;
   onPleinEcran: () => void;
   seanceId: number | null;
+  vue: Vue;
+  onVue: (v: Vue) => void;
 }) {
   const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled, localParticipant } = useLocalParticipant();
   // Ce que le serveur permet d'envoyer (étudiant : rien tant que le formateur ne l'a pas autorisé).
@@ -503,6 +556,9 @@ function Barre({
           {isScreenShareEnabled ? "Arrêter le partage" : "Partager"}
         </TrackToggle>
       )}
+      <button type="button" className="lk-button" onClick={() => onVue(vue === "grille" ? "orateur" : "grille")} title="Changer la disposition des vignettes">
+        {vue === "grille" ? <><LayoutPanelTop className="h-4 w-4" /> Vue orateur</> : <><LayoutGrid className="h-4 w-4" /> Mosaïque</>}
+      </button>
       {seanceId && <BoutonCouperMicros seanceId={seanceId} />}
       <button type="button" className="lk-button" onClick={onPleinEcran} aria-label={pleinEcran ? "Quitter le plein écran" : "Plein écran"}>
         {pleinEcran ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
@@ -673,6 +729,15 @@ export default function VueLivekit(p: {
   const regie = p.role === "formateur" && p.seanceId ? p.seanceId : null;
   const [affichage, setAffichage] = useState({ soiVisible: true, barreVisible: true });
   const [pleinEcran, setPleinEcran] = useState(false);
+  const [vue, setVueEtat] = useState<Vue>(lireVue);
+  const setVue = (v: Vue) => {
+    setVueEtat(v);
+    try {
+      localStorage.setItem(CLE_VUE, v);
+    } catch {
+      /* stockage indisponible */
+    }
+  };
   // Micro ou caméra indisponible (autorisation, autre application, casque débranché) : un bandeau, sans couper la visio.
   const [avisAppareil, setAvisAppareil] = useState<string | null>(null);
   useEffect(() => {
@@ -735,10 +800,10 @@ export default function VueLivekit(p: {
         )}
         <div className="min-h-0 flex-1 p-1.5">
           <ContexteRegie.Provider value={regie}>
-          <Scene soiVisible={affichage.soiVisible} barreVisible={affichage.barreVisible} />
+          <Scene soiVisible={affichage.soiVisible} barreVisible={affichage.barreVisible} vue={vue} />
           </ContexteRegie.Provider>
         </div>
-        {(micro || camera || ecran) && <Barre micro={micro} camera={camera} ecran={ecran} pleinEcran={pleinEcran} onPleinEcran={basculerPleinEcran} seanceId={regie} />}
+        {(micro || camera || ecran) && <Barre micro={micro} camera={camera} ecran={ecran} pleinEcran={pleinEcran} onPleinEcran={basculerPleinEcran} seanceId={regie} vue={vue} onVue={setVue} />}
         <RoomAudioRenderer />
         <Ecouteur rappels={p.rappels} micro={p.micro} camera={p.camera} tu={p.tu} surAffichage={(o) => setAffichage((a) => ({ ...a, ...o }))} />
       </LiveKitRoom>

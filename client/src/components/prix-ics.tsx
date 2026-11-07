@@ -44,6 +44,11 @@ export function PrixIcs() {
               </Button>
             </Link>
           </div>
+          <Link href="/prix-ics-2026#life-tv">
+            <span className="inline-flex items-center gap-2 mt-5 text-sm font-semibold text-[#E9C46A] underline underline-offset-4 cursor-pointer" data-testid="lien-life-tv">
+              ▶ Vu au journal de 12{N}h{N}45 de Life TV
+            </span>
+          </Link>
         </div>
 
         <Link href="/prix-ics-2026">

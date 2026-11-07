@@ -125,6 +125,21 @@ const VIDEO_PRIX_ICS = {
   publisher: { "@type": "Organization", name: "Groupe Écoles 2IAE International", url: SITE },
 };
 
+const VIDEO_LIFE_TV_ICS = {
+  "@context": "https://schema.org",
+  "@type": "VideoObject",
+  name: "Life TV, journal de 12 h 45 : Prix ICS 2025-2026, trois entreprises et leurs dirigeants distingués",
+  description:
+    "Reportage de Life TV sur les Prix spéciaux panafricains ICS 2025-2026 : Séraphin Koua, doublement honoré, Meilleur dirigeant des grandes écoles, et le Groupe 2IAE, Meilleure école de formation.",
+  thumbnailUrl: [SITE + "/videos/prix-ics-2026/reportage-life-tv-poster.jpg"],
+  contentUrl: SITE + "/videos/prix-ics-2026/reportage-life-tv.mp4",
+  uploadDate: "2026-11-07",
+  duration: "PT1M24S",
+  inLanguage: "fr",
+  isFamilyFriendly: true,
+  publisher: { "@type": "Organization", name: "Groupe Écoles 2IAE International", url: SITE },
+};
+
 const VIDEO_TP_SINFRA = {
   "@context": "https://schema.org",
   "@type": "VideoObject",
@@ -211,7 +226,7 @@ const PAGES: Record<string, MetaPage> = {
     description:
       "Le Groupe 2IAE reçoit le Prix spécial panafricain ICS 2025-2026 de la Meilleure école de formation, et son fondateur Séraphin Koua celui du Meilleur dirigeant des grandes écoles. Remise le 31 octobre 2026 à l'Ivotel, Abidjan-Plateau.",
     image: SITE + "/images/prix-ics-2026/p01.jpg",
-    jsonLd: [filAriane("Prix ICS 2025-2026", "/prix-ics-2026"), VIDEO_PRIX_ICS],
+    jsonLd: [filAriane("Prix ICS 2025-2026", "/prix-ics-2026"), VIDEO_PRIX_ICS, VIDEO_LIFE_TV_ICS],
   },
   "/travaux-pratiques-sinfra": {
     titre: "Travaux pratiques à Sinfra : les étudiants de Yamoussoukro dans les serres de l'école | Groupe 2IAE",

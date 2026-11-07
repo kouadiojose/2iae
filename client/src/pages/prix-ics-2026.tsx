@@ -7,6 +7,7 @@
 // Sources : L'inter n° 8489 du mardi 27 octobre 2026 (page Économie), la
 // vidéo de la remise (motifs lus au micro) et l'interview du fondateur à la
 // presse le soir même. Les citations reprennent ces sources mot pour mot.
+import { useEffect } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/lib/seo";
@@ -49,6 +50,14 @@ export default function PrixIcs2026Page() {
     "Le Groupe 2IAE reçoit le Prix spécial panafricain ICS 2025-2026 de la Meilleure école de formation, et son fondateur Séraphin Koua celui du Meilleur dirigeant des grandes écoles. Remise des prix le 31 octobre 2026 à l'Ivotel, Abidjan-Plateau.",
     "/prix-ics-2026",
   );
+
+  // Arrivée par /prix-ics-2026#life-tv (lien de l'accueil) : aller au reportage.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    const t = setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }), 150);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="mobile-safe">
@@ -122,6 +131,30 @@ export default function PrixIcs2026Page() {
                 titre="La remise des deux prix, à l'Ivotel · 2 min 27"
               />
             </aside>
+          </div>
+        </div>
+      </section>
+
+      {/* À la télévision : Life TV */}
+      <section id="life-tv" className="py-16 bg-[#f7f3ee] scroll-mt-20" data-testid="section-life-tv">
+        <div className="container mx-auto px-4 max-w-6xl grid lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] gap-10 items-center">
+          <VideoReportage
+            src={`${V}/reportage-life-tv.mp4`}
+            poster={`${V}/reportage-life-tv-poster.jpg`}
+            titre="Life TV, journal de 12 h 45 : « Prix ICS 2025-2026, trois entreprises et leurs dirigeants distingués » · 1 min 24"
+          />
+          <div>
+            <p className="text-xs tracking-[0.25em] uppercase text-primary mb-3">À la télévision · Life TV</p>
+            <h2 className="font-serif text-3xl text-foreground leading-tight mb-4">«{N}Doublement honoré.{N}»</h2>
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              Le journal de 12{N}h{N}45 de Life TV a consacré son reportage aux trois lauréats. Parmi eux, Séraphin Koua,
+              «{N}doublement honoré comme meilleur dirigeant de grande école, et son établissement désigné meilleure école de
+              formation.{N}»
+            </p>
+            <p className="border-l-4 border-[#E8720C] pl-4 text-foreground leading-relaxed">
+              «{N}Une double distinction qui intervient alors que l'adéquation entre les formations et les besoins du marché
+              de l'emploi reste un défi majeur.{N}»
+            </p>
           </div>
         </div>
       </section>

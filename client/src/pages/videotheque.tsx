@@ -86,6 +86,36 @@ export default function VideothequePage() {
         </div>
       </section>
 
+      {/* Life TV, journal de 12 h 45 : les Prix spéciaux panafricains ICS 2025-2026 */}
+      <section className="py-14 bg-[#0b1f3a]" data-testid="section-reportage-life-tv-videotheque">
+        <div className="container mx-auto px-4 max-w-5xl">
+          <p className="text-xs tracking-[0.25em] uppercase text-[#E9C46A] mb-3 text-center">
+            📺 Life TV · Journal de 12 h 45 · Novembre 2026
+          </p>
+          <h2 className="font-serif text-2xl sm:text-3xl text-white text-center mb-8">
+            « Prix ICS 2025-2026 : trois entreprises et leurs dirigeants distingués »
+          </h2>
+          <div className="rounded-xl overflow-hidden shadow-2xl ring-4 ring-[#E9C46A]/60 max-w-3xl mx-auto">
+            <video
+              className="w-full h-auto block bg-black"
+              src="/videos/prix-ics-2026/reportage-life-tv.mp4"
+              poster="/videos/prix-ics-2026/reportage-life-tv-poster.jpg"
+              controls
+              playsInline
+              preload="none"
+              data-testid="video-reportage-life-tv-videotheque"
+            >
+              Votre navigateur ne prend pas en charge la lecture vidéo.
+            </video>
+            <p className="bg-black/60 text-white/90 text-sm px-4 py-3">
+              Le Groupe 2IAE, Meilleure école de formation, et son fondateur Séraphin Koua, Meilleur dirigeant des grandes
+              écoles : la double distinction au journal de Life TV.{" "}
+              <a href="/prix-ics-2026" className="text-[#E9C46A] underline underline-offset-4">La remise des prix</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Le passage au journal de 13 h de la RTI — la preuve la plus fraîche */}
       <section className="py-14 bg-[#0d2c54]" data-testid="section-reportage-rti-videotheque">
         <div className="container mx-auto px-4 max-w-5xl">

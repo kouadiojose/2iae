@@ -3,8 +3,9 @@
 // Les tables principales (devoirs, rendus, questions_quiz, tentatives_quiz)
 // sont dans ./evaluations.ts ; ici : la trace des rappels envoyés, puis les
 // types échangés entre le serveur et le client (dates en chaînes ISO).
-import { integer, text, timestamp, primaryKey } from "drizzle-orm/pg-core";
-import { campusSchema } from "./base";
+import { integer, serial, text, timestamp, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { campusSchema, utilisateurs } from "./base";
+import { conversations } from "./echanges";
 import { devoirs, type TypeDevoir, type TypeQuestion, type StatutRendu, type CritereGrille, type PropositionIa } from "./evaluations";
 import type { EtatCorrection, EtatCorrectionEtudiant, OrigineNote, RaisonARevoir, RelectureEtudiant, SourceCorrige, StatutCorrige } from "../engagement/corrections";
 
@@ -26,13 +27,83 @@ export const rappelsDevoirs = campusSchema.table(
   (t) => [primaryKey({ columns: [t.devoirId, t.type] })],
 );
 
+/**
+ * Groupes d'un devoir en groupe (devoirs.en_groupe), formés par les étudiants eux-mêmes : « Créer un groupe »,
+ * « Rejoindre », « Quitter » avant que le groupe ait rendu. Les membres peuvent être de campus différents, pourvu
+ * qu'ils suivent le cours. Chaque groupe a sa discussion (conversation de type « groupe », participants = membres).
+ */
+export const groupesDevoir = campusSchema.table(
+  "groupes_devoir",
+  {
+    id: serial("id").primaryKey(),
+    devoirId: integer("devoir_id").notNull().references(() => devoirs.id, { onDelete: "cascade" }),
+    nom: text("nom").notNull(),
+    creeParId: integer("cree_par_id").references(() => utilisateurs.id, { onDelete: "set null" }),
+    /** Discussion du groupe (messagerie). */
+    conversationId: integer("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("groupes_devoir_devoir_idx").on(t.devoirId)],
+);
+
+/** Membres d'un groupe de devoir : un étudiant est dans un seul groupe par devoir (index unique devoir, étudiant). */
+export const membresGroupeDevoir = campusSchema.table(
+  "membres_groupe_devoir",
+  {
+    groupeId: integer("groupe_id").notNull().references(() => groupesDevoir.id, { onDelete: "cascade" }),
+    devoirId: integer("devoir_id").notNull().references(() => devoirs.id, { onDelete: "cascade" }),
+    etudiantId: integer("etudiant_id").notNull().references(() => utilisateurs.id, { onDelete: "cascade" }),
+    rejointLe: timestamp("rejoint_le", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.groupeId, t.etudiantId] }), uniqueIndex("membres_groupe_devoir_unique").on(t.devoirId, t.etudiantId)],
+);
+
+export type GroupeDevoir = typeof groupesDevoir.$inferSelect;
+export type MembreGroupeDevoir = typeof membresGroupeDevoir.$inferSelect;
+
 // ── Contrats d'API ─────────────────────────────────────────────────────────
 
 /**
  * Copie rendue pour un groupe du live (devoir en direct, 12 octobre 2026), telle que les écrans la montrent :
  * « Rendu pour ton groupe (Groupe 2) par Awa K. ». « parMoi » : la personne qui lit est l'auteur de la réponse.
  */
-export type PourGroupeDto = { groupeId: number; nom: string; parNom: string; parMoi: boolean };
+export type PourGroupeDto = {
+  groupeId: number;
+  nom: string;
+  parNom: string;
+  parMoi: boolean;
+  /** « devoir » : groupe formé par les étudiants pour un devoir en groupe ; absent : groupe du live. */
+  source?: "devoir";
+  /** Liste des copies du formateur : membres du groupe qui ont cette copie (prénom et nom, campus). */
+  membres?: { id: number; nom: string; site: string | null }[];
+};
+
+/** Un membre d'un groupe de devoir, tel que les étudiants du cours le voient (jamais le matricule). */
+export type MembreGroupeDevoirDto = { id: number; prenom: string; nom: string; site: string | null; moi: boolean };
+
+/** Un groupe d'un devoir en groupe, vu par un étudiant inscrit. */
+export type GroupeDevoirEtudiantDto = {
+  id: number;
+  nom: string;
+  membres: MembreGroupeDevoirDto[];
+  complet: boolean;
+  /** Le groupe a rendu sa copie : plus personne n'entre ni ne sort. */
+  rendu: boolean;
+  /** J'en fais partie. */
+  monGroupe: boolean;
+  /** Discussion du groupe (/messages/:id), pour ses membres seulement. */
+  conversationId: number | null;
+};
+
+/** Bloc « Devoir en groupe » de GET /api/devoirs/:id (étudiant). */
+export type GroupesDuDevoirEtudiant = {
+  tailleMax: number;
+  groupes: GroupeDevoirEtudiantDto[];
+  /** Identifiant de mon groupe (null : aucun). */
+  monGroupeId: number | null;
+  /** Créer, rejoindre ou quitter un groupe est encore possible (avant la date limite). */
+  modifiable: boolean;
+};
 
 /** Fichier joint tel que le client le reçoit (lecture contrôlée par /api/fichiers/:id). */
 export type PieceJointe = { id: number; nom: string; mime: string; taille: number; url: string };
@@ -59,6 +130,10 @@ type BaseDevoirResume = {
   coefficient: number;
   accepteRetard: boolean;
   dureeMinutes: number | null;
+  /** Devoir en groupe (groupes formés par les étudiants). */
+  enGroupe?: boolean;
+  /** Taille maximale d'un groupe (devoir en groupe). */
+  tailleGroupeMax?: number;
 };
 
 /** Ligne de « Mes devoirs » (étudiant) : uniquement SES informations. */
@@ -184,6 +259,8 @@ export type DevoirDetailEtudiant = {
   corrige?: string | null;
   /** Dépôt corrigé par le campus (il a une ligne de corrigé) : conseils de dépôt et messages adaptés. */
   correctionCampus?: boolean;
+  /** Devoir en groupe : les groupes du devoir et le mien. Absent : devoir individuel. */
+  groupes?: GroupesDuDevoirEtudiant | null;
 };
 
 /** GET /api/devoirs/:id vu par le formateur ou l'équipe (éditeur). */

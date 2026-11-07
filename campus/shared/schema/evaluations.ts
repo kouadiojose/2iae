@@ -11,11 +11,23 @@ export type TypeDevoir = (typeof TYPES_DEVOIR)[number];
 export type CritereGrille = { critere: string; points: number; description?: string };
 
 /**
- * Pour quel groupe du live une copie a été rendue (devoir en direct, demande de José du 12 octobre 2026) : la même
- * copie pour chaque membre, écrite par « parId » (« parNom » : « Awa K. »). Le nom du groupe est recopié : il reste
- * après l'effacement des groupes (remise à venir d'un essai).
+ * Pour quel groupe une copie a été rendue : la même copie pour chaque membre, écrite par « parId » (« parNom » :
+ * « Awa K. »). Le nom du groupe est recopié : il reste après l'effacement des groupes (remise à venir d'un essai,
+ * groupe vidé).
+ *   - groupe du live (devoir en direct, demande de José du 12 octobre 2026) : « source » absente ou « direct »,
+ *     groupeId = groupes_travail.id, avec la séance et la répartition ;
+ *   - groupe formé par les étudiants pour un devoir en groupe (« devoir » : groupeId = groupes_devoir.id).
+ * Un devoir n'a jamais les deux (un devoir en direct n'est pas un devoir en groupe d'étudiants) : groupeId suffit
+ * donc, avec devoir_id, à retrouver les copies d'une même réponse (correction par le campus, recopie de la note).
  */
-export type PourGroupe = { seanceId: number; sessionId: number; groupeId: number; nom: string; parId: number; parNom: string };
+export type PourGroupeDirect = { source?: "direct"; seanceId: number; sessionId: number; groupeId: number; nom: string; parId: number; parNom: string };
+export type PourGroupeDevoir = { source: "devoir"; groupeId: number; nom: string; parId: number; parNom: string };
+export type PourGroupe = PourGroupeDirect | PourGroupeDevoir;
+
+/** Taille d'un groupe de devoir : de 2 à 6 étudiants, 3 par défaut. */
+export const TAILLE_GROUPE_MIN = 2;
+export const TAILLE_GROUPE_MAX = 6;
+export const TAILLE_GROUPE_DEFAUT = 3;
 
 export const devoirs = campusSchema.table(
   "devoirs",
@@ -44,6 +56,10 @@ export const devoirs = campusSchema.table(
     /** Grille de correction (aussi utilisée par l'aide à la correction IA). */
     grille: jsonb("grille").$type<CritereGrille[]>().notNull().default([]),
     publie: boolean("publie").notNull().default(true),
+    /** Devoir en groupe (dépôt) : les étudiants forment leurs groupes et un membre rend une copie pour tout le groupe. */
+    enGroupe: boolean("en_groupe").notNull().default(false),
+    /** Nombre maximal d'étudiants par groupe (2 à 6). */
+    tailleGroupeMax: integer("taille_groupe_max").notNull().default(3),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("devoirs_cours_idx").on(t.coursId), index("devoirs_limite_idx").on(t.dateLimite)],

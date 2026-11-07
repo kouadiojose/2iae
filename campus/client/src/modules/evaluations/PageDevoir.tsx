@@ -27,6 +27,8 @@ import { BoutonAssistant } from "@/modules/ia/BoutonAssistant";
 import type { DevoirDetail, DevoirDetailEtudiant, RecuDepot } from "@shared/schema";
 import { t as textesCampus } from "@shared/textes/corrections-etudiant";
 import { t as textesDirect } from "@shared/textes/devoir-direct";
+import { t as textesGroupe } from "@shared/textes/devoirs-groupe";
+import { GroupesDevoir } from "./composants/GroupesDevoir";
 import { ZoneRendu } from "./composants/ZoneRendu";
 import { EcranRecu, EcranEnAttente, ListePieces, Vignette } from "./composants/Recu";
 import { Coches } from "./composants/CarteDevoir";
@@ -71,13 +73,14 @@ export default function PageDevoir({ id }: { id: string }) {
   // Le formateur et l'équipe arrivent sur l'éditeur ; une interrogation se passe sur son écran dédié.
   if (data.vue === "enseignant") return <Redirect to={`/enseigner/devoirs/${devoirId}`} replace />;
   if (data.devoir.type === "quiz") return <Redirect to={`/quiz/${devoirId}`} replace />;
-  return <DevoirEtudiant d={data} utilisateurId={moi.id} />;
+  return <DevoirEtudiant d={data} utilisateurId={moi.id} prenom={moi.prenom} />;
 }
 
-function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisateurId: number }) {
+function DevoirEtudiant({ d, utilisateurId, prenom }: { d: DevoirDetailEtudiant; utilisateurId: number; prenom: string }) {
   const maintenant = useMaintenant(30_000);
   const tc = useTextes(textesCampus);
   const txd = useTextes(textesDirect);
+  const tg = useTextes(textesGroupe);
   const [remplacer, setRemplacer] = useState(false);
   const [recu, setRecu] = useState<RecuDepot | null>(null);
   const [cleEnFile, setCleEnFile] = useState<string | null>(null);
@@ -97,6 +100,7 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
   const { devoir, rendu, statut } = d;
   const depasse = new Date(devoir.dateLimite).getTime() < maintenant;
   const renduEnvoye = rendu && rendu.statut !== "brouillon" ? rendu : null;
+  const monGroupe = d.groupes?.groupes.find((g) => g.monGroupe) ?? null;
   const lienFormateur = lienEcrireAuFormateur(devoir.formateur?.id, devoir.titre);
   // La copie qui vient d'arriver (même heure de remise que le reçu) : le reçu dit quand le campus la notera
   // (après la date limite), ou que son formateur la regardera (vidéo, son, fichier que le campus ne lit pas).
@@ -111,7 +115,16 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
     principal = (
       <>
         {/* Copie rendue pour un groupe du live : la nouvelle copie, rendue d'ici, ne compte plus que pour soi. */}
-        {renduEnvoye?.pourGroupe && <p className="rounded-xl bg-alerte-clair px-4 py-3 text-[15px] font-semibold text-texte-doux">{txd("copie.groupe.remplacer")}</p>}
+        {renduEnvoye?.pourGroupe && renduEnvoye.pourGroupe.source !== "devoir" && !monGroupe && (
+          <p className="rounded-xl bg-alerte-clair px-4 py-3 text-[15px] font-semibold text-texte-doux">{txd("copie.groupe.remplacer")}</p>
+        )}
+        {/* Devoir en groupe : la copie part pour tout le groupe ; sans groupe, l'étudiant rend seul. */}
+        {monGroupe && (
+          <p className="rounded-xl bg-orange-pale px-4 py-3 text-[15px] font-semibold text-texte-doux">
+            {renduEnvoye ? tg("remplacerGroupe") : tg("rendrePourGroupe", { v: { nom: monGroupe.nom } })}
+          </p>
+        )}
+        {d.groupes && !monGroupe && !d.groupes.modifiable && <p className="rounded-xl bg-creme px-4 py-3 text-[15px] text-texte-doux">{tg("seul.limite")}</p>}
         <ZoneRendu
         utilisateurId={utilisateurId}
         devoir={{ id: devoir.id, titre: devoir.titre }}
@@ -151,6 +164,7 @@ function DevoirEtudiant({ d, utilisateurId }: { d: DevoirDetailEtudiant; utilisa
         {!recu && (
           <div className="flex flex-col gap-5 empty:hidden lg:col-start-2 lg:row-start-1">
             <EtatCopie d={d} maintenant={maintenant} onRemplacer={() => setRemplacer(true)} remplacement={remplacer} enAttente={Boolean(enAttente || cleEnFile)} />
+            {d.groupes && !remplacer && <GroupesDevoir devoirId={devoir.id} groupes={d.groupes} prenom={prenom} />}
             {/* Corrigé validé du devoir : le serveur ne l'envoie qu'après la date limite, à qui a une copie notée. */}
             {d.corrige && d.corrige.trim().length > 0 && !remplacer && <LeCorrige contenu={d.corrige} />}
           </div>
@@ -312,7 +326,7 @@ function EtatCopie({
               {rendu.deposeParEquipe ? " · copie papier déposée par la vie scolaire" : ""}
             </span>
             {envoyeeEnDiffere(rendu.prepareLe, rendu.renduLe) && rendu.prepareLe && <span className="text-sm text-texte-pale">Préparé sur ton téléphone à {heure(rendu.prepareLe)}, envoyé au retour du réseau.</span>}
-            {/* Devoir donné en direct, rendu pour un groupe : la même copie pour chaque membre. */}
+            {/* Rendu pour un groupe (devoir en direct, ou devoir en groupe) : la même copie pour chaque membre. */}
             {rendu.pourGroupe && (
               <span className="text-[15px] font-semibold text-texte-doux">
                 {rendu.pourGroupe.parMoi

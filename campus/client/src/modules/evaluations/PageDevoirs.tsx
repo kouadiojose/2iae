@@ -26,7 +26,7 @@ type Onglet = "a_rendre" | "rendus" | "corriges";
 export function useEvenementsDevoirs() {
   const moi = useMoiConnecte();
   useCanal(`u:${moi.id}`, (e) => {
-    if (["devoir-vu", "devoir-corrige", "devoir-rendu", "quiz-termine", "notification"].includes(e.type)) void rafraichir("/api/devoirs", "/api/notes");
+    if (["devoir-vu", "devoir-corrige", "devoir-rendu", "devoir-groupe", "quiz-termine", "notification"].includes(e.type)) void rafraichir("/api/devoirs", "/api/notes");
   });
 }
 

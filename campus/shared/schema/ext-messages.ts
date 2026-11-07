@@ -46,8 +46,8 @@ export const blocages = campusSchema.table(
 /** Ce que contient un message, pour les aperçus (« 📷 Photo », « 🎤 Note vocale »). */
 export type TypeContenuMessage = "texte" | "photo" | "audio" | "fichier";
 
-/** Conversation directe ou salon « Questions du cours ». */
-export type TypeConversationMessages = "direct" | "cours";
+/** Conversation directe, salon « Questions du cours » ou discussion d'un groupe de devoir. */
+export type TypeConversationMessages = "direct" | "cours" | "groupe";
 
 /** Personne à qui l'on peut écrire, ou interlocuteur d'une conversation directe. */
 export type ContactMessages = {

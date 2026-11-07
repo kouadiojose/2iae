@@ -320,6 +320,8 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
   const d = detailQ.data;
   const erreur = (detailQ.error ?? pageQ.error) as Error | null;
   const salon = d?.type === "cours";
+  // Discussion d'un groupe de devoir : comme un salon pour l'affichage (nom de l'auteur sur chaque bulle), sans modération.
+  const groupe = d?.type === "groupe";
   const etudiant = moi.role === "etudiant";
   const estEquipe = moi.role === "admin" || moi.role === "vie_scolaire";
 
@@ -719,8 +721,8 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
         key={m.id}
         message={m}
         deMoi={deMoi}
-        salon={salon}
-        lu={!salon && deMoi && Boolean(etat.luJusquAAutre && new Date(etat.luJusquAAutre).getTime() >= new Date(m.creeLe).getTime())}
+        salon={salon || groupe}
+        lu={!salon && !groupe && deMoi && Boolean(etat.luJusquAAutre && new Date(etat.luJusquAAutre).getTime() >= new Date(m.creeLe).getTime())}
         suite={suite}
         moderateur={Boolean(d?.peutModerer)}
         peutSupprimer={(deMoi && maintenantServeur() - new Date(m.creeLe).getTime() < DELAI_SUPPRESSION_MS) || (salon && Boolean(d?.peutModerer))}
@@ -817,7 +819,9 @@ export function FilConversation({ id, mobile, contexteInitial }: { id: number; m
                 <p className="text-lg font-extrabold">
                   {salon
                     ? selonRole(moi.role, "Aucune question pour l'instant", "Aucune question pour l'instant")
-                    : selonRole(moi.role, `Écris ton premier message à ${d.interlocuteur?.prenom ?? d.titre}`, `Écrivez votre premier message à ${d.interlocuteur?.prenom ?? d.titre}`)}
+                    : groupe
+                      ? selonRole(moi.role, "Écris le premier message à ton groupe", "Aucun message dans ce groupe")
+                      : selonRole(moi.role, `Écris ton premier message à ${d.interlocuteur?.prenom ?? d.titre}`, `Écrivez votre premier message à ${d.interlocuteur?.prenom ?? d.titre}`)}
                 </p>
                 <p className="text-[15px] text-texte-pale">
                   {salon

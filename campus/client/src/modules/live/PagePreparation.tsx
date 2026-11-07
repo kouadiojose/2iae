@@ -843,7 +843,7 @@ function FeuillePresence({ seance }: { seance: SeanceDetailDto }) {
                     )}
                   </td>
                   <td className="px-3 py-2.5">
-                    <Badge ton={l.statut === "salle" || l.statut === "en_ligne" ? "succes" : l.statut === "absent" ? "danger" : l.statut === "incident" || l.statut === "justifie" ? "gris" : "alerte"}>{LIBELLES_PRESENCE[l.statut]}</Badge>
+                    <Badge ton={l.statut === "salle" || l.statut === "en_ligne" ? "succes" : l.statut === "absent" ? "danger" : l.statut === "incident" || l.statut === "justifie" || l.statut === "facultatif" ? "gris" : "alerte"}>{LIBELLES_PRESENCE[l.statut]}</Badge>
                     {l.emargeQr && <span className="ml-1.5 font-mono text-[11px] text-texte-gris">code</span>}
                     {l.pointe && <span className="ml-1.5 font-mono text-[11px] text-texte-gris">pointé</span>}
                     {l.arriveeSalleLe && l.mode === "salle" && <span className="ml-1.5 font-mono text-[11px] text-texte-gris">arrivé {heureDouble(l.arriveeSalleLe).split(" ")[0]}</span>}

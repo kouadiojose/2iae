@@ -708,7 +708,8 @@ function statutPresence(p: Presence | undefined, s: Seance, siteEtudiant: number
   const incident = siteEtudiant !== null && sitesIncident.has(siteEtudiant);
   if (incident) return "incident";
   if (p && p.minutes > 0) return "partiel";
-  return "absent";
+  // Un rattrapage est facultatif : ne pas y venir n'est jamais une absence.
+  return s.nature === "rattrapage" ? "facultatif" : "absent";
 }
 
 /**

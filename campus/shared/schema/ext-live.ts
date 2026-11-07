@@ -142,7 +142,8 @@ export type RoleSeance = "formateur" | "etudiant" | "salle" | "equipe";
 export type ModeSuivi = "video" | "radio" | "compagnon";
 
 /** Statuts de présence (CONCEPTION §9.7). */
-export type StatutPresence = "salle" | "en_ligne" | "retard" | "partiel" | "absent" | "justifie" | "incident";
+/** « facultatif » : pas venu à une séance de rattrapage (facultative), ce n'est jamais une absence. */
+export type StatutPresence = "salle" | "en_ligne" | "retard" | "partiel" | "absent" | "justifie" | "incident" | "facultatif";
 
 export type SiteLive = { id: number; nom: string; nomCourt: string; salleConference: string; ordre: number };
 

@@ -98,6 +98,7 @@ export const LIBELLES_PRESENCE: Record<StatutPresence, string> = {
   absent: "Absent",
   justifie: "Absent justifié",
   incident: "Incident de salle",
+  facultatif: "Pas venu (rattrapage facultatif)",
 };
 
 export const RESSENTIS_UI = [

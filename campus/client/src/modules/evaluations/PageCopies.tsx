@@ -32,6 +32,7 @@ import type { ListeCopies, CopieResume, CopieDetail, CritereGrille, LigneNoteDet
 import type { CorrigeAValider } from "@shared/engagement/corrections";
 import { selonNombre, t as tc } from "@shared/textes/corrections";
 import { t as textesDirect } from "@shared/textes/devoir-direct";
+import { t as textesGroupe } from "@shared/textes/devoirs-groupe";
 import { Visionneuse, EnregistreurVocal } from "./composants/Correction";
 import { EtatCorrectionCopie, JustificationCritere, TraiterRelecture, propositionDuCampus, texteEcheance } from "./composants/CorrectionCampus";
 import { CorrectionQuiz } from "./composants/CorrectionQuiz";
@@ -243,6 +244,13 @@ export default function PageCopies({ id }: { id: string }) {
                       <span className="truncate text-[15px] font-bold">
                         {c.etudiant.prenom} {c.etudiant.nom}
                       </span>
+                      {/* Devoir en groupe : une ligne par copie de groupe, avec ses membres. */}
+                      {c.pourGroupe?.source === "devoir" && (
+                        <span className="truncate text-[12.5px] font-semibold text-orange-fonce">
+                          {c.pourGroupe.nom}
+                          {c.pourGroupe.membres?.length ? ` · ${c.pourGroupe.membres.map((m) => m.nom).join(", ")}` : ""}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1.5 truncate font-mono text-[11px] text-texte-gris">
                         {c.etudiant.site ?? "—"}
                         {c.renduLe && ` · ${heure(c.renduLe)}`}
@@ -389,6 +397,7 @@ function CopieOuverte({
 }) {
   const { data: c, isLoading, error, refetch } = useQuery<CopieDetail>({ queryKey: ["/api/rendus", renduId] });
   const txd = useTextes(textesDirect);
+  const tg = useTextes(textesGroupe);
 
   useEffect(() => {
     // L'ouverture a posé la deuxième coche : la liste la montre aussitôt.
@@ -434,6 +443,17 @@ function CopieOuverte({
               </Badge>
             )}
           </div>
+          {/* Devoir en groupe : les membres qui ont cette copie ; la correction vaut pour chacun. */}
+          {c.pourGroupe?.source === "devoir" && (
+            <div className="flex flex-col gap-1 rounded-xl bg-orange-pale px-3 py-2.5 text-sm">
+              <span className="font-semibold">
+                {tg("copies.membres", {
+                  v: { noms: (c.pourGroupe.membres ?? []).map((m) => (m.site ? `${m.nom} (${m.site})` : m.nom)).join(", ") },
+                })}
+              </span>
+              <span className="text-texte-doux">{tg("copies.pourTous")}</span>
+            </div>
+          )}
           {envoyeeEnDiffere(c.prepareLe, c.renduLe) && c.prepareLe && <p className="text-sm text-texte-pale">Préparée sur le téléphone à {heure(c.prepareLe)} (hors ligne), arrivée à {c.renduLe ? heure(c.renduLe) : "—"}. L'heure d'arrivée fait foi.</p>}
         </Carte>
         {quiz ? (

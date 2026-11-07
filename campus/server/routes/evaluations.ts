@@ -52,6 +52,17 @@ import {
   versPourGroupeDto,
 } from "../devoirs-direct";
 import { t as tDirect } from "@shared/textes/devoir-direct";
+import {
+  cleFileGroupeDevoir,
+  copiesDuMemeGroupe,
+  creerGroupe,
+  estDevoirEnGroupe,
+  groupesPourEtudiant,
+  quitterGroupe,
+  rejoindreGroupe,
+  situationGroupeDevoir,
+} from "../devoirs-groupe";
+import { t as tGroupe } from "@shared/textes/devoirs-groupe";
 import { SCHEMA_CORRECTION, SYSTEME_CORRECTION, contexteCorrection, grilleDe, messageCopie, noteDu, rapprocherCriteres, type CorrectionIa } from "../correction-ia";
 import {
   copiePriseEnMain,
@@ -140,6 +151,11 @@ import {
   type CorrectionAuto,
   type DemandeRelecture,
   type PourGroupe,
+  type PourGroupeDevoir,
+  type PourGroupeDto,
+  TAILLE_GROUPE_MIN,
+  TAILLE_GROUPE_MAX,
+  TAILLE_GROUPE_DEFAUT,
 } from "@shared/schema";
 
 const MINUTE = 60_000;
@@ -374,6 +390,8 @@ const baseResume = (d: Devoir, c: Pick<Cours, "code" | "titre" | "couleur">) => 
   coefficient: d.coefficient,
   accepteRetard: d.accepteRetard,
   dureeMinutes: d.dureeMinutes,
+  enGroupe: d.type === "depot" && d.enGroupe,
+  tailleGroupeMax: d.tailleGroupeMax,
 });
 
 /** Liste des devoirs vue par un étudiant : publiés, ouverts, avec SON statut. */
@@ -657,6 +675,9 @@ const schemaDevoir = z.object({
   correctionVisible: z.boolean().default(true),
   grille: z.array(schemaCritere).max(30).default([]),
   publie: z.boolean().default(true),
+  /** Devoir en groupe (dépôt seulement) : les étudiants forment leurs groupes, une copie par groupe. */
+  enGroupe: z.boolean().default(false),
+  tailleGroupeMax: z.number().int().min(TAILLE_GROUPE_MIN).max(TAILLE_GROUPE_MAX).default(TAILLE_GROUPE_DEFAUT),
   /**
    * Corrigé d'un dépôt, réservé aux formateurs (correction automatique, 8 octobre 2026) : le campus s'en sert de
    * barème. Rempli : validé par le formateur (server/corriges.ts). Vide ou inchangé : rien ne change (le campus
@@ -668,7 +689,11 @@ const schemaDevoir = z.object({
 });
 const schemaModifDevoir = schemaDevoir.omit({ coursId: true }).partial();
 /** Champs d'un devoir à créer (sans le corrigé, passé à part). */
-export type ValeursDevoir = Omit<z.output<typeof schemaDevoir>, "corrige" | "corrigeVersion">;
+export type ValeursDevoir = Omit<z.output<typeof schemaDevoir>, "corrige" | "corrigeVersion" | "enGroupe" | "tailleGroupeMax"> & {
+  /** Devoir en groupe (absent : individuel ; jamais pour un devoir donné en direct, qui a les groupes du live). */
+  enGroupe?: boolean;
+  tailleGroupeMax?: number;
+};
 
 /**
  * Seuls le formateur du cours et la direction écrivent un corrigé (décision D-F) : un corrigé envoyé par
@@ -723,6 +748,7 @@ export async function creerDevoir(
       dateLimite,
       dureeMinutes: v.type === "quiz" ? v.dureeMinutes ?? null : null,
       accepteRetard: v.type === "quiz" ? false : v.accepteRetard,
+      enGroupe: v.type === "quiz" ? false : v.enGroupe ?? false,
       // Une interrogation naît en brouillon : elle sera publiée une fois ses questions écrites.
       publie: v.type === "quiz" ? false : v.publie,
       auteurId: u.id,
@@ -909,6 +935,8 @@ async function detailEtudiant(u: Utilisateur, d: Devoir, c: Cours): Promise<Devo
     corrige,
     // Le campus corrige les copies de ce devoir (conseil de dépôt) : pas quand son corrigé est bloqué (D-G).
     correctionCampus: corrigeChezLeCampus(cd, d.publie, maintenant),
+    // Devoir en groupe : les groupes du devoir (créer, rejoindre, quitter, discussion du groupe).
+    groupes: (await estDevoirEnGroupe(d)) ? await groupesPourEtudiant(u, d, maintenant) : null,
   };
 }
 
@@ -984,8 +1012,18 @@ async function copieDetail(r: Rendu, d: Devoir, e: Utilisateur): Promise<CopieDe
     origineNote: r.origineNote,
     correctionAuto: etatPourFormateur(r, suivi, cd, d),
     relecture: relecture ? versRelectureEtudiant(relecture) : null,
-    pourGroupe: versPourGroupeDto(r.pourGroupe, 0),
+    pourGroupe: await pourGroupeAvecMembres(r, 0),
   };
+}
+
+/** Copie d'un groupe de devoir, vue du personnel : avec les membres qui ont cette copie (nom, campus). */
+async function pourGroupeAvecMembres(r: Rendu, lecteurId: number): Promise<PourGroupeDto | null> {
+  const dto = versPourGroupeDto(r.pourGroupe, lecteurId);
+  if (!dto || r.pourGroupe?.source !== "devoir") return dto;
+  const ids = [r.etudiantId, ...(await copiesDuMemeGroupe(r)).map((x) => x.etudiantId)];
+  const sitesNoms = await nomsSites();
+  const personnes = await db.select().from(utilisateurs).where(inArray(utilisateurs.id, ids)).orderBy(asc(utilisateurs.nom), asc(utilisateurs.prenom));
+  return { ...dto, membres: personnes.map((e) => ({ id: e.id, nom: `${e.prenom} ${e.nom}`, site: e.siteId ? sitesNoms.get(e.siteId) ?? null : null })) };
 }
 
 // ── Rendre ─────────────────────────────────────────────────────────────────
@@ -1181,8 +1219,7 @@ async function enregistrerRendus(
   if (pourGroupe && options.journal) {
     await tracer(auteur, options.journal, {
       devoirId: d.id,
-      seanceId: pourGroupe.seanceId,
-      sessionId: pourGroupe.sessionId,
+      ...(pourGroupe.source === "devoir" ? { source: "devoir" } : { seanceId: pourGroupe.seanceId, sessionId: pourGroupe.sessionId }),
       groupeId: pourGroupe.groupeId,
       nom: pourGroupe.nom,
       auteurId: pourGroupe.parId,
@@ -1312,6 +1349,58 @@ async function rendrePourGroupe(
     const code = (e as { code?: string } | null)?.code;
     if (e instanceof DelaiGroupeDepasse || code === "55P03" || code === "57014") {
       throw new ErreurHttp(503, "Le campus est très occupé : ta réponse n'est pas partie. Renvoie-la dans un instant.");
+    }
+    throw e;
+  }
+}
+
+/**
+ * Copie d'un membre pour son groupe de devoir (devoir en groupe, groupes formés par les étudiants), dans la file du
+ * groupe : le groupe est relu à l'arrivée (la copie a pu attendre le réseau), puis la même copie est écrite pour
+ * chaque membre inscrit (enregistrerRendus, pour_groupe source « devoir ») : même texte, mêmes fichiers, même heure,
+ * même « en retard ». Un membre peut remplacer la copie du groupe jusqu'à la date limite ; elle repart alors sans
+ * correction pour tous. Les membres dont la copie est déjà publiée, ou rendue après la date limite, restent de côté.
+ */
+async function rendrePourGroupeDevoir(
+  u: Utilisateur,
+  d: Devoir,
+  c: Cours,
+  v: CorpsRendre,
+  groupeId: number,
+  avant: Rendu | undefined,
+  prepareLe: Date | null,
+): Promise<RecuDepot> {
+  try {
+    return await enSerieGroupe(cleFileGroupeDevoir(d.id, groupeId), async () => {
+      const s = await situationGroupeDevoir(d, u.id);
+      if (!s || s.groupe.id !== groupeId) throw new ErreurHttp(409, tGroupe("erreur.groupeChange", { registre: "tu" }));
+      if (!v.texte.trim() && !v.fichierIds.length) throw invalide("Ajoute au moins une photo, un fichier ou un texte avant d'envoyer.");
+      // Fichiers déjà attachés acceptés : ceux de ma copie individuelle ou de la copie actuelle de CE groupe (un
+      // camarade a pu les déposer), jamais ceux d'une copie rendue pour un autre groupe.
+      const [actuelle] = await db
+        .select({ fichierIds: rendus.fichierIds })
+        .from(rendus)
+        .where(and(eq(rendus.devoirId, d.id), ne(rendus.statut, "brouillon"), sql`${rendus.pourGroupe}->>'source' = 'devoir'`, sql`${rendus.pourGroupe}->>'groupeId' = ${String(groupeId)}`))
+        .orderBy(desc(rendus.renduLe))
+        .limit(1);
+      const attaches = [
+        ...(avant && (!avant.pourGroupe || (avant.pourGroupe.source === "devoir" && avant.pourGroupe.groupeId === groupeId)) ? avant.fichierIds : []),
+        ...(actuelle?.fichierIds ?? []),
+      ];
+      await verifierFichiers(u, v.fichierIds, "rendu", attaches);
+      const pourGroupe: PourGroupeDevoir = { source: "devoir", groupeId, nom: s.groupe.nom, parId: u.id, parNom: prenomInitiale(u) };
+      const membres = s.membres.some((m) => m.id === u.id) ? s.membres : [...s.membres, u];
+      const { ecrites, ignores } = await enregistrerRendus(u, d, membres, { texte: v.texte, fichierIds: v.fichierIds, prepareLe }, pourGroupe, {
+        journal: "rendu_groupe",
+        auteurObligatoire: true,
+      });
+      const x = ecrites.find((e) => e.etudiantId === u.id)!;
+      return { ...(await recuDe(d, c, x)), groupe: { nom: s.groupe.nom, copies: ecrites.length, ignores: ignores.map(prenomInitiale) } };
+    });
+  } catch (e) {
+    const code = (e as { code?: string } | null)?.code;
+    if (e instanceof DelaiGroupeDepasse || code === "55P03" || code === "57014") {
+      throw new ErreurHttp(503, "Le campus est très occupé : ta copie n'est pas partie. Renvoie-la dans un instant.");
     }
     throw e;
   }
@@ -1655,6 +1744,7 @@ export function enregistrerEvaluations(app: Express) {
           ...v,
           ...fusion,
           accepteRetard: type === "quiz" ? false : v.accepteRetard ?? d.accepteRetard,
+          enGroupe: type === "quiz" ? false : v.enGroupe ?? d.enGroupe,
           dureeMinutes: type === "quiz" ? (v.dureeMinutes === undefined ? d.dureeMinutes : v.dureeMinutes) : null,
         })
         .where(eq(devoirs.id, d.id))
@@ -1748,6 +1838,50 @@ export function enregistrerEvaluations(app: Express) {
     }),
   );
 
+  // ── Devoir en groupe : groupes formés par les étudiants (inscrits du cours, tous campus) ──
+
+  const schemaGroupe = z.object({ nom: z.string().trim().max(60, "nom trop long (60 caractères au plus)").nullish() });
+
+  /** Les groupes du devoir, à jour, après une action de l'étudiant. */
+  async function groupesApres(u: Utilisateur, devoirId: number) {
+    const [d] = await db.select().from(devoirs).where(eq(devoirs.id, devoirId));
+    return groupesPourEtudiant(u, d);
+  }
+
+  app.post(
+    "/api/devoirs/:id/groupes",
+    exigerRole("etudiant"),
+    route(async (req, res) => {
+      const u = moi(req);
+      const { d } = await devoirARendre(u, idParam(req));
+      const { nom } = valider(schemaGroupe, req.body ?? {});
+      await creerGroupe(u, d, nom);
+      res.status(201).json(await groupesApres(u, d.id));
+    }),
+  );
+
+  app.post(
+    "/api/devoirs/:id/groupes/:groupeId/rejoindre",
+    exigerRole("etudiant"),
+    route(async (req, res) => {
+      const u = moi(req);
+      const { d } = await devoirARendre(u, idParam(req));
+      await rejoindreGroupe(u, d, idParam(req, "groupeId"));
+      res.json(await groupesApres(u, d.id));
+    }),
+  );
+
+  app.post(
+    "/api/devoirs/:id/groupes/quitter",
+    exigerRole("etudiant"),
+    route(async (req, res) => {
+      const u = moi(req);
+      const { d } = await devoirARendre(u, idParam(req));
+      await quitterGroupe(u, d);
+      res.json(await groupesApres(u, d.id));
+    }),
+  );
+
   app.post(
     "/api/devoirs/:id/rendre",
     exigerRole("etudiant"),
@@ -1772,6 +1906,10 @@ export function enregistrerEvaluations(app: Express) {
         const r = await rendrePourGroupe(u, d, c, v, v.groupe, avant, apresEcheance, prepareLe);
         return res.status(r.statut).json(r.recu);
       }
+      // Devoir en groupe (groupes formés par les étudiants) : membre d'un groupe, il rend pour tout le groupe ; sans
+      // groupe, il rend seul (copie individuelle, comme un devoir ordinaire).
+      const groupeDevoir = await situationGroupeDevoir(d, u.id);
+      if (groupeDevoir) return res.status(201).json(await rendrePourGroupeDevoir(u, d, c, v, groupeDevoir.groupe.id, avant, prepareLe));
       if (!v.texte.trim() && !v.fichierIds.length) throw invalide("Ajoute au moins une photo, un fichier ou un texte avant d'envoyer.");
       await verifierFichiers(u, v.fichierIds, "rendu", avant?.fichierIds ?? []);
       const recu = await enregistrerRendu(u, d, c, u.id, { texte: v.texte, fichierIds: v.fichierIds, prepareLe });
@@ -1824,6 +1962,8 @@ export function enregistrerEvaluations(app: Express) {
         const e = etatPourFormateur(r, suivis.get(r.id), cd, d);
         return e ? { etat: e.etat, raison: e.raison } : null;
       };
+      const visiblesIds = new Set(inscrits.map((e) => e.id));
+      const dejaVus = new Set<string>();
       const copies: CopieResume[] = inscrits
         .map((e) => {
           const r = renduDe.get(e.id);
@@ -1846,6 +1986,32 @@ export function enregistrerEvaluations(app: Express) {
             relectureOuverte: Boolean(r && relectures.get(r.id)?.statut === "ouverte"),
             pourGroupe: versPourGroupeDto(r?.pourGroupe, u.id),
           };
+        })
+        // Devoir en groupe : la copie d'un groupe n'apparaît qu'une fois (celle de son auteur, sinon la première),
+        // avec le nom du groupe et ses membres ; la corriger corrige chaque membre.
+        .filter((x) => {
+          const pg = x.renduId ? renduDe.get(x.etudiant.id)?.pourGroupe : null;
+          if (pg?.source !== "devoir") return true;
+          const r = renduDe.get(x.etudiant.id)!;
+          const cle = `${pg.groupeId}:${r.renduLe?.getTime() ?? 0}`;
+          if (dejaVus.has(cle)) return false;
+          const auteurVisible = renduDe.get(pg.parId)?.pourGroupe?.groupeId === pg.groupeId && renduDe.get(pg.parId)?.renduLe?.getTime() === r.renduLe?.getTime() && visiblesIds.has(pg.parId);
+          if (auteurVisible && pg.parId !== x.etudiant.id) return false;
+          dejaVus.add(cle);
+          return true;
+        })
+        .map((x) => {
+          const pg = x.renduId ? renduDe.get(x.etudiant.id)?.pourGroupe : null;
+          if (pg?.source !== "devoir" || !x.pourGroupe) return x;
+          // Membres qui ont cette copie (même groupe, même heure de remise), dans le périmètre de la personne.
+          const t0 = renduDe.get(x.etudiant.id)!.renduLe?.getTime();
+          const membres = inscrits
+            .filter((e) => {
+              const r = renduDe.get(e.id);
+              return r?.pourGroupe?.source === "devoir" && r.pourGroupe.groupeId === pg.groupeId && r.renduLe?.getTime() === t0;
+            })
+            .map((e) => ({ id: e.id, nom: `${e.prenom} ${e.nom}`, site: e.siteId ? sitesNoms.get(e.siteId) ?? null : null }));
+          return { ...x, pourGroupe: { ...x.pourGroupe, membres } };
         })
         // Copies rendues d'abord (les plus anciennes en premier), puis les non-rendus par nom.
         .sort((a, b) => {
@@ -1890,6 +2056,11 @@ export function enregistrerEvaluations(app: Express) {
         if (maj) {
           copie = maj;
           publierUtilisateur(e.id, "devoir-vu", { devoirId: d.id, renduId: r.id, vuLe: iso(maj.vuLe) });
+          // Copie d'un groupe de devoir : ouverte pour chaque membre (✓✓ chez tous).
+          for (const f of await copiesDuMemeGroupe(r)) {
+            const [vu] = await db.update(rendus).set({ vuLe: maj.vuLe }).where(and(memeCopie(f), isNull(rendus.vuLe))).returning({ id: rendus.id });
+            if (vu) publierUtilisateur(f.etudiantId, "devoir-vu", { devoirId: d.id, renduId: f.id, vuLe: iso(maj.vuLe) });
+          }
         }
       }
       res.json(await copieDetail(copie, d, e));
@@ -1946,23 +2117,44 @@ export function enregistrerEvaluations(app: Express) {
         if (!f || f.proprietaireId !== u.id || f.usage !== "rendu" || !f.mime.startsWith("audio/")) throw invalide("Commentaire vocal introuvable. Enregistrez-le à nouveau.");
       }
       const maintenant = new Date();
+      const valeurs = {
+        ...(noteDetail !== undefined ? { noteDetail: noteDetail?.map((l) => (l.justification ? l : { critere: l.critere, points: l.points, obtenu: l.obtenu })) ?? null } : {}),
+        ...(note !== undefined ? { note } : {}),
+        ...(v.commentaire !== undefined ? { commentaire: v.commentaire?.trim() || null } : {}),
+        ...(v.commentaireAudioId !== undefined ? { commentaireAudioId: v.commentaireAudioId } : {}),
+        correcteurId: u.id,
+        // Le formateur prend la main : une note du campus devient la sienne, que le campus ne reprendra plus.
+        origineNote: "formateur" as const,
+        corrigeLe: maintenant,
+        majLe: maintenant,
+      };
+      // Copie d'un groupe de devoir : les copies des autres membres (même réponse), lues avant la mise à jour.
+      const duGroupe = await copiesDuMemeGroupe(r);
       const [maj] = await db
         .update(rendus)
-        .set({
-          ...(noteDetail !== undefined ? { noteDetail: noteDetail?.map((l) => (l.justification ? l : { critere: l.critere, points: l.points, obtenu: l.obtenu })) ?? null } : {}),
-          ...(note !== undefined ? { note } : {}),
-          ...(v.commentaire !== undefined ? { commentaire: v.commentaire?.trim() || null } : {}),
-          ...(v.commentaireAudioId !== undefined ? { commentaireAudioId: v.commentaireAudioId } : {}),
-          correcteurId: u.id,
-          // Le formateur prend la main : une note du campus devient la sienne, que le campus ne reprendra plus.
-          origineNote: "formateur",
-          corrigeLe: maintenant,
-          majLe: maintenant,
-        })
+        .set(valeurs)
         // Même copie que celle lue plus haut : un remplacement arrivé entre-temps l'emporte.
         .where(memeCopie(r))
         .returning();
       if (!maj) throw copieRemplacee();
+      // Devoir en groupe : la même correction (note, détail, commentaires, vocal) pour chaque membre du groupe.
+      for (const f of duGroupe) {
+        const [mf] = await db.update(rendus).set(valeurs).where(memeCopie(f)).returning();
+        if (!mf) continue;
+        if (await db.select({ x: correctionsAuto.renduId }).from(correctionsAuto).where(eq(correctionsAuto.renduId, f.id)).then((l) => l.length > 0)) await copiePriseEnMain(f.id);
+        const changee = note !== undefined && note !== f.note;
+        if (changee) {
+          await db
+            .update(demandesRelecture)
+            .set({ statut: "traitee", noteApres: mf.note, reponse: "Ton formateur a revu la copie de ton groupe et a changé la note.", traiteeParId: u.id, traiteeLe: maintenant })
+            .where(and(eq(demandesRelecture.renduId, f.id), eq(demandesRelecture.statut, "ouverte")));
+        }
+        if (f.statut === "corrige" && changee) {
+          await notifier([f.etudiantId], { type: "note", titre: "Note mise à jour", corps: `« ${d.titre} »`, lien: `/devoirs/${d.id}` });
+          publierUtilisateur(f.etudiantId, "devoir-corrige", { devoirId: d.id });
+        }
+      }
+      if (duGroupe.length) await tracer(u, "correction_groupe", { devoirId: d.id, renduId: r.id, groupeId: r.pourGroupe?.groupeId, autres: duGroupe.map((f) => f.id) });
       // Copie suivie par le campus : sa demande en attente ne sert plus ; une note du campus garde sa trace (note_campus).
       const [suivi] = await db.select({ etat: correctionsAuto.etat, noteCampus: correctionsAuto.noteCampus }).from(correctionsAuto).where(eq(correctionsAuto.renduId, r.id));
       if (suivi) await copiePriseEnMain(r.id);
@@ -2059,6 +2251,10 @@ export function enregistrerEvaluations(app: Express) {
         .where(and(memeCopie(r), ne(rendus.statut, "brouillon")))
         .returning();
       if (!maj) throw new ErreurHttp(409, "L'étudiant vient de remplacer sa copie : la proposition de l'IA portait sur l'ancienne. Relancez-la sur la nouvelle copie.");
+      // Copie d'un groupe de devoir : la proposition vaut pour la copie de chaque membre (même réponse).
+      for (const f of await copiesDuMemeGroupe(r)) {
+        await db.update(rendus).set({ propositionIa: proposition, majLe: new Date() }).where(and(memeCopie(f), ne(rendus.statut, "brouillon")));
+      }
       await tracer(u, "proposition_ia", { renduId: r.id, devoirId: d.id, noteProposee: proposition.note, alerte: Boolean(proposition.alerte) });
       res.json(await copieDetail(maj, d, e));
     }),

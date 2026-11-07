@@ -5,8 +5,11 @@ import { campusSchema, utilisateurs, sites, classes, fichiers } from "./base";
 import { cours } from "./cours";
 import type { Marque, PlateformeRappels } from "../engagement/envois";
 
-/** direct : deux personnes · cours : salon de tous les inscrits d'un cours · classe : salon d'une classe. */
-export const TYPES_CONVERSATION = ["direct", "cours", "classe"] as const;
+/**
+ * direct : deux personnes · cours : salon de tous les inscrits d'un cours · classe : salon d'une classe ·
+ * groupe : discussion d'un groupe de devoir (participants = membres du groupe, tenus à jour par le module évaluations).
+ */
+export const TYPES_CONVERSATION = ["direct", "cours", "classe", "groupe"] as const;
 export type TypeConversation = (typeof TYPES_CONVERSATION)[number];
 
 export const conversations = campusSchema.table(

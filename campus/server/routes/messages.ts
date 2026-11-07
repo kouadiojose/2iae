@@ -497,12 +497,19 @@ async function resumer(u: Utilisateur, lignes: LigneConversation[]): Promise<Con
     const coursSalon = c.coursId ? coursDe.get(c.coursId) ?? null : null;
     if (c.type === "direct" && !autre) continue; // conversation orpheline (compte supprimé)
     if (c.type === "cours" && !coursSalon) continue;
+    if (c.type === "classe") continue;
+    // Discussion d'un groupe de devoir : son titre (« Groupe de Awa · Business plan ») et le cours.
+    const groupe = c.type === "groupe";
     const typeDernier = d && !d.m.supprime ? typeContenu(d.mime) : "texte";
     resumes.push({
       id: c.id,
-      type: c.type === "cours" ? "cours" : "direct",
-      titre: autre ? `${autre.u.prenom} ${autre.u.nom}` : coursSalon!.titre,
-      sousTitre: autre ? detailAutre(autre.u) : `${coursSalon!.code} · Questions du cours`,
+      type: groupe ? "groupe" : c.type === "cours" ? "cours" : "direct",
+      titre: groupe ? c.titre ?? "Discussion du groupe" : autre ? `${autre.u.prenom} ${autre.u.nom}` : coursSalon!.titre,
+      sousTitre: groupe
+        ? `${coursSalon ? `${coursSalon.code} · ` : ""}Discussion du groupe`
+        : autre
+          ? detailAutre(autre.u)
+          : `${coursSalon!.code} · Questions du cours`,
       interlocuteur: autre ? { ...versContact(autre.u, carteSites), detail: detailAutre(autre.u) } : null,
       cours: coursSalon,
       dernierMessage: d
@@ -545,7 +552,7 @@ async function mesConversations(u: Utilisateur): Promise<ConversationResume[]> {
   return (
     resumes
       // Une conversation directe ouverte mais jamais utilisée n'encombre pas la liste.
-      .filter((r) => r.type === "cours" || r.dernierMessage)
+      .filter((r) => r.type === "cours" || r.type === "groupe" || r.dernierMessage)
       .sort((a, b) => {
         // Les salons encore silencieux vont à la fin ; sinon, le plus récent d'abord.
         if (!a.dernierMessage !== !b.dernierMessage) return a.dernierMessage ? -1 : 1;
@@ -879,7 +886,7 @@ export function enregistrerMessages(app: Express) {
               .where(and(eq(participants.conversationId, c.id), eq(participants.utilisateurId, autre.u.id)))
           : [];
         luJusquAAutre = curseur?.lu?.toISOString() ?? null;
-      } else if (c.coursId) {
+      } else if (c.type === "cours" && c.coursId) {
         const [r] = await db
           .select({ n: sql<number>`count(distinct ${classes.siteId})::int` })
           .from(coursClasses)
@@ -1255,6 +1262,20 @@ async function prevenir(u: Utilisateur, c: Conversation, m: MessageDto, autre: {
         priorite: u.role === "etudiant" ? "contenu" : "action", // C3 : un camarade ne prend pas la place d'une échéance
       });
     }
+    return;
+  }
+
+  // Discussion d'un groupe de devoir : les autres membres (participants), une notification par conversation non lue.
+  if (c.type === "groupe") {
+    const membres = await db
+      .select({ id: participants.utilisateurId, sourdine: participants.sourdine })
+      .from(participants)
+      .where(and(eq(participants.conversationId, c.id), ne(participants.utilisateurId, u.id)));
+    for (const p of membres) publierUtilisateur(p.id, "message", { conversationId: c.id });
+    await notifierUneFois(
+      membres.filter((p) => !p.sourdine && !regardent.has(p.id)).map((p) => p.id),
+      { type: "message", titre: `${c.titre ?? "Discussion du groupe"}`, corps: `${u.prenom} : ${apercu}`, lien, push: true, sensible: true, priorite: "contenu" },
+    );
     return;
   }
 

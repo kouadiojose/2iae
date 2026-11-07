@@ -36,7 +36,7 @@ function Extrait({ c, role }: { c: ConversationResume; role: Role }) {
   if (!d) {
     return <span className="truncate italic text-texte-gris">{c.type === "cours" ? "Aucune question pour l'instant" : "Nouvelle conversation"}</span>;
   }
-  const prefixe = d.deMoi ? selonRole(role, "Toi : ", "Vous : ") : c.type === "cours" ? `${d.auteurPrenom} : ` : "";
+  const prefixe = d.deMoi ? selonRole(role, "Toi : ", "Vous : ") : c.type === "cours" || c.type === "groupe" ? `${d.auteurPrenom} : ` : "";
   return (
     <span className={cn("flex min-w-0 items-center gap-1", d.supprime && "italic")}>
       {d.deMoi && d.lu !== null && !d.supprime && (
@@ -77,6 +77,7 @@ function LigneConversation({ c, active, maintenant, role }: { c: ConversationRes
         {c.type === "cours" && (
           <span className="font-mono text-[11px] uppercase tracking-wider text-orange-fonce">{c.cours?.code} · Questions du cours</span>
         )}
+        {c.type === "groupe" && <span className="font-mono text-[11px] uppercase tracking-wider text-orange-fonce">{c.sousTitre}</span>}
         <span className="flex items-center justify-between gap-2">
           <span className={cn("min-w-0 text-[15px]", nonLus ? "font-semibold text-encre" : "text-texte-pale")}>
             <Extrait c={c} role={role} />

@@ -183,12 +183,13 @@ export type AccesConversation = {
 export async function accesConversation(u: Utilisateur, conversationId: number): Promise<AccesConversation> {
   if (!aMessagerie(u)) throw new ErreurHttp(403, "La messagerie n'est pas disponible avec ce compte.");
   const [c] = await db.select().from(conversations).where(eq(conversations.id, conversationId));
-  if (!c || (c.type !== "direct" && c.type !== "cours")) throw introuvable("Conversation");
+  if (!c || (c.type !== "direct" && c.type !== "cours" && c.type !== "groupe")) throw introuvable("Conversation");
   const [p] = await db
     .select()
     .from(participants)
     .where(and(eq(participants.conversationId, conversationId), eq(participants.utilisateurId, u.id)));
-  if (c.type === "direct") {
+  // Directe, ou discussion d'un groupe de devoir (participants = membres actuels du groupe) : participants seulement.
+  if (c.type === "direct" || c.type === "groupe") {
     if (!p) throw introuvable("Conversation");
     return { conversation: c, participant: p, moderateur: false };
   }
@@ -246,7 +247,7 @@ export async function assurerParticipant(conversationId: number, utilisateurId: 
  * ouverts (équipe).
  */
 export function perimetreConversations(u: Utilisateur, coursSalons: number[]): SQL {
-  const directes = and(eq(conversations.type, "direct"), isNotNull(participants.utilisateurId))!;
+  const directes = and(inArray(conversations.type, ["direct", "groupe"]), isNotNull(participants.utilisateurId))!;
   const salons = estEquipe(u)
     ? and(eq(conversations.type, "cours"), isNotNull(participants.utilisateurId))!
     : coursSalons.length

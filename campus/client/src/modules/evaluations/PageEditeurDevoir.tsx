@@ -29,6 +29,7 @@ import { useTextes } from "@/lib/textes";
 import { cn, taille } from "@/lib/utils";
 import type { DevoirDetail, DevoirDetailEnseignant, PieceJointe, CritereGrille, TypeDevoir } from "@shared/schema";
 import { t as tc } from "@shared/textes/corrections";
+import { t as textesGroupe } from "@shared/textes/devoirs-groupe";
 import { texteEcheance } from "./composants/CorrectionCampus";
 import { EditeurGrille } from "./composants/EditeurGrille";
 import { EditeurQuestions } from "./composants/EditeurQuestions";
@@ -54,6 +55,9 @@ type Formulaire = {
   correctionVisible: boolean;
   grille: CritereGrille[];
   publie: boolean;
+  /** Devoir en groupe : les étudiants forment leurs groupes, une copie par groupe. */
+  enGroupe: boolean;
+  tailleGroupeMax: number;
   /** Corrigé (Markdown) : barème du campus pour noter les copies d'un devoir à rendre. */
   corrige: string;
 };
@@ -81,6 +85,8 @@ const depuisDevoir = (d: DevoirDetailEnseignant["devoir"], corrige: string): For
   correctionVisible: d.correctionVisible,
   grille: d.grille,
   publie: d.publie,
+  enGroupe: Boolean(d.enGroupe),
+  tailleGroupeMax: d.tailleGroupeMax ?? 3,
   corrige,
 });
 
@@ -120,6 +126,8 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
     correctionVisible: true,
     grille: [],
     publie: true,
+    enGroupe: false,
+    tailleGroupeMax: 3,
     corrige: "",
   }));
   const initialise = useRef(false);
@@ -135,6 +143,7 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
   const { moi } = useMoi();
   const ecritCorrige = moi?.role === "formateur" || moi?.role === "admin";
   const txc = useTextes(tc);
+  const tg = useTextes(textesGroupe);
   const [envoi, setEnvoi] = useState(false);
   const [televersement, setTeleversement] = useState(false);
   const [confirmerSuppression, setConfirmerSuppression] = useState(false);
@@ -216,6 +225,8 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
       correctionVisible: f.correctionVisible,
       grille: f.grille.map((c) => ({ critere: c.critere.trim(), points: Number(c.points), ...(c.description?.trim() ? { description: c.description.trim() } : {}) })),
       publie: f.publie,
+      enGroupe: !quiz && f.enGroupe,
+      tailleGroupeMax: Math.min(6, Math.max(2, Math.round(Number(f.tailleGroupeMax) || 3))),
       // Devoir à rendre : le corrigé à la création (vide : le campus le rédige), puis seulement s'il a changé, avec
       // la version lue. Jamais de la vie scolaire, qui ne l'écrit pas.
       ...(!quiz && ecritCorrige && (nouveau || corrigeModifie) ? { corrige: f.corrige.trim(), corrigeVersion: versionCorrige } : {}),
@@ -506,12 +517,24 @@ export default function PageEditeurDevoir({ id }: { id?: string }) {
                 <p className="text-[13px] text-texte-gris">Chrono tenu par le serveur ; l'interrogation se ferme à la date limite. La meilleure tentative est retenue.</p>
               </>
             ) : (
-              <CaseACocher
-                checked={f.accepteRetard}
-                onChange={(v) => maj({ accepteRetard: v })}
-                libelle="Accepter les copies en retard"
-                aide="Elles seront marquées « en retard ». L'heure d'arrivée au campus fait foi."
-              />
+              <>
+                <CaseACocher
+                  checked={f.accepteRetard}
+                  onChange={(v) => maj({ accepteRetard: v })}
+                  libelle="Accepter les copies en retard"
+                  aide="Elles seront marquées « en retard ». L'heure d'arrivée au campus fait foi."
+                />
+                <CaseACocher checked={f.enGroupe} onChange={(v) => maj({ enGroupe: v })} libelle={tg("editeur.enGroupe")} aide={tg("editeur.enGroupe.aide")} />
+                {f.enGroupe && (
+                  <Selection libelle={tg("editeur.taille")} value={String(f.tailleGroupeMax)} onChange={(e) => maj({ tailleGroupeMax: Number(e.target.value) })} aide={tg("editeur.taille.aide")}>
+                    {[2, 3, 4, 5, 6].map((n) => (
+                      <option key={n} value={n}>
+                        {n} étudiants
+                      </option>
+                    ))}
+                  </Selection>
+                )}
+              </>
             )}
             <CaseACocher
               checked={quiz && !questions.length ? false : f.publie}

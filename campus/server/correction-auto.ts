@@ -687,7 +687,9 @@ async function echec(x: Contexte, cd: CorrigeDevoir, e: unknown): Promise<IssueE
   return "erreur";
 }
 
-// ── Copies d'un groupe du live : une seule correction, la même note pour tous ──
+// ── Copies d'un groupe (du live, ou d'un devoir en groupe : pour_groupe.source = « devoir ») : une seule
+// correction, la même note pour tous. Les deux sortes de groupe ont groupeId et parId : la même règle les couvre
+// (un devoir n'a jamais les deux, devoirs-groupe.ts : estDevoirEnGroupe). ──
 
 type EtatRecopie =
   | { genre: "notee"; note: number; lignes: NonNullable<Rendu["noteDetail"]>; commentaire: string; detail: string | null }

@@ -77,9 +77,11 @@ export async function compteurs(devoirId: number): Promise<Compteurs> {
 
 const consigneCourte = (c: string) => (c.length > CONSIGNE_DIRECT_MAX ? `${c.slice(0, CONSIGNE_DIRECT_MAX - 1).trimEnd()}…` : c);
 
-/** Copie rendue pour un groupe, telle qu'un écran la montre à « lecteurId ». */
+/** Copie rendue pour un groupe (du live, ou d'un devoir en groupe : source « devoir »), telle qu'un écran la montre à « lecteurId ». */
 export const versPourGroupeDto = (p: PourGroupe | null | undefined, lecteurId: number): PourGroupeDto | null =>
-  p ? { groupeId: p.groupeId, nom: p.nom, parNom: p.parNom, parMoi: p.parId === lecteurId } : null;
+  p
+    ? { groupeId: p.groupeId, nom: p.nom, parNom: p.parNom, parMoi: p.parId === lecteurId, ...(p.source === "devoir" ? { source: "devoir" as const } : {}) }
+    : null;
 
 /** Ma copie (non brouillon) de ce devoir, pour la carte de l'étudiant. */
 export const versMonRendu = (r: Pick<Rendu, "statut" | "renduLe" | "majLe" | "recu" | "enRetard" | "pourGroupe">, lecteurId: number): MonRenduDirectDto | null =>

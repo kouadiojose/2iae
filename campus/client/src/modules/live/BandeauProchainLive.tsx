@@ -6,6 +6,7 @@ import { useMoi } from "@/lib/auth";
 import { LienBouton } from "@/components/ui/bouton";
 import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { LienAgenda } from "./ui";
+import { BadgeRattrapage } from "./ProposerRattrapage";
 import type { EnCours } from "@shared/api";
 
 export function BandeauProchainLive() {
@@ -24,6 +25,7 @@ export function BandeauProchainLive() {
             <span className="point-direct" /> En direct maintenant
           </span>
           <span className="text-[24px] font-extrabold leading-tight tracking-[-0.02em] sm:text-[26px]">{s.titre}</span>
+          {s.nature === "rattrapage" && <BadgeRattrapage className="self-start" />}
           <span className="text-[15px] text-nuit-doux">{lieu}</span>
         </div>
         <LienBouton href={`/live/${s.id}`} taille="lg">
@@ -40,6 +42,7 @@ export function BandeauProchainLive() {
           {new Date(s.debut).getTime() <= maintenant ? "C'est l'heure · le formateur arrive" : <>Dans <DecompteCourt cible={s.debut} /></>}
         </span>
         <span className="text-[24px] font-extrabold leading-tight tracking-[-0.02em] text-encre sm:text-[26px]">{s.titre}</span>
+        {s.nature === "rattrapage" && <span className="text-[15px] font-bold text-encre">Rattrapage facultatif, ouvert à tout le cours.</span>}
         <span className="text-[15px] text-[#2B211B]">{lieu}</span>
       </div>
       <div className="flex flex-wrap gap-2.5">

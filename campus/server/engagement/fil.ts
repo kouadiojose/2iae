@@ -309,10 +309,11 @@ async function calculerPage(k: Cadre, avant: string | null, limite: number): Pro
       FROM campus.seances s
       LEFT JOIN destinataires de ON de.cours_id = s.cours_id
       WHERE s.id = ANY(${ids})`),
-    // 3. La présence en trois états de toutes les séances de la page (la règle du pilotage et du bilan).
+    // 3. La présence en trois états de toutes les séances de la page (la règle du pilotage et du bilan) ; un rattrapage
+    //    y figure aussi (ses absents sont « inconnus »), mais pas dans les totaux de la période.
     db.execute<LignePresence>(sql`
       SELECT a.seance_id, ${COLONNES_RESUME}, count(*) FILTER (WHERE a.etat = 'inconnu')::int AS inconnus_etats
-      FROM (${sqlAttendus({ depuis: new Date(Math.min(...dates)), jusqua: new Date(Math.max(...dates) + 1), sites: k.sites, inclureEnCours: true })}) a
+      FROM (${sqlAttendus({ depuis: new Date(Math.min(...dates)), jusqua: new Date(Math.max(...dates) + 1), sites: k.sites, inclureEnCours: true, inclureRattrapages: true })}) a
       WHERE a.seance_id = ANY(${ids})
       GROUP BY a.seance_id`),
   ]);

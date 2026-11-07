@@ -163,7 +163,7 @@ export async function mettreAJourSemaines(
       SELECT utilisateur_id AS uid, semaine, count(DISTINCT jour)::int AS n FROM campus.activites
       WHERE utilisateur_id = ANY(${entiers(uidsAJuger)}) AND jour >= ${debut}::date AND jour < ${fin}::date
       GROUP BY 1, 2`),
-    // Semaines qui ne sont PAS neutres : une séance de ses cours (non annulée) ou un devoir dû.
+    // Semaines qui ne sont PAS neutres : une séance de ses cours (non annulée, hors rattrapage facultatif) ou un devoir dû.
     db.execute<{ uid: number; semaine: string }>(sql`
       WITH cu AS (
         SELECT e.id AS uid, cc.cours_id FROM campus.utilisateurs e JOIN campus.cours_classes cc ON cc.classe_id = e.classe_id WHERE e.id = ANY(${entiers(uidsAJuger)})
@@ -172,7 +172,7 @@ export async function mettreAJourSemaines(
       )
       SELECT DISTINCT cu.uid, to_char((s.debut AT TIME ZONE ${FUSEAU_PAR_DEFAUT})::date, 'IYYY"-W"IW') AS semaine
       FROM cu JOIN campus.seances s ON s.cours_id = cu.cours_id JOIN campus.cours c ON c.id = s.cours_id
-      WHERE s.statut <> 'annulee' AND c.statut <> 'brouillon' AND s.debut >= ${debut}::date AND s.debut < ${fin}::date
+      WHERE s.statut <> 'annulee' AND s.nature <> 'rattrapage' AND c.statut <> 'brouillon' AND s.debut >= ${debut}::date AND s.debut < ${fin}::date
       UNION
       SELECT DISTINCT cu.uid, to_char((d.date_limite AT TIME ZONE ${FUSEAU_PAR_DEFAUT})::date, 'IYYY"-W"IW')
       FROM cu JOIN campus.devoirs d ON d.cours_id = cu.cours_id JOIN campus.cours c ON c.id = d.cours_id

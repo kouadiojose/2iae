@@ -27,6 +27,7 @@ import { CarteLien, TitreSection } from "@/components/ui/carte";
 import { Badge, BadgeDirect, BarreProgression, EtatVide, Erreur, PastilleDate, Squelette } from "@/components/ui/divers";
 import { DecompteCourt, useMaintenant } from "@/components/ui/compte-a-rebours";
 import { BandeauProchainLive } from "@/modules/live/BandeauProchainLive";
+import { BadgeRattrapage } from "@/modules/live/ProposerRattrapage";
 import { InviteInstallation } from "@/modules/pwa/InviteInstallation";
 import { LienMediatheque } from "@/modules/mediatheque/LienMediatheque";
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
@@ -238,7 +239,12 @@ function CarteAFaire({ element }: { element: ElementAFaire }) {
         <EtiquetteAFaire element={element} />
       </div>
       <div className="flex flex-col gap-2" aria-live="polite">
-        {element.coursCode && <span className={cn("font-mono text-xs font-semibold", style.code)}>{element.coursCode}</span>}
+        {(element.coursCode || element.rattrapage) && (
+          <span className="flex flex-wrap items-center gap-2">
+            {element.coursCode && <span className={cn("font-mono text-xs font-semibold", style.code)}>{element.coursCode}</span>}
+            {element.rattrapage && <BadgeRattrapage />}
+          </span>
+        )}
         <h2 id="titre-a-faire" className="text-[26px] font-black leading-[1.06] tracking-serre sm:text-[32px]">
           {element.titre}
         </h2>
@@ -300,7 +306,10 @@ function Ensuite({ elements }: { elements: ElementAFaire[] }) {
                 </span>
               )}
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-base font-bold leading-snug group-hover:text-orange-fonce">{e.titre}</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-base font-bold leading-snug group-hover:text-orange-fonce">{e.titre}</span>
+                  {e.rattrapage && <BadgeRattrapage />}
+                </span>
                 <span className="text-sm leading-snug text-texte-pale">
                   {e.coursCode && <span className="font-mono text-[12px] font-semibold text-orange-fonce">{e.coursCode} · </span>}
                   {e.detail}

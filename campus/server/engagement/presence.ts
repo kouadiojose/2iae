@@ -22,6 +22,9 @@
 // d'étudiants sur toute une promotion, ne suffit pas : les autres restent
 // « inconnu », jamais « absent ».
 //
+// Rattrapage (seances.nature = 'rattrapage', proposé par le formateur) : facultatif, l'étudiant y est
+// « present » s'il est venu, sinon « inconnu », jamais « absent » (même pointé ou justifié).
+//
 // « inconnu » ne compte JAMAIS comme une absence : ni rattrapage « tu as
 // manqué », ni relance, ni « à contacter », ni perte de points ou de série.
 // Savoir si l'étudiant était attendu à la séance reste l'affaire de
@@ -124,6 +127,8 @@ export type ColonnesEtat = {
   incident: SQL;
   /** La salle de son campus a été émargée (règle D1). */
   salleEmargee: SQL;
+  /** Séance facultative (rattrapage proposé par le formateur) : présent, ou inconnu, jamais absent. */
+  facultative: SQL;
 };
 
 /**
@@ -134,6 +139,7 @@ export type ColonnesEtat = {
 export function sqlCaseEtat(c: ColonnesEtat): SQL {
   return sql`(CASE
       WHEN ${c.tenue} IS NOT TRUE THEN 'inconnu'
+      WHEN ${c.facultative} IS TRUE AND ${c.enSalle} IS NOT TRUE AND ${c.auSeuil} IS NOT TRUE THEN 'inconnu'
       WHEN ${c.justifiee} THEN 'absent'
       WHEN ${c.enSalle} THEN 'present'
       WHEN ${c.auSeuil} THEN 'present'
@@ -170,6 +176,7 @@ export function sqlEtatPresence(seanceId: SQL, etudiantId: SQL, salleEmargee: Sa
     sansCampus: sql`u.site_id IS NULL`,
     incident: SQL_INCIDENT_SALLE,
     salleEmargee: salleEmargee(sql`s.id`, sql`u.site_id`),
+    facultative: sql`s.nature = 'rattrapage'`,
   })}
     FROM (SELECT ${seanceId} AS seance_id, ${etudiantId} AS etudiant_id) arg
     JOIN campus.seances s ON s.id = arg.seance_id

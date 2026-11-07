@@ -24,6 +24,7 @@ import type { DevoirDirectDto, EtatDirectDto, ModeSuivi, SeanceDetailDto } from 
 import type { SeanceResume } from "@shared/api";
 import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours } from "@shared/ouverture";
 import { maintenantServeur } from "@/lib/horloge";
+import { BadgeRattrapage } from "./ProposerRattrapage";
 
 /** En-tête de la salle live : cours, formateur, direct, compteur de connectés. */
 export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDetailDto; etat?: EtatDirectDto; mode?: ModeSuivi; actions?: ReactNode }) {
@@ -336,6 +337,7 @@ export function LigneSeance({ s, enseignant, lien }: { s: SeanceResume; enseigna
         </span>
       </div>
       <span className="flex flex-col items-end gap-1">
+        {s.nature === "rattrapage" && <BadgeRattrapage />}
         {s.statut === "en_direct" ? (
           <BadgeDirect />
         ) : s.statut === "annulee" ? (

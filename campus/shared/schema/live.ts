@@ -1,12 +1,20 @@
 // Classes en direct : un formateur (en France ou ailleurs) enseigne aux cinq
 // salles de conférence et aux étudiants connectés, en même temps.
 import { sql } from "drizzle-orm";
-import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, boolean, timestamp, jsonb, primaryKey, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { campusSchema, utilisateurs, sites, fichiers } from "./base";
 import { cours } from "./cours";
 
 export const STATUTS_SEANCE = ["planifiee", "en_direct", "terminee", "annulee"] as const;
 export type StatutSeance = (typeof STATUTS_SEANCE)[number];
+
+/**
+ * Nature d'une séance : un cours de l'emploi du temps, ou un rattrapage proposé par le formateur
+ * (« Proposer un rattrapage »). Un rattrapage est ouvert à tous les étudiants du cours mais facultatif :
+ * ne pas y venir n'est jamais une absence (engagement/presence.ts, routes/admin.ts : sqlAttendus).
+ */
+export const NATURES_SEANCE = ["cours", "rattrapage"] as const;
+export type NatureSeance = (typeof NATURES_SEANCE)[number];
 
 /**
  * Mise en page de la scène, choisie par le formateur et vue à l'identique dans
@@ -155,6 +163,10 @@ export const seances = campusSchema.table(
     planBLe: timestamp("plan_b_le", { withTimezone: true }),
     /** Le brouillon de fiche de révision a été rédigé par l'IA (« Proposé par l'IA »). */
     resumeParIa: boolean("resume_par_ia").notNull().default(false),
+    /** 'cours' ou 'rattrapage' (facultatif : jamais compté absent). */
+    nature: text("nature").$type<NatureSeance>().notNull().default("cours"),
+    /** Rattrapage : la séance qu'il rattrape (au choix du formateur). */
+    rattrapageDe: integer("rattrapage_de").references((): AnyPgColumn => seances.id, { onDelete: "set null" }),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("seances_cours_idx").on(t.coursId), index("seances_debut_idx").on(t.debut)],

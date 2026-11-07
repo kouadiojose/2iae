@@ -1,7 +1,8 @@
 // Les gros blocs d'un cours pour le professeur (José, 15 octobre 2026 : « ils se connectent, ils voient : commencer le
 // live, rajouter mes documents, un blog pour poster mes liens, mes fichiers. Très simple » ; « un bloc où ils voient les
 // vidéos des cours, les résumés de session, les examens… »). De haut en bas : « Commencer le live » (pleine largeur),
-// puis « Mes documents », « Le mur du cours », « Vidéos et examens », et une ligne « Leçons, devoirs et notes ».
+// puis « Mes documents », « Le mur du cours », « Vidéos et examens », une ligne « Leçons, devoirs et notes » et une
+// ligne « Proposer un rattrapage » (fenêtre sur place, modules/live/ProposerRattrapage.tsx).
 // Le live garde la règle de l'accueil du 14 octobre : en direct → Studio ; dès 1 h avant → la classe s'ouvre puis le
 // Studio ; plus tôt → « Revenez à 9h00. » ; sans séance → bloc grisé. Cours d'un autre professeur (plusieurs
 // professeurs) : confirmation avant d'entrer. Compteurs : GET /api/enseigner/mon-cours/:id/resume (en attendant : les
@@ -13,7 +14,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Clapperboard, FolderOpen, MonitorPlay, Newspaper } from "lucide-react";
+import { BookOpen, CalendarPlus, Clapperboard, FolderOpen, MonitorPlay, Newspaper } from "lucide-react";
 import { post } from "@/lib/api";
 import { relatif } from "@/lib/dates";
 import { useCanal } from "@/lib/flux";
@@ -26,6 +27,7 @@ import { t as tProf } from "@shared/textes/espace-prof";
 import type { CarreFormateurDto } from "@shared/accueil-simple";
 import type { ResumeCoursProfDto } from "@shared/espace-prof";
 import { CLE_ACCUEIL_SIMPLE, useRepere } from "./blocs";
+import { BoutonRattrapage } from "@/modules/live/ProposerRattrapage";
 
 export const cleResumeCours = (coursId: number) => `/api/enseigner/mon-cours/${coursId}/resume`;
 
@@ -189,6 +191,10 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
         />
       </div>
       <LigneBloc testId="lecons" icone={<BookOpen className="h-6 w-6" strokeWidth={2.25} />} titre={tx("blocs.lecons")} href={c.liens.cours} />
+      <BoutonRattrapage
+        coursId={c.coursId}
+        rendu={(ouvrir) => <LigneBloc testId="rattrapage" icone={<CalendarPlus className="h-6 w-6" strokeWidth={2.25} />} titre="Proposer un rattrapage" onClick={ouvrir} />}
+      />
     </div>
   );
 }

@@ -30,6 +30,7 @@ import { Page, EnTetePage } from "@/components/layout/coquille";
 import { Bouton, LienBouton } from "@/components/ui/bouton";
 import { Carte } from "@/components/ui/carte";
 import { Badge, BadgeDirect, Erreur, Squelette } from "@/components/ui/divers";
+import { BadgeRattrapage } from "@/modules/live/ProposerRattrapage";
 import { Fenetre } from "@/components/ui/fenetre";
 import { toast, toastErreur } from "@/components/ui/toast";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
@@ -320,6 +321,7 @@ function LigneElement({ element: e, formateur, onEvenement }: { element: Element
             </span>
           )}
           <StatutElement e={e} />
+          {e.rattrapage && <BadgeRattrapage />}
         </span>
         {titre}
         {annule && e.motifAnnulation && <span className="text-sm text-danger">{e.motifAnnulation}</span>}

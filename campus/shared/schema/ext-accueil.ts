@@ -85,6 +85,8 @@ export type ElementAFaire = {
   quand?: string;
   coursCode?: string;
   couleur?: string;
+  /** Live : séance de rattrapage proposée par le formateur (badge « Rattrapage »). */
+  rattrapage?: boolean;
 };
 
 export type CoursAccueil = {
@@ -277,6 +279,8 @@ export type ElementAgenda = {
   siteId: number | null;
   classeId: number | null;
   modifiable: boolean;
+  /** Séance de rattrapage proposée par le formateur (badge « Rattrapage »). */
+  rattrapage?: boolean;
 };
 
 /** GET /api/agenda */

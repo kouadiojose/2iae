@@ -6,7 +6,7 @@ import { serial, text, integer, bigint, boolean, timestamp, jsonb, primaryKey, i
 import { campusSchema, utilisateurs } from "./base";
 import { devoirs } from "./evaluations";
 import type { PourGroupeDto } from "./ext-evaluations";
-import { seances, questionsLive, sessionsGroupes, type EtapePlan, type FournisseurVisio, type StatutSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource, type ZoneCopie, type RotationCopie } from "./live";
+import { seances, questionsLive, sessionsGroupes, type EtapePlan, type FournisseurVisio, type StatutSeance, type NatureSeance, type ModePresence, type DispositionScene, type ModeChat, type ProjectionVideo, type TypeRessource, type ZoneCopie, type RotationCopie } from "./live";
 import type { EnCours } from "../api";
 
 /** Rappels déjà envoyés (24 h et 15 min avant) : garantit un seul envoi par séance. */
@@ -289,6 +289,10 @@ export type SeanceDetailDto = {
   debut: string;
   dureeMinutes: number;
   statut: StatutSeance;
+  /** 'rattrapage' : séance de rattrapage proposée par le formateur (facultative). */
+  nature: NatureSeance;
+  /** Rattrapage : la séance rattrapée, s'il y en a une. */
+  rattrapageDe: number | null;
   fournisseur: FournisseurVisio;
   /** Lien de la visio externe (fournisseur « externe »). */
   lienExterne: string | null;

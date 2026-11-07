@@ -1,6 +1,6 @@
 // Contrats d'API partagés entre modules (serveur et client).
 // Les dates voyagent en JSON sous forme de chaînes ISO : Json<T> le reflète.
-import type { Notification, Role, StatutSeance, FournisseurVisio } from "./schema";
+import type { Notification, Role, StatutSeance, FournisseurVisio, NatureSeance } from "./schema";
 
 /** Type T tel qu'il arrive côté client après JSON (Date → string). */
 export type Json<T> = T extends Date
@@ -31,6 +31,8 @@ export type SeanceResume = {
   debut: string;
   dureeMinutes: number;
   statut: StatutSeance;
+  /** 'rattrapage' : séance de rattrapage proposée par le formateur (badge « Rattrapage », facultative). */
+  nature: NatureSeance;
   fournisseur: FournisseurVisio;
   replayDisponible: boolean;
   formateur: { id: number; prenom: string; nom: string; localisation: string | null; photoUrl: string | null } | null;

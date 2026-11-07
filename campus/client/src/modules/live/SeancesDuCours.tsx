@@ -8,6 +8,7 @@ import { Chargement, EtatVide, Erreur } from "@/components/ui/divers";
 import { TitreSection } from "@/components/ui/carte";
 import { DecompteCourt } from "@/components/ui/compte-a-rebours";
 import { LigneSeance, LienAgenda } from "./ui";
+import { BadgeRattrapage, BoutonRattrapage } from "./ProposerRattrapage";
 import type { SeanceResume } from "@shared/api";
 import { classeOuverteEnAvance, debutDuCours } from "@shared/ouverture";
 import { maintenantServeur } from "@/lib/horloge";
@@ -29,7 +30,8 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
   return (
     <div className="flex flex-col gap-6">
       {enseignant && (
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          <BoutonRattrapage coursId={coursId} />
           <LienBouton href={`/enseigner/seances/nouvelle?cours=${coursId}`} icone={<Plus className="h-4 w-4" />}>
             Nouvelle séance
           </LienBouton>
@@ -49,6 +51,7 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
               </span>
             )}
             <span className="break-words text-xl font-extrabold">{direct.titre}</span>
+            {direct.nature === "rattrapage" && <BadgeRattrapage className="self-start" />}
           </div>
           <div className="flex flex-wrap gap-2">
             {enseignant && <BoutonLienInvite seance={direct} variante="nuit" />}
@@ -61,6 +64,7 @@ export function SeancesDuCours({ coursId, enseignant }: { coursId: number; ensei
           <div className="flex min-w-0 flex-col gap-1">
             <span className="font-mono text-xs uppercase tracking-wider">Prochain live dans <DecompteCourt cible={prochaine.debut} /></span>
             <span className="break-words text-xl font-extrabold">{prochaine.titre}</span>
+            {prochaine.nature === "rattrapage" && <span className="text-[14px]">Rattrapage facultatif, ouvert à tout le cours.</span>}
           </div>
           <LienAgenda seanceId={prochaine.id} className="rounded-xl border-[1.5px] border-encre px-4 py-3 text-encre hover:bg-encre hover:text-white" />
         </div>

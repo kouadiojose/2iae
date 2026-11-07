@@ -279,6 +279,12 @@ type FiltreAttendus = {
   inclureEnCours?: boolean;
   /** Séances à venir (fiche d'une séance pas encore commencée). */
   inclureAVenir?: boolean;
+  /**
+   * Rattrapages (seances.nature = 'rattrapage') : facultatifs, ils n'entrent ni dans les taux, ni dans les absences,
+   * relances, « À contacter », objectif du jour ou Coupe. Exclus par défaut ; inclus quand on lit UNE séance
+   * (seanceId) ou sur demande (fil des séances du formateur) : l'étudiant qui n'est pas venu y est alors « inconnu ».
+   */
+  inclureRattrapages?: boolean;
 };
 
 /**
@@ -406,6 +412,7 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
     sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = s.id AND NOT di.prevenir)`,
   ];
   if (f.seanceId !== undefined) conds.push(sql`s.id = ${f.seanceId}`);
+  else if (!f.inclureRattrapages) conds.push(sql`s.nature <> 'rattrapage'`);
   if (f.etudiantId !== undefined) conds.push(sql`u.id = ${f.etudiantId}`);
   else conds.push(sql`u.actif`);
   if (f.depuis) conds.push(sql`d.reel >= ${f.depuis.toISOString()}::timestamptz`);
@@ -430,6 +437,7 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
     sansCampus: sql`b.site_id IS NULL`,
     incident: sql`b.incident`,
     salleEmargee: salle,
+    facultative: sql`b.facultative`,
   });
   return sql`
     SELECT b.seance_id, b.cours_id, b.debut, b.seance_titre, b.cours_code, b.uid, b.site_id, b.classe_id,
@@ -457,6 +465,7 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
           AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > ${sqlDebutCours("s")} + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard,
         -- Ce que lit la règle des trois états (engagement/presence.ts, sqlCaseEtat).
         s.demarree_le IS NOT NULL AS tenue,
+        s.nature = 'rattrapage' AS facultative,
         NULLIF(p.justification, '') IS NOT NULL AS justifiee,
         p.mode = 'salle' AS en_salle,
         p.minutes >= d.seuil AS au_seuil,

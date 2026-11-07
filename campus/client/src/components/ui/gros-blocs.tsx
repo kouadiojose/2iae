@@ -345,18 +345,31 @@ export function RetourGros({ href, children, onClick }: { href: string; children
 }
 
 /** Ligne plus petite (80 px) sous les gros blocs : « Leçons, devoirs et notes ». */
-export function LigneBloc({ icone, titre, href, testId }: { icone: ReactNode; titre: string; href: string; testId?: string }) {
-  return (
-    <Link
-      href={href}
-      data-bloc={testId}
-      className={cn("flex min-h-[80px] w-full items-center gap-4 rounded-[22px] border-2 border-ligne bg-white px-5 text-encre no-underline hover:-translate-y-0.5 hover:border-orange/60 hover:text-encre active:translate-y-0 [@media(max-height:700px)]:min-h-[64px]", CLASSES_VIVANTES)}
-    >
+export function LigneBloc({ icone, titre, href, onClick, testId }: { icone: ReactNode; titre: string; href?: string; onClick?: () => void; testId?: string }) {
+  const classes = cn(
+    "flex min-h-[80px] w-full items-center gap-4 rounded-[22px] border-2 border-ligne bg-white px-5 text-left text-encre no-underline hover:-translate-y-0.5 hover:border-orange/60 hover:text-encre active:translate-y-0 [@media(max-height:700px)]:min-h-[64px]",
+    CLASSES_VIVANTES,
+  );
+  const contenu = (
+    <>
       <CercleIcone taille={48} fond="#FFF1E6" couleur="#A34C17">
         {icone}
       </CercleIcone>
       <span className="flex-1 text-[20px] font-extrabold sm:text-[22px]">{titre}</span>
       <ChevronRight className="h-6 w-6 shrink-0" aria-hidden />
+    </>
+  );
+  // Sans lien : un bouton (une fenêtre s'ouvre sur place, « Proposer un rattrapage »).
+  if (!href) {
+    return (
+      <button type="button" onClick={onClick} data-bloc={testId} className={classes}>
+        {contenu}
+      </button>
+    );
+  }
+  return (
+    <Link href={href} data-bloc={testId} className={classes}>
+      {contenu}
     </Link>
   );
 }

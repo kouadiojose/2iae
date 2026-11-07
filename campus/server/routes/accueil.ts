@@ -286,6 +286,7 @@ export function enregistrerAccueil(app: Express) {
               quand: debutDuCours(s).toISOString(),
               coursCode: code,
               couleur,
+              ...(s.nature === "rattrapage" && { rattrapage: true }),
             },
             s.debut.getTime(),
           );
@@ -300,13 +301,16 @@ export function enregistrerAccueil(app: Express) {
             detail:
               dans <= 0
                 ? "Le formateur ouvre la classe dans un instant."
-                : `En direct ${quand(s.debut, maintenant)} à ${heureFr(s.debut)}${formateur ? ` avec ${formateur}` : ""}.`,
+                : `${s.nature === "rattrapage" ? "Rattrapage" : "En direct"} ${quand(s.debut, maintenant)} à ${heureFr(s.debut)}${formateur ? ` avec ${formateur}` : ""}.${
+                    s.nature === "rattrapage" ? " Facultatif, ouvert à tout le cours." : ""
+                  }`,
             lien: `/live/${s.id}`,
             bouton: bientot ? "Entrer dans la classe" : "Voir le live",
             urgence: bientot ? "moyenne" : "basse",
             quand: s.debut.toISOString(),
             coursCode: code,
             couleur,
+            ...(s.nature === "rattrapage" && { rattrapage: true }),
           },
           s.debut.getTime(),
         );

@@ -120,6 +120,7 @@ export async function elementsAgenda(u: Utilisateur, debut: Date, fin: Date): Pr
         siteId: null,
         classeId: null,
         modifiable: false,
+        ...(s.nature === "rattrapage" && { rattrapage: true }),
       });
     }
 

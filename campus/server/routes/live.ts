@@ -197,6 +197,7 @@ import { estPublicSalle, nomDeSalle } from "@shared/salles";
 import { coursDuSite, nomSalleDuCours, type RegardSalle } from "../salles-outils";
 import { lireReglageOuverture, REPERE_AVIS_DIFFERE, REPERE_OUVERTURE_AUTO, REPERE_RAPPEL_DEMARRAGE } from "../ouverture-auto";
 import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours, demarreeHorsCreneau, enAttenteAnimateur } from "@shared/ouverture";
+import { avisRattrapage, titreRattrapage } from "@shared/rattrapage";
 import { t as tOuverture } from "@shared/textes/direct";
 import { deCampus, heureSimple as heureCourte, type FermetureCampusDto } from "@shared/espace-campus";
 
@@ -457,6 +458,7 @@ async function resumesSeances(entrees: { s: Seance; code: string; titreCours: st
     debut: s.debut.toISOString(),
     dureeMinutes: s.dureeMinutes,
     statut: s.statut,
+    nature: s.nature,
     fournisseur: s.fournisseur,
     replayDisponible: replayDisponible(s),
     formateur: (formateurId && parId.get(formateurId)) || null,
@@ -1575,6 +1577,8 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     debut: s.debut.toISOString(),
     dureeMinutes: s.dureeMinutes,
     statut: s.statut,
+    nature: s.nature,
+    rattrapageDe: s.rattrapageDe,
     fournisseur: s.fournisseur,
     lienExterne: s.fournisseur === "externe" ? s.lienExterne : null,
     lienSecours: privilegie ? s.lienSecours : null,
@@ -1634,6 +1638,13 @@ const champsSeance = {
 };
 
 const schemaCreation = z.object({ coursId: z.number().int().positive(), ...champsSeance });
+const schemaRattrapage = z.object({
+  coursId: z.number().int().positive(),
+  debut: z.string().datetime({ offset: true, message: "date invalide" }),
+  dureeMinutes: z.number().int().min(15, "15 minutes au moins").max(480, "8 heures au plus"),
+  sujet: z.string().trim().min(3, "au moins 3 caractères").max(300, "300 caractères au plus"),
+  rattrapageDe: z.number().int().positive().nullable().optional(),
+});
 const schemaModification = z
   .object({ ...champsSeance, replayUrl: lienHttp.nullable().optional() })
   .partial();
@@ -1902,6 +1913,67 @@ export function enregistrerLive(app: Express) {
       }
       const conflits = await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
       res.status(201).json({ ...(await detailSeance(u, s)), conflits });
+    }),
+  );
+
+  // ── Proposer un rattrapage (formateur du cours ou équipe « programme », comme la création d'une séance) ──
+  // Une séance de nature 'rattrapage' sur le même cours : même classe en direct, replay et transcription. Tous les
+  // étudiants du cours sont prévenus aussitôt ; ceux qui étaient absents à la séance rattrapée, plus fort. Facultative :
+  // ne pas y venir n'est jamais une absence (engagement/presence.ts, routes/admin.ts : sqlAttendus).
+  app.post(
+    "/api/seances/rattrapage",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
+      const d = valider(schemaRattrapage, req.body);
+      const c = await coursEnseigne(u, d.coursId);
+      const debut = new Date(d.debut);
+      if (debut.getTime() < Date.now() - 10 * MINUTE) throw invalide("Choisissez une date et une heure à venir.");
+      let rattrapee: Seance | null = null;
+      if (d.rattrapageDe) {
+        const [x] = await db.select().from(seances).where(eq(seances.id, d.rattrapageDe));
+        if (!x || x.coursId !== c.id) throw invalide("La séance à rattraper n'est pas une séance de ce cours.");
+        rattrapee = x;
+      }
+      const fournisseur = visio.fournisseurImpose();
+      verifierFournisseur(fournisseur, null);
+      const [s] = await db
+        .insert(seances)
+        .values({
+          coursId: c.id,
+          titre: titreRattrapage(d.sujet),
+          description: d.sujet,
+          debut,
+          dureeMinutes: d.dureeMinutes,
+          fournisseur,
+          lienExterne: null,
+          nature: "rattrapage",
+          rattrapageDe: rattrapee?.id ?? null,
+        })
+        .returning();
+      await db.insert(journal).values({ utilisateurId: u.id, action: "rattrapage_propose", details: { seanceId: s.id, coursId: c.id, rattrapageDe: rattrapee?.id ?? null } });
+
+      // Qui l'anime : le formateur qui le propose, sinon le formateur du cours.
+      const animateurId = u.role === "formateur" ? u.id : c.formateurId;
+      const prof = animateurId ? await utilisateurParId(animateurId) : null;
+      const nomProf = prof ? `${prof.prenom} ${prof.nom}` : null;
+      const etudiants = (await etudiantsDuCours(c.id)).map((e) => e.id);
+      // Absents CONNUS à la séance rattrapée (présence en trois états : jamais « inconnu »).
+      const absents = new Set<number>();
+      if (rattrapee && rattrapee.demarreeLe && etudiants.length) {
+        for (const [id, etat] of await etatsPresence(rattrapee.id, etudiants)) if (etat === "absent") absents.add(id);
+      }
+      const lien = `/live/${s.id}`;
+      const general = avisRattrapage({ prof: nomProf, debut, sujet: d.sujet });
+      const autres = etudiants.filter((id) => !absents.has(id));
+      await notifier(autres, { type: "live", titre: `${general.titre} · ${c.code}`, corps: general.corps, lien });
+      if (absents.size && rattrapee) {
+        const appuye = avisRattrapage({ prof: nomProf, debut, sujet: d.sujet, absentLe: debutDuCours(rattrapee) });
+        await notifier([...absents], { type: "live", titre: `${appuye.titre} · ${c.code}`, corps: appuye.corps, lien });
+      }
+      const conflits = await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
+      res.status(201).json({ ...(await detailSeance(u, s)), conflits, prevenus: etudiants.length, absentsPrevenus: absents.size });
     }),
   );
 

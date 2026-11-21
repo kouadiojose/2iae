@@ -14,7 +14,7 @@
 import type { Express, RequestHandler } from "express";
 import fs from "fs";
 import { z } from "zod";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { exigerConnexion, moi } from "../auth";
 import { route, valider, idParam, introuvable, invalide } from "../http";
@@ -332,7 +332,10 @@ export async function annoncerRessources(maintenant = Date.now()): Promise<numbe
   const enAttente = await db
     .select({ id: ressourcesSeances.id, seanceId: ressourcesSeances.seanceId, creeLe: ressourcesSeances.creeLe })
     .from(ressourcesSeances)
-    .where(isNull(ressourcesSeances.annonceeLe));
+    .innerJoin(seances, eq(seances.id, ressourcesSeances.seanceId))
+    // Séance à confirmer ou réunion de l'équipe : rien aux étudiants, et les lignes restent non annoncées
+    // (elles partent après la confirmation, confirmation-seances.ts).
+    .where(and(isNull(ressourcesSeances.annonceeLe), eq(seances.aConfirmer, false), ne(seances.nature, "reunion")));
   const parSeance = new Map<number, typeof enAttente>();
   for (const r of enAttente) parSeance.set(r.seanceId, [...(parSeance.get(r.seanceId) ?? []), r]);
   let annonces = 0;

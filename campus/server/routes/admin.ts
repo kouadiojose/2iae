@@ -413,6 +413,7 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
   ];
   if (f.seanceId !== undefined) conds.push(sql`s.id = ${f.seanceId}`);
   else if (!f.inclureRattrapages) conds.push(sql`s.nature <> 'rattrapage'`);
+  conds.push(sql`s.nature <> 'reunion'`);
   if (f.etudiantId !== undefined) conds.push(sql`u.id = ${f.etudiantId}`);
   else conds.push(sql`u.actif`);
   if (f.depuis) conds.push(sql`d.reel >= ${f.depuis.toISOString()}::timestamptz`);
@@ -465,7 +466,7 @@ export function sqlAttendus(f: FiltreAttendus): SQL {
           AND COALESCE(p.arrivee_salle_le, p.arrivee_le) > ${sqlDebutCours("s")} + make_interval(mins => ${sql.raw(String(RETARD_MINUTES))}), false) AS retard,
         -- Ce que lit la règle des trois états (engagement/presence.ts, sqlCaseEtat).
         s.demarree_le IS NOT NULL AS tenue,
-        s.nature = 'rattrapage' AS facultative,
+        (s.nature = 'rattrapage' OR s.a_confirmer OR s.nature = 'reunion') AS facultative,
         NULLIF(p.justification, '') IS NOT NULL AS justifiee,
         p.mode = 'salle' AS en_salle,
         p.minutes >= d.seuil AS au_seuil,

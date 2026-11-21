@@ -13,8 +13,14 @@ export type StatutSeance = (typeof STATUTS_SEANCE)[number];
  * (« Proposer un rattrapage »). Un rattrapage est ouvert à tous les étudiants du cours mais facultatif :
  * ne pas y venir n'est jamais une absence (engagement/presence.ts, routes/admin.ts : sqlAttendus).
  */
-export const NATURES_SEANCE = ["cours", "rattrapage"] as const;
+export const NATURES_SEANCE = ["cours", "rattrapage", "reunion"] as const;
 export type NatureSeance = (typeof NATURES_SEANCE)[number];
+
+/**
+ * Cours technique et caché des réunions de l'équipe (« Réunions de l'équipe », sans classe : aucun étudiant ne le voit).
+ * Une réunion est une séance de nature « reunion » rattachée à ce cours (server/confirmation-seances.ts).
+ */
+export const CODE_COURS_REUNIONS = "REUNIONS-EQUIPE";
 
 /**
  * Mise en page de la scène, choisie par le formateur et vue à l'identique dans
@@ -169,6 +175,18 @@ export const seances = campusSchema.table(
     nature: text("nature").$type<NatureSeance>().notNull().default("cours"),
     /** Rattrapage : la séance qu'il rattrape (au choix du formateur). */
     rattrapageDe: integer("rattrapage_de").references((): AnyPgColumn => seances.id, { onDelete: "set null" }),
+    /**
+     * « Démarrer un cours » sans question : le cours a été deviné, personne n'a encore dit ce que c'était. Tant que
+     * c'est vrai, RIEN ne part vers les étudiants après la séance (replay, résumé, devoirs, ressources, absences).
+     */
+    aConfirmer: boolean("a_confirmer").notNull().default(false),
+    confirmeeLe: timestamp("confirmee_le", { withTimezone: true }),
+    /** Rappel envoyé à celui qui doit répondre (une seule fois). */
+    rappelConfirmationLe: timestamp("rappel_confirmation_le", { withTimezone: true }),
+    /** Qui a lancé la séance (démarrage sans question, réunion). */
+    lanceParId: integer("lance_par_id").references(() => utilisateurs.id, { onDelete: "set null" }),
+    /** Comptes du personnel entrés dans la séance (réunions : seuls eux et le lanceur voient le replay). */
+    participants: integer("participants").array().notNull().default(sql`'{}'::integer[]`),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("seances_cours_idx").on(t.coursId), index("seances_debut_idx").on(t.debut)],

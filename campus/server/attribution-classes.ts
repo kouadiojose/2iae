@@ -13,7 +13,7 @@
 // prévenus. Le compte rendu part dans le journal du serveur (« [classes-cours] »).
 import { and, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { db } from "./db";
-import { classes, cours, coursClasses, inscriptions, journal, seances, utilisateurs } from "@shared/schema";
+import { classes, cours, coursClasses, inscriptions, journal, seances, utilisateurs, CODE_COURS_REUNIONS } from "@shared/schema";
 import { etudiantsDuCours } from "./acces";
 import { notifier } from "./notifications";
 import { demanderJson, iaDisponible } from "./ia";
@@ -119,6 +119,8 @@ export async function attribuerClassesDesCours(): Promise<void> {
   const depuis = new Date(Date.now() - 90 * 86_400_000);
 
   for (const c of liste) {
+    // Cours technique des réunions de l'équipe : jamais de classe, jamais publié.
+    if (c.code === CODE_COURS_REUNIONS) continue;
     const liees = await db.select({ classeId: coursClasses.classeId }).from(coursClasses).where(eq(coursClasses.coursId, c.id));
     const lieesIds = new Set(liees.map((l) => l.classeId));
     const [{ n: inscrits }] = await db.select({ n: sql<number>`count(*)::int` }).from(inscriptions).where(eq(inscriptions.coursId, c.id));

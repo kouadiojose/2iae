@@ -81,7 +81,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { exigerConnexion, moi, estEquipe, perimetreSites, verifierTentatives, noterEchec, effacerTentatives, exigerDroitDe, peut, messageProfil, utilisateurParId } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
-import { coursEnseigne, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque, regieCours } from "../acces";
+import { coursEnRegie, coursEnseigne, coursVisible, seanceVisible, etudiantsDuCours, etudiantsAttendusSeance, formateursDuCours, idsCoursAccessibles, enseigneCours, peutVoirCours, peutVoirMediatheque, regieCours } from "../acces";
 import { intervenantsDesSeances, lienEmploiDuTemps, noterRetouches } from "../programme-outils";
 import { enregistrerGardien, publier, publierUtilisateur, utilisateursSur, connectesSur, estEnLigne, postesSur, noterPosteHttp, utilisateursPresentsSur } from "../temps-reel";
 import { enregistrerGardienFichier, televersement, enregistrerFichier, urlFichier } from "../fichiers";
@@ -103,6 +103,7 @@ import { creerModuleGroupes, noterModeSuivi } from "./live-groupes";
 import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
 import "../replays-lecture-rapide";
 import "../attribution-classes";
+import { confirmer, coursDesReunions, coursExpress, devinerSeance, estDouteuse, peutRepondre, seancesAConfirmerDe, type ChoixConfirmation } from "../confirmation-seances";
 import "../emploi-du-temps-session";
 import {
   seances,
@@ -141,6 +142,7 @@ import {
   FOURNISSEURS_VISIO,
   RESSENTIS,
   type Seance,
+  CODE_COURS_REUNIONS,
   type Cours,
   type Utilisateur,
   type Presence,
@@ -333,7 +335,17 @@ async function chargerSeance(id: number): Promise<Seance> {
 
 /** Séance que la personne peut voir (étudiant inscrit, formateur du cours, équipe, écran de salle). */
 async function seanceAccessible(u: Utilisateur, id: number): Promise<Seance> {
-  return seanceVisible(u, id);
+  const s = await chargerSeance(id);
+  // Réunion de l'équipe : invisible des étudiants et des comptes de campus (404, comme si elle n'existait pas) ;
+  // les autres membres de l'équipe et les formateurs y entrent sans « coursVisible » (le cours des réunions n'a pas de classe).
+  if (s.nature === "reunion") {
+    if (u.role === "etudiant" || estEcran(u)) throw introuvable("Séance");
+    if (u.role === "formateur" || estEquipe(u)) return s;
+    throw introuvable("Séance");
+  }
+  if (u.role === "formateur") return s;
+  await coursVisible(u, s.coursId);
+  return s;
 }
 
 /**
@@ -342,6 +354,12 @@ async function seanceAccessible(u: Utilisateur, id: number): Promise<Seance> {
  * fiche et présences restent au formateur du cours.
  */
 export async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance> {
+  // Réunion de l'équipe : le replay n'est que pour la direction, celui qui l'a lancée et ceux qui y sont entrés.
+  const reunion = await chargerSeance(id);
+  if (reunion.nature === "reunion") {
+    if (u.role === "admin" || u.id === reunion.lanceParId || reunion.participants.includes(u.id)) return reunion;
+    throw introuvable("Séance");
+  }
   if (u.role === "formateur") {
     const s = await chargerSeance(id);
     if (replayDisponible(s)) return s;
@@ -362,8 +380,10 @@ export async function seanceDuReplay(u: Utilisateur, id: number): Promise<Seance
  * du chargé de cours : routes/regie.ts.
  */
 export async function seanceAnimee(u: Utilisateur, id: number): Promise<Seance> {
-  if (u.role === "vie_scolaire" && !peutRegie(u)) throw new ErreurHttp(403, messageProfil(u));
   const s = await chargerSeance(id);
+  // Réunion : celui qui l'a lancée la mène, même s'il n'enseigne pas le cours technique des réunions.
+  if (s.nature === "reunion" && s.lanceParId === u.id && u.role !== "etudiant" && !estEcran(u)) return s;
+  if (u.role === "vie_scolaire" && !peutRegie(u)) throw new ErreurHttp(403, messageProfil(u));
   if (!(await regieCours(u, s.coursId))) {
     throw new ErreurHttp(403, u.role === "etudiant" ? "Cette action est réservée au formateur du cours." : "Seul le formateur de ce cours peut faire cela.");
   }
@@ -396,6 +416,8 @@ async function roleDans(u: Utilisateur, s: Seance): Promise<RoleSeance> {
   // L'écran d'une salle : un compte « salle », ou un compte de campus (« Entrer dans le live ») : toujours une salle,
   // jamais l'animateur (ni propriétaire de la visio, ni enregistrement, ni « Terminer »).
   if (estEcran(u)) return "salle";
+  // L'organisateur d'une réunion de l'équipe la mène comme un formateur.
+  if (s.nature === "reunion" && s.lanceParId === u.id && u.role !== "etudiant") return "formateur";
   if (u.role === "formateur" && (await enseigneCours(u, s.coursId))) return "formateur";
   // La direction a la main sur tous les cours (Studio complet, visio comme le formateur) : elle démarre, présente
   // ou reprend le cours d'un formateur en difficulté. De même la vie scolaire qui gère le programme de ce campus.
@@ -1618,6 +1640,8 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     envoiEtudiants: s.envoiEtudiants,
     formateur: formateur ?? null,
     monRole: role,
+    aConfirmer: s.aConfirmer && (await peutRepondre(u, s)),
+    lanceParMoi: s.lanceParId === u.id,
     peutModifier: role === "formateur" || (role === "equipe" && (await enseigneCours(u, s.coursId))),
     // Horaire, titre, plan, publication, Empêchement, Dupliquer, Supprimer, « C'était un essai », fiche de révision
     // (seanceProgrammee) : pas la régie seule (Chargé de cours).
@@ -2046,51 +2070,7 @@ export function enregistrerLive(app: Express) {
       const fournisseur = visio.fournisseurImpose();
       verifierFournisseur(fournisseur, null);
 
-      let c: Cours;
-      let nouveau = false;
-      if (d.coursId) {
-        c = await coursEnseigne(u, d.coursId);
-        if (c.statut === "archive") throw invalide("Ce cours est archivé.");
-        // « Pour qui ? » sur un cours déjà là : les classes choisies s'ajoutent (rien n'est retiré ici).
-        const demandees = [...new Set(d.classeIds ?? [])];
-        if (demandees.length) {
-          const trouvees = await db.select().from(classes).where(inArray(classes.id, demandees));
-          if (trouvees.length !== demandees.length) throw invalide("Une des classes n'existe pas.");
-          const perimetre = perimetreSites(u);
-          if (perimetre && trouvees.some((cl) => !perimetre.includes(cl.siteId))) throw interdit("Vous ne pouvez choisir que les classes de votre campus.");
-          const ajoutees = await db.insert(coursClasses).values(demandees.map((classeId) => ({ coursId: c.id, classeId }))).onConflictDoNothing().returning({ classeId: coursClasses.classeId });
-          if (ajoutees.length) await db.insert(journal).values({ utilisateurId: u.id, action: "cours_classes", details: { coursId: c.id, ajoutees: ajoutees.map((a) => a.classeId), express: true } });
-        } else {
-          const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(coursClasses).where(eq(coursClasses.coursId, c.id));
-          if (!n) throw invalide("Ce cours n'a encore aucune classe : choisissez pour qui il est (BTS, Licence…).");
-        }
-      } else {
-        const demandees = [...new Set(d.classeIds ?? [])];
-        const trouvees = await db.select().from(classes).where(inArray(classes.id, demandees));
-        if (trouvees.length !== demandees.length) throw invalide("Une des classes n'existe pas.");
-        const perimetre = perimetreSites(u);
-        if (perimetre && trouvees.some((cl) => !perimetre.includes(cl.siteId))) throw interdit("Vous ne pouvez choisir que les classes de votre campus.");
-        const titre = d.titreCours!;
-        const code = await codeLibre(titre);
-        const baseSlug = slugifier(titre);
-        const slugsPris = new Set((await db.select({ slug: cours.slug }).from(cours).where(or(eq(cours.slug, baseSlug), like(cours.slug, `${baseSlug}-%`)))).map((x) => x.slug));
-        let slug = baseSlug;
-        for (let i = 2; slugsPris.has(slug); i++) slug = `${baseSlug}-${i}`;
-        c = await db.transaction(async (tx) => {
-          const [cree] = await tx
-            .insert(cours)
-            .values({ code, titre, slug, formateurId: u.role === "formateur" ? u.id : null, statut: "publie" })
-            .returning();
-          await tx.insert(coursClasses).values(demandees.map((classeId) => ({ coursId: cree.id, classeId }))).onConflictDoNothing();
-          await tx.insert(journal).values({ utilisateurId: u.id, action: "cours_cree", details: { coursId: cree.id, code, express: true, classes: demandees } });
-          return cree;
-        });
-        nouveau = true;
-      }
-      if (c.statut === "brouillon") {
-        const [publie] = await db.update(cours).set({ statut: "publie", majLe: new Date() }).where(eq(cours.id, c.id)).returning();
-        c = publie;
-      }
+      const { c, nouveau } = await coursExpress(u, d);
 
       const sujet = d.sujet?.trim();
       const titreSeance = sujet && sujet.length >= 3 ? sujet : c.titre;
@@ -2115,6 +2095,246 @@ export function enregistrerLive(app: Express) {
       const conflits = maintenant ? [] : await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
       reveiller("classes-des-cours");
       res.status(201).json({ seanceId: s.id, coursId: c.id, coursCode: c.code, coursTitre: c.titre, nouveau, maintenant, prevenus, conflits });
+    }),
+  );
+
+  // ── « Démarrer un cours » sans question, « Réunion », et la réponse après coup (confirmation-seances.ts) ──
+  // Le cours est deviné par des règles simples (prévu maintenant, seul cours, habitude, récent). La séance part
+  // « à confirmer » : à la fin, la question « C'était bien ce cours ? » ; tant qu'elle n'a pas de réponse, rien ne part
+  // vers les étudiants (replay, résumé, devoirs, ressources, absences).
+  async function coursPourChoisir(u: Utilisateur): Promise<{ coursId: number; titre: string; code: string }[]> {
+    const ids = await idsCoursAccessibles(u);
+    const permis = u.role === "formateur" ? new Set(ids) : await coursEnRegie(u, ids);
+    if (!permis.size) return [];
+    const lignes = await db
+      .select({ coursId: cours.id, titre: cours.titre, code: cours.code })
+      .from(cours)
+      .where(and(inArray(cours.id, [...permis]), ne(cours.statut, "archive"), ne(cours.code, CODE_COURS_REUNIONS)))
+      .orderBy(asc(cours.titre))
+      .limit(150);
+    return lignes;
+  }
+
+  type DevineDemarrage = { coursId?: number; seanceId?: number; titre: string; raison: "prevue" | "seul" | "habitude" | "recent" };
+  type EtatDemarrage = { enDirect: { seanceId: number } | null; devine: DevineDemarrage | null; cours: { coursId: number; titre: string; code: string }[] };
+
+  function exigerDemarrage(u: Utilisateur) {
+    if (u.role !== "formateur" && u.role !== "admin" && u.role !== "vie_scolaire") throw interdit("Réservé aux formateurs et à l'équipe pédagogique.");
+    if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
+  }
+
+  async function etatDemarrage(u: Utilisateur): Promise<EtatDemarrage> {
+    const maintenant = Date.now();
+    const liste = await coursPourChoisir(u);
+    const idsListe = liste.map((c) => c.coursId);
+    const titreDe = new Map(liste.map((c) => [c.coursId, c.titre]));
+    if (!idsListe.length) return { enDirect: null, devine: null, cours: [] };
+    // Règle 2 (formateur et équipe) : une séance prévue qui commence dans [-60, +30] min.
+    const proches = await db
+      .select()
+      .from(seances)
+      .where(
+        and(
+          eq(seances.statut, "planifiee"),
+          inArray(seances.coursId, idsListe),
+          ne(seances.nature, "reunion"),
+          gte(seances.debut, new Date(maintenant - 60 * MINUTE)),
+          lte(seances.debut, new Date(maintenant + 30 * MINUTE)),
+        ),
+      )
+      .orderBy(asc(seances.debut));
+    const prevue = (): DevineDemarrage | null => {
+      if (!proches.length) return null;
+      const s = [...proches].sort((a, b) => Math.abs(a.debut.getTime() - maintenant) - Math.abs(b.debut.getTime() - maintenant))[0];
+      return { seanceId: s.id, coursId: s.coursId, titre: titreDe.get(s.coursId) ?? s.titre, raison: "prevue" };
+    };
+    if (u.role !== "formateur") {
+      // Équipe : seulement la règle 2, et seulement s'il y a exactement une séance.
+      return { enDirect: null, devine: proches.length === 1 ? prevue() : null, cours: liste };
+    }
+    // Règle 1 : un direct déjà ouvert sur un de ses cours.
+    const [ouvert] = await db
+      .select({ id: seances.id })
+      .from(seances)
+      .where(and(eq(seances.statut, "en_direct"), isNotNull(seances.demarreeLe), inArray(seances.coursId, idsListe), ne(seances.nature, "reunion")))
+      .orderBy(desc(seances.demarreeLe))
+      .limit(1);
+    if (ouvert) return { enDirect: { seanceId: ouvert.id }, devine: null, cours: liste };
+    const p = prevue();
+    if (p) return { enDirect: null, devine: p, cours: liste };
+    // Règle 3 : un seul cours.
+    if (liste.length === 1) return { enDirect: null, devine: { coursId: liste[0].coursId, titre: liste[0].titre, raison: "seul" }, cours: liste };
+    // Règle 4 : l'habitude (même jour de la semaine, à ± 90 min, au moins 2 fois sur 8 semaines, plus que les autres cours).
+    const tenues = await db
+      .select({ coursId: seances.coursId, demarreeLe: seances.demarreeLe })
+      .from(seances)
+      .where(and(eq(seances.statut, "terminee"), inArray(seances.coursId, idsListe), isNotNull(seances.demarreeLe), gte(seances.demarreeLe, new Date(maintenant - 56 * 86_400_000))));
+    const maintenantD = new Date(maintenant);
+    const minutesDuJour = (d: Date) => d.getUTCHours() * 60 + d.getUTCMinutes();
+    const parCours = new Map<number, number>();
+    for (const t of tenues) {
+      const d = t.demarreeLe!;
+      const ecart = Math.abs(minutesDuJour(d) - minutesDuJour(maintenantD));
+      if (d.getUTCDay() === maintenantD.getUTCDay() && Math.min(ecart, 1440 - ecart) <= 90) parCours.set(t.coursId, (parCours.get(t.coursId) ?? 0) + 1);
+    }
+    const classement = [...parCours].sort((a, b) => b[1] - a[1]);
+    if (classement.length && classement[0][1] >= 2 && (classement.length === 1 || classement[0][1] > classement[1][1])) {
+      return { enDirect: null, devine: { coursId: classement[0][0], titre: titreDe.get(classement[0][0])!, raison: "habitude" }, cours: liste };
+    }
+    // Règle 5 : un seul cours enseigné ces 30 derniers jours.
+    const recents = new Set(tenues.filter((t) => t.demarreeLe!.getTime() >= maintenant - 30 * 86_400_000).map((t) => t.coursId));
+    if (recents.size === 1) {
+      const id = [...recents][0];
+      return { enDirect: null, devine: { coursId: id, titre: titreDe.get(id)!, raison: "recent" }, cours: liste };
+    }
+    return { enDirect: null, devine: null, cours: liste };
+  }
+
+  app.get(
+    "/api/enseigner/demarrer",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      exigerDemarrage(u);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(await etatDemarrage(u));
+    }),
+  );
+
+  app.post(
+    "/api/enseigner/demarrer",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      exigerDemarrage(u);
+      limiter(`demarrer:${u.id}`, 5000, "Un instant : le cours est déjà en train de démarrer.");
+      const d = valider(z.object({ coursId: z.number().int().positive().optional(), seanceId: z.number().int().positive().optional() }), req.body ?? {});
+      let coursId = d.coursId;
+      let seanceId = d.seanceId;
+      if (!coursId && !seanceId) {
+        const etat = await etatDemarrage(u);
+        if (etat.enDirect) return res.status(200).json({ seanceId: etat.enDirect.seanceId, coursTitre: "" });
+        if (!etat.devine) throw new ErreurHttp(409, "Choisissez le cours.", { code: "choisir" });
+        coursId = etat.devine.coursId;
+        seanceId = etat.devine.seanceId;
+      }
+      if (seanceId) {
+        // Séance prévue : le même chemin que « Démarrer » (classe ouverte jusqu'à une heure avant), rien à confirmer.
+        const s = await seanceAnimee(u, seanceId);
+        if (s.nature === "reunion") throw invalide("Cette séance est une réunion.");
+        const [c] = await db.select({ titre: cours.titre }).from(cours).where(eq(cours.id, s.coursId));
+        if (s.statut === "annulee") throw new ErreurHttp(409, "Cette séance a été annulée.");
+        if (s.statut === "en_direct") return res.status(201).json({ seanceId: s.id, coursTitre: c?.titre ?? s.titre });
+        if (s.statut !== "planifiee") throw new ErreurHttp(409, "Cette séance est déjà terminée.");
+        const ouvreA = s.debut.getTime() - AVANCE_MAX_MS;
+        if (ouvreA > Date.now()) throw new ErreurHttp(409, `Le live s'ouvre 1 heure avant le cours, à ${heureCourte(new Date(ouvreA))}.`, { code: "trop_tot", ouvreA: new Date(ouvreA).toISOString() });
+        const maj = await passerEnDirect(db, s, ["planifiee"], { regie: true, parId: u.id });
+        if (maj) {
+          await suitesDuDemarrage(s, maj, { parId: u.id });
+          await noterArrivee(maj, u);
+        }
+        return res.status(201).json({ seanceId: s.id, coursTitre: c?.titre ?? s.titre });
+      }
+      // Cours deviné ou choisi : la séance est créée à l'instant, à confirmer (jamais de question avant de démarrer).
+      const { c } = await coursExpress(u, { coursId }, { sansClasseOk: true });
+      if (c.code === CODE_COURS_REUNIONS) throw invalide("Pour une réunion, utilisez « Réunion ».");
+      const fournisseur = visio.fournisseurImpose();
+      verifierFournisseur(fournisseur, null);
+      const [derniere] = await db.select({ dureeMinutes: seances.dureeMinutes }).from(seances).where(and(eq(seances.coursId, c.id), ne(seances.nature, "reunion"))).orderBy(desc(seances.debut)).limit(1);
+      const dureeMinutes = Math.min(480, Math.max(15, derniere?.dureeMinutes ?? 120));
+      const [s] = await db
+        .insert(seances)
+        .values({ coursId: c.id, titre: c.titre, description: "", debut: new Date(), dureeMinutes, fournisseur, lienExterne: null, plan: [], aConfirmer: true, lanceParId: u.id })
+        .returning();
+      await db.insert(journal).values({ utilisateurId: u.id, action: "seance_demarrer_express", details: { seanceId: s.id, coursId: c.id, devine: !d.coursId } });
+      const maj = await passerEnDirect(db, s, ["planifiee"], { parId: u.id });
+      if (maj) await suitesDuDemarrage(s, maj, { parId: u.id });
+      reveiller("classes-des-cours");
+      res.status(201).json({ seanceId: s.id, coursTitre: c.titre });
+    }),
+  );
+
+  // Réunion de l'équipe : une séance « reunion » sur le cours caché des réunions. Ni étudiants (404), ni rappel,
+  // ni annonce ; l'enregistrement, la transcription et le replay restent ceux du live.
+  app.post(
+    "/api/reunions-equipe/demarrer",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur" && u.role !== "admin" && u.role !== "vie_scolaire") throw interdit("Réservé aux formateurs et à l'équipe.");
+      limiter(`reunion:${u.id}`, 5000, "Un instant : la réunion est déjà en train de démarrer.");
+      const d = valider(z.object({ titre: z.string().trim().min(3, "au moins 3 caractères").max(160).optional() }), req.body ?? {});
+      const fournisseur = visio.fournisseurImpose();
+      verifierFournisseur(fournisseur, null);
+      const c = await coursDesReunions();
+      const jour = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "Africa/Abidjan" }).format(new Date());
+      const [s] = await db
+        .insert(seances)
+        .values({ coursId: c.id, titre: d.titre ?? `Réunion · ${jour}`, description: "", debut: new Date(), dureeMinutes: 180, fournisseur, lienExterne: null, plan: [], nature: "reunion", lanceParId: u.id })
+        .returning();
+      const maj = await passerEnDirect(db, s, ["planifiee"], { parId: u.id });
+      if (maj) {
+        await consigner(maj.id, "demarrage", { par: u.id });
+        publierStatut(maj);
+        annoncer(maj);
+      }
+      await db.insert(journal).values({ utilisateurId: u.id, action: "reunion_equipe_demarree", details: { seanceId: s.id } });
+      res.status(201).json({ seanceId: s.id });
+    }),
+  );
+
+  app.get(
+    "/api/seances/:id/confirmation",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      if (!(await peutRepondre(u, s))) throw interdit("Seuls celui qui a lancé le cours et son formateur peuvent répondre.");
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ devinette: await devinerSeance(s), mesCours: await coursPourChoisir(u) });
+    }),
+  );
+
+  app.post(
+    "/api/seances/:id/confirmation",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAccessible(u, idParam(req));
+      if (!(await peutRepondre(u, s))) throw interdit("Seuls celui qui a lancé le cours et son formateur peuvent répondre.");
+      const choix: ChoixConfirmation = valider(
+        z.discriminatedUnion("choix", [
+          z.object({ choix: z.literal("oui") }),
+          z.object({
+            choix: z.literal("corriger"),
+            coursId: z.number().int().positive().optional(),
+            titreCours: z.string().trim().min(3, "donnez un nom au cours (3 lettres au moins)").max(140).optional(),
+            classeIds: z.array(z.number().int().positive()).max(300).optional(),
+          }),
+          z.object({ choix: z.literal("reunion") }),
+        ]),
+        req.body,
+      );
+      if (choix.choix === "corriger") {
+        if (!choix.coursId && !choix.titreCours) throw invalide("Choisissez un cours ou donnez un nom au nouveau cours.");
+        if (!choix.coursId && !(choix.classeIds && choix.classeIds.length)) throw invalide("Choisissez au moins une classe.");
+      }
+      await confirmer(u, s, choix);
+      res.json(await detailSeance(u, await chargerSeance(s.id)));
+    }),
+  );
+
+  app.get(
+    "/api/enseigner/a-confirmer",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur" && u.role !== "admin" && u.role !== "vie_scolaire") throw interdit("Réservé aux formateurs et à l'équipe.");
+      const lignes = await seancesAConfirmerDe(u);
+      const ids = [...new Set(lignes.map((l) => l.coursId))];
+      const titres = ids.length ? new Map((await db.select({ id: cours.id, titre: cours.titre }).from(cours).where(inArray(cours.id, ids))).map((c) => [c.id, c.titre])) : new Map<number, string>();
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ seances: lignes.map((l) => ({ id: l.id, titre: l.titre, coursTitre: titres.get(l.coursId) ?? "", debut: l.debut.toISOString() })) });
     }),
   );
 
@@ -2291,7 +2511,7 @@ export function enregistrerLive(app: Express) {
           throw new ErreurHttp(409, `Le live s'ouvre 1 heure avant le cours, à ${heureCourte(new Date(ouvreA))}.`, { code: "trop_tot", ouvreA: new Date(ouvreA).toISOString() });
         }
       }
-      const maj = await passerEnDirect(db, s, ["planifiee", "terminee"], { regie: u.role === "vie_scolaire" || Boolean(avantLHeure) });
+      const maj = await passerEnDirect(db, s, ["planifiee", "terminee"], { regie: u.role === "vie_scolaire" || Boolean(avantLHeure), parId: u.id });
       if (!maj) {
         const actuelle = await chargerSeance(s.id);
         return res.json(await detailSeance(u, actuelle.statut === "en_direct" ? await prendreLaClasse(actuelle, u) : actuelle));
@@ -2568,6 +2788,13 @@ export function enregistrerLive(app: Express) {
       const role: RoleSeance = ecran && roleSeance === "formateur" ? "salle" : roleSeance;
       if (s.statut === "annulee") throw new ErreurHttp(409, `Cette séance est annulée${s.motifAnnulation ? ` : ${s.motifAnnulation}` : "."}`);
       if (s.statut === "terminee") throw new ErreurHttp(409, "Cette séance est terminée. Le replay sera bientôt disponible.");
+      // Le personnel (jamais un étudiant ni un écran) qui entre est noté parmi les participants : réunions, replay.
+      if (u.role !== "etudiant" && !estEcran(u)) {
+        await db
+          .update(seances)
+          .set({ participants: sql`array_append(${seances.participants}, ${u.id}::int)` })
+          .where(and(eq(seances.id, s.id), sql`NOT (${u.id}::int = ANY(${seances.participants}))`));
+      }
       const animateur = role === "formateur" || u.role === "admin";
       if (!animateur && s.statut === "planifiee") {
         const avance = role === "etudiant" ? 30 * MINUTE : 90 * MINUTE;
@@ -2608,7 +2835,8 @@ export function enregistrerLive(app: Express) {
         case "daily": {
           // La direction qui répète (ou qui a lancé le direct) parle comme un formateur ; sinon elle observe.
           // Le formateur d'un autre cours entre en invité : micro et caméra (comme un intervenant), sans être propriétaire.
-          const invite = role === "equipe" && u.role === "formateur";
+          // Réunion de l'équipe : tout le personnel entre avec micro et caméra.
+          const invite = role === "equipe" && (u.role === "formateur" || s.nature === "reunion");
           const profil: visio.ProfilJeton =
             role === "formateur" || (u.role === "admin" && enRepetition) ? "formateur" : role === "salle" ? "salle" : role === "equipe" && !invite ? "observateur" : "etudiant";
           // Places comptées : les étudiants en vidéo et l'équipe qui observe ; le formateur et les salles ont les leurs.
@@ -4233,7 +4461,14 @@ export function enregistrerLive(app: Express) {
         .select({ s: seances, code: cours.code, coursTitre: cours.titre, formateurId: cours.formateurId })
         .from(seances)
         .innerJoin(cours, eq(cours.id, seances.coursId))
-        .where(and(eq(seances.statut, "terminee"), or(isNotNull(seances.enregistrementId), isNotNull(seances.replayUrl))))
+        .where(
+          and(
+            eq(seances.statut, "terminee"),
+            or(isNotNull(seances.enregistrementId), isNotNull(seances.replayUrl)),
+            // Réunion de l'équipe : seulement la direction, celui qui l'a lancée et ceux qui y sont entrés.
+            or(ne(seances.nature, "reunion"), u.role === "admin" ? sql`true` : sql`false`, eq(seances.lanceParId, u.id), sql`${u.id} = ANY(${seances.participants})`),
+          ),
+        )
         .orderBy(desc(seances.debut))
         .limit(limite);
       let visibles = lignes;
@@ -4287,6 +4522,7 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       if (u.role !== "admin") throw interdit("Réservé à la direction.");
       const s = await chargerSeance(idParam(req));
+      if (s.aConfirmer) throw new ErreurHttp(409, "Confirmez d'abord ce que c'était.");
       if (s.statut !== "terminee" || !(s.enregistrementId || s.replayUrl)) throw new ErreurHttp(409, "Cette séance n'a pas encore de vidéo.");
       const d = valider(z.object({ formateurs: z.boolean().default(false) }), req.body ?? {});
       const prevenus = await annoncerReplay(s, { formateurs: d.formateurs });
@@ -4425,6 +4661,7 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       const s = await seanceProgrammee(u, idParam(req));
       const d = valider(z.object({ contenu: z.string().trim().min(20, "la fiche est trop courte").max(40_000), valider: z.boolean().optional() }), req.body);
+      if (d.valider === true && s.aConfirmer) throw new ErreurHttp(409, "Confirmez d'abord ce que c'était.");
       const publiee = d.valider === true && !s.resumeValide;
       const [maj] = await db
         .update(seances)
@@ -4433,12 +4670,22 @@ export function enregistrerLive(app: Express) {
         .returning();
       if (publiee) {
         const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
-        await notifier((await etudiantsDuCours(s.coursId)).map((e) => e.id), {
-          type: "cours",
-          titre: `Fiche de révision : ${s.titre}`,
-          corps: `${c?.code ?? ""} · la fiche du live est prête. Relis-la en 5 minutes.`,
-          lien: `/replays/${s.id}`,
-        });
+        if (s.nature === "reunion") {
+          // Réunion : le compte rendu va aux participants, jamais aux étudiants.
+          await notifier([...new Set([...s.participants, ...(s.lanceParId ? [s.lanceParId] : [])])].filter((id) => id !== u.id), {
+            type: "cours",
+            titre: `Compte rendu de la réunion : ${s.titre}`,
+            corps: "Le compte rendu est prêt.",
+            lien: `/replays/${s.id}`,
+          });
+        } else {
+          await notifier((await etudiantsDuCours(s.coursId)).map((e) => e.id), {
+            type: "cours",
+            titre: `Fiche de révision : ${s.titre}`,
+            corps: `${c?.code ?? ""} · la fiche du live est prête. Relis-la en 5 minutes.`,
+            lien: `/replays/${s.id}`,
+          });
+        }
         await db.insert(journal).values({ utilisateurId: u.id, action: "fiche_revision_publiee", details: { seanceId: s.id, parIa: s.resumeParIa } });
         publier(canal(s.id), "fiche", null);
       }
@@ -4628,7 +4875,7 @@ async function passerEnDirect(
   ex: Executant,
   s: Seance,
   statuts: Seance["statut"][],
-  { auto = false, regie = false }: { auto?: boolean; regie?: boolean } = {},
+  { auto = false, regie = false, parId = null }: { auto?: boolean; regie?: boolean; parId?: number | null } = {},
 ): Promise<Seance | null> {
   const reprise = Boolean(s.demarreeLe);
   const maintenant = new Date();
@@ -4638,6 +4885,7 @@ async function passerEnDirect(
       statut: "en_direct",
       demarreeLe: s.demarreeLe ?? maintenant,
       termineeLe: null,
+      ...(!reprise && parId !== null && { lanceParId: parId }),
       ...(!reprise && { ouvertureAuto: auto, animateurLe: null, debutCours: (auto || regie) && s.debut.getTime() > maintenant.getTime() ? s.debut : null }),
       ...(reprise && !estProjectionCopie(s.projection) ? {} : { projection: null }),
     })
@@ -4958,6 +5206,18 @@ async function terminerSeance(s: Seance, parId: number | null, details: Record<s
     .returning();
   // Déjà terminée (double clic, fin automatique au même instant) : rien à refaire ni à annoncer.
   if (!maj) return chargerSeance(s.id);
+  // Séance douteuse (aucun étudiant identifié, moins de 10 min) : à confirmer, rien ne part vers les étudiants d'ici là.
+  // En cas d'erreur de la vérification, dans le doute, la séance reste à confirmer.
+  if (maj.nature !== "reunion" && !maj.aConfirmer) {
+    const douteuse = await estDouteuse(maj).catch((e) => {
+      console.error(`[confirmation] séance ${maj.id} :`, (e as Error).message);
+      return true;
+    });
+    if (douteuse) {
+      await db.update(seances).set({ aConfirmer: true }).where(eq(seances.id, maj.id));
+      maj.aConfirmer = true;
+    }
+  }
   // Copie d'étudiant projetée : retirée avant la fin (« copie_fin » précède « fin » dans le fil).
   await arreterCopie(s.id, "fin");
   await finirParole(s.id);
@@ -4969,6 +5229,16 @@ async function terminerSeance(s: Seance, parId: number | null, details: Record<s
   if (s.publierSurSite) prevenirSite("live terminé");
   // La séance suivante du même cours, qui attendait la fin de celle-ci, s'ouvre tout de suite (ouvrirLesClasses).
   reveiller("live-ouverture-auto");
+  if (maj.aConfirmer) {
+    // La personne qui peut répondre est prévenue ; celle qui vient d'appuyer sur « Terminer » est interrogée par l'écran de fin.
+    const aPrevenir = maj.lanceParId ? [maj.lanceParId] : (await formateursDuCours(maj.coursId)).filter((f) => f.actif).map((f) => f.id);
+    await notifier(aPrevenir.filter((id) => id !== parId), {
+      type: "cours",
+      titre: "Votre cours est terminé : une question",
+      corps: `${maj.titre} : dites-nous ce que c'était. Rien n'est envoyé aux étudiants tant que vous n'avez pas répondu.`,
+      lien: `/live/${maj.id}`,
+    }).catch((e) => console.error(`[confirmation] avis de la séance ${maj.id} :`, (e as Error).message));
+  }
   return maj;
 }
 
@@ -5594,7 +5864,10 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
         isNotNull(seances.salleVisio),
         not(like(seances.salleVisio, "lk:%")),
         isNull(seances.enregistrementId),
-        gt(seances.termineeLe, new Date(Date.now() - 48 * 3600_000)),
+        // Séance à confirmer : le replay n'est pas récupéré (donc rien d'annoncé) avant la réponse ; les 48 h
+        // comptent à partir de la confirmation.
+        eq(seances.aConfirmer, false),
+        sql`coalesce(${seances.confirmeeLe}, ${seances.termineeLe}) > now() - interval '48 hours'`,
       ),
     );
   for (const s of terminees) {
@@ -5633,6 +5906,8 @@ planifier("live-enregistrements", 10 * MINUTE, async () => {
 //  - Cours terminé : l'enregistrement s'arrête, puis ses fichiers (déjà dans le bucket des replays) deviennent le
 //    replay : morceaux, copie dans le bucket notée (rien à recopier), annonce aux étudiants, transcription comme avant.
 let livekitEnregistrementsEnCours = false;
+/** Séances à confirmer dont l'enregistrement LiveKit a déjà été arrêté (une seule fois par séance). */
+const livekitArretesEnAttente = new Set<number>();
 /** Lancements récents par séance : au moins 2 min entre deux, 6 par heure au plus (un enregistreur en panne ne tourne pas en boucle). */
 const lancementsLivekit = new Map<number, number[]>();
 function lancementPermis(seanceId: number, maintenant: number): boolean {
@@ -5661,10 +5936,33 @@ planifier("livekit-enregistrements", 30_000, async () => {
         console.warn(`[replays] séance ${s.id} : enregistrement LiveKit impossible :`, (e as Error).message);
       }
     }
+    // Séances à confirmer : l'enregistrement en cours est arrêté (une seule fois), mais rien n'est récupéré ni annoncé
+    // avant la réponse du formateur.
+    const enAttente = await db
+      .select({ id: seances.id })
+      .from(seances)
+      .where(and(eq(seances.statut, "terminee"), like(seances.salleVisio, "lk:%"), isNull(seances.enregistrementId), eq(seances.aConfirmer, true), gt(seances.termineeLe, new Date(maintenant - 14 * 86_400_000))));
+    for (const { id } of enAttente) {
+      if (livekitArretesEnAttente.has(id)) continue;
+      try {
+        await livekit.arreterEnregistrementsSeance(id);
+        livekitArretesEnAttente.add(id);
+      } catch (e) {
+        console.warn(`[replays] séance ${id} : arrêt de l'enregistrement impossible :`, (e as Error).message);
+      }
+    }
     const terminees = await db
       .select()
       .from(seances)
-      .where(and(eq(seances.statut, "terminee"), like(seances.salleVisio, "lk:%"), isNull(seances.enregistrementId), gt(seances.termineeLe, new Date(maintenant - 48 * 3600_000))));
+      .where(
+        and(
+          eq(seances.statut, "terminee"),
+          like(seances.salleVisio, "lk:%"),
+          isNull(seances.enregistrementId),
+          eq(seances.aConfirmer, false),
+          sql`coalesce(${seances.confirmeeLe}, ${seances.termineeLe}) > now() - interval '48 hours'`,
+        ),
+      );
     for (const s of terminees) {
       try {
         await livekit.arreterEnregistrementsSeance(s.id);
@@ -5708,6 +6006,18 @@ planifier("livekit-enregistrements", 30_000, async () => {
  * complète est dans « Enregistrements ».
  */
 async function annoncerReplay(s: Seance, { formateurs: prevenirFormateurs = true }: { formateurs?: boolean } = {}): Promise<{ formateurs: number; etudiants: number }> {
+  // Séance à confirmer : rien ne part, ni vers les étudiants ni vers les collègues. Relu en base : l'objet reçu peut dater.
+  const [etat] = await db.select({ aConfirmer: seances.aConfirmer, nature: seances.nature, participants: seances.participants, lanceParId: seances.lanceParId }).from(seances).where(eq(seances.id, s.id));
+  if (s.aConfirmer || !etat || etat.aConfirmer) return { formateurs: 0, etudiants: 0 };
+  // Réunion de l'équipe : seuls ceux qui y étaient (hors étudiants) et celui qui l'a lancée ; ni étudiants ni collègues.
+  if (s.nature === "reunion" || etat.nature === "reunion") {
+    const ids = new Set<number>(etat.participants);
+    if (etat.lanceParId) ids.add(etat.lanceParId);
+    const equipe = ids.size ? (await db.select({ id: utilisateurs.id }).from(utilisateurs).where(and(inArray(utilisateurs.id, [...ids]), ne(utilisateurs.role, "etudiant"), eq(utilisateurs.actif, true)))).map((x) => x.id) : [];
+    const minutes = s.replayDureeSecondes ? ` · ${Math.max(1, Math.round(s.replayDureeSecondes / 60))} min` : "";
+    await notifier(equipe, { type: "cours", titre: "Le replay de votre réunion est prêt", corps: `${s.titre}${minutes}`, lien: `/replays/${s.id}` });
+    return { formateurs: equipe.length, etudiants: 0 };
+  }
   const [c] = await db.select({ code: cours.code, formateurId: cours.formateurId }).from(cours).where(eq(cours.id, s.coursId));
   const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id) ?? null;
   const [a] = animateurId ? await db.select({ prenom: utilisateurs.prenom, nom: utilisateurs.nom }).from(utilisateurs).where(eq(utilisateurs.id, animateurId)) : [];

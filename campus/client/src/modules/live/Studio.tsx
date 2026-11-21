@@ -211,6 +211,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
       <div className="mx-auto flex max-w-[1500px] flex-col gap-4">
         {/* Régie (Chargé de cours, direction) : avant l'en-tête, qui garde sa place juste au-dessus du reste. */}
         {!observation && seance.regie && <BandeauRegie seance={seance} />}
+        {seance.nature === "reunion" && <BandeauReunion seanceId={seance.id} />}
         <EnTeteLive
           seance={seance}
           etat={etat}
@@ -1376,3 +1377,33 @@ function FenetreEmpechement({ ouverte, onFermer, onConfirmer }: { ouverte: boole
   );
 }
 
+/** Réunion de l'équipe : invisible des étudiants ; le lien se partage (presse-papiers, WhatsApp) à qui doit entrer. */
+function BandeauReunion({ seanceId }: { seanceId: number }) {
+  const lien = `${window.location.origin}/live/${seanceId}`;
+  const copier = async () => {
+    try {
+      await navigator.clipboard.writeText(lien);
+      toast("Lien copié.");
+    } catch {
+      toast(`Copiez ce lien : ${lien}`, "info");
+    }
+  };
+  return (
+    <div role="status" className="flex flex-col gap-3 rounded-[18px] bg-nuit-panneau px-4 py-3 text-[14px] leading-snug text-nuit-texte sm:flex-row sm:items-center sm:justify-between" data-bandeau-reunion>
+      <span className="font-bold">Réunion · invisible des étudiants</span>
+      <span className="flex flex-wrap gap-2">
+        <Bouton variante="nuit" taille="sm" onClick={() => void copier()}>
+          Copier le lien
+        </Bouton>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(`Rejoignez la réunion : ${lien}`)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center rounded-[10px] bg-nuit-carte px-3 py-2 text-[13px] font-semibold text-white no-underline hover:bg-nuit-ligne hover:text-white"
+        >
+          WhatsApp
+        </a>
+      </span>
+    </div>
+  );
+}

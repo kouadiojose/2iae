@@ -367,6 +367,8 @@ export async function seancesAPreparer(limite: number, sansLimiteEssais = false)
     .where(
       and(
         eq(seances.statut, "terminee"),
+        // Cours deviné et pas encore confirmé, ou réunion de l'équipe : rien pour les étudiants (confirmation-seances.ts).
+        sql`NOT ${seances.aConfirmer} AND ${seances.nature} <> 'reunion'`,
         gte(seances.debut, new Date(Date.now() - FENETRE_JOURS * 24 * 3600_000)),
         sql`(SELECT count(*) FROM ${sousTitres} st WHERE st.seance_id = ${seances.id}) >= 20`,
         sql`NOT EXISTS (SELECT 1 FROM campus.transcriptions_replays tr WHERE tr.seance_id = ${seances.id} AND tr.statut = 'soumise')`,

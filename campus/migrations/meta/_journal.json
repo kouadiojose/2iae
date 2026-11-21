@@ -309,6 +309,13 @@
       "when": 1795300000000,
       "tag": "0043_seances_envoi_etudiants",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0044_seances_a_confirmer",
+      "breakpoints": true
     }
   ]
 }

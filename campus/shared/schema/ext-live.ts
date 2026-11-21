@@ -324,6 +324,10 @@ export type SeanceDetailDto = {
   envoiEtudiants: { micro: boolean; camera: boolean };
   formateur: { id: number; prenom: string; nom: string; localisation: string | null; photoUrl: string | null } | null;
   monRole: RoleSeance;
+  /** Séance terminée dont la personne doit dire ce que c'était (vrai seulement pour qui peut répondre). */
+  aConfirmer: boolean;
+  /** La personne a lancé cette séance (« Démarrer un cours », « Réunion »). */
+  lanceParMoi: boolean;
   /**
    * Préparer, modifier, dupliquer : formateur du cours, direction, vie scolaire
    * d'un cours propre à son campus. Faux pour la vie scolaire d'un campus sur

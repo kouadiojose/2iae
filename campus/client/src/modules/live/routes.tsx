@@ -12,6 +12,7 @@ const PageEnregistrements = lazy(() => import("./PageEnregistrements"));
 const PagePresentateur = lazy(() => import("./presentateur"));
 const PageInvite = lazy(() => import("./PageInvite"));
 const PageFaireUnCours = lazy(() => import("./PageFaireUnCours"));
+const PageDemarrer = lazy(() => import("./PageDemarrer"));
 
 export const routes: DefRoute[] = [
   { chemin: "/direct", page: PageDirect, acces: "connecte" },
@@ -26,6 +27,8 @@ export const routes: DefRoute[] = [
   { chemin: "/emargement", page: PageEmargement, acces: ["etudiant"], coquille: "aucune" },
   // « Faire un cours » en un écran : le cours (au besoin), ses classes et la séance.
   { chemin: "/enseigner/nouveau", page: PageFaireUnCours, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
+  // « Démarrer un cours » : le choix du cours quand le campus ne le devine pas.
+  { chemin: "/enseigner/demarrer", page: PageDemarrer, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
   { chemin: "/enseigner/seances/nouvelle", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"], droit: "programme" },
   // Préparer une séance : la régie aussi (diapos, vidéos, sondages ; pas l'horaire, voir PagePreparation).
   { chemin: "/enseigner/seances/:id", page: PagePreparation, acces: ["formateur", "admin", "vie_scolaire"], droit: ["programme", "animer"] },

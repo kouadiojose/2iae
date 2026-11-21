@@ -30,6 +30,7 @@ import { salutation } from "@/lib/dates";
 import { maintenantServeur } from "@/lib/horloge";
 import { cn, pluriel } from "@/lib/utils";
 import { SousNav } from "./composants/SousNav";
+import { BlocDemarrer } from "../live/BlocDemarrer";
 import { LigneAContacter } from "./composants/LigneAContacter";
 import { FenetreSuivi } from "./composants/FenetreSuivi";
 import { CarteRentree } from "./composants/CarteRentree";
@@ -81,6 +82,9 @@ function TableauPilotage() {
           ) : undefined
         }
       />
+
+      {/* « Démarrer un cours » et « Réunion » : de gros boutons, pour la direction et le profil « programme » (21 novembre 2026). */}
+      {(moi.role === "admin" || profilPermet(moi, "programme")) && <BlocDemarrer />}
 
       {/* Les cartes du haut attendent le compte des salles du jour (au plus un instant) : la carte orange ne vient pas
           repousser « Le travail du campus » déjà affiché, et la petite carte ne s'affiche pas pour disparaître aussitôt. */}

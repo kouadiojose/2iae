@@ -176,7 +176,7 @@ export function sqlEtatPresence(seanceId: SQL, etudiantId: SQL, salleEmargee: Sa
     sansCampus: sql`u.site_id IS NULL`,
     incident: SQL_INCIDENT_SALLE,
     salleEmargee: salleEmargee(sql`s.id`, sql`u.site_id`),
-    facultative: sql`s.nature = 'rattrapage'`,
+    facultative: sql`(s.nature = 'rattrapage' OR s.a_confirmer OR s.nature = 'reunion')`,
   })}
     FROM (SELECT ${seanceId} AS seance_id, ${etudiantId} AS etudiant_id) arg
     JOIN campus.seances s ON s.id = arg.seance_id

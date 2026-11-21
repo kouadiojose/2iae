@@ -25,6 +25,7 @@ import type { SeanceResume } from "@shared/api";
 import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours } from "@shared/ouverture";
 import { maintenantServeur } from "@/lib/horloge";
 import { BadgeRattrapage } from "./ProposerRattrapage";
+import { ConfirmerSeance, type IssueConfirmation } from "./ConfirmerSeance";
 
 /** En-tête de la salle live : cours, formateur, direct, compteur de connectés. */
 export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDetailDto; etat?: EtatDirectDto; mode?: ModeSuivi; actions?: ReactNode }) {
@@ -84,11 +85,13 @@ export function EnTeteLive({ seance, etat, mode, actions }: { seance: SeanceDeta
 
 /** Séance annulée ou terminée : message clair, présence, replay. */
 type SeanceFinie = Pick<SeanceDetailDto, "id" | "titre" | "statut" | "motifAnnulation" | "maPresence" | "coursCode" | "replayDisponible" | "monRole"> &
-  Partial<Pick<SeanceDetailDto, "debut" | "dureeMinutes" | "termineeLe" | "fermeeToutSeule" | "peutModifier" | "peutProgrammer">>;
+  Partial<Pick<SeanceDetailDto, "debut" | "dureeMinutes" | "termineeLe" | "fermeeToutSeule" | "peutModifier" | "peutProgrammer" | "aConfirmer">>;
 
 export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; devoirDirect?: DevoirDirectDto | null }) {
   const annulee = seance.statut === "annulee";
   const maintenant = useMaintenant(60_000);
+  // Cours démarré sans question : à la fin, « C'était bien ce cours ? » (rien ne part vers les étudiants avant la réponse).
+  const [confirmee, setConfirmee] = useState<IssueConfirmation | null>(null);
   const txd = useTextes(textesDirect);
   // Devoir donné en direct que l'étudiant n'a pas rendu et peut encore rendre : la navigation est sans risque, le direct est fini.
   const devoirOuvert =
@@ -118,6 +121,7 @@ export function FinDeSeance({ seance, devoirDirect }: { seance: SeanceFinie; dev
   return (
     <div className="grid min-h-[calc(100dvh-64px)] place-items-center bg-nuit px-4 pb-28 text-white">
       <div className="flex max-w-lg flex-col items-center gap-4 text-center">
+        {!annulee && (seance.aConfirmer || confirmee) && <ConfirmerSeance seanceId={seance.id} fait={confirmee} onFait={setConfirmee} />}
         <div className="grid h-14 w-14 place-items-center rounded-full bg-nuit-carte text-orange">{annulee ? <Ban className="h-7 w-7" /> : <PlayCircle className="h-7 w-7" />}</div>
         <span className="etiquette text-orange-peche">{seance.coursCode}</span>
         <h1 className="text-3xl font-black tracking-serre">{annulee ? "Ce live est annulé." : "Ce live est terminé."}</h1>

@@ -96,12 +96,11 @@ export default function PageSalle() {
 
 /**
  * Un téléphone ouvert sur l'écran de la salle sans repère d'appareil : ancienne installation par le lien partagé dans les
- * groupes. L'étudiant passe sur son compte (un billet de 30 minutes lie ce téléphone à la salle) ; l'écran réel redonne le
- * code d'installation.
+ * groupes. L'étudiant passe sur son compte (un billet de 30 minutes lie ce téléphone à la salle). « Oui, c'est l'écran »
+ * ne demande rien de plus : l'appareil est déjà connecté comme écran, et un vrai écran ne doit jamais rester bloqué ici
+ * (un code introuvable en plein cours couperait la salle).
  */
 function QuestionAppareil({ onEcran }: { onEcran: () => void }) {
-  const [vue, setVue] = useState<"question" | "code">("question");
-  const [code, setCode] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const etudiant = async () => {
@@ -120,57 +119,20 @@ function QuestionAppareil({ onEcran }: { onEcran: () => void }) {
       setEnvoi(false);
     }
   };
-  const installer = async (v: string) => {
-    setEnvoi(true);
-    setErreur(null);
-    try {
-      const m = await post("/api/ecran/installer", { code: v });
-      noterAppareil("ecran");
-      queryClient.setQueryData(["/api/auth/moi"], m);
-      onEcran();
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : "Le campus ne répond pas.");
-      setCode("");
-      setEnvoi(false);
-    }
+  const ecran = () => {
+    noterAppareil("ecran");
+    onEcran();
   };
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-nuit px-5 py-10 text-center text-white">
       <div className="flex w-full max-w-[420px] flex-col items-center gap-5">
         <h1 className="text-[30px] font-black leading-tight">Cet appareil est-il l'écran de la salle ?</h1>
-        {vue === "question" ? (
-          <>
-            <button type="button" disabled={envoi} onClick={() => void etudiant()} className="min-h-[56px] w-full rounded-[14px] bg-orange px-6 py-4 text-[17px] font-bold text-encre disabled:opacity-60">
-              Je suis étudiant
-            </button>
-            <button type="button" disabled={envoi} onClick={() => setVue("code")} className="min-h-[56px] w-full rounded-[14px] bg-nuit-carte px-6 py-4 text-[17px] font-bold text-white disabled:opacity-60">
-              Oui, c'est l'écran
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-[16px] text-nuit-doux">Tapez le code d'installation de 8 caractères (Pilotage, « Installer l'écran »).</p>
-            <input
-              value={code.length > 4 ? `${code.slice(0, 4)} ${code.slice(4)}` : code}
-              onChange={(e) => {
-                const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-                setCode(v);
-                if (v.length === 8) void installer(v);
-              }}
-              aria-label="Code d'installation de 8 caractères"
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-              autoComplete="one-time-code"
-              autoFocus
-              placeholder="•••• ••••"
-              className="w-full rounded-2xl border-2 border-nuit-bord bg-nuit-carte px-4 py-4 text-center font-mono text-[32px] font-bold tracking-[0.16em] text-white outline-none focus:border-orange"
-            />
-            <button type="button" onClick={() => setVue("question")} className="text-[15px] font-semibold text-nuit-doux underline underline-offset-4">
-              Retour
-            </button>
-          </>
-        )}
+        <button type="button" disabled={envoi} onClick={() => void etudiant()} className="min-h-[56px] w-full rounded-[14px] bg-orange px-6 py-4 text-[17px] font-bold text-encre disabled:opacity-60">
+          Je suis étudiant
+        </button>
+        <button type="button" disabled={envoi} onClick={ecran} className="min-h-[56px] w-full rounded-[14px] bg-nuit-carte px-6 py-4 text-[17px] font-bold text-white disabled:opacity-60">
+          Oui, c'est l'écran
+        </button>
         {erreur && (
           <p role="alert" className="text-[15px] font-semibold text-[#FF8A6B]">
             {erreur}

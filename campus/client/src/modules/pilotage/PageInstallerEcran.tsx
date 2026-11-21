@@ -15,7 +15,7 @@ import { estProfilCampus, type Moi } from "@shared/schema";
 import { get, post, ErreurApi } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { accueilDe, seDeconnecter, useMoi } from "@/lib/auth";
-import { lireAppareil, noterAppareil } from "@/lib/appareil";
+import { lireAppareil, noterAppareil, ressembleTelephone } from "@/lib/appareil";
 import { dateEtHeure } from "@/lib/dates";
 import { Bouton } from "@/components/ui/bouton";
 import { cn } from "@/lib/utils";
@@ -61,8 +61,16 @@ export default function PageInstallerEcran({ jeton }: { jeton?: string }) {
   // Ce qui désigne la salle : le lien, ou le billet d'un téléphone qui était connecté comme écran (PageSalle).
   const [ticket] = useState(() => (!jeton && new URLSearchParams(window.location.search).get("ticket") ? lireTicketSalle() : null));
   const source = jeton ? { jeton } : ticket ? { ticket } : null;
+  // Un écran déjà installé (session « salle » sur un ordinateur, d'avant le repère « appareil ») qui rouvre le lien :
+  // il se réinstalle comme avant, sans question (rien ne change pour les vraies salles).
+  const [ecranDejaInstalle] = useState(
+    () => Boolean(jeton) && lireAppareil() === null && moi?.role === "salle" && !estProfilCampus(moi) && !ressembleTelephone(),
+  );
+  useEffect(() => {
+    if (ecranDejaInstalle) noterAppareil("ecran");
+  }, [ecranDejaInstalle]);
   // Un appareil déjà repéré comme écran s'installe comme avant ; tous les autres passent par la question.
-  const [modeQuestion] = useState(() => Boolean(source) && !(jeton && lireAppareil() === "ecran"));
+  const [modeQuestion] = useState(() => Boolean(source) && !(jeton && (lireAppareil() === "ecran" || ecranDejaInstalle)));
   const [etat, setEtat] = useState<"saisie" | "envoi" | "installe">(jeton && !modeQuestion ? "envoi" : "saisie");
   const [etape, setEtape] = useState<Etape>("choix");
   const [apercu, setApercu] = useState<{ campus: string; salle: string } | null>(null);

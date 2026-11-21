@@ -15,7 +15,7 @@
 import type { Express, Request } from "express";
 import crypto from "crypto";
 import { z } from "zod";
-import { and, eq, gt, isNull, ne } from "drizzle-orm";
+import { and, desc, asc, eq, gt, gte, lte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { config, estProduction } from "../config";
 import { bucketFichiersDisponible } from "../fichiers";
@@ -50,10 +50,11 @@ import { notifier } from "../notifications";
 import { prevenirSite } from "../site";
 import { invaliderJetons } from "./compte";
 import { sallePasEncoreNommee, SALLES_INVENTEES } from "../amorcage";
-import { compteEcranSalle, ECRAN_REEL } from "../salles-outils";
+import { compteEcranSalle, ECRAN_REEL, coursDuSite } from "../salles-outils";
+import { peutVoirCours } from "../acces";
 import { nomDeSalle } from "@shared/salles";
 import { ACTION_JOURNAL_DEMO, adresseDeDemonstration } from "../demo-constantes";
-import { utilisateurs, sites, journal, reinitialisations, estProfilRegie, type Utilisateur, type Role } from "@shared/schema";
+import { utilisateurs, sites, journal, reinitialisations, seances, cours, inscriptions, estProfilRegie, estProfilCampus, type Utilisateur, type Role } from "@shared/schema";
 import { t as tRegie } from "@shared/textes/regie";
 import type {
   EtatRentree,
@@ -991,6 +992,39 @@ function reseauClient(ip: string | undefined): string {
     .join(":")}::/64`;
 }
 
+const MESSAGE_LIEN_ECRAN_PERDU = "Ce lien de salle ne marche plus. Demande le lien du jour à la vie scolaire.";
+
+/** Compte d'écran de salle d'un lien d'installation encore valable (même recherche que l'installation), sinon null. */
+async function compteDuJeton(jeton: string): Promise<Utilisateur | null> {
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(jeton)) return null;
+  const [ligne] = await db
+    .select({ utilisateurId: reinitialisations.utilisateurId })
+    .from(reinitialisations)
+    .where(and(eq(reinitialisations.jetonHash, hacherJeton(jeton)), eq(reinitialisations.type, "activation"), isNull(reinitialisations.utiliseLe), gt(reinitialisations.expireLe, new Date())));
+  if (!ligne) return null;
+  const [c] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, ligne.utilisateurId));
+  return c && c.actif && c.role === "salle" ? c : null;
+}
+
+// Billet d'un écran de salle : HMAC-SHA256 de « compteId.exp », valable 30 minutes, lié à un seul compte d'écran.
+const DUREE_TICKET_MS = 30 * 60_000;
+const cleTicket = () => crypto.createHash("sha256").update(`ticket-salle:${config.sessionSecret}`).digest();
+const signature = (charge: string) => crypto.createHmac("sha256", cleTicket()).update(charge).digest();
+
+function signerTicket(compteId: number): string {
+  const charge = `${compteId}.${Date.now() + DUREE_TICKET_MS}`;
+  return Buffer.from(`${charge}.${signature(charge).toString("base64url")}`).toString("base64url");
+}
+
+function lireTicket(ticket: string): number | null {
+  const m = /^(\d{1,12})\.(\d{10,16})\.([A-Za-z0-9_-]{43})$/.exec(Buffer.from(ticket, "base64url").toString("utf8"));
+  if (!m) return null;
+  const attendue = signature(`${m[1]}.${m[2]}`);
+  const recue = Buffer.from(m[3], "base64url");
+  if (recue.length !== attendue.length || !crypto.timingSafeEqual(recue, attendue)) return null;
+  return Number(m[2]) > Date.now() ? Number(m[1]) : null;
+}
+
 const ROLES_INVITABLES: Role[] = ["formateur", "vie_scolaire", "admin"];
 
 /**
@@ -1379,6 +1413,120 @@ export function enregistrerLancement(app: Express) {
       effacerTentatives(cleIp);
       await journaliser(installe, "ecran_installe", { siteId: installe.siteId, par: parLien ? "lien" : "code" });
       res.json(await versMoi(installe));
+    }),
+  );
+
+  // ── Le lien de la salle reconnaît les étudiants ──
+  // Le lien partagé dans les groupes est celui de l'installation de l'écran. Un étudiant qui l'ouvre ne devient pas
+  // l'écran : il se connecte (matricule et code secret) et entre dans le cours qui se tient dans cette salle.
+
+  // Aperçu public du lien : le campus et le nom de la salle, rien d'autre (ni noms, ni séance).
+  app.get(
+    "/api/ecran/:jeton/apercu",
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const cleIp = `ecran-apercu|${reseauClient(req.ip)}`;
+      verifierTentatives(cleIp, 60);
+      const compte = await compteDuJeton(String(req.params.jeton ?? ""));
+      const [s] = compte?.siteId ? await db.select().from(sites).where(eq(sites.id, compte.siteId)) : [];
+      if (!compte || !s) {
+        noterEchec(cleIp);
+        throw new ErreurHttp(410, MESSAGE_LIEN_ECRAN_PERDU);
+      }
+      res.json({ campus: s.nomCourt, salle: nomDeSalle(compte, s) });
+    }),
+  );
+
+  // Billet de 30 minutes pour un téléphone déjà connecté comme écran de salle (ancienne installation) qui veut
+  // passer au compte de son étudiant : il le garde le temps de se déconnecter et de se connecter.
+  app.get(
+    "/api/ecran/ticket",
+    exigerConnexion,
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const u = moi(req);
+      if (u.role !== "salle") throw interdit("Cette page n'est pas accessible avec ce compte.");
+      res.json({ ticket: signerTicket(u.id) });
+    }),
+  );
+
+  app.post(
+    "/api/ecran/entrer",
+    exigerConnexion,
+    route(async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const u = moi(req);
+      const roleOk = u.role === "etudiant" || u.role === "formateur" || u.role === "admin" || (u.role === "vie_scolaire" && !estProfilCampus(u));
+      if (!roleOk) throw interdit("Cette page n'est pas accessible avec ce compte.");
+      const cle = `ecran-entrer|${u.id}`;
+      verifierTentatives(cle, 30);
+      noterEchec(cle);
+      const d = valider(z.object({ jeton: z.string().max(100).optional(), ticket: z.string().max(300).optional() }), req.body);
+      if (Boolean(d.jeton) === Boolean(d.ticket)) throw invalide("Il faut le lien de la salle ou le billet, pas les deux.");
+      let compte: Utilisateur | null = null;
+      if (d.jeton) compte = await compteDuJeton(d.jeton);
+      else {
+        const id = lireTicket(d.ticket!);
+        if (id) {
+          const [c] = await db.select().from(utilisateurs).where(eq(utilisateurs.id, id));
+          compte = c && c.actif && c.role === "salle" ? c : null;
+        }
+      }
+      if (!compte || !compte.siteId) throw new ErreurHttp(410, MESSAGE_LIEN_ECRAN_PERDU);
+
+      const [s] = await db.select().from(sites).where(eq(sites.id, compte.siteId));
+      const campus = s?.nomCourt ?? "";
+      const ids = await coursDuSite(compte.siteId, { compteId: compte.id });
+      const horsReunion = sql`${seances.nature} <> 'reunion'`;
+      const maintenant = new Date();
+      let seance: { id: number; coursId: number } | undefined;
+      let prochaine: { titre: string; debut: Date } | null = null;
+      if (ids.length) {
+        [seance] = await db
+          .select({ id: seances.id, coursId: seances.coursId })
+          .from(seances)
+          .where(and(inArray(seances.coursId, ids), eq(seances.statut, "en_direct"), horsReunion))
+          .orderBy(desc(seances.demarreeLe))
+          .limit(1);
+        if (!seance) {
+          [seance] = await db
+            .select({ id: seances.id, coursId: seances.coursId })
+            .from(seances)
+            .where(and(inArray(seances.coursId, ids), eq(seances.statut, "planifiee"), gte(seances.debut, new Date(maintenant.getTime() - 5 * 60_000)), lte(seances.debut, new Date(maintenant.getTime() + 30 * 60_000)), horsReunion))
+            .orderBy(asc(seances.debut))
+            .limit(1);
+        }
+        if (!seance) {
+          const [p] = await db
+            .select({ titre: seances.titre, debut: seances.debut })
+            .from(seances)
+            .where(and(inArray(seances.coursId, ids), eq(seances.statut, "planifiee"), gt(seances.debut, maintenant), horsReunion))
+            .orderBy(asc(seances.debut))
+            .limit(1);
+          prochaine = p ?? null;
+        }
+      }
+      if (!seance) {
+        res.json({ seanceId: null, campus, prochaine });
+        return;
+      }
+
+      if (!(await peutVoirCours(u, seance.coursId))) {
+        if (u.role !== "etudiant") throw interdit("Ce cours n'est pas accessible avec ce compte.");
+        if (u.siteId !== compte.siteId) throw interdit("Ce cours n'est pas celui de ton campus. Ouvre le campus : tes cours y sont.");
+        const [c] = await db.select({ statut: cours.statut }).from(cours).where(eq(cours.id, seance.coursId));
+        if (c?.statut !== "publie") throw interdit("Ce cours n'est pas encore ouvert. Demande à la vie scolaire de ton campus.");
+        await db.insert(inscriptions).values({ coursId: seance.coursId, utilisateurId: u.id }).onConflictDoNothing();
+        await journaliser(u, "inscription_par_salle", { coursId: seance.coursId, seanceId: seance.id, ecranId: compte.id });
+        oublierUtilisateur(u.id);
+      }
+      const [deja] = await db
+        .select({ id: journal.id })
+        .from(journal)
+        .where(and(eq(journal.utilisateurId, u.id), eq(journal.action, "ecran_entree_personnelle"), sql`${journal.details}->>'seanceId' = ${String(seance.id)}`))
+        .limit(1);
+      if (!deja) await journaliser(u, "ecran_entree_personnelle", { seanceId: seance.id, role: u.role });
+      res.json({ seanceId: seance.id });
     }),
   );
 

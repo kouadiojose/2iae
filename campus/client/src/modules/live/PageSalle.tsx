@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Hand, Minus, Plus, CheckCircle2, CircleAlert, Maximize, MonitorPlay, Eye, EyeOff, X, MessageSquare, LogOut, ArrowLeft, Video } from "lucide-react";
 import { get, post, put, suppr } from "@/lib/api";
 import { accueilDe, seDeconnecter, useMoiConnecte } from "@/lib/auth";
+import { lireAppareil, noterAppareil, ressembleTelephone } from "@/lib/appareil";
 import { queryClient, rafraichir } from "@/lib/queryClient";
 import { useTousEvenements } from "@/lib/flux";
 import { cn } from "@/lib/utils";
@@ -37,7 +38,7 @@ import { EmargementPleinEcran, GuideChargeDeCours, cheminEmargement, useCodeSall
 import { LimiteSilencieuse } from "@/components/ui/limite-silencieuse";
 // Emplacement du plan d'engagement (campus/ENGAGEMENT.md) : sans cours et avant le cours, jamais pendant.
 import { CoupeSalle } from "@/modules/progression/CoupeSalle";
-import { estEcran, type DevoirDirectDto, type EtatDirectDto, type MainDirectDto, type SeanceDetailDto } from "@shared/schema";
+import { estEcran, estProfilCampus, type DevoirDirectDto, type EtatDirectDto, type MainDirectDto, type SeanceDetailDto } from "@shared/schema";
 import type { EnCours, SeanceResume } from "@shared/api";
 import { estPublicSalle, etiquetteSalle, nomDeSalle } from "@shared/salles";
 import { t as textesSalles } from "@shared/textes/salles";
@@ -51,6 +52,14 @@ const INCIDENTS = ["Son coupé", "Image figée", "Plus d'électricité", "Plus d
 export default function PageSalle() {
   const moi = useMoiConnecte();
   useEcranAllume(true);
+  // Écran de salle installé avant le repère « appareil » : un ordinateur reste tel quel (rien ne change à l'écran de la
+  // salle), un téléphone doit dire si c'est bien l'écran de la salle ou celui d'un étudiant.
+  const appareilIncertain = moi.role === "salle" && !estProfilCampus(moi) && lireAppareil() === null;
+  const ressembleTel = appareilIncertain && ressembleTelephone();
+  const [appareilConfirme, setAppareilConfirme] = useState(false);
+  useEffect(() => {
+    if (appareilIncertain && !ressembleTel) noterAppareil("ecran");
+  }, [appareilIncertain, ressembleTel]);
   const siteParam = Number(new URLSearchParams(window.location.search).get("site")) || null;
   const siteId = moi.role === "salle" || (moi.role === "vie_scolaire" && moi.siteId) ? moi.siteId : siteParam ?? 1;
 
@@ -75,10 +84,99 @@ export default function PageSalle() {
   // (celle d'une autre salle du campus, ou un cours commun du soir) avant la sienne.
   const seanceId = enCours?.enDirect?.id ?? enCours?.prochaine?.id ?? (enCoursLu ? duJour?.[duJour.length - 1]?.id : null) ?? null;
 
+  if (ressembleTel && !appareilConfirme) return <QuestionAppareil onEcran={() => setAppareilConfirme(true)} />;
+
   return (
     <div className="min-h-dvh bg-nuit text-white">
       {seanceId ? <EcranSeance seanceId={seanceId} siteId={siteId} /> : <EcranSansCours siteId={siteId} enCours={enCours} />}
       <Toasts />
+    </div>
+  );
+}
+
+/**
+ * Un téléphone ouvert sur l'écran de la salle sans repère d'appareil : ancienne installation par le lien partagé dans les
+ * groupes. L'étudiant passe sur son compte (un billet de 30 minutes lie ce téléphone à la salle) ; l'écran réel redonne le
+ * code d'installation.
+ */
+function QuestionAppareil({ onEcran }: { onEcran: () => void }) {
+  const [vue, setVue] = useState<"question" | "code">("question");
+  const [code, setCode] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const etudiant = async () => {
+    setEnvoi(true);
+    setErreur(null);
+    try {
+      const { ticket } = await get<{ ticket: string }>("/api/ecran/ticket");
+      try {
+        sessionStorage.setItem("campus:ticket-salle", ticket);
+      } catch {
+        /* sans stockage : l'étudiant rouvrira le lien de la salle */
+      }
+      await seDeconnecter("/ecran?ticket=1");
+    } catch {
+      setErreur("Le campus ne répond pas. Vérifie ta connexion internet, puis réessaie.");
+      setEnvoi(false);
+    }
+  };
+  const installer = async (v: string) => {
+    setEnvoi(true);
+    setErreur(null);
+    try {
+      const m = await post("/api/ecran/installer", { code: v });
+      noterAppareil("ecran");
+      queryClient.setQueryData(["/api/auth/moi"], m);
+      onEcran();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : "Le campus ne répond pas.");
+      setCode("");
+      setEnvoi(false);
+    }
+  };
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-nuit px-5 py-10 text-center text-white">
+      <div className="flex w-full max-w-[420px] flex-col items-center gap-5">
+        <h1 className="text-[30px] font-black leading-tight">Cet appareil est-il l'écran de la salle ?</h1>
+        {vue === "question" ? (
+          <>
+            <button type="button" disabled={envoi} onClick={() => void etudiant()} className="min-h-[56px] w-full rounded-[14px] bg-orange px-6 py-4 text-[17px] font-bold text-encre disabled:opacity-60">
+              Je suis étudiant
+            </button>
+            <button type="button" disabled={envoi} onClick={() => setVue("code")} className="min-h-[56px] w-full rounded-[14px] bg-nuit-carte px-6 py-4 text-[17px] font-bold text-white disabled:opacity-60">
+              Oui, c'est l'écran
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-[16px] text-nuit-doux">Tapez le code d'installation de 8 caractères (Pilotage, « Installer l'écran »).</p>
+            <input
+              value={code.length > 4 ? `${code.slice(0, 4)} ${code.slice(4)}` : code}
+              onChange={(e) => {
+                const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+                setCode(v);
+                if (v.length === 8) void installer(v);
+              }}
+              aria-label="Code d'installation de 8 caractères"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="one-time-code"
+              autoFocus
+              placeholder="•••• ••••"
+              className="w-full rounded-2xl border-2 border-nuit-bord bg-nuit-carte px-4 py-4 text-center font-mono text-[32px] font-bold tracking-[0.16em] text-white outline-none focus:border-orange"
+            />
+            <button type="button" onClick={() => setVue("question")} className="text-[15px] font-semibold text-nuit-doux underline underline-offset-4">
+              Retour
+            </button>
+          </>
+        )}
+        {erreur && (
+          <p role="alert" className="text-[15px] font-semibold text-[#FF8A6B]">
+            {erreur}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

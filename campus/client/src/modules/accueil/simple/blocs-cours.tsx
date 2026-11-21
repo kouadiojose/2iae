@@ -126,15 +126,15 @@ export function BlocsDuCours({ c }: { c: CarreFormateurDto }) {
       <GrosBloc
         grand
         testId="live"
-        ton={tonLive}
-        cercle={tonLive === "gris" ? { fond: "#E2DDD8", couleur: "#5E554F" } : tonLive === "vert" ? { fond: "rgba(255,255,255,.2)", couleur: "#FFFFFF" } : { fond: "rgba(255,255,255,.3)", couleur: "#141414" }}
+        ton={live.etat === "aucun" ? "orange" : tonLive}
+        cercle={live.etat !== "aucun" && tonLive === "gris" ? { fond: "#E2DDD8", couleur: "#5E554F" } : tonLive === "vert" ? { fond: "rgba(255,255,255,.2)", couleur: "#FFFFFF" } : { fond: "rgba(255,255,255,.3)", couleur: "#141414" }}
         icone={<MonitorPlay className="h-8 w-8 sm:h-10 sm:w-10" strokeWidth={2.25} />}
         titre={live.etat === "direct" ? tx("blocs.live.entrer") : tx("blocs.live.commencer")}
         sousTitre={envoi ? te("blocs.live.ouverture") : texteLive}
         vivant={live.etat === "direct"}
         pointFixe={ouverteEnAvance}
         attente={envoi}
-        onClick={live.etat === "aucun" ? undefined : entrer}
+        onClick={live.etat === "aucun" ? () => naviguer(`/enseigner/nouveau?cours=${c.coursId}`) : entrer}
         className="[@media(max-height:800px)]:!py-4"
       />
       {revenir && texteRevenir && (

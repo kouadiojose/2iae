@@ -95,6 +95,7 @@ import { rappelerDemarrage, sitesDuCours } from "./participation-direct";
 import { etatsPresence } from "../engagement/presence";
 import { iaDisponible, demanderJson, demanderClaude, verifierQuota } from "../ia";
 import { prevenirSite } from "../site";
+import { slugifier } from "./cours";
 import { planifier, reveiller } from "../taches";
 import * as visio from "../visio";
 import * as livekit from "../visio-livekit";
@@ -138,6 +139,7 @@ import {
   FOURNISSEURS_VISIO,
   RESSENTIS,
   type Seance,
+  type Cours,
   type Utilisateur,
   type Presence,
   type Sondage,
@@ -197,7 +199,7 @@ import { estPublicSalle, nomDeSalle } from "@shared/salles";
 import { coursDuSite, nomSalleDuCours, type RegardSalle } from "../salles-outils";
 import { lireReglageOuverture, REPERE_AVIS_DIFFERE, REPERE_OUVERTURE_AUTO, REPERE_RAPPEL_DEMARRAGE } from "../ouverture-auto";
 import { AVANCE_MAX_OUVERTURE_MIN, debutDuCours, demarreeHorsCreneau, enAttenteAnimateur } from "@shared/ouverture";
-import { avisRattrapage, titreRattrapage } from "@shared/rattrapage";
+import { avisRattrapage, quandRattrapage, titreRattrapage } from "@shared/rattrapage";
 import { t as tOuverture } from "@shared/textes/direct";
 import { deCampus, heureSimple as heureCourte, type FermetureCampusDto } from "@shared/espace-campus";
 
@@ -1646,6 +1648,35 @@ const schemaRattrapage = z.object({
   sujet: z.string().trim().min(3, "au moins 3 caractères").max(300, "300 caractères au plus"),
   rattrapageDe: z.number().int().positive().nullable().optional(),
 });
+/**
+ * « Faire un cours » en un seul écran (21 novembre 2026, José : créer un cours à l'improviste demandait cinq écrans).
+ * Un cours déjà là (coursId) ou un nouveau (titre + classes) ; tout de suite (debut absent) ou plus tard.
+ */
+const schemaExpress = z
+  .object({
+    coursId: z.number().int().positive().optional(),
+    titreCours: z.string().trim().min(3, "donnez un nom au cours (3 lettres au moins)").max(140).optional(),
+    classeIds: z.array(z.number().int().positive()).max(300).optional(),
+    sujet: z.string().trim().max(160).optional(),
+    debut: z.string().datetime({ offset: true, message: "date invalide" }).nullable().optional(),
+    dureeMinutes: z.number().int().min(15, "15 minutes au moins").max(480, "8 heures au plus"),
+  })
+  .refine((d) => d.coursId || d.titreCours, { message: "Choisissez un cours ou donnez un nom au nouveau cours." })
+  .refine((d) => d.coursId || (d.classeIds && d.classeIds.length > 0), { message: "Choisissez au moins une classe." });
+
+/** Code d'un cours créé en un écran : les initiales du titre et un numéro libre (« Marketing digital » → « MD-101 »). */
+async function codeLibre(titre: string): Promise<string> {
+  const mots = titre
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter((m) => (m.length > 2 && !["DES", "LES", "UNE", "AUX", "POUR", "AVEC", "DANS", "SUR"].includes(m)) || /^[0-9]+$/.test(m));
+  const base = (mots.length > 1 ? mots.map((m) => m[0]).join("") : (mots[0] ?? "COURS").slice(0, 3)).slice(0, 5) || "COURS";
+  const pris = new Set((await db.select({ code: cours.code }).from(cours).where(like(cours.code, `${base}-%`))).map((c) => c.code));
+  for (let n = 101; ; n++) if (!pris.has(`${base}-${n}`)) return `${base}-${n}`;
+}
+
 const schemaModification = z
   .object({ ...champsSeance, replayUrl: lienHttp.nullable().optional() })
   .partial();
@@ -1975,6 +2006,81 @@ export function enregistrerLive(app: Express) {
       }
       const conflits = await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
       res.status(201).json({ ...(await detailSeance(u, s)), conflits, prevenus: etudiants.length, absentsPrevenus: absents.size });
+    }),
+  );
+
+  // ── « Faire un cours » en un écran : le cours (s'il est nouveau), ses classes et la séance, d'un seul geste ──
+  // Tout de suite : la séance est créée à l'instant, l'écran appelle « démarrer » et entre dans la classe (les
+  // étudiants sont prévenus par le démarrage). Plus tard : les étudiants du cours sont prévenus aussitôt.
+  app.post(
+    "/api/enseigner/cours-express",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      if (u.role !== "formateur" && !estEquipe(u)) throw interdit("Réservé aux formateurs et à l'équipe pédagogique.");
+      if (u.role === "vie_scolaire") exigerDroitDe(u, "programme");
+      const d = valider(schemaExpress, req.body);
+      const maintenant = !d.debut;
+      const debut = d.debut ? new Date(d.debut) : new Date();
+      if (!maintenant && debut.getTime() < Date.now() - 10 * MINUTE) throw invalide("Choisissez une date et une heure à venir.");
+      const fournisseur = visio.fournisseurImpose();
+      verifierFournisseur(fournisseur, null);
+
+      let c: Cours;
+      let nouveau = false;
+      if (d.coursId) {
+        c = await coursEnseigne(u, d.coursId);
+        if (c.statut === "archive") throw invalide("Ce cours est archivé.");
+      } else {
+        const demandees = [...new Set(d.classeIds ?? [])];
+        const trouvees = await db.select().from(classes).where(inArray(classes.id, demandees));
+        if (trouvees.length !== demandees.length) throw invalide("Une des classes n'existe pas.");
+        const perimetre = perimetreSites(u);
+        if (perimetre && trouvees.some((cl) => !perimetre.includes(cl.siteId))) throw interdit("Vous ne pouvez choisir que les classes de votre campus.");
+        const titre = d.titreCours!;
+        const code = await codeLibre(titre);
+        const baseSlug = slugifier(titre);
+        const slugsPris = new Set((await db.select({ slug: cours.slug }).from(cours).where(or(eq(cours.slug, baseSlug), like(cours.slug, `${baseSlug}-%`)))).map((x) => x.slug));
+        let slug = baseSlug;
+        for (let i = 2; slugsPris.has(slug); i++) slug = `${baseSlug}-${i}`;
+        c = await db.transaction(async (tx) => {
+          const [cree] = await tx
+            .insert(cours)
+            .values({ code, titre, slug, formateurId: u.role === "formateur" ? u.id : null, statut: "publie" })
+            .returning();
+          await tx.insert(coursClasses).values(demandees.map((classeId) => ({ coursId: cree.id, classeId }))).onConflictDoNothing();
+          await tx.insert(journal).values({ utilisateurId: u.id, action: "cours_cree", details: { coursId: cree.id, code, express: true, classes: demandees } });
+          return cree;
+        });
+        nouveau = true;
+      }
+      if (c.statut === "brouillon") {
+        const [publie] = await db.update(cours).set({ statut: "publie", majLe: new Date() }).where(eq(cours.id, c.id)).returning();
+        c = publie;
+      }
+
+      const sujet = d.sujet?.trim();
+      const titreSeance = sujet && sujet.length >= 3 ? sujet : c.titre;
+      const [s] = await db
+        .insert(seances)
+        .values({ coursId: c.id, titre: titreSeance, description: "", debut, dureeMinutes: d.dureeMinutes, fournisseur, lienExterne: null, plan: [] })
+        .returning();
+      await db.insert(journal).values({ utilisateurId: u.id, action: "seance_express", details: { seanceId: s.id, coursId: c.id, maintenant, nouveau } });
+
+      let prevenus = 0;
+      if (!maintenant) {
+        const etudiants = (await etudiantsDuCours(c.id)).map((e) => e.id);
+        prevenus = etudiants.length;
+        const prof = u.role === "formateur" ? `${u.prenom} ${u.nom}` : null;
+        await notifier(etudiants, {
+          type: "live",
+          titre: `Cours en direct · ${c.code}`,
+          corps: `${prof ? `${prof} fait cours` : "Cours"} ${quandRattrapage(debut)} : ${titreSeance}.`,
+          lien: `/live/${s.id}`,
+        });
+      }
+      const conflits = maintenant ? [] : await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
+      res.status(201).json({ seanceId: s.id, coursId: c.id, coursCode: c.code, coursTitre: c.titre, nouveau, maintenant, prevenus, conflits });
     }),
   );
 

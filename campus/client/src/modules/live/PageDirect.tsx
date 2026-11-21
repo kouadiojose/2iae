@@ -34,6 +34,7 @@ export default function PageDirect() {
   const { data: presences } = useMesPresences(moi.role === "etudiant");
   const etatDe = new Map((presences?.seances ?? []).map((l) => [l.seanceId, l.etat]));
   const [choixCours, setChoixCours] = useState(false);
+  const [, naviguer] = useLocation();
 
   if (moi.role === "salle") return <Redirect to="/salle" replace />;
   if (enCours?.enDirect && !estEquipe(moi.role)) return <Redirect to={`/live/${enCours.enDirect.id}`} replace />;
@@ -54,8 +55,8 @@ export default function PageDirect() {
         }
         actions={
           moi.role === "formateur" || estEquipe(moi.role) ? (
-            <Bouton icone={<Plus className="h-4 w-4" />} onClick={() => setChoixCours(true)}>
-              Nouvelle séance
+            <Bouton icone={<Plus className="h-4 w-4" />} onClick={() => naviguer("/enseigner/nouveau")}>
+              Faire un cours
             </Bouton>
           ) : undefined
         }

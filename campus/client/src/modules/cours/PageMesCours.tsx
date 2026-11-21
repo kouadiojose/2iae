@@ -58,8 +58,8 @@ export default function PageMesCours() {
         sousTitre={sousTitre}
         actions={
           !etudiant ? (
-            <LienBouton href="/enseigner/cours/nouveau" icone={<Plus className="h-5 w-5" />} className="min-h-[48px]">
-              Nouveau cours
+            <LienBouton href="/enseigner/nouveau" icone={<Plus className="h-5 w-5" />} className="min-h-[48px]">
+              Faire un cours
             </LienBouton>
           ) : undefined
         }
@@ -91,10 +91,10 @@ export default function PageMesCours() {
           <EtatVide
             icone={<BookOpen className="h-6 w-6" />}
             titre={equipe ? "Aucun cours pour l'instant" : "Vous n'avez pas encore de cours"}
-            texte="Créez un cours : donnez-lui un code et un titre, ajoutez vos chapitres et leçons, cochez les classes, puis publiez-le. Les étudiants seront prévenus."
+            texte="Touchez « Faire un cours » : donnez son nom, choisissez les classes et l'heure. Les étudiants sont prévenus, et vous ajouterez vos leçons ensuite."
             action={
-              <LienBouton href="/enseigner/cours/nouveau" icone={<Plus className="h-5 w-5" />} className="min-h-[48px]">
-                Créer un cours
+              <LienBouton href="/enseigner/nouveau" icone={<Plus className="h-5 w-5" />} className="min-h-[48px]">
+                Faire un cours
               </LienBouton>
             }
           />

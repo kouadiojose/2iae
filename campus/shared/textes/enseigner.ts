@@ -314,7 +314,7 @@ const FR = {
   "blocs.live.ouvre": "le live ouvre à {heure}",
   "blocs.live.revenir": "Revenez à {heure}",
   "blocs.live.revenir.jour": "Revenez {jour} à {heure}",
-  "blocs.live.aucun": "Pas de live prévu",
+  "blocs.live.aucun": "Pas de live prévu. Touchez pour faire cours.",
   "blocs.live.ouverture": "Ouverture…",
 
   // ── Ajouter un PowerPoint, une vidéo (José, 15 octobre 2026 à 5 h : « le professeur doit pouvoir rajouter ses

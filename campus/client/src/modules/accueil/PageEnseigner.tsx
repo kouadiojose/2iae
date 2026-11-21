@@ -10,6 +10,8 @@
 // 15 octobre 2026 (José) : les blocs d'un cours sont « Commencer le live », « Mes documents », « Le mur du cours »,
 // « Vidéos et examens » et la ligne « Leçons, devoirs et notes » (simple/blocs-cours.tsx) ; plus aucun cours caché :
 // ceux qui ne sont pas montrés viennent dessous, en « Mes autres cours ».
+import { Link } from "wouter";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Page } from "@/components/layout/coquille";
 import { useMaintenant } from "@/components/ui/compte-a-rebours";
@@ -41,6 +43,20 @@ export default function PageEnseigner() {
           {data ? `${data.salutation} ${data.prenom}.` : " "}
         </h1>
       </header>
+      {/* « Faire un cours » : un seul écran pour le cours, les classes et l'heure (21 novembre 2026). */}
+      <Link
+        href="/enseigner/nouveau"
+        className="flex min-h-[72px] items-center gap-4 rounded-[24px] bg-encre px-6 py-4 text-[24px] font-black leading-tight text-white no-underline shadow-carte [@media(max-height:700px)]:!min-h-[60px] [@media(max-height:700px)]:!text-[20px]"
+        data-faire-un-cours
+      >
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-orange text-encre">
+          <Plus className="h-7 w-7" strokeWidth={3} />
+        </span>
+        <span className="flex flex-col">
+          Faire un cours
+          <span className="text-[16px] font-semibold text-white/75">Maintenant ou plus tard, en un seul écran</span>
+        </span>
+      </Link>
       {isLoading ? (
         <p className="text-[24px] font-bold text-texte-doux" aria-busy="true">
           {tx("blocs.chargement")}

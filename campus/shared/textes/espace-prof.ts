@@ -40,7 +40,7 @@ export const t = creerTextes({
   "blocs.autres": "Mes autres cours",
   "blocs.classes.aucune": "Aucune classe pour l'instant",
   "blocs.aucunCours.titre": "Aucun cours pour l'instant.",
-  "blocs.aucunCours.texte": "La direction vous attache à vos cours. Ils apparaîtront ici.",
+  "blocs.aucunCours.texte": "Touchez « Faire un cours » pour créer le vôtre, ou attendez que la direction vous attache à vos cours.",
 
   // ── Mes documents ────────────────────────────────────────────────────────
   "documents.titre": "Mes documents",

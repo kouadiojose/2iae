@@ -64,6 +64,46 @@ async function demanderALIa(c: { code: string; titre: string; description: strin
 
 let premierPassage = true;
 
+/**
+ * Corrections du 21 novembre 2026, une seule fois chacune (journal) :
+ *  - « TEEO-2BTS », renommé « … 1BTS » : les 2BTS y avaient été rattachés à tort par le premier passage (le code
+ *    l'emportait sur le titre) ; ils sont retirés ;
+ *  - un cours « … · Licence » sans aucune séance, copie d'un cours qui a des séances : les Licences ont suivi le cours
+ *    d'origine, ses classes y sont rattachées (séances, replays, fiches).
+ */
+async function corrections(): Promise<void> {
+  const fautes = await db.select().from(journal).where(and(eq(journal.action, "cours_classes_auto"), sql`${journal.details}->>'code' = 'TEEO-2BTS'`, sql`${journal.details}->'niveaux' ? 'BTS2'`));
+  const [defait] = await db.select({ id: journal.id }).from(journal).where(and(eq(journal.action, "cours_classes_auto_annule"), sql`${journal.details}->>'code' = 'TEEO-2BTS'`));
+  if (fautes.length && !defait) {
+    const d = fautes[0].details as { coursId: number; classes: number[] };
+    const [c] = await db.select().from(cours).where(eq(cours.id, d.coursId));
+    if (c && niveauxNommes(c.titre).has("BTS1") && !niveauxNommes(c.titre).has("BTS2") && d.classes?.length) {
+      await db.delete(coursClasses).where(and(eq(coursClasses.coursId, c.id), inArray(coursClasses.classeId, d.classes)));
+      await db.insert(journal).values({ utilisateurId: null, action: "cours_classes_auto_annule", details: { coursId: c.id, code: "TEEO-2BTS", classes: d.classes } });
+      console.log(`[classes-cours] TEEO-2BTS : les ${d.classes.length} classes de 2BTS rattachées à tort sont retirées.`);
+    }
+  }
+  const SUFFIXE = " · Licence";
+  const copies = (await db.select().from(cours).where(ne(cours.statut, "archive"))).filter((c) => c.titre.endsWith(SUFFIXE));
+  for (const copie of copies) {
+    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(seances).where(eq(seances.coursId, copie.id));
+    if (n > 0) continue;
+    const [origine] = await db.select().from(cours).where(and(eq(cours.titre, copie.titre.slice(0, -SUFFIXE.length)), ne(cours.statut, "archive")));
+    if (!origine) continue;
+    const [{ n: seancesOrigine }] = await db.select({ n: sql<number>`count(*)::int` }).from(seances).where(eq(seances.coursId, origine.id));
+    if (!seancesOrigine) continue;
+    const ids = (await db.select({ classeId: coursClasses.classeId }).from(coursClasses).where(eq(coursClasses.coursId, copie.id))).map((x) => x.classeId);
+    if (!ids.length) continue;
+    const avant = new Set((await etudiantsDuCours(origine.id)).map((e) => e.id));
+    const ajoutees = await db.insert(coursClasses).values(ids.map((classeId) => ({ coursId: origine.id, classeId }))).onConflictDoNothing().returning({ classeId: coursClasses.classeId });
+    if (!ajoutees.length) continue;
+    await db.insert(journal).values({ utilisateurId: null, action: "cours_classes_auto", details: { coursId: origine.id, code: origine.code, niveaux: ["L*"], classes: ajoutees.map((a) => a.classeId), copie: copie.code } });
+    const nouveaux = (await etudiantsDuCours(origine.id)).filter((e) => !avant.has(e.id)).map((e) => e.id);
+    if (nouveaux.length) await notifier(nouveaux, { type: "cours", titre: `Nouveau cours : ${origine.titre}`, corps: `Le cours ${origine.code} est ouvert pour ta classe : leçons, séances et replays t'attendent.`, lien: `/cours/${origine.id}` });
+    console.log(`[classes-cours] ${origine.code} : les ${ajoutees.length} classes de ${copie.code} (cours sans séance) y sont rattachées, ${nouveaux.length} étudiant(s) de plus.`);
+  }
+}
+
 export async function attribuerClassesDesCours(): Promise<void> {
   const [derniere] = await db.select({ annee: sql<string | null>`max(${classes.anneeScolaire})` }).from(classes);
   if (!derniere?.annee) return;
@@ -74,6 +114,7 @@ export async function attribuerClassesDesCours(): Promise<void> {
     .where(and(eq(utilisateurs.role, "etudiant"), eq(utilisateurs.actif, true)))
     .groupBy(utilisateurs.classeId);
   const effectifDe = new Map(effectifs.map((e) => [e.classeId, e.n]));
+  await corrections().catch((e) => console.warn("[classes-cours] corrections :", (e as Error).message));
   const liste = await db.select().from(cours).where(ne(cours.statut, "archive"));
   const depuis = new Date(Date.now() - 90 * 86_400_000);
 
@@ -85,8 +126,10 @@ export async function attribuerClassesDesCours(): Promise<void> {
     const clesLiees = new Set(toutes.filter((cl) => lieesIds.has(cl.id)).map((cl) => cleNiveau(cl.niveau)).filter(Boolean) as string[]);
     // Le titre, le code et les titres des séances seulement : une description qui évoque « la licence après le BTS »
     // ne désigne pas une classe.
-    const texte = [c.code, c.titre, ...sc.map((s) => s.titre)].join("\n");
-    let nommes = niveauxNommes(texte);
+    // Le titre du cours fait foi : s'il nomme une classe, ni le code ni les séances n'en ajoutent d'autre (« TEEO-2BTS »
+    // renommé « … 1BTS » est un cours de 1BTS). Sinon, le code et les titres des séances.
+    const duTitre = niveauxNommes(c.titre);
+    let nommes = duTitre.size ? duTitre : niveauxNommes([c.code, ...sc.map((s) => s.titre)].join("\n"));
     const sansClasse = lieesIds.size === 0 && inscrits === 0;
 
     if (premierPassage) {

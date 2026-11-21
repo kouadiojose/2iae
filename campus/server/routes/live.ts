@@ -103,7 +103,7 @@ import { creerModuleGroupes, noterModeSuivi } from "./live-groupes";
 import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
 import "../replays-lecture-rapide";
 import "../attribution-classes";
-import "../diagnostic-edt";
+import "../emploi-du-temps-session";
 import {
   seances,
   cours,

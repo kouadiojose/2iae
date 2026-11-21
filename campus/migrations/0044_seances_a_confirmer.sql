@@ -10,7 +10,7 @@ ALTER TABLE "campus"."seances" ADD COLUMN IF NOT EXISTS "lance_par_id" integer;
 ALTER TABLE "campus"."seances" ADD COLUMN IF NOT EXISTS "participants" integer[] DEFAULT '{}'::integer[] NOT NULL;
 --> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "campus"."seances" ADD CONSTRAINT "seances_lance_par_id_fk" FOREIGN KEY ("lance_par_id") REFERENCES "campus"."utilisateurs"("id") ON DELETE set null;
+  ALTER TABLE "campus"."seances" ADD CONSTRAINT "seances_lance_par_id_utilisateurs_id_fk" FOREIGN KEY ("lance_par_id") REFERENCES "campus"."utilisateurs"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "seances_a_confirmer_idx" ON "campus"."seances" ("a_confirmer") WHERE "a_confirmer";

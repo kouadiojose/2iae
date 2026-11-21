@@ -189,7 +189,11 @@ export const seances = campusSchema.table(
     participants: integer("participants").array().notNull().default(sql`'{}'::integer[]`),
     creeLe: timestamp("cree_le", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("seances_cours_idx").on(t.coursId), index("seances_debut_idx").on(t.debut)],
+  (t) => [
+    index("seances_cours_idx").on(t.coursId),
+    index("seances_debut_idx").on(t.debut),
+    index("seances_a_confirmer_idx").on(t.aConfirmer).where(sql`${t.aConfirmer}`),
+  ],
 );
 
 /** Ressources de la séance (liens et fichiers), dans l'ordre choisi par le formateur. */

@@ -12,7 +12,7 @@
 //     de l'école diffère).
 //   - Le cours « CE » des 2BTS RHCOM (M. Dianda, lundi matin) n'existait pas sur le campus : il est créé une fois.
 // Heures d'Abidjan (GMT). Pour changer un créneau : ce tableau, puis une mise en ligne.
-import { and, eq, gte, ilike, lt, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import { classes, cours, coursClasses, journal, seances, utilisateurs } from "@shared/schema";
 import { planifier } from "./taches";
@@ -26,7 +26,7 @@ const CONGES: [string, string][] = [["2026-12-21", "2027-01-03"]];
 const HORIZON_JOURS = 14;
 
 /** jour : 1 = lundi … 6 = samedi. */
-const CRENEAUX: Creneau[] = [
+export const CRENEAUX: Creneau[] = [
   // 2BTS Industriel (ATPA, ATPV, GBAT), tous les sites
   { jour: 3, heure: "08:30", minutes: 240, code: "TEEO", titre: "TEEO INDUSTRIEL", fin: FIN_INDUSTRIEL },
   { jour: 3, heure: "13:30", minutes: 210, code: "AG-IND", titre: "ANGLAIS INDUSTRIEL", fin: FIN_INDUSTRIEL },
@@ -57,40 +57,24 @@ async function coursCe(): Promise<void> {
   });
 }
 
+/**
+ * 21 novembre 2026 (José) : sur le terrain, l'emploi du temps n'est pas respecté, les cours se décident le jour même.
+ * Créer les séances d'avance envoyait aux étudiants des rappels pour des cours qui n'auraient pas lieu : la création
+ * automatique est arrêtée, et les séances créées par elle qui n'ont pas commencé sont retirées (elles sont notées au
+ * journal). Le tableau des créneaux reste : il servira de « proposition du jour » à confirmer d'un geste.
+ */
 export async function tenirEmploiDuTemps(): Promise<void> {
-  const maintenant = Date.now();
-  const auj = new Date().toISOString().slice(0, 10);
-  if (auj > FIN_INDUSTRIEL) return;
-  await coursCe();
-  const parCode = new Map((await db.select().from(cours)).map((c) => [c.code, c]));
-  let creees = 0;
-  for (let j = 0; j <= HORIZON_JOURS; j++) {
-    const jour = new Date(maintenant + j * 86_400_000);
-    const date = jour.toISOString().slice(0, 10);
-    if (date < DEBUT || CONGES.some(([de, a]) => date >= de && date <= a)) continue;
-    const numero = jour.getUTCDay(); // 0 = dimanche
-    for (const cr of CRENEAUX) {
-      if (cr.jour !== numero || date > cr.fin) continue;
-      const c = parCode.get(cr.code);
-      if (!c || c.statut === "archive") continue;
-      const debut = new Date(`${date}T${cr.heure}:00Z`);
-      if (debut.getTime() < maintenant + 30 * 60_000) continue;
-      const [proche] = await db
-        .select({ id: seances.id })
-        .from(seances)
-        .where(and(eq(seances.coursId, c.id), gte(seances.debut, new Date(debut.getTime() - 3 * 3600_000)), lt(seances.debut, new Date(debut.getTime() + 3 * 3600_000))))
-        .limit(1);
-      if (proche) continue;
-      const [s] = await db
-        .insert(seances)
-        .values({ coursId: c.id, titre: cr.titre, description: "", debut, dureeMinutes: cr.minutes, fournisseur: visio.fournisseurImpose(), lienExterne: null, plan: [] })
-        .returning({ id: seances.id });
-      await db.insert(journal).values({ utilisateurId: null, action: "seance_emploi_du_temps", details: { seanceId: s.id, coursId: c.id, code: c.code, debut: debut.toISOString() } });
-      creees++;
-      console.log(`[emploi-du-temps] ${c.code} « ${cr.titre} » : séance du ${date} à ${cr.heure} créée.`);
-    }
+  const lignes = await db.select({ details: journal.details }).from(journal).where(eq(journal.action, "seance_emploi_du_temps"));
+  const ids = lignes.map((l) => Number((l.details as { seanceId?: number } | null)?.seanceId)).filter((x) => Number.isInteger(x) && x > 0);
+  if (!ids.length) return;
+  const retirees = await db
+    .delete(seances)
+    .where(and(inArray(seances.id, ids), eq(seances.statut, "planifiee"), isNull(seances.demarreeLe)))
+    .returning({ id: seances.id });
+  if (retirees.length) {
+    await db.insert(journal).values({ utilisateurId: null, action: "seances_emploi_du_temps_retirees", details: { seances: retirees.map((r) => r.id) } });
+    console.log(`[emploi-du-temps] ${retirees.length} séance(s) créée(s) d'avance et jamais commencée(s) : retirée(s).`);
   }
-  if (creees) console.log(`[emploi-du-temps] ${creees} séance(s) créée(s) pour les ${HORIZON_JOURS} prochains jours.`);
 }
 
-planifier("emploi-du-temps", 6 * 3600_000, tenirEmploiDuTemps);
+planifier("emploi-du-temps", 24 * 3600_000, tenirEmploiDuTemps);

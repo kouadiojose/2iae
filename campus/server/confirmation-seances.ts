@@ -14,7 +14,7 @@
 // Les règles de devinette sont de simples règles, sans IA.
 import { and, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "./db";
-import { perimetreSites } from "./auth";
+import { oublierUtilisateur, perimetreSites } from "./auth";
 import { ErreurHttp, interdit, invalide } from "./http";
 import { coursEnseigne, formateursDuCours, regieCours } from "./acces";
 import { notifier } from "./notifications";
@@ -28,6 +28,8 @@ import {
   coursClasses,
   devoirs,
   devoirsDirect,
+  effectifsSalles,
+  evenementsSeances,
   fichesRevision,
   inscriptions,
   journal,
@@ -77,6 +79,8 @@ export async function coursExpress(
   if (d.coursId) {
     c = await coursEnseigne(u, d.coursId);
     if (c.statut === "archive") throw invalide("Ce cours est archivé.");
+    // Le cours caché des réunions ne se publie jamais (il serait vu dans la médiathèque de tous les étudiants).
+    if (c.code === CODE_COURS_REUNIONS) throw invalide("Pour une réunion, utilisez « Réunion ».");
     // « Pour qui ? » sur un cours déjà là : les classes choisies s'ajoutent (rien n'est retiré ici).
     const demandees = [...new Set(d.classeIds ?? [])];
     if (demandees.length) {
@@ -143,6 +147,11 @@ export type DevinetteSeance = {
   classesAAjouter: { id: number; nom: string }[];
   etudiantsIdentifies: number;
   etudiantsDuCoursPresents: number;
+  /**
+   * Preuve d'un cours tenu en salle de conférence, même sans aucun étudiant identifié en ligne : un effectif déclaré par
+   * une salle, ou l'écran d'une salle d'un campus du cours connecté au moins 10 minutes (« salle_connectee »).
+   */
+  preuveSalle: boolean;
   dureeMinutes: number;
   suggestion: "cours" | "reunion";
   phrase: string;
@@ -161,7 +170,8 @@ export async function devinerSeance(s: Seance, ex: Ex = db): Promise<DevinetteSe
     .select({ id: utilisateurs.id, classeId: utilisateurs.classeId })
     .from(presences)
     .innerJoin(utilisateurs, eq(utilisateurs.id, presences.utilisateurId))
-    .where(and(eq(presences.seanceId, s.id), eq(utilisateurs.role, "etudiant"), sql`${presences.minutes} >= ${MINUTES_PRESENCE}`));
+    // En ligne au moins 5 minutes, ou compté en salle (émargement QR, pointé par le responsable de salle).
+    .where(and(eq(presences.seanceId, s.id), eq(utilisateurs.role, "etudiant"), sql`(${presences.minutes} >= ${MINUTES_PRESENCE} OR ${presences.mode} = 'salle')`));
   const inscrits = presents.length
     ? new Set(
         (await ex.select({ id: inscriptions.utilisateurId }).from(inscriptions).where(and(eq(inscriptions.coursId, s.coursId), inArray(inscriptions.utilisateurId, presents.map((p) => p.id))))).map((i) => i.id),
@@ -176,7 +186,16 @@ export async function devinerSeance(s: Seance, ex: Ex = db): Promise<DevinetteSe
   const debut = s.debutCours ?? s.demarreeLe;
   const fin = s.termineeLe ?? new Date();
   const dureeMinutes = debut ? Math.max(0, Math.round((fin.getTime() - debut.getTime()) / 60_000)) : 0;
-  const suggestion: "cours" | "reunion" = presents.length === 0 && (s.participants?.length ?? 0) >= 2 ? "reunion" : "cours";
+  const [effectif] = await ex
+    .select({ n: sql<number>`count(*)::int` })
+    .from(effectifsSalles)
+    .where(and(eq(effectifsSalles.seanceId, s.id), sql`${effectifsSalles.nombre} > 0`));
+  const [ecran] = await ex
+    .select({ n: sql<number>`count(*)::int` })
+    .from(evenementsSeances)
+    .where(and(eq(evenementsSeances.seanceId, s.id), eq(evenementsSeances.type, "salle_connectee")));
+  const preuveSalle = (effectif?.n ?? 0) > 0 || (ecran?.n ?? 0) > 0;
+  const suggestion: "cours" | "reunion" = presents.length === 0 && !preuveSalle && (s.participants?.length ?? 0) >= 2 ? "reunion" : "cours";
   const titre = c?.titre ?? s.titre;
   const noms = [...liees, ...aAjouter].map((x) => x.nom);
   return {
@@ -186,16 +205,21 @@ export async function devinerSeance(s: Seance, ex: Ex = db): Promise<DevinetteSe
     classesAAjouter: aAjouter,
     etudiantsIdentifies: presents.length,
     etudiantsDuCoursPresents: duCours.length,
+    preuveSalle,
     dureeMinutes,
     suggestion,
     phrase: noms.length ? `C'était : ${titre}, pour ${noms.join(", ")} ?` : `C'était : ${titre} ?`,
   };
 }
 
-/** Séance douteuse (garde-fou e) : aucun étudiant identifié, ou moins de 10 minutes. Elle reste à confirmer. */
+/**
+ * Séance douteuse (garde-fou e) : moins de 10 minutes, ou aucune trace d'étudiants (personne d'identifié en ligne ni
+ * émargé, aucune salle de conférence qui suivait le cours). Elle reste à confirmer. Une classe suivie seulement dans les
+ * salles (écran connecté 10 min, effectif déclaré) n'est pas douteuse : elle part comme avant.
+ */
 export async function estDouteuse(s: Seance): Promise<boolean> {
   const d = await devinerSeance(s);
-  return d.etudiantsIdentifies === 0 || d.dureeMinutes < 10;
+  return (d.etudiantsIdentifies === 0 && !d.preuveSalle) || d.dureeMinutes < 10;
 }
 
 /** Qui peut dire ce que c'était : celui qui a lancé la séance, la régie du cours, la direction. */
@@ -212,9 +236,29 @@ export type ChoixConfirmation =
   | { choix: "corriger"; coursId?: number; titreCours?: string; classeIds?: number[] }
   | { choix: "reunion" };
 
+/**
+ * Étudiants inscrits au cours deviné par le lien de la salle pendant cette séance (routes/lancement.ts,
+ * « inscription_par_salle ») : ils suivent le cours corrigé, et plus le cours deviné (une réunion : plus aucun).
+ * Une inscription venue d'une autre séance du même cours reste.
+ */
+async function deplacerInscriptionsParSalle(tx: Ex, s: Seance, c: Cours, reunion: boolean): Promise<number[]> {
+  const lignes = await tx
+    .select({ uid: journal.utilisateurId, seanceId: sql<string>`${journal.details}->>'seanceId'` })
+    .from(journal)
+    .where(and(eq(journal.action, "inscription_par_salle"), sql`${journal.details}->>'coursId' = ${String(s.coursId)}`));
+  const autres = new Set(lignes.filter((l) => l.seanceId !== String(s.id)).map((l) => l.uid));
+  const uids = [...new Set(lignes.filter((l) => l.seanceId === String(s.id) && l.uid !== null && !autres.has(l.uid)).map((l) => l.uid as number))];
+  if (!uids.length) return [];
+  await tx.delete(inscriptions).where(and(eq(inscriptions.coursId, s.coursId), inArray(inscriptions.utilisateurId, uids)));
+  if (!reunion) await tx.insert(inscriptions).values(uids.map((utilisateurId) => ({ coursId: c.id, utilisateurId }))).onConflictDoNothing();
+  await tx.insert(journal).values({ utilisateurId: null, action: "inscriptions_par_salle_deplacees", details: { seanceId: s.id, deCours: s.coursId, versCours: reunion ? null : c.id, etudiants: uids } });
+  return uids;
+}
+
 /** Déplace la séance et ce qu'elle a produit (devoirs du direct, fiches, cartes, activités) vers un autre cours. */
-async function deplacerVers(tx: Ex, s: Seance, c: Cours): Promise<void> {
+async function deplacerVers(tx: Ex, s: Seance, c: Cours, { reunion = false }: { reunion?: boolean } = {}): Promise<void> {
   if (s.coursId === c.id) return;
+  for (const uid of await deplacerInscriptionsParSalle(tx, s, c, reunion)) oublierUtilisateur(uid);
   const [ancien] = await tx.select({ titre: cours.titre }).from(cours).where(eq(cours.id, s.coursId));
   const devoirsDuDirect = tx.select({ id: devoirsDirect.devoirId }).from(devoirsDirect).where(eq(devoirsDirect.seanceId, s.id));
   await tx.update(devoirs).set({ coursId: c.id }).where(inArray(devoirs.id, devoirsDuDirect));
@@ -274,7 +318,7 @@ export async function confirmer(u: Utilisateur, s: Seance, choix: ChoixConfirmat
     const c = await coursDesReunions();
     await db.transaction(async (tx) => {
       const ex = tx as unknown as Ex;
-      await deplacerVers(ex, s, c);
+      await deplacerVers(ex, s, c, { reunion: true });
       const [maj] = await ex
         .update(seances)
         .set({ nature: "reunion", aConfirmer: false, confirmeeLe: new Date() })

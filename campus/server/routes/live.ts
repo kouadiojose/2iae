@@ -1585,6 +1585,12 @@ export async function fermeeToutSeule(seanceId: number): Promise<boolean> {
   return f?.donnees?.automatique === true;
 }
 
+/** Rappel du démarrage retenu et pas encore libéré (« Démarrer un cours » sur un cours deviné sans certitude). */
+async function avisRetenuDe(seanceId: number): Promise<boolean> {
+  const reperes = await db.select({ type: rappelsLive.type }).from(rappelsLive).where(and(eq(rappelsLive.seanceId, seanceId), inArray(rappelsLive.type, ["avis-retenu", REPERE_RAPPEL_DEMARRAGE])));
+  return reperes.some((r) => r.type === "avis-retenu") && !reperes.some((r) => r.type === REPERE_RAPPEL_DEMARRAGE);
+}
+
 async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto> {
   const [c] = await db.select().from(cours).where(eq(cours.id, s.coursId));
   const animateurId = (await animateursDes([{ seanceId: s.id, formateurId: c?.formateurId ?? null }])).get(s.id);
@@ -1642,6 +1648,7 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     monRole: role,
     aConfirmer: s.aConfirmer && (await peutRepondre(u, s)),
     lanceParMoi: s.lanceParId === u.id,
+    avisRetenu: s.statut === "en_direct" && (role === "formateur" || role === "equipe") && (await avisRetenuDe(s.id)),
     peutModifier: role === "formateur" || (role === "equipe" && (await enseigneCours(u, s.coursId))),
     // Horaire, titre, plan, publication, Empêchement, Dupliquer, Supprimer, « C'était un essai », fiche de révision
     // (seanceProgrammee) : pas la régie seule (Chargé de cours).
@@ -2208,16 +2215,29 @@ export function enregistrerLive(app: Express) {
       const u = moi(req);
       exigerDemarrage(u);
       limiter(`demarrer:${u.id}`, 5000, "Un instant : le cours est déjà en train de démarrer.");
-      const d = valider(z.object({ coursId: z.number().int().positive().optional(), seanceId: z.number().int().positive().optional() }), req.body ?? {});
+      const d = valider(
+        z.object({
+          coursId: z.number().int().positive().optional(),
+          seanceId: z.number().int().positive().optional(),
+          // Le cours vient de la devinette (useDemarrerUnCours) : sa raison décide si les étudiants sont prévenus.
+          devine: z.enum(["prevue", "seul", "habitude", "recent"]).optional(),
+        }),
+        req.body ?? {},
+      );
       let coursId = d.coursId;
       let seanceId = d.seanceId;
+      let raison = d.devine;
       if (!coursId && !seanceId) {
         const etat = await etatDemarrage(u);
         if (etat.enDirect) return res.status(200).json({ seanceId: etat.enDirect.seanceId, coursTitre: "" });
         if (!etat.devine) throw new ErreurHttp(409, "Choisissez le cours.", { code: "choisir" });
         coursId = etat.devine.coursId;
         seanceId = etat.devine.seanceId;
+        raison = etat.devine.raison;
       }
+      // Deviné sans certitude (l'habitude, le seul cours de ces 30 jours) : si c'est le mauvais cours, ses étudiants
+      // recevraient « En direct » pour rien. Le rappel du démarrage est retenu ; l'animateur le lance d'un geste.
+      const avisRetenu = !d.coursId || d.devine ? raison === "habitude" || raison === "recent" : false;
       if (seanceId) {
         // Séance prévue : le même chemin que « Démarrer » (classe ouverte jusqu'à une heure avant), rien à confirmer.
         const s = await seanceAnimee(u, seanceId);
@@ -2247,10 +2267,15 @@ export function enregistrerLive(app: Express) {
         .values({ coursId: c.id, titre: c.titre, description: "", debut: new Date(), dureeMinutes, fournisseur, lienExterne: null, plan: [], aConfirmer: true, lanceParId: u.id })
         .returning();
       await db.insert(journal).values({ utilisateurId: u.id, action: "seance_demarrer_express", details: { seanceId: s.id, coursId: c.id, devine: !d.coursId } });
+      if (avisRetenu) {
+        // Posés avant l'ouverture : ni le rappel du démarrage ni son filet (envoyerRappelsEmargement) ne partent.
+        await db.insert(rappelsLive).values({ seanceId: s.id, type: "avis-retenu" }).onConflictDoNothing();
+        for (const site of await sitesDuCours(c.id)) await db.insert(rappelsLive).values({ seanceId: s.id, type: `emargement:${site}` }).onConflictDoNothing();
+      }
       const maj = await passerEnDirect(db, s, ["planifiee"], { parId: u.id });
-      if (maj) await suitesDuDemarrage(s, maj, { parId: u.id });
+      if (maj) await suitesDuDemarrage(s, maj, { parId: u.id, avisDiffere: avisRetenu });
       reveiller("classes-des-cours");
-      res.status(201).json({ seanceId: s.id, coursTitre: c.titre });
+      res.status(201).json({ seanceId: s.id, coursTitre: c.titre, avisRetenu });
     }),
   );
 
@@ -2280,6 +2305,27 @@ export function enregistrerLive(app: Express) {
       }
       await db.insert(journal).values({ utilisateurId: u.id, action: "reunion_equipe_demarree", details: { seanceId: s.id } });
       res.status(201).json({ seanceId: s.id });
+    }),
+  );
+
+  // Rappel du démarrage retenu (cours deviné sans certitude) : l'animateur, sûr du cours, prévient les étudiants. Une
+  // seule fois (repère « rappel-demarrage » posé d'abord).
+  app.post(
+    "/api/seances/:id/prevenir-etudiants",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAnimee(u, idParam(req));
+      if (s.statut !== "en_direct") throw new ErreurHttp(409, "Le cours n'est pas en direct.");
+      const [retenu] = await db.select({ type: rappelsLive.type }).from(rappelsLive).where(and(eq(rappelsLive.seanceId, s.id), eq(rappelsLive.type, "avis-retenu"))).limit(1);
+      if (!retenu) throw new ErreurHttp(409, "Les étudiants ont déjà été prévenus.");
+      const pris = await db.insert(rappelsLive).values({ seanceId: s.id, type: REPERE_RAPPEL_DEMARRAGE }).onConflictDoNothing().returning();
+      if (pris.length) {
+        const [c] = await db.select({ code: cours.code }).from(cours).where(eq(cours.id, s.coursId));
+        await rappelerDemarrage(s, c?.code ?? "");
+        await db.insert(journal).values({ utilisateurId: u.id, action: "seance_avis_libere", details: { seanceId: s.id, coursId: s.coursId } });
+      }
+      res.json(await detailSeance(u, await chargerSeance(s.id)));
     }),
   );
 
@@ -4759,6 +4805,8 @@ function libelleEvenement(type: TypeEvenementSeance, d: Record<string, unknown>,
       return `Séance annulée${d.automatique ? " automatiquement" : ""} : ${String(d.motif ?? "")}`;
     case "salle_fermee":
       return tOuverture("bilan.salleFermee", { v: { site: site ?? "Une salle" } });
+    case "salle_connectee":
+      return `L'écran de ${site ?? "une salle"} suit le cours depuis ${Number(d.minutes ?? 10)} min`;
     case "plan_b":
       return "Plan B : bascule sur le lien de secours";
     case "invite":
@@ -5199,25 +5247,27 @@ export async function fermerClasseFinie(autre: Seance, attendue: Seance, siteId:
 async function terminerSeance(s: Seance, parId: number | null, details: Record<string, unknown> = {}): Promise<Seance> {
   const lignes = await db.select({ t: sousTitres.t, texte: sousTitres.texte }).from(sousTitres).where(eq(sousTitres.seanceId, s.id)).orderBy(asc(sousTitres.t), asc(sousTitres.id));
   const transcription = lignes.map((l) => `[${Math.floor(l.t / 60)}:${String(l.t % 60).padStart(2, "0")}] ${l.texte}`).join("\n");
+  const termineeLe = new Date();
+  // Séance douteuse (moins de 10 min, ou aucune trace d'étudiants ni de salle) : à confirmer, rien ne part vers les
+  // étudiants d'ici là. Jugée avant la fin et écrite dans la même mise à jour : aucune tâche (replay, résumé) ne peut
+  // la voir terminée et pas encore retenue. En cas d'erreur de la vérification, dans le doute, elle reste à confirmer.
+  const actuelle = await chargerSeance(s.id);
+  const douteuse =
+    actuelle.nature !== "reunion" &&
+    !actuelle.aConfirmer &&
+    // Déjà confirmée (puis reprise) : la réponse donnée vaut toujours.
+    actuelle.confirmeeLe === null &&
+    (await estDouteuse({ ...actuelle, termineeLe }).catch((e) => {
+      console.error(`[confirmation] séance ${s.id} :`, (e as Error).message);
+      return true;
+    }));
   const [maj] = await db
     .update(seances)
-    .set({ statut: "terminee", termineeLe: new Date(), transcription })
+    .set({ statut: "terminee", termineeLe, transcription, ...(douteuse && { aConfirmer: true }) })
     .where(and(eq(seances.id, s.id), inArray(seances.statut, ["en_direct", "planifiee"])))
     .returning();
   // Déjà terminée (double clic, fin automatique au même instant) : rien à refaire ni à annoncer.
   if (!maj) return chargerSeance(s.id);
-  // Séance douteuse (aucun étudiant identifié, moins de 10 min) : à confirmer, rien ne part vers les étudiants d'ici là.
-  // En cas d'erreur de la vérification, dans le doute, la séance reste à confirmer.
-  if (maj.nature !== "reunion" && !maj.aConfirmer) {
-    const douteuse = await estDouteuse(maj).catch((e) => {
-      console.error(`[confirmation] séance ${maj.id} :`, (e as Error).message);
-      return true;
-    });
-    if (douteuse) {
-      await db.update(seances).set({ aConfirmer: true }).where(eq(seances.id, maj.id));
-      maj.aConfirmer = true;
-    }
-  }
   // Copie d'étudiant projetée : retirée avant la fin (« copie_fin » précède « fin » dans le fil).
   await arreterCopie(s.id, "fin");
   await finirParole(s.id);
@@ -5610,6 +5660,42 @@ export async function ouvrirLesClasses(maintenant = new Date()): Promise<Seance[
   if (ouvertes.length) await noterArriveesDesPresents(ouvertes).catch((e) => console.error("[live] arrivées des animateurs :", (e as Error).message));
   return ouvertes;
 }
+
+// Preuve qu'un cours se tient dans une salle de conférence (confirmation-seances.ts, estDouteuse) : l'écran d'une salle
+// d'un campus qui suit le cours, connecté à la classe au moins 10 minutes (comptées chaque minute, en mémoire), laisse
+// une trace « salle_connectee » au fil. Une classe suivie seulement en salle (aucun étudiant identifié en ligne) n'est
+// alors pas « douteuse » à la fin : rien n'est retenu.
+const MINUTES_PREUVE_SALLE = 10;
+const minutesEcransSalles = new Map<string, number>();
+planifier("salles-connectees", MINUTE, async () => {
+  const directs = await db.select({ id: seances.id, coursId: seances.coursId }).from(seances).where(and(eq(seances.statut, "en_direct"), ne(seances.nature, "reunion")));
+  const sitesDe = new Map<number, number[]>();
+  for (const s of directs) {
+    const sitesEcrans = new Set(
+      utilisateursPresentsSur(canal(s.id))
+        .filter((x) => estEcran(x) && x.siteId)
+        .map((x) => x.siteId as number),
+    );
+    if (!sitesEcrans.size) continue;
+    if (!sitesDe.has(s.coursId)) sitesDe.set(s.coursId, await sitesDuCours(s.coursId));
+    for (const site of sitesEcrans) {
+      if (!sitesDe.get(s.coursId)!.includes(site)) continue;
+      const cle = `${s.id}|${site}`;
+      const n = (minutesEcransSalles.get(cle) ?? 0) + 1;
+      minutesEcransSalles.set(cle, n);
+      if (n !== MINUTES_PREUVE_SALLE) continue;
+      const [deja] = await db
+        .select({ id: evenementsSeances.id })
+        .from(evenementsSeances)
+        .where(and(eq(evenementsSeances.seanceId, s.id), eq(evenementsSeances.type, "salle_connectee"), sql`${evenementsSeances.donnees}->>'siteId' = ${String(site)}`))
+        .limit(1);
+      if (!deja) await consigner(s.id, "salle_connectee", { siteId: site, minutes: MINUTES_PREUVE_SALLE });
+    }
+  }
+  // Compteurs des séances qui ne sont plus en direct : oubliés.
+  const enDirect = new Set(directs.map((s) => s.id));
+  for (const cle of minutesEcransSalles.keys()) if (!enDirect.has(Number(cle.split("|")[0]))) minutesEcransSalles.delete(cle);
+});
 
 planifier("live-ouverture-auto", MINUTE, async () => {
   await ouvrirLesClasses();

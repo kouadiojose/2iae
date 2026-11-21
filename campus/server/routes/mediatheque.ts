@@ -50,7 +50,7 @@ const NOUVEAU_MS = 14 * 24 * 3600_000;
 const schemaReglage = z.object({ mediatheque: z.enum(ACCES_MEDIATHEQUE) });
 
 /** Enregistrements : séances terminées avec une vidéo, jamais un essai de visio (direct immédiat sans prévenir). */
-async function enregistrementsDes(u: { id: number }, coursIds: number[] | "tous") {
+async function enregistrementsDes(u: { id: number; role: string }, coursIds: number[] | "tous") {
   if (coursIds !== "tous" && !coursIds.length) return new Map<number, EnregistrementMediathequeDto[]>();
   const lignes = await db
     .select({
@@ -71,6 +71,8 @@ async function enregistrementsDes(u: { id: number }, coursIds: number[] | "tous"
         or(isNotNull(seances.enregistrementId), isNotNull(seances.replayUrl)),
         coursIds === "tous" ? undefined : inArray(seances.coursId, coursIds),
         sql`NOT EXISTS (SELECT 1 FROM campus.directs_immediats di WHERE di.seance_id = ${seances.id} AND NOT di.prevenir)`,
+        // Réunion de l'équipe : seulement la direction, celui qui l'a lancée et ceux qui y sont entrés (comme /api/replays).
+        u.role === "admin" ? undefined : sql`(${seances.nature} <> 'reunion' OR ${seances.lanceParId} = ${u.id} OR ${u.id} = ANY(${seances.participants}))`,
       ),
     )
     .orderBy(desc(seances.debut));

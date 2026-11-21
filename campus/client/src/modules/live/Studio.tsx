@@ -212,6 +212,7 @@ export default function Studio({ seance, observation = false }: { seance: Seance
         {/* Régie (Chargé de cours, direction) : avant l'en-tête, qui garde sa place juste au-dessus du reste. */}
         {!observation && seance.regie && <BandeauRegie seance={seance} />}
         {seance.nature === "reunion" && <BandeauReunion seanceId={seance.id} />}
+        {!observation && seance.avisRetenu && <BandeauAvisRetenu seance={seance} />}
         <EnTeteLive
           seance={seance}
           etat={etat}
@@ -1404,6 +1405,36 @@ function BandeauReunion({ seanceId }: { seanceId: number }) {
           WhatsApp
         </a>
       </span>
+    </div>
+  );
+}
+
+/**
+ * « Démarrer un cours » sur un cours deviné sans certitude (l'habitude) : les étudiants n'ont pas reçu « En direct ».
+ * Le formateur, sûr du cours, les prévient d'un geste ; sinon il termine et démarre le bon cours.
+ */
+function BandeauAvisRetenu({ seance }: { seance: SeanceDetailDto }) {
+  const [envoi, setEnvoi] = useState(false);
+  const prevenir = async () => {
+    setEnvoi(true);
+    try {
+      const maj = await post<SeanceDetailDto>(`/api/seances/${seance.id}/prevenir-etudiants`);
+      queryClient.setQueryData([`/api/seances/${seance.id}`], maj);
+      toast("Les étudiants sont prévenus.");
+    } catch (e) {
+      toastErreur(e);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  return (
+    <div role="status" className="flex flex-col gap-3 rounded-[18px] bg-nuit-panneau px-4 py-3 text-[14px] leading-snug text-nuit-texte sm:flex-row sm:items-center sm:justify-between" data-bandeau-avis-retenu>
+      <span>
+        <span className="font-bold">Les étudiants ne sont pas encore prévenus.</span> C'est bien le cours « {seance.coursTitre} » ? Sinon, terminez et démarrez le bon cours.
+      </span>
+      <Bouton variante="nuit" taille="sm" disabled={envoi} onClick={() => void prevenir()}>
+        Prévenir les étudiants
+      </Bouton>
     </div>
   );
 }

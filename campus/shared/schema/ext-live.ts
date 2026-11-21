@@ -18,9 +18,11 @@ export const rappelsLive = campusSchema.table(
      *  « ouverture-auto » : la séance ne s'ouvre plus d'elle-même à cet horaire ; « rappel-demarrage » : le rappel du
      *  démarrage est déjà parti pour cet horaire (essai effacé après une ouverture automatique) (server/ouverture-auto.ts) ;
      *  « avis-differe » : classe ouverte très tôt par le compte de campus, l'avis aux étudiants et au formateur attend
-     *  l'heure où l'ouverture automatique l'aurait envoyé (routes/live.ts, envoyerAvisDifferes). Colonne texte : pas de
+     *  l'heure où l'ouverture automatique l'aurait envoyé (routes/live.ts, envoyerAvisDifferes) ; « avis-retenu » : « Démarrer
+     *  un cours » sur un cours deviné par l'habitude (deviné sans certitude) : les étudiants ne sont prévenus que si le
+     *  formateur appuie sur « Prévenir les étudiants » (POST /api/seances/:id/prevenir-etudiants). Colonne texte : pas de
      *  migration pour une valeur nouvelle. */
-    type: text("type").$type<"24h" | "jour" | "15min" | "ouverture-auto" | "rappel-demarrage" | "avis-differe" | `emargement:${number}`>().notNull(),
+    type: text("type").$type<"24h" | "jour" | "15min" | "ouverture-auto" | "rappel-demarrage" | "avis-differe" | "avis-retenu" | `emargement:${number}`>().notNull(),
     envoyeLe: timestamp("envoye_le", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.seanceId, t.type] })],
@@ -37,7 +39,7 @@ export const signalementsQuestions = campusSchema.table(
   (t) => [primaryKey({ columns: [t.questionId, t.utilisateurId] })],
 );
 
-export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom", "devoir_direct", "arrivee", "cours_commence", "salle_fermee"] as const;
+export const TYPES_EVENEMENT_SEANCE = ["demarrage", "fin", "annulation", "plan_b", "diapo", "parole", "parole_fin", "incident", "incident_resolu", "remise_a_venir", "groupes_ouverts", "groupes_fermes", "invite", "copie", "copie_fin", "copie_nom", "devoir_direct", "arrivee", "cours_commence", "salle_fermee", "salle_connectee"] as const;
 export type TypeEvenementSeance = (typeof TYPES_EVENEMENT_SEANCE)[number];
 
 /**
@@ -328,6 +330,11 @@ export type SeanceDetailDto = {
   aConfirmer: boolean;
   /** La personne a lancé cette séance (« Démarrer un cours », « Réunion »). */
   lanceParMoi: boolean;
+  /**
+   * Cours deviné sans certitude (« Démarrer un cours », habitude ou cours récent) : les étudiants n'ont pas été prévenus
+   * du démarrage ; l'animateur peut le faire (« Prévenir les étudiants »). Faux pour tout autre regard.
+   */
+  avisRetenu: boolean;
   /**
    * Préparer, modifier, dupliquer : formateur du cours, direction, vie scolaire
    * d'un cours propre à son campus. Faux pour la vie scolaire d'un campus sur

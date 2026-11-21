@@ -30,9 +30,18 @@ export function useDemarrerUnCours() {
         return;
       }
       const d = etat.devine;
-      const r = await post<{ seanceId: number; coursTitre: string }>("/api/enseigner/demarrer", d.seanceId ? { seanceId: d.seanceId } : { coursId: d.coursId });
+      const r = await post<{ seanceId: number; coursTitre: string; avisRetenu?: boolean }>(
+        "/api/enseigner/demarrer",
+        d.seanceId ? { seanceId: d.seanceId } : { coursId: d.coursId, devine: d.raison },
+      );
       await rafraichir("/api/cours", "/api/seances", "/api/accueil", "/api/live/en-cours", "/api/agenda", "/api/enseigner/a-confirmer");
-      toast(`Le cours « ${r.coursTitre || d.titre} » démarre. Pas le bon cours ? Vous corrigerez à la fin.`);
+      const titre = r.coursTitre || d.titre;
+      // Deviné sans certitude : les étudiants ne sont pas prévenus tant que le formateur ne le demande pas (Studio).
+      toast(
+        r.avisRetenu
+          ? `Le cours « ${titre} » démarre. Les étudiants ne sont pas encore prévenus : si c'est le bon cours, appuyez sur « Prévenir les étudiants ».`
+          : `Le cours « ${titre} » démarre. Pas le bon cours ? Vous corrigerez à la fin.`,
+      );
       naviguer(`/live/${r.seanceId}`);
     } catch (e) {
       toastErreur(e);

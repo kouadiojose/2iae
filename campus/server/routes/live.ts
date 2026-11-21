@@ -102,6 +102,7 @@ import * as livekit from "../visio-livekit";
 import { creerModuleGroupes, noterModeSuivi } from "./live-groupes";
 import { copierVersBucket, lienReplayBucket, stockageReplaysDisponible, supprimerDuBucket } from "../stockage-replays";
 import "../replays-lecture-rapide";
+import "../attribution-classes";
 import {
   seances,
   cours,
@@ -1961,6 +1962,7 @@ export function enregistrerLive(app: Express) {
         if (pub.publierSurSite) prevenirSite("live publié");
       }
       const conflits = await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
+      reveiller("classes-des-cours");
       res.status(201).json({ ...(await detailSeance(u, s)), conflits });
     }),
   );
@@ -2048,6 +2050,19 @@ export function enregistrerLive(app: Express) {
       if (d.coursId) {
         c = await coursEnseigne(u, d.coursId);
         if (c.statut === "archive") throw invalide("Ce cours est archivé.");
+        // « Pour qui ? » sur un cours déjà là : les classes choisies s'ajoutent (rien n'est retiré ici).
+        const demandees = [...new Set(d.classeIds ?? [])];
+        if (demandees.length) {
+          const trouvees = await db.select().from(classes).where(inArray(classes.id, demandees));
+          if (trouvees.length !== demandees.length) throw invalide("Une des classes n'existe pas.");
+          const perimetre = perimetreSites(u);
+          if (perimetre && trouvees.some((cl) => !perimetre.includes(cl.siteId))) throw interdit("Vous ne pouvez choisir que les classes de votre campus.");
+          const ajoutees = await db.insert(coursClasses).values(demandees.map((classeId) => ({ coursId: c.id, classeId }))).onConflictDoNothing().returning({ classeId: coursClasses.classeId });
+          if (ajoutees.length) await db.insert(journal).values({ utilisateurId: u.id, action: "cours_classes", details: { coursId: c.id, ajoutees: ajoutees.map((a) => a.classeId), express: true } });
+        } else {
+          const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(coursClasses).where(eq(coursClasses.coursId, c.id));
+          if (!n) throw invalide("Ce cours n'a encore aucune classe : choisissez pour qui il est (BTS, Licence…).");
+        }
       } else {
         const demandees = [...new Set(d.classeIds ?? [])];
         const trouvees = await db.select().from(classes).where(inArray(classes.id, demandees));
@@ -2097,6 +2112,7 @@ export function enregistrerLive(app: Express) {
         });
       }
       const conflits = maintenant ? [] : await conflitsDeSalle(c.id, debut, d.dureeMinutes, s.id);
+      reveiller("classes-des-cours");
       res.status(201).json({ seanceId: s.id, coursId: c.id, coursCode: c.code, coursTitre: c.titre, nouveau, maintenant, prevenus, conflits });
     }),
   );

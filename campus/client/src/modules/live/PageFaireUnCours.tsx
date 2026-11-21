@@ -80,6 +80,8 @@ export default function PageFaireUnCours() {
   const [affiner, setAffiner] = useState(false);
   /** Les classes sans étudiant restent repliées (« Voir les autres classes »). */
   const [toutes, setToutes] = useState(false);
+  /** Cours déjà là : le professeur ajoute des classes (ou doit en choisir, si le cours n'en a aucune). */
+  const [ajouterClasses, setAjouterClasses] = useState(false);
   // 2. Quand.
   const [quand, setQuand] = useState<"maintenant" | "plus_tard">("maintenant");
   const [date, setDate] = useState(aujourdhui);
@@ -145,8 +147,8 @@ export default function PageFaireUnCours() {
       ? "Choisissez un cours."
       : choix === "nouveau" && titreCours.trim().length < 3
         ? "Donnez un nom au cours."
-        : choix === "nouveau" && !classeIds.length
-          ? "Choisissez pour qui est le cours."
+        : (choix === "nouveau" || (coursChoisi && coursChoisi.nbClasses === 0)) && !classeIds.length
+          ? "Choisissez pour qui est le cours (BTS, Licence…)."
           : quand === "plus_tard" && (!date || !heureDebut)
             ? "Choisissez le jour et l'heure."
             : null;
@@ -164,7 +166,7 @@ export default function PageFaireUnCours() {
     setEnvoi(true);
     try {
       const r = await post<Reponse>("/api/enseigner/cours-express", {
-        ...(typeof choix === "number" ? { coursId: choix } : { titreCours: titreCours.trim(), classeIds }),
+        ...(typeof choix === "number" ? { coursId: choix, ...(classeIds.length ? { classeIds } : {}) } : { titreCours: titreCours.trim(), classeIds }),
         sujet: sujet.trim() || undefined,
         debut,
         dureeMinutes: duree,
@@ -187,41 +189,7 @@ export default function PageFaireUnCours() {
     }
   };
 
-  return (
-    <Page className="max-w-[860px] gap-7 pb-40">
-      <button type="button" onClick={() => naviguer("/enseigner")} className="-mb-2 flex min-h-[44px] items-center gap-2 self-start text-[18px] font-bold text-texte-doux">
-        <ArrowLeft className="h-5 w-5" /> Retour
-      </button>
-      <header className="flex flex-col gap-1">
-        <h1 className="text-[40px] leading-[1.02] text-encre sm:text-[52px]">Faire un cours</h1>
-        <p className="text-[20px] text-texte-doux">Quelques gros boutons, et la classe est prête.</p>
-      </header>
-
-      <Question numero={1} titre="Quel cours ?">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {mesCours.map((c) => (
-            <Choix key={c.id} actif={choix === c.id} onClick={() => setChoix(c.id)} sous={c.nbEtudiants != null ? `${c.code} · ${c.nbEtudiants} étudiant${c.nbEtudiants > 1 ? "s" : ""}` : c.code}>
-              {c.titre}
-            </Choix>
-          ))}
-          <Choix actif={choix === "nouveau"} onClick={() => setChoix("nouveau")} icone={<Plus className="h-6 w-6" strokeWidth={3} />} sous="Donnez son nom et choisissez les classes">
-            Un nouveau cours
-          </Choix>
-        </div>
-
-        {choix === "nouveau" && (
-          <div className="flex flex-col gap-4 rounded-[24px] border-2 border-ligne bg-creme p-5 sm:p-6" data-nouveau-cours>
-            <label className="flex flex-col gap-2">
-              <span className="text-[20px] font-black">Le nom du cours</span>
-              <input
-                value={titreCours}
-                onChange={(e) => setTitreCours(e.target.value)}
-                placeholder="Par exemple : Droit des affaires"
-                maxLength={140}
-                autoFocus
-                className="min-h-[60px] rounded-[16px] border-2 border-ligne bg-white px-4 text-[22px] font-bold outline-none focus:border-orange"
-              />
-            </label>
+  const pourQui = (
             <div className="flex flex-col gap-2">
               <span className="flex items-center gap-2 text-[20px] font-black">
                 <Users className="h-5 w-5" /> Pour qui ?
@@ -288,6 +256,69 @@ export default function PageFaireUnCours() {
                 </>
               )}
             </div>
+  );
+
+  return (
+    <Page className="max-w-[860px] gap-7 pb-40">
+      <button type="button" onClick={() => naviguer("/enseigner")} className="-mb-2 flex min-h-[44px] items-center gap-2 self-start text-[18px] font-bold text-texte-doux">
+        <ArrowLeft className="h-5 w-5" /> Retour
+      </button>
+      <header className="flex flex-col gap-1">
+        <h1 className="text-[40px] leading-[1.02] text-encre sm:text-[52px]">Faire un cours</h1>
+        <p className="text-[20px] text-texte-doux">Quelques gros boutons, et la classe est prête.</p>
+      </header>
+
+      <Question numero={1} titre="Quel cours ?">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {mesCours.map((c) => (
+            <Choix key={c.id} actif={choix === c.id} onClick={() => {
+                setChoix(c.id);
+                setAjouterClasses(false);
+                setNiveaux([]);
+                setFilieres([]);
+              }} sous={c.nbEtudiants != null ? `${c.code} · ${c.nbEtudiants} étudiant${c.nbEtudiants > 1 ? "s" : ""}` : c.code}>
+              {c.titre}
+            </Choix>
+          ))}
+          <Choix actif={choix === "nouveau"} onClick={() => setChoix("nouveau")} icone={<Plus className="h-6 w-6" strokeWidth={3} />} sous="Donnez son nom et choisissez les classes">
+            Un nouveau cours
+          </Choix>
+        </div>
+
+        {coursChoisi && (
+          <div className="flex flex-col gap-3 rounded-[24px] border-2 border-ligne bg-creme p-5 sm:p-6" data-classes-du-cours>
+            {coursChoisi.nbClasses > 0 && !ajouterClasses ? (
+              <>
+                <p className="flex items-center gap-2 text-[20px] font-black">
+                  <Users className="h-5 w-5" /> Pour {coursChoisi.nbEtudiants ?? 0} étudiant{(coursChoisi.nbEtudiants ?? 0) > 1 ? "s" : ""} ({coursChoisi.nbClasses} classe{coursChoisi.nbClasses > 1 ? "s" : ""})
+                </p>
+                <button type="button" onClick={() => setAjouterClasses(true)} className="min-h-[44px] self-start text-[17px] font-bold text-orange-profond underline underline-offset-4">
+                  Ajouter une classe (BTS, Licence…)
+                </button>
+              </>
+            ) : (
+              <>
+                {coursChoisi.nbClasses === 0 && <p className="rounded-[16px] bg-orange-clair px-4 py-3 text-[18px] font-bold">Ce cours n'a encore aucune classe : aucun étudiant ne le voit. Dites pour qui il est.</p>}
+                {pourQui}
+              </>
+            )}
+          </div>
+        )}
+
+        {choix === "nouveau" && (
+          <div className="flex flex-col gap-4 rounded-[24px] border-2 border-ligne bg-creme p-5 sm:p-6" data-nouveau-cours>
+            <label className="flex flex-col gap-2">
+              <span className="text-[20px] font-black">Le nom du cours</span>
+              <input
+                value={titreCours}
+                onChange={(e) => setTitreCours(e.target.value)}
+                placeholder="Par exemple : Droit des affaires"
+                maxLength={140}
+                autoFocus
+                className="min-h-[60px] rounded-[16px] border-2 border-ligne bg-white px-4 text-[22px] font-bold outline-none focus:border-orange"
+              />
+            </label>
+            {pourQui}
           </div>
         )}
       </Question>

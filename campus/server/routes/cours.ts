@@ -18,6 +18,7 @@ import type { Express } from "express";
 import { z } from "zod";
 import { and, asc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "../db";
+import { reveiller } from "../taches";
 import { exigerConnexion, exigerRole, droitSiEquipe, moi, estEquipe, perimetreSites } from "../auth";
 import { route, valider, idParam, introuvable, interdit, invalide, ErreurHttp } from "../http";
 import { idsCoursAccessibles, coursVisible, coursEnseigne, enseigneCours, peutVoirCours, etudiantsDuCours, peutVoirMediatheque, peutReglerMediatheque } from "../acces";
@@ -844,6 +845,7 @@ export function enregistrerCours(app: Express) {
           push: false,
         });
       }
+      reveiller("classes-des-cours");
       res.status(201).json(await detailCours(u, c));
     }),
   );

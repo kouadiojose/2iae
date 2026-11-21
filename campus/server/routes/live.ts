@@ -771,7 +771,7 @@ async function finirParole(seanceId: number): Promise<MainLevee | null> {
     : [];
   paroles.set(seanceId, null);
   if (p.type === "etudiant" && p.utilisateurId) {
-    autoriserEtudiantLivekit(seanceId, p.utilisateurId, { micro: false, camera: false });
+    remettreAuReglageDeLaClasse(seanceId, p.utilisateurId);
     sortirApresParole(seanceId, p.utilisateurId);
   }
   return main ?? null;
@@ -781,21 +781,34 @@ async function finirParole(seanceId: number): Promise<MainLevee | null> {
 // Un étudiant entre sans micro ni caméra (une salle de conférence pleine de téléphones ferait un écho terrible). Le
 // formateur les lui ouvre en lui donnant la parole ou d'un geste sur sa vignette, et les referme ; « Couper tous les
 // micros » ferme ceux de tout le monde sauf le sien. L'autorisation tient le temps du cours (même après un rechargement).
-const autorisationsEtudiants = new Map<string, { micro: boolean; camera: boolean }>();
+// 21 novembre 2026 : le formateur règle aussi TOUTE la classe (seances.envoi_etudiants), dès la création du cours ou
+// pendant le direct ; un réglage donné à un étudiant (ouvert ou fermé) passe par-dessus celui de la classe.
+const autorisationsEtudiants = new Map<string, { micro?: boolean; camera?: boolean }>();
 
-function envoiEtudiant(seanceId: number, utilisateurId: number, aLaParole: boolean): ("audio" | "video")[] | false {
-  const a = autorisationsEtudiants.get(`${seanceId}:${utilisateurId}`);
+function envoiEtudiant(s: Pick<Seance, "id" | "envoiEtudiants">, utilisateurId: number, aLaParole: boolean): ("audio" | "video")[] | false {
+  const a = autorisationsEtudiants.get(`${s.id}:${utilisateurId}`);
   const envoi: ("audio" | "video")[] = [];
-  if (aLaParole || a?.micro) envoi.push("audio");
-  if (aLaParole || a?.camera) envoi.push("video");
+  if (aLaParole || (a?.micro ?? s.envoiEtudiants.micro)) envoi.push("audio");
+  if (aLaParole || (a?.camera ?? s.envoiEtudiants.camera)) envoi.push("video");
   return envoi.length ? envoi : false;
+}
+
+/** Fin de la parole : l'étudiant retrouve le réglage de la classe (fermé, sauf si le formateur a tout ouvert). */
+function remettreAuReglageDeLaClasse(seanceId: number, utilisateurId: number) {
+  autorisationsEtudiants.delete(`${seanceId}:${utilisateurId}`);
+  void (async () => {
+    const [sp] = await db.select({ salleVisio: seances.salleVisio, envoiEtudiants: seances.envoiEtudiants }).from(seances).where(eq(seances.id, seanceId));
+    if (!sp || !livekit.estSalleLivekit(sp.salleVisio) || !livekit.livekitDisponible()) return;
+    await livekit.reglerEnvoiLivekit(livekit.salleSeanceLivekit(seanceId), utilisateurId, { micro: sp.envoiEtudiants.micro, camera: sp.envoiEtudiants.camera });
+  })().catch((e) => console.warn(`[visio] retour au réglage de la classe, étudiant ${utilisateurId} (séance ${seanceId}) :`, (e as Error).message));
 }
 
 function autoriserEtudiantLivekit(seanceId: number, utilisateurId: number, o: { micro?: boolean; camera?: boolean }) {
   const cle = `${seanceId}:${utilisateurId}`;
-  const a = { ...(autorisationsEtudiants.get(cle) ?? { micro: false, camera: false }), ...o };
-  if (a.micro || a.camera) autorisationsEtudiants.set(cle, a);
-  else autorisationsEtudiants.delete(cle);
+  const a = { ...(autorisationsEtudiants.get(cle) ?? {}) };
+  if (o.micro !== undefined) a.micro = o.micro;
+  if (o.camera !== undefined) a.camera = o.camera;
+  autorisationsEtudiants.set(cle, a);
   void (async () => {
     const [sp] = await db.select({ salleVisio: seances.salleVisio }).from(seances).where(eq(seances.id, seanceId));
     if (!livekit.estSalleLivekit(sp?.salleVisio) || !livekit.livekitDisponible()) return;
@@ -1600,6 +1613,7 @@ async function detailSeance(u: Utilisateur, s: Seance): Promise<SeanceDetailDto>
     publierSurSite: s.publierSurSite,
     replayDisponible: replayDisponible(s),
     resumeValide: s.resumeValide,
+    envoiEtudiants: s.envoiEtudiants,
     formateur: formateur ?? null,
     monRole: role,
     peutModifier: role === "formateur" || (role === "equipe" && (await enseigneCours(u, s.coursId))),
@@ -1660,6 +1674,9 @@ const schemaExpress = z
     sujet: z.string().trim().max(160).optional(),
     debut: z.string().datetime({ offset: true, message: "date invalide" }).nullable().optional(),
     dureeMinutes: z.number().int().min(15, "15 minutes au moins").max(480, "8 heures au plus"),
+    /** Dès le départ : les étudiants peuvent ouvrir leur micro, leur caméra (réglage de la classe). */
+    microEtudiants: z.boolean().optional(),
+    cameraEtudiants: z.boolean().optional(),
   })
   .refine((d) => d.coursId || d.titreCours, { message: "Choisissez un cours ou donnez un nom au nouveau cours." })
   .refine((d) => d.coursId || (d.classeIds && d.classeIds.length > 0), { message: "Choisissez au moins une classe." });
@@ -2063,7 +2080,7 @@ export function enregistrerLive(app: Express) {
       const titreSeance = sujet && sujet.length >= 3 ? sujet : c.titre;
       const [s] = await db
         .insert(seances)
-        .values({ coursId: c.id, titre: titreSeance, description: "", debut, dureeMinutes: d.dureeMinutes, fournisseur, lienExterne: null, plan: [] })
+        .values({ coursId: c.id, titre: titreSeance, description: "", debut, dureeMinutes: d.dureeMinutes, fournisseur, lienExterne: null, plan: [], envoiEtudiants: { micro: d.microEtudiants ?? false, camera: d.cameraEtudiants ?? false } })
         .returning();
       await db.insert(journal).values({ utilisateurId: u.id, action: "seance_express", details: { seanceId: s.id, coursId: c.id, maintenant, nouveau } });
 
@@ -2611,7 +2628,7 @@ export function enregistrerLive(app: Express) {
               ...(invite
                 ? { envoi: ["audio", "video"] as ("audio" | "video")[] }
                 : profil === "etudiant"
-                  ? { envoi: envoiEtudiant(s.id, u.id, aLaParole) }
+                  ? { envoi: envoiEtudiant(s, u.id, aLaParole) }
                   : {}),
               ...(profil === "salle" && { poste: poste ?? crypto.randomBytes(6).toString("hex") }),
             });
@@ -3007,6 +3024,7 @@ export function enregistrerLive(app: Express) {
         planB: s.planBLe ? s.lienSecours : null,
         motifAnnulation: s.motifAnnulation,
         chatMode: s.chatMode,
+        envoiEtudiants: s.envoiEtudiants,
         diapo: diapoCourante(s),
         projection: await projectionDe(s),
         copie: copieDe(s),
@@ -3307,6 +3325,41 @@ export function enregistrerLive(app: Express) {
     }),
   );
 
+  // Réglage de la classe : micro et caméra de TOUS les étudiants, ouverts ou fermés d'un geste. Possible avant le
+  // direct (le réglage attend les étudiants à leur entrée) et pendant. Les réglages donnés un par un pour ce qui
+  // change sont effacés : « tous » veut dire tous.
+  app.post(
+    "/api/seances/:id/visio/envoi-tous",
+    exigerConnexion,
+    route(async (req, res) => {
+      const u = moi(req);
+      const s = await seanceAnimee(u, idParam(req));
+      exigerStatut(s, ["planifiee", "en_direct"], "Cette séance est terminée.");
+      const d = valider(z.object({ micro: z.boolean().optional(), camera: z.boolean().optional() }), req.body);
+      if (d.micro === undefined && d.camera === undefined) throw invalide("Rien à régler.");
+      const classe = { micro: d.micro ?? s.envoiEtudiants.micro, camera: d.camera ?? s.envoiEtudiants.camera };
+      await db.update(seances).set({ envoiEtudiants: classe }).where(eq(seances.id, s.id));
+      for (const cle of [...autorisationsEtudiants.keys()]) {
+        if (!cle.startsWith(`${s.id}:`)) continue;
+        const a = { ...autorisationsEtudiants.get(cle)! };
+        if (d.micro !== undefined) delete a.micro;
+        if (d.camera !== undefined) delete a.camera;
+        if (Object.keys(a).length) autorisationsEtudiants.set(cle, a);
+        else autorisationsEtudiants.delete(cle);
+      }
+      let etudiants = 0;
+      if (s.statut === "en_direct" && livekit.estSalleLivekit(s.salleVisio) && livekit.livekitDisponible()) {
+        // Celui qui a la parole garde micro et caméra jusqu'à la fin de sa parole.
+        const parole = await paroleCourante(s.id);
+        const sauf = new Set<number>(parole?.type === "etudiant" && parole.utilisateurId ? [parole.utilisateurId] : []);
+        etudiants = await livekit.reglerEnvoiClasseLivekit(livekit.salleSeanceLivekit(s.id), classe, { micro: d.micro, camera: d.camera }, sauf);
+      }
+      await db.insert(journal).values({ utilisateurId: u.id, action: "visio_envoi_tous", details: { seanceId: s.id, ...classe } });
+      publierStatut({ ...s, envoiEtudiants: classe });
+      res.json({ ok: true, envoiEtudiants: classe, etudiants });
+    }),
+  );
+
   app.post(
     "/api/seances/:id/visio/couper-micros",
     exigerConnexion,
@@ -3315,11 +3368,17 @@ export function enregistrerLive(app: Express) {
       const s = await seanceAnimee(u, idParam(req));
       exigerStatut(s, ["en_direct"], "La séance n'est pas en direct.");
       if (!livekit.estSalleLivekit(s.salleVisio) || !livekit.livekitDisponible()) throw new ErreurHttp(409, "Cette séance n'est pas sur la nouvelle visio.");
+      // Le micro se ferme pour toute la classe (réglage de la classe compris) ; les caméras ne bougent pas.
       for (const cle of [...autorisationsEtudiants.keys()]) {
         if (!cle.startsWith(`${s.id}:`)) continue;
-        const a = autorisationsEtudiants.get(cle)!;
-        if (a.camera) autorisationsEtudiants.set(cle, { ...a, micro: false });
+        const { micro: _m, ...reste } = autorisationsEtudiants.get(cle)!;
+        if (Object.keys(reste).length) autorisationsEtudiants.set(cle, reste);
         else autorisationsEtudiants.delete(cle);
+      }
+      if (s.envoiEtudiants.micro) {
+        const classe = { ...s.envoiEtudiants, micro: false };
+        await db.update(seances).set({ envoiEtudiants: classe }).where(eq(seances.id, s.id));
+        publierStatut({ ...s, envoiEtudiants: classe });
       }
       const n = await livekit.couperMicrosLivekit(livekit.salleSeanceLivekit(s.id));
       await db.insert(journal).values({ utilisateurId: u.id, action: "visio_micros_coupes", details: { seanceId: s.id, micros: n } });

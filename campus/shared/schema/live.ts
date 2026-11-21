@@ -153,6 +153,8 @@ export const seances = campusSchema.table(
     /** Vidéo ou page de copie projetée en ce moment à la place de la diapo (null : pas de projection). */
     projection: jsonb("projection").$type<ProjectionSeance>(),
     chatMode: text("chat_mode").$type<ModeChat>().notNull().default("tous"),
+    /** Micro et caméra ouverts à tous les étudiants (réglage de la classe ; les réglages par étudiant passent par-dessus). */
+    envoiEtudiants: jsonb("envoi_etudiants").$type<{ micro: boolean; camera: boolean }>().notNull().default({ micro: false, camera: false }),
     proposeSurSite: boolean("propose_sur_site").notNull().default(false),
     publierSurSite: boolean("publier_sur_site").notNull().default(false),
     /** Motif d'annulation ou de report (« Le formateur a un empêchement »), affiché partout. */

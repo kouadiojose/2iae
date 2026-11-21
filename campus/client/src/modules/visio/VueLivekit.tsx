@@ -16,6 +16,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties } from "react";
 import { post } from "@/lib/api";
 import { toast, toastErreur } from "@/components/ui/toast";
+import { useQuery } from "@tanstack/react-query";
 import {
   LiveKitRoom,
   GridLayout,
@@ -268,6 +269,62 @@ function BoutonCouperMicros({ seanceId }: { seanceId: number }) {
 
 const LIBELLE_PROFIL: Record<string, string> = { formateur: "Formateur", salle: "Salle", etudiant: "Étudiant", observateur: "Équipe" };
 
+/**
+ * Formateur : micro et caméra de TOUS les étudiants, d'un geste (réglage de la classe, gardé pour ceux qui arrivent
+ * ensuite). Les boutons de chaque étudiant, dessous, passent par-dessus pour lui seul.
+ */
+function ReglageClasse({ seanceId }: { seanceId: number }) {
+  const cle = `/api/seances/${seanceId}`;
+  const { data } = useQuery<{ envoiEtudiants?: { micro: boolean; camera: boolean } }>({ queryKey: [cle], staleTime: 10_000 });
+  const [local, setLocal] = useState<{ micro: boolean; camera: boolean } | null>(null);
+  const [envoi, setEnvoi] = useState(false);
+  const classe = local ?? data?.envoiEtudiants ?? { micro: false, camera: false };
+  const regler = (o: { micro?: boolean; camera?: boolean }) => {
+    setEnvoi(true);
+    post<{ envoiEtudiants: { micro: boolean; camera: boolean } }>(`/api/seances/${seanceId}/visio/envoi-tous`, o)
+      .then((r) => {
+        setLocal(r.envoiEtudiants);
+        const quoi = o.micro !== undefined ? "micro" : "caméra";
+        const ouvert = o.micro ?? o.camera;
+        toast(ouvert ? `Tous les étudiants peuvent ouvrir leur ${quoi}.` : `${quoi === "micro" ? "Micro fermé" : "Caméra fermée"} pour tous les étudiants.`, "info");
+      })
+      .catch(toastErreur)
+      .finally(() => setEnvoi(false));
+  };
+  const bouton = (actif: boolean): CSSProperties => ({
+    flex: 1,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 44,
+    padding: "8px 10px",
+    borderRadius: 12,
+    fontSize: 13,
+    fontWeight: 800,
+    border: "none",
+    cursor: "pointer",
+    background: actif ? "rgba(228,121,58,0.95)" : "rgba(255,255,255,0.12)",
+    color: "#fff",
+  });
+  return (
+    <div style={{ marginBottom: 10, padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.08)" }} data-reglage-classe>
+      <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Tous les étudiants</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button type="button" style={bouton(classe.micro)} disabled={envoi} aria-pressed={classe.micro} onClick={() => regler({ micro: !classe.micro })}>
+          {classe.micro ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+          {classe.micro ? "Micro ouvert à tous" : "Ouvrir le micro à tous"}
+        </button>
+        <button type="button" style={bouton(classe.camera)} disabled={envoi} aria-pressed={classe.camera} onClick={() => regler({ camera: !classe.camera })}>
+          {classe.camera ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+          {classe.camera ? "Caméra ouverte à tous" : "Ouvrir la caméra à tous"}
+        </button>
+      </div>
+      <p style={{ fontSize: 12, opacity: 0.75, margin: "6px 0 0" }}>Touchez de nouveau pour refermer. Dessous, réglez un étudiant à la fois.</p>
+    </div>
+  );
+}
+
 /** Formateur : tous les participants, leur micro et leur caméra, et les mêmes boutons que sur les vignettes. */
 function ListeParticipants({ seanceId, onFermer }: { seanceId: number; onFermer: () => void }) {
   const participants = useParticipants();
@@ -286,6 +343,7 @@ function ListeParticipants({ seanceId, onFermer }: { seanceId: number; onFermer:
           <X className="h-4 w-4" />
         </button>
       </div>
+      <ReglageClasse seanceId={seanceId} />
       {autres.length === 0 && <p style={{ fontSize: 14, opacity: 0.8 }}>Personne d'autre pour l'instant.</p>}
       <ul style={{ display: "flex", flexDirection: "column", gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
         {autres.map((x) => (
@@ -599,16 +657,29 @@ function Barre({
   const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled, localParticipant } = useLocalParticipant();
   // Ce que le serveur permet d'envoyer (étudiant : rien tant que le formateur ne l'a pas autorisé).
   const perm = useLocalParticipantPermissions();
+  const salleBarre = useRoomContext();
   const sources = perm ? (perm.canPublish ? (perm.canPublishSources.length ? perm.canPublishSources : [1, 2]) : []) : [1, 2];
   const microPermis = sources.includes(2);
   const cameraPermis = sources.includes(1);
   // Autorisation reçue du formateur : micro et caméra s'allument tout seuls (comme quand il donne la parole).
   const avant = useRef({ micro: microPermis, camera: cameraPermis });
   useEffect(() => {
-    if (microPermis && !avant.current.micro && micro) void localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
-    if (cameraPermis && !avant.current.camera) void localParticipant.setCameraEnabled(true).catch(() => undefined);
+    // Réglage de toute la classe (annoncé par la salle) : rien ne s'allume tout seul, l'étudiant touche son micro.
+    let classe: { micro?: boolean; camera?: boolean } = {};
+    try {
+      classe = (JSON.parse(salleBarre.metadata || "{}") as { envoiClasse?: typeof classe }).envoiClasse ?? {};
+    } catch {
+      /* pas de réglage de classe */
+    }
+    const microDonne = microPermis && !avant.current.micro;
+    const cameraDonnee = cameraPermis && !avant.current.camera;
+    if (microDonne && micro && !classe.micro) void localParticipant.setMicrophoneEnabled(true).catch(() => undefined);
+    if (cameraDonnee && !classe.camera) void localParticipant.setCameraEnabled(true).catch(() => undefined);
+    if ((microDonne && classe.micro) || (cameraDonnee && classe.camera)) {
+      toast(microDonne && cameraDonnee ? "Ton formateur a ouvert micro et caméra : touche les boutons pour t'en servir." : microDonne ? "Ton formateur a ouvert les micros : touche le micro pour parler." : "Ton formateur a ouvert les caméras : touche la caméra pour te montrer.", "info");
+    }
     avant.current = { micro: microPermis, camera: cameraPermis };
-  }, [microPermis, cameraPermis, micro, localParticipant]);
+  }, [microPermis, cameraPermis, micro, localParticipant, salleBarre]);
   micro = micro && microPermis;
   camera = (camera || cameraPermis) && cameraPermis;
   return (

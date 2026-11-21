@@ -320,6 +320,8 @@ export type SeanceDetailDto = {
   publierSurSite: boolean;
   replayDisponible: boolean;
   resumeValide: boolean;
+  /** Micro et caméra ouverts à tous les étudiants (réglage de la classe). */
+  envoiEtudiants: { micro: boolean; camera: boolean };
   formateur: { id: number; prenom: string; nom: string; localisation: string | null; photoUrl: string | null } | null;
   monRole: RoleSeance;
   /**
@@ -609,6 +611,8 @@ export type EtatDirectDto = {
   mains: MainDirectDto[];
   /** Qui écrit dans la discussion (réglage du formateur). */
   chatMode: ModeChat;
+  /** Micro et caméra ouverts à tous les étudiants (réglage de la classe). */
+  envoiEtudiants: { micro: boolean; camera: boolean };
   /** Dernier devoir donné en direct dans la séance (null : aucun). */
   devoirDirect: DevoirDirectDto | null;
 };

@@ -179,6 +179,24 @@ export async function couperMicrosLivekit(salle: string): Promise<number> {
   return n;
 }
 
+/**
+ * Réglage de la classe : micro et caméra de TOUS les étudiants présents (sauf ceux de `sauf`, réglés un par un).
+ * La salle l'annonce d'abord (métadonnées) : chez l'étudiant, rien ne s'allume tout seul, il touche son micro.
+ */
+export async function reglerEnvoiClasseLivekit(salle: string, classe: { micro: boolean; camera: boolean }, o: { micro?: boolean; camera?: boolean }, sauf: Set<number> = new Set()): Promise<number> {
+  await salles().updateRoomMetadata(salle, JSON.stringify({ envoiClasse: classe })).catch(() => undefined);
+  const liste = await salles().listParticipants(salle).catch(() => []);
+  const comptes = new Set<number>();
+  for (const p of liste) if (profilParticipant(p.metadata) === "etudiant") comptes.add(compteDeIdentite(p.identity));
+  let n = 0;
+  for (const id of comptes) {
+    if (sauf.has(id)) continue;
+    await reglerEnvoiLivekit(salle, id, o).catch(() => undefined);
+    n++;
+  }
+  return n;
+}
+
 /** Ferme une salle : tout le monde sort. */
 export async function fermerSalleLivekit(salle: string): Promise<void> {
   try {

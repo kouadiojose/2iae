@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarClock, Check, MonitorPlay, Plus, Users, Zap } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Mic, MonitorPlay, Plus, Users, Video, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { post } from "@/lib/api";
 import { rafraichir } from "@/lib/queryClient";
@@ -87,6 +87,9 @@ export default function PageFaireUnCours() {
   // 3. Durée et sujet.
   const [duree, setDuree] = useState(120);
   const [sujet, setSujet] = useState("");
+  // Dès le départ : ce que les étudiants peuvent ouvrir (fermé par défaut, à cause de l'écho en salle).
+  const [microEtudiants, setMicroEtudiants] = useState(false);
+  const [cameraEtudiants, setCameraEtudiants] = useState(false);
   const [envoi, setEnvoi] = useState(false);
 
   // Aucun cours encore : on part directement sur « nouveau ». Un seul : il est déjà choisi.
@@ -165,6 +168,8 @@ export default function PageFaireUnCours() {
         sujet: sujet.trim() || undefined,
         debut,
         dureeMinutes: duree,
+        microEtudiants,
+        cameraEtudiants,
       });
       if (r.maintenant) {
         // La classe s'ouvre tout de suite (les étudiants sont prévenus), et le professeur y entre.
@@ -189,7 +194,7 @@ export default function PageFaireUnCours() {
       </button>
       <header className="flex flex-col gap-1">
         <h1 className="text-[40px] leading-[1.02] text-encre sm:text-[52px]">Faire un cours</h1>
-        <p className="text-[20px] text-texte-doux">Trois questions, et la classe est prête.</p>
+        <p className="text-[20px] text-texte-doux">Quelques gros boutons, et la classe est prête.</p>
       </header>
 
       <Question numero={1} titre="Quel cours ?">
@@ -328,6 +333,18 @@ export default function PageFaireUnCours() {
             className="min-h-[56px] rounded-[16px] border-2 border-ligne bg-white px-4 text-[20px] outline-none focus:border-orange"
           />
         </label>
+      </Question>
+
+      <Question numero={4} titre="Les étudiants peuvent…">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Choix actif={microEtudiants} onClick={() => setMicroEtudiants((v) => !v)} icone={<Mic className="h-6 w-6" />} sous={microEtudiants ? "Micro ouvert à tous dès le début" : "Micro fermé : vous l'ouvrez à qui vous voulez"}>
+            Parler
+          </Choix>
+          <Choix actif={cameraEtudiants} onClick={() => setCameraEtudiants((v) => !v)} icone={<Video className="h-6 w-6" />} sous={cameraEtudiants ? "Caméra ouverte à tous dès le début" : "Caméra fermée : vous l'ouvrez à qui vous voulez"}>
+            Se montrer
+          </Choix>
+        </div>
+        <p className="text-[16px] text-texte-doux">Vous pourrez changer cela pendant le cours, pour tous ou pour un seul étudiant. En salle de conférence, gardez les micros fermés : sinon il y a de l'écho.</p>
       </Question>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t-2 border-ligne bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+84px)] pt-3 backdrop-blur sm:pb-4" data-valider-cours>

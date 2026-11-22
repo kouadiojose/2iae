@@ -1,6 +1,6 @@
 // Mise en avant, en tête de la page d'accueil, de la victoire du Groupe 2IAE
 // à la compétition inter-écoles du SELAB 2026 (Sommet de l'élevage
-// d'Abidjan). Le récit : /selab-2026.
+// d'Abidjan, dimanche 22 novembre 2026). Le récit : /selab-2026.
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { ARTICLE_SELAB } from "@/pages/selab-2026";
@@ -14,12 +14,22 @@ export function Selab2026() {
         <div className="lg:order-2">
           <p className="text-xs tracking-[0.25em] uppercase text-[#E9C46A] mb-3">SELAB 2026 · Sommet de l'élevage d'Abidjan</p>
           <h2 className="font-serif text-3xl md:text-4xl leading-tight mb-5">
-            Compétition inter-écoles : <span className="text-[#E9C46A]">2IAE l'emporte.</span>
+            Compétition inter-écoles{"\u00a0"}: <span className="text-[#E9C46A]">2IAE l'emporte.</span>
           </h2>
-          <p className="text-white/80 leading-relaxed mb-7">
-            Médailles au cou, attestations en main : nos étudiants ont remporté la compétition inter-écoles du Sommet de
-            l'élevage d'Abidjan.
+          <p className="text-white/80 leading-relaxed mb-5">
+            Dimanche 22 novembre, nos étudiants ont remporté la compétition inter-écoles du ministère des Ressources animales
+            et halieutiques. Troisièmes à la théorie, ils ont dominé l'épreuve pratique.
           </p>
+          <div className="grid grid-cols-2 gap-3 mb-7">
+            <div className="rounded-xl border border-[#E9C46A]/40 bg-white/5 px-4 py-3">
+              <p className="font-sans font-bold text-3xl text-[#E9C46A] leading-none">1<sup className="text-base">er</sup></p>
+              <p className="text-xs text-white/75 mt-1">au classement général</p>
+            </div>
+            <div className="rounded-xl border border-[#E9C46A]/40 bg-white/5 px-4 py-3">
+              <p className="font-sans font-bold text-3xl text-[#E9C46A] leading-none">74{"\u00a0"}%</p>
+              <p className="text-xs text-white/75 mt-1">à l'épreuve pratique</p>
+            </div>
+          </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <Link href="/selab-2026">
               <Button className="bg-[#E8720C] hover:bg-[#c96208] text-white font-bold px-8 py-3 h-auto w-full sm:w-auto" data-testid="button-selab-2026">

@@ -224,7 +224,7 @@ const PAGES: Record<string, MetaPage> = {
   "/selab-2026": {
     titre: "SELAB 2026 : le Groupe 2IAE remporte la compétition inter-écoles | Groupe 2IAE",
     description:
-      "Au Sommet de l'élevage d'Abidjan (SELAB 2026), les étudiants de l'École des entrepreneurs remportent la compétition inter-écoles : médailles et attestations remises sur la scène de la remise des prix et des distinctions.",
+      "Dimanche 22 novembre 2026, au SELAB 2026, les étudiants du Groupe 2IAE remportent la compétition inter-écoles du ministère des Ressources animales et halieutiques : premiers au classement général, premiers à l'épreuve pratique avec 74 %.",
     image: SITE + "/images/selab-2026/p01.jpg",
     jsonLd: [filAriane("SELAB 2026", "/selab-2026")],
   },

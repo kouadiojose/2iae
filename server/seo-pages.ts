@@ -221,6 +221,13 @@ const PAGES: Record<string, MetaPage> = {
     image: SITE + "/images/tp-azaguie-2026/p06.jpg",
     jsonLd: [filAriane("Travaux pratiques à Azaguié", "/travaux-pratiques-azaguie"), VIDEO_TP_AZAGUIE],
   },
+  "/selab-2026": {
+    titre: "SELAB 2026 : le Groupe 2IAE remporte la compétition inter-écoles | Groupe 2IAE",
+    description:
+      "Au Sommet de l'élevage d'Abidjan (SELAB 2026), les étudiants de l'École des entrepreneurs remportent la compétition inter-écoles : médailles et attestations remises sur la scène de la remise des prix et des distinctions.",
+    image: SITE + "/images/selab-2026/p01.jpg",
+    jsonLd: [filAriane("SELAB 2026", "/selab-2026")],
+  },
   "/prix-ics-2026": {
     titre: "Prix ICS 2025-2026 : 2IAE Meilleure école de formation, Séraphin Koua Meilleur dirigeant | Groupe 2IAE",
     description:
